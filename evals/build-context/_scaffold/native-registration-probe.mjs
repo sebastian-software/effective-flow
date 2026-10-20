@@ -67,11 +67,11 @@ child.stdin.write(
 );
 await new Promise((done) => child.once('close', done));
 clearTimeout(timeout);
-if (error || !result?.result?.config?.agents) {
+if (error || !result?.result?.config) {
   process.stderr.write(error || JSON.stringify(result?.error) || stderr);
   process.exitCode = 1;
 } else {
-  const agents = result.result.config.agents;
+  const agents = result.result.config.agents ?? {};
   for (const expected of input.registrations) {
     const actual = agents[expected.name];
     if (actual?.config_file !== expected.file || actual.description !== expected.description)

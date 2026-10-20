@@ -63,18 +63,21 @@ child.on('close', (code, signal) => {
     stdout = readFileSync(input.base + '.stdout.jsonl'),
     stderr = readFileSync(input.base + '.stderr.txt'),
     capture = readFileSync(input.base + '.capture.jsonl');
-  process.stdout.write(
-    JSON.stringify({
-      startedAt,
-      finishedAt,
-      exitCode: code,
-      signal,
-      launchError: error,
-      stdoutDigest: hash(stdout),
-      stderrDigest: hash(stderr),
-      captureDigest: hash(capture),
-      inputDigest: hash(input.input),
-      collectorDigest: hash(readFileSync(new URL(import.meta.url))),
-    }),
-  );
+  const outcome = {
+    startedAt,
+    finishedAt,
+    exitCode: code,
+    signal,
+    launchError: error,
+    stdoutDigest: hash(stdout),
+    stderrDigest: hash(stderr),
+    captureDigest: hash(capture),
+    inputDigest: hash(input.input),
+    collectorDigest: hash(readFileSync(new URL(import.meta.url))),
+  };
+  writeFileSync(input.base + '.outcome.json', JSON.stringify(outcome) + '\n', {
+    flag: 'wx',
+    mode: 0o600,
+  });
+  process.stdout.write(JSON.stringify(outcome));
 });

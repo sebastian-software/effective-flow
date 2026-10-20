@@ -66,6 +66,17 @@ trace/prompt/skill parent directory as writable. The CLI receives the profile th
 `-c` definitions despite `--ignore-user-config`; caller `-s workspace-write` is normalized into that
 profile, not allowed to override it.
 
+Before sealing Codex settings, the coordinator uses the installed CLI's model-free app-server
+`initialize` + `config/batchWrite` path to persist exactly one
+`projects."<physical-fixture>".trust_level = "trusted"` entry in its isolated config. Native
+workspace-write startup otherwise writes that entry after capture, even with `--ignore-user-config`.
+Only absent, empty or that exact canonical config is admitted; unrelated entries are rejected.
+The complete resulting bytes remain hashed and any later change fails validation. The original
+caller grammar is compiled once into the actual native argv before capture; postchecks compare
+that same canonical form. No user task bytes, model or effort change during this initialization.
+No thread or turn is created by it. Owned-worktree config/read/debug probes must leave this single
+trust entry unchanged.
+
 Before **each** fresh or resumed turn, the coordinator runs the installed CLI's model-free
 `codex sandbox --permission-profile ... --include-managed-config -- COMMAND` with the exact generated
 global arguments, cwd and environment. The probe reads/writes the fixture, creates a local Git
@@ -271,6 +282,19 @@ user text; the coordinator does not invent a handle or spawn a replacement:
 
 The argument vector is host-specific; supply the full actual CLI resume vector, including required
 settings. It is preserved privately. Resuming a coordinator journal is separate from this operation.
+Each fresh/resumed turn requires a nonempty primitive string. The exact current-turn stdin and
+digest are sealed before filesystem probes, guards or subprocesses. Missing/null/object/array,
+boxed, Buffer and blank inputs are rejected without changing run state or journal files; no output
+capture depends on hashing unchecked caller input after a process has run.
+
+For Codex, the actual outer `thread.started` UUID must match exactly one root rollout and every
+resumed turn must use that same UUID. Before resume, the complete previously observed session
+inventory and bytes must be unchanged. After its CLI process, only appends are admitted; every
+observed root/child prefix is copied into the protected host journal. The appended root segment
+must contain the exact sealed current user input before its first assistant/tool action. Completion
+rechecks the last snapshot. Keep one final session entry per actual root/child, spanning all its
+turns; per-turn prefix copies are private provenance, never extra session observations. Original
+runner continuation additionally needs the actual matching helper/agent follow-up evidence.
 
 Then `complete` captures the actual tree. Every successful spawn needs one entry, including
 formatting/validation specialists. Aliases are local, not caller-assigned role proof:
@@ -346,6 +370,16 @@ terminal reference whose actual gate evidence is absent. Interruption requires t
 Drift supplies `checkpoint:{root,path,digest}` and independently compares its actual snapshot with
 Git HEAD/index/tracked/untracked contents. Each variant has its own actual call/session; reusing one
 unrelated `TOO_LARGE` result for multiple cases fails. Never delete live runtime data to make a probe.
+
+Immediately after every native subprocess returns, the coordinator preserves unparsed stdout and
+stderr Buffers, actual argv, stdin digest, actual start/end, exit/signal/error and byte counts under
+`<launch>-observed-<turn>.*` in the protected journal. This happens before post-launch parsing,
+settings, binary or profile checks. Claude's external collector also retains its outcome before
+parsing or projection. Invalid UTF-8 remains the original bytes. Timeout/ENOBUFS records explicitly
+mark incomplete capture and preserve the actual nullable exit; no replacement exit is invented.
+A postcheck failure writes a closed `invalid` attempt with null metrics and keeps the observed
+outcome, rather than losing raw output or admitting a completed run. These artifacts cannot recover
+an older launch whose original output was never retained.
 
 For unsuccessful supported launches submit `fail` after the actual process result:
 
@@ -436,12 +470,28 @@ resolution cannot be inferred from CLI flags or a root init response. Claude fam
 checked against actual assistant model IDs (for example opus → claude-opus-*); unrelated families
 are refused, and each pair must retain identical concrete role/model/effort observations.
 
+The retained failed 0.163.0 launch exposes encrypted `agent_message` assignments and spawn messages;
+plain labels and injected AGENTS context do not establish the actual delegated task. A read-only
+scan recognizes 17 of 172 freeform Exec wrappers, including one immutable const alias, but zero
+helper invocations under the closed literal grammar. Dynamic helper construction stays unproven.
+No decryption, task-name inference, canonical-file-read substitute or new model launch repairs that
+missing assignment evidence. Model-free regular API inspection of an isolated copied history using
+`thread/read`, `thread/turns/list` and `thread/items/list` exposed completed wait/activity metadata,
+without the missing prompt/recipient contents. Older plaintext capability probes do not establish
+observability for this launch/profile. Current Codex cohort recording is blocked: a genuine
+accessible host assignment source and supported actual helper-call evidence must be established
+before another cohort recording; the old failed launch remains ineligible.
+
 The transcript adapter recognizes Codex private rollout `session_meta`, actual tool call/results,
 `turn_context` model/effort, task completion and token-count events, and Claude actual assistant
 model/usage/effort and tool-use associations. Conservative helper capture requires literal
 `node /absolute/scripts/build-run.mjs OP <<'JSON'` (or pilot-measurement/remote-tracker) shell commands
 with a JSON input body. The observed current-CLI form `text(await tools.exec_command({...}));` is
 recognized only with a literal JSON-compatible request and the actual associated output block.
+The immutable observed form `const r = await tools.exec_command({literal}); text(r);` is also
+recognized only when the sole declaration binds the literal call and the only following action
+prints that exact identifier. Rebinding, another identifier, result rewriting, extra statements,
+dynamic arguments and printing parsed command stdout are rejected.
 The adapter **never executes transcript text**. Dynamic expressions, mixed printing, ambiguous
 wrappers, reversed/detached results and absent actual settings/usage remain unproven. Injected
 AGENTS context precedes the initial task; only the last user message before the first actual

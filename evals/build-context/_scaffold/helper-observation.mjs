@@ -5,9 +5,19 @@ export function observedExecRequest(tool) {
   if (['exec_command', 'shell_command'].includes(tool.name) && typeof tool.arguments === 'object')
     return tool.arguments;
   if (tool.name !== 'exec' || typeof tool.arguments !== 'string') return null;
-  const body = tool.arguments.match(
+  const direct = tool.arguments.match(
     /^\s*text\(await tools\.exec_command\((\{[\s\S]*\})\)\);?\s*$/,
-  )?.[1];
+  );
+  const bound = tool.arguments.match(
+    /^\s*const\s+([a-zA-Z_$][a-zA-Z0-9_$]*)\s*=\s*await tools\.exec_command\((\{[\s\S]*\})\)\s*;\s*text\(\1\)\s*;?\s*$/,
+  );
+  // One immutable literal call, followed only by printing that exact result. Never execute JS.
+  const forbidden = new Set(
+    'text tools await break case catch class const continue debugger default delete do else enum eval export extends false finally for function if implements import in instanceof interface let new null package private protected public return static super switch this throw true try typeof var void while with yield arguments'.split(
+      ' ',
+    ),
+  );
+  const body = direct?.[1] ?? (bound && !forbidden.has(bound[1]) ? bound[2] : null);
   if (!body) return null;
   // Only JSON scalar/object arguments with unquoted identifier keys are admitted. Never eval JS.
   let normalized = '',

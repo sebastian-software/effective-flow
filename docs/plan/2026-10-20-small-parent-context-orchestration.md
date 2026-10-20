@@ -284,3 +284,39 @@ Independent review closed four additional Codex recording-integration findings a
 The complete prescribed sequence passed again: `pnpm agent:check`; `pnpm test` (3,002 passed, one intentional freshness skip, zero failed); `node build.mjs` (all targets, build caller 208/214 lines); `pnpm test:distribution`. An earlier full run had one failure in an unchanged process-runner timeout test. Its failed log is retained; five isolated repetitions and subsequent full runs passed without changing the test, timeout or concurrency. Existing merge-gate/iterate evidence remains stale and needs refresh before release; all eleven next-steps scenarios remain current. Build-context strict verification correctly fails while its six scenarios, twenty pairs and two native lanes are absent.
 
 The final instrument review and correctness checks authorize a fresh clean candidate pin and new feasible Codex recordings. The first failed recording retains its original identity and is never adopted into the new instrument. Claude quota and observed native Codex Fast precedence remain the capability limits described above; no repeated quota probe, alternative account, model-mapping change or reduced acceptance gate is authorized by this continuation. The plan remains **Not implemented**, unarchived, and attached to draft PR #581. Required actual workload evidence and any reduction claim remain pending.
+
+### 2026-10-20 — Second actual recording
+
+A fresh actual Codex launch used clean candidate `04702825ba0d2e3468520345045e4295f0425c11` and corrected instrument `sha256:ff05960c3db9806776b3a7241acd786f664dc246ec81cc6d6808987d49363f26`. Ten unique sessions were recorded, with actual `gpt-6.1-sol/high` and `gpt-5.6-luna/medium` observations. The fixture reached Phase 7 after one documented correction round: implementation, documentation, tests, validation, independent review, final validation and plan archival were checkpointed; delivery, pilot finalization, cleanup and completion remained pending at a delivery-choice question. This is concrete partial workflow progress, not a complete scenario or paired measurement.
+
+The CLI exited zero, but the coordinator rejected its postcheck because an initially absent isolated `codex/config.toml` became a generated fixture-trust entry. The separately reported difference between caller arguments and compiled native arguments is expected compilation, not a confirmed second settings drift in the compared settings objects. Full byte checks and rejection of genuine host drift must remain in place.
+
+The rejection also exposed a capture-ordering gap: original stdout/stderr and the external process receipt had not been saved before the rejecting postcheck. Those missing original bytes are unavailable and must never be reconstructed or presented as original evidence. The actual journals, ten raw sessions, observed config bytes and paused fixture were retained with hashes in private runtime history. No owned process remains. Preserve this paused fixture without blindly resuming it; first correct and independently validate prelaunch initialization and outcome capture before any further model start.
+
+This second attempt remains rejected with zero valid full workflows and null performance metrics. Its candidate, instrument and original files remain distinct from the first attempt and from every future recording identity. The plan stays **Not implemented** and PR #581 stays draft; the approved scenario, paired-workload, native-lane and reduction gates are unchanged.
+
+### 2026-10-20 — Final bounded correction and host gate
+
+The bounded recording correction is complete and independently reviewed. The exact native fixture-trust entry is initialized through the official local writer before sealed settings capture; later byte drift still rejects. Original stdout/stderr buffers, actual arguments, sealed stdin, timestamps and process outcome are saved before parsing or rejecting postchecks. Invalid outcomes remain closed, unproven attempts with null metrics. Current-turn input is validated and sealed before any filesystem, guard or subprocess activity. Root identity comes from the actual top-level native event; protected per-turn rollout prefixes bind the same root and runner across a trusted reply and reject foreign IDs, rewritten prefixes and copied-prefix corruption. The two-turn production-path test uses explicit synthetic gate judgments and diagnostic transcripts; it is not a feature recording.
+
+Independent follow-up closed the final Important/Small capture finding and reports no open code findings at any severity. All 49 focused tests passed, including all four positive matrix cells and rejection cases. The final prescribed sequence passed: `pnpm agent:check`; `pnpm test` (3,006 passed, one intentional freshness skip, zero failed); `node build.mjs` (all three targets, caller 208/214 lines); `pnpm test:distribution`. The upstream #580 rule withholding dependent execution options while delivery/review is unfinished is preserved; the approved measurement baseline remains `de23f9b`.
+
+The current Codex recording profile is still **unproven and blocked**. All nine actual spawn messages and child assignments in the second attempt are encrypted. The regular local App-Server methods `thread/read` with turns, `thread/turns/list` and `thread/items/list` were checked on an isolated history copy without models, provider requests or auth material. They expose wait events and child IDs/paths but no original assignment or role text. Older probe rollouts containing plaintext do not supply the missing current assignments. The closed literal adapter recognizes 17 of 172 freeform blocks from the actual attempt and zero helper invocations; unknown/dynamic forms stay unproven. Labels, guessed roles, decryption or new audit/attestation infrastructure cannot replace the approved observations.
+
+No further identical costly recordings are authorized until an accessible official source for actual assignment/role and helper evidence is established. Keep both failed attempts and the paused fixture unchanged; do not blindly resume them, reconstruct missing stdout, relabel them under a later instrument or count them as eligible pairs. Continue through this branch and existing draft PR #581 after revalidating roots, source and forge association. Any later instrument change requires a new candidate/instrument pin and fresh affected recordings. Claude quota, actual Claude model/effort observation and the native Codex Fast precedence remain separate unproven gates. No profile downgrade, model-mapping change or activation toggle is included.
+
+Zero complete behavioural scenarios, zero eligible pairs and neither native lane have been archived. Build-context strict verification therefore fails as required. Merge-gate and iterate recordings remain stale and need refresh before release; all eleven next-steps scenarios remain current. This plan stays **Not implemented** and unarchived, and PR #581 stays draft. The checked implementation is reviewable, but no acceptance-completion or context-reduction claim is made.
+
+## Review findings
+
+**Date:** 2026-10-20
+**Reviewer:** Independent runtime/workflow and Node.js reviewers
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    23 |
+| Open / Not implemented |     0 |
+
+These counts cover implementation-review findings: eight runtime/workflow findings, ten initial evidence findings, four native recording-integration findings and one final capture follow-up. The actual recording and acceptance gates above remain open.

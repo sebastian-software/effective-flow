@@ -238,6 +238,57 @@ export function nativeExecArgs(args, policy, { resume = false } = {}) {
     ...positionals,
   ];
 }
+// Seed only the native writer's observed fixture trust entry before settings are sealed.
+export function initializeNativeSettings({ command, policy, journalRoot }) {
+  const configFile = resolve(command.codexHome, 'config.toml');
+  const canonical = '[projects.' + JSON.stringify(policy.fixture) + ']\ntrust_level = "trusted"\n';
+  const before = existsSync(configFile) ? readRegular(configFile, 256 * 1024) : null;
+  requireThat(
+    before === null || before === '' || before === canonical,
+    'isolated native config must be absent, empty, or exact fixture trust only',
+  );
+  const script = resolve(import.meta.dirname, 'native-initialization.mjs');
+  const args = command.args.slice(0, command.args.indexOf('exec'));
+  const startedAt = Date.now();
+  const result = spawnSync(process.execPath, [script], {
+    input: JSON.stringify({
+      executable: command.executable,
+      args,
+      fixture: policy.fixture,
+      configFile,
+      environment: { PATH: process.env.PATH, HOME: command.home, CODEX_HOME: command.codexHome },
+    }),
+    encoding: 'utf8',
+    timeout: 20000,
+    maxBuffer: 2 * 1024 * 1024,
+  });
+  const finishedAt = Date.now();
+  requireThat(
+    result.status === 0 && !result.error,
+    'model-free native fixture initialization failed: ' + result.stderr,
+  );
+  requireThat(
+    readRegular(configFile) === canonical,
+    'native writer made an unexpected settings transition',
+  );
+  const observation = {
+    startedAt,
+    finishedAt,
+    beforeDigest: before === null ? null : digest(before),
+    afterDigest: digest(canonical),
+    binaryDigest: digest(readFileSync(realpathSync(command.executable))),
+    argumentsDigest: digest(JSON.stringify(args)),
+    sourceDigest: digest(readRegular(script)),
+    stdoutDigest: digest(result.stdout),
+    stderrDigest: digest(result.stderr),
+  };
+  writeFileSync(
+    resolve(journalRoot, 'native-initialization-' + randomBytes(16).toString('hex') + '.json'),
+    JSON.stringify(observation) + '\n',
+    { flag: 'wx', mode: 0o600 },
+  );
+  return observation;
+}
 export function nativeSandboxArgs(policy, command, execArgs) {
   const prefix = execArgs
     ? execArgs.slice(0, execArgs.indexOf('exec'))

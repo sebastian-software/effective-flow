@@ -372,8 +372,8 @@ export function launchClaudeProcess({
   const result = JSON.parse(run.stdout);
   return {
     ...result,
-    stdout: readRegular(base + '.stdout.jsonl', 16 * 1024 * 1024),
-    stderr: readRegular(base + '.stderr.txt', 16 * 1024 * 1024),
+    stdout: readFileSync(base + '.stdout.jsonl'),
+    stderr: readFileSync(base + '.stderr.txt'),
     capturePath: base + '.capture.jsonl',
     stdoutPath: base + '.stdout.jsonl',
   };

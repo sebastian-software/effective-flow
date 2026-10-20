@@ -10,6 +10,8 @@ import {
   realpathSync,
   existsSync,
   readdirSync,
+  cpSync,
+  chmodSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -44,6 +46,7 @@ import {
   summarizeMatrix,
   median,
   nearestRank,
+  sealAuxiliaryRecord,
 } from '../evals/build-context/_scaffold/evidence.mjs';
 import {
   verifyArchivedScenario,
@@ -60,6 +63,7 @@ import {
   nativeSandboxArgs,
   mirrorTrackerLedger,
   trackerLedgerProblems,
+  initializeNativeSettings,
 } from '../evals/build-context/_scaffold/native-sandbox.mjs';
 import { checkoutBasis, fileMembership } from '../evals/build-context/_scaffold/basis.mjs';
 import { observeToolFailure } from '../evals/build-context/_scaffold/tool-failure.mjs';
@@ -1171,7 +1175,74 @@ test(
       profile,
     };
     const settingsInput = { fixtureRoot: fixture, skillRoot: skill, transcriptDir: sessions };
+    assert.equal(existsSync(resolve(config, 'config.toml')), false);
+    const initialization = initializeNativeSettings({ command, policy, journalRoot: host });
+    assert.equal(initialization.beforeDigest, null);
+    const canonicalConfig = '[projects.' + JSON.stringify(fixture) + ']\ntrust_level = "trusted"\n';
+    assert.equal(readFileSync(resolve(config, 'config.toml'), 'utf8'), canonicalConfig);
+    const owned = resolve(fixture, '.effective-flow/owned-worktree');
+    git('worktree', 'add', '--detach', owned, 'HEAD');
+    t.after(() => {
+      try {
+        git('worktree', 'remove', '--force', owned);
+      } catch {}
+    });
+    const childPrefix = args.slice(0, args.indexOf('exec'));
+    childPrefix[1] = owned;
+    const configRead = spawnSync(
+      process.execPath,
+      [
+        resolve(
+          import.meta.dirname,
+          '../evals/build-context/_scaffold/native-registration-probe.mjs',
+        ),
+      ],
+      {
+        input: JSON.stringify({
+          executable: command.executable,
+          args: childPrefix,
+          cwd: owned,
+          environment: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
+          registrations: [],
+        }),
+        encoding: 'utf8',
+        timeout: 20000,
+      },
+    );
+    assert.equal(configRead.status, 0, configRead.stderr);
+    const debugChild = spawnSync(
+      command.executable,
+      [
+        ...childPrefix,
+        'debug',
+        'prompt-input',
+        'Render the exact inherited policy without a model.',
+      ],
+      {
+        cwd: owned,
+        env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
+        encoding: 'utf8',
+        timeout: 20000,
+      },
+    );
+    assert.equal(debugChild.status, 0, debugChild.stderr);
+    assert.ok(debugChild.stdout.includes('workspace-write'));
+    assert.equal(
+      readFileSync(resolve(config, 'config.toml'), 'utf8'),
+      canonicalConfig,
+      'owned-worktree config/read/debug must not grow extra trust entries',
+    );
     const preparedSettings = recordingSettings(command, settingsInput);
+    writeFileSync(
+      resolve(config, 'config.toml'),
+      canonicalConfig + '\n[projects."/unrelated"]\ntrust_level = "trusted"\n',
+    );
+    assert.throws(
+      () => initializeNativeSettings({ command, policy, journalRoot: host }),
+      /exact fixture trust only/,
+    );
+    assert.notDeepEqual(recordingSettings(command, settingsInput), preparedSettings);
+    writeFileSync(resolve(config, 'config.toml'), canonicalConfig);
     assert.deepEqual(recordingSettings(command, settingsInput), preparedSettings);
     assert.equal(
       preparedSettings.stubFixtureDigest,
@@ -1889,6 +1960,7 @@ test('Claude trusted collector captures actual child stdout and sealed stdin wit
   const actual = JSON.parse(run.stdout);
   assert.equal(actual.exitCode, 0);
   assert.equal(actual.inputDigest, digest(claudeUserInput('task')));
+  assert.deepEqual(JSON.parse(readFileSync(base + '.outcome.json')), actual);
   assert.equal(actual.collectorDigest, digest(readFileSync(worker)));
   assert.equal(
     decodeClaudeCapture(
@@ -1981,4 +2053,652 @@ test('Codex registration observer uses only model-free config RPCs and rejects a
   const bad = run('/different/unbound.toml');
   assert.notEqual(bad.status, 0);
   assert.match(bad.stderr, /registration differs/);
+});
+
+async function phaseSevenControlFixture(fixture, skill) {
+  // Synthetic gate judgments are unit inputs, never behavioural quality evidence.
+  const { executeOperation, contentDigest, REQUIRED_GATES } =
+    await import('../src/scripts/build-run-core.mjs');
+  const { createProcessRunner } = await import('../src/scripts/process-runner.mjs');
+  const call = async (operation, input) =>
+    (await executeOperation(operation, input, { runner: createProcessRunner() })).result;
+  const runtime = resolve(fixture, '.effective-flow');
+  mkdirSync(runtime, { recursive: true });
+  writeFileSync(
+    resolve(runtime, 'memory.json'),
+    JSON.stringify({ runtimeMigration: { directory: { version: 1 } } }),
+  );
+  const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+    cwd: fixture,
+    encoding: 'utf8',
+  }).trim();
+  const instruction = 'Implement the approved Feature plan in place without a delivery branch.';
+  const created = await call('create', {
+    runtimeStateRoot: fixture,
+    repositoryIdentity: resolve(fixture, '.git'),
+    runId: 'phase-seven-control',
+    execution: {
+      executionRoot: fixture,
+      branch: 'develop',
+      head,
+      origin: 'current-checkout',
+      owner: 'build',
+    },
+    plan: {
+      root: fixture,
+      path: 'docs/plan/feature.md',
+      digest: contentDigest(readFileSync(resolve(fixture, 'docs/plan/feature.md'))),
+    },
+    source: { instruction, restrictions: ['No publication.'] },
+    runMode: 'interactive',
+    languages: Object.fromEntries(
+      ['source', 'documentation.user', 'documentation.technical', 'workflow', 'forge', 'git'].map(
+        (k) => [k, 'en'],
+      ),
+    ),
+    completionCondition: 'Control fixture only.',
+    deliveryRestrictions: ['No publication.'],
+    sourceAssociation: 'approved-feature-plan',
+    allowedRoots: [fixture],
+  });
+  const common = {
+      runtimeStateRoot: fixture,
+      repositoryIdentity: resolve(fixture, '.git'),
+      runId: 'phase-seven-control',
+      requestDigest: created.requestDigest,
+    },
+    agentHandle = '/root/original-fixture-runner';
+  await call('bind-agent', { ...common, agentHandle });
+  const authorization = await call('authorize-execution', {
+    ...common,
+    agentHandle,
+    mode: 'in-place-no-delivery',
+    executionRoot: fixture,
+    branch: 'develop',
+    baseHead: head,
+    authority: { kind: 'source', source: 'instruction', index: null, quote: instruction },
+  });
+  await call('transition-execution', {
+    ...common,
+    agentHandle,
+    authorization,
+    execution: {
+      executionRoot: fixture,
+      branch: 'develop',
+      head,
+      origin: 'in-place',
+      owner: 'build',
+    },
+    ownership: null,
+  });
+  const evidencePath = '.effective-flow/build-runs/phase-seven-control/unit-gate-input.txt';
+  writeFileSync(
+    resolve(fixture, evidencePath),
+    'Unit control inputs; no model/workflow-quality claim.',
+  );
+  const evidence = [
+    {
+      root: fixture,
+      path: evidencePath,
+      digest: contentDigest(readFileSync(resolve(fixture, evidencePath))),
+    },
+  ];
+  const completed = REQUIRED_GATES.filter(
+      (g) =>
+        !['delivery', 'plan-archival', 'pilot-finalization', 'cleanup', 'completion'].includes(g),
+    ),
+    gates = [];
+  for (const gate of completed)
+    gates.push(
+      await call('receipt', {
+        ...common,
+        gate,
+        outcome: 'passed',
+        reason: 'Synthetic control input only.',
+        evidence,
+        agentHandle,
+      }),
+    );
+  const checkpoint = await call('checkpoint', {
+    ...common,
+    checkpointId: 'phase-seven-delivery-choice',
+    agentHandle,
+    completed,
+    pending: REQUIRED_GATES.filter((g) => !completed.includes(g)),
+    evidence: gates,
+  });
+  const data = {
+    common,
+    agentHandle,
+    helper: resolve(skill, 'scripts/build-run.mjs'),
+    questionInput: {
+      ...common,
+      checkpoint,
+      questionId: 'phase-seven-delivery-choice',
+      revision: 1,
+      origin: 'delivery-choice',
+      agentHandle,
+      question: 'Retain the fixture locally?',
+      options: ['Retain locally', 'Publish'],
+      responseType: 'option',
+    },
+  };
+  const file = resolve(runtime, 'unit-phase-seven.json');
+  writeFileSync(file, JSON.stringify(data));
+  return file;
+}
+
+test(
+  'production coordinator initializes native trust before capture and preserves raw outcomes before postcheck failure',
+  { skip: process.platform !== 'darwin' || !existsSync('/opt/homebrew/bin/codex') },
+  async (t) => {
+    const root = temporary(t),
+      host = resolve(root, 'journal');
+    const coordinator = new HostCoordinator(host, { suite });
+    const build = coordinator.build({
+      condition: 'candidate',
+      sourceRoot: resolve(import.meta.dirname, '..'),
+      outputRoot: resolve(root, 'built'),
+    });
+    const git = (cwd, ...args) => execFileSync('git', args, { cwd, stdio: 'pipe' });
+    for (const mode of ['unchanged', 'settings-drift', 'invalid-bytes', 'timeout']) {
+      const base = resolve(root, mode),
+        fixture = resolve(base, 'project'),
+        skill = resolve(base, 'skill'),
+        home = resolve(base, 'home'),
+        config = resolve(base, 'config'),
+        wrapper = resolve(base, 'bin/codex');
+      for (const d of [
+        fixture,
+        home,
+        config,
+        resolve(base, 'bin'),
+        resolve(fixture, 'docs/plan'),
+        resolve(fixture, 'test'),
+      ])
+        mkdirSync(d, { recursive: true });
+      cpSync(resolve(root, 'built/dist/portable/effective-flow'), skill, { recursive: true });
+      writeFileSync(
+        resolve(skill, 'scripts/remote-tracker.mjs'),
+        readFileSync(resolve(suite.root, '../_scaffold/remote-tracker.mjs')),
+      );
+      writeFileSync(resolve(base, 'fixture.json'), JSON.stringify({ operations: {} }));
+      writeFileSync(resolve(fixture, '.build-context-fixture'), SCHEMA + '\n');
+      writeFileSync(resolve(fixture, '.gitignore'), '.effective-flow/\n');
+      writeFileSync(resolve(fixture, 'docs/plan/feature.md'), '# Approved plan\n');
+      writeFileSync(
+        resolve(fixture, 'test/acceptance.test.mjs'),
+        'actual fixture acceptance criteria\n',
+      );
+      git(fixture, 'init', '-q', '-b', 'develop');
+      git(fixture, 'add', '.');
+      git(
+        fixture,
+        '-c',
+        'user.name=Fixture',
+        '-c',
+        'user.email=fixture@invalid',
+        'commit',
+        '-qm',
+        'test: fixture',
+      );
+      const origin = resolve(base, 'origin.git');
+      git(base, 'init', '--bare', '-q', origin);
+      git(fixture, 'remote', 'add', 'origin', origin);
+      git(fixture, 'push', '-q', 'origin', 'develop');
+      // Only the exec branch is a local diagnostic program; every guard/config operation
+      // delegates to the actual installed CLI. No model or behavioural success is emitted.
+      writeFileSync(
+        wrapper,
+        '#!' +
+          process.execPath +
+          '\n' +
+          `import {spawnSync} from 'node:child_process';
+import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
+const args=process.argv.slice(2);
+if(!args.includes('exec')) { const r=spawnSync('/opt/homebrew/bin/codex',args,{stdio:'inherit'}); process.exit(r.status??1); }
+const input=readFileSync(0), rootId='12345678-1234-1234-1234-123456789abc', runnerId='22345678-1234-1234-1234-123456789abc';
+const resumed=args.includes('resume'), rootFile=process.env.CODEX_HOME+'/sessions/rollout-unit-root.jsonl', childFile=process.env.CODEX_HOME+'/sessions/rollout-unit-child.jsonl';
+const row=payload=>JSON.stringify({timestamp:new Date().toISOString(),...payload})+'\\n';
+const user=text=>row({type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text}]}});
+if(!resumed) writeFileSync(rootFile,row({type:'session_meta',payload:{id:rootId}})+user(input.toString('utf8')));
+else appendFileSync(rootFile,user(input.toString('utf8')));
+${
+  mode === 'unchanged'
+    ? `
+const path=${JSON.stringify(resolve(fixture, '.effective-flow/unit-phase-seven.json'))};
+const data=JSON.parse(readFileSync(path));
+const invoke=(operation,payload,file)=>{
+ const callAt=new Date().toISOString(), text=JSON.stringify(payload), r=spawnSync(process.execPath,[data.helper,operation],{input:text,cwd:${JSON.stringify(fixture)},encoding:'utf8'});
+ if(r.status!==0) throw Error(r.stderr); const result=JSON.parse(r.stdout);
+ const id=operation+'-actual-call'; appendFileSync(file,JSON.stringify({timestamp:callAt,type:'response_item',payload:{type:'function_call',call_id:id,name:'exec_command',arguments:JSON.stringify({cmd:'node '+data.helper+' '+operation+" <<'JSON'\\n"+text+'\\nJSON'})}})+'\\n'+row({type:'response_item',payload:{type:'function_call_output',call_id:id,output:JSON.stringify({exit_code:r.status,output:r.stdout})}}));
+ return result.result;
+};
+if(!resumed){
+ writeFileSync(childFile,row({type:'session_meta',payload:{id:runnerId,parent_thread_id:rootId,agent_path:data.agentHandle}})+user('Unit fixture: reach Phase 7 delivery-choice control boundary.'));
+ data.question=invoke('question',data.questionInput,childFile); writeFileSync(path,JSON.stringify(data));
+}else{
+ const reply=invoke('reply',{...data.common,question:data.question,trustedUser:{channel:'current-user',messageId:'fixed-fixture-answer',questionDigest:data.question.digest,answer:input.toString('utf8')}},rootFile);
+ appendFileSync(rootFile,row({type:'response_item',payload:{type:'function_call',call_id:'same-runner-followup',name:'followup_task',arguments:JSON.stringify({target:data.agentHandle,message:'Resume the same runner with the actual reply reference.'})}})+row({type:'response_item',payload:{type:'function_call_output',call_id:'same-runner-followup',output:JSON.stringify({task_name:data.agentHandle})}}));
+ data.resumed=invoke('resume',{...data.common,question:data.question,reply,agentHandle:data.agentHandle},childFile); writeFileSync(path,JSON.stringify(data));
+}
+`
+    : ''
+}
+appendFileSync(rootFile,row({type:'response_item',payload:{type:'message',role:'assistant',content:[{type:'output_text',text:'Diagnostic control only; no model or workflow-quality claim.'}]}}));
+process.stdout.write(JSON.stringify({type:'thread.started',thread_id:rootId})+'\\n');
+${mode === 'settings-drift' ? "appendFileSync(process.env.CODEX_HOME+'/config.toml','# unexpected change\\n');" : ''}
+process.stdout.write(${mode === 'invalid-bytes' ? 'Buffer.from([0x7b,0xff,0x7d,0x0a])' : "JSON.stringify({type:'model-free-diagnostic',arguments:args,input:input.toString('utf8')})+'\\n'"});
+process.stderr.write(Buffer.from('stderr\\n'));
+${mode === 'timeout' ? 'setInterval(()=>{},1000);' : ''}`,
+      );
+      chmodSync(wrapper, 0o755);
+      const callerArgs = [
+        'exec',
+        '--json',
+        '--ignore-user-config',
+        '--ignore-rules',
+        '-s',
+        'workspace-write',
+        '-m',
+        'gpt-6.1-sol',
+        '-c',
+        'model_reasoning_effort="high"',
+        '-C',
+        fixture,
+        '-',
+      ];
+      const commandFile = resolve(base, 'command.json'),
+        promptFile = resolve(base, 'prompt.txt'),
+        prompt = 'Exact initial user task.\nSecond line.\n';
+      writeFileSync(promptFile, prompt);
+      writeFileSync(
+        commandFile,
+        JSON.stringify({
+          executable: wrapper,
+          args: callerArgs,
+          home,
+          codexHome: config,
+          profile,
+          timeoutMs: mode === 'timeout' ? 500 : 5000,
+        }),
+      );
+      if (mode === 'unchanged') await phaseSevenControlFixture(fixture, skill);
+      const prepared = coordinator.prepare({
+        condition: 'candidate',
+        harness: 'codex-cli',
+        complexity: 'simple',
+        slot: 1,
+        target: 'portable',
+        buildSeal: build.seal,
+        fixtureRoot: fixture,
+        skillRoot: skill,
+        transcriptDir: resolve(config, 'sessions'),
+        promptFile,
+        commandFile,
+      });
+      const state = coordinator.launches.get(prepared.launch),
+        settings = prepared.receipt.payload.settings;
+      assert.notDeepEqual(
+        state.command.args,
+        callerArgs,
+        'native argument compiler must actually reorder this caller shape',
+      );
+      assert.deepEqual(recordingSettings(state.command, state.input), settings);
+      assert.equal(prepared.receipt.payload.promptDigest, digest(prompt));
+      assert.equal(existsSync(resolve(config, 'config.toml')), true);
+      if (mode === 'unchanged') {
+        const actual = coordinator.launch(prepared.launch);
+        assert.equal(actual.exitCode, 0);
+        assert.equal(actual.settingsObservationDigest, prepared.receipt.payload.settingsDigest);
+        const originalSnapshot = structuredClone(state.nativeTranscriptSnapshot),
+          rootId = originalSnapshot.rootId;
+        const sealedState = JSON.stringify(state),
+          sealedJournal = fileMembership(host);
+        for (const invalid of [
+          undefined,
+          null,
+          {},
+          [],
+          1,
+          false,
+          '',
+          '  ',
+          Buffer.from('answer'),
+          new String('answer'),
+        ]) {
+          assert.throws(
+            () =>
+              coordinator.launch(prepared.launch, {
+                resume: true,
+                args: [...callerArgs.slice(0, -1), 'resume', rootId, '-'],
+                prompt: invalid,
+              }),
+            /nonempty string current-turn input/,
+          );
+          assert.equal(JSON.stringify(state), sealedState);
+          assert.deepEqual(
+            fileMembership(host),
+            sealedJournal,
+            'invalid input must run no guard or subprocess and change no journal state',
+          );
+        }
+        const wrongArgs = [
+          ...callerArgs.slice(0, -1),
+          'resume',
+          '32345678-1234-1234-1234-123456789abc',
+          '-',
+        ];
+        assert.throws(
+          () =>
+            coordinator.launch(prepared.launch, {
+              resume: true,
+              args: wrongArgs,
+              prompt: 'Retain locally',
+            }),
+          /exact observed root/,
+        );
+        assert.equal(
+          state.observedProcesses.length,
+          1,
+          'foreign-root resume must not launch a process',
+        );
+        const resumed = coordinator.launch(prepared.launch, {
+          resume: true,
+          args: [...callerArgs.slice(0, -1), 'resume', rootId, '-'],
+          prompt: 'Retain locally',
+        });
+        assert.equal(state.processes.length, 2);
+        assert.equal(resumed.rootIdentity, actual.rootIdentity);
+        assert.equal(resumed.inputDigest, digest('Retain locally'));
+        assert.ok(resumed.startedAt >= actual.finishedAt);
+        const control = JSON.parse(
+          readFileSync(resolve(fixture, '.effective-flow/unit-phase-seven.json')),
+        );
+        assert.ok(
+          control.resumed.resume.digest,
+          'actual helper reply and original-runner resume must succeed',
+        );
+        assert.equal(control.resumed.agentHandle, control.agentHandle);
+        assert.equal(control.resumed.answer, 'Retain locally');
+        assert.equal(control.resumed.completed.length, 6);
+        assert.equal(control.resumed.pending.length, 5);
+        assert.equal(
+          Object.keys(state.nativeTranscriptSnapshot.files).length,
+          2,
+          'the same two unit sessions remain two across both process segments',
+        );
+        for (const [name, prefix] of Object.entries(originalSnapshot.files)) {
+          const old = readFileSync(prefix.path),
+            full = readFileSync(resolve(config, 'sessions', name));
+          assert.deepEqual(full.subarray(0, old.length), old);
+        }
+        const rootText = readFileSync(resolve(config, 'sessions/rollout-unit-root.jsonl'), 'utf8');
+        const rootParsed = parseTranscript(rootText, 'codex-cli');
+        const replyCall = rootParsed.tools.find(
+          (t) => helperInvocation(t.arguments)?.operation === 'reply',
+        );
+        assert.equal(
+          helperInvocation(replyCall.arguments).input.trustedUser.answer,
+          'Retain locally',
+        );
+        assert.equal(
+          rootParsed.calls.filter((c) => c.name === 'followup_task')[0].arguments.target,
+          control.agentHandle,
+        );
+        const child = parseTranscript(
+          readFileSync(resolve(config, 'sessions/rollout-unit-child.jsonl'), 'utf8'),
+          'codex-cli',
+        );
+        assert.equal(child.meta.agent_path, control.agentHandle);
+        assert.equal(
+          child.tools.filter((t) => helperInvocation(t.arguments)?.operation === 'resume').length,
+          1,
+        );
+        const protectedPrefix = state.nativeTranscriptSnapshot.files['rollout-unit-child.jsonl'];
+        const childPath = resolve(config, 'sessions/rollout-unit-child.jsonl');
+        writeFileSync(
+          childPath,
+          readFileSync(childPath).toString('utf8').replace('Phase 7', 'Phase 8'),
+        );
+        assert.throws(
+          () =>
+            coordinator.launch(prepared.launch, {
+              resume: true,
+              args: [...callerArgs.slice(0, -1), 'resume', rootId, '-'],
+              prompt: 'Retain locally',
+            }),
+          /prefix was rewritten/,
+        );
+        assert.equal(
+          state.observedProcesses.length,
+          2,
+          'prefix rewrite must reject before another subprocess',
+        );
+        writeFileSync(childPath, readFileSync(protectedPrefix.path));
+      } else {
+        assert.throws(
+          () => coordinator.launch(prepared.launch),
+          mode === 'settings-drift'
+            ? /settings\/inventory changed/
+            : mode === 'timeout'
+              ? /capture incomplete/
+              : /invalid UTF-8/,
+        );
+        assert.equal(
+          state.processes.length,
+          0,
+          'invalid diagnostic must create zero accepted process records',
+        );
+        assert.equal(state.closed, true);
+        assert.throws(() => coordinator.complete(prepared.launch, {}), /actual coordinator launch/);
+      }
+      const observedBase = resolve(host, prepared.launch + '-observed-1');
+      const observedReceipt = JSON.parse(readFileSync(observedBase + '-outcome.json'));
+      const observed = observedReceipt.payload,
+        raw = readFileSync(observedBase + '.stdout'),
+        stderr = readFileSync(observedBase + '.stderr');
+      assert.equal(observed.exitCode, mode === 'timeout' ? null : 0);
+      assert.equal(observed.captureComplete, mode !== 'timeout');
+      if (mode === 'timeout') assert.equal(observed.launchError, 'ETIMEDOUT');
+      assert.equal(observed.stdoutDigest, digest(raw));
+      assert.equal(observed.stderrDigest, digest(stderr));
+      assert.equal(observed.capturedStdoutBytes, raw.length);
+      assert.equal(observed.stdinDigest, digest(prompt));
+      assert.equal(observed.argumentsDigest, digest(JSON.stringify(state.command.args)));
+      assert.ok(
+        observed.finishedAt >= observed.startedAt &&
+          observed.startedAt >= prepared.receipt.payload.preparedAt,
+      );
+      assert.deepEqual(
+        JSON.parse(readFileSync(observedBase + '-command.json')).arguments,
+        state.command.args,
+      );
+      if (mode === 'invalid-bytes')
+        assert.deepEqual(raw.subarray(raw.indexOf(10) + 1), Buffer.from([0x7b, 0xff, 0x7d, 0x0a]));
+      else {
+        const emitted = JSON.parse(raw.toString('utf8').trim().split('\n').at(-1));
+        assert.deepEqual(emitted.arguments, state.command.args);
+        assert.equal(emitted.input, prompt);
+      }
+      assert.deepEqual(stderr, Buffer.from('stderr\n'));
+      if (mode !== 'unchanged') {
+        const failedPath = resolve(host, prepared.launch + '-failed.json'),
+          failed = JSON.parse(readFileSync(failedPath));
+        assert.equal(failed.payload.metrics, null);
+        assert.equal(failed.payload.failure.processOutcome.seal, observedReceipt.seal);
+        const output = resolve(base, 'invalid-attempt.json');
+        sealAuxiliaryRecord(
+          { schema: SCHEMA, kind: 'attempt', completion: failedPath },
+          output,
+          suite,
+        );
+        assert.equal(JSON.parse(readFileSync(output)).record.metrics, null);
+        const forged = structuredClone(failed);
+        forged.payload.failure.processOutcome.payload.stdoutDigest = digest('forged');
+        forged.seal = envelope('failed-launch', forged.payload).seal;
+        writeFileSync(resolve(base, 'forged.json'), JSON.stringify(forged));
+        assert.throws(
+          () =>
+            sealAuxiliaryRecord(
+              { schema: SCHEMA, kind: 'attempt', completion: resolve(base, 'forged.json') },
+              resolve(base, 'bad-attempt.json'),
+              suite,
+            ),
+          /process-outcome/,
+        );
+      }
+    }
+  },
+);
+
+import {
+  captureNativeTurn,
+  verifyNativeTranscriptPrefix,
+} from '../evals/build-context/_scaffold/native-transcripts.mjs';
+test('native protected turn prefixes permit same-session appends but reject source rewrites and copied-proof corruption', (t) => {
+  const base = temporary(t),
+    root = resolve(base, 'sessions'),
+    journal = resolve(base, 'journal');
+  mkdirSync(root);
+  mkdirSync(journal);
+  const id = '12345678-1234-1234-1234-123456789abc',
+    file = resolve(root, 'rollout-root.jsonl');
+  const row = (payload) => JSON.stringify({ timestamp: '2026-10-20T10:00:00Z', ...payload }) + '\n';
+  const user = (text) =>
+    row({
+      type: 'response_item',
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+    });
+  const action = row({
+    type: 'response_item',
+    payload: {
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'Unit codec fixture only.' }],
+    },
+  });
+  const first = row({ type: 'session_meta', payload: { id } }) + user('original task') + action;
+  writeFileSync(file, first);
+  const args = {
+    root,
+    journalRoot: journal,
+    launch: 'unit',
+    stdout: Buffer.from(JSON.stringify({ type: 'thread.started', thread_id: id }) + '\n'),
+  };
+  const one = captureNativeTurn({ ...args, turn: 1, prompt: 'original task' });
+  writeFileSync(file, first + user('fixed answer') + action);
+  const two = captureNativeTurn({ ...args, turn: 2, prompt: 'fixed answer', prior: one.snapshot });
+  assert.equal(two.rootIdentity, one.rootIdentity);
+  assert.equal(two.inputDigest, digest('fixed answer'));
+  assert.equal(readFileSync(one.snapshot.files['rollout-root.jsonl'].path, 'utf8'), first);
+  assert.equal(Object.keys(two.snapshot.files).length, 1);
+  const good = readFileSync(file);
+  writeFileSync(file, good.toString('utf8').replace('original task', 'rewritten task'));
+  assert.throws(
+    () => verifyNativeTranscriptPrefix(root, two.snapshot, { append: true }),
+    /prefix was rewritten/,
+  );
+  writeFileSync(file, good);
+  writeFileSync(two.snapshot.files['rollout-root.jsonl'].path, 'replaced protected prefix');
+  assert.throws(
+    () => verifyNativeTranscriptPrefix(root, two.snapshot),
+    /protected native transcript prefix changed/,
+  );
+  assert.throws(
+    () =>
+      captureNativeTurn({
+        ...args,
+        turn: 3,
+        prompt: 'fixed answer',
+        prior: one.snapshot,
+        stdout: Buffer.from(
+          JSON.stringify({
+            type: 'thread.started',
+            thread_id: '22345678-1234-1234-1234-123456789abc',
+          }) + '\n',
+        ),
+      }),
+    /changed the observed root/,
+  );
+});
+
+test('both harnesses reject unsealed initial/resume input before filesystem, guard, subprocess or state mutation', (t) => {
+  const root = temporary(t);
+  for (const harness of ['codex-cli', 'claude-code']) {
+    const coordinator = new HostCoordinator(resolve(root, harness), { suite });
+    const state = {
+      closed: false,
+      processes: [{}],
+      prompt: 'initial',
+      nativePolicy: { kind: harness === 'codex-cli' ? 'codex-native' : 'claude-process' },
+      input: { fixtureRoot: '/deliberately-missing-fixture' },
+    };
+    coordinator.launches.set('unit', state);
+    const before = JSON.stringify(state),
+      files = fileMembership(coordinator.root);
+    for (const prompt of [
+      undefined,
+      null,
+      {},
+      [],
+      123,
+      false,
+      '',
+      ' \n ',
+      Buffer.from('answer'),
+      new String('answer'),
+    ]) {
+      assert.throws(
+        () => coordinator.launch('unit', { resume: true, args: ['resume'], prompt }),
+        /nonempty string current-turn input/,
+      );
+      assert.equal(JSON.stringify(state), before);
+      assert.deepEqual(fileMembership(coordinator.root), files);
+    }
+    state.processes = [];
+    state.prompt = null;
+    const invalidInitial = JSON.stringify(state);
+    assert.throws(() => coordinator.launch('unit'), /nonempty string current-turn input/);
+    assert.equal(JSON.stringify(state), invalidInitial);
+    assert.deepEqual(fileMembership(coordinator.root), files);
+  }
+});
+
+test('observed immutable const exec alias emits only its literal actual result, without JS execution', () => {
+  // Exact wrapper form observed in the retained 0.163 rollout; request literals sanitized.
+  const request = {
+    cmd: 'node --test test/acceptance.test.mjs',
+    workdir: '/fixture',
+    max_output_tokens: 10000,
+  };
+  const actual =
+    'const r = await tools.exec_command({cmd:' +
+    JSON.stringify(request.cmd) +
+    ',workdir:"/fixture",max_output_tokens:10000});text(r);\n';
+  assert.deepEqual(observedExecRequest({ name: 'exec', arguments: actual }), request);
+  for (const code of [
+    actual.replace('text(r)', 'text(other)'),
+    actual.replace('text(r)', 'text({...r})'),
+    actual.replace('const r', 'let r'),
+    actual.replace('text(r)', 'r.output="invented";text(r)'),
+    actual + 'text({exit_code:71,output:"sandbox_apply failure"});',
+    actual.replace('text(r)', 'text({exit_code:0,output:r.output})'),
+    actual.replace('max_output_tokens:10000', 'max_output_tokens:limit'),
+    actual.replace('const r', 'const text').replace('text(r)', 'text(text)'),
+    actual.replace('const r', 'const tools').replace('text(r)', 'text(tools)'),
+    actual.replace('const r', 'const for').replace('text(r)', 'text(for)'),
+    actual.replace('const r', 'const eval').replace('text(r)', 'text(eval)'),
+    actual.replace('text(r)', 'text(JSON.parse(r.output))'),
+  ])
+    assert.equal(observedExecRequest({ name: 'exec', arguments: code }), null);
+  const result = {
+    exit_code: 0,
+    output: JSON.stringify({ exit_code: 71, output: 'sandbox_apply failure' }),
+  };
+  assert.equal(
+    observedExecResult(JSON.stringify(result)).exit_code,
+    0,
+    'stdout JSON never becomes the outer native result',
+  );
 });

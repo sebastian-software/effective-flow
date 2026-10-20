@@ -252,6 +252,13 @@ function validRun(metrics, baseline = false, timing = 200, harness = 'codex-cli'
         finishedAt: timing + 300,
         exitCode: 0,
         launchArgumentsDigest: execArgumentsDigest,
+        ...(!claude
+          ? {
+              rootIdentity: observations[0].sessionIdentity,
+              inputDigest: prepared.payload.promptDigest,
+              transcriptBasisDigest: digest('transcript-basis'),
+            }
+          : {}),
         ...(claude
           ? {
               captureDigest: digest('claude-capture'),
@@ -552,6 +559,33 @@ test('native compatibility validation requires the pinned target, active pilot, 
     run: { ...run, provenance: undefined },
   });
   assert.ok(missingReceipt.includes('missing or changed host completion receipt'));
+  for (const field of ['rootIdentity', 'inputDigest', 'transcriptBasisDigest']) {
+    const mutated = validRun({
+      parentPeakInput: 100,
+      firstRequestInput: 100,
+      cumulativeInput: 100,
+      elapsedMs: 100,
+    });
+    const launchPayload = mutated.provenance.payload.launch.payload,
+      processes = launchPayload.processes.map((process, index) =>
+        index === 0
+          ? Object.fromEntries(Object.entries(process).filter(([key]) => key !== field))
+          : process,
+      ),
+      launch = envelope('launch', { ...launchPayload, processes }),
+      completionPayload = { ...mutated.provenance.payload, launch },
+      body = { ...mutated, provenance: undefined };
+    mutated.provenance = envelope('completion', {
+      ...completionPayload,
+      runDigest: digest(JSON.stringify(body)),
+    });
+    assert.ok(
+      nativeProblems({ target: 'codex', harness: 'codex-cli', run: mutated }).includes(
+        'actual native turn root/input/prefix binding missing',
+      ),
+      field,
+    );
+  }
   assert.ok(
     nativeProblems({ target: 'codex', harness: 'claude-code', run }).includes(
       'native target/harness mismatch',

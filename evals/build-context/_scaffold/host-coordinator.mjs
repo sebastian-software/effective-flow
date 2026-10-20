@@ -28,12 +28,18 @@ import { requireThat, CELL_NAMES } from './protocol.mjs';
 import {
   nativePolicy,
   nativeExecArgs,
+  initializeNativeSettings,
   probeNativeSandbox,
   nativeContextProblems,
   mirrorTrackerLedger,
   trackerLedgerProblems,
 } from './native-sandbox.mjs';
 import { observeToolFailure } from './tool-failure.mjs';
+import {
+  captureNativeTurn,
+  verifyNativeTranscriptPrefix,
+  nativeRootFromArguments,
+} from './native-transcripts.mjs';
 import {
   claudePolicy,
   bindClaudeAgents,
@@ -374,6 +380,7 @@ export class HostCoordinator {
         ],
       });
       command.args = nativeExecArgs(command.args, nativeSandbox);
+      initializeNativeSettings({ command, policy: nativeSandbox, journalRoot: this.root });
     } else {
       mkdirSync(transcripts, { recursive: true });
       nativeSandbox = claudePolicy({
@@ -503,6 +510,14 @@ export class HostCoordinator {
   launch(id, { resume = false, args = null, prompt = null } = {}) {
     const state = this.launches.get(id);
     requireThat(state && !state.closed, 'unknown or closed prepared launch');
+    const turnPrompt = resume ? prompt : state.prompt;
+    requireThat(
+      typeof turnPrompt === 'string' && turnPrompt.trim().length > 0,
+      'nonempty string current-turn input required before launch',
+    );
+    const isClaude = state.nativePolicy?.kind === 'claude-process';
+    const sealedInput = isClaude ? claudeUserInput(turnPrompt) : turnPrompt;
+    const sealedInputDigest = digest(sealedInput);
     if (!resume) requireThat(state.processes.length === 0, 'one initial CLI launch only');
     else
       requireThat(
@@ -533,7 +548,6 @@ export class HostCoordinator {
         verifyEnvelope(state.receipt, 'prepared').settingsDigest,
       'actual settings changed after prelaunch',
     );
-    const isClaude = state.nativePolicy.kind === 'claude-process';
     const environment = isClaude
       ? claudeEnvironment(state.command, state.nativePolicy)
       : {
@@ -549,6 +563,15 @@ export class HostCoordinator {
         ? claudeExecArgs(args, { resume: true, nativeAgentsFile: state.command.nativeAgentsFile })
         : nativeExecArgs(args, state.nativePolicy, { resume: true })
       : state.command.args;
+    if (!isClaude && resume) {
+      requireThat(
+        state.nativeTranscriptSnapshot &&
+          nativeRootFromArguments(actualArgs) === state.nativeTranscriptSnapshot.rootId,
+        'native resume must address the exact observed root',
+      );
+      verifyNativeTranscriptPrefix(state.input.transcriptDir, state.nativeTranscriptSnapshot);
+    }
+    const actualArgumentsDigest = digest(JSON.stringify(actualArgs));
     const beforeGuard = checkoutBasis(state.input.fixtureRoot);
     const guardObservation = (isClaude ? probeClaudeProcess : probeNativeSandbox)({
       journalRoot: this.root,
@@ -578,7 +601,7 @@ export class HostCoordinator {
             policy: state.nativePolicy,
             environment,
             execArgs: actualArgs,
-            prompt: resume ? prompt : state.prompt,
+            prompt: turnPrompt,
             journalRoot: this.root,
             turn: id + '-' + (state.processes.length + 1),
             timeoutMs: state.command.timeoutMs ?? 1800000,
@@ -586,92 +609,177 @@ export class HostCoordinator {
         : spawnSync(state.command.executable, actualArgs, {
             cwd: state.input.fixtureRoot,
             env: environment,
-            input: resume ? prompt : state.prompt,
-            encoding: 'utf8',
+            input: sealedInput,
             timeout: state.command.timeoutMs ?? 1800000,
             maxBuffer: 16 * 1024 * 1024,
           });
-    requireThat(
-      digest(readFileSync(realpathSync(state.command.executable))) ===
-        guardObservation.binaryDigest,
-      'native CLI binary changed during process',
-    );
-    if (isClaude)
-      requireThat(
-        claudeRuntimeIdentity(state.nativePolicy.runtime.root).membershipDigest ===
-          state.nativePolicy.runtime.membershipDigest,
-        'actual official runtime changed during process',
-      );
-    const postSettings = recordingSettings(state.command, state.input);
-    requireThat(
-      digest(JSON.stringify(postSettings)) ===
-        verifyEnvelope(state.receipt, 'prepared').settingsDigest,
-      'actual CLI settings/inventory changed during process',
-    );
-    const priorLedger =
-      state.processes.at(-1)?.trackerMirror?.archiveDigest ??
-      verifyEnvelope(state.receipt, 'prepared').trackerInitialDigest;
-    const trackerMirror = mirrorTrackerLedger(state.nativePolicy, priorLedger);
-    const event = {
-      trackerMirror,
-      settingsObservationDigest: digest(JSON.stringify(postSettings)),
-      managedSystemPresent:
-        !!state.command.codexHome && existsSync(resolve(state.command.codexHome, 'skills/.system')),
+    // Preserve the actual subprocess result before any fallible post-launch validation.
+    const observedNumber = (state.observedProcesses?.length ?? 0) + 1;
+    const observed = {
       startedAt: isClaude ? result.startedAt : startedAt,
       finishedAt: isClaude ? result.finishedAt : Date.now(),
-      exitCode: isClaude ? result.exitCode : (result.status ?? 1),
-      ...(isClaude
-        ? {
-            captureDigest: result.captureDigest,
-            collectorDigest: result.collectorDigest,
-            inputDigest: result.inputDigest,
-            signal: result.signal,
-          }
-        : {}),
+      exitCode: isClaude ? result.exitCode : result.status,
+      signal: result.signal ?? null,
       launchError: isClaude ? result.launchError : (result.error?.code ?? null),
-      stdoutDigest: digest(result.stdout),
-      stderrDigest: digest(result.stderr),
-      guard: guardObservation,
+      argumentsDigest: actualArgumentsDigest,
+      stdinDigest: sealedInputDigest,
+      stdoutDigest: digest(result.stdout ?? ''),
+      stderrDigest: digest(result.stderr ?? ''),
+      capturedStdoutBytes: Buffer.byteLength(result.stdout ?? ''),
+      capturedStderrBytes: Buffer.byteLength(result.stderr ?? ''),
+      captureComplete: isClaude ? !result.launchError : !result.error,
+      binaryDigest: guardObservation.binaryDigest,
       policyDigest: state.nativePolicy.policyDigest,
-      launchArgumentsDigest: digest(JSON.stringify(actualArgs)),
     };
-    mkdirSync(state.input.transcriptDir, { recursive: true });
-    const stdoutPath = resolve(
-      state.input.transcriptDir,
-      'host-process-' + (state.processes.length + 1) + '.jsonl',
-    );
-    writeFileSync(stdoutPath, result.stdout, { flag: 'wx', mode: 0o600 });
-    state.outputPaths ??= [];
-    state.outputPaths.push(stdoutPath);
-    state.processes.push(event);
-    write(
-      resolve(this.root, id + '-process-' + state.processes.length + '.json'),
-      envelope('process', event),
-    );
-    if (isClaude) {
-      state.capturePaths ??= [];
-      state.turnPrompts ??= [];
-      state.capturePaths.push(result.capturePath);
-      state.turnPrompts.push(resume ? prompt : state.prompt);
-      try {
-        state.streamProjection = materializeClaudeStreams({
-          processes: state.processes,
-          capturePaths: state.capturePaths,
-          outputPaths: state.outputPaths,
-          destination: state.input.transcriptDir,
-          target: verifyEnvelope(state.receipt, 'prepared').target,
-          prompts: state.turnPrompts,
-        });
-      } catch (error) {
-        state.streamProjection = { error: error.message };
-      }
-      write(
-        resolve(this.root, id + '-streams-' + state.processes.length + '.json'),
-        state.streamProjection,
-      );
-    }
+    const observedReceipt = envelope('process-outcome', observed);
+    const observedBase = resolve(this.root, id + '-observed-' + observedNumber);
+    writeFileSync(observedBase + '.stdout', result.stdout ?? '', { flag: 'wx', mode: 0o600 });
+    writeFileSync(observedBase + '.stderr', result.stderr ?? '', { flag: 'wx', mode: 0o600 });
+    write(observedBase + '-command.json', {
+      executable: state.command.executable,
+      arguments: actualArgs,
+      stdinDigest: observed.stdinDigest,
+    });
+    write(observedBase + '-outcome.json', observedReceipt);
+    state.observedProcesses ??= [];
+    state.observedProcesses.push(observedReceipt);
     this.save();
-    return event;
+    try {
+      requireThat(
+        observed.captureComplete && Number.isInteger(observed.exitCode),
+        'actual process capture incomplete or failed',
+      );
+      if (!isClaude)
+        requireThat(
+          Buffer.from(result.stdout.toString('utf8')).equals(result.stdout),
+          'actual native stdout is invalid UTF-8; raw bytes retained',
+        );
+      requireThat(
+        digest(readFileSync(realpathSync(state.command.executable))) ===
+          guardObservation.binaryDigest,
+        'native CLI binary changed during process',
+      );
+      if (isClaude)
+        requireThat(
+          claudeRuntimeIdentity(state.nativePolicy.runtime.root).membershipDigest ===
+            state.nativePolicy.runtime.membershipDigest,
+          'actual official runtime changed during process',
+        );
+      let nativeTurn = null;
+      if (!isClaude)
+        nativeTurn = captureNativeTurn({
+          root: state.input.transcriptDir,
+          journalRoot: this.root,
+          launch: id,
+          turn: state.processes.length + 1,
+          stdout: result.stdout,
+          prompt: turnPrompt,
+          prior: state.nativeTranscriptSnapshot ?? null,
+        });
+      const postSettings = recordingSettings(state.command, state.input);
+      requireThat(
+        digest(JSON.stringify(postSettings)) ===
+          verifyEnvelope(state.receipt, 'prepared').settingsDigest,
+        'actual CLI settings/inventory changed during process',
+      );
+      const priorLedger =
+        state.processes.at(-1)?.trackerMirror?.archiveDigest ??
+        verifyEnvelope(state.receipt, 'prepared').trackerInitialDigest;
+      const trackerMirror = mirrorTrackerLedger(state.nativePolicy, priorLedger);
+      const event = {
+        ...(nativeTurn
+          ? {
+              rootIdentity: nativeTurn.rootIdentity,
+              inputDigest: nativeTurn.inputDigest,
+              transcriptBasisDigest: nativeTurn.transcriptBasisDigest,
+            }
+          : {}),
+        trackerMirror,
+        settingsObservationDigest: digest(JSON.stringify(postSettings)),
+        managedSystemPresent:
+          !!state.command.codexHome &&
+          existsSync(resolve(state.command.codexHome, 'skills/.system')),
+        startedAt: isClaude ? result.startedAt : startedAt,
+        finishedAt: observed.finishedAt,
+        exitCode: observed.exitCode,
+        ...(isClaude
+          ? {
+              captureDigest: result.captureDigest,
+              collectorDigest: result.collectorDigest,
+              inputDigest: result.inputDigest,
+              signal: result.signal,
+            }
+          : {}),
+        launchError: isClaude ? result.launchError : (result.error?.code ?? null),
+        stdoutDigest: digest(result.stdout),
+        stderrDigest: digest(result.stderr),
+        guard: guardObservation,
+        policyDigest: state.nativePolicy.policyDigest,
+        launchArgumentsDigest: actualArgumentsDigest,
+      };
+      mkdirSync(state.input.transcriptDir, { recursive: true });
+      const stdoutPath = resolve(
+        state.input.transcriptDir,
+        'host-process-' + (state.processes.length + 1) + '.jsonl',
+      );
+      writeFileSync(stdoutPath, result.stdout, { flag: 'wx', mode: 0o600 });
+      state.outputPaths ??= [];
+      state.outputPaths.push(stdoutPath);
+      state.processes.push(event);
+      if (nativeTurn) state.nativeTranscriptSnapshot = nativeTurn.snapshot;
+      write(
+        resolve(this.root, id + '-process-' + state.processes.length + '.json'),
+        envelope('process', event),
+      );
+      if (isClaude) {
+        state.capturePaths ??= [];
+        state.turnPrompts ??= [];
+        state.capturePaths.push(result.capturePath);
+        state.turnPrompts.push(turnPrompt);
+        try {
+          state.streamProjection = materializeClaudeStreams({
+            processes: state.processes,
+            capturePaths: state.capturePaths,
+            outputPaths: state.outputPaths,
+            destination: state.input.transcriptDir,
+            target: verifyEnvelope(state.receipt, 'prepared').target,
+            prompts: state.turnPrompts,
+          });
+        } catch (error) {
+          state.streamProjection = { error: error.message };
+        }
+        write(
+          resolve(this.root, id + '-streams-' + state.processes.length + '.json'),
+          state.streamProjection,
+        );
+      }
+      this.save();
+      return event;
+    } catch (error) {
+      // An observed process is not an accepted run. Keep failed postchecks irreversible.
+      const failed = envelope('failed-launch', {
+        prepared: state.receipt,
+        processes: [...state.processes, observed],
+        outcome: 'invalid',
+        failure: {
+          kind: 'instrument',
+          code: 'post-launch-validation',
+          sourceDigest: observedReceipt.seal,
+          processOutcome: observedReceipt,
+          reasonDigest: digest(error.message),
+        },
+        metrics: null,
+      });
+      writeFileSync(observedBase + '-validation-error.txt', error.message, {
+        flag: 'wx',
+        mode: 0o600,
+      });
+      write(resolve(this.root, id + '-failed.json'), failed);
+      state.closed = true;
+      state.invalid = failed.seal;
+      this.save();
+      throw error;
+    }
   }
   fail(id, { outcome = 'failed', host = null, rootTranscript = null } = {}) {
     const state = this.launches.get(id);
@@ -901,6 +1009,8 @@ export class HostCoordinator {
     );
     const prepared = verifyEnvelope(state.receipt, 'prepared');
     const isClaude = state.nativePolicy?.kind === 'claude-process';
+    if (!isClaude)
+      verifyNativeTranscriptPrefix(state.input.transcriptDir, state.nativeTranscriptSnapshot);
     if (isClaude) {
       const projection = materializeClaudeStreams({
         processes: state.processes,

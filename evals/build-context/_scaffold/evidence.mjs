@@ -604,8 +604,31 @@ export function sealAuxiliaryRecord(manifest, output, suite) {
     const failed = JSON.parse(readRegular(resolve(manifest.completion), MAX_ARCHIVE_BYTES)),
       p = verifyEnvelope(failed, 'failed-launch'),
       prepared = verifyEnvelope(p.prepared, 'prepared');
+    const instrumentOutcome =
+      p.failure?.kind === 'instrument' && p.failure?.code === 'post-launch-validation'
+        ? verifyEnvelope(p.failure.processOutcome, 'process-outcome')
+        : null;
+    const actualInvalidObservation =
+      instrumentOutcome &&
+      p.outcome === 'invalid' &&
+      p.metrics === null &&
+      p.failure.sourceDigest === p.failure.processOutcome.seal &&
+      [
+        instrumentOutcome.stdoutDigest,
+        instrumentOutcome.stderrDigest,
+        instrumentOutcome.argumentsDigest,
+        instrumentOutcome.stdinDigest,
+        instrumentOutcome.binaryDigest,
+        instrumentOutcome.policyDigest,
+        p.failure.reasonDigest,
+      ].every(digestValue) &&
+      instrumentOutcome.startedAt >= prepared.preparedAt &&
+      instrumentOutcome.finishedAt >= instrumentOutcome.startedAt &&
+      (instrumentOutcome.exitCode === null || Number.isInteger(instrumentOutcome.exitCode)) &&
+      p.processes.some((e) => isDeepStrictEqual(e, instrumentOutcome));
     requireThat(
-      (p.processes.some((e) => e.exitCode !== 0) ||
+      (actualInvalidObservation ||
+        p.processes.some((e) => e.exitCode !== 0) ||
         (p.outcome === 'unsupported-depth' && p.failure?.code === 'unsupported-depth') ||
         (p.failure?.kind === 'tool-capability' &&
           p.failure?.code === 'native-tool-sandbox-unavailable' &&

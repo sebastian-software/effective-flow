@@ -85,6 +85,17 @@ export function completionProblems(run) {
     );
     const native = prepared.nativeSandbox,
       proof = run.nativePolicyProof;
+    if (!isClaude)
+      requireThat(
+        launch.processes.every(
+          (e, i) =>
+            e.rootIdentity === launch.rootIdentity &&
+            digestValue(e.inputDigest) &&
+            digestValue(e.transcriptBasisDigest) &&
+            (i !== 0 || e.inputDigest === prepared.promptDigest),
+        ),
+        'actual native turn root/input/prefix binding missing',
+      );
     if (isClaude) {
       const pin = JSON.parse(
         readRegular(resolve(import.meta.dirname, '../profiles.json'), 256 * 1024),
