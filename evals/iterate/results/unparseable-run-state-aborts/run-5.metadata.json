@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e",
+  "roundId": "mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c",
   "scenario": "unparseable-run-state-aborts",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
-  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/unparseable-run-state-aborts/slot-5/attempt-1/project",
+  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c/slots/unparseable-run-state-aborts/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "codex-cli 0.159.3",
-    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
   },
-  "promptDigest": "sha256:8af9d99d46d9302261832b96ee3fe04cc526b8e78fb14fe3e725b8772f9f74ec",
-  "fixtureDigest": "sha256:a7418ea4cf47988db8c2fd488787fabee473f88ac62acd6869f42c3468b2eecc",
-  "buildDigest": "sha256:db552f7db29a9b05e6d2359353e0627fc007fb5b608906bf52615b23b5547e98",
+  "promptDigest": "sha256:ea77ca6ed2a520d1a8bfdbc592bf7e017e4e42cba2d1f955b47c3ae41596dde1",
+  "fixtureDigest": "sha256:4443955ed4d7afcfb446d445bf60daa99ba55ef0471917d246aab2e13c20a55d",
+  "buildDigest": "sha256:0be65b1c42b2d29168c77a8c915d53db705e1a808729c8eeb517e686bd929c80",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/unparseable-run-state-aborts/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c/slots/unparseable-run-state-aborts/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "codex-cli 0.159.3",
-      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
+      "reportedVersion": "0.159.3",
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
     }
   }
 }

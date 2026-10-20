@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e",
+  "roundId": "mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c",
   "scenario": "unparseable-item-filter-aborts",
   "slot": 1,
   "attempt": 1,
-  "sourceRevision": "266eb7e22d1171d41da333cdd3c9eb0d08c31c68",
-  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/unparseable-item-filter-aborts/slot-1/attempt-1/project",
+  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c/slots/unparseable-item-filter-aborts/slot-1/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "codex-cli 0.159.3",
-    "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
   },
-  "promptDigest": "sha256:e48c2622cf07e8693101bec0e74f294a1620e77ce36441a0b46376c17e17ffb0",
-  "fixtureDigest": "sha256:ded7f2e5f1fcedc10238667a72923819154b07347212878ebca4ae59b91b0428",
-  "buildDigest": "sha256:6c0f8024a00912ddafdd356f1b21137012461b2a7c22f87bd339a2491e50a995",
+  "promptDigest": "sha256:665cc47d48c0876d4f065d68dc30b33334a028ee08b49ffe349cd675ac7e31c9",
+  "fixtureDigest": "sha256:ad8d0b0ff24ed8c47b002a08d7d9888a3a4156744c97e622f7727b176f6f24fa",
+  "buildDigest": "sha256:b772c08b9036c3a480f5b87f7a12d05a958971807af3d3e1dccfa05aef8c163a",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvc8agw0-53378928-ed4e-41bd-b036-a1337498fc4e/slots/unparseable-item-filter-aborts/slot-1/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c/slots/unparseable-item-filter-aborts/slot-1/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "codex-cli 0.159.3",
-      "toolPolicy": "approve-for-me,ignore-user-config,isolated-home"
+      "reportedVersion": "0.159.3",
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
     }
   }
 }

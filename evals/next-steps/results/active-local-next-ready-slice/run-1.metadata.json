@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "roundId": "mv4706v6-fc9353d8-9577-4445-bb78-9e68bbbea84c",
+  "roundId": "mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef",
   "scenario": "active-local-next-ready-slice",
   "slot": 1,
   "attempt": 1,
-  "sourceRevision": "eb68ee077a3381b16419e20b9d6ec42656b74e36",
-  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/mv4706v6-fc9353d8-9577-4445-bb78-9e68bbbea84c/slots/active-local-next-ready-slice/slot-1/attempt-1/project",
+  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
+  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/active-local-next-ready-slice/slot-1/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6.1-sol",
@@ -13,13 +13,13 @@
     "reportedVersion": "0.159.3",
     "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
   },
-  "promptDigest": "sha256:38ba1885b8807c80a56f83669175e643d6c6e4a0494cd5f9d9b87e49a01ea399",
+  "promptDigest": "sha256:6e0cb08e3e10a594a6709c12b245170bb54facdf3e203276e29cee2458134b10",
   "fixtureDigest": "sha256:e3c65d31cf2116060ca8351f524840b0bc9037a9bec3e34c482232a0fd76bb97",
-  "buildDigest": "sha256:5fa5cdd596705aa2ad10bcc8a574435c9e94dfb0716fbcd5dd9e4301b93133b8",
+  "buildDigest": "sha256:054ca51b8ab359c908f6cd2546fde9fe21edcbe10aec3fbb11d147610474bd05",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/mv4706v6-fc9353d8-9577-4445-bb78-9e68bbbea84c/slots/active-local-next-ready-slice/slot-1/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/active-local-next-ready-slice/slot-1/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {

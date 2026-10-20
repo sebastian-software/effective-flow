@@ -78,7 +78,9 @@ instead of relying on the receiving tool to notice.
 3. **Reconcile with the observed outcome, then choose.** Compare packages, dependencies, review/open
    points and approvals with verified completed work. Explicit user instructions and unfinished
    delivery/review or real post-merge reconciliation for this package lead before a later package;
-   an open PR is not bypassed. Otherwise the next applicable unfinished package normally leads,
+   an open PR is not bypassed. If the current package still needs delivery or review, omit execution
+   options for packages that depend on that completion; describing an option as “after delivery”
+   does not make it independently applicable now. Otherwise the next applicable unfinished package normally leads,
    mapped to an existing exposed tool with actual arguments, even without a matching table row.
    Require established readiness and authority before suggesting execution. Missing preparation or
    a recoverably stale record leads to `{{SKILL:plan}} <known-plan-path>` or
