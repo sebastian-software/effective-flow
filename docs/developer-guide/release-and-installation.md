@@ -68,7 +68,7 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 
 ### The release pull request gates the behavioural eval evidence
 
-The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate` and `next-steps` — archive evidence
+The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate`, `next-steps` and `build-context` — archive evidence
 about a build, and the build that matters is the one that ships, so the release pull request is
 where that evidence has to be current. The last step of the required `Format, test and build` job,
 `Behavioural eval evidence`, runs `pnpm eval <tool> verify` once for each suite: a read-only command

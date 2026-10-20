@@ -4,7 +4,11 @@ import { createHash } from 'node:crypto';
 import { lstatSync, readFileSync, realpathSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { HASH, requireThat } from './protocol.mjs';
-import { observedHelperEvent } from './helper-observation.mjs';
+import {
+  observedHelperEvent,
+  observedExecRequest,
+  observedExecResult,
+} from './helper-observation.mjs';
 import { normalizeProfile } from '../../_scaffold/profile.mjs';
 export const digest = (text) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 export function readRegular(path, maximum = 128 * 1024 * 1024) {
@@ -56,10 +60,29 @@ export function toolTexts(value, depth = 0) {
 const finite = (number) => Number.isFinite(number) && number >= 0;
 export function parseTranscript(text, harness) {
   requireThat(['codex-cli', 'claude-code'].includes(harness), 'unsupported transcript harness');
-  const rows = text
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+  let stream = null;
+  if (harness === 'claude-code') {
+    const value = object(text.trim());
+    if (value?.schema === 'effective-flow.build-context/1/claude-host-stream') {
+      requireThat(
+        Array.isArray(value.entries) &&
+          typeof value.rootIdentity === 'string' &&
+          value.rootInit?.session_id === value.rootIdentity,
+        'malformed external Claude stream view',
+      );
+      stream = value;
+    }
+  }
+  const rows = stream
+    ? stream.entries.map((r) => ({
+        ...r.event,
+        hostObservedAt: r.observedAt,
+        flowProcessIndex: r.processIndex,
+      }))
+    : text
+        .split('\n')
+        .filter(Boolean)
+        .map((line) => JSON.parse(line));
   const models = new Set(),
     efforts = new Set(),
     calls = new Map(),
@@ -73,7 +96,7 @@ export function parseTranscript(text, harness) {
     first = null;
   const usageMessages = new Set();
   for (const [line, row] of rows.entries()) {
-    const timestamp = Date.parse(row.timestamp ?? '');
+    const timestamp = Date.parse(row.timestamp ?? '') || (stream ? row.hostObservedAt : NaN);
     if (finite(timestamp)) timestamps.push(timestamp);
     if (harness === 'codex-cli') {
       const p = row.payload ?? {};
@@ -121,6 +144,7 @@ export function parseTranscript(text, harness) {
     } else {
       const message = row.message ?? {};
       if (row.type === 'assistant') {
+        if (stream) complete = message.stop_reason === 'end_turn';
         if (typeof message.model === 'string') models.add(message.model);
         // Only a host-written actual setting is evidence. A requested CLI flag is not one.
         if (typeof row.effort === 'string') efforts.add(row.effort);
@@ -140,7 +164,7 @@ export function parseTranscript(text, harness) {
           if (finite(u.cache_read_input_tokens)) cached = (cached ?? 0) + u.cache_read_input_tokens;
         }
       }
-      if (row.type === 'result' && row.is_error === false) complete = true;
+      if (row.type === 'result') complete = row.is_error === false;
       for (const block of message.content ?? []) {
         if (block.type === 'tool_use')
           calls.set(block.id, {
@@ -174,10 +198,13 @@ export function parseTranscript(text, harness) {
   }
   const tools = results.flatMap((result) => {
     const call = calls.get(result.id);
-    return call
+    return call &&
+      result.line > call.line &&
+      (!Number.isFinite(call.at) || !Number.isFinite(result.at) || result.at >= call.at)
       ? [
           {
             ...call,
+            callAt: call.at,
             output: result.value,
             resultLine: result.line,
             at: result.at,
@@ -186,18 +213,50 @@ export function parseTranscript(text, harness) {
         ]
       : [];
   });
+  const firstAssistant = rows.findIndex(
+    (r) =>
+      (r.type === 'response_item' &&
+        (r.payload?.role === 'assistant' ||
+          ['reasoning', 'function_call', 'custom_tool_call'].includes(r.payload?.type))) ||
+      r.type === 'assistant',
+  );
+  const initialUser =
+    users.filter((u) => firstAssistant < 0 || u.line <= firstAssistant).at(-1) ?? null;
   return {
+    initialUser,
+    permissionContexts: rows
+      .filter((r) => r.type === 'turn_context')
+      .map((r) => ({
+        cwd: r.payload?.cwd,
+        approvalPolicy: r.payload?.approval_policy,
+        permissionProfile: r.payload?.permission_profile,
+        fileSystemSandboxPolicy: r.payload?.file_system_sandbox_policy,
+      })),
     firstAt: timestamps.length ? Math.min(...timestamps) : null,
     lastAt: timestamps.length ? Math.max(...timestamps) : null,
+    streamCapture: stream
+      ? {
+          rootIdentity: stream.rootIdentity,
+          edgeIdentity: stream.edgeIdentity,
+          parentEdge: stream.parentEdge,
+          captureDigests: stream.captureDigests,
+          processIndexes: [...new Set(stream.entries.map((e) => e.processIndex))],
+        }
+      : null,
+    nativeAgentRole: stream?.spawn?.input?.subagent_type ?? null,
     reportedVersion:
+      stream?.rootInit?.claude_code_version ??
       rows.find((r) => r.type === 'session_meta')?.payload?.cli_version ??
       rows.find((r) => r.type === 'system' && r.subtype === 'init')?.claude_code_version ??
       null,
     cwd:
+      stream?.rootInit?.cwd ??
       rows.find((r) => r.type === 'session_meta')?.payload?.cwd ??
       rows.find((r) => r.type === 'system' && r.subtype === 'init')?.cwd ??
       null,
-    nativeSessionId: rows.find((r) => r.session_id)?.session_id ?? null,
+    nativeSessionId: stream
+      ? stream.rootIdentity + (stream.edgeIdentity === null ? '' : '/edge/' + stream.edgeIdentity)
+      : (rows.find((r) => r.session_id)?.session_id ?? null),
     loadedInstructions: rows
       .filter((r) => r.payload?.role === 'developer' || r.payload?.role === 'system')
       .flatMap((r) =>
@@ -228,8 +287,9 @@ function deriveRole({ entry, parsed, manifest, requestedModel }) {
   if (entry.parent === null) return { role: 'parent', evidence: null };
   if (!manifest.skillRoot) return { role: 'unclassified', evidence: null };
   const root = resolve(manifest.skillRoot),
-    assignment = parsed.users[0]?.text ?? '';
-  const nativeRole = parsed.meta?.source?.subagent?.thread_spawn?.agent_role ?? null;
+    assignment = parsed.initialUser?.text ?? '';
+  const nativeRole =
+    parsed.meta?.source?.subagent?.thread_spawn?.agent_role ?? parsed.nativeAgentRole ?? null;
   const candidates = [];
   if (nativeRole && /^effective-flow-[a-z-]+$/.test(nativeRole))
     candidates.push({
@@ -377,7 +437,11 @@ export function captureHostEvidence(manifest) {
         linked &&
           typeof nativeId === 'string' &&
           nativeId.length > 0 &&
-          JSON.stringify(tool?.output).includes(nativeId),
+          (JSON.stringify(tool?.output).includes(nativeId) ||
+            (parsed.streamCapture &&
+              tool &&
+              parsed.streamCapture.edgeIdentity === entry.spawnCallId &&
+              parsed.streamCapture.rootIdentity === parent.parsed.streamCapture?.rootIdentity)),
         `${entry.alias}: child association lacks host tool evidence`,
       );
       const args = call.arguments ?? {};
@@ -426,10 +490,12 @@ export function captureHostEvidence(manifest) {
           line: tool.resultLine,
           at: tool.at,
         });
-      const exit = /(?:\"exit_code\"\s*:\s*0|Process exited with code 0|Exit code: 0)/.test(
-        outputText,
-      );
-      const command = tool.arguments?.cmd ?? tool.arguments?.command ?? '';
+      const exit =
+        tool.name === 'exec'
+          ? observedExecResult(tool.output)?.exit_code === 0
+          : /(?:\"exit_code\"\s*:\s*0|Process exited with code 0|Exit code: 0)/.test(outputText);
+      const decoded = observedExecRequest(tool) ?? tool.arguments;
+      const command = decoded?.cmd ?? decoded?.command ?? '';
       const write =
         /apply_patch|(?:^|\W)(?:Write|Edit|write_file)(?:$|\W)/.test(tool.name) ||
         /^(?:apply_patch\s+<<|cat\s+>)/.test(command);
@@ -464,6 +530,7 @@ export function captureHostEvidence(manifest) {
           roots: {
             'build-run': resolve(manifest.skillRoot ?? '/unproven', 'scripts/build-run.mjs'),
             pilot: resolve(manifest.skillRoot ?? '/unproven', 'scripts/pilot-measurement.mjs'),
+            tracker: resolve(manifest.skillRoot ?? '/unproven', 'scripts/remote-tracker.mjs'),
           },
         });
         if (event) {

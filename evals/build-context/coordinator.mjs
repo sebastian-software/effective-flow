@@ -3,6 +3,7 @@
 import { createInterface } from 'node:readline';
 import { resolve } from 'node:path';
 import suite from './suite.config.mjs';
+import { prepareClaudeRuntime } from './_scaffold/claude-runtime.mjs';
 import { HostCoordinator } from './_scaffold/host-coordinator.mjs';
 const [root, mode, ...rest] = process.argv.slice(2);
 if (!root || rest.length || (mode && !['new', 'resume'].includes(mode)))
@@ -16,6 +17,17 @@ for await (const line of createInterface({ input: process.stdin, crlfDelay: Infi
       throw Error('closed coordinator request is {operation,input}');
     let result;
     switch (request.operation) {
+      case 'prepare-runtime':
+        if (
+          !request.input ||
+          JSON.stringify(Object.keys(request.input)) !== JSON.stringify(['root']) ||
+          typeof request.input.root !== 'string' ||
+          !request.input.root.startsWith('/') ||
+          request.input.root.length > 4096
+        )
+          throw Error('closed runtime preparation input is {root:absolutePhysicalDestination}');
+        result = await prepareClaudeRuntime(resolve(request.input.root));
+        break;
       case 'build':
         result = coordinator.build(request.input);
         break;

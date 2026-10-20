@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -28,6 +28,8 @@ import {
 import { parseState } from '../evals/build-context/_scaffold/capture.mjs';
 import suite from '../evals/build-context/suite.config.mjs';
 import { BASELINE_COMMIT, envelope } from '../evals/build-context/_scaffold/host-receipt.mjs';
+import { claudeUserInput } from '../evals/build-context/_scaffold/claude-process.mjs';
+import { runtimePin } from '../evals/build-context/_scaffold/claude-runtime.mjs';
 
 test('build-context evidence protocol declares the complete behavioural and compatibility matrix', () => {
   assert.equal(SCHEMA, 'effective-flow.build-context/1');
@@ -145,7 +147,23 @@ test('spawn validation rejects missing, mismatched and incomplete descendant obs
   assert.ok(problems.some((problem) => problem.includes('missing required implementer')));
 });
 
-function validRun(metrics, baseline = false, timing = 200) {
+function validRun(metrics, baseline = false, timing = 200, harness = 'codex-cli') {
+  const claude = harness === 'claude-code';
+  const policyDigest = digest('native-policy'),
+    trackerInitialDigest = digest(''),
+    execArgumentsDigest = digest(JSON.stringify(['codex', 'exec', '--ignore-user-config'])),
+    wrapperDigest = digest(
+      readFileSync(
+        new URL(
+          claude
+            ? '../evals/build-context/_scaffold/claude-process-probe.mjs'
+            : '../evals/build-context/_scaffold/native-sandbox-probe.mjs',
+          import.meta.url,
+        ),
+      ),
+    ),
+    protectedRootDigests = [digest('root'), digest('home'), digest('codex-home')],
+    writeRootDigests = [digest('fixture'), digest('git'), digest('ledger')];
   const observations = ['parent', ...REQUIRED_ROLES].map((role, index) => ({
     session: role,
     sessionIdentity: digest('session-' + role + '-' + (metrics.identityKey ?? 'unit')),
@@ -166,19 +184,43 @@ function validRun(metrics, baseline = false, timing = 200) {
       native: false,
     },
   }));
-  const settings = { harness: 'codex-cli', model: 'root', effort: 'medium' };
+  const settings = {
+    harness,
+    model: claude ? 'claude-root' : 'root',
+    effort: 'medium',
+    reportedVersion: claude ? '2.1.292' : '0.163.0',
+    toolPolicy: claude ? 'isolated fixture; provider proxy' : 'isolated fixture',
+  };
+  const nativeSandbox = {
+    kind: claude ? 'claude-process' : 'codex-native',
+    policyDigest,
+    execArgumentsDigest,
+    binaryDigest: digest('codex-binary'),
+    writeRootDigests,
+    protectedRootDigests,
+    ...(claude
+      ? {
+          runtimeDigest: runtimePin().membershipDigest,
+          providerDomainsDigest: digest(JSON.stringify(['api.anthropic.com'])),
+        }
+      : {}),
+  };
   const prepared = envelope('prepared', {
     preparedAt: 100,
     condition: baseline ? 'baseline' : 'candidate',
     slot: metrics.slot ?? 1,
-    harness: 'codex-cli',
+    harness,
     complexity: metrics.complexity ?? 'simple',
+    profile: settings,
     settings,
     settingsDigest: digest(JSON.stringify(settings)),
     transcriptDestinationWasEmpty: true,
     fixture: { head: digest('fixture') },
     promptDigest: digest('prompt'),
+    ...(claude ? { inputDigest: digest(claudeUserInput('prompt')) } : {}),
     reviewBasis: { criteriaDigest: digest('criteria'), assignmentDigest: digest('assignment') },
+    trackerInitialDigest,
+    nativeSandbox,
     build: envelope('build', {
       source: { commit: baseline ? BASELINE_COMMIT : digest('candidate-commit'), clean: true },
       membership: { files: { 'SKILL.md': digest('skill') } },
@@ -197,19 +239,80 @@ function validRun(metrics, baseline = false, timing = 200) {
     lastAt: timing + 300,
     processes: [
       {
+        trackerMirror: {
+          sourceDigest: trackerInitialDigest,
+          archiveDigest: trackerInitialDigest,
+          priorDigest: trackerInitialDigest,
+          prefixBytes: 0,
+          sourceBytes: 0,
+          addedEntries: 0,
+        },
         settingsObservationDigest: prepared.payload.settingsDigest,
         startedAt: timing,
         finishedAt: timing + 300,
         exitCode: 0,
-        guard: { writeDenied: true, wrapperDigest: digest('wrapper') },
-        policyDigest: digest('policy'),
+        launchArgumentsDigest: execArgumentsDigest,
+        ...(claude
+          ? {
+              captureDigest: digest('claude-capture'),
+              collectorDigest: digest(
+                readFileSync(
+                  new URL(
+                    '../evals/build-context/_scaffold/claude-stream-worker.mjs',
+                    import.meta.url,
+                  ),
+                ),
+              ),
+              inputDigest: digest(claudeUserInput('prompt')),
+            }
+          : {}),
+        guard: {
+          schema: SCHEMA + '/native-guard',
+          kind: claude ? 'claude-process' : 'codex-native',
+          writeDenied: true,
+          inheritedDenied: true,
+          denied: protectedRootDigests.length + 1,
+          fixtureRead: true,
+          fixtureWrite: true,
+          gitCommit: true,
+          gitPush: true,
+          stubLedger: true,
+          wrapperDigest,
+          binaryDigest: nativeSandbox.binaryDigest,
+          reportedVersion: settings.reportedVersion,
+          policyDigest,
+          execArgumentsDigest,
+          sandboxArgumentsDigest: digest('sandbox-arguments'),
+          debugPromptDigest: digest('debug-prompt'),
+          stdoutDigest: digest('guard-stdout'),
+          startedAt: timing - 20,
+          finishedAt: timing - 1,
+          protectedRootDigests,
+          writeRootDigests,
+          ...(claude
+            ? {
+                fileEditDenied: true,
+                fileWriteDenied: true,
+                networkDenied: true,
+                runtimeDigest: nativeSandbox.runtimeDigest,
+                providerDomainsDigest: digest(JSON.stringify(['api.anthropic.com'])),
+              }
+            : {}),
+        },
+        policyDigest,
         stdoutDigest: digest('stdout'),
       },
     ],
   });
   const body = {
-    harness: 'codex-cli',
-    profile: { harness: 'codex-cli', model: 'root', reasoningEffort: 'medium' },
+    harness,
+    profile: {
+      harness,
+      model: settings.model,
+      reasoningEffort: 'medium',
+      reportedVersion: settings.reportedVersion,
+      toolPolicy: settings.toolPolicy,
+    },
     observations,
     metrics,
     acceptance: { exitCode: 0, outputDigest: digest('acceptance') },
@@ -246,6 +349,29 @@ function validRun(metrics, baseline = false, timing = 200) {
     terminalVerification: baseline
       ? undefined
       : { sourceDigest: digest('terminal'), status: 'DONE' },
+    nativePolicyProof: {
+      kind: claude ? 'claude-process' : 'codex-native',
+      policyDigest,
+      sessions: observations.map((observation) =>
+        claude
+          ? {
+              sessionIdentity: observation.sessionIdentity,
+              sourceDigest: observation.sourceDigest,
+              captures: [{ processIndex: 0, captureDigest: digest('claude-capture') }],
+            }
+          : {
+              sessionIdentity: observation.sessionIdentity,
+              sourceDigest: observation.sourceDigest,
+              contexts: 1,
+              observedPolicyDigest: policyDigest,
+            },
+      ),
+    },
+    trackerLedgerProof: {
+      initialDigest: trackerInitialDigest,
+      finalDigest: trackerInitialDigest,
+      actualCalls: 0,
+    },
   };
   const completion = envelope('completion', {
     launch,
@@ -289,6 +415,7 @@ test('matrix uses paired medians and nearest-rank p95, while failed attempts rem
           },
           true,
           slot % 2 ? 200 : 600,
+          harness,
         ),
         candidateRun: validRun(
           {
@@ -302,15 +429,35 @@ test('matrix uses paired medians and nearest-rank p95, while failed attempts rem
           },
           false,
           slot % 2 ? 600 : 200,
+          harness,
         ),
       });
     }
   }
   const summary = summarizeMatrix(records);
-  assert.equal(summary.cells[0].state, 'current');
-  assert.equal(summary.cells[0].metrics.parentPeakRatio, 0.2);
-  assert.equal(summary.cells[0].metrics.cumulativeInputRatio, 0.3);
-  assert.equal(summary.cells[0].metrics.p95Estimator, 'nearest-rank; n=5 is maximum');
+  assert.equal(summary.cells.length, CELL_NAMES.length);
+  for (const cell of summary.cells) {
+    assert.equal(cell.state, 'current', cell.cell);
+    assert.equal(cell.pairs, 5, cell.cell);
+    assert.equal(cell.metrics.parentPeakRatio, 0.2, cell.cell);
+    assert.equal(cell.metrics.cumulativeInputRatio, 0.3, cell.cell);
+    assert.equal(cell.metrics.p95Estimator, 'nearest-rank; n=5 is maximum', cell.cell);
+  }
+  const substituted = records.map((record, index) =>
+    index === 10
+      ? {
+          ...record,
+          candidateRun: { ...record.candidateRun, harness: 'codex-cli' },
+        }
+      : record,
+  );
+  const substitutedSummary = summarizeMatrix(substituted);
+  assert.equal(substitutedSummary.cells[2].state, 'unproven');
+  assert.ok(
+    substitutedSummary.cells[2].problems.some((problem) =>
+      /declared cell differs|run differs from host completion/.test(problem),
+    ),
+  );
   const failed = summarizeMatrix([
     ...records,
     {

@@ -1,10 +1,19 @@
 // Adversarial unit fixtures are intentionally synthetic; none are behavioural recordings.
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, mkdirSync, readFileSync, rmSync, realpathSync } from 'node:fs';
+import {
+  mkdtempSync,
+  writeFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  realpathSync,
+  existsSync,
+  readdirSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, execFileSync } from 'node:child_process';
 import {
   captureHostEvidence,
   parseTranscript,
@@ -15,6 +24,7 @@ import {
 import {
   HostCoordinator,
   observedSettings,
+  recordingSettings,
 } from '../evals/build-context/_scaffold/host-coordinator.mjs';
 import {
   envelope,
@@ -23,6 +33,9 @@ import {
 } from '../evals/build-context/_scaffold/host-receipt.mjs';
 import {
   helperInvocation,
+  observedExecRequest,
+  observedExecResult,
+  observedHelperEvent,
   rejectionProblems,
 } from '../evals/build-context/_scaffold/helper-observation.mjs';
 import {
@@ -39,6 +52,17 @@ import {
 import { parseState } from '../evals/build-context/_scaffold/capture.mjs';
 import { SCHEMA } from '../evals/build-context/_scaffold/protocol.mjs';
 import suite from '../evals/build-context/suite.config.mjs';
+import {
+  nativePolicy,
+  nativeExecArgs,
+  nativeContextProblems,
+  probeNativeSandbox,
+  nativeSandboxArgs,
+  mirrorTrackerLedger,
+  trackerLedgerProblems,
+} from '../evals/build-context/_scaffold/native-sandbox.mjs';
+import { checkoutBasis, fileMembership } from '../evals/build-context/_scaffold/basis.mjs';
+import { observeToolFailure } from '../evals/build-context/_scaffold/tool-failure.mjs';
 const profile = {
   harness: 'codex-cli',
   model: 'gpt-6.1-sol',
@@ -782,4 +806,1179 @@ test('C3 generated native TOML and actual multiline messages establish roles, la
     observe({ ...portableArgs, read: 'workers/effective-flow-nodejs-reviewer.md' }).role,
     'unclassified',
   );
+});
+
+test('native launch grammar rejects attached/equal policy bypasses, output controls and untyped TOML', (t) => {
+  const root = temporary(t),
+    policy = { fixture: root, configs: ['approval_policy="never"'] },
+    valid = [
+      'exec',
+      '--ignore-user-config',
+      '--ignore-rules',
+      '--json',
+      '-m',
+      'gpt-6.1-sol',
+      '-c',
+      'model_reasoning_effort="high"',
+      '-s',
+      'workspace-write',
+      '-C',
+      root,
+      '-',
+    ];
+  assert.ok(nativeExecArgs(valid, policy).includes('exec'));
+  for (const extra of [
+    ['-capproval_policy="untrusted"'],
+    ['-P:workspace'],
+    ['--enable=plugins'],
+    ['-cpermissions.flow-build-context.filesystem={":root"="write"}'],
+    ['--dangerously-bypass-approvals-and-sandbox'],
+    ['--sandbox=danger-full-access'],
+    ['--output-last-message', resolve(root, 'protected')],
+    ['--config', 'approval_policy="never"'],
+    ['-c', 'agents.enabled=true\napproval_policy="never"'],
+    ['-c', 'model_reasoning_effort="high"\ndefault_permissions=":danger-full-access"'],
+    ['-c', 'features.multi_agent_v2.max_concurrent_threads_per_session=101'],
+    ['-c', 'agents.enabled="true"'],
+    ['unexpected prompt'],
+    ['--search'],
+    ['-p', 'other'],
+  ]) {
+    assert.throws(
+      () => nativeExecArgs([...valid.slice(0, -1), ...extra, '-'], policy),
+      /native|closed|unrecognized/,
+    );
+  }
+  const resumed = nativeExecArgs(
+    [...valid.slice(0, -1), 'resume', '12345678-1234-1234-1234-123456789abc', '-'],
+    policy,
+    { resume: true },
+  );
+  assert.ok(resumed.includes('resume'));
+  assert.throws(
+    () =>
+      nativeExecArgs([...valid.slice(0, -1), 'resume', 'not-an-observed-root', '-'], policy, {
+        resume: true,
+      }),
+    /unrecognized/,
+  );
+});
+
+test('native policy verification compares every actual permission entry and tool policy, never just its name', () => {
+  const root = '/private/fixture',
+    policy = {
+      fixture: root,
+      definition: {
+        filesystem: {
+          ':slash_tmp': 'read',
+          ':tmpdir': 'read',
+          [root + '/.git']: 'write',
+          '/private/host': 'read',
+          '/private/origin.git': 'write',
+        },
+      },
+    };
+  const values = new Map([
+    [':root', 'read'],
+    [':slash_tmp', 'read'],
+    [':tmpdir', 'read'],
+    [root, 'write'],
+    ...['.git', '.agents', '.codex', '.aws'].map((n) => [root + '/' + n, 'read']),
+    ...Object.entries(policy.definition.filesystem),
+  ]);
+  const entries = [...values].map(([path, access]) => ({
+    path: path.startsWith(':')
+      ? { type: 'special', value: { kind: path.slice(1) } }
+      : { type: 'path', path },
+    access,
+  }));
+  const actual = {
+    cwd: root,
+    approvalPolicy: 'never',
+    permissionProfile: {
+      type: 'managed',
+      file_system: { type: 'restricted', entries },
+      network: 'restricted',
+    },
+    fileSystemSandboxPolicy: { kind: 'restricted', entries },
+  };
+  assert.deepEqual(nativeContextProblems([actual], policy), []);
+  for (const mutate of [
+    (v) => {
+      v.approvalPolicy = 'on-request';
+    },
+    (v) => {
+      v.permissionProfile.file_system.entries.push({
+        path: { type: 'path', path: '/private/host' },
+        access: 'write',
+      });
+    },
+    (v) => {
+      v.permissionProfile.file_system.entries.find(
+        (e) => e.path.value?.kind === 'slash_tmp',
+      ).access = 'write';
+    },
+    (v) => {
+      v.fileSystemSandboxPolicy = { kind: 'external' };
+    },
+    (v) => {
+      v.permissionProfile.unrecognizedAuthority = true;
+    },
+  ]) {
+    const bad = structuredClone(actual);
+    mutate(bad);
+    assert.ok(nativeContextProblems([bad], policy).length);
+  }
+  assert.ok(nativeContextProblems([], policy).length);
+});
+
+function failureFixture(t) {
+  const root = temporary(t),
+    prompt = 'Read the supplied fixture router.',
+    startedAt = Date.parse('2026-10-20T10:00:00Z'),
+    call = {
+      type: 'response_item',
+      timestamp: '2026-10-20T10:00:01Z',
+      payload: {
+        type: 'custom_tool_call',
+        call_id: 'actual-exec-call',
+        name: 'exec',
+        input:
+          'text(await tools.exec_command({cmd:"cat supplied-router.md",max_output_tokens:12000}));',
+      },
+    },
+    output = {
+      type: 'response_item',
+      timestamp: '2026-10-20T10:00:02Z',
+      payload: {
+        type: 'custom_tool_call_output',
+        call_id: 'actual-exec-call',
+        output: [
+          {
+            type: 'input_text',
+            text: JSON.stringify({
+              exit_code: 71,
+              output: 'sandbox-exec: sandbox_apply: Operation not permitted\n',
+            }),
+          },
+        ],
+      },
+    };
+  const rows = transcript('actual-root', [
+    {
+      type: 'response_item',
+      timestamp: '2026-10-20T10:00:00Z',
+      payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: prompt }] },
+    },
+    call,
+    output,
+  ])
+    .trim()
+    .split('\n')
+    .map(JSON.parse);
+  rows[0].payload.cwd = root;
+  const stdoutText = JSON.stringify({ type: 'thread.started', thread_id: 'actual-root' }) + '\n',
+    process = {
+      startedAt,
+      finishedAt: startedAt + 5000,
+      exitCode: 0,
+      stdoutDigest: digest(stdoutText),
+    };
+  return {
+    root,
+    rows,
+    stdoutText,
+    process,
+    prompt,
+    fixtureRoot: root,
+    reportedVersion: '0.163.0',
+    observe(modify = () => {}) {
+      const copy = structuredClone(rows);
+      modify(copy);
+      return observeToolFailure({ ...this, rootText: copy.map(JSON.stringify).join('\n') });
+    },
+  };
+}
+
+test('zero-exit native tool failure is bound to actual call/result, immutable stdout, root, prompt and process', (t) => {
+  const fixture = failureFixture(t),
+    observed = fixture.observe();
+  assert.equal(observed.kind, 'tool-capability');
+  assert.equal(observed.cliExitCode, 0);
+  assert.equal(observed.toolExitCode, 71);
+  assert.equal(observed.stdoutDigest, fixture.process.stdoutDigest);
+  assert.throws(
+    () =>
+      fixture.observe((rows) => {
+        rows.find((r) => r.payload?.type === 'custom_tool_call_output').payload.call_id =
+          'unassociated';
+      }),
+    /tool sandbox error missing/,
+  );
+  assert.throws(
+    () =>
+      fixture.observe((rows) => {
+        rows.find((r) => r.payload?.type === 'custom_tool_call_output').payload.output = [
+          { type: 'input_text', text: 'sandbox-exec: sandbox_apply: Operation not permitted' },
+        ];
+      }),
+    /tool sandbox error missing/,
+  );
+  assert.throws(
+    () =>
+      fixture.observe((rows) => {
+        rows.find((r) => r.payload?.type === 'custom_tool_call').payload.input =
+          'text({exit_code:71,output:"sandbox-exec: sandbox_apply: Operation not permitted"});';
+      }),
+    /tool sandbox error missing/,
+  );
+  assert.throws(
+    () =>
+      fixture.observe((rows) => {
+        rows[0].payload.id = 'another-real-root';
+      }),
+    /metadata differs/,
+  );
+  assert.throws(
+    () =>
+      observeToolFailure({
+        ...fixture,
+        rootText: fixture.rows.map(JSON.stringify).join('\n'),
+        stdoutText: fixture.stdoutText + '{}\n',
+      }),
+    /stdout changed/,
+  );
+  assert.throws(
+    () =>
+      observeToolFailure({
+        ...fixture,
+        rootText: fixture.rows.map(JSON.stringify).join('\n'),
+        process: {
+          ...fixture.process,
+          startedAt: fixture.process.startedAt + 60000,
+          finishedAt: fixture.process.finishedAt + 60000,
+        },
+      }),
+    /predeclared process/,
+  );
+});
+
+test('closed fail retains CLI exit zero and null metrics for an actual associated tool capability failure', (t) => {
+  const fixture = failureFixture(t),
+    home = resolve(fixture.root, 'config'),
+    sessions = resolve(home, 'sessions');
+  mkdirSync(sessions, { recursive: true });
+  const raw = resolve(sessions, 'root.jsonl'),
+    stdout = resolve(fixture.root, 'host-process.jsonl');
+  writeFileSync(raw, fixture.rows.map(JSON.stringify).join('\n'));
+  writeFileSync(stdout, fixture.stdoutText);
+  const coordinator = new HostCoordinator(resolve(fixture.root, 'journal'), { suite }),
+    receipt = envelope('prepared', { profile: { reportedVersion: '0.163.0' } });
+  coordinator.launches.set('observed', {
+    closed: false,
+    receipt,
+    command: { codexHome: home },
+    input: { fixtureRoot: fixture.root },
+    prompt: fixture.prompt,
+    processes: [fixture.process],
+    outputPaths: [stdout],
+  });
+  const result = coordinator.fail('observed', { rootTranscript: raw });
+  assert.equal(result.payload.processes[0].exitCode, 0);
+  assert.equal(result.payload.metrics, null);
+  assert.equal(result.payload.failure.toolExitCode, 71);
+  assert.equal(coordinator.launches.get('observed').closed, true);
+});
+
+test(
+  'actual Codex native guard permits fixture Git push and missing stub ledger while denying host writes in descendants',
+  { skip: process.platform !== 'darwin' || !existsSync('/opt/homebrew/bin/codex') },
+  (t) => {
+    const root = temporary(t),
+      fixture = resolve(root, 'project'),
+      skill = resolve(root, 'skill'),
+      host = resolve(root, 'journal'),
+      home = resolve(root, 'home'),
+      config = resolve(root, 'config'),
+      sessions = resolve(config, 'sessions');
+    for (const dir of [fixture, resolve(skill, 'scripts'), host, home, config, sessions])
+      mkdirSync(dir, { recursive: true });
+    writeFileSync(resolve(fixture, '.build-context-fixture'), SCHEMA + '\n');
+    writeFileSync(resolve(fixture, 'README.md'), 'Actual local fixture.\n');
+    writeFileSync(resolve(fixture, '.gitignore'), '.effective-flow/\n');
+    const git = (...args) => execFileSync('git', args, { cwd: fixture, stdio: 'pipe' });
+    git('init', '-q', '-b', 'develop');
+    git('add', '.');
+    git(
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@invalid',
+      'commit',
+      '-qm',
+      'test: fixture',
+    );
+    const origin = resolve(root, 'fixture-origin.git');
+    execFileSync('git', ['init', '--bare', '-q', origin]);
+    git('remote', 'add', 'origin', origin);
+    git('push', '-q', 'origin', 'develop');
+    writeFileSync(
+      resolve(skill, 'scripts/remote-tracker.mjs'),
+      readFileSync(resolve(suite.root, '../_scaffold/remote-tracker.mjs')),
+    );
+    writeFileSync(resolve(root, 'fixture.json'), JSON.stringify({ operations: {} }));
+    const policy = nativePolicy({
+        fixtureRoot: fixture,
+        skillRoot: skill,
+        protectedRoots: [host, home, config, sessions],
+      }),
+      args = nativeExecArgs(
+        [
+          'exec',
+          '--ignore-user-config',
+          '--ignore-rules',
+          '--json',
+          '-m',
+          'gpt-6.1-sol',
+          '-c',
+          'model_reasoning_effort="high"',
+          '-',
+        ],
+        policy,
+      ),
+      before = checkoutBasis(fixture);
+    assert.equal(existsSync(policy.ledger), false);
+    assert.equal(existsSync(policy.lock), false);
+    const observed = probeNativeSandbox({
+      executable: '/opt/homebrew/bin/codex',
+      reportedVersion: '0.163.0',
+      policy,
+      environment: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
+      execArgs: args,
+    });
+    assert.equal(observed.inheritedDenied, true);
+    assert.equal(observed.gitPush, true);
+    assert.equal(observed.stubLedger, true);
+    assert.equal(observed.execArgumentsDigest, digest(JSON.stringify(args)));
+    assert.deepEqual(checkoutBasis(fixture), before);
+    assert.equal(existsSync(policy.ledger), false);
+    assert.equal(existsSync(policy.lock), false);
+    const command = {
+      executable: '/opt/homebrew/bin/codex',
+      args,
+      home,
+      codexHome: config,
+      profile,
+    };
+    const settingsInput = { fixtureRoot: fixture, skillRoot: skill, transcriptDir: sessions };
+    const preparedSettings = recordingSettings(command, settingsInput);
+    assert.deepEqual(recordingSettings(command, settingsInput), preparedSettings);
+    assert.equal(
+      preparedSettings.stubFixtureDigest,
+      digest(readFileSync(resolve(root, 'fixture.json'), 'utf8')),
+    );
+    assert.ok(!JSON.stringify(preparedSettings.arguments).includes(root));
+    const actualStub = spawnSync(
+      '/opt/homebrew/bin/codex',
+      nativeSandboxArgs(
+        policy,
+        [process.execPath, resolve(skill, 'scripts/remote-tracker.mjs'), 'host-guard-probe'],
+        args,
+      ),
+      {
+        cwd: fixture,
+        env: {
+          PATH: process.env.PATH,
+          HOME: home,
+          CODEX_HOME: config,
+          EVAL_TRACKER_LOG: policy.ledger,
+          EVAL_TRACKER_FIXTURE: policy.fixtureFile,
+        },
+        input: JSON.stringify({ cwd: fixture }),
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(actualStub.status, 1, actualStub.stderr);
+    assert.equal(existsSync(policy.ledger), true);
+    assert.equal(existsSync(policy.lock), false, 'actual stub must remove its directory lock');
+    const mirror = mirrorTrackerLedger(policy, digest(''));
+    assert.equal(mirror.addedEntries, 1);
+    assert.equal(mirror.sourceDigest, mirror.archiveDigest);
+    assert.deepEqual(checkoutBasis(fixture), before);
+    assert.equal(
+      recordingSettings(command, settingsInput).stubFixtureDigest,
+      preparedSettings.stubFixtureDigest,
+    );
+    const help = spawnSync('/opt/homebrew/bin/codex', [...args.slice(0, -1), '--help'], {
+      cwd: fixture,
+      env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
+      encoding: 'utf8',
+    });
+    assert.equal(help.status, 0, help.stderr);
+    const resumeArgs = nativeExecArgs(
+      [
+        'exec',
+        '--ignore-user-config',
+        '--ignore-rules',
+        '--json',
+        '-m',
+        'gpt-6.1-sol',
+        '-c',
+        'model_reasoning_effort="high"',
+        'resume',
+        '12345678-1234-1234-1234-123456789abc',
+        '-',
+      ],
+      policy,
+      { resume: true },
+    );
+    const resumeHelp = spawnSync(
+      '/opt/homebrew/bin/codex',
+      [...resumeArgs.slice(0, -1), '--help'],
+      {
+        cwd: fixture,
+        env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
+        encoding: 'utf8',
+      },
+    );
+    assert.equal(resumeHelp.status, 0, resumeHelp.stderr);
+  },
+);
+
+test('actual literal exec wrapper observes helper calls and rejects dynamic/mixed/ambiguous wrappers', () => {
+  const cmd =
+    'node /fixture/skill/scripts/remote-tracker.mjs pr-view <<\'JSON\'\n{"cwd":"/fixture/project"}\nJSON';
+  const input =
+    'text(await tools.exec_command({cmd:' + JSON.stringify(cmd) + ',max_output_tokens:1000}));';
+  const tool = {
+    id: 'actual-call',
+    name: 'exec',
+    arguments: input,
+    callAt: 100,
+    resultLine: 5,
+    at: 100,
+  };
+  assert.equal(observedExecRequest(tool).cmd, cmd);
+  const event = observedHelperEvent(
+    tool,
+    { operation: 'pr-view', ok: true },
+    {
+      session: 'root',
+      sourceDigest: digest('raw'),
+      alias: digest,
+      agentSession: () => null,
+      roots: { tracker: '/fixture/skill/scripts/remote-tracker.mjs' },
+    },
+  );
+  assert.equal(event.family, 'tracker');
+  assert.equal(event.cwdDigest, digest('/fixture/project'));
+  for (const argumentsValue of [
+    input + 'text({ok:true});',
+    input.replace(JSON.stringify(cmd), 'command'),
+    input.replace('text(await', 'text(await transform('),
+    "await tools.exec_command({cmd:'true'}); text({exit_code:71,output:'sandbox_apply'});",
+    input.replace('max_output_tokens:1000', 'max_output_tokens:1+999'),
+  ])
+    assert.equal(observedExecRequest({ ...tool, arguments: argumentsValue }), null);
+  assert.equal(
+    observedExecResult([
+      {
+        type: 'input_text',
+        text: JSON.stringify({
+          exit_code: 0,
+          output: JSON.stringify({
+            exit_code: 71,
+            output: 'sandbox-exec: sandbox_apply: Operation not permitted\n',
+          }),
+        }),
+      },
+    ]).exit_code,
+    0,
+  );
+  assert.equal(
+    observedExecResult([
+      { type: 'input_text', text: JSON.stringify({ exit_code: 0, output: '' }) },
+      { type: 'input_text', text: JSON.stringify({ exit_code: 71, output: 'ambiguous' }) },
+    ]),
+    null,
+  );
+});
+
+test('initial task is the last actual user before first assistant/tool, never a later reply', () => {
+  const user = (text) => ({
+    type: 'response_item',
+    timestamp: '2026-10-20T10:00:00Z',
+    payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+  });
+  const assistant = {
+    type: 'response_item',
+    timestamp: '2026-10-20T10:00:01Z',
+    payload: {
+      type: 'message',
+      role: 'assistant',
+      content: [{ type: 'output_text', text: 'working' }],
+    },
+  };
+  assert.equal(
+    parseTranscript(
+      transcript('root', [
+        user('injected AGENTS.md'),
+        user('sealed exact task'),
+        assistant,
+        user('later reply'),
+      ]),
+      'codex-cli',
+    ).initialUser.text,
+    'sealed exact task',
+  );
+  assert.equal(
+    parseTranscript(
+      transcript('root', [user('injected AGENTS.md'), assistant, user('sealed exact task')]),
+      'codex-cli',
+    ).initialUser.text,
+    'injected AGENTS.md',
+  );
+});
+
+test('exit zero stdout containing a fabricated native failure is never a tool capability failure', (t) => {
+  const fixture = failureFixture(t);
+  assert.throws(
+    () =>
+      fixture.observe((rows) => {
+        rows.find((r) => r.payload?.type === 'custom_tool_call_output').payload.output = [
+          {
+            type: 'input_text',
+            text: JSON.stringify({
+              exit_code: 0,
+              output: JSON.stringify({
+                exit_code: 71,
+                output: 'sandbox-exec: sandbox_apply: Operation not permitted\n',
+              }),
+            }),
+          },
+        ];
+      }),
+    /tool sandbox error missing/,
+  );
+});
+
+test('host tracker mirrors preserve bytes and require unique correlated raw calls', (t) => {
+  const root = temporary(t),
+    policy = {
+      ledger: resolve(root, 'actual.jsonl'),
+      archiveLedger: resolve(root, 'protected.jsonl'),
+    };
+  const row = {
+    seq: 1,
+    operation: 'pr-view',
+    apply: false,
+    cwd: '/fixture',
+    at: '2026-10-20T10:00:00Z',
+  };
+  writeFileSync(policy.ledger, JSON.stringify(row) + '\n');
+  const mirror = mirrorTrackerLedger(policy, digest(''));
+  assert.equal(mirror.addedEntries, 1);
+  assert.equal(mirror.sourceDigest, mirror.archiveDigest);
+  assert.equal(readFileSync(policy.ledger, 'utf8'), readFileSync(policy.archiveLedger, 'utf8'));
+  const call = {
+    session: 'root',
+    callDigest: digest('call'),
+    family: 'tracker',
+    operation: 'pr-view',
+    apply: false,
+    cwdDigest: digest('/fixture'),
+  };
+  assert.deepEqual(trackerLedgerProblems({ helperEvents: [call] }, policy, ''), []);
+  for (const calls of [
+    [],
+    [call, call],
+    [{ ...call, operation: 'pr-merge' }],
+    [{ ...call, cwdDigest: digest('/other') }],
+  ])
+    assert.ok(trackerLedgerProblems({ helperEvents: calls }, policy, '').length);
+  writeFileSync(policy.ledger, '');
+  assert.throws(() => mirrorTrackerLedger(policy, mirror.archiveDigest), /lost\/changed/);
+});
+
+test('ordinary actual Codex exec-wrapper capture binds helper and validation to matching chronological native output', (t) => {
+  const root = temporary(t),
+    skill = resolve(root, 'skill');
+  mkdirSync(resolve(skill, 'scripts'), { recursive: true });
+  writeFileSync(resolve(skill, 'SKILL.md'), 'Canonical router bytes');
+  const command =
+    'node ' + skill + '/scripts/remote-tracker.mjs pr-view <<\'JSON\'\n{"cwd":"/fixture"}\nJSON';
+  const call = (id, cmd) => ({
+    type: 'response_item',
+    timestamp: '2026-10-20T10:00:01Z',
+    payload: {
+      type: 'custom_tool_call',
+      name: 'exec',
+      call_id: id,
+      input: 'text(await tools.exec_command({cmd:' + JSON.stringify(cmd) + '}));',
+    },
+  });
+  const output = (id, text) => ({
+    type: 'response_item',
+    timestamp: '2026-10-20T10:00:02Z',
+    payload: {
+      type: 'custom_tool_call_output',
+      call_id: id,
+      output: [{ type: 'input_text', text: JSON.stringify({ exit_code: 0, output: text }) }],
+    },
+  });
+  const rows = [
+    call('read-router', 'cat ' + skill + '/SKILL.md'),
+    output('read-router', 'Canonical router bytes'),
+    call('tracker', command),
+    output('tracker', JSON.stringify({ ok: true, operation: 'pr-view', data: {} })),
+    call('validate', 'node --test'),
+    output('validate', 'tests passed'),
+  ];
+  const observe = (values) => {
+    const path = resolve(root, 'root.jsonl');
+    writeFileSync(path, transcript('actual-root', values));
+    return captureHostEvidence({
+      harness: 'codex-cli',
+      profile,
+      skillRoot: skill,
+      sessions: [{ alias: 'root', path, parent: null, target: 'portable' }],
+    });
+  };
+  const actual = observe(rows);
+  assert.equal(actual.helperEvents.length, 1);
+  assert.equal(actual.helperEvents[0].operation, 'pr-view');
+  assert.ok(actual.phaseEvents.some((e) => e.gate === 'validation'));
+  const mixed = structuredClone(rows);
+  mixed[2].payload.input += 'text({ok:true});';
+  assert.equal(observe(mixed).helperEvents.length, 0);
+  const wrong = structuredClone(rows);
+  wrong[3].payload.call_id = 'unrelated';
+  assert.equal(observe(wrong).helperEvents.length, 0);
+  const reversed = [rows[0], rows[1], rows[3], rows[2], ...rows.slice(4)];
+  assert.equal(observe(reversed).helperEvents.length, 0);
+  const dynamic = structuredClone(rows);
+  dynamic[4].payload.input = 'text(await tools.exec_command({cmd:command}));';
+  assert.equal(observe(dynamic).phaseEvents.length, 0);
+});
+
+test(
+  'production probeHelper captures actual subprocess start/completion and oversized rejection without a model',
+  { skip: process.platform !== 'darwin' },
+  async (t) => {
+    const root = temporary(t),
+      fixture = resolve(root, 'project'),
+      skill = resolve(root, 'skill'),
+      scripts = resolve(skill, 'scripts');
+    mkdirSync(fixture);
+    mkdirSync(scripts, { recursive: true });
+    const git = (...args) =>
+      execFileSync('git', args, { cwd: fixture, encoding: 'utf8', stdio: 'pipe' }).trim();
+    git('init', '-q', '-b', 'develop');
+    writeFileSync(resolve(fixture, '.gitignore'), '.effective-flow/\n');
+    writeFileSync(
+      resolve(fixture, 'plan.md'),
+      '# Approved Feature plan\n\n**Plan status:** Not implemented\n',
+    );
+    git('add', '.');
+    git(
+      '-c',
+      'user.name=Fixture',
+      '-c',
+      'user.email=fixture@invalid',
+      'commit',
+      '-qm',
+      'test: boundary fixture',
+    );
+    mkdirSync(resolve(fixture, '.effective-flow'));
+    writeFileSync(
+      resolve(fixture, '.effective-flow/memory.json'),
+      JSON.stringify({ runtimeMigration: { directory: { version: 1 } } }),
+    );
+    const sourceScripts = resolve(import.meta.dirname, '../src/scripts');
+    for (const file of readdirSync(sourceScripts).filter((f) => f.endsWith('.mjs')))
+      writeFileSync(resolve(scripts, file), readFileSync(resolve(sourceScripts, file)));
+    const { executeOperation, contentDigest, REQUIRED_GATES } =
+      await import('../src/scripts/build-run-core.mjs');
+    const { createProcessRunner } = await import('../src/scripts/process-runner.mjs');
+    const call = async (operation, input) =>
+      (await executeOperation(operation, input, { runner: createProcessRunner() })).result;
+    const created = await call('create', {
+      runtimeStateRoot: fixture,
+      repositoryIdentity: resolve(fixture, '.git'),
+      runId: 'actual-boundary',
+      execution: {
+        executionRoot: fixture,
+        branch: 'develop',
+        head: git('rev-parse', 'HEAD'),
+        origin: 'current-checkout',
+        owner: 'build',
+      },
+      plan: {
+        root: fixture,
+        path: 'plan.md',
+        digest: contentDigest(readFileSync(resolve(fixture, 'plan.md'))),
+      },
+      source: {
+        instruction: 'Implement the approved Feature plan.',
+        restrictions: ['No remote publication.'],
+      },
+      runMode: 'interactive',
+      languages: Object.fromEntries(
+        ['source', 'documentation.user', 'documentation.technical', 'workflow', 'forge', 'git'].map(
+          (key) => [key, 'en'],
+        ),
+      ),
+      completionCondition: 'All required gates pass.',
+      deliveryRestrictions: ['Do not merge.'],
+      sourceAssociation: 'approved-feature-plan',
+      allowedRoots: [fixture],
+    });
+    const common = {
+      runtimeStateRoot: fixture,
+      repositoryIdentity: resolve(fixture, '.git'),
+      runId: 'actual-boundary',
+      requestDigest: created.requestDigest,
+    };
+    await call('bind-agent', { ...common, agentHandle: 'actual-fixture-runner' });
+    const checkpoint = await call('checkpoint', {
+      ...common,
+      checkpointId: 'actual-pause',
+      agentHandle: 'actual-fixture-runner',
+      completed: [],
+      pending: REQUIRED_GATES,
+      evidence: [],
+    });
+    const input = {
+      ...common,
+      checkpoint,
+      questionId: 'oversized',
+      revision: 1,
+      origin: 'design-scope',
+      agentHandle: 'actual-fixture-runner',
+      question: '€'.repeat(6000),
+      options: [],
+      responseType: 'free-text',
+    };
+    const inputFile = resolve(fixture, '.effective-flow/boundary-input.json');
+    writeFileSync(inputFile, JSON.stringify(input));
+    const coordinator = new HostCoordinator(resolve(root, 'host-journal'), { suite });
+    // Synthetic launch state only establishes the unit seam; the request/checkpoint/helper execution
+    // and returned rejection below are actual isolated filesystem/subprocess observations.
+    coordinator.launches.set('unit-launch', {
+      closed: false,
+      processes: [{}],
+      probes: [],
+      input: { fixtureRoot: fixture, skillRoot: skill, aliasSalt: 'unit' },
+      receipt: envelope('prepared', {
+        targetDigest: digest(JSON.stringify(fileMembership(skill))),
+      }),
+    });
+    const before = Date.now(),
+      event = coordinator.probeHelper('unit-launch', {
+        variant: 'oversized-question',
+        operation: 'question',
+        inputFile,
+      }),
+      after = Date.now();
+    assert.equal(event.ok, false);
+    assert.equal(event.code, 'TOO_LARGE');
+    assert.equal(event.processExitCode, 2);
+    assert.equal(event.questionBytes, 18000);
+    assert.ok(event.callAt >= before);
+    assert.ok(event.at > event.callAt);
+    assert.ok(event.at <= after);
+    assert.deepEqual(rejectionProblems({ boundaryProbes: [event] }, 'oversized-question'), []);
+    assert.equal(coordinator.launches.get('unit-launch').probes[0], event);
+    assert.throws(
+      () =>
+        coordinator.probeHelper('unit-launch', {
+          variant: 'oversized-question',
+          operation: 'question',
+          inputFile,
+        }),
+      /one actual boundary stimulus/,
+    );
+  },
+);
+
+// These stream fixtures test decoders, never model/workflow success.
+import {
+  claudeExecArgs,
+  claudeEnvironment,
+  claudeUserInput,
+  bindClaudeAgents,
+} from '../evals/build-context/_scaffold/claude-process.mjs';
+import { claudeRuntimeIdentity } from '../evals/build-context/_scaffold/claude-runtime.mjs';
+import {
+  decodeClaudeCapture,
+  materializeClaudeStreams,
+} from '../evals/build-context/_scaffold/claude-stream.mjs';
+
+test('Claude closed argv cannot replace whole-process permissions, settings, output or native agents', () => {
+  const valid = ['--model', 'opus', '--effort', 'high'];
+  const compiled = claudeExecArgs(valid);
+  assert.equal(compiled[compiled.indexOf('--setting-sources') + 1], '');
+  assert.equal(compiled[compiled.indexOf('--permission-mode') + 1], 'dontAsk');
+  assert.ok(compiled.indexOf('--no-chrome') > compiled.indexOf('--allowedTools'));
+  for (const args of [
+    ['--settings', '{}'],
+    ['--settings={}'],
+    ['--permission-mode', 'bypassPermissions'],
+    ['--dangerously-skip-permissions'],
+    ['--allowedTools', 'Write'],
+    ['--agents', '{}'],
+    ['--mcp-config', '{}'],
+    ['--output-format', 'json'],
+    ['--output-file', '/private/host'],
+    ['--model=opus'],
+    ['--effort', 'high\npermissions=true'],
+    ['--resume', 'bad'],
+    ['--fork-session'],
+    ['--continue'],
+    ['unexpected prompt'],
+    ['--max-turns', '0'],
+    ['--effort', 'low'],
+  ])
+    assert.throws(() => claudeExecArgs([...valid, ...args]), /Claude|closed|duplicate/);
+  const id = '12345678-1234-1234-1234-123456789abc';
+  assert.ok(claudeExecArgs([...valid, '--resume', id], { resume: true }).includes(id));
+  assert.throws(() => claudeExecArgs([...valid, '--resume', id]), /fresh\/same-root/);
+  assert.throws(() => claudeExecArgs(valid, { resume: true }), /fresh\/same-root/);
+});
+
+test('Claude mutable state is bound to exact physical guard roots and official runtime membership', (t) => {
+  const root = temporary(t);
+  const command = { home: root, claudeHome: root, claudeTmp: root };
+  assert.equal(claudeEnvironment(command, { stateRoots: [root, root, root] }).HOME, root);
+  assert.throws(
+    () => claudeEnvironment(command, { stateRoots: [root, root, '/other'] }),
+    /roots changed/,
+  );
+  mkdirSync(resolve(root, 'node_modules/@anthropic-ai/sandbox-runtime'), { recursive: true });
+  writeFileSync(
+    resolve(root, 'node_modules/@anthropic-ai/sandbox-runtime/package.json'),
+    JSON.stringify({ name: '@anthropic-ai/sandbox-runtime', version: '0.0.81' }),
+  );
+  assert.throws(() => claudeRuntimeIdentity(root), /membership|runtime|ENOENT/);
+  assert.equal(
+    JSON.parse(claudeUserInput('exact\nuser task')).message.content[0].text,
+    'exact\nuser task',
+  );
+  assert.throws(() => claudeUserInput(''), /user message/);
+});
+
+function streamFixture(root, events, index = 0) {
+  const stdout = events.map(JSON.stringify).join('\n') + '\n';
+  const capture =
+    JSON.stringify({ at: 110 + index * 100, bytes: Buffer.from(stdout).toString('base64') }) + '\n';
+  const output = resolve(root, 'stdout-' + index),
+    path = resolve(root, 'capture-' + index);
+  writeFileSync(output, stdout);
+  writeFileSync(path, capture);
+  return {
+    stdout,
+    capture,
+    output,
+    path,
+    process: {
+      startedAt: 100 + index * 100,
+      finishedAt: 120 + index * 100,
+      captureDigest: digest(capture),
+      stdoutDigest: digest(stdout),
+    },
+  };
+}
+const streamRoot = '12345678-1234-1234-1234-123456789abc';
+const streamInit = {
+  type: 'system',
+  subtype: 'init',
+  session_id: streamRoot,
+  cwd: '/fixture',
+  model: 'claude-opus-4',
+  claude_code_version: '2.1.292',
+};
+const streamUser = (text, extra = {}) => ({
+  type: 'user',
+  session_id: streamRoot,
+  parent_tool_use_id: null,
+  message: { role: 'user', content: [{ type: 'text', text }] },
+  ...extra,
+});
+const streamAssistant = (content, extra = {}) => ({
+  type: 'assistant',
+  session_id: streamRoot,
+  parent_tool_use_id: null,
+  message: { role: 'assistant', model: 'claude-opus-4', content },
+  ...extra,
+});
+
+test('Claude host frames require byte identity and actual monotonic receive times, never source timestamps', (t) => {
+  const root = temporary(t),
+    f = streamFixture(root, [streamInit, streamUser('task')]);
+  assert.equal(decodeClaudeCapture(f.capture, f.stdout, f.process)[0].observedAt, 110);
+  assert.throws(() => decodeClaudeCapture(f.capture, f.stdout + '\n', f.process), /changed/);
+  for (const frame of [
+    { at: 99, bytes: Buffer.from(f.stdout).toString('base64') },
+    { at: 121, bytes: Buffer.from(f.stdout).toString('base64') },
+    { at: 110, bytes: '!!' },
+    { at: 110, bytes: '', declared: true },
+  ]) {
+    const capture = JSON.stringify(frame) + '\n';
+    assert.throws(
+      () =>
+        decodeClaudeCapture(capture, f.stdout, { ...f.process, captureDigest: digest(capture) }),
+      /chronology|bytes|foreign/,
+    );
+  }
+  const truncated = f.stdout.slice(0, -1),
+    capture = JSON.stringify({ at: 110, bytes: Buffer.from(truncated).toString('base64') }) + '\n';
+  assert.throws(
+    () =>
+      decodeClaudeCapture(capture, truncated, {
+        ...f.process,
+        captureDigest: digest(capture),
+        stdoutDigest: digest(truncated),
+      }),
+    /truncated/,
+  );
+});
+
+test('Claude stream root task is the last initial user before actual assistant action and cannot rebind later', (t) => {
+  const root = temporary(t);
+  const materialize = (events, prompt = 'sealed task') => {
+    const f = streamFixture(root, events);
+    return materializeClaudeStreams({
+      processes: [f.process],
+      capturePaths: [f.path],
+      outputPaths: [f.output],
+      destination: root,
+      target: 'portable',
+      prompts: [prompt],
+    });
+  };
+  assert.equal(
+    materialize([
+      streamInit,
+      streamUser('prior instruction'),
+      streamUser('sealed task'),
+      streamAssistant([]),
+    ]).rootId,
+    streamRoot,
+  );
+  assert.throws(
+    () =>
+      materialize([
+        streamInit,
+        streamUser('sealed task'),
+        streamUser('different final task'),
+        streamAssistant([]),
+      ]),
+    /sealed stdin/,
+  );
+  assert.throws(
+    () =>
+      materialize([
+        streamInit,
+        streamUser('wrong'),
+        streamAssistant([]),
+        streamUser('sealed task'),
+      ]),
+    /sealed stdin/,
+  );
+  assert.throws(() => materialize([streamInit, streamInit, streamUser('sealed task')]), /init/);
+  assert.throws(
+    () =>
+      materialize([
+        streamInit,
+        streamUser('sealed task'),
+        streamAssistant([], { session_id: 'foreign' }),
+      ]),
+    /foreign root/,
+  );
+});
+
+test('Claude forwarded children require unique actual Agent spawn edges and same root across resumes', (t) => {
+  const root = temporary(t),
+    call = {
+      type: 'tool_use',
+      id: 'actual-edge',
+      name: 'Agent',
+      input: { prompt: 'fresh assignment', subagent_type: 'general-purpose' },
+    };
+  const events = [
+    streamInit,
+    streamUser('sealed task'),
+    streamAssistant([call]),
+    streamUser('fresh assignment', { parent_tool_use_id: 'actual-edge' }),
+    streamAssistant([], { parent_tool_use_id: 'actual-edge' }),
+  ];
+  const f = streamFixture(root, events);
+  const args = {
+    processes: [f.process],
+    capturePaths: [f.path],
+    outputPaths: [f.output],
+    destination: root,
+    target: 'portable',
+    prompts: ['sealed task'],
+  };
+  const result = materializeClaudeStreams(args);
+  assert.equal(result.sessions.length, 2);
+  assert.equal(result.sessions[1].spawnCallId, 'actual-edge');
+  const child = parseTranscript(readFileSync(result.sessions[1].path, 'utf8'), 'claude-code');
+  assert.equal(child.initialUser.text, 'fresh assignment');
+  // Root init model and CLI --effort are not observations of actual assistant effort.
+  assert.equal(child.efforts.length, 0);
+  for (const altered of [
+    [...events, streamAssistant([call])],
+    events.filter((e) => e !== events[2]),
+  ]) {
+    const bad = streamFixture(root, altered, 2);
+    assert.throws(
+      () =>
+        materializeClaudeStreams({
+          ...args,
+          processes: [bad.process],
+          capturePaths: [bad.path],
+          outputPaths: [bad.output],
+        }),
+      /spawn edge|parent Agent/,
+    );
+  }
+  const next = streamFixture(
+    root,
+    [{ ...streamInit, session_id: 'new-root' }, streamUser('reply', { session_id: 'new-root' })],
+    1,
+  );
+  assert.throws(
+    () =>
+      materializeClaudeStreams({
+        ...args,
+        processes: [f.process, next.process],
+        capturePaths: [f.path, next.path],
+        outputPaths: [f.output, next.output],
+        prompts: ['sealed task', 'reply'],
+      }),
+    /resume changed/,
+  );
+});
+
+test('Claude trusted collector captures actual child stdout and sealed stdin without a model', (t) => {
+  const root = temporary(t),
+    base = resolve(root, 'capture');
+  const worker = resolve(
+    import.meta.dirname,
+    '../evals/build-context/_scaffold/claude-stream-worker.mjs',
+  );
+  const run = spawnSync(process.execPath, [worker], {
+    input: JSON.stringify({
+      executable: process.execPath,
+      args: [
+        '-e',
+        "process.stdin.resume();process.stdin.on('end',()=>process.stdout.write(JSON.stringify({type:'system',subtype:'init'})+'\\n'))",
+      ],
+      cwd: root,
+      environment: { PATH: process.env.PATH },
+      input: claudeUserInput('task'),
+      base,
+      timeoutMs: 2000,
+    }),
+    encoding: 'utf8',
+    timeout: 5000,
+  });
+  assert.equal(run.status, 0, run.stderr);
+  const actual = JSON.parse(run.stdout);
+  assert.equal(actual.exitCode, 0);
+  assert.equal(actual.inputDigest, digest(claudeUserInput('task')));
+  assert.equal(actual.collectorDigest, digest(readFileSync(worker)));
+  assert.equal(
+    decodeClaudeCapture(
+      readFileSync(base + '.capture.jsonl', 'utf8'),
+      readFileSync(base + '.stdout.jsonl', 'utf8'),
+      actual,
+    ).length,
+    1,
+  );
+});
+
+test('Claude native registration preserves exact generated models/efforts and rejects extra inventory', (t) => {
+  const root = temporary(t),
+    skill = resolve(root, 'skill'),
+    agents = resolve(root, 'agents'),
+    journal = resolve(root, 'journal');
+  for (const p of [skill, agents, journal]) mkdirSync(p);
+  const name = 'effective-flow-nodejs-implementer-fast';
+  writeFileSync(
+    resolve(skill, 'native-agent-inventory.json'),
+    JSON.stringify({ schemaVersion: 1, harness: 'claude', baseWorkers: [], fastWorkers: [name] }),
+  );
+  writeFileSync(
+    resolve(agents, name + '.md'),
+    '---\nname: ' +
+      name +
+      '\ndescription: "Actual source description"\nmodel: sonnet\neffort: medium\ntools: Read, Edit\ncolor: blue\n---\nactual\ncanonical body\n',
+  );
+  const file = bindClaudeAgents({ skillRoot: skill, target: 'claude', journalRoot: journal });
+  const actual = JSON.parse(readFileSync(file, 'utf8'))[name];
+  assert.deepEqual(actual, {
+    description: 'Actual source description',
+    prompt: 'actual\ncanonical body\n',
+    model: 'sonnet',
+    effort: 'medium',
+    tools: ['Read', 'Edit'],
+  });
+  writeFileSync(resolve(agents, 'effective-flow-unmeasured.md'), 'unmeasured');
+  assert.throws(
+    () => bindClaudeAgents({ skillRoot: skill, target: 'claude', journalRoot: journal }),
+    /membership differs/,
+  );
+  assert.equal(
+    bindClaudeAgents({ skillRoot: skill, target: 'portable', journalRoot: journal }),
+    null,
+  );
+});
+
+test('Codex registration observer uses only model-free config RPCs and rejects a foreign sidecar', (t) => {
+  const root = temporary(t),
+    script = resolve(root, 'server.mjs'),
+    ledger = resolve(root, 'methods.jsonl');
+  writeFileSync(
+    script,
+    `import {createInterface} from 'node:readline';import{appendFileSync}from'node:fs';for await(const line of createInterface({input:process.stdin})){const r=JSON.parse(line);appendFileSync(process.env.LEDGER,JSON.stringify(r)+'\\n');process.stdout.write(JSON.stringify({id:r.id,result:r.method==='initialize'?{}:{config:{agents:{'effective-flow-nodejs-implementer':{description:'canonical',config_file:process.env.SIDECAR}}}}})+'\\n');}`,
+  );
+  const observer = resolve(
+    import.meta.dirname,
+    '../evals/build-context/_scaffold/native-registration-probe.mjs',
+  );
+  const run = (file) =>
+    spawnSync(process.execPath, [observer], {
+      input: JSON.stringify({
+        executable: process.execPath,
+        args: [script],
+        cwd: root,
+        environment: { PATH: process.env.PATH, LEDGER: ledger, SIDECAR: file },
+        registrations: [
+          {
+            name: 'effective-flow-nodejs-implementer',
+            description: 'canonical',
+            file: '/bound/canonical.toml',
+          },
+        ],
+      }),
+      encoding: 'utf8',
+      timeout: 5000,
+    });
+  const good = run('/bound/canonical.toml');
+  assert.equal(good.status, 0, good.stderr);
+  assert.equal(JSON.parse(good.stdout).count, 1);
+  assert.deepEqual(
+    readFileSync(ledger, 'utf8')
+      .trim()
+      .split('\n')
+      .map(JSON.parse)
+      .map((r) => r.method),
+    ['initialize', 'config/read'],
+  );
+  const bad = run('/different/unbound.toml');
+  assert.notEqual(bad.status, 0);
+  assert.match(bad.stderr, /registration differs/);
 });

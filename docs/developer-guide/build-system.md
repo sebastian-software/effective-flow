@@ -255,12 +255,14 @@ PR-review integration load it at their admission decision. Keep admission before
 artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
 One consequence is worth knowing before you write the fence. Each behavioural eval suite under
-`evals/<tool>/` — `merge-gate`, `iterate`, and `next-steps` — derives the content identity each archived
+`evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, and `build-context` — derives the content identity each archived
 round is stamped with by following exactly these rendered pointers through the built tree from its
 own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
 invalidates every archived round of that suite, and owes a re-record of the affected scenario
 evidence by hand through fresh agent sessions. `iterate` is inside the `merge-gate` load set, so a
-fragment `iterate` reaches stales both suites; changing shared `next-steps` affects all three.
+fragment `iterate` reaches stales both suites; changing shared `next-steps` affects its suite and any
+suite whose seeds reach it. The `build-context` suite owns native/portable continuation and host-policy
+evidence for the planned-build boundary; its README owns its scenario inventory and recording protocol.
 That debt comes due before the next release rather than before the next merge: `pnpm test`
 asserts only that the archived evidence is structurally
 sound, while `pnpm eval <tool> verify` reports the staleness on every pull request and fails the
@@ -273,7 +275,8 @@ it. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round,
 [`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ,
 [`evals/next-steps/README.md`](../../evals/next-steps/README.md) for the bounded final-report suite,
-and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all three suites on
+[`evals/build-context/README.md`](../../evals/build-context/README.md) for planned-build host evidence,
+and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all four suites on
 every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
 and recording requirements.
 
@@ -890,7 +893,7 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 27 identical, usable scripts,
+checks prove that all three installed payloads contain all 29 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target

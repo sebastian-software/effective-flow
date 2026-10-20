@@ -7,16 +7,16 @@ CI never launches a model. Report mode reports missing evidence; strict mode fai
 
 ## Required populations
 
-| Population | Required observations |
-| --- | --- |
-| `approved-single-module` | Five independent complete deliveries; one actual deep runner each |
-| `review-correction` | Five independent two-module deliveries; seeded duplicate-label blocker, actual independent correction and revalidation |
-| `question-trust-and-publication` | Five recordings, each with separate consent, refusal, injected-answer and stale-answer launches; local forge observes exactly one consented publication |
-| `unsupported-nesting` | Five actual pre-mutation nesting refusals, each followed by complete inline delivery with all mandatory specialists and gates |
-| `checkpoint-drift-and-cleanup` | Five recordings, each with separate HEAD, tracked, untracked and interruption launches plus successful terminal/continuation verification after real owned-worktree removal |
-| `control-boundary-abuse` | Five recordings, each with separate oversized-question, oversized-result, missing-evidence and third-party-instruction launches |
-| Portable Quality matrix | Twenty baseline/candidate pairs: Codex and Claude × simple and review-correction × five fixed slots |
-| Native compatibility | One separate complete lane for each native target; neither portable evidence nor a capability probe substitutes for it |
+| Population                       | Required observations                                                                                                                                                       |
+| -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `approved-single-module`         | Five independent complete deliveries; one actual deep runner each                                                                                                           |
+| `review-correction`              | Five independent two-module deliveries; seeded duplicate-label blocker, actual independent correction and revalidation                                                      |
+| `question-trust-and-publication` | Five recordings, each with separate consent, refusal, injected-answer and stale-answer launches; local forge observes exactly one consented publication                     |
+| `unsupported-nesting`            | Five actual pre-mutation nesting refusals, each followed by complete inline delivery with all mandatory specialists and gates                                               |
+| `checkpoint-drift-and-cleanup`   | Five recordings, each with separate HEAD, tracked, untracked and interruption launches plus successful terminal/continuation verification after real owned-worktree removal |
+| `control-boundary-abuse`         | Five recordings, each with separate oversized-question, oversized-result, missing-evidence and third-party-instruction launches                                             |
+| Portable Quality matrix          | Twenty baseline/candidate pairs: Codex and Claude × simple and review-correction × five fixed slots                                                                         |
+| Native compatibility             | One separate complete lane for each native target; neither portable evidence nor a capability probe substitutes for it                                                      |
 
 Each variant has its own actual fresh root and descendants. A transcript or helper rejection cannot
 be counted twice under different aliases, branches, slots or conditions. Every supported failed or
@@ -54,12 +54,76 @@ rechecks the fixture, settings and target. It records actual process times and m
 root metadata, first user instruction bytes and timestamps to that process and exclusively prepared
 transcript destination. Old genuine transcripts fail these associations.
 
-The coordinator journal must use a physical path outside every model-writable fixture. The launched
-CLI and all descendants inherit macOS `sandbox-exec` denial of journal writes. The exact launch
-wrapper tests an actual write to a physical canary inside that same process sandbox before starting
-the CLI; the child inherits the tested policy. Path secrecy and a standalone abstract path test are
-not protection. Read access is harmless because the journal has no key or live workflow capability.
-A missing/failed guard, unsupported OS, missing process observation or missing metric fails closed.
+The coordinator journal, protected external raw captures and scaffold trace must use physical paths
+outside **every** model-writable root. Codex also protects its isolated HOME/CODEX_HOME and raw
+sessions. Claude needs writable isolated internal state; those internal logs are untrusted. Codex uses its native named workspace
+permission profile with approval `never`; the parent CLI runs normally so its tool processes can
+apply their own native sandbox. An outer Seatbelt wrapper around the whole CLI is incompatible
+with Codex's native tool sandbox and is not used. The closed policy removes writable `/tmp` and
+TMPDIR, permits the disposable fixture, its actual Git directory and its actual local bare origin,
+and disables network, MCP servers, apps, plugins, browser/computer tools and hooks. It never adds a
+trace/prompt/skill parent directory as writable. The CLI receives the profile through explicit
+`-c` definitions despite `--ignore-user-config`; caller `-s workspace-write` is normalized into that
+profile, not allowed to override it.
+
+Before **each** fresh or resumed turn, the coordinator runs the installed CLI's model-free
+`codex sandbox --permission-profile ... --include-managed-config -- COMMAND` with the exact generated
+global arguments, cwd and environment. The probe reads/writes the fixture, creates a local Git
+commit through a separate temporary index, pushes it to a temporary ref on the actual local bare
+origin, and calls the actual forge stub. It requires missing ledger/lock creation and lock removal,
+then restores ledger bytes/absence, index and ref before the measured turn. Direct and descendant
+Node writes, including a fixture symlink to a protected canary, must receive actual OS denial.
+`codex debug prompt-input` independently renders the same effective writable roots without a model
+call. Guard receipts bind the actual binary, version, full generated arguments, policy, probe source
+and chronology; completion additionally compares **every actual root/child turn-context permission
+entry** against that policy. A name, boolean, standalone path check or post-run mismatch alone is
+insufficient protection. See the official [permissions](https://learn.chatgpt.com/docs/permissions)
+and [sandboxing](https://learn.chatgpt.com/docs/sandboxing) documentation.
+
+The forge stub writes only `PROJECT/.effective-flow/eval-ledger/tracker-calls.jsonl` under ignored
+fixture runtime. After each CLI turn, the host copies its exact bytes into the protected scaffold
+trace, requiring an unchanged prior prefix. Process receipts retain the source/archive hashes,
+prior hash, byte lengths and added-call count. Completion requires a one-to-one correlation between
+all actual ledger calls and unique matching raw tracker tool calls, including operation, apply flag
+and cwd. Model-authored ledger contents alone cannot prove a call. Protected prompt, skill copy,
+fixture response data, journal and raw transcripts remain outside the writable roots.
+
+The model-free integration regression is reproducible without credentials or a model:
+
+```sh
+node --test --test-name-pattern='actual Codex native guard' test/build-context-evidence-contract.test.mjs
+```
+
+It must run outside an enclosing sandbox that prevents native sandbox setup. A missing/failed guard,
+unsupported OS, missing actual process/policy observation or missing metric fails closed.
+
+Claude uses a separate whole-process OS boundary around the actual CLI and all descendants,
+covering in-process Read/Edit/Write, native Bash, hooks and subagents. The official
+[`@anthropic-ai/sandbox-runtime`](https://github.com/anthropic-experimental/sandbox-runtime) 0.0.81
+archive, publisher, exact lock and complete executed dependency membership are pinned in
+`profiles.json`. Its provider proxy permits only `api.anthropic.com`; unrelated domains and local
+network binding are denied. The fixture, actual Git directory/local origin and three explicit
+isolated mutable state roots are writable. The host journal, external stdout/stderr/frame captures,
+prompt, skill, scaffold trace and runtime bundle remain outside those roots. Shared `/tmp/claude`
+write paths are denied. The selected profile disables the inner Bash-only sandbox; the outer OS
+boundary remains mandatory for the complete CLI process.
+
+Before each Claude turn, model-free `--init-only` Setup/SessionStart probes and the actual native
+`mcp serve` Read/Edit/Write/Bash tools run under that same outer filesystem/provider policy. They
+prove direct/inherited/symlink write denial, protected Edit/Write denial, allowed fixture operations,
+local Git commit/push, actual forge-ledger creation/lock removal and denial of an unrelated domain.
+The probe's trusted hooks and MCP server are used only for these guard checks; measured execution
+has hooks disabled and an empty MCP configuration. This proves OS enforcement, without claiming
+that MCP dispatch equals model dispatch or that a future model run is compatible.
+
+Only the trusted external collector writes provenance: raw stream-json stdout, stderr, byte frames
+with actual host receive times and sealed stdin identity. Internal mutable Claude transcripts are
+never accepted. Completion reconstructs every projected session from those protected bytes;
+actual `parent_tool_use_id` edges must match unique observed Agent calls. Each turn must replay its
+sealed user input before the first assistant action, and resume must retain the actual root UUID.
+No CLI flag, root model label or effort-active boolean supplies missing assistant model/effort,
+usage, child completion, canonical contract loading or native lifecycle observations. Actual Claude
+model compatibility and all workload populations remain unproven until these real fields exist.
 Do not run unprotected model processes alongside the coordinator or edit the journal by hand.
 
 Journal and raw transcript directories remain private, with normal host access controls. Public
@@ -83,8 +147,10 @@ node evals/build-context/coordinator.mjs /private/tmp/flow-evidence-host-journal
 ```
 
 The journal contains pending launches, build receipts, sequence and already-used actual session
-identities. Preserve it across the Claude reset; no ephemeral key is lost and no instrument rotation
-is needed. A resumed coordinator does not create or resume a model until explicitly requested.
+identities. Preserve it across the Claude reset; no ephemeral key is lost. Quota reset itself
+requires no profile activation or instrument rotation. The same pinned runtime membership can be
+restored from the retained public bundle, and the unchanged coordinator can continue pending Claude
+slots. A resumed coordinator does not create or resume a model until explicitly requested.
 
 First submit two real builds (output roots must not exist). Use neutral opaque paths for the
 candidate checkout/build, skill copies and fixtures so the reviewer cannot infer the condition:
@@ -126,9 +192,43 @@ Create a private native command file. Example Codex command-file shape (all path
 }
 ```
 
-Use an isolated native Claude command file with its real executable/args, `home`, `claudeHome` and
-pinned Claude profile. The coordinator supports these two CLI basenames only. It rejects resume,
-fork or continue flags on an initial launch and credentials in argument names. Known config files
+Prepare the task-owned official Claude wrapper once, or restore the retained exact public runtime
+bundle. This installs no project/global dependency, uses no lifecycle scripts and reads no auth:
+
+```json
+{"operation":"prepare-runtime","input":{"root":"/PRIVATE/ABSENT/PINNED_RUNTIME"}}
+```
+
+The complete dependency membership must match the pinned digest; later semver resolution cannot
+silently change it. A Claude command file uses physical isolated state paths outside all protected
+host evidence paths (create the three state directories first):
+
+```json
+{
+  "executable":"/opt/homebrew/bin/claude",
+  "args":["--model","opus","--effort","high"],
+  "home":"/PRIVATE/ISOLATED/HOME",
+  "claudeHome":"/PRIVATE/ISOLATED/CLAUDE_HOME",
+  "claudeTmp":"/PRIVATE/ISOLATED/CLAUDE_TMP",
+  "sandboxRuntime":"/PRIVATE/PINNED_RUNTIME",
+  "profile":{"harness":"claude-code","model":"opus","reasoningEffort":"high","reportedVersion":"2.1.292","toolPolicy":"isolated fixture; provider-only network; explicit target; portable Quality"},
+  "timeoutMs":1800000
+}
+```
+
+Claude arguments use a closed grammar: explicit `--model` and `--effort`, optional bounded
+`--max-turns`, the fixed stream-json/replay/forward flags and only an actual UUID for `--resume`.
+The coordinator generates the complete immutable settings, empty MCP configuration, tool list,
+permission mode and whole-process wrapper. Caller settings, MCP, agents, output paths, positional
+prompts, attached/equal control forms and permission bypasses are rejected. `transcriptDir` is an
+absent/empty external host directory, distinct from mutable `claudeHome`.
+
+Codex arguments use a closed grammar: `exec`, explicit `-m` model,
+`-c model_reasoning_effort="..."`, required ignore-config/ignore-rules/json flags, optional exact
+fixture `-C`, workspace-write `-s`, `--skip-git-repo-check`, boolean `agents.enabled` and bounded
+`features.multi_agent_v2.max_concurrent_threads_per_session` (1–100). Attached/equal control forms,
+permission/approval overrides, arbitrary TOML, dynamic options, output paths, fork and continue are
+rejected before execution. Initial input ends in `-`; resume adds only `resume ACTUAL_UUID -`. Known config files
 are observed by digest; auth files are never read. Isolated homes must not contain installed user
 instructions, skills or rules. Codex may bootstrap its bundled `skills/.system` inventory: only the
 complete canonical 0.163.0 file membership pinned in `profiles.json` is accepted, before and after
@@ -136,10 +236,14 @@ each actual CLI process and on resume. An empty initial inventory and that exact
 one expected settings digest; arbitrary `.system` contents, symlinks, extra user skills or changed
 builtins fail. The harness-managed plugin cache is not copied into user skill paths or treated as
 a source of workflow authority. Codex requires `--ignore-user-config` and `--ignore-rules`. Host-native
-worker registration must come from the exact measured target, and is included in the native target
-identity. Do not silently edit native model mappings when a CLI ignores an override.
+worker registration comes from the exact measured target and is included in its identity. For
+native Codex, the coordinator derives only canonical `agents.NAME={description,config_file}` entries
+from the measured inventory and sidecars; model-free strict `config/read` confirms every effective
+registration. No caller agent configuration is allowed. For native Claude, the same inventory
+binds exact prompt/model/effort/tools into a protected host-generated `--agents` file; the model-free
+init probe uses that file. Generated Fast values are preserved. Do not silently edit native model mappings when a CLI ignores an override.
 
-Choose an absent or empty transcript directory **before** launch. Configure the native CLI to put
+Choose an absent or empty transcript directory **before** launch. For Codex, configure the CLI to put
 all actual root/child rollouts beneath it (for Codex, choose its isolated session destination within
 CODEX_HOME). Settings/auth may live beside that exclusive session directory. Stdout alone omits
 necessary child details on Codex 0.163.0. Submit:
@@ -162,7 +266,7 @@ root/runner handles. Use `resume` with the native CLI's actual same-root argumen
 user text; the coordinator does not invent a handle or spawn a replacement:
 
 ```json
-{"operation":"resume","input":{"launch":"SAME_LAUNCH_ID","args":["exec","resume","ACTUAL_PRIVATE_ROOT_HANDLE","--json","-"],"prompt":"ACTUAL TRUSTED USER ANSWER"}}
+{"operation":"resume","input":{"launch":"SAME_LAUNCH_ID","args":["exec","--ignore-user-config","--ignore-rules","--json","-m","gpt-6.1-sol","-c","model_reasoning_effort=\"high\"","resume","ACTUAL_PRIVATE_ROOT_HANDLE","-"],"prompt":"ACTUAL TRUSTED USER ANSWER"}}
 ```
 
 The argument vector is host-specific; supply the full actual CLI resume vector, including required
@@ -176,7 +280,11 @@ formatting/validation specialists. Aliases are local, not caller-assigned role p
 ```
 
 The example omits additional children for readability; capture rejects an incomplete tree. Counts
-must describe actual turns. Roles derive from the actual child's canonical assignment/native
+must describe actual turns. For Claude, use the exact `sessions` list in the private
+`<launch>-streams-<turn>.json` projection written by the coordinator; completion regenerates it from
+protected raw frames and rejects any changed session, edge or path. An `error` projection stays
+unproven. Internal Claude session files cannot replace these projected observations. Roles derive
+from the actual child's canonical assignment/native
 `agent_role` and loaded contract bytes. Encrypted parent messages are not replaced by arbitrary
 `roleMarker` strings. Duplicate physical files, copied transcript bytes, real session IDs and spawn
 edges are rejected. Requested and actual model/effort, completion and parent relationships are
@@ -239,10 +347,21 @@ Drift supplies `checkpoint:{root,path,digest}` and independently compares its ac
 Git HEAD/index/tracked/untracked contents. Each variant has its own actual call/session; reusing one
 unrelated `TOO_LARGE` result for multiple cases fails. Never delete live runtime data to make a probe.
 
-For unsuccessful supported launches submit `fail` after the actual nonzero CLI result:
+For unsuccessful supported launches submit `fail` after the actual process result:
 
 ```json
 {"operation":"fail","input":{"launch":"ACTUAL_LAUNCH","outcome":"failed"}}
+```
+
+An actual CLI exit of zero can still contain a native tool capability failure. Supply its actual
+private `rootTranscript` to `fail`; the decoder binds the fresh root, exact initial task, process
+window, immutable host stdout and matching literal tool call/result. Only the actual outer exec
+result's nonzero exit and exact native sandbox setup error are accepted. A JSON error printed by
+an exit-zero command, assistant prose, dynamic/mixed JavaScript or a detached result cannot qualify.
+The original CLI exit stays zero; metrics remain null and the attempt is ineligible for success.
+
+```json
+{"operation":"fail","input":{"launch":"ACTUAL_LAUNCH","outcome":"failed","rootTranscript":"/PRIVATE/ACTUAL/CODEX_HOME/sessions/ACTUAL_ROOT.jsonl"}}
 ```
 
 `invalid` likewise needs an actual unsuccessful process/error. `unsupported-depth` instead supplies
@@ -305,6 +424,8 @@ Codex 0.163.0 capability probes observed deep `gpt-6.1-sol/high`, standard
 possible direct leaf. These are not completed workload scenarios. A separate actual native Fast
 probe requested `gpt-5.6-luna/medium` on the base TOML role but observed `gpt-6.1-sol/high`.
 That override is unsupported in that observed launch; do not change mappings or record a pass.
+Model-free native registration and OS guard success for either target establish no actual Fast
+model/effort compatibility. Those require the separate complete native lanes.
 
 Claude Code 2.1.292 returned actual API 429 `usage_limit_reached` on 2026-10-20, zero spawns and zero
 input, with reported reset 2026-10-22 16:00 Europe/Berlin. Its successful nesting, actual effort,
@@ -317,8 +438,20 @@ are refused, and each pair must retain identical concrete role/model/effort obse
 
 The transcript adapter recognizes Codex private rollout `session_meta`, actual tool call/results,
 `turn_context` model/effort, task completion and token-count events, and Claude actual assistant
-model/usage/effort and tool-use associations. Conservative helper capture currently requires direct
-`node /absolute/scripts/build-run.mjs OP <<'JSON'` (or pilot-measurement) tool commands with a JSON
-input body. Opaque nested JavaScript command wrappers or absent actual settings/usage are unproven;
-no string-search success inference is used. Host `probe-helper` provides exact boundary observations,
+model/usage/effort and tool-use associations. Conservative helper capture requires literal
+`node /absolute/scripts/build-run.mjs OP <<'JSON'` (or pilot-measurement/remote-tracker) shell commands
+with a JSON input body. The observed current-CLI form `text(await tools.exec_command({...}));` is
+recognized only with a literal JSON-compatible request and the actual associated output block.
+The adapter **never executes transcript text**. Dynamic expressions, mixed printing, ambiguous
+wrappers, reversed/detached results and absent actual settings/usage remain unproven. Injected
+AGENTS context precedes the initial task; only the last user message before the first actual
+assistant/tool event can bind the sealed task, never a later reply. No string-search success
+inference is used. Host `probe-helper` provides exact boundary observations,
 but cannot substitute for missing genuine workflow/native lifecycle calls.
+
+The first actual start under source `8abc99aed951396e2f2a9ca694c7bf630df8d9c1` used the incompatible
+outer wrapper and ended before loading the router: CLI exit zero, native tool exit 71, five usage
+updates, zero children and zero complete workflows. Its private history remains a failed attempt;
+it cannot be adopted or replaced as successful evidence. The native guard changes require a new
+instrument identity. Model-free guard/unit checks do not establish context reduction, quality or
+any of the missing behavioural, paired or native recordings.

@@ -1,21 +1,92 @@
 // Conservative actual CLI invocation parser. Unsupported shell/JS shapes are unproven, never
 // inferred from a command-name substring or from a reported error-code alone.
 import { digest } from './transcript.mjs';
+export function observedExecRequest(tool) {
+  if (['exec_command', 'shell_command'].includes(tool.name) && typeof tool.arguments === 'object')
+    return tool.arguments;
+  if (tool.name !== 'exec' || typeof tool.arguments !== 'string') return null;
+  const body = tool.arguments.match(
+    /^\s*text\(await tools\.exec_command\((\{[\s\S]*\})\)\);?\s*$/,
+  )?.[1];
+  if (!body) return null;
+  // Only JSON scalar/object arguments with unquoted identifier keys are admitted. Never eval JS.
+  let normalized = '',
+    quoted = false,
+    escape = false;
+  for (let i = 0; i < body.length; i++) {
+    const c = body[i];
+    if (quoted) {
+      normalized += c;
+      if (escape) escape = false;
+      else if (c === '\\') escape = true;
+      else if (c === '"') quoted = false;
+      continue;
+    }
+    if (c === '"') {
+      quoted = true;
+      normalized += c;
+      continue;
+    }
+    if (/[a-zA-Z_]/.test(c)) {
+      const match = body.slice(i).match(/^([a-zA-Z_][a-zA-Z0-9_]*)(\s*:)/);
+      if (match) {
+        normalized += JSON.stringify(match[1]) + match[2];
+        i += match[0].length - 1;
+        continue;
+      }
+    }
+    normalized += c;
+  }
+  try {
+    return JSON.parse(normalized);
+  } catch {
+    return null;
+  }
+}
+// Only host output blocks are unwrapped. Never parse an actual command's stdout as its result.
+export function observedExecResult(value) {
+  const parse = (v) => {
+    try {
+      return typeof v === 'string' ? JSON.parse(v) : v;
+    } catch {
+      return null;
+    }
+  };
+  const outer = parse(value);
+  const candidates = Array.isArray(outer)
+    ? outer.filter((v) => v?.type === 'input_text' || v?.type === 'text').map((v) => parse(v.text))
+    : [outer];
+  const results = candidates.filter(
+    (v) =>
+      v &&
+      typeof v === 'object' &&
+      !Array.isArray(v) &&
+      Number.isInteger(v.exit_code) &&
+      typeof v.output === 'string',
+  );
+  return results.length === 1 ? results[0] : null;
+}
 export function helperInvocation(argumentsValue) {
   const command = argumentsValue?.cmd ?? argumentsValue?.command;
   if (typeof command !== 'string') return null;
   const match = command.match(
-    /^node\s+([^\s'";|&]+\/(build-run|pilot-measurement)\.mjs)\s+([a-z-]+)\s+<<'([A-Z][A-Z0-9_]*)'\n([\s\S]*?)\n\4\s*$/,
+    /^node\s+([^\s'";|&]+\/(build-run|pilot-measurement|remote-tracker)\.mjs)\s+([a-z-]+)(?:\s+(--apply))?\s+<<'([A-Z][A-Z0-9_]*)'\n([\s\S]*?)\n\5\s*$/,
   );
-  if (!match) return null;
+  if (!match || (match[4] && match[2] !== 'remote-tracker')) return null;
   try {
     return {
       script: match[1],
-      family: match[2] === 'build-run' ? 'build-run' : 'pilot',
+      family:
+        match[2] === 'build-run'
+          ? 'build-run'
+          : match[2] === 'remote-tracker'
+            ? 'tracker'
+            : 'pilot',
+      apply: !!match[4],
       operation: match[3],
-      input: JSON.parse(match[5]),
-      inputBytes: Buffer.byteLength(match[5]),
-      inputDigest: digest(match[5]),
+      input: JSON.parse(match[6]),
+      inputBytes: Buffer.byteLength(match[6]),
+      inputDigest: digest(match[6]),
     };
   } catch {
     return null;
@@ -26,8 +97,15 @@ export function observedHelperEvent(
   envelope,
   { session, sourceDigest, alias, roots, agentSession },
 ) {
-  const call = helperInvocation(tool.arguments);
-  if (!call || call.operation !== envelope.operation || call.script !== roots[call.family])
+  const call = helperInvocation(observedExecRequest(tool) ?? tool.arguments);
+  if (
+    !Number.isFinite(tool.callAt) ||
+    !Number.isFinite(tool.at) ||
+    tool.at < tool.callAt ||
+    !call ||
+    call.operation !== envelope.operation ||
+    call.script !== roots[call.family]
+  )
     return null;
   const input = call.input,
     result = envelope.result ?? {};
@@ -38,6 +116,8 @@ export function observedHelperEvent(
     at: tool.at,
     family: call.family,
     operation: call.operation,
+    apply: call.apply,
+    cwdDigest: typeof input.cwd === 'string' ? digest(input.cwd) : null,
     ok: envelope.ok === true,
     code: envelope.error?.code ?? null,
     inputBytes: call.inputBytes,

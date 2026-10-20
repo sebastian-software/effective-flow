@@ -294,7 +294,7 @@ export function captureReview(path, host, checkout, assignment) {
     assignment && assignment.text && assignment.criteriaDigest,
     'host-controlled blinded assignment missing',
   );
-  const first = actual.users[0]?.text ?? '';
+  const first = actual.initialUser?.text ?? '';
   requireThat(
     first.includes(assignment.text) ||
       (first.includes(assignment.path) &&
@@ -373,10 +373,10 @@ export function captureRun(manifest, baseline = false, complexity = 'simple') {
     manifest.protectedJournal && process.platform === 'darwin',
     'actual host journal sandbox required for artifact execution',
   );
+  const roots = manifest.protectedRoots ?? [manifest.protectedJournal];
   const policy =
-    '(version 1)(allow default)(deny file-write* (subpath ' +
-    JSON.stringify(manifest.protectedJournal) +
-    '))';
+    '(version 1)(allow default)' +
+    roots.map((root) => '(deny file-write* (subpath ' + JSON.stringify(root) + '))').join('');
   const protectedRun = (executable, args, options = {}) =>
     spawnSync('/usr/bin/sandbox-exec', ['-p', policy, executable, ...args], {
       ...options,
@@ -606,7 +606,26 @@ export function sealAuxiliaryRecord(manifest, output, suite) {
       prepared = verifyEnvelope(p.prepared, 'prepared');
     requireThat(
       (p.processes.some((e) => e.exitCode !== 0) ||
-        (p.outcome === 'unsupported-depth' && p.failure?.code === 'unsupported-depth')) &&
+        (p.outcome === 'unsupported-depth' && p.failure?.code === 'unsupported-depth') ||
+        (p.failure?.kind === 'tool-capability' &&
+          p.failure?.code === 'native-tool-sandbox-unavailable' &&
+          p.failure?.cliExitCode === 0 &&
+          Number.isInteger(p.failure?.toolExitCode) &&
+          p.failure.toolExitCode !== 0 &&
+          [
+            p.failure.stdoutDigest,
+            p.failure.rootIdentity,
+            p.failure.callDigest,
+            p.failure.inputDigest,
+            p.failure.resultDigest,
+          ].every(digestValue) &&
+          p.processes.some(
+            (e) =>
+              e.exitCode === 0 &&
+              e.stdoutDigest === p.failure.stdoutDigest &&
+              p.failure.at >= e.startedAt - 1000 &&
+              p.failure.at <= e.finishedAt + 1000,
+          ))) &&
         p.failure?.sourceDigest &&
         p.failure?.code,
       'actual failed host process/error required',

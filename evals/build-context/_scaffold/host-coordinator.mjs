@@ -10,7 +10,7 @@ import {
   realpathSync,
   renameSync,
 } from 'node:fs';
-import { resolve, basename } from 'node:path';
+import { resolve, basename, dirname } from 'node:path';
 import { randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { envelope, verifyEnvelope, BASELINE_COMMIT } from './host-receipt.mjs';
@@ -25,6 +25,26 @@ import {
   instrumentIdentity,
 } from '../../_scaffold/build-identity.mjs';
 import { requireThat, CELL_NAMES } from './protocol.mjs';
+import {
+  nativePolicy,
+  nativeExecArgs,
+  probeNativeSandbox,
+  nativeContextProblems,
+  mirrorTrackerLedger,
+  trackerLedgerProblems,
+} from './native-sandbox.mjs';
+import { observeToolFailure } from './tool-failure.mjs';
+import {
+  claudePolicy,
+  bindClaudeAgents,
+  claudeExecArgs,
+  claudeEnvironment,
+  probeClaudeProcess,
+  launchClaudeProcess,
+  claudeUserInput,
+} from './claude-process.mjs';
+import { materializeClaudeStreams, decodeClaudeCapture } from './claude-stream.mjs';
+import { claudeRuntimeIdentity } from './claude-runtime.mjs';
 import { normalizeProfile } from '../../_scaffold/profile.mjs';
 const write = (path, value) =>
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -110,8 +130,28 @@ export function observedSettings(command, roots) {
           )
         : null,
     files,
+    nativeAgentDefinitionsDigest: command.nativeAgentsFile
+      ? digest(readRegular(command.nativeAgentsFile, 2 * 1024 * 1024))
+      : null,
+    stubFixtureDigest: roots.stubRoot
+      ? digest(readRegular(resolve(roots.stubRoot, 'fixture.json'), 256 * 1024))
+      : null,
     profile: normalizeProfile(command.profile),
   };
+}
+export function recordingSettings(command, input) {
+  return observedSettings(command, {
+    fixtureRoot: input.fixtureRoot,
+    skillRoot: input.skillRoot,
+    stubRoot: dirname(input.skillRoot),
+    transcripts: input.transcriptDir,
+    home: command.home,
+    codexHome: command.codexHome,
+    claudeHome: command.claudeHome,
+    claudeTmp: command.claudeTmp,
+    sandboxRuntime: command.sandboxRuntime,
+    hostJournalRoot: command.hostJournalRoot,
+  });
 }
 export class HostCoordinator {
   constructor(root, { resume = false, suite = null } = {}) {
@@ -309,15 +349,53 @@ export class HostCoordinator {
       !command.args.some((a) => /^(?:resume|--resume|--fork-session|--continue)$/.test(a)),
       'initial launch must be fresh and nonforked',
     );
-    const prompt = readRegular(input.promptFile, 128 * 1024),
-      settings = observedSettings(command, {
+    requireThat(
+      (harness === 'codex-cli' && basename(command.executable) === 'codex') ||
+        (harness === 'claude-code' && basename(command.executable) === 'claude'),
+      'CLI executable differs from declared harness',
+    );
+    let nativeSandbox = null;
+    if (harness === 'codex-cli') {
+      requireThat(command.codexHome && command.home, 'isolated native HOME/CODEX_HOME required');
+      requireThat(
+        resolve(transcripts) === resolve(command.codexHome, 'sessions'),
+        'native transcripts must use the exclusive actual CODEX_HOME/sessions destination',
+      );
+      mkdirSync(transcripts, { recursive: true });
+      nativeSandbox = nativePolicy({
+        target,
         fixtureRoot,
         skillRoot,
-        transcripts,
-        home: command.home,
-        codexHome: command.codexHome,
-        claudeHome: command.claudeHome,
+        protectedRoots: [
+          this.root,
+          realpathSync(command.home),
+          realpathSync(command.codexHome),
+          realpathSync(transcripts),
+        ],
       });
+      command.args = nativeExecArgs(command.args, nativeSandbox);
+    } else {
+      mkdirSync(transcripts, { recursive: true });
+      nativeSandbox = claudePolicy({
+        fixtureRoot,
+        skillRoot,
+        protectedRoots: [this.root, realpathSync(transcripts)],
+        command,
+      });
+      command.nativeAgentsFile = bindClaudeAgents({ skillRoot, target, journalRoot: this.root });
+      command.hostJournalRoot = this.root;
+      command.args = claudeExecArgs(command.args, { nativeAgentsFile: command.nativeAgentsFile });
+    }
+    requireThat(
+      !existsSync(nativeSandbox.ledger) && !existsSync(nativeSandbox.lock),
+      'fresh fixture tracker ledger required',
+    );
+    const initial = existsSync(nativeSandbox.archiveLedger)
+      ? readRegular(nativeSandbox.archiveLedger, 2 * 1024 * 1024)
+      : '';
+    if (initial) writeFileSync(nativeSandbox.ledger, initial, { flag: 'wx', mode: 0o600 });
+    const prompt = readRegular(input.promptFile, 128 * 1024),
+      settings = recordingSettings(command, { fixtureRoot, skillRoot, transcriptDir: transcripts });
     requireThat(settings.profile.harness === harness, 'observed settings profile harness differs');
     const receiptPayload = {
       condition,
@@ -332,11 +410,33 @@ export class HostCoordinator {
       build: build.receipt,
       fixture: checkoutBasis(fixtureRoot),
       promptDigest: digest(prompt),
+      ...(harness === 'claude-code' ? { inputDigest: digest(claudeUserInput(prompt)) } : {}),
       settingsDigest: digest(JSON.stringify(settings)),
       profile: settings.profile,
       settings,
       transcriptDestinationWasEmpty: true,
       targetDigest: digest(JSON.stringify(fileMembership(skillRoot))),
+      trackerInitialDigest: digest(
+        nativeSandbox && existsSync(nativeSandbox.archiveLedger)
+          ? readRegular(nativeSandbox.archiveLedger, 2 * 1024 * 1024)
+          : '',
+      ),
+      nativeSandbox: nativeSandbox
+        ? {
+            kind: nativeSandbox.kind ?? 'codex-native',
+            ...(nativeSandbox.kind === 'claude-process'
+              ? {
+                  runtimeDigest: nativeSandbox.runtime.membershipDigest,
+                  providerDomainsDigest: nativeSandbox.providerDomainsDigest,
+                }
+              : {}),
+            policyDigest: nativeSandbox.policyDigest,
+            execArgumentsDigest: digest(JSON.stringify(command.args)),
+            binaryDigest: digest(readFileSync(realpathSync(command.executable))),
+            writeRootDigests: nativeSandbox.writes.map(digest),
+            protectedRootDigests: nativeSandbox.protectedPaths.map(digest),
+          }
+        : null,
     };
     const id = randomBytes(16).toString('hex');
     const criteria =
@@ -380,6 +480,11 @@ export class HostCoordinator {
         aliasSalt: randomBytes(32).toString('hex'),
       },
       command,
+      nativePolicy: nativeSandbox,
+      trackerInitialText:
+        nativeSandbox && existsSync(nativeSandbox.archiveLedger)
+          ? readRegular(nativeSandbox.archiveLedger, 2 * 1024 * 1024)
+          : '',
       prompt,
       processes: [],
       probes: [],
@@ -418,108 +523,117 @@ export class HostCoordinator {
         verifyEnvelope(state.receipt, 'prepared').targetDigest,
       'deployed skill changed before launch',
     );
-    // macOS's inherited sandbox denies every descendant write to the coordinator journal. Read
-    // access is harmless: this protocol stores no key or authority capability. No path secrecy.
     requireThat(
-      process.platform === 'darwin' && existsSync('/usr/bin/sandbox-exec'),
-      'OS journal write protection unavailable; provenance remains unproven',
-    );
-    const policy =
-      '(version 1)(allow default)(deny file-write* (subpath ' + JSON.stringify(this.root) + '))';
-    const canary = resolve(this.root, 'write-protection-canary');
-    if (!existsSync(canary)) writeFileSync(canary, 'host-owned', { flag: 'wx', mode: 0o600 });
-    const guard = spawnSync(
-      '/usr/bin/sandbox-exec',
-      [
-        '-p',
-        policy,
-        process.execPath,
-        '-e',
-        'try{require("node:fs").writeFileSync(process.argv[1],"changed");process.exit(42)}catch(e){process.exit(e.code==="EPERM"?0:43)}',
-        canary,
-      ],
-      { encoding: 'utf8' },
+      state.nativePolicy &&
+        ['codex-cli', 'claude-code'].includes(verifyEnvelope(state.receipt, 'prepared').harness),
+      'native host journal protection is unproven for this harness; no model launched',
     );
     requireThat(
-      guard.status === 0 && readRegular(canary) === 'host-owned',
-      'actual inherited OS journal write protection failed',
-    );
-    requireThat(
-      digest(
-        JSON.stringify(
-          observedSettings(state.command, {
-            fixtureRoot: state.input.fixtureRoot,
-            skillRoot: state.input.skillRoot,
-            transcripts: state.input.transcriptDir,
-            home: state.command.home,
-            codexHome: state.command.codexHome,
-            claudeHome: state.command.claudeHome,
-          }),
-        ),
-      ) === verifyEnvelope(state.receipt, 'prepared').settingsDigest,
+      digest(JSON.stringify(recordingSettings(state.command, state.input))) ===
+        verifyEnvelope(state.receipt, 'prepared').settingsDigest,
       'actual settings changed after prelaunch',
     );
-    const actualArgs = resume ? args : state.command.args;
-    const startedAt = Date.now(),
-      result = spawnSync(
-        '/usr/bin/sandbox-exec',
-        [
-          '-p',
-          policy,
-          process.execPath,
-          resolve(import.meta.dirname, 'host-guard-launch.mjs'),
-          canary,
-          state.command.executable,
-          ...actualArgs,
-        ],
-        {
-          cwd: state.input.fixtureRoot,
-          env: {
-            PATH: process.env.PATH,
-            HOME: state.command.home,
-            CODEX_HOME: state.command.codexHome,
-            CLAUDE_CONFIG_DIR: state.command.claudeHome,
-          },
-          input: resume ? prompt : state.prompt,
-          encoding: 'utf8',
-          timeout: state.command.timeoutMs ?? 1800000,
-          maxBuffer: 16 * 1024 * 1024,
-        },
-      );
-    const guardObservation = JSON.parse(result.stdout.split('\n')[0]);
-    requireThat(
-      guardObservation.type === 'host_guard' &&
-        guardObservation.writeDenied === true &&
-        guardObservation.wrapperDigest ===
-          digest(readRegular(resolve(import.meta.dirname, 'host-guard-launch.mjs'))) &&
-        guardObservation.physicalCanaryDigest === digest(realpathSync(canary)),
-      'actual CLI sandbox guard receipt missing or foreign',
-    );
-    const postSettings = observedSettings(state.command, {
-      fixtureRoot: state.input.fixtureRoot,
-      skillRoot: state.input.skillRoot,
-      transcripts: state.input.transcriptDir,
-      home: state.command.home,
-      codexHome: state.command.codexHome,
-      claudeHome: state.command.claudeHome,
+    const isClaude = state.nativePolicy.kind === 'claude-process';
+    const environment = isClaude
+      ? claudeEnvironment(state.command, state.nativePolicy)
+      : {
+          PATH: process.env.PATH,
+          HOME: state.command.home,
+          CODEX_HOME: state.command.codexHome,
+          CLAUDE_CONFIG_DIR: state.command.claudeHome,
+          EVAL_TRACKER_LOG: state.nativePolicy.ledger,
+          EVAL_TRACKER_FIXTURE: state.nativePolicy.fixtureFile,
+        };
+    const actualArgs = resume
+      ? isClaude
+        ? claudeExecArgs(args, { resume: true, nativeAgentsFile: state.command.nativeAgentsFile })
+        : nativeExecArgs(args, state.nativePolicy, { resume: true })
+      : state.command.args;
+    const beforeGuard = checkoutBasis(state.input.fixtureRoot);
+    const guardObservation = (isClaude ? probeClaudeProcess : probeNativeSandbox)({
+      journalRoot: this.root,
+      executable: state.command.executable,
+      reportedVersion: verifyEnvelope(state.receipt, 'prepared').profile.reportedVersion,
+      policy: state.nativePolicy,
+      environment,
+      execArgs: actualArgs,
     });
+    requireThat(
+      isDeepStrictEqual(beforeGuard, checkoutBasis(state.input.fixtureRoot)),
+      'native probe changed fixture Git/content basis',
+    );
+    requireThat(
+      guardObservation.binaryDigest ===
+        verifyEnvelope(state.receipt, 'prepared').nativeSandbox.binaryDigest,
+      'native CLI binary changed since preparation',
+    );
+    write(
+      resolve(this.root, id + '-native-guard-' + (state.processes.length + 1) + '.json'),
+      envelope('native-guard', guardObservation),
+    );
+    const startedAt = Date.now(),
+      result = isClaude
+        ? launchClaudeProcess({
+            executable: state.command.executable,
+            policy: state.nativePolicy,
+            environment,
+            execArgs: actualArgs,
+            prompt: resume ? prompt : state.prompt,
+            journalRoot: this.root,
+            turn: id + '-' + (state.processes.length + 1),
+            timeoutMs: state.command.timeoutMs ?? 1800000,
+          })
+        : spawnSync(state.command.executable, actualArgs, {
+            cwd: state.input.fixtureRoot,
+            env: environment,
+            input: resume ? prompt : state.prompt,
+            encoding: 'utf8',
+            timeout: state.command.timeoutMs ?? 1800000,
+            maxBuffer: 16 * 1024 * 1024,
+          });
+    requireThat(
+      digest(readFileSync(realpathSync(state.command.executable))) ===
+        guardObservation.binaryDigest,
+      'native CLI binary changed during process',
+    );
+    if (isClaude)
+      requireThat(
+        claudeRuntimeIdentity(state.nativePolicy.runtime.root).membershipDigest ===
+          state.nativePolicy.runtime.membershipDigest,
+        'actual official runtime changed during process',
+      );
+    const postSettings = recordingSettings(state.command, state.input);
     requireThat(
       digest(JSON.stringify(postSettings)) ===
         verifyEnvelope(state.receipt, 'prepared').settingsDigest,
       'actual CLI settings/inventory changed during process',
     );
+    const priorLedger =
+      state.processes.at(-1)?.trackerMirror?.archiveDigest ??
+      verifyEnvelope(state.receipt, 'prepared').trackerInitialDigest;
+    const trackerMirror = mirrorTrackerLedger(state.nativePolicy, priorLedger);
     const event = {
+      trackerMirror,
       settingsObservationDigest: digest(JSON.stringify(postSettings)),
       managedSystemPresent:
         !!state.command.codexHome && existsSync(resolve(state.command.codexHome, 'skills/.system')),
-      startedAt,
-      finishedAt: Date.now(),
-      exitCode: result.status ?? 1,
-      launchError: result.error?.code ?? null,
+      startedAt: isClaude ? result.startedAt : startedAt,
+      finishedAt: isClaude ? result.finishedAt : Date.now(),
+      exitCode: isClaude ? result.exitCode : (result.status ?? 1),
+      ...(isClaude
+        ? {
+            captureDigest: result.captureDigest,
+            collectorDigest: result.collectorDigest,
+            inputDigest: result.inputDigest,
+            signal: result.signal,
+          }
+        : {}),
+      launchError: isClaude ? result.launchError : (result.error?.code ?? null),
       stdoutDigest: digest(result.stdout),
       stderrDigest: digest(result.stderr),
       guard: guardObservation,
-      policyDigest: digest(policy),
+      policyDigest: state.nativePolicy.policyDigest,
+      launchArgumentsDigest: digest(JSON.stringify(actualArgs)),
     };
     mkdirSync(state.input.transcriptDir, { recursive: true });
     const stdoutPath = resolve(
@@ -534,10 +648,32 @@ export class HostCoordinator {
       resolve(this.root, id + '-process-' + state.processes.length + '.json'),
       envelope('process', event),
     );
+    if (isClaude) {
+      state.capturePaths ??= [];
+      state.turnPrompts ??= [];
+      state.capturePaths.push(result.capturePath);
+      state.turnPrompts.push(resume ? prompt : state.prompt);
+      try {
+        state.streamProjection = materializeClaudeStreams({
+          processes: state.processes,
+          capturePaths: state.capturePaths,
+          outputPaths: state.outputPaths,
+          destination: state.input.transcriptDir,
+          target: verifyEnvelope(state.receipt, 'prepared').target,
+          prompts: state.turnPrompts,
+        });
+      } catch (error) {
+        state.streamProjection = { error: error.message };
+      }
+      write(
+        resolve(this.root, id + '-streams-' + state.processes.length + '.json'),
+        state.streamProjection,
+      );
+    }
     this.save();
     return event;
   }
-  fail(id, { outcome = 'failed', host = null } = {}) {
+  fail(id, { outcome = 'failed', host = null, rootTranscript = null } = {}) {
     const state = this.launches.get(id);
     requireThat(
       state && !state.closed && state.processes.length,
@@ -564,27 +700,56 @@ export class HostCoordinator {
           !root.meta?.parent_thread_id &&
           root.firstAt >= state.processes[0].startedAt - 1000 &&
           root.lastAt <= state.processes.at(-1).finishedAt + 1000 &&
-          root.users[0]?.text?.includes(state.prompt),
+          root.initialUser?.text?.includes(state.prompt),
         'actual prelaunch-linked nesting refusal missing',
       );
       failure = { code: 'unsupported-depth', sourceDigest: root.sourceDigest };
     } else {
-      requireThat(
-        state.processes.some((p) => p.exitCode !== 0),
-        'actual unsuccessful supported attempt required',
-      );
-      const text = readRegular(state.outputPaths.at(-1)),
-        rows = text.split('\n').filter(Boolean).map(JSON.parse),
-        error = rows.find((r) => r.api_error || r.type === 'error' || r.is_error === true);
-      requireThat(error || state.processes.at(-1).launchError, 'actual host error event missing');
-      failure = {
-        code:
-          error?.api_error ??
-          error?.error?.code ??
-          state.processes.at(-1).launchError ??
-          'host-error',
-        sourceDigest: digest(text),
-      };
+      if (state.processes.every((p) => p.exitCode === 0)) {
+        if (state.nativePolicy?.kind === 'claude-process') {
+          const rows = decodeClaudeCapture(
+            readRegular(state.capturePaths.at(-1), 24 * 1024 * 1024),
+            readRegular(state.outputPaths.at(-1), 16 * 1024 * 1024),
+            state.processes.at(-1),
+          );
+          const error = rows.find((r) => r.event.type === 'result' && r.event.is_error === true);
+          requireThat(error, 'actual external Claude terminal error missing');
+          failure = {
+            code: error.event.api_error ?? error.event.subtype ?? 'host-error',
+            sourceDigest: digest(readRegular(state.outputPaths.at(-1))),
+            captureDigest: state.processes.at(-1).captureDigest,
+            cliExitCode: 0,
+          };
+        } else {
+          requireThat(
+            rootTranscript &&
+              state.command.codexHome &&
+              below(resolve(state.command.codexHome, 'sessions'), realpathSync(rootTranscript)),
+            'actual CLI session transcript required for zero-exit tool failure',
+          );
+          failure = observeToolFailure({
+            stdoutText: readRegular(state.outputPaths.at(-1)),
+            rootText: readRegular(rootTranscript),
+            process: state.processes.at(-1),
+            prompt: state.prompt,
+            fixtureRoot: state.input.fixtureRoot,
+            reportedVersion: verifyEnvelope(state.receipt, 'prepared').profile.reportedVersion,
+          });
+        }
+      } else {
+        const text = readRegular(state.outputPaths.at(-1)),
+          rows = text.split('\n').filter(Boolean).map(JSON.parse),
+          error = rows.find((r) => r.api_error || r.type === 'error' || r.is_error === true);
+        requireThat(error || state.processes.at(-1).launchError, 'actual host error event missing');
+        failure = {
+          code:
+            error?.api_error ??
+            error?.error?.code ??
+            state.processes.at(-1).launchError ??
+            'host-error',
+          sourceDigest: digest(text),
+        };
+      }
     }
     const failed = envelope('failed-launch', {
       prepared: state.receipt,
@@ -647,8 +812,7 @@ export class HostCoordinator {
         verifyEnvelope(state.receipt, 'prepared').targetDigest,
       'measured helper/target changed',
     );
-    const script = resolve(state.input.skillRoot, 'scripts/build-run.mjs'),
-      at = Date.now();
+    const script = resolve(state.input.skillRoot, 'scripts/build-run.mjs');
     const policy =
       '(version 1)(allow default)(deny file-write* (subpath ' + JSON.stringify(this.root) + '))';
     requireThat(
@@ -673,17 +837,20 @@ export class HostCoordinator {
     const interruptedLockObserved = existsSync(
       resolve(runtime, '.effective-flow/build-runs', input.runId, '.operation.lock'),
     );
+    const callAt = Date.now();
     const output = spawnSync(
       '/usr/bin/sandbox-exec',
       ['-p', policy, process.execPath, script, operation],
       { input: inputText, encoding: 'utf8', timeout: 30000, maxBuffer: 128 * 1024 },
     );
+    const at = Date.now();
     requireThat(!output.error, 'boundary helper process did not finish');
     const result = JSON.parse(output.stdout);
     const alias = (value) => digest(state.input.aliasSalt + '\0' + value);
     const event = observedHelperEvent(
       {
-        id: String(at),
+        id: String(callAt),
+        callAt,
         arguments: {
           cmd: 'node ' + script + ' ' + operation + " <<'JSON'\n" + inputText + '\nJSON',
         },
@@ -705,10 +872,12 @@ export class HostCoordinator {
       requestVerified: true,
       missingEvidenceObserved,
       interruptedLockObserved,
+      callAt,
       processExitCode: output.status,
       scriptDigest: digest(readRegular(script)),
       callDigest: digest(
         JSON.stringify({
+          callAt,
           at,
           operation,
           inputDigest: digest(inputText),
@@ -731,6 +900,21 @@ export class HostCoordinator {
       'actual coordinator launch required before completion',
     );
     const prepared = verifyEnvelope(state.receipt, 'prepared');
+    const isClaude = state.nativePolicy?.kind === 'claude-process';
+    if (isClaude) {
+      const projection = materializeClaudeStreams({
+        processes: state.processes,
+        capturePaths: state.capturePaths,
+        outputPaths: state.outputPaths,
+        destination: state.input.transcriptDir,
+        target: prepared.target,
+        prompts: state.turnPrompts,
+      });
+      requireThat(
+        isDeepStrictEqual(manifest.host.sessions, projection.sessions),
+        'Claude sessions must equal complete protected external stream projection',
+      );
+    }
     requireThat(
       manifest.host.sessions.every((entry) =>
         below(state.input.transcriptDir, realpathSync(entry.path)),
@@ -776,6 +960,7 @@ export class HostCoordinator {
             skillRoot: state.input.skillRoot,
             controlledReview: state.controlledReview,
             protectedJournal: this.root,
+            protectedRoots: state.nativePolicy?.protectedPaths,
             host: hostInput,
           },
           prepared.condition === 'baseline',
@@ -806,7 +991,7 @@ export class HostCoordinator {
       'root timestamps do not belong to observed CLI processes',
     );
     requireThat(
-      root.users[0]?.text?.includes(state.prompt),
+      root.initialUser?.text?.includes(state.prompt),
       'actual initial user instruction bytes differ from prelaunch prompt',
     );
     for (const observation of run.observations) {
@@ -818,12 +1003,71 @@ export class HostCoordinator {
       this.usedRoots.add(observation.sessionIdentity);
       this.usedSources.add(observation.sourceDigest);
     }
+    requireThat(
+      state.nativePolicy && prepared.nativeSandbox,
+      'actual native protection was not established for this launch',
+    );
+    const policySessions = [];
+    for (const [alias, item] of actual.sessions) {
+      const observation = run.observations.find((o) => o.session === alias);
+      if (isClaude) {
+        const stream = item.parsed.streamCapture;
+        requireThat(
+          stream && stream.processIndexes.length > 0,
+          'actual external Claude process ancestry missing',
+        );
+        policySessions.push({
+          sessionIdentity: observation.sessionIdentity,
+          sourceDigest: observation.sourceDigest,
+          captures: stream.processIndexes.map((processIndex) => ({
+            processIndex,
+            captureDigest: state.processes[processIndex]?.captureDigest,
+          })),
+        });
+      } else {
+        const problems = nativeContextProblems(item.parsed.permissionContexts, state.nativePolicy);
+        requireThat(problems.length === 0, alias + ': ' + problems.join('; '));
+        policySessions.push({
+          sessionIdentity: observation.sessionIdentity,
+          sourceDigest: observation.sourceDigest,
+          contexts: item.parsed.permissionContexts.length,
+          observedPolicyDigest: digest(JSON.stringify(item.parsed.permissionContexts)),
+        });
+      }
+    }
+    const trackerProblems = trackerLedgerProblems(
+      run,
+      state.nativePolicy,
+      state.trackerInitialText,
+    );
+    requireThat(trackerProblems.length === 0, trackerProblems.join('; '));
+    const lastMirror = state.processes.at(-1).trackerMirror;
+    requireThat(
+      lastMirror &&
+        lastMirror.sourceDigest ===
+          digest(
+            existsSync(state.nativePolicy.ledger)
+              ? readRegular(state.nativePolicy.ledger, 2 * 1024 * 1024)
+              : '',
+          ),
+      'actual tracker ledger changed after host mirror',
+    );
+    run.trackerLedgerProof = {
+      initialDigest: digest(state.trackerInitialText),
+      finalDigest: lastMirror.archiveDigest,
+      actualCalls: (run.helperEvents ?? []).filter((e) => e.family === 'tracker').length,
+    };
+    run.nativePolicyProof = {
+      kind: isClaude ? 'claude-process' : 'codex-native',
+      policyDigest: state.nativePolicy.policyDigest,
+      sessions: policySessions,
+    };
     const launch = envelope('launch', {
       prepared: state.receipt,
       processes: state.processes,
       freshRoot: true,
       initialPromptObserved: true,
-      firstUserDigest: root.users[0].digest,
+      firstUserDigest: root.initialUser.digest,
       rootSourceDigest: root.sourceDigest,
       preparedSeal: state.receipt.seal,
       firstAt: root.firstAt,
