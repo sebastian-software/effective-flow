@@ -33,6 +33,8 @@ const AGENT_PREFIX = 'effective-flow-';
 const RUNTIME_SCRIPT_FILES = [
   'delegation-envelope.mjs',
   'delegation-envelope-core.mjs',
+  'build-run-core.mjs',
+  'build-run.mjs',
   'diff-baseline.mjs',
   'diff-baseline-core.mjs',
   'delivery-selection.mjs',

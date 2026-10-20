@@ -309,7 +309,9 @@ test('deliver owns only its partial-diff lifecycle and retains artifacts on inco
 //
 // The host set is derived, never listed: every tool whose include graph reaches
 // `worktree-integration` (eager or lazy, directly or through shared fragments)
-// can create a worktree and must therefore carry the eager obligation fragment.
+// can create a worktree. Its execution owner must therefore eagerly carry the
+// obligation; the thin build caller selects the same runner fragment for its
+// delegated and inline paths.
 
 const OBLIGATION = 'worktree-record-obligation';
 const OBLIGATION_SENTENCE =
@@ -333,7 +335,7 @@ const obligationHosts = [...toolNames]
   .sort()
   .filter((name) => includeGraphReaches(toolBody(name), 'worktree-integration'));
 
-test('every tool that can reach worktree-integration eagerly carries the record obligation', () => {
+test('every worktree execution owner eagerly carries the record obligation', () => {
   assert.ok(obligationHosts.length > 0, 'derived obligation host set must not be empty');
   assert.ok(
     obligationHosts.includes('merge-gate'),
@@ -341,7 +343,15 @@ test('every tool that can reach worktree-integration eagerly carries the record 
   );
 
   for (const name of obligationHosts) {
-    const body = toolBody(name);
+    let body = toolBody(name);
+    if (name === 'build') {
+      const runnerIncludes = [...body.matchAll(LAZY_INCLUDE_RE)].filter(
+        (match) => match[1].trim() === 'build-delegated-run',
+      );
+      assert.equal(runnerIncludes.length, 1, 'build selects exactly one complete execution owner');
+      assert.match(body, /read\/follow `build-delegated-run` in this caller/);
+      body = readShared('build-delegated-run');
+    }
     const eagerObligations = [...body.matchAll(EAGER_INCLUDE_RE)].filter(
       (match) => match[1].trim() === OBLIGATION,
     );
@@ -400,13 +410,17 @@ test('the record obligation fragment pins the allowed exit states and its own li
 });
 
 // Invariant: every run that can create a worktree reads the record path, the fixed sentence and the
-// self-check trigger. merge-gate creates one only in its delegated run, which reads the core and
-// then `merge-gate-delegated-run`, so its render is checked over both; the eager include itself is
-// pinned to the core by the test above.
+// self-check trigger. Delegated workflow callers read their complete execution owner before
+// creating a worktree, so their render is checked over both documents. The test above separately
+// pins the eager obligation to the owner and the build caller to its single owner pointer.
 const renderedHostBody = (name) =>
   name === 'merge-gate'
     ? spliceDelegatedRun(toolBody(name), readShared('merge-gate-delegated-run'), `tools/${name}.md`)
-    : toolBody(name);
+    : name === 'build'
+      ? toolBody(name).replace(LAZY_INCLUDE_RE, (match, fragment) =>
+          fragment.trim() === 'build-delegated-run' ? readShared(fragment.trim()) : match,
+        )
+      : toolBody(name);
 
 test('the record obligation survives every harness render of every host tool', () => {
   for (const name of obligationHosts) {

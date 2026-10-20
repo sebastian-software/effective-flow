@@ -122,6 +122,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'build-run.mjs',
+  'build-run-core.mjs',
   'delegation-envelope.mjs',
   'delegation-envelope-core.mjs',
   'diff-baseline.mjs',
@@ -1115,7 +1117,7 @@ try {
   // selector lines.
   const profilePhaseAuthorizations = new Map([
     [
-      'tools/build.md',
+      'shared/build-delegated-run.md',
       {
         phase: 'Build Phase 2',
         startHeading: '### Phase 2: Implementation',
@@ -1155,7 +1157,7 @@ try {
     const authorization = profilePhaseAuthorizations.get(source.context);
     if (!authorization) {
       throw new Error(
-        `Fast-profile references are allowed only in tools/build.md and tools/refactor.md; found one in ${source.context}`,
+        `Fast-profile references are allowed only in the initial implementation phases of shared/build-delegated-run.md and tools/refactor.md; found one in ${source.context}`,
       );
     }
 
@@ -1325,7 +1327,7 @@ try {
   // shipped once per harness as shared/<name>.md (see the per-harness loop).
   const lazyFragments = new Set();
   const projectRoutingConsumers = new Set([
-    'tools/build.md',
+    'shared/build-delegated-run.md',
     'tools/fix.md',
     'tools/refactor.md',
     'tools/review.md',
@@ -1493,6 +1495,10 @@ try {
   // --- Documentation-sync consumer guard ---
   // Keeping documentation in sync is a fixed phase of every implementation
   // tool. Removing the eager include from any consumer fails the build.
+  sourceIncludes.set(
+    'shared/build-delegated-run.md',
+    collectIncludeNames(readFileSync(join(SHARED_DIR, 'build-delegated-run.md'), 'utf8')),
+  );
   assertDocumentationSyncConsumers(sourceIncludes);
 
   for (const file of agentFiles) {
@@ -2386,7 +2392,7 @@ try {
     'apply-review-commit-mechanics': 656,
     maintain: 699,
     docs: 637,
-    build: 640,
+    build: 214,
     apply: 550,
     'apply-plan': 545,
     investigate: 590,

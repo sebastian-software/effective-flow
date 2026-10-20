@@ -158,6 +158,12 @@ out of the main session; the tier rules above are unchanged.
 Mechanics: [Build system](../developer-guide/build-system.md) (the split core and its budget) and
 the shipped fragments `central-reasoning-delegation` and `merge-gate-delegated-run`.
 
+**Planned-build boundary (2026-10-20).** After source/status/clarification/configuration and approval checks, `build` starts exactly one initially fresh `deep` built-in workflow orchestrator for phases 2–7; `apply-plan` follows this caller without another child boundary. Existing Quality roles, independent review, validator correction order and Fast selection remain unchanged. The runner's one bounded read-only nesting probe is `standard` with no downward move. This deliberately tests the required leaf depth rather than assuming that a successful first spawn proves nested support. Named workers remain leaves.
+
+User questions pause and continue the same runner by retained opaque handle. Transient pilot capabilities stay in that agent, with no capability persistence or fresh-agent transfer. A lost agent after mutation stops with recoverable artifacts and unproven finalization reported. A host without nesting or same-agent continuation before mutation uses the complete inline phases, marked isolation unavailable. The parent consumes bounded artifact projections and validates durable gate evidence, including after execution-worktree removal; the byte/line limits do not claim host context guarantees. Only an originating interactive build can relay its existing publication ask; merge-gate's separate relay remains unchanged. The terminal continuation projection belongs to a new independent workflow rather than reusing this runner.
+
+The delegated-default candidate stays unpublished until behavioural scenarios, paired portable Quality measurements and both native Fast compatibility lanes satisfy the approved plan. Those measurements establish context/cost claims; structural guards alone do not. The measured source identity is the delivered identity, with no later activation edit. The current implementation remains a draft candidate: the Claude host probe is rate-limited, and the Codex nested/same-agent continuation probe has no workload measurements, so no reduction or release-readiness claim follows from the structural work.
+
 ## Alternatives and tradeoffs
 
 - **Keep portable Quality-only.** Rejected: portable workers were where the unmanaged inheritance

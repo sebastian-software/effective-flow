@@ -244,3 +244,25 @@ Six Important findings were identified and are now incorporated and independentl
 ## Open points
 
 - No open points.
+
+## Implementation evidence and continuation
+
+### 2026-10-20 — Capability boundaries
+
+Implementation and independent code review are in progress in the existing draft PR #581. This plan remains **Not implemented** until its complete acceptance and evidence gates pass. Host capability probes are separate from the six behavioural scenarios and the twenty paired workloads; they cannot satisfy either population or support a context-reduction claim.
+
+- Codex CLI 0.163.0 actually completed a deep child, a standard grandchild and continuation through their original handles. A separate capacity-limited probe observed a pre-mutation nesting refusal followed by a successful direct standard leaf. Complete inline workflow delivery still requires its own scenario recordings.
+- Claude Code 2.1.292 returned API 429 `usage_limit_reached` before any child or model input. Its reported weekly reset was 2026-10-22 at 16:00 Europe/Berlin. Claude capability, both Claude workload cells and the Claude native lane remain unproven. Continue unaffected work without treating this failed attempt as an eligible measurement or repeatedly probing the unchanged limit.
+- A real native Codex role probe loaded the generated Node.js implementer sidecar under Codex CLI 0.163.0. The spawn explicitly requested the Fast override `gpt-5.6-luna` with `medium` effort; the actual child ran `gpt-6.1-sol` with `high` effort from that sidecar. Native Fast compatibility is therefore unproven on this host. This is a compatibility follow-up for the existing native representation owner, not authority to change model mappings or enable Fast in this plan.
+
+Keep the approved thresholds, native lanes, actual per-spawn observations and same candidate/instrument identity requirements unchanged. Record feasible portable Codex workloads only after independent review and the exact candidate pin. Later Claude recordings must continue that same identity without a source activation toggle. Private transcripts and live capabilities remain outside published evidence. Until all gates pass, retain the installed release, the open plan and the draft PR; do not mark this plan implemented, archive it or claim the proposed reduction.
+
+### 2026-10-20 — Source implementation and validation
+
+The bounded runtime protocol, thin build caller and complete delegated/inline phase owner are implemented. Execution transitions, original-agent questions, content-drift checks, approved-plan-preserving completion, irreversible runtime-only handoff and cleanup-surviving evidence are covered by focused tests and independent review. Transient pilot capabilities are not persisted. The built caller measures **208/214 split-newline lines**, below the approved 320-line cap; this is not a token measurement.
+
+Independent implementation review closed six execution/authority findings and two configuration/provider follow-ups. Independent evidence review closed seven provenance/verification findings and three adapter-compatibility follow-ups. The exact Codex built-in bootstrap inventory is bound without allowing user skills or altered canonical contracts. No scoped blocking code finding remains from those reviews; actual behavioural and performance acceptance remains separate.
+
+The final prescribed correctness sequence passed: `pnpm agent:check`; `pnpm test` (2,983 passed, one skipped, zero failed); `node build.mjs` (all three targets); `pnpm test:distribution`. A real model-free coordinator preflight also built the approved baseline and current candidate, provisioned a disposable fixture and successfully prepared its isolated command/skill/prompt inputs. It stopped before model launch and supplies no behavioural recording or performance sample.
+
+Freshness verification reports all five `merge-gate` recordings and all five `iterate` recordings stale after four loaded shared-source changes; refresh them before the next release. All eleven `next-steps` scenarios remain current. The six new build-context scenarios, portable paired matrix and native lanes have no archived workload evidence yet, so strict verification correctly remains unproven. Record the feasible actual Codex population after the candidate pin, retain failed attempts, and continue the unavailable cells only at that same candidate/instrument identity. The plan stays open and the PR stays draft while any approved gate is unmet.

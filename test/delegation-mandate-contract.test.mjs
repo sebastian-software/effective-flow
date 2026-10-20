@@ -1142,3 +1142,61 @@ test('investigate Phase 3b runs a deep skeptic and Phase 4 folds its verdict con
     'German label is in the label list',
   );
 });
+
+// Planned build may isolate execution only after eager approval/source guards and owns no second runner.
+test('planned build dispatch keeps caller guards eager and all execution gates in one complete runner', () => {
+  const caller = readSource('tools', 'build.md');
+  const runner = readSource('shared', 'build-delegated-run.md');
+  const callerIncludes = collectIncludeNames(caller);
+  for (const guard of [
+    'chat-language',
+    'delegation-mandate',
+    'plan-status',
+    'apply-clarity-gate',
+  ]) {
+    assert.ok(callerIncludes.eager.has(guard), `caller must eagerly retain ${guard}`);
+  }
+  assert.equal((caller.match(/<!-- spawn-site:build\/delegated-run -->/g) ?? []).length, 1);
+  assert.doesNotMatch(caller, /### Phase [2-7]:/);
+  assert.ok(callerIncludes.lazy.has('build-run-contract'));
+  assert.ok(
+    callerIncludes.lazy.has('build-delegated-run'),
+    'complete inline fallback remains reachable',
+  );
+  const runnerIncludes = collectIncludeNames(runner);
+  for (const gate of [
+    'delegation-mandate',
+    'skill-discovery',
+    'completion-protocol',
+    'goal-completion',
+    'worktree-record-obligation',
+    'documentation-sync',
+    'pre-commit-gate',
+  ]) {
+    assert.ok(runnerIncludes.eager.has(gate), `runner eagerly owns ${gate}`);
+  }
+  let previous = -1;
+  for (const phase of [2, 3, 4, 5, 6, 7]) {
+    const current = runner.indexOf(`### Phase ${phase}:`);
+    assert.ok(current > previous, `phase ${phase} remains ordered and present`);
+    previous = current;
+  }
+  assert.equal(
+    (runner.match(/<!-- spawn-site:build-delegated-run\/nested-spawn-probe -->/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(runner, /<!-- spawn-site:build\/delegated-run -->/);
+  const control = readSource('shared', 'build-run-contract.md');
+  for (const contract of [
+    /\*\*same\*\* opaque agent handle/,
+    /relevant untracked files/,
+    /transient pilot state only in the original agent/,
+    /release all lifecycle\/pilot locks/,
+    /Truly non-interactive and merge-gate relays gain no authority/,
+    /completionBasis.*renewedGates/s,
+    /verify-terminal/,
+    /verify-continuation/,
+  ]) {
+    assert.match(control, contract);
+  }
+});

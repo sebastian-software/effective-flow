@@ -402,8 +402,8 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Ten subsystems and 27 runtime scripts carry this today: the pairs
-  `config-resolve.mjs`/
+  misread as one. Eleven subsystems and 29 runtime scripts carry this today: the pairs
+  `build-run.mjs`/`build-run-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs` and
@@ -668,8 +668,8 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Ten dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 27 files: eight two-file subsystems, the remote tracker's seven-file family,
+Eleven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 29 files: nine two-file subsystems, the remote tracker's seven-file family,
 the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
@@ -798,6 +798,38 @@ point is an I/O boundary over testable core or protocol modules:
   `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
+- **Build-run.** Invoke it as `node <skill-root>/scripts/build-run.mjs <operation>` with one
+  JSON object on standard input. The supported operations are `create`, `validate`, `bind-agent`,
+  `authorize-execution`, `transition-execution`, `prepare-completion`, `seal-delivery`, `handoff`,
+  `record-return`, `checkpoint`, `question`, `reply`, `resume`, `receipt`, `terminal`,
+  `verify-terminal`, `continuation`, and `verify-continuation`; the operation name is the only argv
+  value. The
+  dependency-free core owns the versioned schemas, immutable source and request digests,
+  execution-root and repository-identity checks, one-operation lock, bounded question/reply
+  binding, active execution authorization/transition, completion transformation proof, delivery
+  sealing, post-commit handoff, checkout-return proof, gate receipts, terminal verification, and
+  the next-workflow projection. It writes only
+  under `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, uses 8 KiB UTF-8 for the
+  dispatch projection and 16 KiB UTF-8 for each control record, and fails closed on unknown fields,
+  unsafe paths, content drift, foreign evidence, stale replies, or incomplete terminal gates.
+  The build caller remains the authority for user-channel provenance, approval and gate judgments;
+  `build-run-core.mjs` proves identity and evidence but never grants consent or replaces the
+  phases-2–7 workflow. `build-run-contract.md` is the caller/runner lifecycle contract and
+  `build-delegated-run.md` owns the delegated phases and complete inline fallback. The helper is
+  shipped to all three targets through `RUNTIME_SCRIPT_FILES`; it is not a scheduler or a
+  persistent capability store.
+
+  `authorize-execution` records an already resolved delivery mode and owning agent before setup;
+  `transition-execution` binds the fresh receipt and lifecycle proof before baseline capture or
+  worker writes. `prepare-completion` binds the existing independent-review and final-validation
+  receipts before the approved plan receives its deterministic completion section and status/archive
+  transformation. `seal-delivery` proves that staged paths and modes match that basis; changed
+  product bytes require the independent marked `code-validator` formatting-only proof or renewed
+  affected gates. `handoff` ends product authority after the verified commit, leaving only the
+  existing runtime-only delivery/cleanup/pilot/completion outcomes; `record-return` proves an actual
+  in-place checkout restore. The original agent handle is retained for the one allowed pilot
+  finalization and is never persisted as a transferable capability.
+
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
   closed-schema JSON object on standard input: `cwd` (the verified absolute root, which is
   `RUNTIME_STATE_ROOT` for a hidden-mode plan directory), `planDir` relative to it, and optional
@@ -886,7 +918,7 @@ and directive syntax").
   `apply-clarity-gate`, `delegation-mandate`, `chat-language`, `remote-helper-contract`, and the
   status markers in `plan-status`. `goal-completion` governs every remaining phase rather than one
   decision point, and `apply-clarity-gate` is a safety gate whose failure mode — silently not
-  running — is the one nobody notices. Neither is deferred, however tempting their size.
+  running — is the one nobody notices. Neither is deferred, however tempting their size, except the explicit planned-build execution boundary below.
   `delegation-mandate` is eager for the same reason: a lazy pointer at the delegation decision point
   would let the very host default this fragment corrects skip the pointer's own trigger, so the
   mandate must be present before the model plans the run. `base-branch-resolution` is eager in both
@@ -908,6 +940,21 @@ and directive syntax").
   `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
   its core keeps every record write and transition and makes reading the fragment mandatory before
   such a worktree is created.
+- **Planned-build execution has one explicit boundary.** The current built `build` caller reports 208
+  split-newline lines against a 214-line budget. Its intent/source classification, canonical status,
+  clarification, configuration/retired-key preflight and approval basis stay eager. Only after those
+  guards pass does it read `build-run-contract` and select one fresh `deep` built-in runner or the
+  complete inline fallback. The runner loads `build-delegated-run` once; that fragment eagerly owns
+  `skill-discovery`, `completion-protocol`, `goal-completion`, `worktree-record-obligation`,
+  `delegation-mandate` and `pre-commit-gate` for phases 2–7. Their execution gates move together
+  with their owning phases; none is hidden behind its own decision. Existing
+  implementation/profile/review/validation markers move with those phases unchanged. The caller,
+  probe and completion-transform markers reconcile against `model-tiers`; the probe is `standard`,
+  never down, and the completion transform is an independent `code-validator` check. `build-run.mjs`
+  and `build-run-core.mjs` are explicitly shipped runtime files. The helper's 8 KiB dispatch and
+  16 KiB control bounds measure UTF-8 bytes, while the build reports caller lines; neither is a token
+  measurement. The inline fallback reads the exact same complete phases, so it preserves every
+  quality gate while recording isolation unavailable.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,

@@ -383,7 +383,14 @@ test('every target renders the diff-baseline pointer and ships the fragment', (t
   for (const target of ['claude', 'codex', 'portable']) {
     const skill = join(outputRoot, 'dist', target, 'effective-flow');
     for (const tool of ['build', 'fix', 'refactor']) {
-      const body = readFileSync(join(skill, 'tools', `${tool}.md`), 'utf8');
+      const body = readFileSync(
+        join(
+          skill,
+          tool === 'build' ? 'shared' : 'tools',
+          tool === 'build' ? 'build-delegated-run.md' : `${tool}.md`,
+        ),
+        'utf8',
+      );
       assert.equal(body.split(pointer).length - 1, 1, `${target} tools/${tool}.md pointer`);
       assert.doesNotMatch(body, /```lazy-include/, `${target} tools/${tool}.md`);
     }

@@ -47,6 +47,11 @@ function source(path) {
   return readFileSync(new URL(path, repositoryRoot), 'utf8');
 }
 
+// Build execution gates moved together to the runner; caller guards are tested separately.
+function implementationSource(tool) {
+  return source(tool === 'build' ? 'src/shared/build-delegated-run.md' : `src/tools/${tool}.md`);
+}
+
 // merge-gate reads as one document – its caller core with the delegated-run pointer replaced by the
 // fragment – everywhere a test pins the gate's own prose; see test/support/merge-gate-source.mjs.
 const MERGE_GATE_PATH = 'src/tools/merge-gate.md';
@@ -54,6 +59,7 @@ function mergeGateSource() {
   return mergeGateWithDelegatedRun(repositoryRoot);
 }
 function gateAwareSource(path) {
+  if (path === 'src/tools/build.md') return implementationSource('build');
   return path === MERGE_GATE_PATH ? mergeGateSource() : source(path);
 }
 
@@ -2631,7 +2637,7 @@ test('build and fix retire delivery keys before their first delegation', () => {
       name: 'build',
       path: 'src/tools/build.md',
       phase: '## Phase 0: Intent Gate',
-      firstDelegation: '1. Start `{{SKILL:plan}}` with the feature requirement.',
+      firstDelegation: 'Run `{{SKILL:plan}}` with the requirement,',
     },
     {
       name: 'fix',
@@ -4368,7 +4374,7 @@ test('every durable derived-work materializer reaches one gate before mutation',
   }
 
   for (const tool of ['build', 'fix', 'refactor', 'maintain']) {
-    const includes = collectIncludeNames(source(`src/tools/${tool}.md`));
+    const includes = collectIncludeNames(implementationSource(tool));
     assert.equal(
       includes.eager.has('unresolved-review-report') ||
         includes.lazy.has('unresolved-review-report'),
@@ -5430,7 +5436,7 @@ test('review.md keeps the plan-file special case before the pull-request special
 test('the documentation sync gate is a fixed, blocking part of every implementation tool', () => {
   const consumers = ['build', 'fix', 'refactor', 'maintain'];
   for (const tool of consumers) {
-    const { eager, lazy } = collectIncludeNames(source(`src/tools/${tool}.md`));
+    const { eager, lazy } = collectIncludeNames(implementationSource(tool));
     assert.ok(
       eager.has('documentation-sync'),
       `tools/${tool}.md must embed documentation-sync eagerly, so the phase cannot be deferred away`,
@@ -12857,7 +12863,7 @@ test('the four plan-carrying tools keep their in-place-without-delivery instruct
   // trigger in the mode the relocation was decided for. Nothing else pins it.
   for (const name of ['build', 'fix', 'docs', 'refactor']) {
     assert.match(
-      source(`src/tools/${name}.md`),
+      implementationSource(name),
       /in-place without delivery[\s\S]{0,240}same status switch and archive move/,
       `${name} lost its in-place-without-delivery archival instruction`,
     );
@@ -20150,7 +20156,7 @@ const DIFF_BASELINE_TOOLS = [
 // Invariant: each tool defers the fragment to its named capture step and loads it once.
 test('build, fix and refactor lazy-load the diff-baseline fragment exactly once', () => {
   for (const { tool, capturePoint } of DIFF_BASELINE_TOOLS) {
-    const path = `src/tools/${tool}.md`;
+    const path = tool === 'build' ? 'src/shared/build-delegated-run.md' : `src/tools/${tool}.md`;
     const body = source(path);
     const { eager, lazy } = collectIncludeNames(body);
     assert.equal(eager.has('diff-baseline'), false, `${path} must not eager-include diff-baseline`);
@@ -20229,7 +20235,7 @@ test('fix specifies the reproduction test in Phase 2 and writes it after capture
 
 // Invariant: the baseline outlives every step that renders it and is discarded before handback.
 test('build captures last in Phase 2 step 0 and discards only after the Phase 7 formatter', () => {
-  const build = source('src/tools/build.md');
+  const build = source('src/shared/build-delegated-run.md');
 
   const phase2 = numberedItems(boundedSlice(build, '### Phase 2: Implementation', '### Phase 3'));
   assert.match(prose(phase2.get(0)), /Last, capture the diff baseline/);
@@ -21321,7 +21327,7 @@ test('every plan continuation pointer also fires for in-place without delivery, 
   );
 
   for (const tool of ['build', 'docs', 'fix', 'refactor']) {
-    const body = source(`src/tools/${tool}.md`);
+    const body = implementationSource(tool);
     const [pointer] = [...body.matchAll(LAZY_INCLUDE_RE)].filter(
       (match) => match[1].trim() === 'plan-pr-continuation',
     );
@@ -21635,7 +21641,7 @@ test('exactly the four plan-consuming implementation tools defer the plan contin
   // Invariant: each implementation tool that archives a plan also looks for its published pull
   // request, through one pointer after plan-archival, and all four fire on the same trigger.
   for (const file of toolFiles) {
-    const body = source(`src/tools/${file}`);
+    const body = file === 'build.md' ? implementationSource('build') : source(`src/tools/${file}`);
     const pointers = [...body.matchAll(LAZY_INCLUDE_RE)].filter(
       (match) => match[1].trim() === 'plan-pr-continuation',
     );

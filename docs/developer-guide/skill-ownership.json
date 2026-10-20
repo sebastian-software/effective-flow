@@ -34,6 +34,7 @@
         { "consumer": "apply-review-remote", "classification": "delegate" },
         { "consumer": "apply-issues", "classification": "delegate" },
         { "consumer": "build", "classification": "delegate" },
+        { "consumer": "build-delegated-run", "classification": "delegate" },
         { "consumer": "fix", "classification": "delegate" },
         { "consumer": "code-validator", "classification": "delegate" },
         { "consumer": "test-writer", "classification": "route-when-relevant" },
