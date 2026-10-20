@@ -1,0 +1,246 @@
+# Keep parent contexts small during planned feature delivery
+
+**Plan status:** Not implemented
+**Source:** effective-flow plan
+**Recommended workflow:** Feature (`effective-flow build`)
+
+## Requirement
+
+Keep the user-facing parent session small while implementing an approved Feature plan. Preserve the complete implementation, documentation, testing, independent review, validation, approval, and delivery obligations. The first implementation covers `apply <Feature plan>` and `build <Feature plan>`; it establishes a measurable pattern before extending other workflows.
+
+Planning baseline: `de23f9b`, 2026-10-20, clean execution checkout. Primary evidence is the local main-checkout report `.effective-flow/investigation/investigation-2026-10-20-session-model-context.md`. Its relevant findings are reproduced here so implementation does not depend on access to private session logs:
+
+- Codex: 273 child sessions in four sampled roots, 126 on Luna; all 278 parsed spawns requested zero inherited turns. Initial child input median was 37,734 tokens, yet three parent peaks reached 362k–396k.
+- Claude: cheaper child-request share rose from 1.9% to 20.8%; mean parent context changed only from 429k to 418k. These are descriptive cohorts, not matched experiments.
+- Delegation already works. The missing boundary is how much workflow work and evidence remain in the parent across a long lifecycle. Moving existing history into another child cannot shrink that history in the host.
+- Installed 1.68 and current source differ. Implement against this source baseline, including the existing fresh artifact judgments; do not reinstall the older design or count it as new work.
+
+This is Feature work because it changes execution routing, return contracts, and relayed interaction, rather than merely changing prose layout.
+
+### Scope
+
+In scope: a thin planned-build caller, one initially fresh built-in workflow runner continued in the same agent after user questions, bounded artifact-based control traffic, guarded question/resume handling, complete quality preservation, a continuation record for the next workflow, and paired measurement.
+
+Out of scope: changing model mappings, enabling Fast, automatic compaction or creation of user-visible chats, removing prior transcript messages, rewriting every workflow, changing merge criteria, and a general-purpose workflow engine. Unplanned direct `build` retains its existing planning and approval behavior; after approval it may enter the same execution seam. Non-Feature plans keep their current routes.
+
+## Architecture decisions
+
+1. **One additional execution boundary.** `apply-plan` remains the source resolver and clarification gate. It follows the thin `build` caller in the current run; only that caller spawns the fresh runner. Do not add both an apply child and a build child. The runner reads the persisted approved plan and owns phases 2–7.
+2. **Keep the existing orchestration rights distinct.** Use a built-in general-purpose workflow orchestrator, not a named `src/agents/*` worker. Named workers remain leaves. The runner may start its existing specialists and must await them before returning.
+3. **Preserve quality and authority.** The workflow runner is `deep`; existing specialist and independent-review tiers, Fast selection, validation order, review coverage, pre-commit gates, and delivery decisions retain their current contracts. Delegation never creates publication, merge, destructive-action, or scope-expansion authority.
+4. **Artifacts carry evidence; the parent carries control.** Full plan bodies, diffs, test output, reviewer findings, and phase histories stay with the runner and their owning artifacts. The parent receives bounded status, artifact identities, evidence availability, questions, and the next user action. A summary cannot replace an unmet gate.
+5. **A small deterministic helper, scoped to build.** Add `build-run.mjs` over `build-run-core.mjs`, following existing JSON CLI and runtime-safety patterns. Do not overload the merge-gate-specific `delegation-envelope` grammar or copy its entire implementation. Avoid a scheduler, global registry, new configuration block, or new memory counter.
+6. **Explicit limits, not invented token guarantees.** Enforce UTF-8 limits on the helper's control artifacts and generated dispatch output. Measure real context separately from host transcripts. Host tool returns and worker free text cannot be universally intercepted; prompt discipline plus behavioural evidence covers that boundary.
+7. **Separate same-run continuation from the next workflow.** After a user question, resume the same delegated agent with its existing transient state; no fresh-agent transfer or persistent storage of pilot capabilities is allowed. A lost agent/transient state requires a controlled stop with retained artifacts and unproven finalization reported honestly, not reconstructed authority. The latest completed run exposes a compact handoff for the next workflow in a fresh session; it does not resume a live pilot or grant unrestricted approval.
+8. **Conservative rollout.** Prepare the final delegated-default candidate in an isolated, unpublished checkout. Keep the installed release unchanged during measurement; release the same measured candidate identity only after all gates pass. The complete inline route remains a compatibility fallback, labeled and excluded from isolation-success counts.
+
+### Alternatives considered
+
+- More eager-to-lazy moves alone reduce initial prompt size but do not isolate a multi-phase implementation. Use them at the caller/runner seam, with mandatory caller guards retained.
+- A fresh child per phase introduces many new ownership and recovery boundaries. Defer that extension until the first runner's peak and cumulative measurements justify it.
+- Lowering the parent or review model does not solve context growth and confounds the requested quality comparison.
+- Requiring a new chat after every phase depends on host/user actions and is not a portable implementation contract.
+- Reusing an unbounded build child forever only relocates the problem. A runner is limited to one approved plan, returns at terminal state or a user gate, and cannot adopt the next independent plan.
+
+## Affected files
+
+| File                                                                                                                                             | Planned change                                                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/tools/build.md`                                                                                                                             | Keep caller preflight, intent/plan routing, approval basis, dispatch, question relay and terminal handling; defer implementation execution.          |
+| `src/tools/apply-plan.md`                                                                                                                        | Preserve source/status/clarification checks and pass a verified Feature-plan association into the single build dispatch seam.                        |
+| `src/shared/build-delegated-run.md` (new)                                                                                                        | Own existing build phases 2–7 and their authoritative includes without weakening their order or gates.                                               |
+| `src/shared/worktree-record-obligation.md`, `src/shared/worktree-lifecycle.md`, `src/shared/pr-review-integration.md`                            | Distinguish a build user pause from terminal workflow exit; preserve ownership, lock release and the originating interactive mode through the relay. |
+| `test/worktree-lifecycle.test.mjs`, `test/execution-profile-workflow-contract.test.mjs`                                                          | Protect paused dirty worktree continuation, native profile lifecycle and unchanged truly non-interactive behavior.                                   |
+| `src/shared/build-run-contract.md` (new)                                                                                                         | Define the small caller/runner protocol, allowed question origins and exact validation/dispatch sequence.                                            |
+| `src/scripts/build-run.mjs`, `src/scripts/build-run-core.mjs` (new)                                                                              | Guarded control-artifact creation/read, digest binding, byte limits, reply matching and terminal validation.                                         |
+| `src/shared/model-tiers.md`, `build.mjs`                                                                                                         | Register runner/probe spawn sites, ship both helpers, preserve existing role/profile sites, measure caller budget.                                   |
+| `test/build-run.test.mjs` (new)                                                                                                                  | Protect the actual transport, state, failure and authorization invariants.                                                                           |
+| `test/delegation-mandate-contract.test.mjs`, `test/model-tiers-contract.test.mjs`, `test/workflow-contracts.test.mjs`, `test/build-lib.test.mjs` | Protect single dispatch, leaf boundaries, tier/profile preservation and delivery of the split/helper files.                                          |
+| `evals/build-context/` (new)                                                                                                                     | Suite config, bounded fixture/scenario adapters, evaluator, README and manually recorded evidence using the existing scaffold.                       |
+| `test/build-context-eval.test.mjs` (new), `.github/workflows/ci.yml`                                                                             | Validate the new suite's archive/instrument and add evidence reporting with the existing strict release gate; retain pinned action references.       |
+| `docs/adr/per-spawn-model-tiers.md`                                                                                                              | Amend the active lean-orchestrator decision with the planned-build boundary and host-depth tradeoff.                                                 |
+| `docs/developer-guide/architecture.md`, `docs/developer-guide/build-system.md`                                                                   | Document caller/runner ownership, allowed eager/deferred boundaries, fallback and measured limits.                                                   |
+| `docs/developer-guide/skill-ownership.json`, `docs/developer-guide/skill-ownership.md`                                                           | Classify the new fragments as orchestration-owned and retain domain judgment in the central skills.                                                  |
+
+The existing router, global leaf mandate, generic completion protocol and merge-gate envelope format need no semantic rewrite. Do not edit generated `dist/`; build it from source.
+
+## Implementation details
+
+### Work package 1: Bound and verify the planned-build handoff
+
+Prerequisite: none.
+
+- Implement one build-owned protocol version with request, blocked-question/reply, and terminal records. Use `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, distinct from unattended-planning `runs/` and merge-gate state.
+- Before any write, verify execution/runtime receipts, runtime migration, ignore/tracked-state guards, physical containment and regular-file identity. Use exclusive creation for a new run and each immutable record; do not overwrite a foreign run or repair malformed state.
+- Request fields: protocol/run ID, exact plan path and content digest, original user instruction/restrictions as immutable source data, originating interactive/non-interactive run mode, verified roots/checkout identity, resolved languages, completion condition, selected delivery restrictions and source association. Do not copy full workflow instructions or the conversation into dispatch text.
+- The helper returns the request path/digest and a compact dispatch projection. Plan contents and larger source inputs remain referenced artifacts. Input restrictions that affect authority are mandatory, not optional summary fields.
+- Fixed first-version bounds: dispatch projection at most 8 KiB, each control JSON record at most 16 KiB, at most one outstanding question per run. UTF-8 bytes are not tokens. Store a longer original request separately without truncating it; the request digest binds that source.
+- Reject a missing field, unknown control field, unsafe path, changed digest, invalid language or oversized control record before dispatch. Do not drop constraints or truncate questions to make them fit.
+- A result contains status, source/final plan identity, final checkout/head identity, required phase outcomes with evidence references, retained-worktree information, applicable pilot status and a bounded user-facing conclusion. Every emitted artifact reference has a digest and an owning root.
+- Evidence references may be outside runtime state when their owning plan/review/delivery contract permits it; validate against the recorded allowed roots rather than assuming every file lives under one directory.
+- Before mandatory wisdom/baseline cleanup and execution-worktree removal, persist bounded phase/gate receipts under the verified runtime root. Reference committed deliverables, including the archived plan, by repository identity, immutable commit and blob identity, and path. Preserve only the non-Git evidence needed for acceptance in durable runtime artifacts. Terminal verification and continuation must remain valid after successful cleanup; do not retain full diffs or skip cleanup to satisfy the new protocol.
+- A digest proves byte identity, not user authorization, command execution or substantive correctness. The caller checks the matching run/phase and existing gate outcomes; independent reviewers still judge the actual artifacts.
+
+Verify: focused helper tests cover byte limits with multibyte text, exact-boundary inputs, missing fields, exclusive-create collision, symlink escape, stale source, foreign result and missing evidence.
+
+### Work package 2: Execute one approved Feature plan in a fresh runner
+
+Prerequisite: work package 1.
+
+- Split build at the existing clarified-plan seam: the current source already treats a referenced unbuilt plan that passes clarification as approval for phases 2–7. Preserve that meaning, including the visible completion condition.
+- Keep all guards needed to decide dispatch eager in the caller. Explicitly update the build-system progressive-disclosure rule for this seam; do not hide a gate behind a pointer whose trigger the gate itself controls.
+- Target the built `build` caller at no more than 320 lines, measured by the build's split-newline convention. This is a proposed implementation cap, not a claim that 320 lines imply a token count. Use a tighter measured `CONTEXT_BUDGET_LINES` entry with at most ten lines of headroom.
+- The fresh runner loads `build-delegated-run` once. It cannot re-enter the caller and spawn another build runner. The handoff uses zero inherited turns where supported and explicitly carries the rendered `deep` tier.
+- Preserve exactly once: worktree setup/ownership, source association and backlinks, initial implementation, documentation synchronization, tests, validation/corrections, routed independent review/incorporation, final validation, commit/delivery gates, plan archival, pilot finalization, lifecycle cleanup and completion checks.
+- Existing implementation/review/profile spawn sites move with their contracts and retain their role/tier meanings. New runner and nesting-probe sites receive their own model-tier rows and build-enforced markers.
+- Before a runner makes project/runtime mutations, use one bounded read-only no-op nested child at `standard` to establish that its required leaf level is available. Await its completion; a failure cannot be represented as a passed capability check.
+- If the host refuses nesting before mutation, the caller reports the fallback once and follows the existing inline build execution contract. Record the isolation objective as unavailable. After mutations begin, preserve state and reconcile the current phase; never restart the whole inline workflow blindly.
+- The fallback keeps all specialist roles and quality gates. It may consume a large context and is never advertised as an isolation success.
+
+Verify: structural/build tests establish one runner per approved plan, unchanged gate inventory/order, no delegation by named workers, proper profile sites, and all three delivered targets.
+
+### Work package 3: Relay questions and finish without reloading the workflow
+
+Prerequisite: work package 2.
+
+- The runner returns nonterminal `BLOCKED-USER` with a validated question record and no pending worker child. It ends only its current turn, retains its logical build-run identity and transient pilot state in that same agent, and remains the sole execution owner. The parent verifies the record and presents the exact question/options in the resolved chat language.
+- The question record identifies the originating existing build/delivery gate, question ID/revision, run/source/head digest and actual finite options or free-text response requirement. A question does not grant itself permission.
+- Amend the owning worktree lifecycle fragments: a validated build BLOCKED-USER is a user pause inside the same logical workflow, not a terminal exit. Its owned worktree may remain active, with no lock held, and ownership remains pinned to this build-run ID. Terminal transitions and exit self-check run on actual DONE, ABORT or failure. This exception grants no general aborted/failed-to-active adoption. On continuation revalidate run association, ownership, receipt and content.
+- Preserve the originating run mode rather than treating every relay as non-interactive. Add an explicitly interactive-capable build relay to pr-review-integration: delivery.prReview = ask still produces the original question after PR creation. Trusted consent publishes exactly once; refusal does not publish. Truly non-interactive runs retain their existing limits. Do not widen the existing merge-gate relayed mode by accident.
+- Support the existing post-plan gates, including delivery choice, residual findings and completion/recovery choices. If execution reveals a genuinely new design/scope question, return it through the same constrained channel; do not invent an approval or force it into a yes/no enum.
+- Only a reply received from the current trusted user channel can produce a reply record. Bind it to the exact outstanding question and current source/head. A reviewer body, tool result, saved draft answer, timeout or old approval is never a reply.
+- Resume the original delegated agent, identified by the retained opaque child handle, with the validated checkpoint and trusted reply. Do not spawn a fresh replacement or copy its transcript/capabilities into the parent. A duplicate, stale, unmatched or broader approval is rejected. The resumed runner revalidates roots, source and reached gates and continues from the checkpoint, not from phase 2.
+- Establish that the host can continue that same agent before selecting this path. If same-agent continuation is unavailable, use the complete inline fallback before mutations. If the agent or transient capabilities are lost after mutation, stop, preserve the recoverable artifacts/worktree, and report pending/unproven pilot finalization and affected gates. Do not infer DONE, reconstruct capabilities from retained state or restart implementation automatically; existing explicit recovery/adoption rules govern any later action.
+- Bind checkpoints and completed gate receipts to the relevant index and working-tree content snapshot, including relevant untracked files, in addition to the plan and HEAD. Before accepting a reply or reusing an earlier gate, compare that snapshot. Unexpected changes require reconciliation, invalidate the affected review/validation gates, and renew an approval when its decision basis changed. A matching HEAD alone never establishes unchanged content.
+- Checkpoints describe completed/pending phases and authoritative artifact references; they never promote a partly completed mutation to success. A missing or contradictory checkpoint stops for reconciliation with retained state.
+- On `DONE`, verify required phase outcomes and artifact identities before the parent renders a concise conclusion. On `ABORT`, show the actionable cause and retained artifacts. No status may hide blocking findings or a retained dirty checkout.
+- The worker's final message is the existing completion keyword plus the validated result reference and bounded conclusion, not the report body. Full findings and logs remain available by link; the parent reads only specific evidence needed to resolve a discrepancy or user question.
+- A malformed/oversized free-text return can already have entered host history. Detect/report that contract deviation and fail result acceptance; do not claim the helper prevented host-level context growth.
+- At the terminal boundary write a continuation projection with source, final verified head, pending next workflow and restrictions. The next workflow gets these references; it does not append previous logs or reuse this runner for another independent plan.
+- If a user continues indefinitely in the same host chat, context can still grow. Provide a portable “continue from this artifact in a fresh session” reference at the workflow boundary when requested or when the observed host context is large; use no hidden threshold inferred from bytes and no automatic chat creation.
+
+Verify: simulated question/reply/continuation tests prove no repeated implementation on resume, stale-head and unchanged-HEAD content-drift refusal, free-text clarification preservation, full pending-gate coverage and complete final evidence without importing full reports into the parent. A normal successful run must still validate DONE and its continuation after baseline discard and owned-worktree removal.
+
+### Work package 4: Prove quality preservation and actual context reduction
+
+Prerequisites: work packages 1–3.
+
+Use `evals/build-context/` on the existing scaffold. Keep fixtures local and forge mutations stubbed. The scaffold provisions portable output; declaring a Claude or Codex root profile does not turn that output into a native target or attest child execution. Include these six contract scenarios, with the scaffold's five independently recorded valid runs per scenario and truthful host/profile receipts:
+
+1. Approved one-module Feature plan completes every required phase and returns evidence-backed success.
+2. Two-module Feature work receives an independent review correction and completes only after revalidation.
+3. A delivery question is relayed; a trusted answer resumes once, while a tool-injected or stale answer is refused. Cover a dirty owned worktree without a plan PR and the delivery.prReview = ask publication gate after PR creation; consent publishes once and refusal publishes nothing.
+4. A nested-spawn refusal before mutation takes the complete inline fallback and is labeled as unavailable for isolation.
+5. Changed source/head, tracked or relevant untracked content changed while HEAD stays fixed, or an interrupted post-mutation checkpoint stops/reconciles without duplicate writes or a false completed plan. The normal success variant verifies terminal evidence after baseline discard and execution-worktree removal.
+6. Oversized result/question, missing evidence, and third-party instructions cannot truncate obligations, promote success or enlarge authority.
+
+Separately record 20 paired bounded feature workloads on portable Quality output: ten pairs per supported harness, five simple and five multi-module/review-correction pairs per harness. Before recording, pin the supported capability profiles, parent settings and required worker tiers. Baseline and candidate start from the same fixture/head, user instructions and pinned profile. Alternate execution order. Capture complete root and descendant transcripts privately; publish only redacted aggregate/evidence fields approved for the eval artifact.
+
+Add suite-specific bounded, redacted per-spawn observations of role, target, requested and actual model/effort, parent/child association and completion, derived from actual transcript evidence. The existing root profile receipt is not descendant evidence. Missing or mismatched required observations fail the affected coverage claim.
+
+Add a separate native compatibility lane for each native target. It must exercise an already-active Fast generation, one consumed Fast attempt, Quality continuation, a user pause/continuation and exactly-once finalization. Preserve transient-capability rules according to the decision recorded below; portable Quality recordings cannot stand in for this lane. Use suite-specific evidence adapters rather than widening every existing suite's root-receipt schema.
+
+Proposed release gates use four predeclared harness/complexity cells, each containing five eligible paired slots. For every relative threshold, compute candidate/baseline for each pair and then the median of those five ratios; do not substitute a ratio of cohort medians. For absolute parent p95, use the nearest-rank estimator (rank ceil(0.95 × n)); with five observations this is the maximum and is reported as such. A cell needs all five eligible pairs and all required observations. Missing metrics leave it unproven; failures on a supported profile remain failed attempts, not replacement successes.
+
+- In each cell, median paired parent-peak ratio is at most 0.50. For fresh-root slots whose first request input is at most 60k, candidate parent p95 is at most 120k; if fewer than five eligible absolute-threshold slots are available in a cell, that gate remains unproven.
+- In each cell, the median paired cumulative root-plus-descendant input ratio is at most 1.15 and median paired elapsed-time ratio at most 1.25. Report raw totals, cached/uncached input where available and all fallback, invalid and failed attempts. Harness-wide aggregates are descriptive and never override a failing cell.
+- Actual required review/validation models and gate coverage remain unchanged. Blinded independent review checks the final diff/artifacts against the same acceptance criteria and seeded known defects: no new Critical/Important defect, no missed seeded blocker, no unauthorized action, no false completion and no skipped validation.
+- All independently specified fixture acceptance checks pass for baseline and candidate. Report rework/correction rounds and non-blocking observations; do not claim statistical proof of non-inferiority from twenty pairs.
+- Unsupported-depth runs remain compatibility evidence and do not enter performance-success cohorts; disclose their count/rate. A supported profile that repeatedly cannot complete is not silently removed from the denominator.
+
+Archive all twenty pair records and native compatibility evidence as sealed, suite-owned auxiliary evidence with immutable baseline build, candidate build and instrument identities. Extend pnpm eval build-context verify --mode strict to require the complete matrix, gate calculations and current candidate identity alongside the six behavioural scenarios. Raw transcripts and live capabilities stay private and outside published evidence.
+
+Measure the final proposed delegated-default source in the isolated unpublished checkout, then release that measured candidate without a later source-level activation toggle. Activation means delivery of this approved candidate, not a source edit after measurement. Existing build-identity normalization is authoritative; any source or instrument change outside its existing normalization invalidates the affected evidence and requires fresh recordings. If gates fail, retain the currently installed release and the explicit measurement failure; do not relax quality, change thresholds after observing results, or call a parent-only reduction a total-cost saving.
+
+## Acceptance criteria
+
+- [ ] A clarified Feature plan reaches exactly one fresh deep build runner; unplanned/non-Feature and unsupported-host paths retain their existing authority/quality semantics.
+- [ ] The built caller is at most 320 lines; all required dispatch guards remain eager and moved gate ownership is documented.
+- [ ] Helper limits (8 KiB dispatch, 16 KiB control record), containment/digest checks, trusted reply binding and missing-evidence rejection are implemented and covered by meaningful boundary tests.
+- [ ] Every existing phases-2–7 obligation is accounted for exactly once in the new path, including independent review, validation after correction, Fast lifecycle, archival and delivery/worktree cleanup.
+- [ ] Resume compares index/worktree content as well as HEAD, invalidates affected gates after changes, never repeats completed side effects or treats a pending phase as complete; fallback and partial failure preserve recoverable state and remain visible.
+- [ ] Terminal evidence and the continuation artifact remain verifiable after normal baseline/wisdom cleanup and owned-worktree removal, using durable receipts and immutable Git identities.
+- [ ] The parent consumes compact results and referenced evidence rather than complete diffs/logs/reports, and a completed runner cannot absorb a new independent plan.
+- [ ] All six behavioural scenarios have five current valid recordings, complete actual-model/profile evidence and no failing quality/authority invariant.
+- [ ] All twenty portable Quality pairs, per-spawn observations and both native Fast compatibility lanes are archived and current; each five-pair cell passes its defined paired-ratio and nearest-rank gates before delivery of the delegated-default candidate.
+- [ ] Required CI/distribution checks pass; affected existing eval evidence is refreshed before release; docs and skill-ownership relationships match the final contracts.
+
+Together these criteria mean: one approved-plan delivery completes with the same required quality/authority evidence while the supported parent path demonstrably stays substantially smaller, and the compatibility path remains truthful.
+
+## Validation plan
+
+Run focused helper/contract tests first, then the repository's required distribution order: `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution`. Build output supplies the final caller line measurement; never raise budgets merely to pass.
+
+The new suite's `pnpm eval build-context verify` becomes available after its config/fixtures exist; it verifies recorded evidence and does not run a model. Add the suite to CI's existing evidence loop and strict release gate. Run the existing `merge-gate`, `iterate` and `next-steps` verify commands to identify which loaded sources became stale, and re-record every affected suite before the next release. Do not replace manual model evidence with archive tests.
+
+Review generated Claude, Codex and portable output for single dispatch, valid role tiers, unchanged Fast representation, worker leaf boundaries, and shipped helpers. Perform the skill-ownership check for every expanded tool/shared fragment. No model prices, token-to-byte conversion, or subscription savings are assumed.
+
+## Assumptions and open points
+
+- The fixed bounds and performance thresholds are proposed acceptance targets for this requested change, not facts established by the diagnosis.
+- Host nesting and transport differ. The protocol is portable at the artifact boundary; each supported host needs actual receipts. The known inline fallback preserves quality without promising small context.
+- This pilot reduces future parent growth during planned Feature delivery. It cannot make already-large chats small, and does not yet isolate planning authoring, direct review aggregation, or every fix/refactor workflow.
+- The active tier ADR already owns lean orchestration. Update it in place rather than introduce a competing architecture record or a second domain-skill playbook.
+- Before implementation, compare the in-scope source with `de23f9b` and reconcile changes to approval, delivery, plan readiness or runtime receipts. Harmless line movement is not a blocker.
+- User decision, 2026-10-20: continue the same delegated runner after questions. Transient capabilities stay only in that orchestrator; a lost agent state causes a controlled stop. No capability-persistence extension is authorized. The next-workflow handoff is separate from live-run resume.
+
+## Plan review
+
+### 2026-10-20 — Independent gap analysis and plan review
+
+**Result:** Approved
+
+Independent plan-level judgment using `effective-delivery` and `effective-engineering` identified two Important findings. Both were incorporated and independently verified closed on 2026-10-20. The focused verification reports no remaining findings; this is not an implementation or code review. The summary counts below record the findings resolved during this review, not outstanding blockers.
+
+### Summary
+
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         1 |    0 |
+| Testability     |        0 |         0 |    0 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         0 |    0 |
+
+### Findings
+
+- **Important — Error cases: content drift at resume.** HEAD and plan identity do not cover uncommitted changes. Work package 3 now binds checkpoints/gate receipts to relevant index, working-tree and untracked contents, invalidates affected gates and renews approvals after decision-basis changes. The paused-run scenario includes unchanged-HEAD edits.
+- **Important — Architecture: evidence survives cleanup.** Wisdom, diff snapshots and owned execution worktrees are temporary. Work package 1 now persists bounded gate receipts and immutable Git identities before cleanup; successful cleanup is explicitly covered by terminal-validation and continuation verification.
+
+### Validation scorecard
+
+- Clarity: concrete caller/runner ownership, files, protocol limits and ordered work packages.
+- Verification: named contract scenarios, paired measurement gates and repository checks.
+- Context: source baseline and observed metrics are separated from proposed thresholds and host limitations.
+- Big picture: planned Feature delivery is the bounded first rollout, with quality and authority held constant.
+- No-code boundary: this planning run changes only this plan file; the plan contains no implementation code.
+- Workflow: Feature (`effective-flow build`) matches the changed execution and interaction behavior.
+
+### 2026-10-20 — Deep interactive plan review
+
+**Result:** Approved
+
+Six Important findings were identified and are now incorporated and independently verified closed. The user chose same-runner continuation on 2026-10-20; focused verification confirmed consistency with transient pilot authority, lifecycle pauses and the native compatibility lane. No blocking findings or open decisions remain. The summary counts record findings resolved during this review; earlier review results are history.
+
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         2 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         1 |    0 |
+| Testability     |        0 |         2 |    0 |
+| Scope           |        0 |         1 |    0 |
+| Maintainability |        0 |         0 |    0 |
+
+- **Important — Architecture: transient Fast capabilities.** A fresh runner cannot receive capabilities through retained state under the existing pilot contract. The user chose continuation of the original agent, with its transient state retained in that agent and a controlled stop if that state is lost. WP3 now distinguishes nonterminal question pauses, same-agent resume and a separate next-workflow handoff; protected capability persistence is excluded.
+- **Important — Error cases: user pause is not terminal exit.** The owning lifecycle fragments will keep a paused build active under the same run identity, without held locks, and apply terminal exit handling only at actual completion/abort/failure. Add dirty-worktree continuation without a plan PR.
+- **Important — Scope: interactive review publication.** Carry the originating run mode and adapt pr-review-integration for an interactive-capable build relay so its default ask is preserved; truly non-interactive and merge-gate relays retain their current limits.
+- **Important — Testability: one gate population and estimator.** All relative thresholds now use median paired ratios within each of the four five-pair cells. Absolute p95 uses nearest rank, and missing observations leave a cell unproven.
+- **Important — Testability: actual target and descendant coverage.** Portable Quality performance evidence is separated from two native Fast compatibility lanes; suite-specific observations establish actual child execution rather than relying on root profile receipts.
+- **Important — Architecture: release identity and evidence freshness.** The final delegated-default candidate is measured unpublished and then delivered at that same identity; sealed pair/native records are required by the suite's strict verification, with no post-measurement activation source edit.
+
+## Open points
+
+- No open points.
