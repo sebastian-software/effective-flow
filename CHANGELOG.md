@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.69.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.68.0...effective-flow-v1.69.0) (2026-10-20)
+
+
+### Features
+
+* add a read-only setup status mode that diagnoses configuration, ignore state, domain owners and version ([#571](https://github.com/sebastian-software/effective-flow/issues/571)) ([baa7474](https://github.com/sebastian-software/effective-flow/commit/baa74743adfe05ea90b3dec782904ff8e1abff9a))
+* add bounded Forgejo check polling ([#578](https://github.com/sebastian-software/effective-flow/issues/578)) ([2ce106f](https://github.com/sebastian-software/effective-flow/commit/2ce106fd16b09762ec117ec4541d93be4d3a558e))
+* add Issue Buddy runtime ([025301d](https://github.com/sebastian-software/effective-flow/commit/025301db1dc029577e4964dab9ea038494e39a96))
+* add the unattended plan publication core ([e7d021e](https://github.com/sebastian-software/effective-flow/commit/e7d021e874f79412fad71976cf68cc41e05dc80b))
+* add unattended Issue Buddy planning passes ([de23f9b](https://github.com/sebastian-software/effective-flow/commit/de23f9b2ab7a93b747aa22a4d985824899d2c916))
+* draft the PR body on the mechanical tier ([#569](https://github.com/sebastian-software/effective-flow/issues/569)) ([f0929fd](https://github.com/sebastian-software/effective-flow/commit/f0929fd59767bc6c8e7ea7f438f9bb0b8972704b))
+* run the plan, concept and diagnosis checks in a fresh-context reviewer ([#568](https://github.com/sebastian-software/effective-flow/issues/568)) ([19c38d5](https://github.com/sebastian-software/effective-flow/commit/19c38d52bc3db305084025a1be5f6c939055e6a0)), closes [#475](https://github.com/sebastian-software/effective-flow/issues/475)
+* support unattended planning and readiness checks ([#573](https://github.com/sebastian-software/effective-flow/issues/573)) ([9b347b4](https://github.com/sebastian-software/effective-flow/commit/9b347b415abd90366ca90a11a3b71a25e0378139))
+
+
+### Bug Fixes
+
+* keep dependent next steps behind delivery ([#580](https://github.com/sebastian-software/effective-flow/issues/580)) ([917c9bd](https://github.com/sebastian-software/effective-flow/commit/917c9bd697d7ee9f86d19ed4f5345dae38b3743b))
+
 ## [1.68.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.67.1...effective-flow-v1.68.0) (2026-10-17)
 
 
