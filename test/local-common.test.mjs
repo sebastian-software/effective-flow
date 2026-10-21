@@ -39,13 +39,23 @@ function isolatedEnvironment(root, mode, distRoot) {
   };
 }
 
-function nativeInventory(harness, baseWorkers, fastWorkers = []) {
+function nativeInventory(harness, baseWorkers, fastWorkers = [], standardWorkers = []) {
   return `${JSON.stringify(
     {
-      schemaVersion: 1,
+      schemaVersion: 2,
       harness,
       baseWorkers: baseWorkers.map((worker) => `effective-flow-${worker}`).sort(),
       fastWorkers: fastWorkers.map((worker) => `effective-flow-${worker}-fast`).sort(),
+      tierWorkers:
+        harness === 'codex'
+          ? standardWorkers
+              .flatMap((worker) => [
+                `effective-flow-${worker}-tier-deep`,
+                `effective-flow-${worker}-tier-mechanical`,
+              ])
+              .sort()
+          : [],
+      standardWorkers: standardWorkers.map((worker) => `effective-flow-${worker}`).sort(),
     },
     null,
     2,
@@ -56,6 +66,7 @@ async function createNativeDistribution(
   root,
   workers = ['alpha', 'beta'],
   fastWorkers = ['alpha'],
+  standardWorkers = [],
 ) {
   const distRoot = join(root, 'dist');
   const claudeSkill = join(distRoot, 'claude/effective-flow');
@@ -77,9 +88,12 @@ async function createNativeDistribution(
     writeFile(join(codexSkill, 'tools/run.md'), references),
     writeFile(
       join(claudeSkill, 'native-agent-inventory.json'),
-      nativeInventory('claude', workers, fastWorkers),
+      nativeInventory('claude', workers, fastWorkers, standardWorkers),
     ),
-    writeFile(join(codexSkill, 'native-agent-inventory.json'), nativeInventory('codex', workers)),
+    writeFile(
+      join(codexSkill, 'native-agent-inventory.json'),
+      nativeInventory('codex', workers, fastWorkers, standardWorkers),
+    ),
   ]);
   for (const worker of workers) {
     const name = `effective-flow-${worker}`;
@@ -94,6 +108,13 @@ async function createNativeDistribution(
   for (const worker of fastWorkers) {
     const name = `effective-flow-${worker}-fast`;
     await writeFile(join(claudeAgents, `${name}.md`), `---\nname: ${name}\n---\nFast ${worker}\n`);
+    await writeFile(join(codexAgents, `${name}.toml`), `name = "${name}"\n`);
+  }
+  for (const worker of standardWorkers) {
+    for (const tier of ['mechanical', 'deep']) {
+      const name = `effective-flow-${worker}-tier-${tier}`;
+      await writeFile(join(codexAgents, `${name}.toml`), `name = "${name}"\n`);
+    }
   }
   return distRoot;
 }
@@ -250,7 +271,7 @@ test('copy and link install both native agent sets and report their discovery lo
       );
       assert.equal(
         await readFile(join(env.CODEX_HOME, 'agents/.effective-flow-agents.manifest'), 'utf8'),
-        'effective-flow-alpha.toml\neffective-flow-beta.toml\n',
+        'effective-flow-alpha-fast.toml\neffective-flow-alpha.toml\neffective-flow-beta.toml\n',
       );
     });
   }
@@ -538,6 +559,20 @@ test('missing or malformed native agent artifacts fail before changing installed
       error: /Native agent inventory validation failed/,
     },
     {
+      name: 'legacy inventory cannot install',
+      mutate: async (distRoot) => {
+        for (const harness of ['claude', 'codex']) {
+          const path = join(distRoot, harness, 'effective-flow/native-agent-inventory.json');
+          const value = JSON.parse(await readFile(path, 'utf8'));
+          value.schemaVersion = 1;
+          delete value.tierWorkers;
+          delete value.standardWorkers;
+          await writeFile(path, `${JSON.stringify(value, null, 2)}\n`);
+        }
+      },
+      error: /Native agent inventory validation failed/,
+    },
+    {
       name: 'missing inventory',
       mutate: (distRoot) => rm(join(distRoot, 'claude/effective-flow/native-agent-inventory.json')),
       error: /Native agent inventory validation failed/,
@@ -614,5 +649,51 @@ test('missing and malformed routers remain non-fatal for standalone reports', as
       assert.equal(result.stdout.split('\n')[0], 'Deployed effective-flow skill to:');
       assert.doesNotMatch(result.stdout, /^effective-flow /m);
     });
+  }
+});
+
+test('native Codex copy and link install variants and remove only previously owned variants', async (t) => {
+  const sandbox = await mkdtemp(join(tmpdir(), 'effective-flow-codex-variants-'));
+  t.after(() => rm(sandbox, { recursive: true, force: true }));
+  const firstDist = await createNativeDistribution(
+    join(sandbox, 'first'),
+    ['alpha', 'beta'],
+    ['alpha'],
+    ['beta'],
+  );
+  const secondDist = await createNativeDistribution(
+    join(sandbox, 'second'),
+    ['alpha', 'beta'],
+    [],
+    [],
+  );
+  for (const mode of ['copy', 'link']) {
+    const installRoot = join(sandbox, mode);
+    const env = isolatedEnvironment(installRoot, mode, firstDist);
+    await mkdir(join(env.CODEX_HOME, 'agents'), { recursive: true });
+    const foreign = join(env.CODEX_HOME, 'agents/effective-flow-neighbor-tier-deep.toml');
+    await writeFile(foreign, 'foreign\n');
+    const install = runShell('. "$ROOT_DIR/local-common.sh"; effective_flow_deploy_from_dist', env);
+    assert.equal(install.status, 0, install.stderr);
+    const variants = ['alpha-fast', 'beta-tier-deep', 'beta-tier-mechanical'].map(
+      (name) => `effective-flow-${name}.toml`,
+    );
+    const manifestPath = join(env.CODEX_HOME, 'agents/.effective-flow-agents.manifest');
+    const manifest = (await readFile(manifestPath, 'utf8')).trim().split('\n');
+    for (const name of variants) {
+      assert.ok(manifest.includes(name), `${mode}: ${name} ownership`);
+      assert.equal(
+        (await lstat(join(env.CODEX_HOME, 'agents', name))).isSymbolicLink(),
+        mode === 'link',
+      );
+    }
+    const upgrade = runShell('. "$ROOT_DIR/local-common.sh"; effective_flow_deploy_from_dist', {
+      ...env,
+      DIST_ROOT: secondDist,
+    });
+    assert.equal(upgrade.status, 0, upgrade.stderr);
+    for (const name of variants)
+      assert.equal(await pathExists(join(env.CODEX_HOME, 'agents', name)), false);
+    assert.equal(await readFile(foreign, 'utf8'), 'foreign\n');
   }
 });

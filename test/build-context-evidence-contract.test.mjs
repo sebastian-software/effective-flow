@@ -1981,13 +1981,31 @@ test('Claude native registration preserves exact generated models/efforts and re
   const name = 'effective-flow-nodejs-implementer-fast';
   writeFileSync(
     resolve(skill, 'native-agent-inventory.json'),
-    JSON.stringify({ schemaVersion: 1, harness: 'claude', baseWorkers: [], fastWorkers: [name] }),
+    JSON.stringify(
+      {
+        schemaVersion: 2,
+        harness: 'claude',
+        baseWorkers: ['effective-flow-nodejs-implementer'],
+        fastWorkers: [name],
+        tierWorkers: [],
+        standardWorkers: [],
+      },
+      null,
+      2,
+    ) + '\n',
   );
   writeFileSync(
     resolve(agents, name + '.md'),
     '---\nname: ' +
       name +
       '\ndescription: "Actual source description"\nmodel: sonnet\neffort: medium\ntools: Read, Edit\ncolor: blue\n---\nactual\ncanonical body\n',
+  );
+  writeFileSync(
+    resolve(agents, 'effective-flow-nodejs-implementer.md'),
+    readFileSync(resolve(agents, name + '.md'), 'utf8')
+      .replaceAll(name, 'effective-flow-nodejs-implementer')
+      .replace('model: sonnet', 'model: opus')
+      .replace('effort: medium', 'effort: high'),
   );
   const file = bindClaudeAgents({ skillRoot: skill, target: 'claude', journalRoot: journal });
   const actual = JSON.parse(readFileSync(file, 'utf8'))[name];
@@ -2701,4 +2719,70 @@ test('observed immutable const exec alias emits only its literal actual result, 
     0,
     'stdout JSON never becomes the outer native result',
   );
+});
+
+// Native evidence must bind all schema-2 role variants without admitting unmeasured sidecars.
+import { nativeWorkerNames } from '../evals/build-context/_scaffold/native-workers.mjs';
+test('native evidence registers schema-2 base, Fast and tier roles and rejects stale or extra inventories', (t) => {
+  const root = temporary(t),
+    skill = resolve(root, 'skill'),
+    agents = resolve(root, 'agents');
+  mkdirSync(skill);
+  mkdirSync(agents);
+  const inventory = {
+    schemaVersion: 2,
+    harness: 'codex',
+    baseWorkers: ['effective-flow-alpha', 'effective-flow-beta'],
+    fastWorkers: ['effective-flow-alpha-fast'],
+    tierWorkers: ['effective-flow-beta-tier-deep', 'effective-flow-beta-tier-mechanical'],
+    standardWorkers: ['effective-flow-beta'],
+  };
+  const save = (value) =>
+    writeFileSync(
+      resolve(skill, 'native-agent-inventory.json'),
+      JSON.stringify(value, null, 2) + '\n',
+    );
+  const names = [...inventory.baseWorkers, ...inventory.fastWorkers, ...inventory.tierWorkers];
+  for (const name of names)
+    writeFileSync(resolve(agents, name + '.toml'), 'name = ' + JSON.stringify(name) + '\n');
+  save(inventory);
+  assert.deepEqual(nativeWorkerNames(skill, 'codex'), names);
+  assert.throws(() => nativeWorkerNames(skill, 'claude'), /harness differs/);
+  save({ ...inventory, schemaVersion: 1 });
+  assert.throws(() => nativeWorkerNames(skill, 'codex'), /schemaVersion/);
+  save(inventory);
+  writeFileSync(resolve(agents, 'effective-flow-extra.toml'), 'unmeasured');
+  assert.throws(() => nativeWorkerNames(skill, 'codex'), /membership differs/);
+  rmSync(resolve(agents, 'effective-flow-extra.toml'));
+  rmSync(resolve(agents, inventory.tierWorkers[0] + '.toml'));
+  assert.throws(() => nativeWorkerNames(skill, 'codex'), /membership differs/);
+});
+
+// Every runtime import of the canonical native inventory parser must invalidate the instrument.
+import { instrumentIdentity } from '../evals/_scaffold/build-identity.mjs';
+test('native inventory admission dependencies participate in the sealed instrument identity', (t) => {
+  const dependencies = [
+    'build-lib.mjs',
+    'src/scripts/pilot-measurement-protocol.mjs',
+    'src/scripts/plan-lint-core.mjs',
+  ];
+  const fixture = temporary(t);
+  const files = dependencies.map((name, index) => {
+    const source = resolve(import.meta.dirname, '..', name);
+    assert.ok(suite.instrumentFiles.includes(source), name + ' is pinned');
+    const copy = resolve(fixture, index + '.mjs');
+    writeFileSync(copy, readFileSync(source));
+    return copy;
+  });
+  const bound = { ...suite, instrumentFiles: files };
+  const before = instrumentIdentity(bound);
+  for (const file of files) {
+    const original = readFileSync(file);
+    writeFileSync(
+      file,
+      Buffer.concat([original, Buffer.from('\n// changed admission dependency\n')]),
+    );
+    assert.notDeepEqual(instrumentIdentity(bound), before);
+    writeFileSync(file, original);
+  }
 });

@@ -420,7 +420,11 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
   );
   assertSameMembers(
     readdirSync(codexAgents).filter((name) => name.endsWith('.toml')),
-    workers.map((name) => `${name}.toml`),
+    [
+      ...codexInventory.baseWorkers,
+      ...codexInventory.fastWorkers,
+      ...codexInventory.tierWorkers,
+    ].map((name) => `${name}.toml`),
     'Codex native workers',
   );
   assertSameMembers(
@@ -445,7 +449,11 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     ...claudeInventory.baseWorkers,
     ...claudeInventory.fastWorkers,
   ]);
-  assertWorkerResolution(join(distRoot, 'codex'), codexAgents, 'toml', 'name = "', workers);
+  assertWorkerResolution(join(distRoot, 'codex'), codexAgents, 'toml', 'name = "', [
+    ...codexInventory.baseWorkers,
+    ...codexInventory.fastWorkers,
+    ...codexInventory.tierWorkers,
+  ]);
   assertWorkerResolution(join(distRoot, 'portable'), portableWorkers, 'md', '# ', workers);
 
   for (const target of ['claude', 'codex', 'portable']) {

@@ -307,6 +307,43 @@ No further identical costly recordings are authorized until an accessible offici
 
 Zero complete behavioural scenarios, zero eligible pairs and neither native lane have been archived. Build-context strict verification therefore fails as required. Merge-gate and iterate recordings remain stale and need refresh before release; all eleven next-steps scenarios remain current. This plan stays **Not implemented** and unarchived, and PR #581 stays draft. The checked implementation is reviewable, but no acceptance-completion or context-reduction claim is made.
 
+### 2026-10-21 — Remaining evidence gates and recorder compatibility
+
+The separate native representation correction in PR #582 passed 36 actual Codex configuration
+checks, including every Fast/tier role and conflicting model/effort parameters. This is bounded
+role-selection evidence, not the full native workload lane. Its source is now included as a normal
+dependency merge. The recording adapter had rejected schema 2 and Codex Fast sidecars; it now
+reuses the central canonical inventory parser, binds exact target directory membership and
+registers base, Fast and tier workers. Claude retains its generated models, efforts and tools.
+Regression coverage rejects stale, missing, foreign and extra inventory entries. The canonical
+parser and both local imports are instrument-bound; a regression test checks each dependency's
+hash contribution. The build selector test follows the delegated phase's actual shared-file path.
+Fresh model-free probes of both installed CLIs passed: 33 Codex registrations, 21 Claude
+definitions, fixture Git/stub operations and protected-host/descendant write denials. Claude also
+passed file-tool and non-provider network denials. Neither probe started a model turn or changed
+fixture content; the ledger/lock absence was restored. These are recorder prerequisites only.
+
+The recording instrument changes with this compatibility correction. A later cohort must use a
+new clean candidate/instrument pin and matching baseline receipt. The failed attempts retain their
+original identities, original journal hashes and zero eligible measurements; missing original
+stdout/process receipts remain unavailable.
+
+Current read-only strict verification still reports all six build-context scenarios absent,
+twenty pairs and both full native lanes unrecorded. Eight merge-gate scenarios and seven iterate
+scenarios are stale; all eleven next-steps scenarios remain current. A fresh model-free official
+App-Server inspection additionally covered full turn items and bounded original item hydration.
+It exposes native commands but still no original root/runner/worker spawn assignment. The nine
+retained original spawn messages remain encrypted and the closed helper grammar still has no
+input-bound helper observations. No decryption, task-name inference, new attestation infrastructure
+or known-unprovable cohort launch was used.
+
+The retained Claude sandbox bundle was restored without network or dependency resolution and
+passed the exact membership pin. Claude Code is still 2.1.292; the reported weekly reset at
+2026-10-22 16:00 Europe/Berlin remained future at this check, so the unchanged quota was not probed
+again. Actual Claude model/effort, workloads and native continuation remain unproven. Preserve
+Quality defaults, all thresholds and lifecycle gates; keep this plan Not implemented and both
+PR #581 and PR #582 in draft until the complete approved evidence is accepted.
+
 ## Review findings
 
 **Date:** 2026-10-20

@@ -16,6 +16,7 @@ import { randomBytes } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { digest, readRegular, toolTexts } from './transcript.mjs';
 import { requireThat, SCHEMA } from './protocol.mjs';
+import { nativeWorkerNames } from './native-workers.mjs';
 const NAME = 'flow-build-context';
 const below = (root, path) => path === root || path.startsWith(root + '/');
 const toml = (value) =>
@@ -86,17 +87,7 @@ export function nativePolicy({ fixtureRoot, skillRoot, protectedRoots, target = 
   const definition = { extends: ':workspace', filesystem, network: { enabled: false } };
   const nativeRegistrations = [];
   if (target === 'codex') {
-    const inventory = JSON.parse(readRegular(resolve(skill, 'native-agent-inventory.json')));
-    requireThat(
-      inventory.schemaVersion === 1 &&
-        inventory.harness === 'codex' &&
-        Array.isArray(inventory.baseWorkers) &&
-        inventory.baseWorkers.length > 0 &&
-        new Set(inventory.baseWorkers).size === inventory.baseWorkers.length &&
-        inventory.fastWorkers?.length === 0,
-      'actual canonical Codex native inventory required',
-    );
-    for (const name of inventory.baseWorkers) {
+    for (const name of nativeWorkerNames(skill, 'codex')) {
       requireThat(/^effective-flow-[a-z0-9-]+$/.test(name), 'unknown native worker name');
       const file = resolve(skill, '../agents', name + '.toml'),
         body = readRegular(file, 256 * 1024),

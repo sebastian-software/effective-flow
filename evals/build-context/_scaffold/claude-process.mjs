@@ -13,6 +13,7 @@ import { nativePolicy } from './native-sandbox.mjs';
 import { claudeRuntimeIdentity } from './claude-runtime.mjs';
 import { digest, readRegular } from './transcript.mjs';
 import { requireThat, SCHEMA } from './protocol.mjs';
+import { nativeWorkerNames } from './native-workers.mjs';
 const below = (root, p) => p === root || p.startsWith(root + '/');
 export const CLAUDE_PROVIDER_DOMAINS = Object.freeze(['api.anthropic.com']);
 export const CLAUDE_SETTINGS = Object.freeze({
@@ -72,30 +73,8 @@ export function claudePolicy({ fixtureRoot, skillRoot, protectedRoots, command }
 export function bindClaudeAgents({ skillRoot, target, journalRoot }) {
   if (target !== 'claude') return null;
   const root = resolve(skillRoot, '../agents'),
-    definitions = {},
-    inventory = JSON.parse(readRegular(resolve(skillRoot, 'native-agent-inventory.json')));
-  requireThat(
-    inventory.schemaVersion === 1 &&
-      inventory.harness === 'claude' &&
-      Array.isArray(inventory.baseWorkers) &&
-      Array.isArray(inventory.fastWorkers),
-    'canonical native Claude inventory required',
-  );
-  const names = [...inventory.baseWorkers, ...inventory.fastWorkers];
-  requireThat(
-    names.length > 0 &&
-      new Set(names).size === names.length &&
-      names.every((n) => /^effective-flow-[a-z0-9-]+$/.test(n)),
-    'closed native Claude inventory required',
-  );
-  requireThat(
-    JSON.stringify(
-      readdirSync(root)
-        .filter((f) => f.endsWith('.md'))
-        .sort(),
-    ) === JSON.stringify(names.map((n) => n + '.md').sort()),
-    'native Claude sidecar membership differs',
-  );
+    definitions = {};
+  nativeWorkerNames(skillRoot, 'claude');
   for (const file of readdirSync(root)
     .filter((f) => /^effective-flow-[a-z0-9-]+\.md$/.test(f))
     .sort()) {

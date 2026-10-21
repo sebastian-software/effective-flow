@@ -7,7 +7,7 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 
 ## Tier rules
 
-- Pass the tier's "Harness values" on the spawn; the rendered site line is authoritative, and
+- Apply the tier through "Harness values" and the role selection rule below; the rendered site line is authoritative, and
   "Spawn sites" below is its source. A spawn without a rendered line, such as a correction or
   respawn, takes its role default for a named worker, otherwise the tier of the row whose Spawn
   entry describes it; without one, `standard`.
@@ -42,6 +42,8 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 ## Harness values
 
 {{MODEL_TIER_TABLE}}
+
+{{MODEL_TIER_ROLE_SELECTION}}
 
 ## Spawn sites
 

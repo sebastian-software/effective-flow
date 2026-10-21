@@ -36,9 +36,10 @@ measurements stay local.
 
 Host capability moved as well. Claude Code takes a per-invocation `model` (aliases `haiku`,
 `sonnet`, `opus`) and `effort` on its Agent tool, and the per-invocation value wins over agent
-frontmatter and over `CLAUDE_CODE_SUBAGENT_MODEL`. Codex ships a per-spawn `model` and
-`reasoning_effort` override for the native Fast path; its use with the built-in default agent is
-unverified and gated by the status above.
+frontmatter and over `CLAUDE_CODE_SUBAGENT_MODEL`. Codex accepts per-spawn `model` and
+`reasoning_effort` parameters, but the native role file's model and reasoning settings win when
+both are present. The Codex role files therefore carry the Fast and tier variants, while a base
+role remains safe for direct invocation.
 
 ## Decision
 
@@ -63,8 +64,15 @@ binds (below).
 **The role default is the single source.** Each `src/agents/*.md` declares one top-level `tier:`.
 Implementers, reviewers and the merge-conflict resolver are `deep`; the validator, test, end-to-end,
 documentation and marketing writers are `standard`. The native Claude and Codex frontmatter is
-derived from it and remains the harness-enforced fallback for a spawn that passes nothing. A
-per-agent model or effort field fails the build.
+derived from it and remains the harness-enforced fallback for a spawn that passes nothing. The
+generated Codex role files are authoritative when a spawn also carries model or reasoning
+parameters. A per-agent model or effort field in source fails the build.
+
+For a named Codex role, the base sidecar is the role default. An allowed one-step move of a
+standard role selects its generated `-tier-mechanical` or `-tier-deep` sidecar; returning to
+`standard` selects the base sidecar again. A tier variant preserves the base role for defaults and
+retry rules, and a mechanical variant is never a new retry default. Deep roles have no tier
+variants. Built-in/default spawns use the rendered Harness values directly.
 
 **Spawn-site markers.** Every spawn instruction in `src/tools` and `src/shared` carries a marker
 line `<!-- spawn-site:<tool>/<id> -->`. The build replaces it with the site's resolved tier and the
@@ -121,9 +129,10 @@ text; the guard recognizes both shapes, and a native target may name only its ow
 - `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. It is documented and not detected.
 
 **The Fast pilot keeps its contract.** `{{AGENT_PROFILE:X:fast}}`, its gate, its first-attempt rule
-and its measurement are unchanged, and portable output stays without Fast. A Fast spawn passes
-only its Fast reference's own values, never the site's tier line, because on Claude Code a
-per-invocation value would override the `-fast` sidecar; `execution-profiles` owns that carve-out. The Quality intent token
+and its measurement are unchanged, and portable output stays without Fast. A Fast spawn selects
+the generated Fast role in native Claude Code and Codex targets without model or effort
+overrides. Codex role-file values win over spawn parameters; Claude invocation values would
+override its Fast sidecar. The Quality intent token
 is unchanged; the configured strongest capability it names is the role's `deep` tier. The
 Quality-mapping identity, a SHA-256 digest of the canonical `deep` values per harness, becomes part
 of the pilot protocol, so a change of those values starts a new generation. Protocol `1.2.0`

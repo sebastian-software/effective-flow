@@ -505,3 +505,38 @@ updates, zero children and zero complete workflows. Its private history remains 
 it cannot be adopted or replaced as successful evidence. The native guard changes require a new
 instrument identity. Model-free guard/unit checks do not establish context reduction, quality or
 any of the missing behavioural, paired or native recordings.
+
+## 2026-10-21 continuation qualification
+
+PR #582 supplies native Codex Fast sidecars and standard-role tier variants. Its separate 36-case
+configuration probe covers every generated variant and conflicting spawn model/effort values; it
+does not complete this suite's native workload lane. The recording candidate now includes that
+change. Both native recording adapters use the build's canonical schema-2 inventory parser and
+bind all declared base/Fast/tier files exactly; Codex registration includes all 33 roles and Claude
+retains all 21 definitions. Current installation inventories remain schema-2-only.
+
+This recorder change changes the instrument identity. Retain both failed attempts and their
+original identities; do not resume or relabel them. Any later actual recording needs the newly
+reviewed, clean candidate and instrument pin, including a matching baseline build receipt. The
+six scenarios, twenty pairs, native lifecycle/continuation lanes and release freshness gates are
+unchanged.
+
+A model-free continuation inspected the official local App-Server's full turn hydration and
+bounded `thread/items/read` on an isolated copy of the retained history. Native command records
+are visible, but the sampled root/runner/worker still expose no original spawn assignment;
+all nine original raw spawn messages remain encrypted, and the current closed helper grammar
+recognizes no input-bound helper call in those hydrated root/runner commands. These diagnostics
+are not cohort evidence. Do not infer tasks from agent paths or decrypt missing assignments.
+The pinned Claude sandbox bundle can be restored and its complete dependency membership verified
+without network or new dependency resolution. Actual Claude execution remains unproven; the
+reported 2026-10-22 16:00 Europe/Berlin reset was still in the future at this check. No unchanged
+quota request or unprovable model recording was repeated.
+
+Both actual installed CLIs also passed fresh model-free registration/process qualification:
+Codex 0.163.0 admitted all 33 declared roles through strict configuration reads, and Claude
+2.1.292 bound all 21 definitions. Both guards allowed fixture read/write, Git commit/push and
+the tracker stub, while denying protected host writes and inherited child writes. Claude also
+denied file-tool host edits/writes and non-provider network access. Fixture content was unchanged
+and absent ledger/lock state was restored. No provider/model turn was started. These checks close
+recorder compatibility prerequisites, not either native workload lane. The canonical parser and
+its local imports are explicitly included in the instrument hash.

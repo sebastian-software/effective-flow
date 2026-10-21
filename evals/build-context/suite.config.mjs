@@ -39,6 +39,12 @@ const suite = {
     resolve(root, 'identity.mjs'),
     resolve(root, 'coordinator.mjs'),
     tracker,
+    // Native inventory admission executes the canonical parser and its local dependencies.
+    ...[
+      'build-lib.mjs',
+      'src/scripts/pilot-measurement-protocol.mjs',
+      'src/scripts/plan-lint-core.mjs',
+    ].map((name) => resolve(root, '../..', name)),
     ...['sandbox.mjs', 'scaffold.mjs', 'prompt.mjs', 'suite.mjs'].map((n) => resolve(shared, n)),
     ...readdirSync(resolve(root, '_scaffold'))
       .filter((n) => n.endsWith('.mjs'))

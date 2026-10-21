@@ -7,9 +7,10 @@ Active
 ## Context
 
 Effective Flow ships native Claude Code and Codex worker definitions plus a harness-neutral portable
-manager target. Their delegation contracts differ: Codex can apply model and reasoning settings to
-an individual spawn, Claude Code represents a fixed worker profile through a registered sidecar,
-and a portable manager cannot guarantee either native mechanism or a uniform Quality fallback.
+manager target. Their delegation contracts differ: Claude Code and Codex represent fixed worker
+profiles through registered sidecars, while a portable manager cannot guarantee either native
+mechanism or a uniform Quality fallback. Codex also accepts spawn parameters, but the role file's
+model and reasoning settings take precedence over those parameters.
 
 The execution-profile policy must preserve the same safety behavior across targets without
 pretending that all targets can enforce the same optimization. Concrete model names and reasoning
@@ -19,9 +20,9 @@ project's configuration or in this durable rationale.
 ## Decision
 
 Quality and Fast remain provider-neutral intents in the shared policy. Native rendering represents
-Fast in Codex with an explicit model-and-reasoning override on an eligible implementation spawn.
-Claude Code represents Fast with a generated implementer sidecar whose native metadata fixes the
-mapped model and effort. Both paths continue to use the registered Quality role for exclusions,
+Fast in both Claude Code and Codex with a generated implementer sidecar whose native metadata fixes
+the mapped model and effort. Model-tier variants use the same representation for Codex's six
+standard roles. Both paths continue to use the registered Quality role for exclusions,
 unavailability, rejection, escalation, and correction. Central build metadata—not workflow prose
 or project configuration—owns the concrete mappings.
 
@@ -43,14 +44,14 @@ performance optimization is intentionally native-only.
 > tier whose values for both harnesses are build-generated, so "portable contains no model
 > metadata" no longer holds for generated tier text.
 
-The build now renders this native capability and publishes strict native-agent inventories as
-build/install consistency manifests. It generates the sanctioned Claude Fast implementer sidecars
-and can render the Codex per-spawn override form. Portable output still contains no native profile
-artifact. Capability remains separate from activation: a valid inventory does not prove runtime
-discovery or host acceptance. `build` Phase 2 and `refactor` Phase 3 are the two adopting
-phases; each renders the five Fast references inline and executes the policy's runtime capability
-gate immediately before selection, and only an eligible packet in an active pilot generation
-requests Fast.
+The build now renders this native capability and publishes strict schema-2 native-agent inventories
+as build/install consistency manifests. It generates five Fast implementer sidecars for each native
+harness and Codex's twelve mechanical/deep variants for the six standard roles. Portable output
+still contains no native profile artifact. Capability remains separate from activation: a valid
+inventory does not prove runtime discovery or host acceptance. `build` Phase 2 and `refactor` Phase
+3 are the two adopting phases; each renders the five Fast references inline and executes the
+policy's runtime capability gate immediately before selection, and only an eligible packet in an
+active pilot generation requests Fast.
 
 ## Alternatives and tradeoffs
 

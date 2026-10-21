@@ -6,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
+  extractFrontmatter,
+  resolveAgentTier,
   parseExecutionProfileContract,
   assertExecutionProfileContract,
   EXECUTION_PROFILE_GATE_REASONS,
@@ -1061,8 +1063,24 @@ test('an isolated build ships Fast only through the adopted build and refactor p
       for (const worker of EXPECTED_FAST_WORKERS) {
         assert.equal(
           phase.split(`\`effective-flow-${worker}-fast\``).length - 1,
-          target === 'claude' ? 1 : 0,
-          `${target} ${name} must reference effective-flow-${worker}-fast only on Claude`,
+          target === 'portable' ? 0 : 1,
+          `${target} ${name} must reference effective-flow-${worker}-fast only on native targets`,
+        );
+        if (target === 'codex') {
+          const selector = phase
+            .split('\n')
+            .find((line) => line.includes(`\`effective-flow-${worker}-fast\``));
+          assert.ok(
+            selector.endsWith(`Fast: \`effective-flow-${worker}-fast\`.`),
+            `${target} ${name} must select the registered Fast sidecar directly`,
+          );
+        }
+      }
+      if (target === 'codex') {
+        assert.doesNotMatch(
+          phase,
+          /\b(?:model|reasoning_effort)\s*:/,
+          `${target} ${name} must not combine base roles with ineffective Fast spawn overrides`,
         );
       }
     }
@@ -1084,10 +1102,21 @@ test('an isolated build ships Fast only through the adopted build and refactor p
     [...EXPECTED_WORKERS, ...EXPECTED_FAST_WORKERS.map((worker) => `${worker}-fast`)].sort(),
     'Claude capability must add only the five sanctioned Fast sidecars',
   );
+  const tierWorkers = EXPECTED_WORKERS.filter(
+    (worker) =>
+      resolveAgentTier(
+        extractFrontmatter(readFileSync(new URL(`src/agents/${worker}.md`, ROOT), 'utf8')),
+        { agentName: worker },
+      ) === 'standard',
+  ).flatMap((worker) => [`${worker}-tier-mechanical`, `${worker}-tier-deep`]);
   assert.deepEqual(
     generatedWorkers.codex.sort(),
-    EXPECTED_WORKERS,
-    'Codex must retain only independently discoverable Quality workers',
+    [
+      ...EXPECTED_WORKERS,
+      ...EXPECTED_FAST_WORKERS.map((worker) => `${worker}-fast`),
+      ...tierWorkers,
+    ].sort(),
+    'Codex must retain Quality workers and add exactly the sanctioned Fast and standard-role tier sidecars',
   );
   assert.deepEqual(
     generatedWorkers.portable.sort(),

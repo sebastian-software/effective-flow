@@ -625,15 +625,19 @@ export function renderSpawnSiteLine(site, harness, { mappings, context } = {}) {
   const tiers = [...new Set(site.clauses.map(({ tier }) => tier))];
   const noDown = !site.downAllowed && tiers.includes('standard');
   const suffix = ` (rules: \`model-tiers\`${noDown ? ', no downward move' : ''}).`;
+  const values = (tier, role) =>
+    harness === 'codex' && role
+      ? 'select the named role’s configured sidecar'
+      : tierValuesPhrase(tier, harness, mappings, context);
   if (tiers.length === 1) {
-    return `Tier \`${tiers[0]}\`: ${tierValuesPhrase(tiers[0], harness, mappings, context)}${suffix}`;
+    return `Tier \`${tiers[0]}\`: ${values(
+      tiers[0],
+      site.clauses.every(({ role }) => role),
+    )}${suffix}`;
   }
   return (
     site.clauses
-      .map(
-        ({ role, tier }) =>
-          `Tier \`${tier}\` for {{AGENT:${role}}}: ${tierValuesPhrase(tier, harness, mappings, context)}`,
-      )
+      .map(({ role, tier }) => `Tier \`${tier}\` for {{AGENT:${role}}}: ${values(tier, role)}`)
       .join('. ') + suffix
   );
 }
@@ -660,6 +664,7 @@ export const MODEL_TIER_TABLE_END = '<!-- model-tier-table:end -->';
 export const MODEL_TIER_GENERATED_PLACEHOLDERS = Object.freeze([
   '{{MODEL_TIER_ROLE_DEFAULTS}}',
   '{{MODEL_TIER_TABLE}}',
+  '{{MODEL_TIER_ROLE_SELECTION}}',
 ]);
 
 // Role | Tier for every agent source, sorted by name.
@@ -712,7 +717,12 @@ export function renderModelTierDirectives(
   }
   return withSites
     .replaceAll('{{MODEL_TIER_ROLE_DEFAULTS}}', () => renderModelTierRoleDefaults(agentTiers))
-    .replaceAll('{{MODEL_TIER_TABLE}}', () => renderModelTierTable(harness, mappings, { context }));
+    .replaceAll('{{MODEL_TIER_TABLE}}', () => renderModelTierTable(harness, mappings, { context }))
+    .replaceAll('{{MODEL_TIER_ROLE_SELECTION}}', () =>
+      harness === 'codex'
+        ? 'For a named native role, select its base sidecar at the role default. For an allowed move of a standard role, choose `effective-flow-<role>-tier-mechanical` or `effective-flow-<role>-tier-deep`; use the base role again for standard. These variants preserve the worker instructions and pin the selected tier. A variant retains its underlying base role for defaults and retry rules; a mechanical variant is never a new retry default. Never override a named role with spawn model or effort parameters: Codex loads the role configuration after those parameters and can silently replace them. Deep roles have no tier variants. Built-in/default spawns use the Harness values directly.'
+        : 'Pass the Harness values directly on the spawn.',
+    );
 }
 
 function providerNamePattern(names) {
@@ -803,6 +813,8 @@ const NATIVE_AGENT_INVENTORY_KEYS = Object.freeze([
   'harness',
   'baseWorkers',
   'fastWorkers',
+  'tierWorkers',
+  'standardWorkers',
 ]);
 const NATIVE_AGENT_STEM_RE = /^effective-flow-[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
@@ -831,13 +843,16 @@ function canonicalNativeAgentInventory(inventory) {
       harness: inventory.harness,
       baseWorkers: inventory.baseWorkers,
       fastWorkers: inventory.fastWorkers,
+      ...(inventory.schemaVersion === 2
+        ? { tierWorkers: inventory.tierWorkers, standardWorkers: inventory.standardWorkers }
+        : {}),
     },
     null,
     2,
   )}\n`;
 }
 
-export function parseNativeAgentInventory(content, { context } = {}) {
+export function parseNativeAgentInventory(content, { context, allowLegacy = false } = {}) {
   if (Buffer.isBuffer(content)) content = content.toString('utf8');
   if (typeof content !== 'string') {
     throw new Error(`Native agent inventory must be UTF-8 text${contextSuffix(context)}`);
@@ -851,16 +866,20 @@ export function parseNativeAgentInventory(content, { context } = {}) {
   }
   assertPlainObject(inventory, 'Native agent inventory', context);
   const keys = Object.keys(inventory);
+  const expectedKeys =
+    allowLegacy && inventory.schemaVersion === 1
+      ? NATIVE_AGENT_INVENTORY_KEYS.slice(0, -2)
+      : NATIVE_AGENT_INVENTORY_KEYS;
   if (
-    keys.length !== NATIVE_AGENT_INVENTORY_KEYS.length ||
-    keys.some((key, index) => key !== NATIVE_AGENT_INVENTORY_KEYS[index])
+    keys.length !== expectedKeys.length ||
+    keys.some((key, index) => key !== expectedKeys[index])
   ) {
     throw new Error(
-      `Native agent inventory keys must be exactly ${NATIVE_AGENT_INVENTORY_KEYS.join(', ')} in canonical order${contextSuffix(context)}`,
+      `Native agent inventory keys must be exactly ${expectedKeys.join(', ')} in canonical order${contextSuffix(context)}`,
     );
   }
-  if (inventory.schemaVersion !== 1) {
-    throw new Error(`Native agent inventory schemaVersion must be 1${contextSuffix(context)}`);
+  if (inventory.schemaVersion !== 2 && !(allowLegacy && inventory.schemaVersion === 1)) {
+    throw new Error(`Native agent inventory schemaVersion must be 2${contextSuffix(context)}`);
   }
   if (!['claude', 'codex'].includes(inventory.harness)) {
     throw new Error(
@@ -869,13 +888,28 @@ export function parseNativeAgentInventory(content, { context } = {}) {
   }
   assertCanonicalStringArray(inventory.baseWorkers, 'Native baseWorkers', context);
   assertCanonicalStringArray(inventory.fastWorkers, 'Native fastWorkers', context);
+  if (inventory.schemaVersion === 2) {
+    assertCanonicalStringArray(inventory.tierWorkers, 'Native tierWorkers', context);
+    assertCanonicalStringArray(inventory.standardWorkers, 'Native standardWorkers', context);
+    if (inventory.standardWorkers.some((worker) => !inventory.baseWorkers.includes(worker))) {
+      throw new Error(
+        `Native standardWorkers must be declared base workers${contextSuffix(context)}`,
+      );
+    }
+  }
   if (inventory.baseWorkers.length === 0) {
     throw new Error(`Native baseWorkers must not be empty${contextSuffix(context)}`);
   }
-  const base = new Set(inventory.baseWorkers);
-  const overlap = inventory.fastWorkers.filter((worker) => base.has(worker));
+  const all = [
+    ...inventory.baseWorkers,
+    ...inventory.fastWorkers,
+    ...(inventory.tierWorkers ?? []),
+  ];
+  const overlap = all.filter((worker, index) => all.indexOf(worker) !== index);
   if (overlap.length > 0) {
-    throw new Error(`Native baseWorkers and fastWorkers must be disjoint${contextSuffix(context)}`);
+    throw new Error(
+      `Native baseWorkers, fastWorkers and tierWorkers must be disjoint${contextSuffix(context)}`,
+    );
   }
   if (content !== canonicalNativeAgentInventory(inventory)) {
     throw new Error(`Native agent inventory bytes are not canonical${contextSuffix(context)}`);
@@ -943,17 +977,37 @@ export function reconcileNativeAgentInventories(
   if (JSON.stringify(claudeInventory.baseWorkers) !== JSON.stringify(codexInventory.baseWorkers)) {
     throw new Error(`Native agent inventories disagree on baseWorkers${contextSuffix(context)}`);
   }
-  if (codexInventory.fastWorkers.length !== 0) {
-    throw new Error(`Codex native inventory must not list Fast sidecars${contextSuffix(context)}`);
+  if (claudeInventory.tierWorkers.length !== 0) {
+    throw new Error(`Claude native inventory must not list tier sidecars${contextSuffix(context)}`);
+  }
+  if (JSON.stringify(claudeInventory.fastWorkers) !== JSON.stringify(codexInventory.fastWorkers)) {
+    throw new Error(`Native agent inventories disagree on fastWorkers${contextSuffix(context)}`);
   }
   const base = new Set(claudeInventory.baseWorkers);
   for (const fastWorker of claudeInventory.fastWorkers) {
     const baseWorker = fastWorker.replace(/-fast$/, '');
     if (baseWorker === fastWorker || !base.has(baseWorker)) {
       throw new Error(
-        `Claude Fast worker "${fastWorker}" has no declared base worker${contextSuffix(context)}`,
+        `Fast worker "${fastWorker}" has no declared base worker${contextSuffix(context)}`,
       );
     }
+  }
+  if (
+    JSON.stringify(claudeInventory.standardWorkers) !==
+    JSON.stringify(codexInventory.standardWorkers)
+  ) {
+    throw new Error(
+      `Native agent inventories disagree on standardWorkers${contextSuffix(context)}`,
+    );
+  }
+  const standardWorkers = codexInventory.standardWorkers;
+  const expectedTierWorkers = standardWorkers
+    .flatMap((name) => [`${name}-tier-mechanical`, `${name}-tier-deep`])
+    .sort();
+  if (JSON.stringify(codexInventory.tierWorkers) !== JSON.stringify(expectedTierWorkers)) {
+    throw new Error(
+      `Codex tierWorkers must exactly match standard role variants${contextSuffix(context)}`,
+    );
   }
 
   if ((claudeArtifacts === undefined) !== (codexArtifacts === undefined)) {
@@ -965,7 +1019,11 @@ export function reconcileNativeAgentInventories(
     const actualClaude = inventoryArtifactStems(claudeArtifacts, 'claude', context);
     const actualCodex = inventoryArtifactStems(codexArtifacts, 'codex', context);
     const expectedClaude = [...claudeInventory.baseWorkers, ...claudeInventory.fastWorkers].sort();
-    const expectedCodex = [...codexInventory.baseWorkers].sort();
+    const expectedCodex = [
+      ...codexInventory.baseWorkers,
+      ...codexInventory.fastWorkers,
+      ...codexInventory.tierWorkers,
+    ].sort();
     if (JSON.stringify(actualClaude) !== JSON.stringify(expectedClaude)) {
       throw new Error(
         `Claude native artifacts do not match the inventory${contextSuffix(context)}`,
@@ -979,6 +1037,8 @@ export function reconcileNativeAgentInventories(
   return {
     baseWorkers: [...claudeInventory.baseWorkers],
     claudeFastWorkers: [...claudeInventory.fastWorkers],
+    codexFastWorkers: [...codexInventory.fastWorkers],
+    codexTierWorkers: [...codexInventory.tierWorkers],
   };
 }
 
@@ -4267,10 +4327,7 @@ export function transformRefs(
     .replace(AGENT_PROFILE_REF_RE, (_, raw) => {
       const name = agentName(raw);
       if (harness === 'claude') return `\`${name}-fast\``;
-      if (harness === 'codex') {
-        const { model, reasoning_effort: effort } = profileMappings.fast.codex;
-        return `\`${name}\` with \`model: "${model}"\` and \`reasoning_effort: "${effort}"\``;
-      }
+      if (harness === 'codex') return `\`${name}-fast\``;
       if (harness === 'portable') {
         return `\`${name}\` (portable build: Fast unavailable, Quality only)`;
       }
