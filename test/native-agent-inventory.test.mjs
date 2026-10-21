@@ -11,8 +11,16 @@ const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const CLI = join(ROOT_DIR, 'scripts/native-agent-inventory.mjs');
 const FAILURE = 'Native agent inventory validation failed\n';
 
-function inventory(harness, { baseWorkers = ['effective-flow-alpha'], fastWorkers = [] } = {}) {
-  return { schemaVersion: 1, harness, baseWorkers, fastWorkers };
+function inventory(
+  harness,
+  {
+    baseWorkers = ['effective-flow-alpha'],
+    fastWorkers = [],
+    tierWorkers = [],
+    standardWorkers = [],
+  } = {},
+) {
+  return { schemaVersion: 2, harness, baseWorkers, fastWorkers, tierWorkers, standardWorkers };
 }
 
 function canonical(value) {
@@ -23,7 +31,7 @@ function createFixture(root) {
   const claudeInventory = inventory('claude', {
     fastWorkers: ['effective-flow-alpha-fast'],
   });
-  const codexInventory = inventory('codex');
+  const codexInventory = inventory('codex', { fastWorkers: ['effective-flow-alpha-fast'] });
   const claudeInventoryPath = join(root, 'claude/native-agent-inventory.json');
   const codexInventoryPath = join(root, 'codex/native-agent-inventory.json');
   const claudeAgents = join(root, 'claude-agents');
@@ -43,6 +51,10 @@ function createFixture(root) {
     '---\nname: effective-flow-alpha-fast\n---\nfast\n',
   );
   writeFileSync(join(codexAgents, 'effective-flow-alpha.toml'), 'name = "effective-flow-alpha"\n');
+  writeFileSync(
+    join(codexAgents, 'effective-flow-alpha-fast.toml'),
+    'name = "effective-flow-alpha-fast"\n',
+  );
   return {
     claudeInventory,
     codexInventory,
@@ -73,7 +85,7 @@ function runCli(fixture, args) {
   );
 }
 
-test('parseNativeAgentInventory accepts only the canonical schema-1 bytes', () => {
+test('parseNativeAgentInventory accepts only the canonical schema-2 bytes', () => {
   const expected = inventory('claude', {
     baseWorkers: ['effective-flow-alpha', 'effective-flow-beta'],
     fastWorkers: ['effective-flow-alpha-fast'],
@@ -82,7 +94,7 @@ test('parseNativeAgentInventory accepts only the canonical schema-1 bytes', () =
   assert.deepEqual(parseNativeAgentInventory(Buffer.from(canonical(expected))), expected);
 
   for (const [content, diagnostic] of [
-    [canonical({ ...expected, schemaVersion: 2 }), /schemaVersion must be 1/],
+    [canonical({ ...expected, schemaVersion: 1 }), /schemaVersion must be 2/],
     [canonical({ ...expected, extra: true }), /keys must be exactly/],
     [
       canonical({
@@ -90,6 +102,8 @@ test('parseNativeAgentInventory accepts only the canonical schema-1 bytes', () =
         schemaVersion: expected.schemaVersion,
         baseWorkers: expected.baseWorkers,
         fastWorkers: expected.fastWorkers,
+        tierWorkers: expected.tierWorkers,
+        standardWorkers: expected.standardWorkers,
       }),
       /keys must be exactly.*canonical order/,
     ],
@@ -112,7 +126,7 @@ test('parseNativeAgentInventory accepts only the canonical schema-1 bytes', () =
 
 test('reconcileNativeAgentInventories enforces cross-target and artifact agreement', () => {
   const claude = inventory('claude', { fastWorkers: ['effective-flow-alpha-fast'] });
-  const codex = inventory('codex');
+  const codex = inventory('codex', { fastWorkers: ['effective-flow-alpha-fast'] });
   assert.deepEqual(
     reconcileNativeAgentInventories(claude, codex, {
       claudeArtifacts: [
@@ -122,11 +136,16 @@ test('reconcileNativeAgentInventories enforces cross-target and artifact agreeme
           declaredName: 'effective-flow-alpha-fast',
         },
       ],
-      codexArtifacts: [{ name: 'effective-flow-alpha.toml', declaredName: 'effective-flow-alpha' }],
+      codexArtifacts: [
+        { name: 'effective-flow-alpha.toml', declaredName: 'effective-flow-alpha' },
+        { name: 'effective-flow-alpha-fast.toml', declaredName: 'effective-flow-alpha-fast' },
+      ],
     }),
     {
       baseWorkers: ['effective-flow-alpha'],
       claudeFastWorkers: ['effective-flow-alpha-fast'],
+      codexFastWorkers: ['effective-flow-alpha-fast'],
+      codexTierWorkers: [],
     },
   );
 
@@ -141,18 +160,14 @@ test('reconcileNativeAgentInventories enforces cross-target and artifact agreeme
     /disagree on baseWorkers/,
   );
   assert.throws(
-    () =>
-      reconcileNativeAgentInventories(
-        claude,
-        inventory('codex', { fastWorkers: ['effective-flow-alpha-fast'] }),
-      ),
-    /Codex native inventory must not list Fast sidecars/,
+    () => reconcileNativeAgentInventories(claude, inventory('codex')),
+    /disagree on fastWorkers/,
   );
   assert.throws(
     () =>
       reconcileNativeAgentInventories(
         inventory('claude', { fastWorkers: ['effective-flow-orphan-fast'] }),
-        codex,
+        inventory('codex', { fastWorkers: ['effective-flow-orphan-fast'] }),
       ),
     /has no declared base worker/,
   );
@@ -205,7 +220,7 @@ test('the inventory CLI is silent on success and stable, non-echoing on every fa
       mutate: (fixture) =>
         writeFileSync(
           fixture.claudeInventoryPath,
-          canonical({ ...fixture.claudeInventory, schemaVersion: 2 }),
+          canonical({ ...fixture.claudeInventory, schemaVersion: 1 }),
         ),
     },
     {
@@ -256,4 +271,93 @@ test('the inventory CLI is silent on success and stable, non-echoing on every fa
       );
     }
   }
+});
+
+// Only the baseline proof opts into the legacy bytes; installation stays schema-2-only.
+test('legacy schema-1 inventories require an explicit read-only compatibility option', () => {
+  const legacy = {
+    schemaVersion: 1,
+    harness: 'codex',
+    baseWorkers: ['effective-flow-alpha'],
+    fastWorkers: [],
+  };
+  assert.throws(() => parseNativeAgentInventory(canonical(legacy)), /keys must be exactly/);
+  assert.deepEqual(parseNativeAgentInventory(canonical(legacy), { allowLegacy: true }), legacy);
+  assert.throws(
+    () => parseNativeAgentInventory(canonical({ ...legacy, extra: true }), { allowLegacy: true }),
+    /keys must be exactly/,
+  );
+});
+
+test('tier inventories require exact pairs for declared standard roles and reject other roles', () => {
+  const standard = 'effective-flow-alpha';
+  const deep = 'effective-flow-beta';
+  const metadata = { baseWorkers: [standard, deep], standardWorkers: [standard] };
+  const tiers = [`${standard}-tier-deep`, `${standard}-tier-mechanical`];
+  const claude = inventory('claude', metadata);
+  const codex = inventory('codex', { ...metadata, tierWorkers: tiers });
+  assert.doesNotThrow(() =>
+    reconcileNativeAgentInventories(claude, codex, {
+      claudeArtifacts: metadata.baseWorkers.map((name) => `${name}.md`),
+      codexArtifacts: [...metadata.baseWorkers, ...tiers].map((name) => `${name}.toml`),
+    }),
+  );
+  for (const tierWorkers of [
+    [],
+    tiers.slice(0, 1),
+    [...tiers, `${deep}-tier-mechanical`],
+    [`${standard}-tier-standard`],
+    [`effective-flow-orphan-tier-deep`],
+  ]) {
+    assert.throws(
+      () =>
+        reconcileNativeAgentInventories(claude, inventory('codex', { ...metadata, tierWorkers })),
+      /exactly match standard role variants/,
+    );
+  }
+  assert.throws(
+    () =>
+      reconcileNativeAgentInventories(
+        inventory('claude', { ...metadata, tierWorkers: tiers }),
+        codex,
+      ),
+    /Claude native inventory must not list tier sidecars/,
+  );
+  assert.throws(
+    () =>
+      reconcileNativeAgentInventories(
+        claude,
+        inventory('codex', { ...metadata, standardWorkers: [], tierWorkers: [] }),
+      ),
+    /disagree on standardWorkers/,
+  );
+  assert.throws(
+    () =>
+      parseNativeAgentInventory(
+        canonical(inventory('codex', { ...metadata, standardWorkers: ['effective-flow-orphan'] })),
+      ),
+    /must be declared base workers/,
+  );
+  assert.throws(
+    () =>
+      parseNativeAgentInventory(
+        canonical(inventory('codex', { ...metadata, tierWorkers: [tiers[0], tiers[0]] })),
+      ),
+    /sorted and unique/,
+  );
+  assert.throws(
+    () =>
+      parseNativeAgentInventory(
+        canonical(inventory('codex', { ...metadata, tierWorkers: [standard] })),
+      ),
+    /must be disjoint/,
+  );
+  assert.throws(
+    () =>
+      reconcileNativeAgentInventories(claude, codex, {
+        claudeArtifacts: metadata.baseWorkers.map((name) => `${name}.md`),
+        codexArtifacts: metadata.baseWorkers.map((name) => `${name}.toml`),
+      }),
+    /Codex native artifacts do not match/,
+  );
 });

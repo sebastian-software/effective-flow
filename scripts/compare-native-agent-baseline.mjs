@@ -5,8 +5,8 @@
 //   node scripts/compare-native-agent-baseline.mjs --base <commit>
 // builds <commit>, which must be an ancestor of HEAD, and a copy of the working
 // tree (tracked plus untracked, non-ignored files) into temporary output roots.
-// Every worker in the working native inventories (base and Fast) must then build
-// the same Claude and Codex sidecar bytes as at <commit>, apart from the deltas in
+// Every worker in the baseline inventories (base, Fast and tier variants) must retain
+// the same Claude and Codex sidecar bytes in the working build, apart from the deltas in
 // EXPECTED_NATIVE_DELTAS; the report names each delta and the workers showing it.
 // Importing the module runs nothing; main runs only when the file is executed
 // directly.
@@ -264,13 +264,13 @@ function build(checkout, outputRoot) {
   });
 }
 
-function inventory(outputRoot, harness) {
+function inventory(outputRoot, harness, allowLegacy = false) {
   return parseNativeAgentInventory(
     readFileSync(
       join(outputRoot, 'dist', harness, 'effective-flow', 'native-agent-inventory.json'),
       'utf8',
     ),
-    { context: `${harness} baseline comparison inventory` },
+    { context: `${harness} baseline comparison inventory`, allowLegacy },
   );
 }
 
@@ -292,7 +292,15 @@ function compareBaseline(baseOutput, workingOutput) {
   ]) {
     const baselineDir = join(baseOutput, 'dist', harness, 'agents');
     const workingDir = join(workingOutput, 'dist', harness, 'agents');
-    const workers = [...native.baseWorkers, ...native.fastWorkers];
+    const baseline = inventory(baseOutput, harness, true);
+    if (JSON.stringify(baseline.baseWorkers) !== JSON.stringify(native.baseWorkers)) {
+      throw new Error(`${harness} base worker membership changed`);
+    }
+    const workers = [
+      ...baseline.baseWorkers,
+      ...baseline.fastWorkers,
+      ...(baseline.tierWorkers ?? []),
+    ];
     assertBaselineWorkerMembership(harness, readdirSync(baselineDir), workers, extension);
     for (const worker of workers) {
       const file = `${worker}.${extension}`;

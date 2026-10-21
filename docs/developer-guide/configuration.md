@@ -297,8 +297,8 @@ configuration contract classifies `configState`, and only `enabled` on a native 
 read-only helper `inventory` that yields the generation state. `none`, `suspended`, and `review`
 select Quality without a record; only `baseline` and `active` classify and measure packets, and a
 `baseline` is first offered to the helper's automatic `activate`. The
-build emits the native capability this needs—five generated Claude Fast sidecars, Codex per-spawn
-rendering, strict native inventories, and the local measurement helper. Portable output remains
+build emits the native capability this needs—five generated Fast sidecars for each native harness,
+Codex tier variants, strict schema-2 native inventories, and the local measurement helper. Portable output remains
 Quality-only and unmeasured. The existence of native artifacts or a valid inventory neither
 activates Fast nor proves that the running host can discover or accept the representation.
 
