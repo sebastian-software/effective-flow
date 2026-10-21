@@ -540,3 +540,32 @@ denied file-tool host edits/writes and non-provider network access. Fixture cont
 and absent ledger/lock state was restored. No provider/model turn was started. These checks close
 recorder compatibility prerequisites, not either native workload lane. The canonical parser and
 its local imports are explicitly included in the instrument hash.
+
+## 2026-10-22 native observation qualification
+
+The supported [Codex hooks](https://learn.chatgpt.com/docs/hooks) cover nested Code Mode tool calls,
+including actual tool inputs and responses. A bounded local 0.163.0 qualification activated only
+pre-vetted passive hooks in an isolated profile and retained their raw inputs outside model write
+roots. The final probe captured eleven hook events, including paired root/child Bash calls and
+the original spawn call. Both spawn hooks still received the same encrypted message; SubagentStart
+contained no assignment, and UserPromptSubmit covered only the root. Hooks therefore do not
+resolve this profile's original-assignment blocker. No production hook integration is enabled.
+
+Disabling the Code Mode host was also rejected as a capture solution: actual tool calls reported
+that the host was disabled. Flag acceptance is not tool capability. Shell probes additionally
+observed a real Here-Document temporary-file denial, not a successful helper invocation. Preserve
+those failed outcomes without counting them as cohort, paired, native-lifecycle or helper-success
+evidence. Do not repeat these probes without a changed prerequisite.
+
+The recorder can consume actual native CommandExecution boundaries instead of interpreting
+JavaScript: bind the event to its real thread, execution ID, timestamps, shell argv, cwd, output
+and exit status, then apply the existing literal helper-input grammar and exact helper path.
+Unknown argv, missing or conflicting identity/timing, multiple commands and unbound output remain
+unproven. Duplicate views must not produce another helper observation. This is an additional
+native observation source, not permission to execute transcript text or relax the helper grammar.
+An encrypted original incoming task remains an explicit UNSUPPORTED_ORIGINAL_ASSIGNMENT stop;
+labels, loaded contracts, later messages and hook registration cannot replace it.
+
+The new instrument needs a fresh clean candidate/baseline pin. Existing failed archives remain
+unchanged and ineligible. Both PRs stay draft; full behavioral, paired, native continuation and
+release-freshness acceptance remains outstanding.

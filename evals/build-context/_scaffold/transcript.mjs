@@ -10,6 +10,7 @@ import {
   observedExecResult,
 } from './helper-observation.mjs';
 import { normalizeProfile } from '../../_scaffold/profile.mjs';
+import { codexNativeExecutions, codexAssignmentProblem } from './codex-native-observations.mjs';
 export const digest = (text) => `sha256:${createHash('sha256').update(text).digest('hex')}`;
 export function readRegular(path, maximum = 128 * 1024 * 1024) {
   const stat = lstatSync(path);
@@ -220,10 +221,23 @@ export function parseTranscript(text, harness) {
           ['reasoning', 'function_call', 'custom_tool_call'].includes(r.payload?.type))) ||
       r.type === 'assistant',
   );
-  const initialUser =
-    users.filter((u) => firstAssistant < 0 || u.line <= firstAssistant).at(-1) ?? null;
+  const meta = rows.find((r) => r.type === 'session_meta')?.payload ?? null;
+  const firstAt = timestamps.length ? Math.min(...timestamps) : null,
+    lastAt = timestamps.length ? Math.max(...timestamps) : null;
+  const native =
+    harness === 'codex-cli'
+      ? codexNativeExecutions(rows, meta, { firstAt, lastAt })
+      : { present: false, tools: [] };
+  tools.push(...native.tools.map((tool) => ({ ...tool, envelopes: outputObjects(tool.output) })));
+  const assignmentProblem =
+    harness === 'codex-cli' ? codexAssignmentProblem(rows, meta, firstAssistant) : null;
+  const initialUser = assignmentProblem
+    ? null
+    : (users.filter((u) => firstAssistant < 0 || u.line <= firstAssistant).at(-1) ?? null);
   return {
     initialUser,
+    assignmentProblem,
+    nativeExecutionsPresent: native.present,
     permissionContexts: rows
       .filter((r) => r.type === 'turn_context')
       .map((r) => ({
@@ -232,8 +246,8 @@ export function parseTranscript(text, harness) {
         permissionProfile: r.payload?.permission_profile,
         fileSystemSandboxPolicy: r.payload?.file_system_sandbox_policy,
       })),
-    firstAt: timestamps.length ? Math.min(...timestamps) : null,
-    lastAt: timestamps.length ? Math.max(...timestamps) : null,
+    firstAt,
+    lastAt,
     streamCapture: stream
       ? {
           rootIdentity: stream.rootIdentity,
@@ -267,7 +281,7 @@ export function parseTranscript(text, harness) {
               .map((block) => block.text),
       )
       .join('\n'),
-    meta: rows.find((r) => r.type === 'session_meta')?.payload ?? null,
+    meta,
     parentToolUseId: rows.find((r) => r.parent_tool_use_id)?.parent_tool_use_id ?? null,
     sourceDigest: digest(text),
     models: [...models],
@@ -372,6 +386,10 @@ export function captureHostEvidence(manifest) {
     );
     const path = realpathSync(resolve(entry.path)),
       parsed = parseTranscript(readRegular(path), manifest.harness);
+    requireThat(
+      !parsed.assignmentProblem,
+      `${entry.alias}: UNSUPPORTED_ORIGINAL_ASSIGNMENT: ${parsed.assignmentProblem}`,
+    );
     const identity = parsed.meta?.id ?? parsed.nativeSessionId;
     requireThat(
       typeof identity === 'string' && identity.length > 0,
@@ -516,6 +534,7 @@ export function captureHostEvidence(manifest) {
           line: tool.resultLine,
           at: tool.at,
         });
+      if (parsed.nativeExecutionsPresent && !tool.nativeExecution) continue;
       for (const env of tool.envelopes) {
         const alias = (value) => digest((manifest.aliasSalt ?? '') + '\0' + value);
         const agentSession = (handle) =>

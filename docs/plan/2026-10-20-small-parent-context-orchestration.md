@@ -344,6 +344,24 @@ again. Actual Claude model/effort, workloads and native continuation remain unpr
 Quality defaults, all thresholds and lifecycle gates; keep this plan Not implemented and both
 PR #581 and PR #582 in draft until the complete approved evidence is accepted.
 
+### 2026-10-22 — Supported native capture qualification
+
+Official passive PreToolUse/PostToolUse hooks were qualified against the installed Codex 0.163.0
+in an isolated profile with a protected journal and unchanged model/sandbox policy. Eleven real
+events covered root and child Bash boundaries plus the original spawn. The spawn input was still
+encrypted at both hook boundaries; SubagentStart supplied no task and UserPromptSubmit only the
+root input. The Code Mode host disable switch failed actual tool execution. Neither route supplies
+a supported plaintext original assignment. No production hook activation or task inference is
+admitted. Shell probes retained actual Here-Document temporary-file denials, not helper success.
+
+The bounded recorder correction consumes native completed CommandExecution boundaries with exact
+thread/execution/timing/argv binding and the unchanged literal helper grammar. Duplicate views
+must not count twice, and encrypted original tasks stop explicitly as unsupported. Regression
+tests protect malformed, foreign, ambiguous and synthetic-output cases. These tests are not model
+recordings and do not close the original-assignment, full workload or acceptance gates. The new
+instrument requires repinning; this plan remains Not implemented and unarchived, with both PRs
+in draft.
+
 ## Review findings
 
 **Date:** 2026-10-20
