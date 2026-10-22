@@ -905,6 +905,71 @@ test('a benign git add warning such as an embedded repository does not fail a sn
   assert.deepEqual(envelope.result.entries, [{ status: 'A', path: 'embedded' }]);
 });
 
+test('snapshot ignores the identified host diagnostics but still fails a real skipped path', async (t) => {
+  const fixture = repository(t);
+  const { root } = fixture;
+  const inner = createProcessRunner();
+  const hostDiagnostics =
+    "git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\n" +
+    "git: error: couldn't create cache file '/tmp/xcrun_db-0HSPI2SX' (errno=Operation not permitted)\n";
+  const runner = async (call) => {
+    const result = await inner(call);
+    if (call.args.includes('add') && call.env.GIT_INDEX_FILE) {
+      return {
+        ...result,
+        stderr: Buffer.concat([result.stderr, Buffer.from(hostDiagnostics)]),
+      };
+    }
+    return result;
+  };
+  const baseline = await executeOperation('capture', captureInput(fixture), {
+    runner,
+    env: GIT_ENV,
+  });
+  assert.equal(baseline.ok, true, JSON.stringify(baseline));
+  writeFileSync(join(root, 'host-diagnostic.txt'), 'changed\n');
+  const rendered = await executeOperation('render', renderInput(fixture, baseline.result), {
+    runner,
+    env: GIT_ENV,
+  });
+  assert.equal(rendered.ok, true, JSON.stringify(rendered));
+  assert.deepEqual(rendered.result.entries, [{ status: 'A', path: 'host-diagnostic.txt' }]);
+
+  const skippedRunner = async (call) => {
+    const result = await inner(call);
+    if (call.args.includes('add') && call.env.GIT_INDEX_FILE) {
+      return {
+        ...result,
+        stderr: Buffer.from(`${hostDiagnostics}locked/: Permission denied\n`),
+      };
+    }
+    return result;
+  };
+  const skipped = await executeOperation(
+    'capture',
+    captureInput(fixture, { sessionId: `${SESSION}-skipped` }),
+    { runner: skippedRunner, env: GIT_ENV },
+  );
+  assert.equal(skipped.ok, false, JSON.stringify(skipped));
+  assert.equal(skipped.error.code, 'GIT_FAILED');
+  assert.match(skipped.error.message, /could not read locked\//);
+  assert.doesNotMatch(skipped.error.message, /DARWIN_USER_TEMP_DIR|xcrun_db/);
+
+  const failedRunner = async (call) => {
+    if (call.args.includes('add') && call.env.GIT_INDEX_FILE) {
+      return { status: 1, stdout: Buffer.alloc(0), stderr: Buffer.from(hostDiagnostics) };
+    }
+    return inner(call);
+  };
+  const failed = await executeOperation(
+    'capture',
+    captureInput(fixture, { sessionId: `${SESSION}-failed` }),
+    { runner: failedRunner, env: GIT_ENV },
+  );
+  assert.equal(failed.ok, false, JSON.stringify(failed));
+  assert.equal(failed.error.code, 'GIT_FAILED');
+});
+
 test('a failing snapshot cleanup never replaces the snapshot error', async (t) => {
   const fixture = repository(t);
   const { root } = fixture;

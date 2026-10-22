@@ -769,8 +769,11 @@ point is an I/O boundary over testable core or protocol modules:
   and an empty private `core.hooksPath`, so no split-index write and no hook reaches the real
   `.git/`. They pin `core.safecrlf=false`, so a line-ending round trip cannot abort the snapshot,
   and every helper git call runs with `LC_ALL=C`, so git's messages stay parseable. Both snapshots
-  use the identical procedure, so filter, line-ending and sparse-checkout effects cancel out. An
-  unreadable file or directory makes `capture` or `render` fail closed, naming the path. `render` verifies `executionRoot` and
+  use the identical procedure, so filter, line-ending and sparse-checkout effects cancel out. The
+  skipped-path check ignores only the literal macOS Git shim diagnostics for `DARWIN_USER_TEMP_DIR`
+  and an anchored `/tmp/xcrun_db-` cache path with eight alphanumeric characters and `Operation not
+permitted`, when Git exits successfully; a true unreadable file or directory still makes
+  `capture` or `render` fail closed with its path, and any nonzero status remains a failure. `render` verifies `executionRoot` and
   `baselineTree` against the recorded `baseline.json` and fails closed when its baseline is
   missing instead of capturing again. The helper refuses before any write when `.effective-flow/`
   is tracked, not ignored, or reached through a symlink; directories are created with mode `0700`
@@ -825,6 +828,13 @@ point is an I/O boundary over testable core or protocol modules:
   `build-delegated-run.md` owns the delegated phases and complete inline fallback. The helper is
   shipped to all three targets through `RUNTIME_SCRIPT_FILES`; it is not a scheduler or a
   persistent capability store.
+
+  Before a caller reads bound artifacts or mutates project state, it follows the helper invocation
+  and failure contract in [`build-run-contract.md`](../../src/shared/build-run-contract.md): the
+  operation is the sole argv value, the JSON payload is the only stdin content, and a JSON
+  `operation` field cannot replace the argv value. A nonzero exit, `ok:false`, missing or malformed
+  envelope, including `INVALID_OPERATION`, stops the run without an implicit retry or inline
+  fallback. `ABORT` is recorded only when the bound controls are valid.
 
   `authorize-execution` records an already resolved delivery mode and owning agent before setup;
   `transition-execution` binds the fresh receipt and lifecycle proof before baseline capture or

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+  existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
@@ -721,6 +722,41 @@ test('CLI emits exactly one machine envelope, diagnostic stderr and usage exit s
   assert.equal(oversizedOperation.status, 2);
   assert.ok(Buffer.byteLength(oversizedOperation.stdout) <= MAX_CONTROL_BYTES);
   assert.equal(JSON.parse(oversizedOperation.stdout).operation, null);
+});
+
+test('CLI takes exactly one positional operation and reads only the JSON payload from stdin', async (t) => {
+  const cli = fileURLToPath(new URL('../src/scripts/build-run.mjs', import.meta.url));
+  const fx = fixture(t);
+  const missingArg = spawnSync(process.execPath, [cli], {
+    input: JSON.stringify({ operation: 'validate' }),
+    cwd: fx.root,
+    encoding: 'utf8',
+  });
+  assert.equal(missingArg.status, 2);
+  assert.equal(JSON.parse(missingArg.stdout).error.code, 'INVALID_OPERATION');
+  assert.equal(existsSync(path.join(fx.root, '.effective-flow', 'build-runs')), false);
+
+  const live = await start(fx);
+  const valid = spawnSync(process.execPath, [cli, 'validate'], {
+    input: JSON.stringify(live.common),
+    encoding: 'utf8',
+  });
+  assert.equal(valid.status, 0, valid.stderr);
+  assert.equal(JSON.parse(valid.stdout).ok, true);
+
+  const extraPayloadOperation = spawnSync(process.execPath, [cli, 'validate'], {
+    input: JSON.stringify({ ...live.common, operation: 'validate' }),
+    encoding: 'utf8',
+  });
+  assert.equal(extraPayloadOperation.status, 2);
+  assert.equal(JSON.parse(extraPayloadOperation.stdout).error.code, 'INVALID_PAYLOAD');
+
+  const extraArg = spawnSync(process.execPath, [cli, 'validate', 'extra'], {
+    input: JSON.stringify(live.common),
+    encoding: 'utf8',
+  });
+  assert.equal(extraArg.status, 2);
+  assert.equal(JSON.parse(extraArg.stdout).error.code, 'INVALID_OPERATION');
 });
 
 test('checkpoint cannot promote an unfinished phase and DONE cannot claim cleanup before removal', async (t) => {

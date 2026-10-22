@@ -1200,3 +1200,48 @@ test('planned build dispatch keeps caller guards eager and all execution gates i
     assert.match(control, contract);
   }
 });
+
+test('build-run contract freezes helper invocation and fail-closed handoff behavior', () => {
+  const control = readSource('shared', 'build-run-contract.md');
+  assert.match(control, /^## Helper invocation and failure handling$/m);
+  assert.match(
+    control,
+    /exactly one positional operation(?: argument)?[^\n]*JSON payload[^\n]*stdin/i,
+    'the helper contract must keep the operation in argv and the payload on stdin',
+  );
+  assert.match(
+    control,
+    /JSON[^\n]*operation[^\n]*(?:never|not)[^\n]*(?:accepted|used)[^\n]*(?:argv|argument)/i,
+    'the helper contract must reject an operation supplied through JSON',
+  );
+  assert.match(
+    control,
+    /missing[^\n]*argv[^\n]*INVALID_OPERATION/i,
+    'missing argv must stop as INVALID_OPERATION',
+  );
+  assert.match(
+    control,
+    /nonzero[^\n]*ok:false|ok:false[^\n]*nonzero/i,
+    'nonzero and ok:false helper outcomes must stop the run',
+  );
+  assert.match(
+    control,
+    /malformed[\s\S]{0,180}INVALID_OPERATION|INVALID_OPERATION[\s\S]{0,180}malformed/i,
+    'malformed helper output, including INVALID_OPERATION, must stop the run',
+  );
+  assert.match(
+    control,
+    /no implicit retry[\s\S]{0,180}(?:inline fallback|fallback)/i,
+    'helper failure must not trigger an implicit retry or inline fallback',
+  );
+  assert.match(
+    control,
+    /terminal[^\n]*ABORT[^\n]*(?:only|if)[^\n]*bound[^\n]*valid/i,
+    'terminal ABORT requires a valid bound result',
+  );
+  assert.match(
+    control,
+    /never[\s\S]{0,180}(?:fabricate|treat|accept|turn)[\s\S]{0,180}(?:earlier|failed)[\s\S]{0,100}call/i,
+    'terminal handling must not fabricate or accept an earlier failed call',
+  );
+});
