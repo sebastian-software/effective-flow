@@ -103,7 +103,7 @@ For delegated progress, the caller owns the one visible phase overview; send onl
 
 ## Wisdom Accumulation
 
-Insights from earlier phases must be passed on to later phases.
+Insights from earlier phases must be passed on to later phases. Retain required phase/wisdom evidence with `retain-evidence` per `build-run-contract`.
 
 ### Session isolation
 

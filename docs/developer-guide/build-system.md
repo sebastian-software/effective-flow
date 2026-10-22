@@ -811,7 +811,7 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
 - **Build-run.** Invoke it as `node <skill-root>/scripts/build-run.mjs <operation>` with one
   JSON object on standard input. The supported operations are `create`, `validate`, `bind-agent`,
   `authorize-execution`, `transition-execution`, `prepare-completion`, `seal-delivery`, `handoff`,
-  `record-return`, `checkpoint`, `question`, `reply`, `resume`, `receipt`, `terminal`,
+  `record-return`, `retain-evidence`, `checkpoint`, `question`, `reply`, `resume`, `receipt`, `terminal`,
   `verify-terminal`, `continuation`, and `verify-continuation`; the operation name is the only argv
   value. The
   dependency-free core owns the versioned schemas, immutable source and request digests,
@@ -828,6 +828,25 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   `build-delegated-run.md` owns the delegated phases and complete inline fallback. The helper is
   shipped to all three targets through `RUNTIME_SCRIPT_FILES`; it is not a scheduler or a
   persistent capability store.
+
+  `retain-evidence` is the bounded runtime-only evidence handoff. Its payload carries the common
+  run controls, an exact `evidenceId`, and exactly one of `content` or
+  `source:{root,path,digest}`. `content` must be nonempty, well-formed UTF-8 text without NUL;
+  both forms are limited to 1 MiB of actual bytes. A source is checked against the caller's
+  allowed single-file roots and copied byte-for-byte. The helper exclusively creates
+  `evidence-<evidenceId>.txt` below the verified runtime run and returns the standard file
+  reference, so callers never choose a write path. For example:
+
+  ```json
+  {"runtimeStateRoot":"/repo","repositoryIdentity":"/repo/.git","runId":"run-1","requestDigest":"sha256:<digest>","evidenceId":"final-plan","source":{"root":"/repo","path":"docs/plan/current.md","digest":"sha256:<digest>"}}
+  ```
+
+  Caller-supplied text is retained as text only: the returned digest identifies the retained bytes,
+  not native execution, a gate judgment, or delivery success. Retention is allowed after verified
+  handoff only as runtime-only retention and is refused after terminal completion. Before
+  `terminal`, a non-Git final plan must be retained from its source and the returned reference
+  must be used; a caller attestation cannot replace the plan bytes. The normal nonzero/`ok:false`
+  failure contract, runtime guard, operation lock, and exclusive-create collision rules apply.
 
   Before a caller reads bound artifacts or mutates project state, it follows the helper invocation
   and failure contract in [`build-run-contract.md`](../../src/shared/build-run-contract.md): the

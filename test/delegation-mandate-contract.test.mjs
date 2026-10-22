@@ -1245,3 +1245,30 @@ test('build-run contract freezes helper invocation and fail-closed handoff behav
     'terminal handling must not fabricate or accept an earlier failed call',
   );
 });
+
+test('build-run contract requires runtime-owned retention for non-Git terminal evidence', () => {
+  const control = readSource('shared', 'build-run-contract.md');
+  const retention = control.slice(control.indexOf('retain-evidence'));
+  assert.notEqual(retention, control, 'build-run contract must name the retention helper');
+  assert.match(retention, /required phase\/wisdom evidence/i, 'retention must cover run evidence');
+  assert.match(
+    retention,
+    /source[\s\S]{0,120}copies its exact bytes/i,
+    'retention must cover source artifacts',
+  );
+  assert.match(
+    retention,
+    /returns its standard file ref/i,
+    'retention must return a runtime-owned reference',
+  );
+  assert.match(
+    retention,
+    /non-Git final plan/i,
+    'terminal non-Git finalPlan evidence must be retained first',
+  );
+  assert.match(
+    retention,
+    /durable (?:evidence|private plan copy)/i,
+    'retention must preserve durable evidence rules',
+  );
+});

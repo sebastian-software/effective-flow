@@ -759,6 +759,387 @@ test('CLI takes exactly one positional operation and reads only the JSON payload
   assert.equal(JSON.parse(extraArg.stdout).error.code, 'INVALID_OPERATION');
 });
 
+function retentionPayload(live, extra = {}) {
+  return {
+    ...live.common,
+    evidenceId: 'retained-content',
+    content: 'Retained evidence: Größe €\n',
+    ...extra,
+  };
+}
+
+test('retain-evidence retains valid UTF-8 caller content as a runtime-owned standard reference', async (t) => {
+  const live = await start(fixture(t));
+  const retained = await live.call('retain-evidence', retentionPayload(live));
+  assert.equal(retained.root, live.root);
+  assert.equal(
+    retained.path,
+    `.effective-flow/build-runs/${live.input.runId}/evidence-retained-content.txt`,
+  );
+  assert.equal(
+    readFileSync(path.join(retained.root, retained.path), 'utf8'),
+    'Retained evidence: Größe €\n',
+  );
+  assert.equal(retained.digest, contentDigest('Retained evidence: Größe €\n'));
+});
+
+test('retain-evidence accepts exact one-megabyte UTF-8 content by byte length', async (t) => {
+  const live = await start(fixture(t));
+  const content = '€'.repeat(Math.floor((1024 * 1024) / 3)) + 'a';
+  assert.equal(Buffer.byteLength(content), 1024 * 1024);
+  const retained = await live.call(
+    'retain-evidence',
+    retentionPayload(live, {
+      evidenceId: 'utf8-limit',
+      content,
+    }),
+  );
+  assert.equal(retained.digest, contentDigest(content));
+});
+
+test('retain-evidence accepts one existing artifact source and preserves its exact bytes and digest', async (t) => {
+  const live = await start(fixture(t));
+  const sourcePath = `.effective-flow/build-runs/${live.input.runId}/existing-evidence.bin`;
+  const bytes = Buffer.from('source evidence €\n', 'utf8');
+  writeFileSync(path.join(live.root, sourcePath), bytes);
+  const retained = await live.call('retain-evidence', {
+    ...live.common,
+    evidenceId: 'retained-source',
+    source: { root: live.root, path: sourcePath, digest: contentDigest(bytes) },
+  });
+  assert.equal(
+    retained.path,
+    `.effective-flow/build-runs/${live.input.runId}/evidence-retained-source.txt`,
+  );
+  assert.deepEqual(readFileSync(path.join(retained.root, retained.path)), bytes);
+  assert.equal(retained.digest, contentDigest(bytes));
+});
+
+test('retain-evidence rejects invalid schemas, encoding, size, identity and source safety constraints', async (t) => {
+  const live = await start(fixture(t));
+  const existingPath = `.effective-flow/build-runs/${live.input.runId}/existing.txt`;
+  const existing = Buffer.from('existing\n');
+  writeFileSync(path.join(live.root, existingPath), existing);
+  const oversizedSourcePath = `.effective-flow/build-runs/${live.input.runId}/oversized-source.bin`;
+  const oversizedSource = Buffer.alloc(1024 * 1024 + 1, 0x61);
+  writeFileSync(path.join(live.root, oversizedSourcePath), oversizedSource);
+  const hardlinkOriginPath = path.join(live.root, 'hardlink-origin.txt');
+  const hardlinkPath = path.join(live.root, 'hardlink.txt');
+  const hardlinkBytes = Buffer.from('hardlink source\n');
+  writeFileSync(hardlinkOriginPath, hardlinkBytes);
+  assert.equal(spawnSync('ln', [hardlinkOriginPath, hardlinkPath], { env }).status, 0);
+  const validSource = { root: live.root, path: existingPath, digest: contentDigest(existing) };
+  const cases = [
+    { name: 'missing evidence id', code: 'INVALID_PAYLOAD', payload: { content: 'x' } },
+    {
+      name: 'path-like evidence id',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: '../escape', content: 'x' },
+    },
+    {
+      name: 'unknown key',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'unknown', content: 'x', extra: true },
+    },
+    {
+      name: 'neither content nor source',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'none' },
+    },
+    {
+      name: 'both content and source',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'both', content: 'x', source: validSource },
+    },
+    {
+      name: 'empty content',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'empty', content: '' },
+    },
+    {
+      name: 'NUL content',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'nul', content: 'x\0y' },
+    },
+    {
+      name: 'ill-formed UTF-8 content',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'ill-formed', content: Buffer.from([0xc3, 0x28]) },
+    },
+    {
+      name: 'unpaired surrogate content',
+      code: 'INVALID_PAYLOAD',
+      payload: { evidenceId: 'surrogate', content: '\ud800' },
+    },
+    {
+      name: 'oversized content',
+      code: 'TOO_LARGE',
+      payload: { evidenceId: 'oversized', content: 'x'.repeat(1024 * 1024 + 1) },
+    },
+    {
+      name: 'oversized source',
+      code: 'TOO_LARGE',
+      payload: {
+        evidenceId: 'oversized-source',
+        source: {
+          root: live.root,
+          path: oversizedSourcePath,
+          digest: contentDigest(oversizedSource),
+        },
+      },
+    },
+    {
+      name: 'source digest drift',
+      code: 'DIGEST_MISMATCH',
+      payload: { evidenceId: 'drift', source: { ...validSource, digest: contentDigest('wrong') } },
+    },
+    {
+      name: 'source outside allowed roots',
+      code: 'UNSAFE_PATH',
+      payload: { evidenceId: 'outside', source: { ...validSource, root: path.dirname(live.root) } },
+    },
+    {
+      name: 'source symlink',
+      code: 'UNSAFE_PATH',
+      payload: { evidenceId: 'symlink', source: { ...validSource, path: 'link.txt' } },
+    },
+    {
+      name: 'source hardlink',
+      code: 'UNSAFE_PATH',
+      payload: {
+        evidenceId: 'hardlink',
+        source: { root: live.root, path: 'hardlink.txt', digest: contentDigest(hardlinkBytes) },
+      },
+    },
+  ];
+  symlinkSync(existingPath, path.join(live.root, 'link.txt'));
+  for (const item of cases)
+    await assert.rejects(
+      live.call('retain-evidence', { ...live.common, ...item.payload }),
+      error(item.code),
+      item.name,
+    );
+});
+
+test('retain-evidence rejects target collisions and held runtime locks before writing', async (t) => {
+  const live = await start(fixture(t));
+  const target = path.join(
+    live.root,
+    '.effective-flow',
+    'build-runs',
+    live.input.runId,
+    'evidence-collision.txt',
+  );
+  writeFileSync(target, 'existing target\n');
+  await assert.rejects(
+    live.call('retain-evidence', retentionPayload(live, { evidenceId: 'collision' })),
+    error('COLLISION'),
+  );
+  writeFileSync(
+    path.join(live.root, '.effective-flow', 'build-runs', live.input.runId, '.operation.lock'),
+    'held',
+  );
+  await assert.rejects(
+    live.call('retain-evidence', retentionPayload(live, { evidenceId: 'locked' })),
+    error('LOCKED'),
+  );
+});
+
+test('retain-evidence accepts tracked product sources while protecting tracked runtime state', async (t) => {
+  const live = await start(fixture(t));
+  const retained = await live.call('retain-evidence', {
+    ...live.common,
+    evidenceId: 'tracked-product-source',
+    source: { root: live.root, path: 'source.txt', digest: contentDigest('initial\n') },
+  });
+  assert.equal(retained.digest, contentDigest('initial\n'));
+  const trackedRuntimePath = `.effective-flow/build-runs/${live.input.runId}/tracked-runtime.txt`;
+  writeFileSync(path.join(live.root, trackedRuntimePath), 'tracked runtime\n');
+  git(live.root, 'add', '-f', trackedRuntimePath);
+  await assert.rejects(
+    live.call('retain-evidence', {
+      ...live.common,
+      evidenceId: 'tracked-runtime-source',
+      source: {
+        root: live.root,
+        path: trackedRuntimePath,
+        digest: contentDigest('tracked runtime\n'),
+      },
+    }),
+    error('UNSAFE_RUNTIME_ROOT'),
+  );
+});
+
+test('retain-evidence keeps runtime and migration guards before writing', async (t) => {
+  const live = await start(fixture(t));
+  writeFileSync(path.join(live.root, '.gitignore'), '');
+  await assert.rejects(
+    live.call('retain-evidence', retentionPayload(live, { evidenceId: 'runtime-not-ignored' })),
+    error('REPOSITORY_MISMATCH'),
+  );
+  const migrated = await start(fixture(t));
+  writeFileSync(path.join(migrated.root, '.gitignore'), '.effective-flow/\n');
+  writeFileSync(path.join(migrated.root, '.effective-flow', 'memory.json'), '{}');
+  await assert.rejects(
+    migrated.call(
+      'retain-evidence',
+      retentionPayload(migrated, { evidenceId: 'migration-missing' }),
+    ),
+    error('MIGRATION_REQUIRED'),
+  );
+  const foreign = await start(fixture(t));
+  const other = fixture(t);
+  const mismatch = { ...foreign.common, repositoryIdentity: path.join(other.root, '.git') };
+  await assert.rejects(
+    foreign.call(
+      'retain-evidence',
+      retentionPayload(foreign, { evidenceId: 'main-mismatch', ...mismatch }),
+    ),
+    error('REPOSITORY_MISMATCH'),
+  );
+});
+
+test('retain-evidence is allowed after handoff as runtime-only retention and terminal runs remain immutable', async (t) => {
+  const live = await completed(fixture(t));
+  const handoffRetention = await live.call(
+    'retain-evidence',
+    retentionPayload(live, { evidenceId: 'post-handoff' }),
+  );
+  assert.equal(handoffRetention.root, live.root);
+  const terminal = await live.call('terminal', terminalInput(live));
+  await assert.rejects(
+    live.call('retain-evidence', retentionPayload(live, { evidenceId: 'post-terminal' })),
+    error('TERMINAL_RUN'),
+  );
+  assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
+});
+
+test('untracked workload plan needs runtime retention before an ABORT terminal can be verified', async (t) => {
+  const live = await start(fixture(t));
+  const workloadPath = 'workload-plan.md';
+  const workload = '# Untracked workload plan\n';
+  writeFileSync(path.join(live.executionRoot, workloadPath), workload);
+  const checkpoint = await live.call('checkpoint', {
+    ...live.common,
+    checkpointId: 'abort-evidence',
+    agentHandle: 'original-child-handle',
+    completed: [],
+    pending: REQUIRED_GATES,
+    evidence: [],
+  });
+  const checkpointValue = JSON.parse(
+    readFileSync(path.join(checkpoint.root, checkpoint.path), 'utf8'),
+  );
+  const finalCheckout = {
+    repositoryIdentity: live.repositoryIdentity,
+    executionRoot: live.executionRoot,
+    branch: live.input.execution.branch,
+    head: checkpointValue.snapshot.head,
+    snapshot: checkpointValue.snapshot,
+    worktreeRemoved: false,
+  };
+  const abort = (finalPlan) => ({
+    ...live.common,
+    status: 'ABORT',
+    finalPlan,
+    finalCheckout,
+    gates: [],
+    retainedWorktree: null,
+    pilotStatus: 'not-applicable',
+    conclusion: 'Workload stopped before delivery.',
+    nextWorkflow: 'Resume the workload later.',
+  });
+  const workloadRef = live.ref(live.executionRoot, workloadPath);
+  await assert.rejects(live.call('terminal', abort(workloadRef)), error('MISSING_EVIDENCE'));
+  const retained = await live.call('retain-evidence', {
+    ...live.common,
+    evidenceId: 'workload-plan',
+    source: workloadRef,
+  });
+  const terminal = await live.call('terminal', abort(retained));
+  assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'ABORT');
+});
+
+test('retains the actual archived final plan before handoff and permits a durable ABORT terminal', async (t) => {
+  const live = await preparedForTransform(t);
+  const source = live.ref(live.executionRoot, 'archive/plan.md');
+  const sealRef = await live.call('seal-delivery', sealing(live));
+  const seal = JSON.parse(readFileSync(path.join(sealRef.root, sealRef.path), 'utf8'));
+  assert.equal(seal.finalPlan.digest, source.digest);
+  assert.equal(existsSync(path.join(live.executionRoot, 'plan.md')), false);
+  assert.equal(git(live.executionRoot, 'rev-parse', 'HEAD'), live.input.execution.head);
+  assert.equal(
+    existsSync(
+      path.join(live.root, '.effective-flow/build-runs', live.input.runId, 'handoff.json'),
+    ),
+    false,
+  );
+  const retained = await live.call('retain-evidence', {
+    ...live.common,
+    evidenceId: 'archived-final-plan',
+    source,
+  });
+  assert.deepEqual(
+    readFileSync(path.join(retained.root, retained.path)),
+    readFileSync(path.join(source.root, source.path)),
+  );
+  const terminal = await live.call('terminal', {
+    ...live.common,
+    status: 'ABORT',
+    finalPlan: retained,
+    finalCheckout: {
+      repositoryIdentity: live.repositoryIdentity,
+      executionRoot: live.executionRoot,
+      branch: live.execution.branch,
+      head: seal.snapshot.head,
+      snapshot: seal.snapshot,
+      worktreeRemoved: false,
+    },
+    gates: [],
+    retainedWorktree: {
+      root: live.executionRoot,
+      dirty: true,
+      reason: 'Archived completion output retained before commit and handoff.',
+    },
+    pilotStatus: 'not-applicable',
+    conclusion: 'Delivery was intentionally aborted before commit and handoff.',
+    nextWorkflow: 'Review the retained plan before resuming.',
+  });
+  assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'ABORT');
+});
+
+test('CLI recognizes retain-evidence from a linked checkout while retaining into the verified runtime root', async (t) => {
+  const fx = fixture(t);
+  const linked = path.join(fx.root, '.effective-flow', 'linked-cli');
+  git(fx.root, 'worktree', 'add', '-b', 'linked-cli', linked);
+  const created = await fx.call('create', fx.input);
+  const common = {
+    runtimeStateRoot: fx.root,
+    repositoryIdentity: fx.repositoryIdentity,
+    runId: fx.input.runId,
+    requestDigest: created.requestDigest,
+  };
+  await fx.call('bind-agent', { ...common, agentHandle: 'original-child-handle' });
+  const cli = fileURLToPath(new URL('../src/scripts/build-run.mjs', import.meta.url));
+  const result = spawnSync(process.execPath, [cli, 'retain-evidence'], {
+    cwd: linked,
+    input: JSON.stringify({
+      ...common,
+      evidenceId: 'cli-retained',
+      content: 'CLI evidence\n',
+    }),
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const envelope = JSON.parse(result.stdout);
+  assert.equal(envelope.operation, 'retain-evidence');
+  assert.equal(envelope.result.root, fx.root);
+  assert.equal(
+    envelope.result.path,
+    `.effective-flow/build-runs/${fx.input.runId}/evidence-cli-retained.txt`,
+  );
+});
+
 test('checkpoint cannot promote an unfinished phase and DONE cannot claim cleanup before removal', async (t) => {
   const live = await start(fixture(t));
   await assert.rejects(

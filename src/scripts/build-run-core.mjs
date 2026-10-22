@@ -9,6 +9,7 @@ import { resolveConfiguration } from './config-resolve-core.mjs';
 export const BUILD_RUN_VERSION = 1;
 export const MAX_DISPATCH_BYTES = 8 * 1024;
 export const MAX_CONTROL_BYTES = 16 * 1024;
+export const MAX_RETAINED_EVIDENCE_BYTES = 1024 * 1024;
 export const BUILD_RUN_OPERATIONS = Object.freeze([
   'create',
   'validate',
@@ -19,6 +20,7 @@ export const BUILD_RUN_OPERATIONS = Object.freeze([
   'seal-delivery',
   'handoff',
   'record-return',
+  'retain-evidence',
   'checkpoint',
   'question',
   'reply',
@@ -337,13 +339,13 @@ function artifactShape(ref) {
   relative(ref.path);
   digest(ref.digest);
 }
-async function artifact(ref, allowedRoots) {
+async function artifact(ref, allowedRoots, maximum = Infinity) {
   artifactShape(ref);
   if (!allowedRoots.includes(ref.root)) fail('UNSAFE_PATH', 'artifact owning root is not allowed');
   await safeDirectory(ref.root);
   let bytes;
   try {
-    bytes = await safeRead(path.join(ref.root, ref.path));
+    bytes = await safeRead(path.join(ref.root, ref.path), maximum);
   } catch (error) {
     if (error.code === 'ENOENT') fail('MISSING_EVIDENCE', 'referenced artifact is missing');
     throw error;
@@ -389,6 +391,20 @@ function reference(context, file, bytes) {
     path: path.relative(context.root, file),
     digest: contentDigest(bytes),
   };
+}
+async function retainEvidence(context, input) {
+  identifier(input.evidenceId);
+  if (Object.hasOwn(input, 'content') === Object.hasOwn(input, 'source'))
+    fail('INVALID_PAYLOAD', 'retention requires exactly one content or source');
+  const bytes = Object.hasOwn(input, 'source')
+    ? await artifact(input.source, context.request.allowedRoots, MAX_RETAINED_EVIDENCE_BYTES)
+    : Buffer.from(text(input.content, 'evidence content'), 'utf8');
+  if (bytes.length > MAX_RETAINED_EVIDENCE_BYTES)
+    fail('TOO_LARGE', 'retained evidence exceeds byte limit');
+  const file = path.join(context.run, `evidence-${input.evidenceId}.txt`);
+  await runtimeGuard(context.request, context.deps, true, file);
+  await exclusive(file, bytes);
+  return reference(context, file, bytes);
 }
 async function record(context, name, value) {
   const bytes = encodeControl(value);
@@ -2360,6 +2376,7 @@ const SCHEMAS = {
   'seal-delivery': ['agentHandle', 'sealId', 'basis', 'finalPlan', 'expectedTree', 'judgments'],
   handoff: ['agentHandle', 'seal', 'head', 'finalPlan'],
   'record-return': ['agentHandle', 'delivery'],
+  'retain-evidence': ['evidenceId'],
   checkpoint: ['checkpointId', 'agentHandle', 'completed', 'pending', 'evidence'],
   question: [
     'questionId',
@@ -2476,7 +2493,15 @@ async function operate(operation, input, context) {
   }
   if (context.handoff) {
     if (
-      !['checkpoint', 'question', 'reply', 'resume', 'receipt', 'record-return'].includes(operation)
+      ![
+        'checkpoint',
+        'question',
+        'reply',
+        'resume',
+        'receipt',
+        'record-return',
+        'retain-evidence',
+      ].includes(operation)
     )
       fail(
         'PRODUCT_AUTHORITY_ENDED',
@@ -2503,7 +2528,12 @@ async function operate(operation, input, context) {
         );
       const prepared = await preparation(context, input.completionBasis);
       await planCompletion(context, prepared, input.currentPlan, true);
-    } else if (!['seal-delivery', 'handoff'].includes(operation)) await planUnchanged(context);
+    } else if (!['seal-delivery', 'handoff', 'retain-evidence'].includes(operation))
+      await planUnchanged(context);
+  }
+  if (operation === 'retain-evidence') {
+    if (!context.handoff) await policyUnchanged(context);
+    return retainEvidence(context, input);
   }
   if (operation === 'authorize-execution') return authorizeExecution(context, input);
   if (operation === 'transition-execution') return transitionExecution(context, input);
@@ -2715,7 +2745,9 @@ export async function executeOperation(operation, input, deps = {}) {
         ? ['renewedGates']
         : operation === 'authorize-execution'
           ? ['returnBranch', 'planContinuation']
-          : [],
+          : operation === 'retain-evidence'
+            ? ['content', 'source']
+            : [],
   );
   const mutation = !['validate', 'verify-terminal', 'verify-continuation'].includes(operation);
   const context = await load(input, deps, mutation);
