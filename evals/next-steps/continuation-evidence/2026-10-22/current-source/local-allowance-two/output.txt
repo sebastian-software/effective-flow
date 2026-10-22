@@ -1,0 +1,8 @@
+Nur den [bestehenden Checkpoint](/private/tmp/ef-outcome-583-source-exercise-v4/local-allowance-two/project/docs/plan/2026-10-22-export-proof.md) aktualisiert:
+
+- `allowance-retry` einmal bewertet: neue Parser-Modell-Fixtures und grüne lokale Tests, kein Fortschritt bei P1/P2.
+- Zähler bleibt `2`; Restfreigabe sinkt von `1` auf `0`.
+- Neubewertung wegen ausgeschöpfter Freigabe: Ansatz gestoppt, weitere Fortsetzung bleibt `review-required`. Keine neue Evidenz oder konkrete Eigentümerentscheidung rechtfertigt einen dritten Versuch.
+- Frühere Entscheidungen und offene Abnahme bleiben erhalten. Reale Export- und Rollback-/Isolationsnachweise fehlen weiterhin.
+
+Keine weitere Ausführung oder optionale Arbeit vorgenommen.

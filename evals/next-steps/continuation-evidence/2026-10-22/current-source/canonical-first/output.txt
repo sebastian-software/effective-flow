@@ -1,0 +1,7 @@
+Kommentar `730` in `example/flow#37` wurde mit Hash-Schutz aktualisiert und exakt zurückgelesen; er bleibt die einzige Primärquelle.
+
+- `canonical-continuation-1` einmal ausgewertet: neue Parser-Fixtures und grüne lokale Tests, kein Fortschritt bei P1/P2.
+- Zähler ohne Fortschritt: `0 → 1`. Export-, Rollback-/Isolationsnachweise und die Duplikatfrage bleiben offen.
+- Bestehende Entscheidung unverändert: keine Sonderfreigabe, nur akzeptierter Single-Process-Ansatz. Kein Neubewertungstrigger erreicht.
+
+Der autorisierte Quellenabgleich ist abgeschlossen; keine Folgeimplementierung ausgeführt.

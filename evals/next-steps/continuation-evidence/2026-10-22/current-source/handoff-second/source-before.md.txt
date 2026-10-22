@@ -1,0 +1,13 @@
+`handoff-continuation-1` wurde einmal ausgewertet: Zähler `0 → 1`. Die neuen Fixtures und grünen lokalen Tests liefern keinen Fortschritt an P1/P2 und klären die Duplikatfrage nicht. Eine Neubewertung ist hier nicht ausgelöst; die bestehende Grenze bleibt bestehen. Weitere Implementierung ist nicht autorisiert. Der Checkpoint wird ausschließlich im Handoff festgehalten.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; direct-request export proof and retained return. Source owner: current orchestrator.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** handoff-continuation-1; returned and accounted once.
+**No-progress count:** 1
+**Evidence delta:** New parser-model fixtures and green local tests only; neither P1 nor P2 advanced. These are not original acceptance proofs. Duplicate identifiers remain unresolved; no real export or rollback/isolation evidence exists.
+**Cumulative approach:** Initial parser adaptation plus additional fixture-only checks; real export and mandatory rollback/isolation remain unproved. Cost unknown; no additional runtime or maintenance responsibility accepted.
+**Continuation decision:** No special allowance; accepted single-process work only. No reassessment trigger reached. This bounded source-update task ends here; no follow-up implementation is authorized.
+
+No writable implementation note exists.

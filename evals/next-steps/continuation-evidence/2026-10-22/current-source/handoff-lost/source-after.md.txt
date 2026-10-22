@@ -1,0 +1,13 @@
+Die begrenzte Prüfung ist abgeschlossen. Der Checkpoint bleibt ausschließlich in dieser Übergabe; das ursprüngliche Ergebnis ist nicht als erfüllt nachgewiesen.
+
+**Primary source:** `example/flow`; retained direct-request handoff. Source owner: current orchestrator. No writable primary artifact.
+
+**Original outcome:** Preserve the original direct-request fix; no new goal. Its detailed acceptance and safety/support references are absent from the retained handoff and cannot be reconstructed here.
+
+**Last evaluated attempt:** One authorized existing-process boundary check completed. No new outcome-continuation attempt counted; earlier attempt references remain unknown.
+
+**No-progress count:** `unknown`. Evidence delta: governing contracts and project language settings checked; no verified original acceptance proof advanced. Missing history justifies neither `0` nor `2`.
+
+**Cumulative approach:** Earlier effort, maintained components and runtime/maintenance ownership remain unknown. Original acceptance remains unverified.
+
+**Continuation decision:** **Owner decision required** before dependent continuation. Reassessment compared the bounded check, further work with unsupported context, and an honest stop; the supported result is this handoff. The single authorized check is complete; remaining authorized checks: `0`. No allowance is renewed. Further continuation requires restored acceptance context and specific bounded authority.

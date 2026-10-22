@@ -724,8 +724,18 @@ test('central-reasoning-delegation.md hands the judgment of the written artifact
   );
   assert.match(
     section,
-    /\*\*Output contract:\*\* findings only[\s\S]*?no report, artifact, comment, or tracker write of its own/,
-    'the output contract returns findings only and forbids the delegate any artifact of its own',
+    /\*\*Output contract:\*\* for continuation reassessment, include the bounded recommendation above;\s+otherwise findings only, each with area, proposed severity/,
+    'only continuation reassessment adds a bounded recommendation; ordinary judgment still returns findings only',
+  );
+  assert.match(
+    section,
+    /no report, artifact, comment, or tracker write of its own/,
+    'neither output mode grants the read-only delegate its own artifact or tracker write',
+  );
+  assert.match(
+    fragment,
+    /source updates and the consequential decision stay with the\s+orchestrator/,
+    'the bounded recommendation leaves source writes and consequential decisions with the orchestrator',
   );
   const row = readShared('model-tiers')
     .split('\n')

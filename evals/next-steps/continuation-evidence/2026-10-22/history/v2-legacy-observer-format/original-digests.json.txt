@@ -1,0 +1,18 @@
+{
+  "original_host_transcript_sha256": "sha256:38581821557b56c9710e7d9d0da18092f770c595e7bbc2f1c3bf9f8afb1b1ccc",
+  "original_host_transcript_bytes": 86108,
+  "projected_event_count": 22,
+  "original_files": {
+    "prompt.txt": "sha256:a66abe322cf5ceade21be7bbae62df8cf79896b7621401a8f43ca6c2072f76bf",
+    "source-before.md": "sha256:89843012ca8d51da7d3f05bcebd13b681a44ec23e924722d01045c8ccdf65be3",
+    "source-after.md": "sha256:7845efa2b0ec920e1713a8eff09b8801af7da61f248db04c558293d7bb35ba10",
+    "source.diff": "sha256:63a1471b1eb711cf7055e5da743355c875975197d7b4d1cea0c162038de6c294",
+    "output.txt": "sha256:d1c43038ab7f52af88ddb5b9d1a5916702c42fc0d0ea73b980012405c83bc361",
+    "tracker-calls.jsonl": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "host-receipt.json": "sha256:1d00b55c8b73bafbd75577fc72d4a78685ce5d8357d1d43e8de83bb5d5b16735",
+    "prepared.json": "sha256:9e4b36852fd9ddc06517034074af1c268366b130cdcc348e8830f04911e320be",
+    "record.json": "sha256:704c632f749b20df546a22a548b4af342fe444e2bfa971b2bf3a01b0703e563c",
+    "seal.json": "sha256:52502f81df35c1c979cbd9253266d37a343036fc5653ecbb5d5c9eb66d7190e2"
+  },
+  "originals": "Retained immutable in the recording host; this bundle omits built skills, project copies, full Git/project state and the complete raw host stream."
+}

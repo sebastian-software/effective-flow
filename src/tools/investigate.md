@@ -53,6 +53,17 @@ next-steps
 when: the run reaches its completion report
 ```
 
+Retain any verified primary outcome/source association, checkpoint and attempt from the input or
+known handoff. Analysis/report authority grants no primary-state mutation: return evidence and a
+proposed checkpoint delta to its source owner, preserving unknown history. Before recommending
+another step in that chain, apply the same continuation decision; report a specific blocked
+endpoint without a substitute plan/review/issue-creation invocation.
+
+```lazy-include
+outcome-continuation
+when: this analysis/review belongs to an outcome-directed continuation, prior history is unknown, or a proposed follow-up materially expands the approach
+```
+
 ```include
 effective-flow-dir-migration
 ```

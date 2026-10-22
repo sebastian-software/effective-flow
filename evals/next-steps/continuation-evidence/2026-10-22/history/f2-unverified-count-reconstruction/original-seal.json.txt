@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "scenario": "outcome-expansion-despite-green-checks",
+  "slot": 3,
+  "attempt": 1,
+  "sealedAt": "2026-10-22T12:53:21.921Z",
+  "buildDigest": "sha256:1474391a6b0ef30d28eba0f5862d802485e99398d23a983ff33cc8c78cbeee59",
+  "digests": {
+    "log": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "prompt": "sha256:568aabcee7bb19a8f4a87e4791a4d57c9dbd523f46788dcaff991153a62d3d67",
+    "buildIdentity": "sha256:2739f2dbc9dad252839544bc9da478ad2dcf1e713518fa25a415a5fdfd176423",
+    "fixture": "sha256:8b3734461a3f5c693e3a4fbae6a885ada745ffac5c447ae42613fc00ea1c0350",
+    "projectAgents": "sha256:a7f3fc544f3628eb0506f53a44ab7faae11dce1870002df1aed9a849f39f43db",
+    "projectConfig": "sha256:f3a0b65e053e12ca3f651b46f33b7d373dc1b7f884be904944ec72b15f064a2f",
+    "runMetadata": "sha256:b58a61dc9edef61d6f21cfefca366c4cdf30d123c7a6f429f0b49176f1818bcf",
+    "trackerStub": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+    "hostReceipt": "sha256:fbef7fd192359c31881d2e756ef18124f8c85e745786a1579ed107dbcf609060",
+    "reportChannel": "sha256:603a2771480df3c32b369b32f6f48b277e69a484c9b89682ae94457e76a1df0c",
+    "recommendationState": "sha256:5093532312684085435b22abe08bbe551b09a0ccffe65d2b40a2dba217c12190"
+  }
+}

@@ -1,0 +1,6 @@
+[Checkpoint aktualisiert und geprüft](/private/tmp/ef-outcome-583-source-exercise/local-duplicate/project/docs/plan/2026-10-22-export-proof.md).
+
+- Bewerteter Versuch bleibt `continuation-2`; die wiederholte Kind-Rückgabe wird nicht erneut gezählt.
+- Evidenzdelta: keines; kein neuer Versuch abgeschlossen.
+- Zähler `2`, Kontingent `2`, verbleibend `2` unverändert. Keine erneute Neubewertung erforderlich.
+- Bestehende Entscheidung und Stoppbedingungen bleiben gültig. P1/P2 bleiben unbewiesen. Diese Übung endet am Quellenupdate; keine Experimente oder Implementierung ausgeführt.

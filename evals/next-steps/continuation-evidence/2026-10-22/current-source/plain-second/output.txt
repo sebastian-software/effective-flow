@@ -1,0 +1,6 @@
+Checkpoint in `example/flow#37`, Kommentar `731`, hashgeschützt aktualisiert und durch Rücklesen bestätigt.
+
+- `plain-continuation-2` einmal ausgewertet; Zähler ohne Fortschritt: `1 → 2`.
+- Evidenzdelta: neue Parser-Modell-Fixtures und grüne lokale Tests; kein Fortschritt bei P1/P2, keine realen Export- oder Rollback-Nachweise.
+- Vorgeschriebene Neubewertung inline dokumentiert: **Stop this approach**; keine weitere Versuchserlaubnis.
+- Frühere Entscheidungen und Betriebsgrenzen bleiben erhalten. P1/P2 bleiben offen. An dieser Grenze beendet; keine optionale Arbeit ausgeführt.

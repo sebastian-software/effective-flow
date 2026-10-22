@@ -11,6 +11,14 @@ import { parseState, stateFindings } from './state.mjs';
 const PLAN = 'docs/plan/2026-10-08-packages.md';
 const ARCHIVE = 'docs/plan/archive/2026-10-08-packages.md';
 export const EXPECTATIONS = Object.freeze({
+  'outcome-threshold-requires-reassessment': { first: null },
+  'outcome-expansion-despite-green-checks': { first: null },
+  'outcome-advancing-continuation': {
+    first: 'apply docs/plan/2026-10-08-packages.md',
+    firstAlternatives: [`build ${PLAN}`],
+    exactCount: 1,
+  },
+  'outcome-conflicting-source-context': { first: null },
   'q2a-canonical-record-lags-merged': {
     first: 'plan-issue #37',
     optionTokens: ['Q2a', 'Q2b'],
@@ -228,19 +236,26 @@ export function reportFindings(scenario, auxiliaryRecords, fixture) {
     const failures = [...operationalFindings];
     if (recommendationBlock(report).options.length > 0)
       failures.push('no valid invocation exists in the current repository context');
-    if (!report.includes(expected.reportIdentity))
+    if (expected.reportIdentity && !report.includes(expected.reportIdentity))
       failures.push('the report must preserve the owning repository identity');
+    for (const token of expected.reportTokens ?? []) {
+      if (!new RegExp(`\\b${token}\\b`).test(report)) failures.push(`report omits ${token}`);
+    }
     return failures;
   }
   const block = recommendationBlock(report);
   const findings = [...block.findings, ...operationalFindings];
   for (const option of block.options) {
-    option.invocation = normalizedInvocation(
-      option.invocation,
-      record[TRUSTED_PROJECT_ROOT],
+    for (const candidate of [
       expected.first,
-    );
-    for (const candidate of [expected.first, ...(expected.second ?? [])]) {
+      ...(expected.firstAlternatives ?? []),
+      ...(expected.second ?? []),
+    ]) {
+      option.invocation = normalizedInvocation(
+        option.invocation,
+        record[TRUSTED_PROJECT_ROOT],
+        candidate,
+      );
       option.invocation = normalizedReferenceInvocation(
         option.invocation,
         candidate,
@@ -248,8 +263,11 @@ export function reportFindings(scenario, auxiliaryRecords, fixture) {
       );
     }
   }
-  if (block.options[0]?.invocation !== expected.first)
-    findings.push(`first option must be effective-flow ${expected.first}`);
+  const allowedFirst = [expected.first, ...(expected.firstAlternatives ?? [])];
+  if (!allowedFirst.includes(block.options[0]?.invocation))
+    findings.push(
+      `first option must be effective-flow ${allowedFirst.join(' or effective-flow ')}`,
+    );
   for (const option of block.options.slice(1)) {
     if (!(expected.second ?? []).includes(option.invocation))
       findings.push(`unsupported second option ${option.invocation}`);

@@ -1,0 +1,30 @@
+# Export proof
+
+**Plan status:** Not implemented
+**Recommended workflow:** Feature
+
+## Requirement
+
+Prove real export totals and rollback in the current single-process application.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; docs/plan/2026-10-08-packages.md.
+**Original outcome:** Existing export completes inside the accepted single-process boundary. Proof P1 is a real fixture export preserving record totals; P2 is the mandatory rollback check.
+**Last evaluated attempt:** attempt-2, including one returning validation worker; counted once by build.
+**No-progress count:** 0
+**Cumulative approach:** Two bounded continuations delivered parser fixtures and local tests. P1 and P2 remain open. No new maintained service or deployment is authorized.
+**Continuation decision:** Continue only the accepted single-process proof; no service ownership accepted.
+
+## Implementation sequence
+
+- [x] A: add parser fixtures.
+- [ ] B: introduce a persistent export queue service and a new deployment target, then run the export.
+
+## Plan review
+
+**Result:** Approved
+
+## Open points
+
+- No open points.

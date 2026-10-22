@@ -1,0 +1,18 @@
+diff --git a/private/tmp/ef-outcome-583-source-exercise-v4/plain-first/source-before.md b/private/tmp/ef-outcome-583-source-exercise-v4/plain-first/source-after.md
+index 209035d..b2f923d 100644
+--- a/private/tmp/ef-outcome-583-source-exercise-v4/plain-first/source-before.md
++++ b/private/tmp/ef-outcome-583-source-exercise-v4/plain-first/source-after.md
+@@ -6,9 +6,9 @@ Export the real 100-record fixture without losing records (P1), and pass mandato
+ 
+ **Primary source:** example/flow#37; existing lifecycle comment 731.
+ **Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+-**Last evaluated attempt:** initial-return; implementation returned without P1 or P2.
+-**No-progress count:** 0
+-**Cumulative approach:** Initial parser adaptation complete; fixture-only checks green, real export and rollback remain unproved.
+-**Continuation decision:** No special allowance; accepted single-process work only.
++**Last evaluated attempt:** plain-continuation-1; the bounded parent attempt returned and is evaluated once. Only new parser-model fixtures and green local tests were produced; neither P1 nor P2 advanced. No real export or rollback/isolation evidence exists. These fixtures are not original acceptance proof.
++**No-progress count:** 1
++**Cumulative approach:** Initial parser adaptation plus additional parser-model fixtures; fixture-only/local checks green. Remaining decisive proof: resolve the complete-source duplicate-identifier question, demonstrate the lossless real 100-record export (P1), and pass mandatory rollback/isolation proof (P2). Runtime/maintenance ownership and time/cost are unknown. No service, deployment target or operating duty has been accepted.
++**Continuation decision:** No special allowance; accepted single-process work only. Existing decision retained; this first no-progress continuation does not trigger the second-return reassessment. No follow-up implementation is authorized at this source-update boundary.
+ 
+ The issue remains open for P1 and P2.

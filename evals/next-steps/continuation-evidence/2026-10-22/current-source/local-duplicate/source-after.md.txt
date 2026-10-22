@@ -1,0 +1,30 @@
+# Export proof
+
+**Plan status:** Not implemented
+**Recommended workflow:** Feature
+
+## Requirement
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; docs/plan/2026-10-22-export-proof.md.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** continuation-2 (parent returned; evaluated once). Delta: new parser-model fixtures and green local tests only; neither P1 nor P2 advanced. No real export or rollback/isolation evidence exists; these fixtures are not original acceptance proof.
+**No-progress count:** 2 (saturated; second consecutive no-progress return; reassessment recorded below).
+**Cumulative approach:** Initial parser adaptation and passing fixture checks, now with additional parser-model fixtures. Real 100-record export, the complete source-fixture duplicate-identifier question, and mandatory rollback/isolation proof remain unresolved. Time/cost and the named runtime/maintenance owner are unknown. Retain the existing single-process application and its support boundary; no additional maintained system, service, deployment target or operating duty is accepted.
+**Continuation decision:** Continue within authority, limited to the two owner-accepted experiment inputs below. Reassessment on 2026-10-22 at the second no-progress return, using the minimal in-workflow fallback because effective-product and effective-delivery are unavailable: more parser-model tests alone do not establish P1/P2; the smallest supported continuation uses distinct normal-mode and retry-mode fixtures in the existing process. A larger system is unsupported; other alternatives are unknown. Stopping now would leave both acceptance proofs unfinished; prior investment does not justify continuation. The original owner's explicit instruction at this return boundary conditionally accepts at most these two additional bounded attempts, and this reassessment supports that finite, unchanged-scope option. This supersedes the earlier no-special-allowance decision while retaining its single-process restriction. Allowance: 2; remaining: 2. Eligible attempts: existing-process normal-mode fixture, then existing-process retry-mode fixture, each at most once; neither has run under this allowance. Next observable original proof: resolve the predeclared duplicate-identifier question against the complete source fixture and verify preservation of all 100 real records (P1); obtain mandatory rollback/isolation evidence (P2). Fixture/model success alone remains insufficient. Each completed attempt consumes one exactly once; no-progress returns retain count 2. Qualifying original-proof evidence resets the count to 0 and invalidates this special allowance. At remaining 0, restore review-required before further optional work; do not renew the same exhausted experiments without changed evidence or a specific consequential owner decision. Material expansion or evidence invalidating this rationale terminates the decision earlier; a failed mandatory check blocks immediately. Return here after this checkpoint update: no follow-up execution is authorized in this source-update exercise. P1/P2 remain unfinished and unwaived.
+
+## Acceptance criteria
+
+- [ ] P1: real export preserves all 100 records.
+- [ ] P2: required rollback and isolation checks pass.
+
+## Plan review
+
+**Result:** Approved
+
+## Open points
+
+- No open points.

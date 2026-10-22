@@ -1,0 +1,8 @@
+Quelle: [example/flow – Export proof](/private/tmp/ef-outcome-583-source-exercise-v4/local-allowance-duplicate/project/docs/plan/2026-10-22-export-proof.md).
+
+- **Versuch:** `allowance-normal` wurde bereits einmal bewertet. Die Rückkehr nach Resume ist ein Duplikat, kein neuer Versuch.
+- **Evidenzdelta:** keines. Die vorhandenen Parser-Modell-Fixtures und grünen lokalen Tests belegen weiterhin weder P1 noch P2.
+- **Checkpoint:** bytegenau unverändert. Fortschrittszähler bleibt `2`, Allowance `2`, verbleibend `1`. Kein erneuter Verbrauch und keine neue Neubewertung; Annahmen und Autorität sind unverändert.
+- **Entscheidungs-/Stoppgrenze:** Die bestehende Entscheidung erhält ausschließlich den noch ungestarteten Retry-Modus-Versuch im bestehenden Prozess. Bei Restbudget `0` ist vor weiterer optionaler Arbeit eine Neubewertung erforderlich; ein fehlgeschlagener Pflichtcheck blockiert sofort. P1/P2 bleiben offen und unerlassen.
+
+Diese Quellenprüfung endet hier. Keine weitere Ausführung oder Implementierung wurde vorgenommen.

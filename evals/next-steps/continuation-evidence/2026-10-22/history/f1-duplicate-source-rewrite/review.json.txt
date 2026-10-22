@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "review": "bounded independent duplicate-return finding",
+  "verdict": "FAIL",
+  "classification": {
+    "severity": "Important / P2",
+    "scope": "current implementation scope",
+    "type": "behavioral acceptance failure; duplicate return mutates canonical evidence without a new attempt or new evidence"
+  },
+  "finding": {
+    "title": "Make an already-evaluated duplicate return a persistence no-op",
+    "trigger": "A stale child return repeats the already evaluated continuation-2 after resume; no new attempt completed and no new evidence exists.",
+    "observed": "The actual model rewrote both Last evaluated attempt and Evidence delta in the existing source checkpoint. Count 2, allowance 2 and remaining 2 stayed unchanged, as did the prior reassessment and original acceptance.",
+    "impact": "The duplicate is recorded as another source update and rewrites the retained last evidence even though it has nothing new to evaluate. This fails the accepted duplicate/read-only no-overwrite invariant and permits routine replay narration to churn the sole canonical checkpoint. It is not a demonstrated safety waiver, budget overrun or evidence-loss incident.",
+    "evidence": [
+      "local-second/source-after.md is byte-identical to local-duplicate/source-before.md: the prior checkpoint was actually inherited, not reconstructed by the coordinator.",
+      "local-duplicate/source.diff contains two changed checkpoint fields and no new acceptance evidence.",
+      "In the actual ordered host trace, duplicate event 12 explicitly recognizes that continuation-2 is already evaluated and has no new evidence, then event 16 is a completed file_change updating the real plan.",
+      "The model then verifies selected tokens rather than byte preservation and ends by reporting the checkpoint updated; its positive final summary does not undo the actual source rewrite.",
+      "The prior local-second trace records the actual inline fallback reassessment before its file_change, with the specific owner-authorized two experiments and allowance 2; remaining 2. The duplicate retained that decision rather than repeating it."
+    ],
+    "fix": "In the owning outcome-continuation fragment, explicitly require a fully unchanged checkpoint for a reconciled already-evaluated duplicate/resumed return with no new evidence or separately authorized source reconciliation. Preserve last attempt, last evidence, counter, cumulative summary, reassessment, decision and allowance bytes; return the ignored replay only in the normal report/handoff. If reconciliation cannot establish a duplicate or genuinely fresh evidence exists, use the existing uncertainty/fresh-source mutation rules rather than blindly no-op. Do not add a second state machine, ledger or blanket prohibition on legitimate new evidence.",
+    "verification": "Retain the current strict byte-preservation invariant and demonstrate the corrected behavior through fresh actual source-exercise contexts. Do not relabel this completed behavioral failure as an invalid launch or retry it under an aborted-session exception. A production fragment change requires a new honest build and source-bound recommendation round and a fresh source-exercise root; old evidence remains historical at its original freeze."
+  },
+  "recommendation_review_relation": "The separate 20-row recommendation review remains PASS WITH NOTES for its observed source freeze. Its positive report-only evidence does not prove source-update behavior and cannot satisfy this failing persistence acceptance.",
+  "limits": [
+    "This addition reviews local-duplicate and the directly preceding local-second evidence for the concrete reported failure, not all 22 planned source contexts.",
+    "Actual diffs, original outputs, ordered host event commands/mutations, boundary prompts and predecessor byte continuity were inspected; no full-workflow or production proof is claimed.",
+    "No production files, tests, round inputs, seals or exercise records were changed by this reviewer."
+  ],
+  "evidence_hashes": {
+    "local-duplicate": {
+      "source.diff": "d67fe3d639941ea275faaa89f959fff39d7b759ef776f173c26938d7eee5c302",
+      "output.txt": "04d0c14b518af87fa4ea7a9e0f2ccf16d73f8fb269c74aa013c18cacf49a6121",
+      "host-transcript.jsonl": "d54ca5444a29a1c4d2a3a32f5194b8214f4c780600e39098a22bdd01aeba39b5"
+    },
+    "local-second": {
+      "source.diff": "c35b10f23808a96e9b7e2b170d4de1d8e100ec56643c4797006dddc88e03c0e1",
+      "output.txt": "6c5a59a54d5cc1acb71b55eb7d3675901287c54219544b78dbdb6a759e53b23b",
+      "host-transcript.jsonl": "63dab3a9ac61e4c6c69ee2343ae3adc64c34df158591431309b38fd2bb38a463"
+    }
+  }
+}

@@ -21,7 +21,12 @@ export default {
   scenarios: SCENARIOS,
   scenarioRegistry: resolve(root, 'scenario-registry.mjs'),
   // Only final reporting executes. No implementation workflow or domain skill is entered.
-  loadSetSeeds: ['SKILL.md', 'shared/next-steps.md', 'shared/plan-reference-routing.md'],
+  loadSetSeeds: [
+    'SKILL.md',
+    'shared/next-steps.md',
+    'shared/plan-reference-routing.md',
+    'shared/outcome-continuation.md',
+  ],
   instrumentFiles: [
     resolve(root, 'suite.config.mjs'),
     tracker,

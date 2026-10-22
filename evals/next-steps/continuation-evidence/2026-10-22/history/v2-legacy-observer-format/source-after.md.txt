@@ -1,0 +1,35 @@
+# Export proof
+
+**Plan status:** Not implemented
+**Recommended workflow:** Feature
+
+## Requirement
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** Repository `example/flow` (verified local origin); `docs/plan/2026-10-22-export-proof.md`. The active source-owning orchestrator retains checkpoint ownership.
+
+**Original outcome:** P1: export the real 100-record fixture without record loss; P2: pass mandatory rollback and isolation checks, within the existing single-process application. Both remain unfinished; the duplicate-identifier question for the complete source fixture remains P1's predeclared blocker. No service, deployment target or operating duty is accepted.
+
+**Last evaluated attempt:** Prior attempts are unavailable. This 2026-10-22 entry/return establishes the legacy baseline and reassesses it only; no new continuation attempt was performed or evaluated. Evidence delta: none; neither P1 nor P2 advanced.
+
+**No-progress count:** `unknown`. This is an existing outcome with unreconstructable continuation history, not fresh initial work. Reassessment neither resets history nor consumes an attempt.
+
+**Cumulative approach:** Existing single-process application; earlier effort, cost and implementation investment are unknown. No new maintained component or operating duty is introduced. Existing runtime/maintenance ownership is unspecified; no transfer is authorized. Remaining proof: resolve the complete fixture's duplicate-identifier question, demonstrate the real export preserves all 100 records, and pass P2.
+
+**Continuation decision:** Continue within authority — compact reassessment on 2026-10-22, triggered by unknown prior history. The owner's explicit authorization supplied at this boundary permits one bounded existing-process proof with no new maintained component. Minimal fallback because `effective-product` and `effective-delivery` are unavailable in this isolated context: the authorized existing-process proof is the smallest supported approach to the original acceptance; alternatives are unknown, and stopping leaves P1/P2 open. Unknown sunk investment supplies no justification. Allowance: 1 attempt; remaining: 1. Reserved next attempt reference: `export-proof-existing-process-1`; no execution at this source-only boundary. Its next observable evidence is the complete-fixture duplicate-identifier result resolving P1's named blocker, followed within the same bounded attempt by the real 100-record export and mandatory P2 proof. A decisive answer to that predeclared blocker qualifies as progress; source edits alone do not. Account for the completed attempt once on return; retain unknown earlier history even if qualifying evidence resets the count. Stop dependent continuation immediately on a failed required check; exhaustion requires reassessment before further optional work, and material expansion or evidence invalidating this rationale terminates the allowance earlier. Any changed component, deployment or operating commitment requires an owner decision. This checkpoint authorizes no implementation in the present source-update exercise and waives no unfinished acceptance or prior owner boundary.
+
+## Acceptance criteria
+
+- [ ] P1: real export preserves all 100 records.
+- [ ] P2: required rollback and isolation checks pass.
+
+## Plan review
+
+**Result:** Approved
+
+## Open points
+
+- No open points.

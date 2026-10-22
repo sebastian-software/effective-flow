@@ -1,0 +1,11 @@
+Read the unmodified production contracts at /private/tmp/ef-outcome-583-source-exercise-v4/local-reentry/skill/shared/outcome-continuation.md and the “Goal-driven completion control” section embedded in tools/build.md. Only that section applies here; do not enter the full build workflow. Apply them at this bounded source-owning orchestrator entry/return boundary; this is a source-update exercise, not a complete implementation workflow.
+
+Execution root and runtime-state root: /private/tmp/ef-outcome-583-source-exercise-v4/local-reentry/project. Repository: example/flow. Source: docs/plan/2026-10-22-export-proof.md.
+Chat language de; artifact language en. The original outcome and all retained evidence are synthetic. Use only this isolated project and built skill; no user config, unrelated repository, network, commits, runtime state, additional planning artifacts or optional implementation. Ask no questions in this unattended context. This entry is read-only; return any proposed delta to the source owner.
+
+Observed boundary facts:
+Fresh source-owning entry, with no new completed attempt, evidence or material change. Read the recorded decision and state what may proceed under its existing authority. Do no optional work in this inspection.
+
+
+
+Return a concise factual report with the evaluated attempt, evidence delta, resulting checkpoint or proposed delta, and the existing decision/stop boundary. Explain any actual reassessment at the point it happens; finish before optional work.

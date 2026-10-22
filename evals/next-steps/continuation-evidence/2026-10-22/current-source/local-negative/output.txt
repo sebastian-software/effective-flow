@@ -1,0 +1,5 @@
+[Checkpoint aktualisiert](/private/tmp/ef-outcome-583-source-exercise-v4/local-negative/project/docs/plan/2026-10-22-export-proof.md:11) und geprüft; außerhalb davon blieb die Quelle unverändert.
+
+`negative-proof` wurde einmal ausgewertet: 100 Quelldatensätze geprüft, null doppelte Kennungen. Das schließt den vorab benannten P1-Blocker und zählt als qualifizierender Fortschritt: No-progress-Zähler `2 → 0`, bisherige Sonderfreigabe ungültig.
+
+Frühere Eigentümerentscheidungen bleiben dokumentiert. Keine neue Neubewertung oder Freigabe; P1-Export und P2 bleiben offen und unverzichtbar. Rückkehrgrenze erreicht, keine Folgeimplementierung ausgeführt.

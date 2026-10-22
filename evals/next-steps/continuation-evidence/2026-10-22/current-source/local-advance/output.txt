@@ -1,0 +1,7 @@
+Der [Checkpoint](docs/plan/2026-10-22-export-proof.md) ist aktualisiert und auf ausschließliche Änderungen in diesem Abschnitt geprüft.
+
+- `verified-progress` einmal bewertet: 100/100 Datensätze gelesen und mit passenden Kennungen exportiert; P1 erfüllt.
+- Fortschrittslosenzähler: **2 → 0**; bisherige Sonderfreigabe ungültig.
+- P2 bleibt offen und unverzichtbar; Gesamtziel weiterhin unvollständig.
+- Frühere Eigentümerentscheidungen bleiben dokumentiert. Keine neue Neubewertung ausgelöst.
+- Bestehende Stoppgrenze eingehalten: keine Folgeausführung oder optionale Implementierung.

@@ -287,6 +287,13 @@ First determine the tracker target via the "apply-source detection" (report file
     report containing only closed findings emits no substitute workflow recommendation. Published
     findings use the concrete handover from step 10.
 
+Retain verified original-outcome/parent associations from the chosen report/finding or supplied
+handoff, never title-based matches. This source-owning orchestrator assigns attempts before delegation and accounts once
+per primary outcome after all returning components; components receive its checkpoint, attempt
+reference and evidence-only return authority. Remote findings use their existing authorized
+lifecycle/comment carrier, under the remote helper's mutation guards. No alternate tracker record
+or planning artifact is created for bookkeeping.
+
 ### Phase 2: Commit and stash strategy
 
 This phase is the workflow's only up-front strategy gate: the commit strategy and stash policy are determined here together, before the findings are worked through. After that no further **regular** approval gate follows; the remaining stops are exclusively conflict-driven data-integrity escalations: an `apply` merge conflict in Phase 6, a high-risk cherry-pick conflict in Phase 4.3 under the "Individually with worktrees" strategy and — rarely — an orphaned commit lock under the "Individually" strategy. With a non-`interactive` `applyReview.stashPolicy`, phases 3–8 therefore run through without a further stop if no such escalation occurs; with the default `interactive` policy, the stash decisions in Phase 6 and Phase 4.3 are additional stops.
@@ -437,6 +444,8 @@ Example (across actions) with five findings over multiple actions:
    - the finding details (ID, Problem, Recommendation, Prompt suggestion, File)
    - the corresponding pre-analysis from Phase 4.1 as an **inline context block** in the prompt — not as a reference to the wisdom file. The sub-skills do not read the wisdom file; they only process the prompt content. Embed the pre-analysis in full, for example under the heading `Pre-analysis for this finding:`.
    - the developer note (if present)
+   - verified original outcome/primary association, checkpoint, retained attempt reference,
+     source owner and the duty to return evidence without writing a competing checkpoint
    - the commit strategy from Phase 2
    - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
    - **With commit strategy "Individually with worktrees":** the full git worktree isolation
@@ -497,7 +506,12 @@ Example (across actions) with five findings over multiple actions:
    - permanent decision with ADR: use matching English/German prose and retain `(ADR: <slug>)`
    - non-permanent rejection without ADR: use matching English/German prose; IDs and references
      remain stable
-4. Save the updated report file.
+4. Reconcile the original-criterion evidence once after returning children, using the fresh report
+   as the update basis. Append the checkpoint to the already authorized implementation note of its
+   finding; preserve failed/unfinished acceptance in the existing return when no writable note is
+   available. Record any triggered reassessment before more optional work, never mark a blocked
+   original outcome implemented merely because a code milestone completed.
+5. Save the updated report file.
 
 ### Phase 6: Stash cleanup
 
@@ -622,7 +636,7 @@ options:
 - `stash@{N}` [description] — please check manually
 ```
 
-3. Return that summary and the run's end state — whether a pull request was opened and which source
+3. Return the primary association, checkpoint/decision, that summary and the run's end state — whether a pull request was opened and which source
    remains unprocessed — to `{{SKILL:apply}}`, which closes the run with its own next-step block.
    Name no follow-up invocation of your own here.
 

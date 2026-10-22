@@ -19,6 +19,7 @@
         { "consumer": "code-documenter", "classification": "delegate" },
         { "consumer": "documentation-sync-contract", "classification": "delegate" },
         { "consumer": "durable-follow-up-gate", "classification": "delegate" },
+        { "consumer": "outcome-continuation", "classification": "delegate" },
         { "consumer": "review", "classification": "delegate" },
         { "consumer": "refactor", "classification": "delegate" },
         { "consumer": "plan", "classification": "route-when-relevant" },
@@ -98,6 +99,7 @@
         { "consumer": "plan-review", "classification": "route-when-relevant" },
         { "consumer": "concept", "classification": "delegate" },
         { "consumer": "durable-follow-up-gate", "classification": "delegate" },
+        { "consumer": "outcome-continuation", "classification": "delegate" },
         { "consumer": "setup", "classification": "delegate" },
         { "consumer": "adr-convention", "classification": "delegate" },
         { "consumer": "project-adr-convention", "classification": "delegate" }

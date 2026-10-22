@@ -1,0 +1,8 @@
+Der [Checkpoint](docs/plan/2026-10-22-export-proof.md) wurde ergänzt; der bisherige Quelleninhalt blieb exakt erhalten.
+
+- Bewerteter Versuch: kein neu abgeschlossener Versuch; frühere Historie und Fortschrittszähler bleiben `unknown`.
+- Evidenzdelta: keines. Keine Nachweis- oder Implementierungsarbeit ausgeführt.
+- Neubewertung: `Continue within authority`, begrenzt auf den bereits genehmigten Prozessnachweis; Allowance **1**, verbleibend **1**, unverbraucht.
+- Grenze: P1 und P2 bleiben offen. Bei ausgeschöpfter Allowance ist erneut zu bewerten; Umfangserweiterung beendet die Freigabe, ein fehlgeschlagener Pflichtcheck blockiert sofort.
+
+Die Quellenaktualisierung ist abgeschlossen; abhängige und optionale Arbeiten wurden nicht begonnen.

@@ -1,0 +1,5 @@
+Checkpoint in `example/flow#37`, Kommentar `730`, aktualisiert und wortgleich zurückgelesen.
+
+- `canonical-continuation-2` einmal bewertet: neue Parser-Modell-Fixtures und grüne lokale Tests; kein Fortschritt bei P1/P2, keine realen Export-/Rollback-Nachweise.
+- Zähler ohne Fortschritt: `1 → 2`. Die dadurch ausgelöste Inline-Neubewertung ergibt **Stop this approach**; keine weitere Versuchserlaubnis.
+- P1/P2 bleiben offen, bisherige Single-Process-Grenzen erhalten. Keine optionale Folgearbeit ausgeführt.
