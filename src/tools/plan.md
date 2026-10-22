@@ -295,6 +295,15 @@ On a revision run:
 
 ### Phase 3: Plan creation
 
+Retain a verified existing primary outcome/parent association on revision or continued planning;
+new files do not reset it. New plans include the compact checkpoint from `plan-contract`. Review
+that checkpoint with the plan in Phases 4–6; only this source-owning run incorporates its delta.
+
+```lazy-include
+outcome-continuation
+when: planning continues an existing outcome, prior continuation history is unknown, or a proposed plan/revision materially expands the approach
+```
+
 Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number. On a revision run per Phase 1 step 4, this step targets the resolved existing path instead and none of these naming rules apply.
 
 Before writing, resolve `language.workflow` once through the shared language resolver and retain that concrete value for all planning/review delegates. For an existing plan, preserve its clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths are only the transitional read fallbacks defined centrally; report the setup recommendation when either is used. Do not write configuration from this tool.
@@ -323,6 +332,8 @@ review prose, and the fixed German placeholder tokens from its placeholder table
 ## Requirement
 
 [Requirement, goal, and rationale for the workflow recommendation]
+
+## Outcome checkpoint
 
 ## Architecture decisions
 

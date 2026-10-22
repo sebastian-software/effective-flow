@@ -44,9 +44,22 @@ const fixtureFor = (name) =>
   JSON.parse(readFileSync(resolve(ROOT, 'fixtures', `${name}.json`), 'utf8'));
 function correctReport(name) {
   const expected = EXPECTATIONS[name];
-  if (expected.first === null)
-    return 'Lauf abgeschlossen. Die Quelle other/renovate-config liegt in einem anderen Repository; der bekannte Kontext erlaubt keinen Zielwechsel.';
+  if (expected.first === null) {
+    const blockers = {
+      'outcome-threshold-requires-reassessment':
+        'Zwei Versuche ohne Fortschritt verlangen eine Neubewertung; eine gültige Fortsetzung fehlt.',
+      'outcome-expansion-despite-green-checks':
+        'Der zusätzliche Dienst verändert die Betriebsverantwortung und braucht eine Entscheidung.',
+      'outcome-conflicting-source-context':
+        'Die bekannte Quelle hat widersprüchliche Fortsetzungsdaten; der betroffene Endpunkt bleibt offen.',
+    };
+    return (
+      blockers[name] ??
+      'Lauf abgeschlossen. Die Quelle other/renovate-config liegt in einem anderen Repository; der bekannte Kontext erlaubt keinen Zielwechsel.'
+    );
+  }
   const reasons = {
+    'outcome-advancing-continuation': 'P2 innerhalb des belegten ursprünglichen Umfangs prüfen.',
     'q2a-canonical-record-lags-merged': 'Q2a erfassen und Q2b vorbereiten, ohne Aktivierung.',
     'active-local-next-ready-slice': 'Paket B nach geliefertem A dokumentieren.',
     'implemented-archive-needs-reconciliation': 'Widerspruch im archivierten Plan abgleichen.',
@@ -77,9 +90,9 @@ const untouched = {
   errors: [],
 };
 
-test('the bounded semantic suite registers eleven complete scenarios and keeps five real runs per scenario', async () => {
+test('the bounded semantic suite registers fifteen complete scenarios and keeps five real runs per scenario', async () => {
   assert.equal((await loadSuite('next-steps')).name, 'next-steps');
-  assert.equal(discoverSuite(suite).scenarios.length, 11);
+  assert.equal(discoverSuite(suite).scenarios.length, 15);
   assert.equal(REQUIRED_RUNS, 5);
   assert.deepEqual(suite.expectedProfile, {
     harness: 'codex-cli',
@@ -252,6 +265,7 @@ test('absolute plan arguments preserve exact slot artifact identity including th
   }
   for (const name of [
     'active-local-next-ready-slice',
+    'outcome-advancing-continuation',
     'implemented-archive-needs-reconciliation',
     'approval-and-dependency-block-execution',
   ]) {
@@ -726,4 +740,144 @@ test('scenario fixtures establish executable local scope and configured external
   });
   assert.match(setupAdr, /tracker.mode \| external/);
   assert.match(setupAdr, /tracker.externalTool \| linear/);
+});
+
+test('outcome blockers reject execution and substitute workflows while advancing original proof retains exact apply identity', () => {
+  const blocked = [
+    'outcome-threshold-requires-reassessment',
+    'outcome-expansion-despite-green-checks',
+    'outcome-conflicting-source-context',
+  ];
+  for (const name of blocked) {
+    assert.equal(EXPECTATIONS[name].first, null, name);
+    assert.deepEqual(
+      reportFindings(name, [reportRecord(correctReport(name))], fixtureFor(name)),
+      [],
+      name,
+    );
+    for (const invocation of [
+      'apply docs/plan/2026-10-08-packages.md',
+      'plan docs/plan/2026-10-08-packages.md',
+      'plan-issue #37',
+      'review docs/plan/2026-10-08-packages.md',
+      'open-plans',
+    ]) {
+      const report = `${correctReport(name)}\n\n## Nächster Schritt\n\n- \`effective-flow ${invocation}\` — Die Fortsetzung vorbereiten.`;
+      assert.ok(
+        reportFindings(name, [reportRecord(report)], fixtureFor(name)).length > 0,
+        `${name}: ${invocation}`,
+      );
+    }
+  }
+  const advancing = 'outcome-advancing-continuation';
+  assert.equal(EXPECTATIONS[advancing].first, 'apply docs/plan/2026-10-08-packages.md');
+  assert.equal(EXPECTATIONS[advancing].exactCount, 1);
+  assert.deepEqual(
+    reportFindings(advancing, [reportRecord(correctReport(advancing))], fixtureFor(advancing)),
+    [],
+  );
+  for (const replacement of ['plan docs/plan/2026-10-08-packages.md', 'apply docs/plan/other.md'])
+    assert.ok(
+      reportFindings(
+        advancing,
+        [
+          reportRecord(
+            correctReport(advancing).replace(EXPECTATIONS[advancing].first, replacement),
+          ),
+        ],
+        fixtureFor(advancing),
+      ).length > 0,
+    );
+});
+
+test('outcome recommendation cases retain the sealed read-only boundary even when a checkpoint update seems justified', () => {
+  for (const name of suite.scenarios.filter((scenario) => scenario.startsWith('outcome-'))) {
+    const common = {
+      scenario: name,
+      records: [],
+      auxiliaryRecords: [reportRecord(correctReport(name))],
+      sealedEvidence: untouched,
+    };
+    assert.deepEqual(findings(common), [], name);
+    assert.ok(
+      findings({ ...common, records: [{ operation: 'issue-comment-update', apply: false }] })
+        .length > 0,
+      name,
+    );
+    assert.ok(
+      findings({
+        ...common,
+        sealedEvidence: {
+          ...untouched,
+          after: { 'docs/plan/checkpoint.md': { kind: 'file', hash: 'changed' } },
+        },
+      }).length > 0,
+      name,
+    );
+  }
+});
+
+test('the advancing Feature plan alone accepts apply or build with exact prepared artifact identity and one option', () => {
+  const root = mkdtempSync(join('/private/tmp', 'next-steps-outcome-alternative-'));
+  try {
+    const name = 'outcome-advancing-continuation';
+    const built = buildPortableSkill(root);
+    const { paths } = provisionSlot(suite, {
+      roundRoot: join(root, 'round'),
+      scenario: name,
+      slot: 1,
+      attempt: 1,
+      builtSkillRoot: built,
+      profile: suite.expectedProfile,
+      identity: pristineScenarioBuildIdentity(suite, name, built),
+    });
+    const plan = 'docs/plan/2026-10-08-packages.md';
+    assert.deepEqual(EXPECTATIONS[name].firstAlternatives, [`build ${plan}`]);
+    function judged(invocation, scenario = name, extra = '') {
+      const report =
+        correctReport(scenario).replace(
+          `effective-flow ${EXPECTATIONS[scenario].first}`,
+          `effective-flow ${invocation}`,
+        ) + extra;
+      const parsed = parseAuxiliary(
+        JSON.stringify({ ...reportRecord(report), seq: 1 }) + '\n',
+        paths.projectRoot,
+      );
+      assert.deepEqual(parsed.problems, []);
+      return reportFindings(scenario, parsed.records, fixtureFor(scenario));
+    }
+    for (const tool of ['apply', 'build']) {
+      for (const argument of [
+        plan,
+        `${paths.projectRoot}/${plan}`,
+        `${paths.projectRoot.replace(/^\/private\/tmp\//, '/tmp/')}/${plan}`,
+      ])
+        assert.deepEqual(judged(`${tool} ${argument}`), [], `${tool} ${argument}`);
+      for (const argument of [
+        'docs/plan/other.md',
+        `${root}/foreign/project/${plan}`,
+        `${paths.projectRoot}/docs/plan/../plan/2026-10-08-packages.md`,
+      ])
+        assert.ok(judged(`${tool} ${argument}`).length > 0, `${tool} ${argument}`);
+      assert.ok(
+        judged(
+          `${tool} ${plan}`,
+          name,
+          `\n- \`effective-flow ${tool === 'apply' ? 'build' : 'apply'} ${plan}\` — Dieselbe Arbeit zusätzlich starten.`,
+        ).length > 0,
+      );
+    }
+    for (const tool of ['fix', 'docs']) assert.ok(judged(`${tool} ${plan}`).length > 0, tool);
+    const other = 'active-local-next-ready-slice';
+    assert.equal(EXPECTATIONS[other].firstAlternatives, undefined);
+    assert.ok(judged('build docs/plan/2026-10-08-parser-docs.md', other).length > 0);
+    assert.deepEqual(
+      Object.entries(EXPECTATIONS)
+        .filter(([, value]) => value.firstAlternatives)
+        .map(([scenario]) => scenario),
+      [name],
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -117,6 +117,16 @@ session-rename
 when: the run's subject is fixed and a session title is about to be applied or emitted
 ```
 
+```lazy-include
+plan-contract
+when: the canonical planning comment's compact outcome checkpoint is written or reviewed
+```
+
+```lazy-include
+outcome-continuation
+when: issue planning continues an existing outcome, prior continuation history is unknown, or the proposed approach/decomposition materially expands
+```
+
 ## Comment convention
 
 Write the planning result as an issue comment (operation "Add comment" from the mapping). Resolve
@@ -135,6 +145,9 @@ values, paths, checklist syntax, and the HTML marker remain stable.
 
 ### Requirement
 [refined target behavior with rationale]
+
+### Outcome checkpoint
+[compact fields from `plan-contract`, preserving verified parent association when applicable]
 
 ### Acceptance criteria
 - [ ] [measurable criterion]
@@ -177,6 +190,11 @@ values, paths, checklist syntax, and the HTML marker remain stable.
 - No open points. / [implementation-blocking decision and re-entry note]
 
 ```
+
+Include the compact checkpoint from `plan-contract` (`Ergebnis-Checkpoint` in German); review it
+with the specification, preserving its original baseline and explicit owner decisions. This active
+source owner alone updates the parent checkpoint under the existing expected-body/hash guard;
+proposed children inherit the verified parent reference and return evidence rather than reset state.
 
 The complete German form additionally uses `Plan-Review`, `Ergebnis`, `Freigegeben`,
 `Überarbeitung nötig`, `Zusammenfassung`, `Befunde`, `Offene Punkte`, and

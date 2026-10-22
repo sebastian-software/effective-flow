@@ -1,0 +1,8 @@
+[Checkpoint aktualisiert](/private/tmp/ef-outcome-583-source-exercise-v2/local-legacy/project/docs/plan/2026-10-22-export-proof.md).
+
+- **Versuch:** Kein neuer ausgeführt oder bewertet; frühere Historie bleibt `unknown`.
+- **Evidenzdelta:** keines. P1/P2 bleiben offen.
+- **Entscheidung:** Ein bereits autorisierter Nachweis im bestehenden Prozess; Kontingent `1`, verbleibend `1`.
+- **Stoppgrenze:** Fehlgeschlagener Pflichtcheck sperrt die Fortsetzung; ausgeschöpftes Kontingent erfordert Neubewertung. Neue Komponenten oder Betriebspflichten erfordern eine Owner-Entscheidung.
+
+Geprüft: Ausschließlich der Checkpoint wurde ergänzt; bisheriger Quellinhalt und Owner-Grenzen blieben erhalten. Keine Folgearbeiten ausgeführt.

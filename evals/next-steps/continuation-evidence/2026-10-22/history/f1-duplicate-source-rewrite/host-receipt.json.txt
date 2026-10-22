@@ -1,0 +1,14 @@
+{
+  "schemaVersion": 1,
+  "nonForked": true,
+  "initialWorkingRoot": "/private/tmp/ef-outcome-583-source-exercise/local-duplicate/project",
+  "taskInput": "rendered-prompt-only",
+  "completed": true,
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "high",
+    "reportedVersion": "0.159.3",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+  }
+}

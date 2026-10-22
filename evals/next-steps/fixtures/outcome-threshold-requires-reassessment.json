@@ -1,0 +1,47 @@
+{
+  "name": "outcome-threshold-requires-reassessment",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "completed": true,
+    "emitter": "build",
+    "languageChat": "de",
+    "sourceAssociation": {
+      "kind": "local-plan",
+      "path": "docs/plan/2026-10-08-packages.md"
+    },
+    "outcome": {
+      "completedWork": ["A: parser fixtures merged; original endpoint remains open"],
+      "delivery": "merged",
+      "pullRequest": 42
+    },
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "reportFacts": [
+      "This reporting run has no authority to change the primary source. The next proposed continuation is optional.",
+      "The second no-progress continuation has returned. The original acceptance proof has not advanced. No reassessment result or active allowance exists."
+    ],
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/2026-10-08-packages.md": "# Export proof\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nProve real export totals and rollback in the current single-process application.\n\n## Outcome checkpoint\n\n**Primary source:** example/flow; docs/plan/2026-10-08-packages.md.\n**Original outcome:** Existing export completes inside the accepted single-process boundary. Proof P1 is a real fixture export preserving record totals; P2 is the mandatory rollback check.\n**Last evaluated attempt:** attempt-2, including one returning validation worker; counted once by build.\n**No-progress count:** 2\n**Cumulative approach:** Two bounded continuations delivered parser fixtures and local tests. P1 and P2 remain open. No new maintained service or deployment is authorized.\n**Continuation decision:** Reassessment required; no allowance is recorded.\n\n## Implementation sequence\n\n- [x] A: add parser fixtures.\n- [ ] B: perform real fixture export and mandatory rollback proof. B is approved within the existing single-process boundary; workflow Feature.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n"
+  }
+}

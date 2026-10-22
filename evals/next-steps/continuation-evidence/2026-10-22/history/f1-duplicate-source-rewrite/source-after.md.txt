@@ -1,0 +1,32 @@
+# Export proof
+
+**Plan status:** Not implemented
+**Recommended workflow:** Feature
+
+## Requirement
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; docs/plan/2026-10-22-export-proof.md.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** continuation-2; the parent attempt has returned and is evaluated once by the outer source owner, reconciling all returning evidence under that reference. continuation-1 was the first consecutive no-progress return and did not trigger reassessment; continuation-2 is the second. At this resumed boundary, the stale child return replays the already evaluated continuation-2; no new attempt completed. This duplicate is not evaluated or charged again: no-progress count 2 and allowance: 2; remaining: 2 stay unchanged. No new reassessment is required; the recorded decision and stop boundary remain in force.
+**Evidence delta:** No new evidence exists at this resumed boundary. Retained evidence from continuation-2: only new parser-model fixtures and green local tests were produced. Neither P1 nor P2 advanced; these fixtures are not original acceptance proof. No real export or rollback/isolation evidence exists; the complete-source duplicate-identifier question remains unresolved.
+**No-progress count:** 2
+**Cumulative approach:** Initial parser adaptation complete, with additional parser-model fixtures and green local tests. Real 100-record export and mandatory rollback/isolation remain unproved. Cumulative cost is unknown. Runtime and maintenance remain within the existing single-process application; the responsible operator is not identified in the retained evidence. No additional maintained component, service, deployment target or operating duty is accepted.
+**Reassessment:** 2026-10-22, at the second consecutive no-progress return. Minimal inline fallback: effective-product and effective-delivery are unavailable within the permitted built-skill scope; no fresh-context judgment was performed. The smallest supported continuation uses the existing-process normal-mode fixture and existing-process retry-mode fixture as distinct experiment inputs, targeting the outstanding real proofs without adding a system. More parser-model tests alone would leave acceptance unchanged; stopping now would also leave P1 and P2 unfinished. Other approaches have no verified support here. Unknown cost and prior investment do not justify continuation.
+**Continuation decision:** Continue within authority; allowance: 2; remaining: 2. Authority: the original owner's explicit boundary instruction of 2026-10-22 conditionally accepts at most these two additional bounded attempts; this reassessment supports that limit. The normal-mode attempt must seek observable P1 evidence from the complete real source fixture: resolve the duplicate-identifier question and verify preservation of all 100 records. The retry-mode attempt must seek real mandatory rollback/isolation evidence for P2 in the existing process. Fixture/model-test success alone does not qualify. No additional attempt has run at this boundary. Each completed attempt consumes one remaining attempt exactly once; no-progress returns retain count 2 (remaining 2 → 1 → 0), and duplicate returns consume nothing twice. Qualifying original-proof progress resets the count to 0 and invalidates this allowance. At remaining 0, restore review-required before optional work; do not renew an exhausted experiment without changed evidence or a specific consequential owner decision. Material expansion or evidence invalidating this rationale ends the allowance earlier; a failed required check blocks immediately. P1 and P2 remain unproved, not reported failed or waived. This source-update boundary ends here, before either experiment or any optional implementation; the retained allowance does not authorize execution in this exercise.
+
+## Acceptance criteria
+
+- [ ] P1: real export preserves all 100 records.
+- [ ] P2: required rollback and isolation checks pass.
+
+## Plan review
+
+**Result:** Approved
+
+## Open points
+
+- No open points.

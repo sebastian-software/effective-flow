@@ -1,6 +1,6 @@
 # Bound cumulative effort against the original outcome
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -27,6 +27,33 @@ honest stop. It must not automatically generate another plan, review workflow, i
 primary outcome and its continuation state; the second consecutive no-progress continuation and
 any material expansion invoke the same reassessment before further optional work; behavioral
 acceptance demonstrates this without skipping a required quality or safety check.
+
+## Outcome checkpoint
+
+**Primary source:** `sebastian-software/effective-flow`; this plan and its associated PR #583
+against `develop` remain the original implementation basis.
+**Original outcome:** Enforce the original-outcome continuation policy across the listed entry,
+return and recommendation paths, with reassessment at two no-progress continuations or material
+expansion. Preserve all required quality/safety checks; the Acceptance criteria and Validation plan
+below remain the proof boundary.
+**Last evaluated attempt:** The initial implementation completed its final bounded behavioral
+proof: twenty fresh recommendation reports and twenty-two fresh source-update contexts passed
+independent semantic review. Returning workers and internal correction rounds are not additional
+outcome attempts.
+**No-progress count:** 0
+**Cumulative approach:** One shared instruction contract, existing source carriers and consumer
+wiring, and three bounded test-coordinator modules; no new product runtime component or ledger.
+The observed proof now covers source persistence, duplicate no-ops, allowance consumption and
+invalidation, required safety, legacy uncertainty and permitted advancing continuation. Two precise
+source corrections addressed replay narration and unsupported history reconstruction. Time and
+monetary cost remain unknown. Earlier rounds are retained as diagnostic history, not current proof.
+**Continuation decision:** The 2026-10-22 final evidence allowance is consumed (`allowance: 1;
+remaining: 0`) with its stated original-acceptance proof satisfied. No further prompt-tuning or
+model round is authorized by that decision. Complete the required current technical gates, archive
+this implementation plan and continue the existing PR #583 within the original delivery authority.
+The small publication correction preserves historical evidence as stale and current selected runs
+as current; it changes no model input or product behavior. Quality and safety remain binding.
+Earlier owner decisions in this plan remain authoritative.
 
 ## Architecture decisions
 
@@ -241,32 +268,32 @@ within this feature; do not declare it delivered because a new eval plan was wri
 
 ## Acceptance criteria
 
-- [ ] Local plans and canonical issue planning comments preserve the original goal, accepted
+- [x] Local plans and canonical issue planning comments preserve the original goal, accepted
       boundaries, primary association and a single compact checkpoint through re-entry and child
       handoff; legacy missing metadata alone does not block ordinary valid work.
-- [ ] The first no-progress continuation records `1`; the second records `2` and performs the
+- [x] The first no-progress continuation records `1`; the second records `2` and performs the
       reassessment before further optional work. Resuming the same attempt and returning delegates
       do not double-count; changing session/workflow/child source does not reset history.
-- [ ] Material expansion triggers before the new component, platform, trust boundary or operating
+- [x] Material expansion triggers before the new component, platform, trust boundary or operating
       duty is implemented, including when intermediate tests pass or the existing issue is primary.
-- [ ] Judgment compares cumulative and remaining effort/ownership against the original outcome,
+- [x] Judgment compares cumulative and remaining effort/ownership against the original outcome,
       records a finite continuation or real blocker, and never renews a failed approach through a
       routine approval, a renamed question, a new planning artifact or invented outcome progress.
-- [ ] Required quality/safety failures remain blocking. Their corrective/containment work preserves
+- [x] Required quality/safety failures remain blocking. Their corrective/containment work preserves
       existing authority, and a counter or effort limit never causes a test waiver or false success.
-- [ ] Read-only paths do not mutate primary state; unattended paths ask no questions; concurrent
+- [x] Read-only paths do not mutate primary state; unattended paths ask no questions; concurrent
       source changes and unresolved legacy identity stop only the affected continuation honestly.
-- [ ] Sufficient plain issues and report/direct-request fixes remain usable without creating a
+- [x] Sufficient plain issues and report/direct-request fixes remain usable without creating a
       plan or canonical planning comment; lost handoff-only history becomes `unknown`, never zero.
-- [ ] A justified allowance spanning two attempts is consumed once per return without repeated
+- [x] A justified allowance spanning two attempts is consumed once per return without repeated
       review after the first, hidden history reset, or execution beyond its exhausted/invalid bound.
-- [ ] Successful short work and genuinely advancing multi-package work continue with no redundant
+- [x] Successful short work and genuinely advancing multi-package work continue with no redundant
       owner question or second full review. A documented negative proof can count when it actually
       resolves the prior original-outcome question; unrelated model success cannot.
-- [ ] Behavioral recommendation evidence and the bounded source-update/re-entry exercise below
+- [x] Behavioral recommendation evidence and the bounded source-update/re-entry exercise below
       demonstrate the chosen threshold, safety preservation, legitimate continuation and no reset.
       The completion report states exactly what each evidence layer proves.
-- [ ] The repository's four required checks pass in order; affected release-evidence freshness is
+- [x] The repository's four required checks pass in order; affected release-evidence freshness is
       reported accurately, with no forged or automatic model evidence and no version bump by hand.
 
 ## Validation plan
@@ -370,6 +397,76 @@ history, source/write ownership, read-only and unattended re-entry, mandatory qu
 and the cost and limits of the bounded behavioral acceptance. Compared the plan with the affected
 completion, recommendation, Apply/Fix and eval contracts. The existing review record above remains
 prior-round history.
+
+## Implementation result
+
+Implemented one instruction-enforced checkpoint in `src/shared/outcome-continuation.md`, wired
+through source-owning entry/return paths and read-only recommendations. The existing six prose
+fields support local plans, canonical planning comments, sufficient plain-issue lifecycle comments
+and retained handoffs. Only bilingual heading recognition changed in plan-lint; its payload/result
+schemas and the production tracker runtime remain unchanged. Measured context budgets preserve the
+existing target and delegation contracts. Ownership and developer/user guides describe the new
+boundary without copying central domain playbooks.
+
+The bounded source exercise captures actual submitted issue bodies, production expected-body/hash
+checks, persisted readback, source diffs and real host receipts. It rejects canned replacement and
+stale writes. The normal tracker stub remains unchanged. The recommendation oracle accepts either
+`apply` or `build` for the same approved Feature plan, as the production contract already permits;
+wrong tools, paths and options remain rejected.
+
+## Test results
+
+- The four required gates passed in order on the final source and published artifacts:
+  `pnpm agent:check` (1,016 files), `pnpm test` (2,941 total: 2,940 passing, zero failures, one
+  platform skip for a non-UTF-8 filename rejected by the filesystem), `node build.mjs` (all three
+  targets and budgets), and `pnpm test:distribution` (offline suite). An earlier full run met an
+  occupied loopback operation-mutex endpoint in an unchanged issue-buddy integration test. The
+  exact isolated test and one bounded complete gate repeat passed without source edits or waivers;
+  the earlier failure remains retained and its endpoint holder is unknown.
+- All twenty current recommendation reports passed independent qualitative review: five each for
+  threshold, material expansion despite green checks, genuine advancement and conflicting source
+  context. The selected run profile was Codex CLI 0.159.3, `gpt-6.1-sol`, high reasoning, with fresh
+  isolated nonforked hosts. This proves recommendation choice and read-only behavior only.
+- All twenty-two actual source-update contexts passed independent ordered-trace semantic review
+  and the separate fidelity check. They observed `0 → 1 → 2`, reassessment before optional work,
+  actual allowance `2 → 1 → 0`, byte-identical duplicate returns, exhaustion stop, expansion and
+  progress invalidation, immediate safety block, negative proof, legacy unknown history, exact
+  canonical/plain-issue body persistence and handoff-only continuity.
+- Durable synthetic inputs, outputs, submitted bodies, before/after sources, diffs, safe receipts,
+  ordered public-event projections, review matrices and digests are retained under
+  `evals/next-steps/continuation-evidence/2026-10-22/`. Original diagnostic generations are preserved;
+  compact earlier failures explain the two source corrections and the observer-format correction.
+- These exercises cover controlled entry/return boundaries, not a full workflow, live export or
+  arbitrary distributed sessions. The lost-handoff case also lacks detailed acceptance context;
+  it proves honest unknown/context blocking. A known goal with unknown history is covered by the
+  separate legacy case. One advancing trace creates, compares and removes a temporary verification
+  copy; it creates no planning artifact. The archive contains safe event projections and original
+  digests, not hidden host reasoning or complete disposable skill trees.
+- Final read-only freshness verification reports twenty current targeted next-steps runs and
+  fifty-five stale historical runs; merge-gate has forty stale runs and iterate thirty-five.
+  Historical evidence remains labeled stale and requires fresh recording before release;
+  deterministic checks do not replace model evidence. All 291 retained archive payload checksums
+  pass, and the separate source exercise fidelity result is PASS with twenty-two checks, no
+  problems and no pending contexts. The feature's twenty targeted recommendations and twenty-two
+  source contexts are complete acceptance evidence for this implementation.
+
+## Review findings
+
+**Date:** 2026-10-22
+**Reviewer:** Node.js reviewer and behavioral evidence reviewer; all severities considered.
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     4 |
+| Open / Not implemented |     0 |
+
+Two source findings corrected duplicate checkpoint rewrites and unsupported numeric history
+reconstruction. Two observer findings corrected paired inline-code count recognition and a valid
+`build` recommendation for the same approved Feature plan. All changes retained the original
+acceptance boundary; fresh final behavior passed. No residual work or external review report is
+required.
 
 ## Open points
 

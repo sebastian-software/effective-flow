@@ -1,0 +1,8 @@
+Optionale Fortsetzung ist gesperrt; keine wurde ausgeführt.
+
+- **Geprüft:** vorgeschlagener identischer Retry mit routinemäßiger Reparaturfreigabe. Kein neuer abgeschlossener Versuch; zuletzt ausgewertet bleibt `allowance-retry`.
+- **Evidenzdelta:** keines. Keine neuen Nachweise für P1/P2 oder zur Duplikatfrage.
+- **Checkpoint:** [Quelle](docs/plan/2026-10-22-export-proof.md) bytegleich belassen. No-progress bleibt **2**, Allowance **2**, verbleibend **0**. Frühere Eigentümerentscheidungen bleiben erhalten.
+- **Entscheidungsgrenze:** Die bestehende Entscheidung „Stop this approach; review-required“ gilt weiter. Routinefreigabe rechtfertigt weder Neubewertung noch einen dritten Versuch. Fortsetzung erfordert geänderte Evidenz oder eine spezifische Eigentümerentscheidung über einen begrenzten Zusatzversuch sowie die vorherige Auflösung von `review-required`.
+
+P1/P2 bleiben unerfüllt und unverzichtbar; der Stopp bedeutet keinen Erfolg und keinen Anforderungsverzicht.

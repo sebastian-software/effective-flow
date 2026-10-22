@@ -1,0 +1,15 @@
+Bewerteter Elternversuch: `continuation-1`, Quelle `example/flow`, `docs/plan/2026-10-22-export-proof.md`.
+
+Gemeldete Evidenz: Parser-Fixtures bestehen; P1, P2 und die vorab benannte Duplikatfrage bleiben unbewiesen. Gegenüber dem Checkpoint liegt kein qualifizierender Fortschritt vor.
+
+Vorgeschlagene Quelldifferenz für den äußeren Source Owner, sofern die übrigen Kindrückgaben keinen qualifizierenden Fortschritt liefern:
+
+```markdown
+**Last evaluated attempt:** continuation-1; parser fixtures pass, P1 and P2 remain unproved.
+**No-progress count:** 1
+**Cumulative approach:** Initial parser adaptation complete; fixture checks pass. Real export, the source-fixture duplicate-identifier question, and rollback/isolation proof remain unresolved.
+```
+
+Die bestehende Entscheidung bleibt: `No special allowance; accepted single-process work only.` Keine Neubewertungsschwelle ist erreicht. Der Source Owner rechnet den Elternversuch einmalig an; diese Kindrückgabe führt keinen eigenen Zähler.
+
+Quelle unverändert, Plan weiterhin `Not implemented`. Keine weiteren Arbeiten autorisiert oder ausgeführt.

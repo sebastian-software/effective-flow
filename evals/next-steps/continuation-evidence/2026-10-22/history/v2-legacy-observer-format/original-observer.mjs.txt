@@ -1,0 +1,497 @@
+// Coordinator-only prepare/record/verify seam for the bounded source-write exercise. No model
+// launcher, product checkpoint parser, counter implementation, publication or runtime-state API.
+import { execFileSync } from 'node:child_process';
+import {
+  copyFileSync,
+  cpSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  writeFileSync,
+} from 'node:fs';
+import { dirname, isAbsolute, resolve } from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
+import { builtSkillIdentity, digestFile } from '../../_scaffold/build-identity.mjs';
+import { assertProfileMatchesPin, normalizeProfile, sameKeys } from '../../_scaffold/profile.mjs';
+import suite from '../suite.config.mjs';
+import { treeState } from './state.mjs';
+import { initialSource, ORIGINAL_OUTCOME, PLAN, STEPS } from './continuation-fixtures.mjs';
+
+export { STEPS };
+const ownRoot = realpathSync(resolve(import.meta.dirname, '../../..'));
+const ownFiles = [
+  'continuation-exercise.mjs',
+  'continuation-fixtures.mjs',
+  'continuation-tracker.mjs',
+];
+const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
+const text = (path) => readFileSync(path, 'utf8');
+function save(path, value) {
+  writeFileSync(path, `${JSON.stringify(value, null, 2)}\n`, { flag: 'wx' });
+}
+function safeRoot(root) {
+  if (!isAbsolute(root) || !/^\/(?:private\/)?tmp\//.test(root))
+    throw new Error('exerciseRoot must be an absolute dedicated directory below /tmp');
+  let current = resolve(root);
+  while (current !== dirname(current)) {
+    if (existsSync(current) && lstatSync(current).isSymbolicLink() && current !== '/tmp')
+      throw new Error(`symlinked exercise path: ${current}`);
+    current = dirname(current);
+  }
+  return resolve(root);
+}
+function paths(root, id) {
+  const attemptRoot = resolve(root, id);
+  return {
+    attemptRoot,
+    projectRoot: resolve(attemptRoot, 'project'),
+    skillRoot: resolve(attemptRoot, 'skill'),
+    prompt: resolve(attemptRoot, 'prompt.txt'),
+  };
+}
+function seeds(skillRoot) {
+  return [
+    'SKILL.md',
+    'shared/outcome-continuation.md',
+    'tools/build.md',
+    'shared/plan-contract.md',
+    ...readdirSync(resolve(skillRoot, 'scripts'))
+      .filter((name) => /^remote-tracker.*\.mjs$/.test(name) && name !== 'remote-tracker.mjs')
+      .map((name) => `scripts/${name}`),
+  ];
+}
+function instrument() {
+  return Object.fromEntries(
+    ownFiles.map((name) => [name, digestFile(resolve(import.meta.dirname, name))]),
+  );
+}
+function stepOf(id) {
+  const step = STEPS.find((entry) => entry.id === id);
+  if (!step) throw new Error(`unknown bounded exercise step ${id}`);
+  return step;
+}
+function checkPrepared(p) {
+  const prepared = json(resolve(p.attemptRoot, 'prepared.json'));
+  for (const [name, hash] of Object.entries(prepared.inputs)) {
+    if (digestFile(resolve(p.attemptRoot, name)) !== hash)
+      throw new Error(`prepared input changed: ${name}`);
+  }
+  if (!isDeepStrictEqual(prepared.skillState, treeState(p.skillRoot)))
+    throw new Error('built skill or adapter changed during the exercise');
+  return prepared;
+}
+function sealedRecord(p) {
+  const seal = json(resolve(p.attemptRoot, 'seal.json'));
+  for (const [name, hash] of Object.entries(seal)) {
+    if (digestFile(resolve(p.attemptRoot, name)) !== hash)
+      throw new Error(`recorded evidence changed: ${name}`);
+  }
+  return json(resolve(p.attemptRoot, 'record.json'));
+}
+function sourceNow(step, p) {
+  if (step.carrier === 'handoff') return text(resolve(p.attemptRoot, 'output.txt'));
+  if (step.carrier === 'local') return text(resolve(p.projectRoot, PLAN));
+  return json(resolve(p.attemptRoot, 'issue-state.json')).comments[0].body;
+}
+function hostReceipt(receipt, profile, projectRoot) {
+  if (
+    !receipt ||
+    !sameKeys(receipt, [
+      'schemaVersion',
+      'completed',
+      'initialWorkingRoot',
+      'nonForked',
+      'profile',
+      'taskInput',
+    ]) ||
+    receipt.schemaVersion !== 1 ||
+    receipt.completed !== true ||
+    receipt.nonForked !== true ||
+    receipt.taskInput !== 'rendered-prompt-only' ||
+    receipt.initialWorkingRoot !== projectRoot ||
+    !isDeepStrictEqual(normalizeProfile(receipt.profile), receipt.profile) ||
+    !isDeepStrictEqual(receipt.profile, profile) ||
+    /(?:session|thread|task)[_-]?id|https?:\/\/|account|e-?mail/i.test(JSON.stringify(receipt))
+  ) {
+    throw new Error(
+      'host receipt must attest the actual completed nonforked prompt-only project session and exact profile',
+    );
+  }
+}
+
+export function prepare({ exerciseRoot, builtSkillRoot, profile, step: id }) {
+  const root = safeRoot(exerciseRoot),
+    step = stepOf(id),
+    p = paths(root, id);
+  const resolvedProfile = normalizeProfile(profile);
+  assertProfileMatchesPin(suite.expectedProfile, resolvedProfile, 'continuation exercise');
+  const identity = builtSkillIdentity(builtSkillRoot, seeds(builtSkillRoot));
+  mkdirSync(root, { recursive: true });
+  const manifestPath = resolve(root, 'exercise.json');
+  const manifest = {
+    creatorCheckout: ownRoot,
+    preparedRoot: root,
+    profile: resolvedProfile,
+    identity,
+    instrument: instrument(),
+    steps: STEPS.map((entry) => entry.id),
+  };
+  if (existsSync(manifestPath)) {
+    if (!isDeepStrictEqual(json(manifestPath), manifest))
+      throw new Error('exercise build, profile, instrument or creator changed; prepare a new root');
+  } else save(manifestPath, manifest);
+  if (existsSync(p.attemptRoot))
+    throw new Error(
+      'step already prepared; evidence cannot be overwritten or retried as a new success',
+    );
+  let source = initialSource(step.carrier, step.legacy),
+    previous = null,
+    childReport = '';
+  if (step.previous) {
+    previous = sealedRecord(paths(root, step.previous));
+    source = previous.sourceAfter;
+  }
+  if (step.carrier === 'handoff' && !step.previous) {
+    source = step.legacy
+      ? 'Earlier handoff is unavailable; prior continuation history unknown.'
+      : initialSource('handoff');
+  }
+  if (step.childReport) childReport = sealedRecord(paths(root, step.childReport)).output;
+  mkdirSync(p.projectRoot, { recursive: true });
+  cpSync(builtSkillRoot, p.skillRoot, { recursive: true });
+  copyFileSync(
+    resolve(import.meta.dirname, 'continuation-tracker.mjs'),
+    resolve(p.skillRoot, 'scripts/remote-tracker.mjs'),
+  );
+  mkdirSync(resolve(p.projectRoot, 'docs/adr'), { recursive: true });
+  writeFileSync(
+    resolve(p.projectRoot, 'AGENTS.md'),
+    '# AGENTS.md\n\nSynthetic source-return exercise. Effective Flow project setup: docs/adr/effective-flow-project-setup.md. Use only the provided built contracts and existing source authority; no follow-up implementation is authorized.\n',
+  );
+  writeFileSync(
+    resolve(p.projectRoot, 'docs/adr/effective-flow-project-setup.md'),
+    '# Effective Flow project setup\n\n| Key | Value |\n| --- | --- |\n| language.chat | de |\n| language.project | en |\n| language.source | en |\n| plan.dir | docs/plan |\n| worktree.enabled | false |\n| tracker.mode | remote |\n',
+  );
+  if (step.carrier === 'local') {
+    mkdirSync(dirname(resolve(p.projectRoot, PLAN)), { recursive: true });
+    writeFileSync(resolve(p.projectRoot, PLAN), source);
+  }
+  const issue = { number: 37, title: 'Export proof', body: ORIGINAL_OUTCOME, state: 'open' };
+  const comments = [
+    {
+      id: step.carrier === 'plain' ? 731 : 730,
+      body: source,
+      user: { login: 'fixture-owner', type: 'User' },
+    },
+  ];
+  save(resolve(p.attemptRoot, 'issue-state.json'), { issue, comments });
+  writeFileSync(resolve(p.attemptRoot, 'tracker-calls.jsonl'), '');
+  writeFileSync(resolve(p.attemptRoot, 'source-before.md'), source);
+  const sourceHandle =
+    step.carrier === 'local'
+      ? PLAN
+      : step.carrier === 'handoff'
+        ? 'retained handoff below; no writable source artifact'
+        : `example/flow#37; existing ${step.carrier === 'plain' ? 'implementation lifecycle' : 'canonical planning'} comment ${comments[0].id}`;
+  const prompt = `Read the unmodified production contracts at ${p.skillRoot}/shared/outcome-continuation.md and the “Goal-driven completion control” section embedded in tools/build.md. Only that section applies here; do not enter the full build workflow. Apply them at this bounded ${step.child ? 'returning-child' : 'source-owning orchestrator entry/return'} boundary; this is a source-update exercise, not a complete implementation workflow.\n\nExecution root and runtime-state root: ${p.projectRoot}. Repository: example/flow. Source: ${sourceHandle}.\nChat language de; artifact language en. The original outcome and all retained evidence are synthetic. Use only this isolated project and built skill; no user config, unrelated repository, network, commits, runtime state, additional planning artifacts or optional implementation. Ask no questions in this unattended context. ${step.readonly || step.child ? 'This entry is read-only; return any proposed delta to the source owner.' : step.carrier === 'handoff' ? 'No writable primary artifact exists: retain state only in the final handoff.' : 'You own the existing source and have normal authority to update only its checkpoint. Preserve unfinished acceptance and earlier owner decisions.'}\n\nObserved boundary facts:\n${step.facts}\n\n${step.carrier === 'handoff' ? `Retained handoff:\n${source}\n` : ''}${childReport ? `Actual returning child output:\n${childReport}\n` : ''}\n${['canonical', 'plain'].includes(step.carrier) ? `For all issue reads and changes use node ${p.skillRoot}/scripts/remote-tracker.mjs <operation> [--apply] with JSON stdin, exact cwd ${p.projectRoot}, issue 37, commentId ${comments[0].id}, and normal expectedBodyHash/payload.body protections. The adapter persists your exact submitted body. After an applied update, read the comments back and retain the observed source state. Unsupported operations fail. Do not access the backing store directly.\n` : ''}\nReturn a concise factual report with the evaluated attempt, evidence delta, resulting checkpoint or proposed delta, and the existing decision/stop boundary. Explain any actual reassessment at the point it happens; finish before optional work.\n`;
+  writeFileSync(p.prompt, prompt);
+  execFileSync('git', ['init', '-q', '--initial-branch=develop'], {
+    cwd: p.projectRoot,
+    env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' },
+  });
+  execFileSync('git', ['remote', 'add', 'origin', 'https://github.com/example/flow.git'], {
+    cwd: p.projectRoot,
+  });
+  const inputs = Object.fromEntries(
+    [
+      'prompt.txt',
+      'source-before.md',
+      ...['AGENTS.md', 'docs/adr/effective-flow-project-setup.md'].map((name) => `project/${name}`),
+    ].map((name) => [name, digestFile(resolve(p.attemptRoot, name))]),
+  );
+  save(resolve(p.attemptRoot, 'prepared.json'), {
+    step: id,
+    inputs,
+    identity,
+    previous: previous
+      ? digestFile(resolve(paths(root, step.previous).attemptRoot, 'seal.json'))
+      : null,
+    child: step.childReport
+      ? digestFile(resolve(paths(root, step.childReport).attemptRoot, 'seal.json'))
+      : null,
+    skillState: treeState(p.skillRoot),
+    projectBefore: treeState(p.projectRoot),
+    issueBefore: json(resolve(p.attemptRoot, 'issue-state.json')),
+  });
+  return {
+    ...p,
+    step: id,
+    profile: resolvedProfile,
+    hostReceiptFields: [
+      'schemaVersion',
+      'completed',
+      'initialWorkingRoot',
+      'nonForked',
+      'profile',
+      'taskInput',
+    ],
+  };
+}
+
+export function record({
+  exerciseRoot,
+  step: id,
+  hostReceipt: receipt,
+  outputPath,
+  transcriptPath,
+}) {
+  const root = safeRoot(exerciseRoot),
+    step = stepOf(id),
+    p = paths(root, id);
+  const manifest = json(resolve(root, 'exercise.json'));
+  if (manifest.creatorCheckout !== ownRoot || !isDeepStrictEqual(manifest.instrument, instrument()))
+    throw new Error('exercise belongs to another checkout or instrument');
+  const prepared = checkPrepared(p);
+  if (existsSync(resolve(p.attemptRoot, 'seal.json'))) throw new Error('record already sealed');
+  hostReceipt(receipt, manifest.profile, p.projectRoot);
+  const output = text(outputPath),
+    transcript = text(transcriptPath);
+  if (!output.trim()) throw new Error('actual host final output is required');
+  const events = transcript
+    .trim()
+    .split('\n')
+    .map((line) => JSON.parse(line));
+  if (!events.some((event) => event.type === 'turn.completed'))
+    throw new Error('actual completed host JSON transcript is required');
+  writeFileSync(resolve(p.attemptRoot, 'output.txt'), output, { flag: 'wx' });
+  writeFileSync(resolve(p.attemptRoot, 'host-transcript.jsonl'), transcript, { flag: 'wx' });
+  save(resolve(p.attemptRoot, 'host-receipt.json'), receipt);
+  const sourceAfter = sourceNow(step, p),
+    sourceBefore = text(resolve(p.attemptRoot, 'source-before.md'));
+  writeFileSync(resolve(p.attemptRoot, 'source-after.md'), sourceAfter, { flag: 'wx' });
+  let diff;
+  try {
+    diff = execFileSync(
+      'git',
+      [
+        'diff',
+        '--no-index',
+        '--',
+        resolve(p.attemptRoot, 'source-before.md'),
+        resolve(p.attemptRoot, 'source-after.md'),
+      ],
+      { encoding: 'utf8' },
+    );
+  } catch (error) {
+    if (error.status !== 1) throw error;
+    diff = error.stdout;
+  }
+  writeFileSync(resolve(p.attemptRoot, 'source.diff'), diff, { flag: 'wx' });
+  const data = {
+    step: id,
+    output,
+    sourceBefore,
+    sourceAfter,
+    projectAfter: treeState(p.projectRoot),
+    issueAfter: json(resolve(p.attemptRoot, 'issue-state.json')),
+    transcriptEvents: events.length,
+    previous: prepared.previous,
+    child: prepared.child,
+  };
+  save(resolve(p.attemptRoot, 'record.json'), data);
+  const names = [
+    'prepared.json',
+    ...Object.keys(prepared.inputs),
+    'output.txt',
+    'host-transcript.jsonl',
+    'host-receipt.json',
+    'source-after.md',
+    'source.diff',
+    'record.json',
+    'tracker-calls.jsonl',
+    'issue-state.json',
+  ];
+  save(
+    resolve(p.attemptRoot, 'seal.json'),
+    Object.fromEntries(names.map((name) => [name, digestFile(resolve(p.attemptRoot, name))])),
+  );
+  return {
+    step: id,
+    sealed: true,
+    semanticVerdict:
+      'requires independent qualitative reading of output, source diff and ordered host transcript',
+  };
+}
+
+// Exact fixture labels only, intentionally not a parser for arbitrary production checkpoints.
+function checkpointValue(body, label) {
+  return body.match(new RegExp(`^\\*\\*${label}:\\*\\*\\s*(.*)$`, 'm'))?.[1];
+}
+export function verify({ exerciseRoot, builtSkillRoot }) {
+  const root = resolve(exerciseRoot),
+    manifest = json(resolve(root, 'exercise.json'));
+  const problems = [],
+    pending = [],
+    checks = [];
+  if (!isDeepStrictEqual(manifest.instrument, instrument()))
+    problems.push('exercise instrument changed');
+  if (
+    !isDeepStrictEqual(manifest.identity, builtSkillIdentity(builtSkillRoot, seeds(builtSkillRoot)))
+  )
+    problems.push('production built skill changed');
+  for (const step of STEPS) {
+    const p = paths(root, step.id);
+    if (!existsSync(resolve(p.attemptRoot, 'seal.json'))) {
+      pending.push(step.id);
+      continue;
+    }
+    try {
+      const prepared = checkPrepared(p),
+        result = sealedRecord(p);
+      hostReceipt(
+        json(resolve(p.attemptRoot, 'host-receipt.json')),
+        manifest.profile,
+        paths(manifest.preparedRoot, step.id).projectRoot,
+      );
+      for (const [relation, id] of [
+        ['previous', step.previous],
+        ['child', step.childReport],
+      ]) {
+        if (
+          id &&
+          result[relation] !== digestFile(resolve(paths(root, id).attemptRoot, 'seal.json'))
+        )
+          throw new Error(`${relation} evidence link changed`);
+        if (
+          relation === 'previous' &&
+          id &&
+          result.sourceBefore !== sealedRecord(paths(root, id)).sourceAfter
+        )
+          throw new Error('fresh entry did not retain the exact preceding source');
+      }
+      const expectedCount = step.count;
+      const count = checkpointValue(result.sourceAfter, 'No-progress count');
+      if (!new RegExp(`^${expectedCount}(?:[ .;]|$)`).test(count ?? ''))
+        throw new Error(
+          `expected recorded fixture count ${expectedCount}, observed ${count ?? 'missing'}`,
+        );
+      if (
+        step.remaining !== undefined &&
+        !new RegExp(`remaining:\\s*${step.remaining}\\b`).test(result.sourceAfter)
+      )
+        throw new Error(`expected remaining: ${step.remaining}`);
+      if (
+        (step.readonly || step.unchanged) &&
+        step.carrier !== 'handoff' &&
+        result.sourceAfter !== result.sourceBefore
+      )
+        throw new Error('read-only/duplicate entry changed the primary source');
+      if (step.progress && /remaining:\s*[12]\b/.test(result.sourceAfter))
+        throw new Error('progress retained a reusable old allowance');
+      const allowed =
+        step.carrier === 'local' && !step.readonly && !step.unchanged ? new Set([PLAN]) : new Set();
+      const changes = [
+        ...new Set([...Object.keys(prepared.projectBefore), ...Object.keys(result.projectAfter)]),
+      ].filter(
+        (name) => !isDeepStrictEqual(prepared.projectBefore[name], result.projectAfter[name]),
+      );
+      if (changes.some((name) => !allowed.has(name)))
+        throw new Error(
+          `unexpected project/Git mutation: ${changes.filter((name) => !allowed.has(name)).join(', ')}`,
+        );
+      const calls = text(resolve(p.attemptRoot, 'tracker-calls.jsonl'))
+        .trim()
+        .split('\n')
+        .filter(Boolean)
+        .map(JSON.parse);
+      if (['canonical', 'plain'].includes(step.carrier)) {
+        const requests = calls.filter((entry) => entry.event === 'request');
+        if (
+          requests.some(
+            (entry) =>
+              !['issue-read', 'issue-comments-read', 'issue-comment-update'].includes(
+                entry.operation,
+              ),
+          )
+        )
+          throw new Error('unsupported tracker operation attempted');
+        if (step.readonly && requests.some((entry) => entry.operation === 'issue-comment-update'))
+          throw new Error('read-only tracker mutation attempted, including dry-run');
+        const applied = calls.filter((entry) => entry.event === 'applied');
+        const mutationRequests = requests.filter(
+          (entry) => entry.operation === 'issue-comment-update' && entry.apply,
+        );
+        for (const entry of applied)
+          if (
+            !mutationRequests.some((request) => request.input.payload?.body === entry.submittedBody)
+          )
+            throw new Error('applied body has no exact submitted payload');
+        const expectedIssueAfter = structuredClone(prepared.issueBefore);
+        expectedIssueAfter.comments[0].body = result.sourceAfter;
+        if (!isDeepStrictEqual(expectedIssueAfter, result.issueAfter))
+          throw new Error('offline issue state changed outside the one permitted comment body');
+        if (
+          result.issueAfter.issue.body !== prepared.issueBefore.issue.body ||
+          result.issueAfter.comments.length !== 1 ||
+          result.issueAfter.comments[0].id !== prepared.issueBefore.comments[0].id
+        )
+          throw new Error('issue identity/body or comment carrier changed');
+        for (const entry of applied)
+          if (entry.submittedBody !== entry.persistedBody)
+            throw new Error('adapter replaced submitted body');
+        if (applied.length && applied.at(-1).persistedBody !== result.sourceAfter)
+          throw new Error('stored source does not match the final actual payload');
+        if (result.sourceAfter !== result.sourceBefore && applied.length === 0)
+          throw new Error('issue changed without an actual captured payload');
+        const lastApply = calls.findLastIndex((entry) => entry.event === 'applied');
+        if (
+          lastApply >= 0 &&
+          !calls
+            .slice(lastApply + 1)
+            .some(
+              (entry) =>
+                entry.event === 'response' &&
+                entry.operation === 'issue-comments-read' &&
+                entry.response.ok &&
+                entry.response.data.result.some((comment) => comment.body === result.sourceAfter),
+            )
+        )
+          throw new Error('actual subsequent issue read did not return the submitted body');
+      } else if (!isDeepStrictEqual(prepared.issueBefore, result.issueAfter) || calls.length)
+        throw new Error('non-issue carrier touched tracker state');
+      checks.push({
+        step: step.id,
+        fidelity: 'pass',
+        semanticReview: [
+          'read complete original output and source diff',
+          'read ordered actual host tool events; no optional implementation',
+          ...(step.reassessment
+            ? ['locate actual compact reassessment at this return before any optional step']
+            : []),
+          ...(step.invalidated
+            ? ['confirm material assumptions invalidate the prior decision immediately']
+            : []),
+          ...(step.blocked
+            ? [
+                'confirm required boundary blocks dependent continuation, preserving safety and unfinished proof',
+              ]
+            : []),
+        ],
+      });
+    } catch (error) {
+      problems.push(`${step.id}: ${error.message}`);
+    }
+  }
+  return {
+    fidelity: problems.length ? 'fail' : pending.length ? 'incomplete' : 'pass',
+    problems,
+    pending,
+    checks,
+    semanticVerdict: 'not established by helper; independent qualitative reading is required',
+    limits:
+      'Bounded synthetic source exercise; host receipts attest launches. Hashes prove retained fidelity, not semantic truth, transient writes or arbitrary distributed continuity.',
+  };
+}

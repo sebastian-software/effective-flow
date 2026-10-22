@@ -23,6 +23,8 @@ import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import {
   buildPortableSkill,
+  canonicalDigest,
+  digestOf,
   pristineScenarioBuildIdentity,
 } from '../evals/_scaffold/build-identity.mjs';
 import {
@@ -41,6 +43,7 @@ import {
   retryInvalid,
   roundStatus,
   sealAttempt,
+  verifyFreshness,
 } from '../evals/_scaffold/round-core.mjs';
 import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
@@ -264,21 +267,10 @@ const REPOSITORY_RESULTS = resolve(import.meta.dirname, '..', 'evals', 'merge-ga
 // standing evidence to carry forward, re-stamped to the identity of the tree the test is running
 // against.
 //
-// Without the re-stamp the publication assertions depend on something they are not about.
-// `ensureCanonicalGeneration` re-evaluates **every** carried-forward scenario against a freshly
-// built tree, so one uncommitted edit to any load-set source — the ordinary state of a branch that
-// touches `src/` — makes the publication fail for a reason that has nothing to do with sealing,
-// locking, journalling or promotion, and the lifecycle coverage disappears exactly when drift is
-// most common. Gating the test instead would drop that coverage the same way, more quietly.
-//
-// Only the stamp and the `buildDigest` its metadata pins are rewritten. The behavioural `.jsonl`
-// logs are left exactly as recorded, because they are what `evaluateEvidence` judges: rewriting
-// those would turn the fixture into evidence of nothing.
-//
-// The rejection path this removes from the lifecycle test is restored deliberately below, in
-// `publishRound refuses a carried-forward run whose stamp describes another build`. That case is
-// stronger than the coverage it replaces: it names the drifted run instead of depending on whoever
-// runs the suite happening to have a dirty working tree.
+// These lifecycle fixtures use current stamps to keep locking, journalling and promotion checks
+// independent of corpus freshness. Only temporary stamp/metadata bindings are rewritten; the
+// recorded behavioral logs remain unchanged. The selective-publication regression below instead
+// constructs one coherent stale unit and proves its provenance survives publication byte-for-byte.
 //
 // A scenario the repository corpus does not hold yet — one that landed before its first recorded
 // round — is filled in with synthetic runs (`synthesizeUnrecordedScenario`), because publication and
@@ -1894,20 +1886,119 @@ test(
   },
 );
 
-// The one property the lifecycle test above stopped proving the moment its carried-forward evidence
-// began being re-stamped: publication refuses a standing run whose stamp describes a build that is
-// not the one being published. That used to be covered incidentally, by whoever ran the suite
-// happening to have a modified working tree — a coverage that appeared and disappeared with the
-// checkout's cleanliness, and that took the surrounding lifecycle assertions down with it whenever
-// it did appear. Asserted on purpose it is both stronger and readable: the drifted run is named
-// here, and the case fails for one reason only.
-//
-// The metadata's `buildDigest` is moved along with the stamp deliberately. Leaving the two
-// inconsistent would fail one step earlier, on the binding check, and would prove only that two
-// files disagree. What is under test is the comparison against the freshly built identity, and a
-// unit that does not bind itself correctly never reaches it.
+// Stale history may be retained without claiming that it is current. Selected evidence still has
+// to match its sealed round, and release verification must continue to reject the stale corpus.
 test(
-  'publishRound refuses a carried-forward run whose stamp describes another build',
+  'selective publication preserves valid stale history while selected seals and release freshness stay strict',
+  { timeout: 120_000 },
+  () => {
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-selective-stale-'));
+    const base = resolve(temporary, 'rounds');
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    let prepared;
+    try {
+      prepared = createRound(suite, {
+        scenarios: ['guard-blocks-merge'],
+        profile: PROFILE,
+        base,
+        roundId: 'selective-stale-history',
+      });
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const paths = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', slot, 1);
+        writeFileSync(paths.callLog, legacyLog(paths.projectRoot));
+        sealAttempt(suite, {
+          handle: prepared.manifestPath,
+          scenario: 'guard-blocks-merge',
+          slot,
+          hostReceipt: hostReceipt(paths.projectRoot),
+          base,
+        });
+      }
+      mkdirSync(publicationRoot, { recursive: true });
+      copyRestampedResults(resultsDir);
+      const historical = resolve(resultsDir, 'merge-proceeds', 'run-1');
+      const stamp = JSON.parse(readFileSync(`${historical}.build.json`, 'utf8'));
+      stamp.skill.files['tools/merge-gate.md'] = digestOf('unit-only earlier recorded tool');
+      stamp.skill.digest = canonicalDigest(stamp.skill.files);
+      stamp.skill.versionNeutralDigest = digestOf('unit-only earlier version-neutral tool');
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
+      const metadata = JSON.parse(readFileSync(`${historical}.metadata.json`, 'utf8'));
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(`${historical}.build.json`, `${JSON.stringify(stamp, null, 2)}\n`);
+      writeFileSync(`${historical}.metadata.json`, `${JSON.stringify(metadata, null, 2)}\n`);
+      const before = treeDigests(resolve(resultsDir, 'merge-proceeds'));
+      const published = publishRound(suite, {
+        handle: prepared.manifestPath,
+        base,
+        resultsDir,
+        publicationRoot,
+      });
+      assert.ok(published.generation);
+      assert.deepEqual(
+        treeDigests(resolve(resultsDir, 'merge-proceeds')),
+        before,
+        'historical logs, stamps, metadata and prompts must retain their exact provenance',
+      );
+      const manifest = JSON.parse(readFileSync(prepared.manifestPath, 'utf8'));
+      assert.deepEqual(
+        JSON.parse(
+          readFileSync(resolve(resultsDir, 'guard-blocks-merge/run-1.build.json'), 'utf8'),
+        ),
+        manifest.identities['guard-blocks-merge'],
+      );
+      const freshness = verifyFreshness(suite, { resultsDir });
+      assert.equal(
+        freshness.scenarios.find(({ scenario }) => scenario === 'merge-proceeds').state,
+        'stale',
+      );
+      assert.equal(
+        freshness.scenarios.find(({ scenario }) => scenario === 'guard-blocks-merge').state,
+        'current',
+      );
+      assert.equal(
+        freshness.failsStrict,
+        true,
+        'preservation cannot make historical evidence release-current',
+      );
+
+      const selected = sandboxPaths(prepared.roundRoot, 'guard-blocks-merge', 1, 1);
+      const selectedStamp = JSON.parse(readFileSync(selected.buildIdentity, 'utf8'));
+      selectedStamp.skill.files['tools/merge-gate.md'] = digestOf('unit-only stale selected tool');
+      selectedStamp.skill.digest = canonicalDigest(selectedStamp.skill.files);
+      selectedStamp.digest = digestOf(
+        [
+          selectedStamp.skill.digest,
+          selectedStamp.instrument.digest,
+          selectedStamp.scenario_inputs.digest,
+        ].join('\n'),
+      );
+      writeFileSync(selected.buildIdentity, `${JSON.stringify(selectedStamp, null, 2)}\n`);
+      const canonicalBefore = treeDigests(resultsDir);
+      assert.throws(
+        () =>
+          publishRound(suite, {
+            handle: prepared.manifestPath,
+            base,
+            resultsDir,
+            publicationRoot,
+          }),
+        /guard-blocks-merge\/1 changed after sealing/,
+      );
+      assert.deepEqual(treeDigests(resultsDir), canonicalBefore);
+    } finally {
+      if (prepared && existsSync(prepared.manifestPath)) chmodSync(prepared.manifestPath, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// Even metadata bound to the edited top-level digest cannot legitimize internally inconsistent
+// archived file-map digests. This is provenance corruption, rather than ordinary source drift.
+test(
+  'publishRound refuses inconsistent carried-forward build provenance',
   { timeout: 120_000 },
   () => {
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-drift-'));
@@ -1937,9 +2028,8 @@ test(
       copyRestampedResults(resultsDir);
       const drifted = resolve(resultsDir, 'merge-proceeds', 'run-1');
       const stamp = JSON.parse(readFileSync(`${drifted}.build.json`, 'utf8'));
-      // A moved gate tool, not merely a different top-level digest: the version-stamp waiver
-      // accepts a stamp whose only moved skill file is the router, so a fixture that moved nothing
-      // identifiable would be waived and this case would pass for the wrong reason.
+      // Keep metadata bound to the edited top-level digest while corrupting the internal file-map
+      // digest; the archived-provenance guard must reject this independently of freshness.
       stamp.skill.files['tools/merge-gate.md'] = `sha256:${'a'.repeat(64)}`;
       stamp.skill.digest = `sha256:${'b'.repeat(64)}`;
       stamp.skill.versionNeutralDigest = `sha256:${'c'.repeat(64)}`;
@@ -1952,7 +2042,7 @@ test(
       assert.throws(
         () =>
           publishRound(suite, { handle: prepared.manifestPath, base, resultsDir, publicationRoot }),
-        /merge-proceeds\/run-1 is invalid evidence: the build identity does not match the round manifest/,
+        /merge-proceeds\/run-1 has inconsistent archived build provenance/,
       );
       // A refused publication leaves the standing corpus exactly as it found it: no generation
       // marker, and no candidate or backup tree left behind to be recovered into place later.
@@ -1971,16 +2061,8 @@ test(
   },
 );
 
-// The publication half of the pin. The instrument binding already stales every carried-forward stamp
-// recorded before a pin change, so this case has to get past it deliberately: the archive is
-// re-stamped to the current identity by `copyRestampedResults`, and only then is one carried-forward
-// slot's profile hand-edited back to another model — both copies, because sealing keeps them equal.
-// Its stamp still matches the current build, so the pin assertion in `ensureCanonicalGeneration` is
-// the only guard left that can refuse it.
-//
-// The successful counterpart, a pinned round published over a correctly rewritten carried-forward
-// archive, is the in-process publication in `one immutable round provisions, seals, retries, and
-// publishes isolated slots`.
+// Carried-forward history preserves its recorded identity but must still satisfy the suite's
+// execution-profile pin. Editing both profile copies must not bypass that independent guard.
 test(
   'publishRound refuses a carried-forward run whose archived profile deviates from the pin',
   { timeout: 120_000 },

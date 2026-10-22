@@ -1,0 +1,11 @@
+Read the unmodified production contracts at /private/tmp/ef-outcome-583-source-exercise/local-duplicate/skill/shared/outcome-continuation.md and the “Goal-driven completion control” section embedded in tools/build.md. Only that section applies here; do not enter the full build workflow. Apply them at this bounded source-owning orchestrator entry/return boundary; this is a source-update exercise, not a complete implementation workflow.
+
+Execution root and runtime-state root: /private/tmp/ef-outcome-583-source-exercise/local-duplicate/project. Repository: example/flow. Source: docs/plan/2026-10-22-export-proof.md.
+Chat language de; artifact language en. The original outcome and all retained evidence are synthetic. Use only this isolated project and built skill; no user config, unrelated repository, network, commits, runtime state, additional planning artifacts or optional implementation. Ask no questions in this unattended context. You own the existing source and have normal authority to update only its checkpoint. Preserve unfinished acceptance and earlier owner decisions.
+
+Observed boundary facts:
+A stale child return for the already evaluated continuation-2 is replayed after a resume. No new attempt completed and no new evidence exists.
+
+
+
+Return a concise factual report with the evaluated attempt, evidence delta, resulting checkpoint or proposed delta, and the existing decision/stop boundary. Explain any actual reassessment at the point it happens; finish before optional work.

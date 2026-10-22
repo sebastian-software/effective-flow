@@ -294,7 +294,7 @@ function deriveLoadSet(skillRoot, seeds) {
   return [...set].sort().map((relativePath) => resolve(skillRoot, relativePath));
 }
 
-function canonicalDigest(files) {
+export function canonicalDigest(files) {
   return digestOf(
     Object.keys(files)
       .sort()

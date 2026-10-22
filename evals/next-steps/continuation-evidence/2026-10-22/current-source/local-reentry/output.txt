@@ -1,0 +1,9 @@
+Quelle: `example/flow`, `docs/plan/2026-10-22-export-proof.md`.
+
+- **Bewerteter Versuch:** weiterhin `continuation-2`, bereits einmal ausgewertet. Dieser Lesezugriff zählt keinen neuen Versuch.
+- **Evidenzdelta:** keines. P1 und P2 bleiben offen; Modell-Fixtures und grüne lokale Tests belegen sie nicht.
+- **Checkpoint / vorgeschlagenes Delta:** unverändert, kein Quelldelta. No-progress count bleibt `2`; Allowance `2`, remaining `2`. Keine erneute Neubewertung erforderlich.
+- **Bestehende Entscheidung:** Sie trägt weiterhin die begrenzte Option „Normalmodus-Fixture, danach Retrymodus-Fixture“, jeweils einmal im bestehenden Prozess. Diese Inspektion verbraucht keine Freigabe.
+- **Stopgrenze:** Die Quelle untersagt Folgeausführung in dieser Übung. Daher keine Experimente oder optionalen Arbeiten. Bei ausgeschöpfter Allowance ist erneut eine Entscheidung erforderlich; materielle Erweiterung oder widerlegende Evidenz beendet die Freigabe früher, ein fehlgeschlagener Pflichtcheck blockiert sofort.
+
+Die Quelle blieb vollständig unverändert.

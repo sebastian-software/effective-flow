@@ -1,0 +1,6 @@
+Nur den [bestehenden Checkpoint](docs/plan/2026-10-22-export-proof.md) aktualisiert; übrige Abschnitte unverändert geprüft.
+
+- **Ausgewertet:** vorgegebener P2-Prüfrücklauf, einmalig; Ausführungsreferenz und Fixture-Modus fehlen.
+- **Evidenzdelta:** Wiederherstellung überschreibt einen benachbarten Datensatz. P2 scheitert; kein qualifizierender Fortschritt für P1/P2. Zähler bleibt **2**.
+- **Entscheidung:** Bestehende Sofort-Stop-Grenze greift; die frühere Allowance ist nicht mehr nutzbar. Frühere Owner-Entscheidungen bleiben dokumentiert.
+- **Endzustand:** P1/P2 bleiben offen und unerlassen. Kein Containment nötig; keine weiteren Exporte oder optionalen Arbeiten ausgeführt.

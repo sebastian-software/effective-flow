@@ -21,6 +21,7 @@ import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import {
   buildPortableSkill,
+  canonicalDigest,
   digestFile,
   digestOf,
   freshnessVerdict,
@@ -1169,7 +1170,30 @@ function sameGeneration(actual, expected) {
   );
 }
 
-function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
+// Historical units retain their own provenance; carrying them forward must not turn an
+// inconsistent stamp into evidence merely by comparing it with itself.
+function assertArchivedIdentity(stamp, scenario, slot) {
+  const hash = (value) => typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
+  const parts = ['skill', 'instrument', 'scenario_inputs'];
+  const consistent =
+    stamp?.scenario === scenario &&
+    parts.every((name) => {
+      const part = stamp[name];
+      return (
+        part?.files &&
+        !Array.isArray(part.files) &&
+        Object.keys(part.files).length > 0 &&
+        Object.values(part.files).every(hash) &&
+        part.digest === canonicalDigest(part.files)
+      );
+    }) &&
+    stamp.digest === digestOf(parts.map((name) => stamp[name].digest).join('\n')) &&
+    (stamp.skill.versionNeutralDigest === undefined || hash(stamp.skill.versionNeutralDigest));
+  if (!consistent)
+    throw new Error(`${scenario}/run-${slot} has inconsistent archived build provenance`);
+}
+
+function ensureCanonicalGeneration(suite, candidate, scenarios, identities, selectedScenarios) {
   const findings = [];
   const allowedTopLevel = new Set([...scenarios, '.generation.json']);
   const unknownTopLevel = readdirSync(candidate, { withFileTypes: true })
@@ -1223,24 +1247,35 @@ function ensureCanonicalGeneration(suite, candidate, scenarios, identities) {
       ) {
         throw new Error(`${scenario}/run-${slot} metadata does not bind its archived files`);
       }
-      // Every slot of the candidate generation, newly published and carried forward alike, has to
-      // have been recorded with the pinned profile. The instrument binding is the primary guard:
-      // a pin edit changes the hashed suite configuration, so a carried-forward stamp from before
-      // it already fails the identity check below. This assertion is the defense in depth that
-      // still holds against hand-edited metadata or a future change to the hash membership. The
-      // top-level `profile` is the one to check: sealing guarantees it equals the host receipt's.
+      assertArchivedIdentity(stamp, scenario, slot);
+      safeHostReceipt(
+        metadata.hostAttestation,
+        { profile: metadata.profile },
+        {
+          projectRoot: metadata.projectRoot,
+        },
+      );
+      // Carried-forward units retain the pinned profile and original host binding even when their
+      // skill/instrument is stale. Freshness is still reported and enforced at release by verify.
       assertProfileMatchesPin(
         suite.expectedProfile,
         metadata.profile,
         `${scenario}/run-${slot} archived profile`,
       );
+      // Only an unselected unit with unchanged scenario inputs may preserve an older build.
+      // Re-evaluate its structure and behavior without re-stamping it or calling it current.
+      const preserveStale =
+        !selectedScenarios.includes(scenario) &&
+        freshnessVerdict(suite, scenario, stamp, identities[scenario]).state === 'stale' &&
+        JSON.stringify(stamp.scenario_inputs) ===
+          JSON.stringify(identities[scenario].scenario_inputs);
       const evaluation = evaluateEvidence(suite, {
         scenario,
         logText: readFileSync(`${target}.jsonl`, 'utf8'),
         fixture,
         projectRoot: metadata.projectRoot,
         buildIdentity: stamp,
-        expectedBuildIdentity: identities[scenario],
+        expectedBuildIdentity: preserveStale ? stamp : identities[scenario],
         answerableOperations: new Set(Object.keys(fixture.operations ?? {})),
         auxiliaryText: auxiliary
           ? readFileSync(`${target}.${auxiliary.archiveSuffix}`, 'utf8')
@@ -1570,6 +1605,7 @@ export function publishRound(
             candidate,
             discovered.scenarios,
             currentIdentities,
+            manifest.scenarios,
           );
           const candidateGeneration = {
             schemaVersion: 1,

@@ -277,6 +277,36 @@ and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports a
 every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
 and recording requirements.
 
+### Outcome continuation evidence
+
+The conditionally loaded [`outcome-continuation`](../../src/shared/outcome-continuation.md)
+protocol uses existing shared-fragment discovery and harness rendering; it adds no runtime module
+or CLI/configuration schema. Its short entry/return requirements remain in eager `goal-completion`.
+The bilingual plan-lint projection recognizes the checkpoint heading without parsing its prose
+fields or changing the closed CLI payload/result contract. Measure affected always-loaded cores
+before changing budgets; the existing headroom limit still applies.
+
+Feature acceptance requires actual model evidence as well as source wiring and compatibility
+checks. Four new `next-steps` cases cover threshold, expansion despite green checks, advancing
+continuation, and conflicting source context: five fresh runs per case, **20 new recommendation
+runs**, plus independent qualitative reading. That suite proves final recommendation choice and
+its read-only boundary; fixtures, unit tests and archive-shape checks do not prove model behavior.
+
+The separate bounded host-driven `evals/next-steps/_scaffold/continuation-exercise.mjs` exercise
+must cover source writes and fresh re-entry through local-plan, canonical-comment, lifecycle-comment
+and handoff-only carriers. It must retain actual outputs, submitted mutation bodies, source diffs
+and real host receipts, including the second no-progress return's reassessment, `unknown`, duplicate
+returns, preserved safety blocks, advancing evidence and allowance `2 → 1 → 0`. Its offline adapter
+must persist the actual submitted body under production expected-body/hash preconditions; a canned
+success cannot supply that proof. Fidelity unit tests validate the adapter, not the agent's
+continuation decisions. The host launches fresh contexts; the helper records evidence and never
+fabricates output or launches a model. This bounded exercise is test tooling, not a product runtime
+or general eval suite. Implementation of a scaffold is not a completed behavioral run.
+
+Targeted behavioral acceptance belongs to this feature. Existing broad-suite freshness remains a
+separate pre-release obligation under the suite READMEs above; load-set changes may stale all three
+suites. Report each layer and its outstanding evidence separately.
+
 ## Guards
 
 The build aborts with an error message if any of these guards is violated:
@@ -921,7 +951,7 @@ and directive syntax").
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
-  `plan-pr-continuation`.
+  `plan-pr-continuation`, `outcome-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded

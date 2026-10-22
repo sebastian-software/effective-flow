@@ -1,0 +1,5 @@
+[Checkpoint aktualisiert](docs/plan/2026-10-22-export-proof.md): `continuation-1` wurde am äußeren Source Owner einmalig gewertet; No-progress-Zähler `0 → 1`.
+
+Neue Evidenz: Parser-Fixtures und grüne lokale Tests, kein qualifizierender Fortschritt. P1, P2 und die Duplikatfrage bleiben unbewiesen.
+
+Keine Neubewertung ausgelöst. Entscheidung unverändert: `No special allowance; accepted single-process work only.` Planstatus bleibt `Not implemented`. Ausschließlich drei Checkpoint-Zeilen geändert und geprüft; keine weiteren Arbeiten ausgeführt oder autorisiert.

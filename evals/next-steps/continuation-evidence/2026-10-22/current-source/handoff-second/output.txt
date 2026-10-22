@@ -1,0 +1,17 @@
+`handoff-continuation-2` wurde einmal ausgewertet: Zähler `1 → 2`. Der zweite aufeinanderfolgende Rücklauf ohne Fortschritt löst jetzt die Neubewertung aus. Die zuständigen Spezialisten sind hier nicht verfügbar; die begrenzte Ersatzbewertung erfolgt inline: Weitere Fixture-Prüfungen liefern keinen Abnahmenachweis. Der kleinste sachgerechte nächste Schritt wäre die Klärung der Duplikatfrage mit anschließendem realem Export- und Rollback-/Isolationsnachweis; weitere Umsetzung ist jedoch nicht autorisiert. Daher endet dieser Ansatz hier.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; direct-request export proof and retained return. Source owner: current orchestrator. This handoff is the sole state carrier.
+
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), within the existing single-process application. Whether the complete source fixture contains duplicate identifiers remains a predeclared blocker to the export proof. No service, deployment target or operating duty has been accepted.
+
+**Last evaluated attempt:** handoff-continuation-2; returned and accounted once. Prior attempt handoff-continuation-1 remains accounted once.
+
+**No-progress count:** 2 (saturated); transitioned from 1.
+
+**Evidence delta:** New parser-model fixtures and green local tests only. Neither P1 nor P2 advanced. Duplicate identifiers remain unresolved; no real export or rollback/isolation evidence exists. These fixtures are not original acceptance proofs.
+
+**Cumulative approach:** Initial parser adaptation plus additional fixture-only checks. Cost unknown; no additional runtime or maintenance responsibility accepted. Both original acceptance proofs remain outstanding.
+
+**Continuation decision:** Stop this approach. The second consecutive no-progress return triggered reassessment; the inline fallback supports stopping because fixture-only work has not advanced acceptance and no further specific allowance, changed evidence or implementation authority exists. The prior checkpoint required no reassessment at count 1; this decision supersedes that assessment at count 2. No continuation allowance is granted. P1/P2 remain unfinished and mandatory; this stop neither completes nor withdraws the outcome. No optional work follows.
