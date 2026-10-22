@@ -818,7 +818,7 @@ test('outcome recommendation cases retain the sealed read-only boundary even whe
 });
 
 test('the advancing Feature plan alone accepts apply or build with exact prepared artifact identity and one option', () => {
-  const root = mkdtempSync(join('/private/tmp', 'next-steps-outcome-alternative-'));
+  const root = mkdtempSync(join(tmpdir(), 'next-steps-outcome-alternative-'));
   try {
     const name = 'outcome-advancing-continuation';
     const built = buildPortableSkill(root);

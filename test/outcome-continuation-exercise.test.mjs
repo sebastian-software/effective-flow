@@ -31,7 +31,7 @@ const json = (path) => JSON.parse(readFileSync(path, 'utf8'));
 const text = (path) => readFileSync(path, 'utf8');
 let unitRoot, builtSkillRoot;
 before(() => {
-  unitRoot = realpathSync(mkdtempSync(join('/private/tmp', 'outcome-exercise-unit-only-')));
+  unitRoot = realpathSync(mkdtempSync(join('/tmp', 'outcome-exercise-unit-only-')));
   builtSkillRoot = buildPortableSkill(join(unitRoot, 'build'));
 });
 after(() => rmSync(unitRoot, { recursive: true, force: true }));
