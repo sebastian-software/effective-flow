@@ -8,11 +8,12 @@
     "format": "oxfmt",
     "agent:check": "oxfmt --check",
     "audit:skill-ownership": "node scripts/audit-skill-ownership.mjs",
-    "test": "node --test",
+    "test": "node scripts/test-capabilities.mjs && node --test",
     "test:distribution": "node scripts/distribution-smoke.mjs offline",
     "test:managers": "node scripts/distribution-smoke.mjs managers",
     "eval": "node evals/eval.mjs",
-    "prepare:eval": "node evals/prepare.mjs"
+    "prepare:eval": "node evals/prepare.mjs",
+    "test:preflight": "node scripts/test-capabilities.mjs"
   },
   "devDependencies": {
     "oxfmt": "^0.70.0"

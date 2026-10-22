@@ -14,6 +14,7 @@ prompt-writing rule.
 
 ```sh
 node build.mjs          # builds native + portable targets into dist/ (alias: pnpm build)
+pnpm test:preflight     # verifies required capabilities in the test environment
 pnpm test               # runs the unit test suite (node:test)
 pnpm format             # formats with oxfmt (Markdown + JS)
 pnpm agent:check        # oxfmt --check, CI mode without write access
@@ -36,6 +37,15 @@ releases of those managers. After every source or installer change, use the same
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
 untouched.
+
+`pnpm test:preflight` probes the actual execution environment before the full test suite: it must
+create and clean a temporary fixture, bind an ephemeral loopback TCP listener, and, on macOS,
+apply a distinct nested Seatbelt policy that proves a real write is denied. `pnpm test` runs this
+guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
+correct. Run the preflight in the exact native worker sandbox and environment before a pilot
+launch; failure blocks activation and product writes. Do not skip, xfail, or relax a check, or use
+results from an unprotected host as native-worker proof. On macOS, the nested policy is a
+legitimate requirement because the suite must exercise a different native sandbox policy.
 
 ## Placeholder and directive syntax
 
@@ -1336,6 +1346,10 @@ role and verifies the effective model and reasoning values. The probe must also 
 precedence contract from [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents):
 the role file wins over conflicting spawn parameters. Treat the probe as compatibility evidence,
 not as a reason to activate the pilot.
+
+Run `pnpm test:preflight` separately in the exact worker sandbox before launching that probe. A
+failed preflight blocks native pilot activation and product writes; a passing preflight only
+establishes that the required environment capabilities were observable.
 
 The acceptance checklist remains open until all of these are available: accessible original
 assignment and role evidence and complete actual helper observations; actual Claude model,
