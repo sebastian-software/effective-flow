@@ -36,7 +36,14 @@ const DISABLED = [
   'hooks',
   'enable_mcp_apps',
 ];
-export function nativePolicy({ fixtureRoot, skillRoot, protectedRoots, target = 'portable' }) {
+export function nativePolicy({
+  fixtureRoot,
+  skillRoot,
+  protectedRoots,
+  privateRoots = [],
+  protectedMailbox = null,
+  target = 'portable',
+}) {
   const fixture = realpathSync(fixtureRoot),
     skill = realpathSync(skillRoot);
   requireThat(
@@ -72,16 +79,33 @@ export function nativePolicy({ fixtureRoot, skillRoot, protectedRoots, target = 
   protectedRoots = [...protectedRoots, dirname(archiveLedger)];
   const protectedPaths = [...new Set(protectedRoots.map((p) => realpathSync(p)))].sort();
   const writes = [...new Set([fixture, gitRoot, originRoot])].sort();
+  if (protectedMailbox !== null)
+    requireThat(
+      protectedMailbox === resolve(fixture, '.effective-flow/protected-validation') &&
+        realpathSync(protectedMailbox) === protectedMailbox,
+      'only the exact physical fixture mailbox can override fixture writes',
+    );
   for (const p of protectedPaths)
     for (const w of writes)
       requireThat(
-        !below(w, p) && !below(p, w),
+        (!below(w, p) && !below(p, w)) || (w === fixture && p === protectedMailbox),
         'protected host namespace overlaps a model writable root',
+      );
+  const privatePaths = [...new Set(privateRoots.map((p) => realpathSync(p)))].sort();
+  for (const p of privatePaths)
+    for (const w of writes)
+      requireThat(
+        (!below(w, p) && !below(p, w)) ||
+          (w === fixture &&
+            protectedMailbox !== null &&
+            p === resolve(protectedMailbox, 'private')),
+        'private host namespace overlaps a model writable root',
       );
   const filesystem = {
     ':slash_tmp': 'read',
     ':tmpdir': 'read',
     ...Object.fromEntries(protectedPaths.map((p) => [p, 'read'])),
+    ...Object.fromEntries(privatePaths.map((p) => [p, 'none'])),
     ...Object.fromEntries(writes.filter((p) => p !== fixture).map((p) => [p, 'write'])),
   };
   const definition = { extends: ':workspace', filesystem, network: { enabled: false } };
@@ -132,6 +156,7 @@ export function nativePolicy({ fixtureRoot, skillRoot, protectedRoots, target = 
     fixtureFile,
     archiveLedger,
     protectedPaths,
+    privatePaths,
     writes,
     definition,
     configs,
@@ -312,7 +337,10 @@ export function nativeContextProblems(contexts, policy) {
     [':tmpdir', 'read'],
     [policy.fixture, 'write'],
     ...['.git', '.agents', '.codex', '.aws'].map((n) => [resolve(policy.fixture, n), 'read']),
-    ...Object.entries(policy.definition.filesystem),
+    ...Object.entries(policy.definition.filesystem).map(([path, access]) => [
+      path,
+      access === 'none' ? 'deny' : access,
+    ]),
   ]);
   for (const c of contexts) {
     const p = c.permissionProfile,
@@ -341,9 +369,11 @@ export function nativeContextProblems(contexts, policy) {
         Object.keys(entry.path ?? {}).some((k) => !['type', 'value', 'path'].includes(k)) ||
         (entry.path?.type === 'special' &&
           Object.keys(entry.path.value ?? {}).some((k) => k !== 'kind')) ||
-        keys.some((k) => !['path', 'access', 'missing_path_behavior'].includes(k)) ||
-        !['read', 'write'].includes(entry.access) ||
-        (entry.missing_path_behavior && entry.missing_path_behavior !== 'skip')
+        keys.some((k) => !['path', 'access', 'missing_path_behavior', 'escalatable'].includes(k)) ||
+        !['read', 'write', 'deny'].includes(entry.access) ||
+        (entry.missing_path_behavior && entry.missing_path_behavior !== 'skip') ||
+        (Object.hasOwn(entry, 'escalatable') &&
+          (entry.access !== 'deny' || entry.escalatable !== false))
       )
         problems.push('unknown or duplicate native filesystem policy entry');
       actual.set(key, entry.access);

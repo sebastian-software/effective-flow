@@ -124,6 +124,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 const RUNTIME_SCRIPT_FILES = [
   'build-run.mjs',
   'build-run-core.mjs',
+  'protected-validation-protocol.mjs',
+  'protected-validation-core.mjs',
   'delegation-envelope.mjs',
   'delegation-envelope-core.mjs',
   'diff-baseline.mjs',

@@ -149,6 +149,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'plan-publication-core.mjs',
   'plan-publication.mjs',
   'process-runner.mjs',
+  'protected-validation-core.mjs',
+  'protected-validation-protocol.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-decomposition-core.mjs',
   'remote-tracker-forgejo-core.mjs',
@@ -902,11 +904,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 29);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 31);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 27 approved runtime scripts',
+    'build.mjs must register exactly the 31 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

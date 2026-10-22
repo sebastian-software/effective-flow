@@ -217,6 +217,17 @@ Start in parallel if possible:
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline".
    <!-- spawn-site:build-delegated-run/validation -->
+   If the selected remote environment is the protected native macOS bridge, load the protected-validation
+   contract and enforce its previously qualified executor lane, fresh full-candidate proof and same-validator
+   admission/request/verified-poll/receipt chain before host completion sealing. Launch qualification
+   does not replace this phase’s proof. A remote result is evidence for the ordinary gate; it does not
+   grant the gate by itself.
+
+```lazy-include
+protected-validation
+when: the validation decision selects the protected native macOS GitHub Actions bridge
+```
+
 2. Give the user the complete list of all errors and warnings found.
 3. If errors are found: delegate the repair to the routed Quality implementer.
 4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.

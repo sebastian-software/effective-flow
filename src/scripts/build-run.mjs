@@ -4,6 +4,7 @@ import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 import {
   BUILD_RUN_OPERATIONS,
+  MAX_CONTROL_BYTES,
   BuildRunError,
   errorEnvelope,
   executeOperation,
@@ -24,9 +25,26 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     let input = io.input;
     if (input === undefined) {
       const chunks = [];
-      for await (const chunk of io.stdin ?? process.stdin) chunks.push(Buffer.from(chunk));
+      const boundedValidation = [
+        'validation-await-admission',
+        'validation-request',
+        'validation-result',
+      ].includes(argv[0]);
+      let byteLength = 0;
+      for await (const chunk of io.stdin ?? process.stdin) {
+        const bytes = Buffer.from(chunk);
+        byteLength += bytes.length;
+        if (boundedValidation && byteLength > MAX_CONTROL_BYTES)
+          throw new BuildRunError('TOO_LARGE', 'validation control exceeds 16384 UTF-8 bytes');
+        chunks.push(bytes);
+      }
       try {
-        input = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+        const bytes = Buffer.concat(chunks);
+        input = JSON.parse(
+          boundedValidation
+            ? new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+            : bytes.toString('utf8'),
+        );
       } catch {
         throw new BuildRunError('INVALID_PAYLOAD', 'stdin must contain one valid JSON object');
       }

@@ -51,6 +51,12 @@ import {
 } from './claude-process.mjs';
 import { materializeClaudeStreams, decodeClaudeCapture } from './claude-stream.mjs';
 import { claudeRuntimeIdentity } from './claude-runtime.mjs';
+import {
+  prepareProtectedValidation,
+  startProtectedValidationObserver,
+  stopProtectedValidationObserver,
+  verifyProtectedValidationCompletion,
+} from './protected-validation-host.mjs';
 import { normalizeProfile } from '../../_scaffold/profile.mjs';
 const write = (path, value) =>
   writeFileSync(path, JSON.stringify(value, null, 2) + '\n', { flag: 'wx', mode: 0o600 });
@@ -360,6 +366,17 @@ export class HostCoordinator {
         (harness === 'claude-code' && basename(command.executable) === 'claude'),
       'CLI executable differs from declared harness',
     );
+    const protectedValidation = input.protectedValidation
+      ? prepareProtectedValidation({
+          descriptor: input.protectedValidation,
+          fixtureRoot,
+          journalRoot: this.root,
+        })
+      : null;
+    requireThat(
+      !protectedValidation || harness === 'codex-cli',
+      'protected validation requires native Codex',
+    );
     let nativeSandbox = null;
     if (harness === 'codex-cli') {
       requireThat(command.codexHome && command.home, 'isolated native HOME/CODEX_HOME required');
@@ -372,7 +389,22 @@ export class HostCoordinator {
         target,
         fixtureRoot,
         skillRoot,
+        protectedMailbox:
+          protectedValidation?.mailboxRoot ===
+          resolve(fixtureRoot, '.effective-flow/protected-validation')
+            ? protectedValidation.mailboxRoot
+            : null,
+        privateRoots: protectedValidation
+          ? [
+              this.root,
+              realpathSync(command.home),
+              realpathSync(command.codexHome),
+              realpathSync(transcripts),
+              protectedValidation.privateRoot,
+            ]
+          : [],
         protectedRoots: [
+          ...(protectedValidation ? [protectedValidation.mailboxRoot] : []),
           this.root,
           realpathSync(command.home),
           realpathSync(command.codexHome),
@@ -421,6 +453,14 @@ export class HostCoordinator {
       settingsDigest: digest(JSON.stringify(settings)),
       profile: settings.profile,
       settings,
+      ...(protectedValidation
+        ? {
+            protectedValidation: {
+              mailboxRoot: protectedValidation.mailboxRoot,
+              policyDigest: protectedValidation.policyDigest,
+            },
+          }
+        : {}),
       transcriptDestinationWasEmpty: true,
       targetDigest: digest(JSON.stringify(fileMembership(skillRoot))),
       trackerInitialDigest: digest(
@@ -488,6 +528,7 @@ export class HostCoordinator {
       },
       command,
       nativePolicy: nativeSandbox,
+      protectedValidation,
       trackerInitialText:
         nativeSandbox && existsSync(nativeSandbox.archiveLedger)
           ? readRegular(nativeSandbox.archiveLedger, 2 * 1024 * 1024)
@@ -594,25 +635,33 @@ export class HostCoordinator {
       resolve(this.root, id + '-native-guard-' + (state.processes.length + 1) + '.json'),
       envelope('native-guard', guardObservation),
     );
-    const startedAt = Date.now(),
-      result = isClaude
-        ? launchClaudeProcess({
-            executable: state.command.executable,
-            policy: state.nativePolicy,
-            environment,
-            execArgs: actualArgs,
-            prompt: turnPrompt,
-            journalRoot: this.root,
-            turn: id + '-' + (state.processes.length + 1),
-            timeoutMs: state.command.timeoutMs ?? 1800000,
-          })
-        : spawnSync(state.command.executable, actualArgs, {
-            cwd: state.input.fixtureRoot,
-            env: environment,
-            input: sealedInput,
-            timeout: state.command.timeoutMs ?? 1800000,
-            maxBuffer: 16 * 1024 * 1024,
-          });
+    const startedAt = Date.now();
+    const validationObserver = state.protectedValidation
+      ? startProtectedValidationObserver({
+          state,
+          journalRoot: this.root,
+          launchId: id + '-' + (state.processes.length + 1),
+          startedAt,
+        })
+      : null;
+    const result = isClaude
+      ? launchClaudeProcess({
+          executable: state.command.executable,
+          policy: state.nativePolicy,
+          environment,
+          execArgs: actualArgs,
+          prompt: turnPrompt,
+          journalRoot: this.root,
+          turn: id + '-' + (state.processes.length + 1),
+          timeoutMs: state.command.timeoutMs ?? 1800000,
+        })
+      : spawnSync(state.command.executable, actualArgs, {
+          cwd: state.input.fixtureRoot,
+          env: environment,
+          input: sealedInput,
+          timeout: state.command.timeoutMs ?? 1800000,
+          maxBuffer: 16 * 1024 * 1024,
+        });
     // Preserve the actual subprocess result before any fallible post-launch validation.
     const observedNumber = (state.observedProcesses?.length ?? 0) + 1;
     const observed = {
@@ -645,6 +694,13 @@ export class HostCoordinator {
     state.observedProcesses.push(observedReceipt);
     this.save();
     try {
+      const validationObserverSummary = validationObserver
+        ? stopProtectedValidationObserver(
+            validationObserver,
+            this.root,
+            id + '-' + (state.processes.length + 1),
+          )
+        : null;
       requireThat(
         observed.captureComplete && Number.isInteger(observed.exitCode),
         'actual process capture incomplete or failed',
@@ -685,6 +741,12 @@ export class HostCoordinator {
       const priorLedger =
         state.processes.at(-1)?.trackerMirror?.archiveDigest ??
         verifyEnvelope(state.receipt, 'prepared').trackerInitialDigest;
+      if (validationObserverSummary)
+        requireThat(
+          validationObserverSummary.rootIds.length === 1 &&
+            validationObserverSummary.rootIds[0] === nativeTurn?.snapshot.rootId,
+          'live admission root differs from actual native thread.started capture',
+        );
       const trackerMirror = mirrorTrackerLedger(state.nativePolicy, priorLedger);
       const event = {
         ...(nativeTurn
@@ -1172,6 +1234,13 @@ export class HostCoordinator {
       policyDigest: state.nativePolicy.policyDigest,
       sessions: policySessions,
     };
+    if (state.protectedValidation)
+      run.protectedValidationProof = verifyProtectedValidationCompletion({
+        state,
+        actual,
+        helperEvents: run.helperEvents ?? [],
+        journalRoot: this.root,
+      });
     const launch = envelope('launch', {
       prepared: state.receipt,
       processes: state.processes,
