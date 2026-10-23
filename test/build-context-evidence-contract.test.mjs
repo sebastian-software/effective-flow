@@ -2212,6 +2212,11 @@ test(
   async (t) => {
     const root = temporary(t),
       host = resolve(root, 'journal');
+    // Successful helper subprocesses need a bounded budget for full-suite contention.
+    // Keep the true hang deadline separate and emit its diagnostic before that deadline.
+    const startupDelayMs = 750,
+      successfulProcessBudgetMs = 30000,
+      hangingProcessBudgetMs = 5000;
     const coordinator = new HostCoordinator(host, { suite });
     const build = coordinator.build({
       condition: 'candidate',
@@ -2275,6 +2280,7 @@ test(
 import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
 const args=process.argv.slice(2);
 if(!args.includes('exec')) { const r=spawnSync('/opt/homebrew/bin/codex',args,{stdio:'inherit'}); process.exit(r.status??1); }
+${mode === 'timeout' ? `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,${startupDelayMs});` : ''}
 const input=readFileSync(0), rootId='12345678-1234-1234-1234-123456789abc', runnerId='22345678-1234-1234-1234-123456789abc';
 const resumed=args.includes('resume'), rootFile=process.env.CODEX_HOME+'/sessions/rollout-unit-root.jsonl', childFile=process.env.CODEX_HOME+'/sessions/rollout-unit-child.jsonl';
 const row=payload=>JSON.stringify({timestamp:new Date().toISOString(),...payload})+'\\n';
@@ -2338,7 +2344,7 @@ ${mode === 'timeout' ? 'setInterval(()=>{},1000);' : ''}`,
           home,
           codexHome: config,
           profile,
-          timeoutMs: mode === 'timeout' ? 500 : 5000,
+          timeoutMs: mode === 'timeout' ? hangingProcessBudgetMs : successfulProcessBudgetMs,
         }),
       );
       if (mode === 'unchanged') await phaseSevenControlFixture(fixture, skill);
@@ -2519,6 +2525,7 @@ ${mode === 'timeout' ? 'setInterval(()=>{},1000);' : ''}`,
       assert.equal(observed.exitCode, mode === 'timeout' ? null : 0);
       assert.equal(observed.captureComplete, mode !== 'timeout');
       if (mode === 'timeout') assert.equal(observed.launchError, 'ETIMEDOUT');
+      assert.ok(raw.length > 0, 'the diagnostic must start before the process deadline');
       assert.equal(observed.stdoutDigest, digest(raw));
       assert.equal(observed.stderrDigest, digest(stderr));
       assert.equal(observed.capturedStdoutBytes, raw.length);
