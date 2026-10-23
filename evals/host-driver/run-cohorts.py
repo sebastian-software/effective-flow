@@ -12,13 +12,16 @@ from pathlib import Path
 import re
 import signal
 import subprocess
+import stat
 import sys
 import threading
+import uuid
 
 # CLI execution must leave the source checkout untouched.
 sys.dont_write_bytecode = True
 
 from eval_driver_runtime import execute_wrapper, save, sha, stop_wrappers, verify_cleanup
+from eval_host_worker import cancel_launches, open_cancellation
 
 HERE = Path(__file__).resolve().parent
 SOURCE_REPOSITORY = HERE.parents[1]
@@ -97,6 +100,24 @@ class Driver:
         self.lock, self.launch_lock, self.active_lock = (threading.Lock() for _ in range(3))
         self.active = {}
         self.interrupted_signal = None
+        self.profiles_root.mkdir(mode=0o700, exist_ok=True)
+        info = self.profiles_root.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+            raise ValueError('profiles root must be an owned directory')
+        self.cancellation_path = self.profiles_root / ('launch-cancellation-' + str(uuid.uuid4()) + '.fifo')
+        os.mkfifo(self.cancellation_path, 0o600)
+        try:
+            self.cancellation = open_cancellation({'cancellationPath': str(self.cancellation_path)})
+        except BaseException:
+            self.cancellation_path.unlink()
+            raise
+
+    def close(self):
+        if self.cancellation is not None:
+            for fd in self.cancellation:
+                os.close(fd)
+            self.cancellation = None
+            self.cancellation_path.unlink()
 
     def check_source(self):
         def git(*args):
@@ -137,7 +158,10 @@ class Driver:
         import fcntl
         with self.launch_lock:
             self.stop.set()
-            with self.gate.open('rb') as gate:
+            cancel_launches(self.cancellation)
+            gate = None
+            try:
+                gate = self.gate.open('rb')
                 fcntl.flock(gate, fcntl.LOCK_EX)
                 # Revoke the existing gate's shared launch permission before
                 # best-effort marker publication can fail or delay cleanup.
@@ -146,6 +170,15 @@ class Driver:
                     self.blocker.touch(mode=0o600, exist_ok=True)
                 except OSError:
                     pass
+            except OSError:
+                # These live Popen objects belong to this coordinator. Wrapper
+                # shutdown kills its bridge group without acquiring the gate.
+                with self.active_lock:
+                    processes = list(self.active.values())
+                stop_wrappers(processes)
+            finally:
+                if gate is not None:
+                    gate.close()
 
     def event(self, value):
         with self.lock:
@@ -205,6 +238,7 @@ class Driver:
                         task['runMetadata']: sha(task['runMetadata'])},
                'driverDigest': self.pins[str(Path(__file__).resolve())],
                'fixtureTools': self.fixture_tools, 'coordinatorPid': os.getpid(),
+               'cancellationPath': str(self.cancellation_path),
                'timeoutSeconds': self.timeout_seconds + 125, 'modelTimeoutSeconds': self.timeout_seconds,
                'blockerPath': str(self.blocker), 'launchGatePath': str(self.gate)}
         save(directory / 'worker-job.json', job)
@@ -374,6 +408,7 @@ def main(argv=None):
     finally:
         for sig, handler in previous.items():
             signal.signal(sig, handler)
+        driver.close()
 
 
 if __name__ == '__main__':

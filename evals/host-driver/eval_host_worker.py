@@ -12,6 +12,7 @@ from pathlib import Path
 import re
 import select
 import signal
+import stat
 import subprocess
 import sys
 import time
@@ -113,8 +114,42 @@ def launch_record(job, home, codehome):
                     'PWD': task['projectRoot'], 'TMPDIR': str(cli_tmpdir)}}
 
 
-def block_launches(job):
-    with open(job['launchGatePath'], 'rb') as gate:
+def open_cancellation(job):
+    read_fd = os.open(job['cancellationPath'], os.O_RDONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+    try:
+        write_fd = os.open(job['cancellationPath'], os.O_WRONLY | os.O_NONBLOCK | os.O_NOFOLLOW)
+        try:
+            reader, writer = os.fstat(read_fd), os.fstat(write_fd)
+            if (not stat.S_ISFIFO(reader.st_mode)
+                    or (reader.st_dev, reader.st_ino) != (writer.st_dev, writer.st_ino)):
+                raise ValueError('invalid launch cancellation pipe')
+        except BaseException:
+            os.close(write_fd)
+            raise
+    except BaseException:
+        os.close(read_fd)
+        raise
+    return read_fd, write_fd
+
+
+def cancel_launches(cancellation):
+    try:
+        os.write(cancellation[1], b'!')
+    except BlockingIOError:
+        # No reader consumes the latch; a full pipe is already cancellation.
+        pass
+
+
+def block_launches(job, cancellation=None):
+    own_cancellation = cancellation is None
+    if own_cancellation:
+        cancellation = open_cancellation(job)
+    gate = None
+    try:
+        # All bridges open the pipe before qualification. Its kernel buffer
+        # remains writable when the artifact filesystem cannot publish the gate.
+        cancel_launches(cancellation)
+        gate = open(job['launchGatePath'], 'rb')
         fcntl.flock(gate, fcntl.LOCK_EX)
         # The existing gate's owner-write bit is the shared launch permission.
         # Revoking it needs no new artifact, even when marker creation fails.
@@ -124,9 +159,21 @@ def block_launches(job):
         except OSError:
             # The marker is evidence only; shutdown must still reach cleanup.
             pass
+    except OSError:
+        registered_profile(Path(os.environ['HOME']).parent, job['profilesRoot'], own_group=True)
+        # Only current membership authorizes stopping our group. The runner
+        # wrapper retains its existing bounded TERM/KILL and cache cleanup.
+        os.killpg(os.getpgrp(), signal.SIGTERM)
+    finally:
+        if gate is not None:
+            gate.close()
+        if own_cancellation:
+            for fd in cancellation:
+                os.close(fd)
 
 
 def execute_job(job, *, fixture=False):
+    cancellation = None
     try:
         directory, root = Path(job['artifactDir']), Path(job['profilesRoot'])
         home, codehome = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
@@ -135,6 +182,8 @@ def execute_job(job, *, fixture=False):
         if type(coordinator_pid) is not int or coordinator_pid <= 1:
             raise ValueError('job requires a coordinator PID')
         record = registered_profile(profile_path, root, own_group=True)
+        if not fixture:
+            cancellation = open_cancellation(job)
         if home != profile_path / 'home' or codehome != profile_path / 'codex-home':
             raise ValueError('runner did not supply its recorded homes')
         save(directory / 'runner-profile.json', {'profilePath': str(profile_path),
@@ -159,8 +208,13 @@ def execute_job(job, *, fixture=False):
         started = now()
         begin = time.monotonic()
     except Exception:
-        if not fixture:
-            block_launches(job)
+        try:
+            if not fixture:
+                block_launches(job, cancellation)
+        finally:
+            if cancellation is not None:
+                for fd in cancellation:
+                    os.close(fd)
         raise
     try:
         if fixture:
@@ -177,7 +231,7 @@ def execute_job(job, *, fixture=False):
             (directory / 'qualification.stdout.json').write_text(q.stdout)
             (directory / 'qualification.stderr.log').write_text(q.stderr)
             if q.returncode:
-                block_launches(job)
+                block_launches(job, cancellation)
                 save(directory / 'worker-result.json', {'state': 'qualification-refused-before-launch',
                      'actualModelStarted': False, 'qualificationExit': q.returncode,
                      'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
@@ -203,7 +257,8 @@ def execute_job(job, *, fixture=False):
                     if gate:
                         fcntl.flock(gate, fcntl.LOCK_EX)
                         if (not (os.fstat(gate.fileno()).st_mode & 0o200)
-                                or Path(job['blockerPath']).exists()):
+                                or Path(job['blockerPath']).exists()
+                                or select.select([cancellation[0]], [], [], 0)[0]):
                             save(directory / 'worker-result.json', {'state': 'not-launched-after-blocker',
                                  'actualModelStarted': False,
                                  'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
@@ -228,7 +283,7 @@ def execute_job(job, *, fixture=False):
     except Exception:
         # Close the launch gate before watchdog/wrapper cleanup can delay failure.
         if not fixture:
-            block_launches(job)
+            block_launches(job, cancellation)
         raise
     finally:
         try:
@@ -237,6 +292,9 @@ def execute_job(job, *, fixture=False):
             pass
         os.close(write_fd)
         os.waitpid(watcher, 0)
+        if cancellation is not None:
+            for fd in cancellation:
+                os.close(fd)
 
 
 def main(argv=None):

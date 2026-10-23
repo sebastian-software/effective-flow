@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import errno
+from contextlib import ExitStack
 import hashlib
 import importlib.util
 import json
@@ -132,6 +133,7 @@ class HostDriverTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         os.environ.pop("FIXTURE_START", None)
+        self.doCleanups()
         self.temp.cleanup()
 
     def driver(self, timeout: int = 3):
@@ -139,7 +141,7 @@ class HostDriverTests(unittest.TestCase):
         spec = importlib.util.spec_from_file_location("host_driver_fixture", DRIVER_PATH)
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        return module.Driver(
+        driver = module.Driver(
             self.config,
             self.profiles,
             operator=self.operator,
@@ -150,6 +152,8 @@ class HostDriverTests(unittest.TestCase):
             timeout_seconds=timeout,
             fixture_tools=True,
         )
+        self.addCleanup(driver.close)
+        return driver
 
     def round_driver(self, name: str):
         config = json.loads(self.config.read_text())
@@ -275,7 +279,7 @@ class HostDriverTests(unittest.TestCase):
                        "task": task, "node": NODE, "operator": str(self.operator),
                        "configFile": str(self.config), "source": str(self.source),
                        "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
-                       "coordinatorPid": os.getpid(),
+                       "coordinatorPid": os.getpid(), "cancellationPath": str(driver.cancellation_path),
                        "blockerPath": str(driver.blocker), "launchGatePath": str(driver.gate)}
                 def cleanup(*_args):
                     # The wrapper can remain in cleanup while another slot qualifies.
@@ -308,7 +312,7 @@ class HostDriverTests(unittest.TestCase):
         codehome.mkdir()
         native_touch, native_flock = Path.touch, fcntl.flock
         for publisher in ("worker", "driver"):
-            for error_code in (errno.ENOSPC, errno.EACCES):
+            for error_code in (errno.ENOSPC, errno.EACCES, errno.EROFS):
                 with self.subTest(publisher=publisher, errno=error_code):
                     name = f"publication-{publisher}-{error_code}"
                     driver = self.round_driver(name)
@@ -319,7 +323,7 @@ class HostDriverTests(unittest.TestCase):
                            "task": task, "node": NODE, "operator": str(self.operator),
                            "configFile": str(self.config), "source": str(self.source),
                            "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
-                           "coordinatorPid": os.getpid(), "blockerPath": str(driver.blocker),
+                           "coordinatorPid": os.getpid(), "cancellationPath": str(driver.cancellation_path), "blockerPath": str(driver.blocker),
                            "launchGatePath": str(driver.gate), "pins": {str(self.config): "fixture", str(self.operator): "fixture"},
                            "driverDigest": "fixture", "fixtureTools": True}
                     good = {"qualificationDigest": "fixture-qualification", "profile": task["profile"]}
@@ -368,6 +372,145 @@ class HostDriverTests(unittest.TestCase):
                     self.assertFalse((directory / "process-start.json").exists())
                     self.assertEqual(json.loads((directory / "worker-result.json").read_text())["state"],
                                      "not-launched-after-blocker")
+
+    def test_gate_failure_stops_real_qualified_waiter(self) -> None:
+        import fcntl
+        from eval_driver_runtime import execute_wrapper, verify_cleanup
+
+        script = self.work / "publication-worker.py"
+        script.write_text(r"""
+import builtins
+import json
+import os
+from pathlib import Path
+import sys
+import time
+sys.path.insert(0, sys.argv[1])
+import eval_host_worker as worker
+job = json.loads(Path(sys.argv[2]).read_text())
+role, failure, error_code = sys.argv[3], sys.argv[4], int(sys.argv[5])
+directory = Path(job['artifactDir'])
+if role == 'waiter':
+    native_flock = worker.fcntl.flock
+    def wait_for_publication(gate, operation):
+        (directory / 'waiter-ready').touch()
+        deadline = time.monotonic() + 10
+        while not (directory / 'release-waiter').exists():
+            if time.monotonic() >= deadline:
+                raise TimeoutError('publication fixture release timed out')
+            time.sleep(0.01)
+        return native_flock(gate, operation)
+    worker.fcntl.flock = wait_for_publication
+    raise SystemExit(worker.execute_job(job))
+else:
+    (directory / 'publisher-profile.json').write_text(json.dumps({
+        'profilePath': str(Path(os.environ['HOME']).parent)}))
+    def fail(*args, **kwargs):
+        (directory / 'publication-attempt').write_text(str(error_code))
+        raise OSError(error_code, os.strerror(error_code))
+    if failure == 'gate-open':
+        builtins.open = fail
+    elif failure == 'flock':
+        worker.fcntl.flock = fail
+    else:
+        worker.os.fchmod = fail
+    worker.block_launches(job)
+""")
+        for publisher in ("worker", "driver"):
+            for failure in ("gate-open", "flock", "fchmod"):
+                for error_code in (errno.ENOSPC, errno.EACCES, errno.EROFS):
+                    with self.subTest(publisher=publisher, failure=failure, error=error_code):
+                        name = f"real-{publisher}-{failure}-{error_code}"
+                        driver = self.round_driver(name)
+                        task = self.task(name)
+                        directory = self.work / name
+                        directory.mkdir()
+                        coordinator = subprocess.Popen(
+                            [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                        self.assertNotEqual(coordinator.pid, os.getpid())
+                        job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
+                               "task": task, "binary": str(self.binary), "operator": str(self.operator),
+                               "operatorSha256": digest(self.operator), "node": NODE,
+                               "configFile": str(self.config), "source": str(self.source),
+                               "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
+                               "coordinatorPid": coordinator.pid, "cancellationPath": str(driver.cancellation_path),
+                               "blockerPath": str(driver.blocker),
+                               "launchGatePath": str(driver.gate), "driverDigest": "fixture",
+                               "pins": {str(self.operator): digest(self.operator),
+                                        str(self.config): digest(self.config)}, "fixtureTools": True}
+                        job_path = directory / "job.json"
+                        job_path.write_text(json.dumps(job))
+                        command = [NODE, str(ROOT / "evals/host-run.mjs"),
+                                   "--profiles-root", str(self.profiles), "--", sys.executable,
+                                   "-B", str(script), str(DRIVER_PATH.parent), str(job_path)]
+                        publisher_process = None
+                        begin = time.monotonic()
+                        with ThreadPoolExecutor(max_workers=1) as pool:
+                            future = pool.submit(execute_wrapper,
+                                [*command, "waiter", failure, str(error_code)], directory,
+                                stop=driver.stop, launch_lock=driver.launch_lock,
+                                active=driver.active, active_lock=driver.active_lock,
+                                timeout_seconds=15)
+                            try:
+                                self.assertIsNone(coordinator.poll())
+                                deadline = time.monotonic() + 8
+                                while time.monotonic() < deadline and not (directory / "waiter-ready").exists():
+                                    if future.done():
+                                        break
+                                    time.sleep(0.01)
+                                self.assertTrue((directory / "waiter-ready").exists())
+                                self.assertTrue((directory / "stdout.jsonl").exists())
+                                self.assertTrue((directory / "stderr.log").exists())
+                                if publisher == "worker":
+                                    publisher_process = subprocess.Popen(
+                                        [*command, "publisher", failure, str(error_code)],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                    self.assertNotEqual(publisher_process.wait(timeout=8), 0)
+                                    self.assertIsNone(coordinator.poll())
+                                    self.assertEqual(int((directory / "publication-attempt").read_text()), error_code)
+                                else:
+                                    def fail(*args, **kwargs):
+                                        raise OSError(error_code, os.strerror(error_code))
+                                    with ExitStack() as stack:
+                                        if failure == "gate-open":
+                                            stack.enter_context(mock.patch.object(Path, "open", fail))
+                                        elif failure == "flock":
+                                            stack.enter_context(mock.patch.object(fcntl, "flock", fail))
+                                        else:
+                                            stack.enter_context(mock.patch.object(os, "fchmod", fail))
+                                        driver.block()
+                                    self.assertTrue(driver.stop.is_set())
+                                import select
+                                self.assertTrue(select.select([driver.cancellation[0]], [], [], 0)[0])
+                                (directory / "release-waiter").touch()
+                                self.assertNotEqual(future.result(timeout=8), 0)
+                                self.assertFalse((directory / "process-start.json").exists())
+                                self.assertFalse(self.start_marker.exists())
+                                self.assertFalse(driver.blocker.exists())
+                                if publisher == "worker":
+                                    result = json.loads((directory / "worker-result.json").read_text())
+                                    self.assertEqual(result["state"], "not-launched-after-blocker")
+                                self.assertEqual(len(driver.active), 0)
+                                reference = json.loads((directory / "runner-profile.json").read_text())
+                                self.assertTrue(verify_cleanup(reference["profilePath"], self.profiles)["cleanupComplete"])
+                                if publisher == "worker":
+                                    reference = json.loads((directory / "publisher-profile.json").read_text())
+                                    self.assertTrue(verify_cleanup(reference["profilePath"], self.profiles)["cleanupComplete"])
+                                self.assertLess(time.monotonic() - begin, 8)
+                            finally:
+                                (directory / "release-waiter").touch(exist_ok=True)
+                                if publisher_process is not None and publisher_process.poll() is None:
+                                    publisher_process.terminate()
+                                    publisher_process.wait(timeout=15)
+                                with driver.active_lock:
+                                    owned = list(driver.active.values())
+                                for process in owned:
+                                    process.terminate()
+                                    process.wait(timeout=15)
+                                if coordinator.poll() is None:
+                                    coordinator.kill()
+                                coordinator.wait(timeout=5)
 
     def test_slot_exceptions_block_before_future_collection(self) -> None:
         cases = ("preflight-pin", "wrapper", "completion", "final-pin", "seal-timeout", "seal-malformed")
