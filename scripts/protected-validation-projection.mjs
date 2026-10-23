@@ -1,5 +1,5 @@
 // Maintenance-only source projection. Never writes the source checkout or its index.
-import { execFileSync } from 'node:child_process';
+import { boundedExecFileSync } from './protected-validation-runner.mjs';
 import {
   existsSync,
   lstatSync,
@@ -69,10 +69,17 @@ export function physicalFile(root, path) {
     bytes: readFileSync(current),
   };
 }
-const git = (cwd, ...args) =>
-  execFileSync('git', args, { cwd, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }).trim();
+const execFileSync = (command, args, options = {}) =>
+  boundedExecFileSync(command, args, {
+    ...options,
+    operation: args.find((arg) => !arg.startsWith('-')) ?? 'git',
+    diagnosticKind: 'MATERIALIZATION',
+  });
+const gitCommand = (cwd, args, timeoutMs = 120000) =>
+  execFileSync('git', args, { cwd, encoding: 'utf8', timeoutMs }).trim();
+const git = (cwd, ...args) => gitCommand(cwd, args);
 // Copy objects only: no refs, config, credentials, index or unrelated object-store contents.
-const historyGit = (cwd, args, options = {}) =>
+const historyGitCommand = (cwd, args, options = {}) =>
   execFileSync('git', ['--no-replace-objects', ...args], {
     cwd,
     encoding: 'utf8',
@@ -81,7 +88,9 @@ const historyGit = (cwd, args, options = {}) =>
     env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
     ...options,
   });
-export function verifyValidationHistory(root, sourceHead) {
+export function verifyValidationHistory(root, sourceHead, { timeoutMs = 120000 } = {}) {
+  const historyGit = (cwd, args, options = {}) =>
+    historyGitCommand(cwd, args, { timeoutMs, ...options });
   ensure(/^[a-f0-9]{40}$/.test(sourceHead), 'exact source history commit required');
   ensure(
     historyGit(root, ['rev-parse', '--is-shallow-repository']).trim() === 'false',
@@ -105,27 +114,30 @@ export function verifyValidationHistory(root, sourceHead) {
   );
   return count;
 }
-export function importValidationHistory({ source, destination, sourceHead }) {
-  const count = verifyValidationHistory(source, sourceHead);
+export function importValidationHistory({ source, destination, sourceHead, timeoutMs = 120000 }) {
+  const historyGit = (cwd, args, options = {}) =>
+    historyGitCommand(cwd, args, { timeoutMs, ...options });
+  const count = verifyValidationHistory(source, sourceHead, { timeoutMs });
   const pack = historyGit(source, ['pack-objects', '--revs', '--stdout'], {
     input: sourceHead + '\n',
     encoding: null,
   });
   historyGit(destination, ['index-pack', '--stdin', '--strict'], { input: pack });
   ensure(
-    verifyValidationHistory(destination, sourceHead) === count,
+    verifyValidationHistory(destination, sourceHead, { timeoutMs }) === count,
     'imported source history differs',
   );
   return { sourceHead, commitCount: count, packDigest: validationDigest(pack) };
 }
-export function validationCommitParent(root, commit) {
+export function validationCommitParent(root, commit, { timeoutMs = 120000 } = {}) {
+  const historyGit = (cwd, args) => historyGitCommand(cwd, args, { timeoutMs });
   ensure(/^[a-f0-9]{40}$/.test(commit), 'exact synthetic commit required');
   const parents = historyGit(root, ['rev-list', '--parents', '-n', '1', commit]).trim().split(' ');
   ensure(
     parents.length === 2 && parents[0] === commit,
     'synthetic validation commit must have one parent',
   );
-  verifyValidationHistory(root, parents[1]);
+  verifyValidationHistory(root, parents[1], { timeoutMs });
   return parents[1];
 }
 export function sourceBasis(root) {
@@ -176,7 +188,8 @@ export function verifyExecutionFile(root, entry) {
   );
   return file.bytes;
 }
-export function initializeRepository(root) {
+export function initializeRepository(root, { timeoutMs = 120000 } = {}) {
+  const git = (cwd, ...args) => gitCommand(cwd, args, timeoutMs);
   ensure(!existsSync(resolve(root, '.git')), 'exclusive temporary repository required');
   git(root, 'init', '--quiet');
   git(root, 'config', 'user.name', 'Protected validation');
@@ -186,7 +199,14 @@ export function initializeRepository(root) {
   git(root, 'config', 'commit.gpgsign', 'false');
   git(root, 'config', 'core.hooksPath', '/dev/null');
 }
-export function treeForFiles(root, entries, { transport = false } = {}) {
+export function treeForFiles(root, entries, { transport = false, timeoutMs = 120000 } = {}) {
+  const execFileSync = (command, args, options = {}) =>
+    boundedExecFileSync(command, args, {
+      ...options,
+      timeoutMs,
+      operation: args[0],
+      diagnosticKind: 'MATERIALIZATION',
+    });
   const lines = entries
     .map((entry) => {
       const bytes =
@@ -204,7 +224,7 @@ export function treeForFiles(root, entries, { transport = false } = {}) {
     .join('');
   execFileSync('git', ['read-tree', '--empty'], { cwd: root });
   execFileSync('git', ['update-index', '-z', '--index-info'], { cwd: root, input: lines });
-  return git(root, 'write-tree');
+  return gitCommand(root, ['write-tree'], timeoutMs);
 }
 export function createTransport({ source, destination, manifest }) {
   ensure(!existsSync(destination), 'transport destination must be new');
@@ -312,7 +332,13 @@ function transportFile(root, path) {
   );
   return readFileSync(actual);
 }
-export function materializeTransport({ checkout, destination, expectedCommit = null }) {
+export function materializeTransport({
+  checkout,
+  destination,
+  expectedCommit = null,
+  timeoutMs = 120000,
+}) {
+  const git = (cwd, ...args) => gitCommand(cwd, args, timeoutMs);
   checkout = realpathSync(checkout);
   if (expectedCommit !== null)
     ensure(
@@ -324,7 +350,7 @@ export function materializeTransport({ checkout, destination, expectedCommit = n
     'dirty transport checkout',
   );
   const sourceCommit = git(checkout, 'rev-parse', 'HEAD');
-  const sourceHead = validationCommitParent(checkout, sourceCommit);
+  const sourceHead = validationCommitParent(checkout, sourceCommit, { timeoutMs });
   const materialization = validateMaterializationManifest(
     JSON.parse(transportFile(checkout, MATERIALIZATION_PATH)),
   );
@@ -382,56 +408,63 @@ export function materializeTransport({ checkout, destination, expectedCommit = n
     ensure(mode === entry.mode, 'transport mode mismatch');
   }
   ensure(!existsSync(destination), 'execution repository must be exclusive');
-  mkdirSync(destination, { recursive: true });
-  initializeRepository(destination);
-  importValidationHistory({ source: checkout, destination, sourceHead });
-  const seen = new Set();
-  for (const entry of materialization.executionFiles) {
-    safeRelative(entry.path);
-    ensure(!seen.has(entry.path), 'duplicate execution path');
-    seen.add(entry.path);
-    const relocation = relocated.get(entry.path);
-    if (relocation)
-      ensure(
-        canonicalJSON({
-          path: relocation.path,
-          mode: relocation.mode,
-          digest: relocation.digest,
-        }) === canonicalJSON(entry),
-        'workflow relocation identity mismatch',
-      );
-    const bytes = relocation
-      ? transportFile(checkout, relocation.payloadPath)
-      : verifyExecutionFile(checkout, entry);
-    ensure(validationDigest(bytes) === entry.digest, 'materialized content mismatch');
-    writeExclusive(resolve(destination, entry.path), bytes, entry.mode);
+  let created = false;
+  try {
+    mkdirSync(destination, { recursive: true });
+    created = true;
+    initializeRepository(destination, { timeoutMs });
+    importValidationHistory({ source: checkout, destination, sourceHead, timeoutMs });
+    const seen = new Set();
+    for (const entry of materialization.executionFiles) {
+      safeRelative(entry.path);
+      ensure(!seen.has(entry.path), 'duplicate execution path');
+      seen.add(entry.path);
+      const relocation = relocated.get(entry.path);
+      if (relocation)
+        ensure(
+          canonicalJSON({
+            path: relocation.path,
+            mode: relocation.mode,
+            digest: relocation.digest,
+          }) === canonicalJSON(entry),
+          'workflow relocation identity mismatch',
+        );
+      const bytes = relocation
+        ? transportFile(checkout, relocation.payloadPath)
+        : verifyExecutionFile(checkout, entry);
+      ensure(validationDigest(bytes) === entry.digest, 'materialized content mismatch');
+      writeExclusive(resolve(destination, entry.path), bytes, entry.mode);
+    }
+    ensure(
+      [...relocated.keys()].every((path) => seen.has(path)),
+      'orphan workflow relocation',
+    );
+    const executionTree = treeForFiles(destination, materialization.executionFiles, { timeoutMs });
+    ensure(executionTree === materialization.executionTree, 'execution Git tree mismatch');
+    const executionCommit = git(
+      destination,
+      'commit-tree',
+      executionTree,
+      '-p',
+      sourceHead,
+      '-m',
+      'Materialized protected validation source',
+    );
+    git(destination, 'update-ref', 'refs/heads/execution', executionCommit);
+    git(destination, 'symbolic-ref', 'HEAD', 'refs/heads/execution');
+    ensure(
+      git(destination, 'status', '--porcelain') === '',
+      'materialized repository differs from execution tree',
+    );
+    return {
+      executionTree,
+      executionCommit,
+      sourceCommit,
+      sourceHead,
+      materializationDigest: validationDigest(transportFile(checkout, MATERIALIZATION_PATH)),
+    };
+  } catch (error) {
+    if (created) rmSync(destination, { recursive: true, force: true });
+    throw error;
   }
-  ensure(
-    [...relocated.keys()].every((path) => seen.has(path)),
-    'orphan workflow relocation',
-  );
-  const executionTree = treeForFiles(destination, materialization.executionFiles);
-  ensure(executionTree === materialization.executionTree, 'execution Git tree mismatch');
-  const executionCommit = git(
-    destination,
-    'commit-tree',
-    executionTree,
-    '-p',
-    sourceHead,
-    '-m',
-    'Materialized protected validation source',
-  );
-  git(destination, 'update-ref', 'refs/heads/execution', executionCommit);
-  git(destination, 'symbolic-ref', 'HEAD', 'refs/heads/execution');
-  ensure(
-    git(destination, 'status', '--porcelain') === '',
-    'materialized repository differs from execution tree',
-  );
-  return {
-    executionTree,
-    executionCommit,
-    sourceCommit,
-    sourceHead,
-    materializationDigest: validationDigest(transportFile(checkout, MATERIALIZATION_PATH)),
-  };
 }

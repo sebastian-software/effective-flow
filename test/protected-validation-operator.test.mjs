@@ -47,6 +47,8 @@ const policy = {
     operatorDigest: digest('operator'),
     projectionDigest: digest('projection'),
     backendDigest: digest('backend'),
+    runnerHelperDigest: digest('runner helper'),
+    watchdogDigest: digest('watchdog'),
     materializationAlgorithm: 'git-tree-v1',
     actions: { checkout: 'a'.repeat(40), pnpm: 'b'.repeat(40), node: 'c'.repeat(40) },
   },
@@ -301,6 +303,98 @@ function assertObjectUnavailable(checkout, object) {
     `unrelated private object ${object} leaked into ${checkout}`,
   );
 }
+
+function processAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+test('materialization bounds a hanging commit-tree and leaves no proof or partial execution repository', (t) => {
+  const source = sourceFixture(t);
+  const manifest = fixtureManifest(source);
+  const transport = temporaryCheckout(t, 'protected-validation-timeout-', 'transport');
+  const execution = temporaryCheckout(t, 'protected-validation-timeout-', 'execution');
+  const mapping = createTransport({ source, destination: transport, manifest });
+  const harnessRoot = mkdtempSync(path.join(tmpdir(), 'protected-validation-timeout-harness-'));
+  t.after(() => rmSync(harnessRoot, { recursive: true, force: true }));
+  const fakeBin = path.join(harnessRoot, 'bin');
+  mkdirSync(fakeBin);
+  const descendantPid = path.join(harnessRoot, 'descendant.pid');
+  const fakeGitPid = path.join(harnessRoot, 'fake-git.pid');
+  const descendant = path.join(harnessRoot, 'ignore-term.cjs');
+  writeFileSync(
+    descendant,
+    `const fs = require('node:fs');\nfs.writeFileSync(${JSON.stringify(descendantPid)}, String(process.pid));\nprocess.on('SIGTERM', () => {});\nsetInterval(() => {}, 1000);\n`,
+  );
+  const realGit = execFileSync('which', ['git'], { encoding: 'utf8' }).trim();
+  const fakeGit = path.join(fakeBin, 'git');
+  writeFileSync(
+    fakeGit,
+    `#!/bin/sh\nif [ "$1" = "commit-tree" ]; then\n  echo $$ > ${JSON.stringify(fakeGitPid)}\n  ${JSON.stringify(process.execPath)} ${JSON.stringify(descendant)} >/dev/null 2>&1 &\n  while [ ! -f ${JSON.stringify(descendantPid)} ]; do sleep 0.01; done\n  trap ':' TERM INT\n  while :; do sleep 1; done\nfi\nexec ${JSON.stringify(realGit)} "$@"\n`,
+  );
+  chmodSync(fakeGit, 0o755);
+  const harness = path.join(harnessRoot, 'run.mjs');
+  const projection = path.resolve('scripts/protected-validation-projection.mjs');
+  writeFileSync(
+    harness,
+    `const { materializeTransport } = await import(${JSON.stringify(projection)});\ntry {\n  await materializeTransport({ checkout: ${JSON.stringify(transport)}, destination: ${JSON.stringify(execution)}, expectedCommit: ${JSON.stringify(mapping.snapshotCommit)}, timeoutMs: 250 });\n  process.stdout.write('UNEXPECTED_SUCCESS\\n');\n  process.exitCode = 2;\n} catch (error) {\n  process.stderr.write(String(error?.message ?? error) + '\\n');\n  if (!String(error?.message ?? error).includes('commit-tree')) process.exitCode = 3;\n}\n`,
+  );
+  const started = Date.now();
+  const result = spawnSync(process.execPath, [harness], {
+    cwd: harnessRoot,
+    env: { ...process.env, PATH: `${fakeBin}:${path.dirname(realGit)}:/usr/bin:/bin` },
+    encoding: 'utf8',
+    timeout: 4000,
+    killSignal: 'SIGKILL',
+  });
+  const elapsed = Date.now() - started;
+  t.after(() => {
+    for (const pidPath of [descendantPid, fakeGitPid]) {
+      if (!existsSync(pidPath)) continue;
+      const pid = Number(readFileSync(pidPath, 'utf8'));
+      if (Number.isInteger(pid) && pid > 1) {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {}
+      }
+    }
+  });
+  assert.equal(
+    result.error,
+    undefined,
+    `outer watchdog fired: ${result.error?.code ?? result.error}`,
+  );
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  assert.ok(elapsed < 3500, `bounded materialization took ${elapsed} ms`);
+  assert.match(
+    result.stderr,
+    /^EF_PROTECTED_VALIDATION_MATERIALIZATION_TIMEOUT .*operation=commit-tree .*timeoutMs=250/m,
+  );
+  assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /^EF_PROTECTED_VALIDATION \{/m);
+  assert.equal(existsSync(descendantPid), true, 'the SIGTERM-ignoring descendant was created');
+  assert.equal(existsSync(fakeGitPid), true, 'the hanging fake git process was created');
+  const descendantProcess = Number(readFileSync(descendantPid, 'utf8')),
+    fakeGitProcess = Number(readFileSync(fakeGitPid, 'utf8'));
+  assert.equal(
+    processAlive(descendantProcess),
+    false,
+    'descendant must be gone before fallback cleanup',
+  );
+  assert.equal(
+    processAlive(fakeGitProcess),
+    false,
+    'fake git must be gone before fallback cleanup',
+  );
+  assert.equal(
+    existsSync(execution),
+    false,
+    'timed-out materialization must remove partial execution checkout',
+  );
+});
 
 test('transport preserves complete merged source history for a baseline clone without importing unrelated private objects or mutating the source', (t) => {
   const { source, sourceHead, baseline } = historyFixture(t);

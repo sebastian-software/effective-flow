@@ -46,6 +46,8 @@ const policy = {
     operatorDigest: digest('operator'),
     projectionDigest: digest('projection'),
     backendDigest: digest('backend'),
+    runnerHelperDigest: digest('runner helper'),
+    watchdogDigest: digest('watchdog'),
     materializationAlgorithm: 'git-tree-v1',
     actions: { checkout: oid, pnpm: 'b'.repeat(40), node: 'c'.repeat(40) },
   },

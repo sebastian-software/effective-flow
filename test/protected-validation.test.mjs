@@ -42,6 +42,8 @@ const closure = {
   operatorDigest: digest('operator'),
   projectionDigest: digest('projection'),
   backendDigest: digest('backend'),
+  runnerHelperDigest: digest('runner helper'),
+  watchdogDigest: digest('watchdog'),
   materializationAlgorithm: 'git-tree-v1',
   actions: { checkout: 'a'.repeat(40), pnpm: 'b'.repeat(40), node: 'c'.repeat(40) },
 };
@@ -147,6 +149,18 @@ test('validation policy rejects unknown fields and drift from the approved comma
     () => validatePolicy({ ...policy, nativeCases: REQUIRED_NATIVE_CASES.slice(0, -1) }),
     /native cases differs/,
   );
+});
+
+test('validation policy requires both subprocess helpers in the original execution closure', () => {
+  for (const key of ['runnerHelperDigest', 'watchdogDigest']) {
+    const omitted = structuredClone(policy);
+    delete omitted.executionClosure[key];
+    assert.throws(() => validatePolicy(omitted), /missing or unknown validation field/);
+    const changed = structuredClone(policy);
+    changed.executionClosure[key] = digest('changed helper');
+    assert.notEqual(digest(changed.executionClosure), preparation.executionClosureDigest);
+    assert.notEqual(digest(changed), request.policyDigest);
+  }
 });
 
 test('source projection classifies runtime, observer and unrelated plans instead of exporting them', () => {

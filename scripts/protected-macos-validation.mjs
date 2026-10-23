@@ -1,5 +1,8 @@
 // Runs only inside the disposable GitHub-hosted arm64 macOS job; never invokes a model.
-import { spawnSync, execFileSync } from 'node:child_process';
+import {
+  boundedSpawnSync as spawnSync,
+  boundedExecFileSync as execFileSync,
+} from './protected-validation-runner.mjs';
 import {
   readFileSync,
   writeFileSync,
@@ -68,6 +71,11 @@ function checked(command, args, options = {}) {
     encoding: 'utf8',
     timeout: 120000,
     maxBuffer: 16 * 1024 * 1024,
+    operation: command
+      .split('/')
+      .at(-1)
+      .toLowerCase()
+      .replace(/[^a-z0-9-]/g, '-'),
     ...options,
   });
   ensure(
@@ -223,6 +231,7 @@ function verifyExecutionGitContext(executionRoot, expected) {
       cwd: executionRoot,
       encoding: 'utf8',
       timeout: 120000,
+      operation: args[0],
     }).trim();
   ensure(
     actual(['rev-parse', 'HEAD']) === expected.executionCommit &&
@@ -352,9 +361,11 @@ export function runHostedValidation() {
   const install = spawnSync('pnpm', ['install', '--frozen-lockfile'], {
     cwd,
     env: environment,
-    stdio: 'inherit',
     timeout: 300000,
+    operation: 'pnpm-install',
   });
+  process.stdout.write(install.stdout ?? '');
+  process.stderr.write(install.stderr ?? '');
   ensure(
     !install.error && install.status === 0,
     'lockfile development dependency installation failed',
@@ -368,6 +379,7 @@ export function runHostedValidation() {
       env: environment,
       encoding: 'utf8',
       timeout: 900000,
+      operation: 'validation-command-' + index,
       maxBuffer: 64 * 1024 * 1024,
     });
     process.stdout.write(result.stdout ?? '');

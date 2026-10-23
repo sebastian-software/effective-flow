@@ -351,3 +351,50 @@ test('validation rejects execution HEAD replacement, parent substitution and sha
   assert.doesNotThrow(verify);
   unchangedFiles();
 });
+
+test('both subprocess helpers are original closure bytes preserved through transport and rejected on omission or tamper', (t) => {
+  const fixture = immutableFixture(t);
+  const expected = captureValidationInputs({
+    checkout: fixture.transport,
+    executionRoot: fixture.execution,
+    materialized: fixture.materialized,
+  });
+  const helpers = {
+    runnerHelperDigest: 'scripts/protected-validation-runner.mjs',
+    watchdogDigest: 'scripts/protected-validation-watchdog.mjs',
+  };
+  for (const [key, relative] of Object.entries(helpers)) {
+    assert.equal(CLOSURE_PATHS[key], relative);
+    const original = readFileSync(path.join(fixture.source, relative));
+    assert.deepEqual(readFileSync(path.join(fixture.execution, relative)), original);
+    assert.equal(expected.closure[key], validationDigest(original));
+    const transported = path.join(fixture.transport, relative);
+    assert.deepEqual(readFileSync(transported), original);
+    rmSync(transported);
+    assert.throws(() =>
+      captureValidationInputs({
+        checkout: fixture.transport,
+        executionRoot: fixture.execution,
+        materialized: fixture.materialized,
+      }),
+    );
+    writeFileSync(transported, Buffer.concat([original, Buffer.from('\n// tampered\n')]));
+    assert.throws(
+      () =>
+        verifyValidationInputs({
+          checkout: fixture.transport,
+          executionRoot: fixture.execution,
+          expected,
+        }),
+      /closure|digest|drift/,
+    );
+    writeFileSync(transported, original);
+    assert.doesNotThrow(() =>
+      verifyValidationInputs({
+        checkout: fixture.transport,
+        executionRoot: fixture.execution,
+        expected,
+      }),
+    );
+  }
+});

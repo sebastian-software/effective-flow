@@ -15,6 +15,8 @@ export const CLOSURE_PATHS = Object.freeze({
   operatorDigest: 'scripts/protected-validation-operator.mjs',
   projectionDigest: 'scripts/protected-validation-projection.mjs',
   backendDigest: 'scripts/protected-validation-backend.mjs',
+  runnerHelperDigest: 'scripts/protected-validation-runner.mjs',
+  watchdogDigest: 'scripts/protected-validation-watchdog.mjs',
 });
 export const REQUIRED_BACKEND_STEPS = Object.freeze([
   'Checkout immutable validation transport',
@@ -165,6 +167,8 @@ export function validatePolicy(value) {
     'operatorDigest',
     'projectionDigest',
     'backendDigest',
+    'runnerHelperDigest',
+    'watchdogDigest',
     'materializationAlgorithm',
     'actions',
   ]);

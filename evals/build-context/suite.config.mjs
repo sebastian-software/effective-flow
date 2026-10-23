@@ -45,6 +45,8 @@ const suite = {
       'build-lib.mjs',
       'scripts/protected-validation-operator.mjs',
       'scripts/protected-validation-projection.mjs',
+      'scripts/protected-validation-runner.mjs',
+      'scripts/protected-validation-watchdog.mjs',
       'scripts/protected-validation-backend.mjs',
       'scripts/protected-macos-validation.mjs',
       '.github/workflows/protected-macos-validation.yml',
