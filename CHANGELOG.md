@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.70.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.69.0...effective-flow-v1.70.0) (2026-10-23)
+
+
+### Features
+
+* add current and export session retrospectives ([#589](https://github.com/sebastian-software/effective-flow/issues/589)) ([10748c0](https://github.com/sebastian-software/effective-flow/commit/10748c0fb2dc362d4845efa8f78f8e512afa5c81))
+* bind workflow continuation to the original outcome ([c1f6dc8](https://github.com/sebastian-software/effective-flow/commit/c1f6dc864bd0c8def2ea8331c079753c52336d71))
+* **evals:** add portable qualified cohort host driver ([c6b65e0](https://github.com/sebastian-software/effective-flow/commit/c6b65e003ac4fc2b46e5cd7d96895cc821b75dc4))
+* report compact worker progress during ordinary waits ([#586](https://github.com/sebastian-software/effective-flow/issues/586)) ([3661898](https://github.com/sebastian-software/effective-flow/commit/36618984b1b210901f57c1a18d312229fc83f1d5))
+
+
+### Bug Fixes
+
+* clean up isolated eval host caches ([#585](https://github.com/sebastian-software/effective-flow/issues/585)) ([ca53946](https://github.com/sebastian-software/effective-flow/commit/ca53946ac0c1c94b69eced731a9101b3df24b0bd))
+* honor native Codex Fast and tier selections ([66ba847](https://github.com/sebastian-software/effective-flow/commit/66ba84756f0ed32b2929cf385bef0c19dcc804a6))
+
 ## [1.69.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.68.0...effective-flow-v1.69.0) (2026-10-20)
 
 
