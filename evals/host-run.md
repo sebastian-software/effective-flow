@@ -84,7 +84,8 @@ alter the model launch arguments, prompt, sandbox namespace, profile pin, eviden
 publication lifecycle.
 
 The shared runner is a host-eval tool only. The source `eval.mjs` model-free guarantee and the
-suite-specific evidence contracts remain authoritative:
+suite-specific evidence contracts remain authoritative. The qualified cohort driver has its own
+[driver guide](host-driver/README.md) for the external cohort protocol:
 
 - [`merge-gate`](merge-gate/README.md) documents the caller and delegation scenarios.
 - [`iterate`](iterate/README.md) documents the report channel and fail-closed input cases.
