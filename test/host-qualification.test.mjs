@@ -37,9 +37,44 @@ const PINS = {
 const MODES = ['merge-gate-normal', 'merge-gate-negative-nesting', 'iterate', 'next-steps'];
 const POLICY =
   'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules';
-const SCRIPT =
-  "const fs=require('node:fs');const input=fs.readFileSync('input.txt','utf8');fs.writeFileSync('actual-tool-output.txt',input.toUpperCase(),{flag:'wx'});console.log(input.trim());";
-const COMMAND = `node -e ${JSON.stringify(SCRIPT)}`;
+// The exact source-owned command is a fixture contract, never executed by these tests.
+const PROBE_SCRIPT =
+  'const fs=require("node:fs"),path=require("node:path"),crypto=require("node:crypto");const expected=process.argv[1],shell=process.argv[2],prefix=process.argv[3],cliTmpdir=process.argv[4],input=fs.readFileSync("input.txt"),stream=fs.readFileSync(0);if(!stream.equals(input)||process.env.TMPDIR!==expected||shell!==expected||prefix!==path.join(expected,"zsh")||process.env.TMPPREFIX!==prefix||process.cwd()!==path.join(path.dirname(expected),"project"))throw Error("host probe stream or environment mismatch");const hash=crypto.createHash("sha256").update(input).digest("hex"),temp=path.join(expected,"host-command-"+hash+".tmp");const fd=fs.openSync(temp,"wx",0o600);try{if(fs.realpathSync(temp)!==temp)throw Error("host probe temporary physical path mismatch");fs.writeFileSync(fd,input);}finally{fs.closeSync(fd);}if(!fs.readFileSync(temp).equals(input))throw Error("host probe temporary bytes mismatch");fs.unlinkSync(temp);if(fs.existsSync(temp))throw Error("host probe temporary removal failed");const denied=path.join(cliTmpdir,"host-denied-"+hash+".tmp");let deniedFd,deniedCode;try{deniedFd=fs.openSync(denied,"wx",0o600);}catch(error){if(error.code!=="EPERM"&&error.code!=="EACCES")throw error;deniedCode=error.code;}if(deniedFd!==undefined){try{fs.closeSync(deniedFd);}finally{fs.unlinkSync(denied);}throw Error("host probe CLI temporary directory unexpectedly writable");}if(fs.existsSync(denied))throw Error("host probe CLI temporary denial left a file");fs.writeFileSync("actual-tool-output.txt",input.toString("utf8").toUpperCase(),{flag:"wx"});fs.writeFileSync("actual-environment.json",JSON.stringify({schemaVersion:1,tmpdir:expected,shellTMPDIR:shell,nodeTMPDIR:process.env.TMPDIR,shellTMPPREFIX:prefix,nodeTMPPREFIX:process.env.TMPPREFIX,cliTmpdir,cliTmpdirWriteDenied:true,cliTmpdirWriteErrorCode:deniedCode,cwd:process.cwd(),stdinDigest:"sha256:"+hash,stdinBytes:input.length,tempPath:temp,tempCreatedExclusive:true,tempRemoved:true})+"\\n",{flag:"wx",mode:0o600});process.stdout.write(input);';
+const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+function command(launch, input) {
+  const inner =
+    "cat <<'EF_HOST_QUALIFICATION_INPUT' | node -e " +
+    shellQuote(PROBE_SCRIPT) +
+    ' ' +
+    shellQuote(launch.tmpdir) +
+    ' "$TMPDIR" "$TMPPREFIX" ' +
+    shellQuote(launch.cliTmpdir) +
+    '\n' +
+    input +
+    'EF_HOST_QUALIFICATION_INPUT';
+  return '/bin/zsh -lc ' + shellQuote(inner);
+}
+function environmentReceipt(launch, input, errorCode = 'EPERM') {
+  return {
+    schemaVersion: 1,
+    tmpdir: launch.tmpdir,
+    shellTMPDIR: launch.tmpdir,
+    nodeTMPDIR: launch.tmpdir,
+    shellTMPPREFIX: join(launch.tmpdir, 'zsh'),
+    nodeTMPPREFIX: join(launch.tmpdir, 'zsh'),
+    cliTmpdir: launch.cliTmpdir,
+    cliTmpdirWriteDenied: true,
+    cliTmpdirWriteErrorCode: errorCode,
+    cwd: launch.cwd,
+    stdinDigest: hash(input),
+    stdinBytes: Buffer.byteLength(input),
+    tempPath: join(launch.tmpdir, `host-command-${hash(input).slice(7)}.tmp`),
+    tempCreatedExclusive: true,
+    tempRemoved: true,
+  };
+}
+const receiptBytes = (launch, input, errorCode) =>
+  JSON.stringify(environmentReceipt(launch, input, errorCode)) + '\n';
 const hash = (bytes) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
 const iso = (time) => new Date(time).toISOString();
 const canonical = (value) =>
@@ -87,6 +122,10 @@ function args(mode, launch, binary) {
     '-c',
     'sandbox_workspace_write.exclude_slash_tmp=true',
     '-c',
+    `shell_environment_policy.set.TMPDIR=${JSON.stringify(launch.tmpdir)}`,
+    '-c',
+    `shell_environment_policy.set.TMPPREFIX=${JSON.stringify(join(launch.tmpdir, 'zsh'))}`,
+    '-c',
     `model_reasoning_effort=${JSON.stringify(profile(mode).reasoningEffort)}`,
     '-c',
     `features.multi_agent_v2.max_concurrent_threads_per_session=${mode === 'merge-gate-negative-nesting' ? 2 : 100}`,
@@ -117,26 +156,42 @@ function launchAt(root, mode, binary, measured = false) {
     codexHome: join(root, 'codex-home'),
     lastMessagePath: join(root, 'last-message.txt'),
     stdinPath: join(root, 'attempt-1/prompt.txt'),
+    tmpdir: join(root, 'attempt-1/tmp'),
+    cliTmpdir: join(root, 'attempt-1-cli-tmp'),
   };
   for (const key of ['cwd', 'home', 'codexHome']) mkdirSync(launch[key], { recursive: true });
+  // Exclusive mkdir models coordinator creation; verifier metadata cannot prove historical freshness.
+  for (const key of ['tmpdir', 'cliTmpdir']) mkdirSync(launch[key], { mode: 0o700 });
+  launch.env = {
+    HOME: launch.home,
+    CODEX_HOME: launch.codexHome,
+    PWD: launch.cwd,
+    TMPDIR: launch.cliTmpdir,
+  };
   write(launch.stdinPath, 'deterministic retained prompt\n');
   launch.argv = args(mode, launch, binary);
   if (!measured) write(launch.lastMessagePath, 'original host final message\n');
   return launch;
 }
-function events(nonce) {
+function events(nonce, launch) {
+  const actualCommand = command(launch, nonce);
   return [
     { type: 'thread.started' },
     { type: 'turn.started' },
     {
       type: 'item.started',
-      item: { type: 'command_execution', command: COMMAND, status: 'in_progress', exit_code: null },
+      item: {
+        type: 'command_execution',
+        command: actualCommand,
+        status: 'in_progress',
+        exit_code: null,
+      },
     },
     {
       type: 'item.completed',
       item: {
         type: 'command_execution',
-        command: COMMAND,
+        command: actualCommand,
         status: 'completed',
         exit_code: 0,
         aggregated_output: nonce,
@@ -145,9 +200,15 @@ function events(nonce) {
     { type: 'turn.completed' },
   ];
 }
-async function fixture(t, mode = 'iterate') {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'flow-host-qualification-')));
-  t.after(() => rmSync(root, { recursive: true, force: true }));
+async function fixture(
+  t,
+  mode = 'iterate',
+  { errorCode = 'EPERM', prefix = 'flow-host-qualification-', component } = {},
+) {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), prefix)));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const root = component === undefined ? base : join(base, component);
+  if (component !== undefined) mkdirSync(root);
   const toolchain = {};
   for (const key of Object.keys(PINS)) {
     const name = key === 'companion' ? 'codex-code-mode-host' : key;
@@ -190,7 +251,8 @@ async function fixture(t, mode = 'iterate') {
     SOURCE,
     'production source and pins remain unchanged',
   );
-  const modulePath = join(root, 'fixture-verifier.mjs');
+  // Keep Node's module URL neutral; native filesystem evidence may use backslash paths.
+  const modulePath = join(base, 'fixture-verifier.mjs');
   write(modulePath, copiedSource);
   const imported = await import(pathToFileURL(modulePath).href);
   assert.deepEqual(Object.keys(imported), ['verifyHostQualification']);
@@ -198,7 +260,8 @@ async function fixture(t, mode = 'iterate') {
   for (const [i, probeMode] of MODES.entries()) {
     const d = join(root, probeMode);
     const launch = launchAt(d, probeMode, toolchain.binary.path);
-    const nonce = `host-command-probe-${(i + 1).toString(16).padStart(48, '0')}\n`;
+    const token = (i + 1).toString(16).padStart(48, '0');
+    const nonce = `host-command-probe-${token}\nheredoc-payload-${token}\n`;
     const startedAt = iso(NOW - 2000 + i);
     const probe = {
       mode: probeMode,
@@ -219,7 +282,7 @@ async function fixture(t, mode = 'iterate') {
         taskInput: 'host-preflight-only',
       }),
       stdin: { path: launch.stdinPath, sha256: hash(readFileSync(launch.stdinPath)) },
-      stdout: write(join(d, 'stdout.jsonl'), jsonl(events(nonce))),
+      stdout: write(join(d, 'stdout.jsonl'), jsonl(events(nonce, launch))),
       stderr: write(join(d, 'stderr.log'), ''),
       lastMessage: {
         path: launch.lastMessagePath,
@@ -227,6 +290,10 @@ async function fixture(t, mode = 'iterate') {
       },
       input: write(join(launch.cwd, 'input.txt'), nonce),
       output: write(join(launch.cwd, 'actual-tool-output.txt'), nonce.toUpperCase()),
+      environment: write(
+        join(launch.cwd, 'actual-environment.json'),
+        receiptBytes(launch, nonce, errorCode),
+      ),
     };
     bundle.probes.push(probe);
   }
@@ -319,7 +386,7 @@ test('deterministic fixture accepts the observed shell wrapper and benign diagno
   f.events((stream) => {
     for (const e of stream)
       if (e.item?.type === 'command_execution')
-        e.item.command = `/bin/zsh -lc ${JSON.stringify(COMMAND)}`;
+        e.item.command = `/bin/zsh -lc ${JSON.stringify(command(JSON.parse(readFileSync(f.bundle.probes[0].launch.path, 'utf8')), readFileSync(f.bundle.probes[0].input.path, 'utf8')))}`;
   });
   f.set('stderr', 'warning: benign diagnostic\n');
   assert.equal(f.verify().mode, 'iterate');
@@ -440,13 +507,22 @@ refusal('missing actual file output', (f) => rmSync(f.bundle.probes[0].output.pa
 refusal('empty original last message', (f) => f.set('lastMessage', ''));
 refusal('empty retained stdin', (f) => f.set('stdin', ''));
 refusal('invalid command nonce', (f) => f.set('input', 'host-command-probe-not-a-nonce\n'));
-refusal('duplicate command nonce across modes', (f) => {
-  for (const key of ['input', 'output']) f.set(key, readFileSync(f.bundle.probes[0][key].path), 1);
-  const nonce = readFileSync(f.bundle.probes[0].input.path, 'utf8');
-  f.events((s) => {
-    s[3].item.aggregated_output = nonce;
-  }, 1);
-});
+refusal(
+  'duplicate command nonce across modes',
+  (f) => {
+    for (const key of ['input', 'output'])
+      f.set(key, readFileSync(f.bundle.probes[0][key].path), 1);
+    const nonce = readFileSync(f.bundle.probes[0].input.path, 'utf8');
+    const launch = JSON.parse(readFileSync(f.bundle.probes[1].launch.path, 'utf8'));
+    f.events((s) => {
+      for (const event of s)
+        if (event.item?.type === 'command_execution') event.item.command = command(launch, nonce);
+      s[3].item.aggregated_output = nonce;
+    }, 1);
+    f.set('environment', receiptBytes(launch, nonce), 1);
+  },
+  /duplicate probe nonce/,
+);
 
 for (const [key, value] of [
   ['exitCode', 1],
@@ -557,7 +633,7 @@ for (const [name, mutate] of [
   [
     'measured launch',
     (f) => {
-      f.launch.env = {};
+      f.launch.extra = true;
     },
   ],
   [
@@ -597,6 +673,7 @@ for (const key of [
   'lastMessage',
   'input',
   'output',
+  'environment',
 ])
   refusal(`changed probe ${key} bytes after reference was recorded`, (f) =>
     writeFileSync(f.bundle.probes[0][key].path, 'changed'),
@@ -718,13 +795,16 @@ refusal('cwd equal to attempt root', (f) => {
 refusal('home inside writable root', (f) => {
   f.launch.home = join(f.launch.attemptRoot, 'home');
   mkdirSync(f.launch.home);
+  f.launch.env.HOME = f.launch.home;
 });
 refusal('codex home inside writable root', (f) => {
   f.launch.codexHome = join(f.launch.attemptRoot, 'codex-home');
   mkdirSync(f.launch.codexHome);
+  f.launch.env.CODEX_HOME = f.launch.codexHome;
 });
 refusal('identical homes', (f) => {
   f.launch.home = f.launch.codexHome;
+  f.launch.env.HOME = f.launch.home;
 });
 refusal('last message inside writable root', (f) => {
   f.launch.lastMessagePath = join(f.launch.attemptRoot, 'last-message.txt');
@@ -782,6 +862,7 @@ refusal('probe output path substitution mismatch', (f) => {
 refusal('probe topology drift', (f) =>
   f.record('launch', (r) => {
     r.home = f.launch.home;
+    r.env.HOME = r.home;
   }),
 );
 for (const name of ['config.toml', 'rules', 'skills', 'AGENTS.md', 'CLAUDE.md', 'instructions.txt'])
@@ -842,4 +923,634 @@ test('returned profile mutation cannot change source-owned policy on subsequent 
   assert.deepEqual(f.verify().profile, profile('iterate'));
   f.launch.profile.model = 'caller-selected-model';
   assert.throws(() => f.verify(), /profile mismatch/);
+});
+
+// These are deterministic verifier contracts. They establish neither real sandbox denial
+// nor a historically fresh coordinator launch; retained native probes must establish those.
+for (const mode of MODES)
+  test(`deterministic split environment accepts EACCES proof for ${mode}`, async (t) => {
+    const f = await fixture(t, mode, { errorCode: 'EACCES' });
+    assert.equal(f.verify().mode, mode);
+  });
+test('deterministic exact shell command accepts apostrophes in physical launch paths', async (t) => {
+  const f = await fixture(t, 'iterate', { prefix: "flow-host-qualification-quoted'-" });
+  assert.equal(f.verify().mode, 'iterate');
+});
+
+for (const [name, edit] of [
+  [
+    'missing outer environment',
+    (r) => {
+      delete r.env;
+    },
+  ],
+  [
+    'missing outer TMPDIR',
+    (r) => {
+      delete r.env.TMPDIR;
+    },
+  ],
+  [
+    'outer TMPDIR using writable tool temporary directory',
+    (r) => {
+      r.env.TMPDIR = r.tmpdir;
+    },
+  ],
+  [
+    'wrong outer HOME',
+    (r) => {
+      r.env.HOME = r.codexHome;
+    },
+  ],
+  [
+    'wrong outer CODEX_HOME',
+    (r) => {
+      r.env.CODEX_HOME = r.home;
+    },
+  ],
+  [
+    'wrong outer PWD',
+    (r) => {
+      r.env.PWD = r.attemptRoot;
+    },
+  ],
+  [
+    'extra outer PATH override',
+    (r) => {
+      r.env.PATH = '/invented-path';
+    },
+  ],
+  [
+    'extra outer TMPPREFIX override',
+    (r) => {
+      r.env.TMPPREFIX = join(r.tmpdir, 'zsh');
+    },
+  ],
+])
+  refusal(name, (f) => edit(f.launch), /launch environment|measured launch fields/);
+refusal(
+  'retained probe outer TMPDIR split mismatch',
+  (f) =>
+    f.record('launch', (r) => {
+      r.env.TMPDIR = r.tmpdir;
+    }),
+  /launch environment mismatch/,
+);
+
+for (const key of ['TMPDIR', 'TMPPREFIX']) {
+  const prefix = `shell_environment_policy.set.${key}=`;
+  refusal(
+    `missing tool ${key} override`,
+    (f) => {
+      const index = f.launch.argv.findIndex((a) => a.startsWith(prefix));
+      assert.ok(index > 0);
+      f.launch.argv.splice(index - 1, 2);
+    },
+    /ordered launch argv mismatch/,
+  );
+  refusal(
+    `wrong tool ${key} override`,
+    (f) => {
+      f.launch.argv = f.launch.argv.map((a) =>
+        a.startsWith(prefix) ? prefix + JSON.stringify(f.launch.cliTmpdir) : a,
+      );
+    },
+    /ordered launch argv mismatch/,
+  );
+}
+refusal(
+  'reversed tool temporary override order',
+  (f) => {
+    const a = f.launch.argv;
+    const first = a.findIndex((x) => x.startsWith('shell_environment_policy.set.TMPDIR='));
+    [a[first], a[first + 2]] = [a[first + 2], a[first]];
+  },
+  /ordered launch argv mismatch/,
+);
+refusal(
+  'tool temporary overrides after reasoning effort',
+  (f) => {
+    const a = f.launch.argv;
+    const first = a.findIndex((x) => x.startsWith('shell_environment_policy.set.TMPDIR='));
+    const overrides = a.splice(first - 1, 4);
+    const effort = a.findIndex((x) => x.startsWith('model_reasoning_effort='));
+    a.splice(effort + 1, 0, ...overrides);
+  },
+  /ordered launch argv mismatch/,
+);
+refusal(
+  'retained probe missing TMPPREFIX override',
+  (f) =>
+    f.record('launch', (r) => {
+      const index = r.argv.findIndex((a) =>
+        a.startsWith('shell_environment_policy.set.TMPPREFIX='),
+      );
+      r.argv.splice(index - 1, 2);
+    }),
+  /ordered launch argv mismatch/,
+);
+
+for (const key of ['tmpdir', 'cliTmpdir']) {
+  refusal(
+    `missing ${key} launch field`,
+    (f) => {
+      delete f.launch[key];
+    },
+    /measured launch fields/,
+  );
+  refusal(
+    `noncanonical ${key} path`,
+    (f) => {
+      f.launch[key] += '/.';
+    },
+    /tmpdir must be|cliTmpdir must be/,
+  );
+  refusal(`missing physical ${key}`, (f) => rmSync(f.launch[key], { recursive: true }), /ENOENT/);
+  refusal(
+    `regular file in place of ${key}`,
+    (f) => {
+      rmSync(f.launch[key], { recursive: true });
+      writeFileSync(f.launch[key], 'not a directory');
+    },
+    /expected regular directory/,
+  );
+  refusal(
+    `nonempty ${key}`,
+    (f) => write(join(f.launch[key], 'leftover'), 'old bytes'),
+    /private, owned and empty/,
+  );
+  refusal(
+    `symlinked ${key}`,
+    (f) => {
+      const path = f.launch[key];
+      renameSync(path, path + '-physical');
+      symlinkSync(path + '-physical', path);
+    },
+    /symlink path component/,
+  );
+  for (const mode of [0o755, 0o1700, 0o2700, 0o4700])
+    refusal(
+      `${key} mode ${mode.toString(8)} including special bits`,
+      (f) => {
+        chmodSync(f.launch[key], mode);
+        assert.equal(
+          lstatSync(f.launch[key]).mode & 0o7777,
+          mode,
+          'requested fixture mode is present',
+        );
+      },
+      /private, owned and empty/,
+    );
+}
+refusal(
+  'tool temporary directory outside attempt root',
+  (f) => {
+    f.launch.tmpdir = f.launch.cliTmpdir;
+  },
+  /tmpdir must be attemptRoot\/tmp/,
+);
+refusal(
+  'CLI temporary directory inside attempt root',
+  (f) => {
+    f.launch.cliTmpdir = f.launch.tmpdir;
+  },
+  /cliTmpdir must be the attempt-local sibling/,
+);
+refusal(
+  'retained probe missing cliTmpdir field',
+  (f) =>
+    f.record('launch', (r) => {
+      delete r.cliTmpdir;
+    }),
+  /probe launch fields/,
+);
+refusal(
+  'retained probe nonempty CLI temporary directory',
+  (f) => {
+    const launch = JSON.parse(readFileSync(f.bundle.probes[0].launch.path, 'utf8'));
+    write(join(launch.cliTmpdir, 'leftover'), 'old');
+  },
+  /private, owned and empty/,
+);
+// Equality, descendants and ancestors all defeat isolation even before file-type validation.
+for (const [name, edit] of [
+  [
+    'home equals CLI tmp',
+    (r) => {
+      r.home = r.cliTmpdir;
+    },
+  ],
+  [
+    'home below CLI tmp',
+    (r) => {
+      r.home = join(r.cliTmpdir, 'nested-home');
+      mkdirSync(r.home);
+    },
+  ],
+  [
+    'home contains CLI tmp',
+    (r) => {
+      r.home = dirname(r.cliTmpdir);
+    },
+  ],
+  [
+    'Codex home equals CLI tmp',
+    (r) => {
+      r.codexHome = r.cliTmpdir;
+    },
+  ],
+  [
+    'stdin below CLI tmp',
+    (r) => {
+      r.stdinPath = join(r.cliTmpdir, 'prompt.txt');
+    },
+  ],
+  [
+    'last message below CLI tmp',
+    (r) => {
+      r.lastMessagePath = join(r.cliTmpdir, 'last.txt');
+    },
+  ],
+])
+  refusal(`CLI overlay overlap: ${name}`, (f) => edit(f.launch), /cliTmpdir must be disjoint/);
+
+refusal(
+  'missing environment artifact reference',
+  (f) => {
+    delete f.bundle.probes[0].environment;
+  },
+  /probe fields/,
+);
+refusal(
+  'missing physical environment artifact',
+  (f) => rmSync(f.bundle.probes[0].environment.path),
+  /ENOENT/,
+);
+refusal(
+  'nonregular environment artifact',
+  (f) => {
+    rmSync(f.bundle.probes[0].environment.path);
+    mkdirSync(f.bundle.probes[0].environment.path);
+  },
+  /expected regular file/,
+);
+refusal(
+  'symlinked environment artifact',
+  (f) => {
+    const path = f.bundle.probes[0].environment.path;
+    renameSync(path, path + '.original');
+    symlinkSync(path + '.original', path);
+  },
+  /symlink path component/,
+);
+refusal(
+  'environment artifact path substitution with identical bytes',
+  (f) => {
+    const ref = f.bundle.probes[0].environment;
+    f.bundle.probes[0].environment = write(
+      join(dirname(ref.path), 'other-environment.json'),
+      readFileSync(ref.path),
+    );
+  },
+  /probe path substitution mismatch/,
+);
+refusal(
+  'environment artifact outside private probe root',
+  (f) => {
+    const ref = f.bundle.probes[0].environment;
+    f.bundle.probes[0].environment = write(
+      join(f.root, 'escaped-environment.json'),
+      readFileSync(ref.path),
+    );
+  },
+  /probe artifact escapes private directory/,
+);
+refusal(
+  'environment reference metadata extension',
+  (f) => {
+    f.bundle.probes[0].environment.trusted = true;
+  },
+  /environment reference fields/,
+);
+for (const [key, value] of [
+  ['schemaVersion', 2],
+  ['tmpdir', '/tmp'],
+  ['shellTMPDIR', '/tmp'],
+  ['nodeTMPDIR', '/tmp'],
+  ['shellTMPPREFIX', '/tmp/zsh'],
+  ['nodeTMPPREFIX', '/tmp/zsh'],
+  ['cliTmpdir', '/tmp'],
+  ['cliTmpdirWriteDenied', false],
+  ['cliTmpdirWriteErrorCode', 'ENOENT'],
+  ['cliTmpdirWriteErrorCode', 'EEXIST'],
+  ['cliTmpdirWriteErrorCode', 'ENOSPC'],
+  ['cliTmpdirWriteErrorCode', null],
+  ['cwd', '/other'],
+  ['stdinDigest', `sha256:${'0'.repeat(64)}`],
+  ['stdinBytes', 0],
+  ['tempPath', '/tmp/forged.tmp'],
+  ['tempCreatedExclusive', false],
+  ['tempRemoved', false],
+])
+  refusal(
+    `rehashed environment receipt ${key}=${JSON.stringify(value)}`,
+    (f) => {
+      const receipt = JSON.parse(readFileSync(f.bundle.probes[0].environment.path, 'utf8'));
+      receipt[key] = value;
+      f.set('environment', JSON.stringify(receipt) + '\n');
+    },
+    /actual environment receipt mismatch/,
+  );
+for (const key of [
+  'nodeTMPPREFIX',
+  'cliTmpdirWriteDenied',
+  'cliTmpdirWriteErrorCode',
+  'tempCreatedExclusive',
+  'tempRemoved',
+])
+  refusal(
+    `environment receipt missing proof ${key}`,
+    (f) => {
+      const receipt = JSON.parse(readFileSync(f.bundle.probes[0].environment.path, 'utf8'));
+      delete receipt[key];
+      f.set('environment', JSON.stringify(receipt) + '\n');
+    },
+    /actual environment receipt mismatch/,
+  );
+for (const [name, change] of [
+  ['pretty JSON', (r) => JSON.stringify(JSON.parse(r), null, 2) + '\n'],
+  [
+    'reordered keys',
+    (r) => JSON.stringify(Object.fromEntries(Object.entries(JSON.parse(r)).reverse())) + '\n',
+  ],
+  ['missing final LF', (r) => r.trimEnd()],
+  ['additional receipt field', (r) => JSON.stringify({ ...JSON.parse(r), trusted: true }) + '\n'],
+  ['empty bytes', () => ''],
+  ['invalid UTF-8', () => Buffer.from([255])],
+])
+  refusal(
+    `environment receipt ${name}`,
+    (f) => f.set('environment', change(readFileSync(f.bundle.probes[0].environment.path, 'utf8'))),
+    /actual environment receipt mismatch/,
+  );
+
+for (const [name, edit] of [
+  [
+    'legacy bare node command without shell readiness',
+    () =>
+      `node -e ${JSON.stringify("const fs=require('node:fs');const input=fs.readFileSync('input.txt','utf8');fs.writeFileSync('actual-tool-output.txt',input.toUpperCase(),{flag:'wx'});console.log(input.trim());")}`,
+  ],
+  ['missing quoted heredoc', (c) => c.replace('cat <<', 'cat <')],
+  ['wrong explicit shell', (c) => c.replace('/bin/zsh', '/bin/sh')],
+  ['missing TMPPREFIX argument', (c) => c.replace(' "$TMPPREFIX"', '')],
+  [
+    'omitted denied target absence proof',
+    (c) =>
+      c.replace(
+        'if(fs.existsSync(denied))throw Error("host probe CLI temporary denial left a file");',
+        '',
+      ),
+  ],
+])
+  refusal(
+    name,
+    (f) =>
+      f.events((stream) => {
+        for (const event of stream)
+          if (event.item?.type === 'command_execution') {
+            const before = event.item.command;
+            event.item.command = edit(before);
+            assert.notEqual(
+              event.item.command,
+              before,
+              'fixture actually changes the required command',
+            );
+          }
+      }),
+    /unexpected actual command/,
+  );
+for (const [name, edit] of [
+  ['legacy single input line', (input) => input.split('\n')[0] + '\n'],
+  ['mismatched heredoc nonce', (input) => input.replace('heredoc-payload-0', 'heredoc-payload-f')],
+  ['missing terminal LF', (input) => input.trimEnd()],
+  ['extra heredoc line', (input) => input + 'extra\n'],
+])
+  refusal(
+    name,
+    (f) => f.set('input', edit(readFileSync(f.bundle.probes[0].input.path, 'utf8'))),
+    /invalid command input nonce/,
+  );
+for (const [name, output] of [
+  ['zero-byte stream despite zero pipeline exit', ''],
+  ['first line only despite zero pipeline exit', `host-command-probe-${'0'.repeat(47)}1\n`],
+  [
+    'different heredoc stream despite valid input and receipt',
+    `host-command-probe-${'f'.repeat(48)}\nheredoc-payload-${'f'.repeat(48)}\n`,
+  ],
+])
+  refusal(
+    name,
+    (f) =>
+      f.events((stream) => {
+        stream[3].item.aggregated_output = output;
+      }),
+    /failed or extra actual command/,
+  );
+for (const message of [
+  "zsh:1: can't create temp file for here document: operation not permitted\n",
+  'zsh: here-document: permission denied\n',
+])
+  refusal(
+    `heredoc temporary denial despite zero pipeline exit: ${message.trim()}`,
+    (f) => f.set('stderr', message),
+    /here-document temporary-file denial/,
+  );
+refusal(
+  'heredoc temporary denial embedded in stdout despite a successful command',
+  (f) =>
+    f.events((stream) => {
+      stream.splice(4, 0, {
+        type: 'item.completed',
+        item: {
+          type: 'agent_message',
+          text: "can't create temp file for here document: operation not permitted",
+        },
+      });
+    }),
+  /here-document temporary-file denial/,
+);
+
+// Independent fixture oracle: select the longest viable prefix among three regexes,
+// rather than reproducing the production renderer's byte masks and scan state.
+function nativeDisplayFixture(value) {
+  assert.equal(/[\0^]/.test(value), false, 'unsupported native fixture word');
+  if (value === '') return "''";
+  const prefixes = [/^[+\-./:@\]_0-9A-Za-z]+/, /^[^'^\\]+/, /^[^`$!^]+/];
+  let rendered = '';
+  for (let offset = 0; offset < value.length;) {
+    const rest = value.slice(offset);
+    const lengths = prefixes.map((pattern) => pattern.exec(rest)?.[0].length ?? 0);
+    const length = Math.max(...lengths);
+    assert.ok(length > 0, 'fixture renderer makes progress');
+    const strategy = lengths.indexOf(length);
+    const chunk = rest.slice(0, length);
+    rendered +=
+      strategy === 0
+        ? chunk
+        : strategy === 1
+          ? "'" + chunk + "'"
+          : '"' + chunk.replace(/[\\"$`]/g, '\\$&') + '"';
+    offset += length;
+  }
+  return rendered;
+}
+function nativeEvents(f, index = 0) {
+  const probe = f.bundle.probes[index];
+  const launch = JSON.parse(readFileSync(probe.launch.path, 'utf8'));
+  const expected = command(launch, readFileSync(probe.input.path, 'utf8'));
+  const rendered = '/bin/zsh -lc ' + nativeDisplayFixture(expected);
+  assert.notEqual(rendered, expected);
+  assert.notEqual(rendered, '/bin/zsh -lc ' + JSON.stringify(expected));
+  f.events((stream) => {
+    for (const event of stream)
+      if (event.item?.type === 'command_execution') event.item.command = rendered;
+  }, index);
+  return rendered;
+}
+
+test('native display fixture preserves literal quoting vectors and real LF bytes', () => {
+  for (const [word, expected] of [
+    ['', "''"],
+    ['safe-._/@:AZ09]', 'safe-._/@:AZ09]'],
+    ['hello world', "'hello world'"],
+    ["a'b", '"a\'b"'],
+    ['a"b', "'a\"b'"],
+    ['a\\b', '"a\\\\b"'],
+    ["a$'b", "'a$'\"'b\""],
+    ["a`'b", "'a`'\"'b\""],
+    ["a!'b", "'a!'\"'b\""],
+    ['a\nb', "'a\nb'"],
+    ['a\\nb', '"a\\\\nb"'],
+    ['grüße', "'grüße'"],
+  ])
+    assert.equal(nativeDisplayFixture(word), expected, JSON.stringify(word));
+});
+for (const mode of MODES)
+  test(`deterministic native command display qualifies ${mode} in both command events`, async (t) => {
+    const f = await fixture(t, mode);
+    for (const [index] of f.bundle.probes.entries()) {
+      const rendered = nativeEvents(f, index);
+      assert.ok(rendered.includes('\n'), 'native display retains real LF');
+      assert.ok(rendered.includes('$TMPDIR'), 'native display retains dollar literally');
+      assert.ok(rendered.includes("'"), 'native display switches quoting strategies');
+    }
+    assert.equal(f.verify().mode, mode);
+  });
+test('native display accepts physical paths with quotes backslash dollar backtick bang Unicode and embedded LF', async (t) => {
+  const f = await fixture(t, 'iterate', { component: 'flow-render-\'"\\$`!ü\n-' });
+  for (const [index] of f.bundle.probes.entries()) nativeEvents(f, index);
+  assert.equal(f.verify().mode, 'iterate');
+});
+
+for (const [name, edit] of [
+  ['one script byte', (c) => c.replace('fs.readFileSync', 'fs.readFileSynC')],
+  ['one path byte', (c) => c.replace('/attempt-1/tmp', '/attempt-2/tmp')],
+  ['one nonce byte', (c) => c.replace('host-command-probe-0', 'host-command-probe-f')],
+  ['wrapper executable', (c) => c.replace('/bin/zsh -lc', '/bin/sh -lc')],
+  ['wrapper flags', (c) => c.replace('/bin/zsh -lc', '/bin/zsh -c')],
+  ['extra argument', (c) => c + ' ignored'],
+  ['leading whitespace', (c) => ' ' + c],
+  ['trailing whitespace', (c) => c + ' '],
+  ['semicolon suffix', (c) => c + '; true'],
+  ['and suffix', (c) => c + ' && true'],
+  ['pipe suffix', (c) => c + ' | cat'],
+  ['redirection suffix', (c) => c + ' > ignored'],
+  ['comment suffix', (c) => c + ' # ignored'],
+  ['substitution suffix', (c) => c + ' $(printf ignored)'],
+  ['variable suffix', (c) => c + ' $IGNORED'],
+  ['equivalent flag quoting', (c) => c.replace('/bin/zsh -lc', '/bin/zsh "-lc"')],
+  ['equivalent executable quoting', (c) => c.replace('/bin/zsh -lc', "/bin/'zsh' -lc")],
+  ['escaped LF instead of real LF', (c) => c.replaceAll('\n', '\\n')],
+  ['normalized CRLF instead of real LF', (c) => c.replaceAll('\n', '\r\n')],
+  ['NUL command byte', (c) => c + '\0'],
+])
+  refusal(
+    `native display ${name}`,
+    (f) => {
+      const rendered = nativeEvents(f);
+      const changed = edit(rendered);
+      assert.notEqual(changed, rendered, 'mutation reaches the native display');
+      f.events((stream) => {
+        for (const event of stream)
+          if (event.item?.type === 'command_execution') event.item.command = changed;
+      });
+    },
+    /unexpected actual command/,
+  );
+for (const eventIndex of [2, 3])
+  refusal(
+    `native command identity in event ${eventIndex}`,
+    (f) => {
+      nativeEvents(f);
+      f.events((stream) => {
+        stream[eventIndex].item.command += ' ';
+      });
+    },
+    /unexpected actual command/,
+  );
+refusal(
+  'NUL in measured physical path',
+  (f) => {
+    f.launch.cwd += '\0';
+  },
+  /path must be canonical text/,
+);
+
+import { Worker } from 'node:worker_threads';
+test('unsupported caret in trusted command path fails closed without a no-progress hang', async (t) => {
+  const f = await fixture(t, 'iterate', { prefix: 'flow-render-caret^-' });
+  const worker = new Worker(
+    `
+    const { parentPort, workerData } = require('node:worker_threads');
+    import(workerData.module).then(({ verifyHostQualification }) => {
+      parentPort.once('message', () => {
+        try { verifyHostQualification(workerData.options); parentPort.postMessage({ accepted: true }); }
+        catch (error) { parentPort.postMessage({ accepted: false, message: error.message }); }
+      });
+      parentPort.postMessage({ ready: true });
+    }).catch((error) => { throw error; });
+  `,
+    {
+      eval: true,
+      workerData: {
+        module: pathToFileURL(f.modulePath).href,
+        options: { bundlePath: f.bundlePath, launch: f.launch, now: f.now },
+      },
+    },
+  );
+  let timer;
+  function response(timeout, label) {
+    return new Promise((resolve, reject) => {
+      timer = setTimeout(() => reject(new Error(label)), timeout);
+      worker.once('message', resolve);
+      worker.once('error', reject);
+      worker.once('exit', (code) =>
+        reject(new Error(`verifier worker exited before response: ${code}`)),
+      );
+    }).finally(() => clearTimeout(timer));
+  }
+  try {
+    // Separate import/startup allowance from the actual synchronous verifier deadline.
+    assert.deepEqual(await response(30_000, 'native verifier worker startup exceeded allowance'), {
+      ready: true,
+    });
+    const invocation = response(1500, 'native display verifier exceeded bounded completion');
+    worker.postMessage('verify');
+    const result = await invocation;
+    assert.equal(result.accepted, false);
+    assert.match(result.message, /unhandled literal character/);
+  } finally {
+    clearTimeout(timer);
+    await worker.terminate();
+  }
 });

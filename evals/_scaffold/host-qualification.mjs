@@ -1,7 +1,7 @@
 // Prospective local host readiness only. This instrument-bound policy never launches or repairs a host.
 import { createHash } from 'node:crypto';
 import { lstatSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, isAbsolute, join, normalize, parse, relative, sep } from 'node:path';
+import { basename, dirname, isAbsolute, join, normalize, parse, relative, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const PINS = Object.freeze({
@@ -39,6 +39,7 @@ const ARTIFACTS = [
   'lastMessage',
   'input',
   'output',
+  'environment',
 ];
 const LAUNCH_KEYS = [
   'profile',
@@ -49,11 +50,26 @@ const LAUNCH_KEYS = [
   'codexHome',
   'lastMessagePath',
   'stdinPath',
+  'tmpdir',
+  'cliTmpdir',
+  'env',
 ];
-const SCRIPT =
-  "const fs=require('node:fs');const input=fs.readFileSync('input.txt','utf8');fs.writeFileSync('actual-tool-output.txt',input.toUpperCase(),{flag:'wx'});console.log(input.trim());";
-const COMMAND = `node -e ${JSON.stringify(SCRIPT)}`;
-const COMMANDS = new Set([COMMAND, `/bin/zsh -lc ${JSON.stringify(COMMAND)}`]);
+const PROBE_SCRIPT =
+  'const fs=require("node:fs"),path=require("node:path"),crypto=require("node:crypto");const expected=process.argv[1],shell=process.argv[2],prefix=process.argv[3],cliTmpdir=process.argv[4],input=fs.readFileSync("input.txt"),stream=fs.readFileSync(0);if(!stream.equals(input)||process.env.TMPDIR!==expected||shell!==expected||prefix!==path.join(expected,"zsh")||process.env.TMPPREFIX!==prefix||process.cwd()!==path.join(path.dirname(expected),"project"))throw Error("host probe stream or environment mismatch");const hash=crypto.createHash("sha256").update(input).digest("hex"),temp=path.join(expected,"host-command-"+hash+".tmp");const fd=fs.openSync(temp,"wx",0o600);try{if(fs.realpathSync(temp)!==temp)throw Error("host probe temporary physical path mismatch");fs.writeFileSync(fd,input);}finally{fs.closeSync(fd);}if(!fs.readFileSync(temp).equals(input))throw Error("host probe temporary bytes mismatch");fs.unlinkSync(temp);if(fs.existsSync(temp))throw Error("host probe temporary removal failed");const denied=path.join(cliTmpdir,"host-denied-"+hash+".tmp");let deniedFd,deniedCode;try{deniedFd=fs.openSync(denied,"wx",0o600);}catch(error){if(error.code!=="EPERM"&&error.code!=="EACCES")throw error;deniedCode=error.code;}if(deniedFd!==undefined){try{fs.closeSync(deniedFd);}finally{fs.unlinkSync(denied);}throw Error("host probe CLI temporary directory unexpectedly writable");}if(fs.existsSync(denied))throw Error("host probe CLI temporary denial left a file");fs.writeFileSync("actual-tool-output.txt",input.toString("utf8").toUpperCase(),{flag:"wx"});fs.writeFileSync("actual-environment.json",JSON.stringify({schemaVersion:1,tmpdir:expected,shellTMPDIR:shell,nodeTMPDIR:process.env.TMPDIR,shellTMPPREFIX:prefix,nodeTMPPREFIX:process.env.TMPPREFIX,cliTmpdir,cliTmpdirWriteDenied:true,cliTmpdirWriteErrorCode:deniedCode,cwd:process.cwd(),stdinDigest:"sha256:"+hash,stdinBytes:input.length,tempPath:temp,tempCreatedExclusive:true,tempRemoved:true})+"\\n",{flag:"wx",mode:0o600});process.stdout.write(input);';
+const shellQuote = (value) => "'" + value.replaceAll("'", "'\\''") + "'";
+function probeCommand(tmpdir, input, cliTmpdir) {
+  const inner =
+    "cat <<'EF_HOST_QUALIFICATION_INPUT' | node -e " +
+    shellQuote(PROBE_SCRIPT) +
+    ' ' +
+    shellQuote(tmpdir) +
+    ' "$TMPDIR" "$TMPPREFIX" ' +
+    shellQuote(cliTmpdir) +
+    '\n' +
+    input +
+    'EF_HOST_QUALIFICATION_INPUT';
+  return '/bin/zsh -lc ' + shellQuote(inner);
+}
 const EVENTS = new Set([
   'thread.started',
   'turn.started',
@@ -61,8 +77,41 @@ const EVENTS = new Set([
   'item.completed',
   'turn.completed',
 ]);
+// Codex 0.159.3 uses shlex 1.3.0 display quoting; render only trusted expected text.
+function nativeQuote(value) {
+  requireCondition(!value.includes('\0'), 'NUL in native display word');
+  let remaining = value,
+    out = '';
+  while (remaining.length) {
+    let allowed = 7,
+      index = 0;
+    for (const char of remaining) {
+      const flags =
+        (/^[+\-./:@\]_0-9A-Za-z]$/.test(char) ? 1 : 0) |
+        (!"'^\\".includes(char) ? 2 : 0) |
+        (!'`$!^'.includes(char) ? 4 : 0);
+      const next = allowed & flags;
+      if (!next) break;
+      allowed = next;
+      index += char.length;
+    }
+    if (!index) throw Error('unhandled literal character');
+    const chunk = remaining.slice(0, index);
+    remaining = remaining.slice(index);
+    out +=
+      allowed & 1
+        ? chunk
+        : allowed & 2
+          ? "'" + chunk + "'"
+          : '"' + chunk.replace(/[\\"$`]/g, '\\$&') + '"';
+  }
+  return out || "''";
+}
 const FAILURE =
   /(?:code[-_ ]mode|bootstrap|native|codex-code-mode-host)[^\r\n]*(?:error|fail|unavailable|not found|missing|unable)|(?:error|fail(?:ed|ure)?|unable)[^\r\n]*(?:code[-_ ]mode|bootstrap|native|codex-code-mode-host)/i;
+
+const HEREDOC_FAILURE =
+  /(?:can't create temp file for here document|here[- ]document[^\r\n]*(?:operation not permitted|permission denied))/i;
 
 function requireCondition(ok, label) {
   if (!ok) throw new Error(`host qualification refused: ${label}`);
@@ -182,6 +231,10 @@ function argv(mode, launch, binary) {
     '-c',
     'sandbox_workspace_write.exclude_slash_tmp=true',
     '-c',
+    `shell_environment_policy.set.TMPDIR=${JSON.stringify(launch.tmpdir)}`,
+    '-c',
+    `shell_environment_policy.set.TMPPREFIX=${JSON.stringify(join(launch.tmpdir, 'zsh'))}`,
+    '-c',
     `model_reasoning_effort=${JSON.stringify(policy.effort)}`,
     '-c',
     `features.multi_agent_v2.max_concurrent_threads_per_session=${policy.cap}`,
@@ -233,6 +286,44 @@ function validateLaunch(launch, mode, binary, measured) {
     'cwd must be attemptRoot/project',
   );
   requireCondition(
+    launch.tmpdir === join(launch.attemptRoot, 'tmp'),
+    'tmpdir must be attemptRoot/tmp',
+  );
+  requireCondition(
+    launch.cliTmpdir ===
+      join(dirname(launch.attemptRoot), `${basename(launch.attemptRoot)}-cli-tmp`),
+    'cliTmpdir must be the attempt-local sibling',
+  );
+  requireCondition(
+    ['attemptRoot', 'home', 'codexHome', 'stdinPath', 'lastMessagePath'].every(
+      (key) =>
+        launch.cliTmpdir !== launch[key] &&
+        !inside(launch.cliTmpdir, launch[key]) &&
+        !inside(launch[key], launch.cliTmpdir),
+    ),
+    'cliTmpdir must be disjoint from launch paths',
+  );
+  for (const path of [launch.tmpdir, launch.cliTmpdir]) {
+    const tempStat = physical(path, 'directory');
+    requireCondition(
+      (tempStat.mode & 0o7777) === 0o700 &&
+        (typeof process.getuid !== 'function' || tempStat.uid === process.getuid()) &&
+        readdirSync(path).length === 0,
+      'temporary directories must be private, owned and empty',
+    );
+  }
+  const env = {
+    HOME: launch.home,
+    CODEX_HOME: launch.codexHome,
+    PWD: launch.cwd,
+    TMPDIR: launch.cliTmpdir,
+  };
+  object(launch.env, Object.keys(env), 'launch environment');
+  requireCondition(
+    JSON.stringify(canonical(launch.env)) === JSON.stringify(canonical(env)),
+    'launch environment mismatch',
+  );
+  requireCondition(
     launch.home !== launch.codexHome &&
       launch.home !== launch.attemptRoot &&
       launch.codexHome !== launch.attemptRoot &&
@@ -268,16 +359,45 @@ function timestamp(value, label) {
   );
   return number;
 }
-function commandEvidence(stdout, stderr, input, output, lastMessage) {
+function commandEvidence(stdout, stderr, input, output, lastMessage, environment, launch) {
   const nonce = input.toString('utf8');
   requireCondition(
-    /^host-command-probe-[0-9a-f]{48}\n$/.test(nonce),
+    /^host-command-probe-([0-9a-f]{48})\nheredoc-payload-\1\n$/.test(nonce),
     'invalid command input nonce',
   );
   requireCondition(
     output.equals(Buffer.from(nonce.toUpperCase())),
     'actual command output mismatch',
   );
+  const expectedEnvironments = ['EPERM', 'EACCES'].map((errorCode) => ({
+    schemaVersion: 1,
+    tmpdir: launch.tmpdir,
+    shellTMPDIR: launch.tmpdir,
+    nodeTMPDIR: launch.tmpdir,
+    shellTMPPREFIX: join(launch.tmpdir, 'zsh'),
+    nodeTMPPREFIX: join(launch.tmpdir, 'zsh'),
+    cliTmpdir: launch.cliTmpdir,
+    cliTmpdirWriteDenied: true,
+    cliTmpdirWriteErrorCode: errorCode,
+    cwd: launch.cwd,
+    stdinDigest: digest(input),
+    stdinBytes: input.length,
+    tempPath: join(launch.tmpdir, `host-command-${digest(input).slice(7)}.tmp`),
+    tempCreatedExclusive: true,
+    tempRemoved: true,
+  }));
+  requireCondition(
+    expectedEnvironments.some((expected) =>
+      environment.equals(Buffer.from(JSON.stringify(expected) + '\n')),
+    ),
+    'actual environment receipt mismatch',
+  );
+  const command = probeCommand(launch.tmpdir, nonce, launch.cliTmpdir);
+  const commandsAllowed = new Set([
+    command,
+    `/bin/zsh -lc ${JSON.stringify(command)}`,
+    `/bin/zsh -lc ${nativeQuote(command)}`,
+  ]);
   requireCondition(lastMessage.length > 0, 'missing original last message');
   const raw = new TextDecoder('utf-8', { fatal: true }).decode(stdout);
   const diagnostics = new TextDecoder('utf-8', { fatal: true }).decode(stderr);
@@ -286,6 +406,10 @@ function commandEvidence(stdout, stderr, input, output, lastMessage) {
       !FAILURE.test(diagnostics) &&
       !/\b(?:ERROR|FATAL|PANIC)\b/i.test(diagnostics),
     'native or bootstrap error diagnostics',
+  );
+  requireCondition(
+    !HEREDOC_FAILURE.test(raw) && !HEREDOC_FAILURE.test(diagnostics),
+    'here-document temporary-file denial',
   );
   const lines = raw.split('\n');
   if (lines.at(-1) === '') lines.pop();
@@ -323,7 +447,7 @@ function commandEvidence(stdout, stderr, input, output, lastMessage) {
       const item = event.item;
       requireCondition(item.type !== 'error' && !Object.hasOwn(item, 'error'), 'error item');
       if (item.type === 'command_execution') {
-        requireCondition(COMMANDS.has(item.command), 'unexpected actual command');
+        requireCondition(commandsAllowed.has(item.command), 'unexpected actual command');
         if (event.type === 'item.started') {
           starts++;
           requireCondition(
@@ -444,7 +568,8 @@ export function verifyHostQualification({ bundlePath, launch, now }) {
       probe.stdin.path === record.stdinPath &&
         probe.lastMessage.path === record.lastMessagePath &&
         probe.input.path === join(record.cwd, 'input.txt') &&
-        probe.output.path === join(record.cwd, 'actual-tool-output.txt'),
+        probe.output.path === join(record.cwd, 'actual-tool-output.txt') &&
+        probe.environment.path === join(record.cwd, 'actual-environment.json'),
       'probe path substitution mismatch',
     );
     requireCondition(data.stdin.length > 0, 'empty retained stdin');
@@ -476,6 +601,8 @@ export function verifyHostQualification({ bundlePath, launch, now }) {
       data.input,
       data.output,
       data.lastMessage,
+      data.environment,
+      record,
     );
     requireCondition(!nonces.has(nonce), 'duplicate probe nonce');
     nonces.add(nonce);
