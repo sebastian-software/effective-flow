@@ -37,7 +37,7 @@ def assert_pins(job):
             raise ValueError('pinned input changed: ' + filename)
 
 
-def watchdog(profile, root, owner_pid, bridge_pid, timeout, model_timeout, read_fd, directory):
+def watchdog(profile, root, owner_pid, bridge_pid, coordinator_pid, timeout, model_timeout, read_fd, directory):
     """Only an actual member may stop its own registered group after owner loss."""
     signal.signal(signal.SIGTERM, signal.SIG_IGN)
     signal.signal(signal.SIGINT, signal.SIG_IGN)
@@ -61,6 +61,9 @@ def watchdog(profile, root, owner_pid, bridge_pid, timeout, model_timeout, read_
             reason = 'runner-disconnected'
         if os.getppid() != bridge_pid:
             reason = 'bridge-disconnected'
+        # The runner wrapper and bridge can both outlive a killed coordinator.
+        if process_gone(coordinator_pid):
+            reason = 'coordinator-disconnected'
         if time.monotonic() >= deadline:
             reason = 'timeout'
     # No arbitrary retained receipt authorizes a signal. Re-prove current membership
@@ -117,6 +120,9 @@ def execute_job(job, *, fixture=False):
         directory, root = Path(job['artifactDir']), Path(job['profilesRoot'])
         home, codehome = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
         profile_path = home.parent
+        coordinator_pid = job['coordinatorPid']
+        if type(coordinator_pid) is not int or coordinator_pid <= 1:
+            raise ValueError('job requires a coordinator PID')
         record = registered_profile(profile_path, root, own_group=True)
         if home != profile_path / 'home' or codehome != profile_path / 'codex-home':
             raise ValueError('runner did not supply its recorded homes')
@@ -133,7 +139,7 @@ def execute_job(job, *, fixture=False):
         if watcher == 0:
             os.close(write_fd)
             try:
-                watchdog(profile_path, root, record['ownerPid'], os.getppid(),
+                watchdog(profile_path, root, record['ownerPid'], os.getppid(), coordinator_pid,
                          float(job['timeoutSeconds']), float(job.get('modelTimeoutSeconds', job['timeoutSeconds'])),
                          read_fd, directory)
             finally:

@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import itertools
 import json
+import os
 from pathlib import Path
 import re
 import signal
@@ -197,7 +198,7 @@ class Driver:
                'pins': {**self.pins, task['prompt']: sha(task['prompt']),
                         task['runMetadata']: sha(task['runMetadata'])},
                'driverDigest': self.pins[str(Path(__file__).resolve())],
-               'fixtureTools': self.fixture_tools,
+               'fixtureTools': self.fixture_tools, 'coordinatorPid': os.getpid(),
                'timeoutSeconds': self.timeout_seconds + 125, 'modelTimeoutSeconds': self.timeout_seconds,
                'blockerPath': str(self.blocker), 'launchGatePath': str(self.gate)}
         save(directory / 'worker-job.json', job)

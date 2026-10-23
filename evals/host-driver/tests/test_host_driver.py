@@ -274,6 +274,7 @@ class HostDriverTests(unittest.TestCase):
                        "task": task, "node": NODE, "operator": str(self.operator),
                        "configFile": str(self.config), "source": str(self.source),
                        "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
+                       "coordinatorPid": os.getpid(),
                        "blockerPath": str(driver.blocker), "launchGatePath": str(driver.gate)}
                 def cleanup(*_args):
                     # The wrapper can remain in cleanup while another slot qualifies.
@@ -353,28 +354,55 @@ class HostDriverTests(unittest.TestCase):
             f"driver=module.Driver({str(self.config)!r}, {str(self.profiles)!r}, "
             f"operator={str(self.operator)!r}, operator_sha256={digest(self.operator)!r}, "
             f"binary={str(self.binary)!r}, auth_file={str(self.auth)!r}, node={NODE!r}, "
-            "timeout_seconds=10, fixture_tools=True)\n"
+            "timeout_seconds=120, fixture_tools=True)\n"
             f"driver.run_slot({task!r})\n"
         )
-        os.environ["FIXTURE_MODE"] = "sleep"
+        sys.path.insert(0, str(DRIVER_PATH.parent))
+        from eval_driver_runtime import process_gone, verify_cleanup
+        artifact = self.output / "cohorts/merge-gate/fixture/slot-1"
+        process = None
+        reference = None
+        os.environ["FIXTURE_MODE"] = "ignore-term"
         try:
             process = subprocess.Popen(
                 [sys.executable, "-B", str(script)],
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
-            artifact = self.output / "cohorts/merge-gate/fixture/slot-1"
             deadline = time.monotonic() + 8
             while time.monotonic() < deadline and not (artifact / "process-start.json").exists():
                 time.sleep(0.03)
             self.assertTrue((artifact / "process-start.json").exists())
+            reference = json.loads((artifact / "runner-profile.json").read_text())
+            model = json.loads((artifact / "process-start.json").read_text())
             process.kill()
             self.assertEqual(process.wait(timeout=5), -signal.SIGKILL)
+            # The model timeout is much longer than this cleanup window, and the
+            # fixture ignores TERM: only coordinator-loss shutdown can pass.
+            deadline = time.monotonic() + 8
+            cleanup = verify_cleanup(reference["profilePath"], self.profiles)
+            while time.monotonic() < deadline and not cleanup["cleanupComplete"]:
+                time.sleep(0.05)
+                cleanup = verify_cleanup(reference["profilePath"], self.profiles)
+            self.assertTrue(cleanup["groupGone"], "model group survived coordinator loss")
+            self.assertTrue(cleanup["cleanupComplete"], "profile cleanup did not finish promptly")
+            self.assertTrue(process_gone(model["pid"]))
+            watchdog = json.loads((artifact / "watchdog-stop.json").read_text())
+            self.assertEqual(watchdog["reason"], "coordinator-disconnected")
         finally:
             os.environ.pop("FIXTURE_MODE", None)
-        deadline = time.monotonic() + 15
-        while time.monotonic() < deadline and not list(self.profiles.glob("profile-*/host-profile-cleanup.json")):
-            time.sleep(0.05)
-        self.assertTrue(list(self.profiles.glob("profile-*/host-profile-cleanup.json")))
+            if process is not None and process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            # Preserve wrapper ownership even when this regression fails: ask
+            # the live wrapper to clean its group rather than signal a saved PGID.
+            if reference is not None and not process_gone(reference["ownerPid"]):
+                os.kill(reference["ownerPid"], signal.SIGTERM)
+                deadline = time.monotonic() + 15
+                while time.monotonic() < deadline:
+                    if verify_cleanup(reference["profilePath"], self.profiles)["cleanupComplete"]:
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(verify_cleanup(reference["profilePath"], self.profiles)["cleanupComplete"])
 
     def test_linked_frozen_source_is_rejected_before_cohort_creation(self) -> None:
         linked = self.work / "linked-source"
