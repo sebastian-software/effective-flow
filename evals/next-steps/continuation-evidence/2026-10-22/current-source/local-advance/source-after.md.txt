@@ -1,0 +1,32 @@
+# Export proof
+
+**Plan status:** Not implemented
+**Recommended workflow:** Feature
+
+## Requirement
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; docs/plan/2026-10-22-export-proof.md.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** verified-progress (bounded parent attempt returned; evaluated once). Delta: all 100 expected records were read and all 100 exported with matching identifiers. This is actual export proof satisfying previously defined P1. P2 remains open; no failed check or new boundary was reported.
+**No-progress count:** 0 (qualifying P1 evidence resets the previous saturated count of 2 and invalidates the old special allowance).
+**Cumulative approach:** Initial parser adaptation, passing fixture checks and additional parser-model fixtures, now with actual export proof for all 100 expected records and matching identifiers. P1 is satisfied; mandatory rollback/isolation proof (P2) remains unresolved and unwaived. Time/cost and the named runtime/maintenance owner remain unknown. Retain the existing single-process application and its support boundary; no additional maintained system, service, deployment target or operating duty is accepted.
+**Continuation decision:** Return here after this checkpoint update: no follow-up execution is authorized in this source-update exercise. The qualifying P1 evidence invalidates the previous special allowance; its remaining attempt is no longer an active authorization. No new allowance is granted. No new reassessment is triggered by this return: P2 is still open, with no failed check or new boundary reported. The parent outcome remains incomplete pending P2.
+
+Retained owner decision and rationale: the reassessment on 2026-10-22 at the second no-progress return used the minimal in-workflow fallback because effective-product and effective-delivery were unavailable. Parser-model tests alone did not establish P1/P2; the smallest supported continuation used distinct normal-mode and retry-mode fixtures in the existing process. A larger system was unsupported; other alternatives were unknown. Stopping then would have left both acceptance proofs unfinished; prior investment did not justify continuation. The original owner's explicit instruction conditionally accepted at most those two additional bounded attempts. That decision superseded the earlier no-special-allowance decision while retaining its single-process restriction. The former allowance was 2, with 1 remaining after allowance-normal returned without qualifying progress; retry-mode had not started at that checkpoint. This history does not classify verified-progress as either experiment or authorize retry-mode now. Qualifying evidence has invalidated that allowance, rather than exhausted it. Material expansion or evidence invalidating a decision's rationale terminates that decision earlier; a failed mandatory check blocks immediately. Do not renew exhausted experiments without changed evidence or a specific consequential owner decision. P2 remains unfinished and unwaived.
+
+## Acceptance criteria
+
+- [ ] P1: real export preserves all 100 records.
+- [ ] P2: required rollback and isolation checks pass.
+
+## Plan review
+
+**Result:** Approved
+
+## Open points
+
+- No open points.

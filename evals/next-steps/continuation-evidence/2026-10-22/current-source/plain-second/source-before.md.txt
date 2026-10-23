@@ -1,0 +1,14 @@
+## Implementation status
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow#37; existing lifecycle comment 731.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** plain-continuation-1; the bounded parent attempt returned and is evaluated once. Only new parser-model fixtures and green local tests were produced; neither P1 nor P2 advanced. No real export or rollback/isolation evidence exists. These fixtures are not original acceptance proof.
+**No-progress count:** 1
+**Cumulative approach:** Initial parser adaptation plus additional parser-model fixtures; fixture-only/local checks green. Remaining decisive proof: resolve the complete-source duplicate-identifier question, demonstrate the lossless real 100-record export (P1), and pass mandatory rollback/isolation proof (P2). Runtime/maintenance ownership and time/cost are unknown. No service, deployment target or operating duty has been accepted.
+**Continuation decision:** No special allowance; accepted single-process work only. Existing decision retained; this first no-progress continuation does not trigger the second-return reassessment. No follow-up implementation is authorized at this source-update boundary.
+
+The issue remains open for P1 and P2.

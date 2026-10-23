@@ -1,0 +1,9 @@
+Die read-only Prüfung ist abgeschlossen.
+
+- **Quelle:** `example/flow#37`, kanonischer Planungskommentar `730`. Source Owner bleibt der quellführende Orchestrator.
+- **Bewerteter Versuch:** weiterhin `canonical-continuation-2`, bereits einmal ausgewertet. Diese Statusprüfung zählt keinen weiteren Versuch.
+- **Evidenzdelta:** keines. Die bisherigen Parser-Modell-Fixtures und grünen lokalen Tests haben weder P1 noch P2 vorangebracht.
+- **Vorgeschlagenes Quelldelta:** keines. Der gesamte Checkpoint einschließlich No-progress-Zähler `2`, Evidenz und Entscheidung bleibt bytegenau unverändert; kein Schreibzugriff erfolgte.
+- **Bestehende Grenze:** `Stop this approach`; keine zusätzliche Versuchserlaubnis. Die dokumentierte Neubewertung bleibt bestehen und wurde hier nicht wiederholt.
+
+Offen bleiben die Duplikatfrage im vollständigen Originaldatensatz, der verlustfreie Export aller 100 Datensätze (P1) und der verpflichtende Rollback-/Isolationsnachweis (P2). Ohne geänderte Evidenz oder eine konkrete maßgebliche Owner-Entscheidung ist keine weitere Fortsetzung dieses Ansatzes zulässig. Der Stopp erfüllt oder erlässt keine Akzeptanzanforderung; das Issue bleibt offen.

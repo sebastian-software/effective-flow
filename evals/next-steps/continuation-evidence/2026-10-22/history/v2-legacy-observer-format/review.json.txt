@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "review": "bounded independent legacy-count formatting classification",
+  "classification": "INSTRUMENT_FORMAT_FALSE_NEGATIVE",
+  "behavioral_verdict": "No genuine behavior failure observed in the reviewed legacy boundary. The completed host session remains valid evidence; its source must not be rewritten to satisfy the observer.",
+  "scope": "Only V2 local-legacy and the exact count projection; no classification of all 20 V2 recommendations or all 22 source contexts.",
+  "observed_behavior": [
+    "The original source is a known legacy outcome with unavailable prior history, not a new goal. The added checkpoint retains unknown history, unknown earlier effort/cost and no newly completed attempt or evidence.",
+    "The actual ordered trace explains the compact inline reassessment before the single source mutation command. It uses the unavailable-skill fallback, compares existing-process proof with unknown alternatives and an honest stop, and preserves the prior owner authorization for one attempt.",
+    "Allowance 1 and remaining 1 are recorded without executing the proof. P1/P2, mandatory rollback/isolation and accepted component/operating boundaries remain binding.",
+    "The final German report accurately returns no new attempt/evidence and the bounded decision; English artifact prose retains literal unknown in a Markdown code span."
+  ],
+  "production_contract_basis": [
+    "src/shared/plan-contract.md:85\u2013104 defines prose fields in the artifact language with no JSON/schema. It does not require bare unformatted count bytes.",
+    "The production outcome-continuation contract itself presents canonical state values including unknown in Markdown inline code. A single paired code span around the identical unknown token does not change its semantic value."
+  ],
+  "instrument_cause": {
+    "field_projection": "checkpointValue at lines 330\u2013331 correctly retains the whole value prose line.",
+    "failing_check": "The count check at line 377 starts with the bare expectedCount token and then an existing space/period/semicolon/end delimiter. It rejects the leading backtick in the valid actual field.",
+    "actual_count_prefix": "`unknown`. This is an existing outcome with unreconstructable continuation history.",
+    "semantic_distinction": "This is a false negative in the observer, unlike F1 where an actual duplicate mutated the checkpoint. It must not be presented as a failed semantic model decision or invalid host launch."
+  },
+  "surgical_recommendation": {
+    "change_scope": "Fixture-only count-token matching in continuation-exercise.mjs; keep production source, source bytes, count expectations, stale/duplicate fidelity and all state-transition semantics unchanged.",
+    "matching_rule": "Accept only the exact expected canonical token either bare or inside exactly one paired single-backtick code span, followed by the same existing delimiter.",
+    "example_pattern": "^(?:EXPECTED|\\x60EXPECTED\\x60)(?:[ .;]|$)",
+    "reject": [
+      "wrong canonical count, including 0 where unknown is expected",
+      "unpaired opening or closing backtick",
+      "extra/double backticks",
+      "unknownSuffix or other larger token",
+      "arbitrary surrounding Markdown/prose, parsing or coercion"
+    ],
+    "regression": "Use existing prepareUnit(t, local-legacy), unitRecord and verify machinery in a clearly synthetic UNIT-ONLY test to prove raw unknown and paired-code unknown are accepted, while wrong zero, unmatched/extra ticks and token suffixes are rejected. Do not replace the actual model output or claim the unit receipt is model evidence.",
+    "provenance": "The coordinator reports the original three instrument modules and exercise manifest preserved before any correction. Keep that original binding and explicitly record the observer-only correction when reassessing preserved evidence. No new production source freeze is required by this recommendation."
+  },
+  "read_only_probe": "An in-memory projection check reproduced rejection of the actual source line and checked the proposed narrow rule against raw/paired positives and eight malformed/wrong-token controls. This is a diagnostic probe, not a repository regression test or model evidence.",
+  "write_status": "Only this temporary review JSON and Markdown were written. No production, test, helper, source-exercise, original-output, manifest or seal file was edited. No hosts or models were launched.",
+  "evidence_hashes": {
+    "source-after.md": "7845efa2b0ec920e1713a8eff09b8801af7da61f248db04c558293d7bb35ba10",
+    "output.txt": "d1c43038ab7f52af88ddb5b9d1a5916702c42fc0d0ea73b980012405c83bc361",
+    "host-transcript.jsonl": "38581821557b56c9710e7d9d0da18092f770c595e7bbc2f1c3bf9f8afb1b1ccc",
+    "prompt.txt": "a66abe322cf5ceade21be7bbae62df8cf79896b7621401a8f43ca6c2072f76bf"
+  }
+}

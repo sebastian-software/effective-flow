@@ -110,6 +110,9 @@ plan-reference-routing
 4. Pass as context:
    - that `{{SKILL:apply-plan}}` has already checked the plan status, the workflow recommendation and the clarification gate
    - the full plan path as source association; return any archive move and observed outcome with it
+   - the verified original outcome/parent association, checkpoint and retained attempt reference;
+     transfer source ownership to the receiving workflow along with progress ownership. This router
+     neither counts an attempt nor writes the checkpoint; the target reconciles after its children
    - the detected workflow
    - that the basis is already clarified
    - for documentation plans, additionally the values found in the matching German

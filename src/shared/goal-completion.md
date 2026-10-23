@@ -2,6 +2,16 @@
 
 Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run, and the workflow's regular approval gates always apply.
 
+Retain one original outcome and verified primary-source association at entry; a package completion
+condition does not replace its parent operational outcome. Initial work establishes its first return checkpoint without counting a continuation. At return,
+the source owner reconciles once after returning children and carries unfinished acceptance into
+the handoff.
+
+```lazy-include
+outcome-continuation
+when: entering or returning from an outcome-directed continuation, prior continuation history is unknown, or the proposed approach materially expands
+```
+
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.

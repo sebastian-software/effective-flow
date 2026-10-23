@@ -1,0 +1,6 @@
+{
+  "continuation-exercise.mjs": "sha256:9ef58730c61c5ebc17de58eb3f76ecb51c731aaedebe6556da687a63209872dd",
+  "continuation-tracker.mjs": "sha256:3fe9dc065053133cf672640d86e9a4b9d723c75ab17f4aa21a5109e7d1d03eae",
+  "continuation-fixtures.mjs": "sha256:11fa94709cde5651a759d4761b31750b7628f3a3a27d5f7047d9e703bfc3260a",
+  "exercise.json": "sha256:5a5310598fa7614a3c28175ded68a72867c50b8b5665689a10bb6262a23225c7"
+}

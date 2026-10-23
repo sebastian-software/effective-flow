@@ -518,9 +518,12 @@ call log without its trace, before it evaluates anything; `test/eval-fixture-fid
 pins that pairing rule, and the scenario assertions require each call log's build stamp and, on the
 configured-reviewer route, its trace.
 
-Pairing is necessary, not sufficient. A run must also match the current scenario build identity,
-carry a readable and correctly rooted tracker log, request no operation the production helper
-supports but the fixture leaves undefined, and satisfy any scenario-specific validity rule. For the
+Pairing is necessary, not sufficient. Selected runs must match the current scenario build identity.
+Publication may preserve unselected historical units byte-for-byte with self-consistent original
+provenance, unchanged scenario inputs and the pinned profile; `verify` still reports their moved
+skill or instrument as stale, and strict release verification rejects them. Every unit must carry
+a readable and correctly rooted tracker log, request no operation the production helper supports
+but the fixture leaves undefined, and satisfy any scenario-specific validity rule. For the
 configured-reviewer route, a trace whose records are unreadable, carry another schema or sequence, or
 ran outside the slot project is invalid. An empty trace is not: it records a run that never
 delegated, which is a finding about the gate, as is any trace that is not exactly one echo record

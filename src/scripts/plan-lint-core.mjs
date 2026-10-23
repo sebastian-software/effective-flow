@@ -51,6 +51,7 @@ export const PLAN_CONTRACT_MAPPING = deepFreeze([
   { meaning: 'Target path', de: ['**Ziel-Pfad:**'], en: ['**Target path:**'] },
   { meaning: 'Issue', de: ['**Issue:**'], en: ['**Issue:**'] },
   { meaning: 'Requirement', de: ['## Anforderung'], en: ['## Requirement'] },
+  { meaning: 'Outcome checkpoint', de: ['## Ergebnis-Checkpoint'], en: ['## Outcome checkpoint'] },
   {
     meaning: 'Architecture',
     de: ['## Architekturentscheidungen'],

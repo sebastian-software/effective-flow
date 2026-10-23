@@ -48,12 +48,22 @@ authoritative skill is not available (not installed, `skills.enabled: false`, or
 implementation risks) so the tool stays functional and degrades cleanly — **not** a full local
 handbook.
 
+For an outcome-continuation reassessment, `effective-product` owns proportionality and the
+smallest coherent outcome; `effective-delivery` owns delivery evidence/complexity. Carry the
+verified primary association, original outcome and boundaries, cumulative approach/ownership,
+evaluated attempt/evidence delta, remaining proof, current trigger, finite decision and authority
+into the same judgment handoff. Retained handoff-only state is valid input where no artifact is
+writable; do not create one merely for judgment. Return findings plus the bounded recommendation
+needed by `outcome-continuation`; source updates and the consequential decision stay with the
+orchestrator. This conditional judgment adds no full review to a successful initial change.
+
 ### Judgment handoff
 
 Each step that applies these skills to the written artifact, or obtains their judgment on it, runs
 that judgment outside this run:
 
-1. Write the artifact first; the judgment reads only what is persisted.
+1. Write the artifact first; the judgment reads only what is persisted. For continuation with no
+   writable carrier, pass the retained checkpoint and verified source instead.
 2. Start one read-only sub-agent with the artifact path, the scope (calling step and criteria), the
    resolved artifact language, the owners, relevance gate and fallback above, and the output
    contract. It loads the owning skills itself, starts no sub-agent and writes nothing.
@@ -75,7 +85,8 @@ a review section already in the artifact as an unfilled template, not a result (
 alternatives, all-zero summary, placeholder findings, "Not reviewed in depth yet"), or, once an
 earlier judgment step filled it, in this run or before, as prior-round history to judge anew.
 
-**Output contract:** findings only, each with area, proposed severity (Critical, Important, Note),
+**Output contract:** for continuation reassessment, include the bounded recommendation above;
+otherwise findings only, each with area, proposed severity (Critical, Important, Note),
 problem with its artifact location, evidence (file:line or source, for the orchestrator's check
 only, never added to the artifact's finding form), and whether it is directly incorporable or needs
 a decision; no report, artifact, comment, or tracker write of its own, and no mere summary; with no

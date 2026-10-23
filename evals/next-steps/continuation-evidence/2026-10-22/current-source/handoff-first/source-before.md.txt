@@ -1,0 +1,14 @@
+# Existing fix handoff
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; direct-request export proof and retained return.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** initial-return; implementation returned without P1 or P2.
+**No-progress count:** 0
+**Cumulative approach:** Initial parser adaptation complete; fixture-only checks green, real export and rollback remain unproved.
+**Continuation decision:** No special allowance; accepted single-process work only.
+
+No writable implementation note exists.

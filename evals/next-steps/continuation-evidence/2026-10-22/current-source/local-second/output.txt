@@ -1,0 +1,5 @@
+Der [Checkpoint](docs/plan/2026-10-22-export-proof.md) wurde aktualisiert und geprüft; alle übrigen Quellabschnitte bleiben unverändert.
+
+- **Bewertet:** `continuation-2`, einmalig. Neue Evidenz: Parser-Modell-Fixtures und grüne lokale Tests; kein Fortschritt bei P1/P2. Zähler: **2**.
+- **Neubewertung:** Mangels verfügbarer Fachskills erfolgte der vertragliche Minimalvergleich. Er trägt die ausdrücklich akzeptierten zwei unterschiedlichen Versuche im bestehenden Prozess: Normalmodus und Retrymodus. **Allowance: 2; verbleibend: 2.**
+- **Grenze:** Beide Abnahmen bleiben offen. Bei ausgeschöpftem Kontingent ist erneut zu bewerten; ein fehlgeschlagener Pflichtcheck blockiert sofort. Hier wurde ausschließlich der Checkpoint geändert, kein weiterer Versuch ausgeführt.

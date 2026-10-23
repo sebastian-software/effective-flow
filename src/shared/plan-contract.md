@@ -15,6 +15,7 @@ use it consistently throughout the artifact:
 | Target path          | `**Ziel-Pfad:**`                                    | `**Target path:**`                           |
 | Issue                | `**Issue:**`                                        | `**Issue:**`                                 |
 | Requirement          | `## Anforderung`                                    | `## Requirement`                             |
+| Outcome checkpoint   | `## Ergebnis-Checkpoint`                            | `## Outcome checkpoint`                      |
 | Architecture         | `## Architekturentscheidungen`                      | `## Architecture decisions`                  |
 | Affected files       | `## Betroffene Dateien`                             | `## Affected files`                          |
 | Implementation       | `## Implementierungsdetails`                        | `## Implementation details`                  |
@@ -78,3 +79,26 @@ and Target path fields.
 
 - A writer must not combine fields or sections from both columns. A mixed plan is unclear and is
   not automatically rewritten. A requested translation converts the complete plan contract.
+
+### Compact outcome checkpoint
+
+New local plans and canonical planning comments include this short section after Requirement
+(a planning comment uses `###`); legacy sources remain valid without it. Keep these prose fields
+in the artifact language, with no JSON fence or schema. Values name the verified repository/target
+and primary reference, original acceptance/safety/support boundaries, evaluated attempt and evidence
+delta, cumulative investment/components/remaining proof, and any bounded decision/authorization:
+
+| English                       | German                            |
+| ----------------------------- | --------------------------------- |
+| `**Primary source:**`         | `**Primäre Quelle:**`             |
+| `**Original outcome:**`       | `**Ursprüngliches Ergebnis:**`    |
+| `**Last evaluated attempt:**` | `**Zuletzt bewerteter Versuch:**` |
+| `**No-progress count:**`      | `**Versuche ohne Fortschritt:**`  |
+| `**Cumulative approach:**`    | `**Bisheriger Ansatz:**`          |
+| `**Continuation decision:**`  | `**Fortsetzungsentscheidung:**`   |
+
+A fresh baseline has no evaluated attempt, count `0` and no special decision; do not invent costs.
+Revisions preserve the original baseline, earlier owner changes and decision reasons. Children
+retain their verified parent association rather than independent state. Detailed transitions and
+source-write ownership belong only to `shared/outcome-continuation.md`, loaded on continuation,
+unknown history or expansion; missing new fields alone never forces a new planning artifact.

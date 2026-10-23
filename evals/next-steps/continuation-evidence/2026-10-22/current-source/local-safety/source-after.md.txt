@@ -1,0 +1,31 @@
+# Export proof
+
+**Plan status:** Not implemented
+**Recommended workflow:** Feature
+
+## Requirement
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow; docs/plan/2026-10-22-export-proof.md.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** P2 isolation/rollback check return (evaluated once at this boundary; execution attempt reference and normal/retry fixture mode were not supplied). Evidence delta: the mandatory P2 check fails because restoring the fixture overwrites a sibling dataset. No broader export can run safely. This is decisive failure evidence, not a P2 pass, and does not resolve the predeclared P1 duplicate-identifier question. No new P1 proof was supplied.
+**No-progress count:** 2 (saturated; retained). The failed mandatory check does not qualify as original-proof progress or resolve the previously named bounded evidence question; it does not reset the count.
+**Cumulative approach:** Initial parser adaptation, passing local checks and additional parser-model fixtures remain supporting work only. The newly returned P2 check demonstrates unsafe restoration across the fixture boundary. Real preservation of all 100 records and the complete source-fixture duplicate-identifier question remain unresolved; P2 is failed and unfinished. Time/cost and the named runtime/maintenance owner remain unknown. Retain the existing single-process application and its support boundary; no additional maintained system, service, deployment target or operating duty is accepted.
+**Continuation decision:** Stop this approach. Reassessment on 2026-10-22 at this return: the observed mandatory P2 failure immediately blocks the broader export and terminates the earlier finite continuation decision regardless of unused allowance. The existing process cannot safely support the broader export on the supplied evidence. Existing authorized safe containment remains permitted, but none is needed in this fixture; it grants no export resumption. No supported safe export alternative is established; other alternatives are unknown. Stopping leaves P1/P2 unfinished and unwaived; prior investment does not justify continuation. Do not run either optional fixture experiment, broaden the scope, or resume export under the earlier allowance. No corrective implementation is authorized in this source-update exercise. Return after updating this checkpoint; no question or substitute workflow is required.
+**Earlier owner decision retained:** On 2026-10-22, at the second consecutive no-progress return, the minimal in-workflow fallback was used because effective-product and effective-delivery were unavailable. More parser-model tests alone did not establish P1/P2. The smallest supported continuation was distinct normal-mode and retry-mode fixtures in the existing process; a larger system was unsupported and other alternatives were unknown. Stopping would leave both acceptance proofs unfinished, and prior investment did not justify continuation. The original owner's explicit instruction conditionally accepted at most two additional bounded attempts. That finite, unchanged-scope decision superseded the earlier no-special-allowance decision while retaining its single-process restriction. Allowance at that checkpoint: 2; remaining at that checkpoint: 2. Eligible attempts were existing-process normal-mode fixture, then existing-process retry-mode fixture, each at most once; neither had run at that checkpoint. The required next proof remained the complete source-fixture duplicate-identifier answer and preservation of all 100 real records (P1), plus mandatory rollback/isolation evidence (P2); fixture/model success alone was insufficient. Each completed allowance attempt was to consume one exactly once; no-progress returns retained count 2, qualifying original-proof evidence would reset it to 0 and invalidate the special allowance, and exhaustion required renewed review without repeating unchanged exhausted experiments. Material expansion or invalidating evidence terminated the decision earlier; a failed mandatory check blocked immediately. The supplied return does not identify which eligible experiment, if any, completed, so allowance consumption is not reconstructed. The mandatory-check stop now applies; no remainder is usable.
+
+## Acceptance criteria
+
+- [ ] P1: real export preserves all 100 records.
+- [ ] P2: required rollback and isolation checks pass.
+
+## Plan review
+
+**Result:** Approved
+
+## Open points
+
+- No open points.

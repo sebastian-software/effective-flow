@@ -1204,3 +1204,69 @@ test('publication-metadata applies structural gates, expected language, and retu
     assert.equal(lintWithExtra.error.code, 'INVALID_PAYLOAD');
   });
 });
+
+test('optional bilingual outcome headings preserve legacy lint results without adding checkpoint state to the result schema', () => {
+  for (const [plan, heading, fields] of [
+    [
+      ENGLISH_PLAN,
+      'Outcome checkpoint',
+      '**Primary source:** example/flow; original plan.\n**No-progress count:** unknown\n**Continuation decision:** Existing authority, one bounded proof.',
+    ],
+    [
+      GERMAN_PLAN,
+      'Ergebnis-Checkpoint',
+      '**Primäre Quelle:** example/flow; ursprünglicher Plan.\n**Versuche ohne Fortschritt:** 2\n**Fortsetzungsentscheidung:** Neubewertung erforderlich.',
+    ],
+  ]) {
+    const expected = classifyPlanText(plan);
+    const checkpointPlan = plan.replace(
+      /(## (?:Requirement|Anforderung)\n\n[^\n]+\n)/,
+      `$1\n## ${heading}\n\n${fields}\n`,
+    );
+    assert.ok(checkpointPlan.includes(`## ${heading}`));
+    assert.deepEqual(classifyPlanText(checkpointPlan), expected);
+    // Heading projection is mechanical language detection; arbitrary checkpoint prose is not a new state parser.
+    assert.deepEqual(
+      classifyPlanText(`${plan}\n## ${heading}\n\nFree form evidence; not a JSON schema.\n`),
+      expected,
+    );
+    const otherHeading =
+      heading === 'Outcome checkpoint' ? 'Ergebnis-Checkpoint' : 'Outcome checkpoint';
+    assert.equal(classifyPlanText(`${plan}\n## ${otherHeading}\n`).language, 'mixed');
+    assert.equal(classifyPlanText(`## ${heading}\n`).language, expected.language);
+  }
+});
+
+test('checkpoint-bearing plans use the unchanged closed lint CLI input and output contracts', () => {
+  withTempDir((root) => {
+    const relative = 'docs/plan/checkpoint.md';
+    write(root, relative, `${ENGLISH_PLAN}\n## Outcome checkpoint\n\n**No-progress count:** 2\n`);
+    const input = { cwd: root, planDir: 'docs/plan', files: [relative] };
+    const accepted = runCli(['lint'], JSON.stringify(input));
+    assert.equal(accepted.status, 0);
+    assert.deepEqual(Object.keys(accepted.envelope), ['ok', 'operation', 'data']);
+    assert.deepEqual(Object.keys(accepted.envelope.data.files[0]), [
+      'path',
+      'status',
+      'statusReason',
+      'language',
+      'openPoints',
+      'acceptanceCriteria',
+      'placeholders',
+      'duplicates',
+      'title',
+      'workflow',
+      'docCategory',
+      'targetPath',
+    ]);
+    for (const state of [
+      { checkpoint: { noProgressCount: 2 } },
+      { outcomeCheckpoint: true },
+      { continuationDecision: 'continue' },
+    ]) {
+      const rejected = runCli(['lint'], JSON.stringify({ ...input, ...state }));
+      assert.equal(rejected.status, 2);
+      assert.equal(rejected.envelope.error.code, 'INVALID_PAYLOAD');
+    }
+  });
+});

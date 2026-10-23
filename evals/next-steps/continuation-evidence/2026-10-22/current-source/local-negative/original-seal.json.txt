@@ -1,0 +1,15 @@
+{
+  "prepared.json": "sha256:b2c8ebce6854ada787cb01deb521c09d8b030726643e87464218d331bf674821",
+  "prompt.txt": "sha256:cf50f6bf527390f4699ba7033cbf0844fbccf7c2aa8aac0eb536888d80a4150f",
+  "source-before.md": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+  "project/AGENTS.md": "sha256:b0e67548977ec6a5b31474965cbd5784d5b93286db5369ee8f72d287b64eebbf",
+  "project/docs/adr/effective-flow-project-setup.md": "sha256:b9dd7171a5fa1c70194d24404e711bd22d3db160b8567762796eec03bc9b01c4",
+  "output.txt": "sha256:91eeb850f2a9016df9a1cfe3b76d8a1ddc35c31a67d3c5d42e224f8d2e5935bc",
+  "host-transcript.jsonl": "sha256:3049944d2975409eabaa657902cfba9922a8658988dbf37a2738c7c4652ee6c8",
+  "host-receipt.json": "sha256:8849c4f0b768f997e2face0e367e5bcea7d4018635ef701e96f9f492540d2219",
+  "source-after.md": "sha256:284b186fe9e94768bed3ee25ac7e284900e32006b0905ae724e621c1fb636953",
+  "source.diff": "sha256:b0e3d834b4e23d56b50344ef2aec1aedb0dee1d67fe26cb335c2d33a981dff9a",
+  "record.json": "sha256:c975c68b1f91d380f8fe07e4cfc73af968cbf5b2e9b88a3ead2d5b50700a3913",
+  "tracker-calls.jsonl": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "issue-state.json": "sha256:810e2da9494e0559e5f71d0782af796fe0b695c5e6d6fcb382bbfff7948c3e21"
+}

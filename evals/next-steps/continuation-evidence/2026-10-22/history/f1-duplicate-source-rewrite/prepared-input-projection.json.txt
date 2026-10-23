@@ -1,0 +1,21 @@
+{
+  "step": "local-duplicate",
+  "inputs": {
+    "prompt.txt": "sha256:be171e44356871c34f19c80967372ffae047d43fcafa86106e209f512f3aebb7",
+    "source-before.md": "sha256:6af302ada5da2e544d35486e1d4754a4e31458f737c8cc2bf4b8382dd7889be3",
+    "project/AGENTS.md": "sha256:b0e67548977ec6a5b31474965cbd5784d5b93286db5369ee8f72d287b64eebbf",
+    "project/docs/adr/effective-flow-project-setup.md": "sha256:b9dd7171a5fa1c70194d24404e711bd22d3db160b8567762796eec03bc9b01c4"
+  },
+  "previous": "sha256:615ef64181825688fcd40f0814b6d70e1db2fcbed917d2442eb2d7e5502950ad",
+  "child": null,
+  "identity": {
+    "digest": "sha256:79a31180094747e253de9c9a34ac7ab0434c07c703794d1529e3062ae02f10e0",
+    "versionNeutralDigest": "sha256:dbb83b506c0254ed171eec0d32723d1be42ecffbf2f2bed3e9397310539b1263"
+  },
+  "record_links": {
+    "previous": "sha256:615ef64181825688fcd40f0814b6d70e1db2fcbed917d2442eb2d7e5502950ad",
+    "child": null
+  },
+  "original_prepared_sha256": "sha256:14adfc547a28c1b8e42d1b6a88e92c0c0f857d6d2295debe0305b1ecb9ae0375",
+  "original_record_sha256": "sha256:c160bd294426528dad45c3fbcf93b36bf6ddd4f166f7416fbae8f73699bb40a3"
+}

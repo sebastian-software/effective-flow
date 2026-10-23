@@ -1,0 +1,8 @@
+Quelle: `example/flow`, [Export proof](/private/tmp/ef-outcome-583-source-exercise-v4/local-duplicate/project/docs/plan/2026-10-22-export-proof.md).
+
+- **Versuch:** Replay der bereits einmal ausgewerteten `continuation-2`; kein neuer abgeschlossener Versuch.
+- **Evidenzdelta:** keines. Die bisherigen Parser-Modellfixtures und grünen lokalen Tests belegen weiterhin weder P1 noch P2.
+- **Checkpoint:** vollständig bytegleich belassen. No-progress bleibt `2`; Allowance bleibt `2`, remaining `2`. Keine erneute Bewertung und kein doppelter Verbrauch.
+- **Bestehende Entscheidungsgrenze:** ausschließlich die zwei zuvor akzeptierten Experimente im bestehenden Prozess: Normalmodus, danach Wiederholungsmodus, jeweils höchstens einmal. Bei remaining `0` ist vor weiterer optionaler Arbeit eine Neubewertung erforderlich; Erweiterung oder widerlegende Evidenz beendet die Freigabe früher, ein fehlgeschlagener Pflichtcheck blockiert sofort.
+
+P1/P2 bleiben offen und unvermindert verbindlich. Diese Übung endet an der Quellenrückgabe; keine Folgeausführung erfolgt.

@@ -101,6 +101,11 @@ completion-protocol
 goal-completion
 ```
 
+For an investigation-report fix or direct request without another writable primary source, return
+the verified association and checkpoint in the existing completion/handoff. This grants no right
+to rewrite the diagnosis or create a bookkeeping report. For a review finding, reuse only its
+already authorized implementation note; a returning delegate sends evidence to its source owner.
+
 ```lazy-include
 worktree-integration
 when: the delivery/worktree mode is determined

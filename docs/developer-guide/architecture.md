@@ -229,6 +229,67 @@ ownership contract — canonical for the classification and the ownership-check 
 [`skill-ownership.md`](skill-ownership.md), summarized in
 [`AGENTS.md`](../../AGENTS.md#skill-discovery).
 
+## Outcome-bound continuation
+
+[`src/shared/outcome-continuation.md`](../../src/shared/outcome-continuation.md) coordinates repeated
+runs against one verified original outcome. The eager `goal-completion` contract retains that
+association at entry and return; continuation, unknown history and material expansion load the
+protocol conditionally. Planning sources use the compact bilingual Outcome checkpoint convention
+in [`plan-contract`](../../src/shared/plan-contract.md). This is instruction-enforced prose state,
+not an execution sandbox: there is no continuation runtime, parser, ledger, configuration switch
+or new user tool. Plan lint only recognizes the additional bilingual heading.
+
+The checkpoint retains source identity, original acceptance and safety/support boundaries, last
+evaluated attempt and evidence delta, no-progress count (`0`, `1`, saturated `2`, or `unknown`),
+cumulative approach/ownership and remaining proof, and any finite continuation decision. Explicit
+owner changes and decision reasons stay readable; routine summaries are replaced. Only the active
+source-owning orchestrator writes it through existing file/tracker mutation authority. Returning
+workers and subworkflows supply evidence; parallel children share one parent attempt. A fresh source
+read invalidates a stale proposal, and existing expected-body/hash guards govern reconciliation.
+
+The carrier depends on the existing source: a local plan or canonical planning comment is updated
+in place; a sufficient plain issue uses its already required PR-link/failure lifecycle comment;
+a review-report fix uses its authorized implementation note. An investigation-report fix or direct
+request without another writable source carries state only in its completion/handoff. Read-only
+review, investigation and next-step selection return proposed deltas and never gain primary-write
+authority. No artifact is created just for bookkeeping. Lost handoff history or competing lifecycle
+checkpoints remain `unknown`; exact counts across unrelated fresh chats without an accessible
+carrier are not promised. Legacy metadata alone is no blocker: reconstruct the known baseline and
+reassess unknown prior history once before dependent continuation. Missing identity/outcome blocks
+only that continuation.
+
+Initial work establishes the first return checkpoint. A bounded continuation after that return is
+one attempt, accounted once by the outer source owner after its children return; resumes, duplicate
+returns, worker retries and status reads do not add attempts. New verified evidence must advance a
+previously defined original acceptance proof or close its named uncertainty. A necessary negative
+result can qualify when it answers a bounded proof question specified beforehand. Green local
+checks, fixtures, child PRs, new prerequisites and renamed blockers alone do not establish progress.
+The first no-progress continuation records `1`; the second records `2` and reassesses **at that
+return**, before further optional work. Unaccepted maintained components, platforms, trust
+boundaries, deployment targets or substantial operating duties trigger reassessment before expansion,
+even when tests pass. Exhausted bounds trigger it too.
+
+The current workflow uses its existing judgment mechanism: `effective-product` owns proportionality
+and the smallest coherent outcome; `effective-delivery` owns delivery evidence and complexity.
+The result is a justified bounded continuation within authority, a consequential owner decision, or
+an honest stop with unfinished acceptance. It never automatically launches another planning/review
+workflow or asks for a redundant approval. Reassessment preserves history. At saturated `2`, a
+justified allowance of two attempts keeps count `2` on unsuccessful returns while remaining attempts
+move `2 → 1 → 0`, once per return. The second authorized attempt needs no repeated judgment while
+assumptions hold; exhaustion restores review-required. Material expansion or invalidating evidence
+ends the allowance early. Qualifying progress resets the count to `0` and invalidates the old
+allowance. An identical failed experiment cannot renew itself through routine approval or renaming.
+
+Required safety and quality checks still block immediately regardless of count or allowance.
+Existing authorized correction and safe containment remain eligible without authorizing the blocked
+broader approach. Recommendation selection applies the decision before both plan candidates and
+fallbacks; substitute plan/review/issue invocations cannot evade a blocker. Advice stays read-only
+and limited to two options. Unattended planning preserves its one-artifact/no-question boundary and
+its existing `Revision required` versus operational `ABORT` distinction. A code milestone can be
+complete while its parent operational outcome remains open; both are reported without reopening
+finished work. The [build-system evidence contract](build-system.md#outcome-continuation-evidence)
+separates recommendation behavior from source-write/re-entry proof.
+
 ## Source directories
 
 ```text

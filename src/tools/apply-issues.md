@@ -126,6 +126,20 @@ apply-source-detection
 apply-clarity-gate
 ```
 
+## Outcome association
+
+Retain each issue's verified primary/parent association and checkpoint from its canonical planning
+comment, or from already permitted fresh lifecycle comments when no planning comment exists. These
+status comments carry continuation state, never new functional requirements. Preserve the original
+body/owner clarifications and decomposition parser's exact parent/child bindings. `apply-issues`
+retains source ownership across returning delegates: assign one attempt per primary outcome,
+pass it with state and write limits, then account once after all its children return. Do not count
+routers/workers or create a planning comment merely for bookkeeping. An independent admitted child
+may have its own original goal; a package for the same outcome inherits its parent's state.
+For an existing canonical carrier, retain its exact comment ID/body/hash and verify guarded
+update-by-ID capability before dependent continuation. An unavailable/stale update returns the
+proposed delta and specific blocker; create no replacement comment or planning workflow.
+
 ## Comment conventions
 
 All status updates are written as issue comments (operation "add comment" from the mapping above).
@@ -325,7 +339,9 @@ Issues with the same target PR run sequentially so that new commits are created 
    - Refactoring: `Use the skill {{SKILL:refactor}} for this issue.`
    - Documentation: `Use the skill {{SKILL:docs}} for this issue.`
      The delegation sub-agent runs as a **non-interactive** delegation (context hint "[Context from {{FLOW}} apply-issues: …]"): no approval gate of its own, completion protocol `DONE`/`ABORT`.
-     Pass verified issue/target/repository identity, complete planning basis, absolute root and execution receipt;
+     Pass verified issue/target/repository identity, complete planning basis, original outcome,
+     checkpoint, retained parent attempt, source owner and evidence-only return authority,
+     absolute root and execution receipt;
      never rely on an inherited current directory or create a nested worktree around a reused
      harness-native one. Pass the literal line `Next steps: suppressed` on its own line as well:
      the delegated skill is user-invocable, but it returns its result here and this run is an
@@ -350,6 +366,12 @@ Issues with the same target PR run sequentially so that new commits are created 
    contains it at creation; a reused PR is extended only after a fresh body read through the
    hash-guarded `pr-update-body` path. Invalid, duplicate, mismatched, or stale receipt state fails
    closed.
+   Reconcile original-criterion evidence once after returning delegates; perform any triggered
+   continuation reassessment before another optional step. Persist through the canonical planning
+   comment's existing guarded update when present; otherwise append the checkpoint to the already
+   required PR-link/failure lifecycle comment. Preserve PR receipts and completed code milestones
+   while explicitly retaining unfinished parent acceptance; a continuation blocker is not missing
+   planning detail and never automatically adds Needs-Planning or routes to another workflow.
 4. **Immediately after a successful push or PR creation:** write the PR-link comment through the
    helper and set label `effective-flow-issue-done`; on an external target use the resolved
    connection under the `tracker-target` write discipline. Do **not** set a native sub-item to done
@@ -402,7 +424,7 @@ Report to the user:
 - container entries retained for post-merge reconciliation, if containers were processed
 
 Then delete the wisdom file and **return** that report plus the run's end state — the created pull
-requests/skipped issues, verified source association, complete basis and observed outcomes — to `{{SKILL:apply}}`, which closes the run with its own
+requests/skipped issues, verified source association, complete basis, checkpoint/decision and observed outcomes — to `{{SKILL:apply}}`, which closes the run with its own
 next-step block. Name no follow-up invocation of your own here.
 
 ## Rules

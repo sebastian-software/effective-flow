@@ -6,7 +6,7 @@ rerun implementation, delivery, tracker transitions, or an entire Effective Flow
 integration guards separately protect real completion sites in merge-gate, apply, PR review, and
 automatic delivery. Neither evidence layer alone proves the other.
 
-There are eleven scenarios and **five fresh model sessions per scenario** (55 runs). Published real
+There are fifteen scenarios and **five fresh model sessions per scenario** (75 runs). Published real
 rounds are archived under `results/`. Deterministic tests exercise instrument integrity and
 discrimination, not model behavior. `pnpm eval next-steps verify` reports the current archived
 evidence and whether it matches the tree.
@@ -23,6 +23,10 @@ evidence and whether it matches the tree.
 | `current-pr-delivery-leads-next-slice` | Deliver the current PR before advancing the plan. |
 | `actual-postmerge-reconciliation-reentry` | Actual unresolved receipt-bound issue observation leads to observer-only re-entry. |
 | `cross-repository-context-cannot-switch` | Preserve other/renovate-config identity; explain the limitation; no invalid URL invocation or target switch. |
+| `outcome-threshold-requires-reassessment` | With saturated history and no decision, report the pending in-workflow reassessment and recommend no substitute workflow. |
+| `outcome-expansion-despite-green-checks` | A proposed service/deployment outside accepted ownership blocks continuation even with green subchecks. |
+| `outcome-advancing-continuation` | Original P1 proof advances; continue the remaining authorized package without redundant approval. |
+| `outcome-conflicting-source-context` | Competing primary checkpoint claims remain unresolved; do not choose by recency or guess zero. |
 | `external-issue-identity-retained` | With real external/Linear configuration, retain OPS-17 in the planning invocation. |
 
 Archived/implemented are combined completion signals on one artifact. Missing approval/dependency
@@ -41,7 +45,8 @@ canonical planning comments with the production marker and issue-body requiremen
 or provider connection is used. No case reaches canonical decomposition. A future such case must
 use the existing production parser and seed its runtime modules, never add an eval-only parser.
 
-Source seeds are `shared/next-steps.md` and `shared/plan-reference-routing.md`. `SKILL.md` is also
+Source seeds are `shared/next-steps.md`, `shared/plan-reference-routing.md`, and the production
+`shared/outcome-continuation.md` contract. `SKILL.md` is also
 seeded because the shared identity mechanism requires its version-bearing router for the version
 neutral digest. No implementation workflow executes. The only overlay adds the unchanged iterate
 report-channel helper beside production files, refuses to replace a shipped file, and is hashed as
@@ -63,7 +68,7 @@ no valid generic fallback.
 
 Free explanations, limitation and purpose wording, approval prose, and output language are not
 graded automatically. Tests verify the resolved German language in each prompt, snapshot and
-project configuration. Before publication, an independent reviewer reads all 55 complete original
+project configuration. Before publication, an independent reviewer reads all 75 complete original
 reports and qualitatively checks their purpose, relevant limitations, dependencies/approval meaning
 and German chat-language compliance. Automated checks protect concrete selection and argument
 identity, final-block shape and length, named package/prerequisite IDs, authority and read-only
@@ -127,3 +132,84 @@ pnpm eval iterate verify
 CI reports every suite on each PR and enforces current evidence on release PRs. Changed shared
 production sources stale existing merge-gate and iterate evidence too; re-record before release.
 Passing deterministic checks does not establish green semantic model behavior.
+
+## Bounded source-update and re-entry exercise
+
+The separate coordinator module [_scaffold/continuation-exercise.mjs](_scaffold/continuation-exercise.mjs)
+exports `prepare`, `record`, `verify` and the finite `STEPS` list. It is not part of the read-only
+recommendation suite, does not change that suite's tracker stub or state invariant, and starts no
+model. Its two supporting modules contain only the fixed synthetic carriers/observations and one
+offline issue transport. They do not implement a product checkpoint state machine or new parser.
+
+There are 22 fresh host contexts, in `STEPS` order. One local plan covers the returning-child
+boundary, first/second no-progress return, unchanged fresh entry and duplicate, allowance
+`2 → 1 → 0`, duplicate consumption, exhaustion, immediate expansion invalidation, mandatory
+safety failure, actual advancing proof, a predeclared necessary negative proof, and legacy
+`unknown`. Two existing issue comments cover canonical planning and sufficient plain-issue
+lifecycle state. Three direct-request contexts cover retained handoff-only state and lost history.
+Branching controls start from the referenced sealed predecessor, never a coordinator-written
+corrected checkpoint. The fixture's original owner specifically permits at most two distinct
+existing-process experiments after a justified reassessment; that observation is an authority
+boundary, not an expected model answer.
+
+Use the existing pinned recording profile above. From the source checkout, import the module and
+prepare one step, supplying the unmodified current portable build:
+
+```js
+import { prepare, record, verify, STEPS } from './evals/next-steps/_scaffold/continuation-exercise.mjs';
+const profile = {
+  harness: 'codex-cli', model: 'gpt-6.1-sol', reasoningEffort: 'high', reportedVersion: '0.159.3',
+  toolPolicy: 'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral',
+};
+const exerciseRoot = '/tmp/effective-flow-continuation-exercise-UNIQUE';
+const builtSkillRoot = '/absolute/current/build/portable/effective-flow';
+const slot = prepare({ exerciseRoot, builtSkillRoot, profile, step: STEPS[0].id });
+```
+
+The host launches a real nonforked, isolated-home `codex exec` rooted at `slot.projectRoot`,
+with only `slot.prompt` as task input, the same pin/policy as recommendation recordings, JSON
+stdout, and last-message output. The whole step root must be writable: its copied skill's offline
+transport stores the exact issue state and call log beside the project. Network and unrelated
+filesystem access stay unavailable. Do not give expectations, other turns, or replacement output
+to the model. Preserve the actual JSON stream and final-message file. After that actual session
+completes, pass their paths plus the truthful receipt object to `record`:
+
+```js
+record({ exerciseRoot, step: slot.step, outputPath: '/absolute/host/last-message.txt',
+  transcriptPath: '/absolute/host/stdout.jsonl',
+  hostReceipt: { schemaVersion: 1, completed: true, initialWorkingRoot: slot.projectRoot,
+    nonForked: true, taskInput: 'rendered-prompt-only', profile } });
+// Repeat prepare → actual fresh host session → record for each remaining STEPS entry.
+const evidence = verify({ exerciseRoot, builtSkillRoot });
+```
+
+No command synthesizes receipts, launches a model, rewrites returned state, or retries a behavioral
+failure as invalid evidence. Preparation refuses overwrites and binds the current build using the
+shared built-skill identity helper, plus the exact instrument, immutable prepared inputs and
+predecessor seals. Recording retains original output, complete host tool-event order, actual
+receipt, before/after source, source diff, project/Git state, and exact issue payload/readback log.
+`verify` is read-only and may also inspect a complete preserved copy of the exercise directory;
+receipts continue to identify the original prepared execution roots. No publication/runtime lock
+or new suite lifecycle is introduced. Preserve that evidence with the implementation's acceptance
+record; a temporary directory without retained evidence is not a completed acceptance record.
+
+The offline transport calls production `executeOperation` with an injected process transport.
+Production expected-body hashing, stale-update rejection, idempotency, command building and
+envelopes remain in control. The only writes are to the one existing fixture comment. For a
+PATCH, the transport checks that the production command's body equals the submitted `payload.body`,
+persists precisely that string, and serves it on the next actual comment read. An incorrect
+checkpoint therefore stays incorrect. Unsupported operations fail; no provider process or network
+request is executed. The focused test `test/outcome-continuation-exercise.test.mjs` must prove
+this discrimination and stale-update rejection.
+
+Verification checks retained byte fidelity, source continuity, fixture counts/allowance tokens,
+read-only/duplicate state, unchanged Git/project scope, captured payload equality and subsequent
+readback. It always reports that semantic truth needs independent qualitative reading. An
+independent reviewer must read every full original output, source diff and actual ordered host
+transcript: locate the real reassessment at the second return before any optional work, judge the
+original proof and necessary negative result, check no repeated/erased decision or double count,
+confirm allowance exhaustion/invalidation and safety/authority preservation, and ensure no
+substitute plan/issue was created. A correct final sentence alone proves none of that ordering.
+Hashes and host attestations cannot establish hidden transient actions, an honest launch, general
+distributed continuity or production-environment behavior. Recommendation evidence still proves
+choice only; this bounded exercise proves only the actual captured source-update/re-entry paths.

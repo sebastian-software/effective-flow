@@ -22950,3 +22950,218 @@ test('the caller deletes its wisdom file after every ABORT but an invalid wisdom
     /Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file\./,
   );
 });
+
+// Outcome continuation is an instruction contract. These guards prove wiring and retained rules;
+// actual judgment and persistence behavior require the separately recorded host exercises.
+test('outcome continuation has one source owner and accounts a retained parent attempt once after returning children', () => {
+  const contract = prose(source('src/shared/outcome-continuation.md'));
+  assert.match(
+    contract,
+    /Only the active source-owning orchestrator persists state through its existing authority/,
+  );
+  assert.match(
+    contract,
+    /workers and returning subworkflows return evidence, never competing counters/,
+  );
+  assert.match(contract, /Parallel children share one parent attempt/);
+  assert.match(contract, /Transfer source ownership only on a non-returning handoff/);
+  assert.match(
+    contract,
+    /outer source owner assigns one retained attempt reference before work and evaluates it once after all returning children/,
+  );
+  assert.match(
+    contract,
+    /resumed\/duplicate returns retain the reference and consume nothing twice/,
+  );
+  // Invariant (F2): historical counter reconciliation needs verified attempt deltas; aggregate summaries cannot invent a replacement count.
+  assert.match(
+    contract,
+    /Reconstruct or correct a historical no-progress count only from verified per-attempt evidence deltas; cumulative work summaries or still-open acceptance alone do not justify a replacement numeric count, so return an unresolved discrepancy to the source owner/,
+  );
+  // Invariant (F1): a reconciled replay preserves the entire source checkpoint, not only its count and allowance.
+  assert.match(
+    contract,
+    /A reconciled duplicate\/resumed return with no new completed attempt or evidence leaves the entire checkpoint byte-for-byte unchanged, including last attempt, evidence and decision/,
+  );
+  assert.match(
+    contract,
+    /report the replay only in the return\/handoff, with no narrative or cosmetic source rewrite/,
+  );
+  assert.match(
+    contract,
+    /Initial implementation establishes the first return checkpoint; its internal retries are not continuations/,
+  );
+  const goal = prose(source('src/shared/goal-completion.md'));
+  assert.match(
+    goal,
+    /Retain one original outcome and verified primary-source association at entry/,
+  );
+  assert.match(goal, /source owner reconciles once after returning children/);
+  const router = prose(source('src/tools/apply-plan.md'));
+  assert.match(
+    router,
+    /transfer source ownership to the receiving workflow along with progress ownership/i,
+  );
+  assert.match(router, /router neither counts an attempt nor writes the checkpoint/);
+  for (const [file, ownership, accounting] of [
+    [
+      'apply-issues',
+      /retains source ownership across returning delegates/,
+      /account once after all its children return/,
+    ],
+    [
+      'apply-review',
+      /source-owning orchestrator assigns attempts before delegation/,
+      /accounts once per primary outcome after all returning components/,
+    ],
+  ]) {
+    const text = prose(source(`src/tools/${file}.md`));
+    assert.match(text, ownership, file);
+    assert.match(text, accounting, file);
+    assert.match(text, /evidence-only return authority/, file);
+  }
+});
+
+test('the second no-progress return and material expansion invoke reassessment before optional work without resetting history', () => {
+  const contract = prose(source('src/shared/outcome-continuation.md'));
+  assert.match(contract, /next two no-progress continuations record `1`, then `2` \(saturated\)/);
+  assert.match(
+    contract,
+    /at the second consecutive no-progress return itself, before further optional work/,
+  );
+  assert.match(
+    contract,
+    /Reassess immediately before introducing an unaccepted maintained component\/service, custom platform\/library build, trust boundary, deployment target or substantial operating duty, even when tests pass or the work is primary/,
+  );
+  assert.match(
+    contract,
+    /Reassessment alone preserves `0`, `1`, `2` or `unknown`; it never resets history or manufactures failures/,
+  );
+  assert.match(contract, /remaining `2 → 1 → 0`/);
+  assert.match(
+    contract,
+    /With `remaining: 1` and unchanged assumptions\/authority, proceed within that decision without another review/,
+  );
+  assert.match(contract, /at `remaining: 0`, restore review-required before more optional work/);
+  assert.match(
+    contract,
+    /Material expansion or evidence invalidating the rationale terminates the decision earlier/,
+  );
+  assert.match(
+    contract,
+    /Qualifying evidence resets the count to `0` and invalidates the old special allowance/,
+  );
+  assert.match(
+    contract,
+    /Never renew an identical failed experiment\/exhausted decision without changed evidence or a specific consequential owner decision/,
+  );
+  assert.match(
+    prose(source('src/shared/durable-follow-up-gate.md')),
+    /Primary\/current-scope status does not exempt the approach from outcome-continuation reassessment/,
+  );
+});
+
+test('continuation judgment retains original proof, proportionality owners and required quality and safety gates', () => {
+  const contract = prose(source('src/shared/outcome-continuation.md'));
+  assert.match(
+    contract,
+    /Green model\/local tests, merged child PRs, fixtures, rewritten plans, approach-created prerequisites, renamed blockers and newly invented subgoals do not qualify by themselves/,
+  );
+  assert.match(
+    contract,
+    /necessary negative result qualifies only when it decisively answers a bounded evidence question specified beforehand and closes uncertainty on that proof/,
+  );
+  assert.match(
+    contract,
+    /`effective-product` owns proportionality and the smallest coherent outcome/,
+  );
+  assert.match(contract, /`effective-delivery` owns delivery evidence\/complexity judgment/);
+  assert.match(
+    contract,
+    /failed required check blocks immediately, regardless of count or remaining allowance/,
+  );
+  assert.match(
+    contract,
+    /Existing authorized corrective work and safe containment\/restoration remain eligible; neither grants resumption of the blocked broader approach/,
+  );
+  assert.match(contract, /checks for the retained scope are never waived to meet an effort bound/);
+  const judgment = prose(source('src/shared/central-reasoning-delegation.md'));
+  assert.match(
+    judgment,
+    /original outcome and boundaries, cumulative approach\/ownership, evaluated attempt\/evidence delta, remaining proof, current trigger, finite decision and authority/,
+  );
+  assert.match(
+    judgment,
+    /source updates and the consequential decision stay with the orchestrator/,
+  );
+});
+
+test('continuation source carriers preserve legacy uncertainty and never create a planning artifact for bookkeeping', () => {
+  const contract = prose(source('src/shared/outcome-continuation.md'));
+  for (const invariant of [
+    /already required PR-link\/failure lifecycle comment/,
+    /Reuse the implementation note already authorized on that finding/,
+    /do not rewrite the diagnosis or create a report for bookkeeping/,
+    /Competing checkpoints mean `unknown`, never a newest-source guess/,
+    /Legacy metadata alone is no blocker and requires no bulk migration or corpus scan/,
+    /Known outcome with unreconstructable prior continuation history retains `unknown` and receives one compact reassessment before dependent continuation/,
+    /Lost handoff-only context likewise becomes `unknown`/,
+    /fresh source read invalidates a stale proposal/,
+    /existing expected-body\/hash protections, never overwrite another owner's evidence/,
+  ])
+    assert.match(contract, invariant);
+  assert.match(
+    prose(source('src/tools/fix.md')),
+    /without another writable primary source, return the verified association and checkpoint in the existing completion\/handoff/,
+  );
+  const plan = prose(source('src/shared/plan-contract.md'));
+  assert.match(plan, /legacy sources remain valid without it/);
+  assert.match(plan, /missing new fields alone never forces a new planning artifact/);
+  assert.match(source('src/tools/plan.md'), /## Outcome checkpoint/);
+  assert.match(source('src/tools/plan-issue.md'), /### Outcome checkpoint/);
+});
+
+test('all continuation entry and recommendation consumers defer one protocol and retain the read-only recommendation boundary', () => {
+  const consumers = [
+    'shared/goal-completion',
+    'shared/durable-follow-up-gate',
+    'shared/next-steps',
+    'tools/plan',
+    'tools/plan-issue',
+    'tools/investigate',
+    'tools/review',
+  ];
+  for (const consumer of consumers) {
+    const text = source(`src/${consumer}.md`);
+    const pointers = [...text.matchAll(LAZY_INCLUDE_RE)].filter(
+      (match) => match[1].trim() === 'outcome-continuation',
+    );
+    assert.equal(pointers.length, 1, `${consumer} must reach the single conditional protocol`);
+    assert.match(pointers[0][0], /when:.*(?:continua|history|expands)/, consumer);
+    assert.doesNotMatch(
+      text,
+      /```include\noutcome-continuation\n/,
+      `${consumer} must not load the rare protocol eagerly`,
+    );
+  }
+  const next = prose(source('src/shared/next-steps.md'));
+  assert.match(
+    next,
+    /Before selecting any outward invocation for an existing outcome chain, apply its retained continuation decision to both plan-aware selection and fallback/,
+  );
+  assert.match(next, /neither persists state nor guesses missing history as zero/);
+  assert.match(
+    next,
+    /blocked endpoint emits no substitute planning, review or issue-creation option/,
+  );
+  assert.match(next, /At most two options/);
+  for (const tool of ['investigate', 'review']) {
+    const text = prose(source(`src/tools/${tool}.md`));
+    assert.match(text, /Analysis\/report authority grants no primary-state mutation/, tool);
+    assert.match(
+      text,
+      /proposed checkpoint delta to its source owner, preserving unknown history/,
+      tool,
+    );
+  }
+});

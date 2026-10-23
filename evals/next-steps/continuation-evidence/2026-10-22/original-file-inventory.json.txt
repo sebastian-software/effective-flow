@@ -1,0 +1,1661 @@
+{
+  "scope": "logical origins only; original recording roots are intentionally omitted",
+  "files": [
+    {
+      "archive_file": "current-source/local-child/prompt.txt",
+      "original": "current-v4/local-child/prompt.txt",
+      "sha256": "sha256:3fe4d1689869afbbbe414e567cda07596cc9db01347a2c8dc8504e5fd786f745",
+      "bytes": 1494,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/source-before.md.txt",
+      "original": "current-v4/local-child/source-before.md",
+      "sha256": "sha256:37e4e26fb04c40e79b6879d30b91536d8cd355c652ff6f91c1410b66e4053d12",
+      "bytes": 1541,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/source-after.md.txt",
+      "original": "current-v4/local-child/source-after.md",
+      "sha256": "sha256:37e4e26fb04c40e79b6879d30b91536d8cd355c652ff6f91c1410b66e4053d12",
+      "bytes": 1541,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/source.diff",
+      "original": "current-v4/local-child/source.diff",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/output.txt",
+      "original": "current-v4/local-child/output.txt",
+      "sha256": "sha256:71bb11469eb7171ad9b4c3605c15b6d0926bc41a2baf75ae72581f3f4a42a57d",
+      "bytes": 1114,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-child/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/original-seal.json.txt",
+      "original": "current-v4/local-child/seal.json",
+      "sha256": "sha256:722985ccdc2a33e26dd197de4ce0dbb65cf4e019774dc65a1158e5481d78a89d",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/host-receipt.json.txt",
+      "original": "current-v4/local-child/host-receipt.json",
+      "sha256": "sha256:c1afc3e3ca27cd73bbdda2cfd8b4d2371e15e65a97724192e606ff2c07e75747",
+      "bytes": 487,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-child/tool-order.jsonl.txt",
+      "original": "current-v4/local-child/host-transcript.jsonl",
+      "original_sha256": "sha256:bf8b02ff4f68ed798b5ac0762d1495ab666ba20aa85f8f0cdf7f56d7bdfcfe44",
+      "original_bytes": 58197,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 15
+    },
+    {
+      "archive_file": "current-source/local-first/prompt.txt",
+      "original": "current-v4/local-first/prompt.txt",
+      "sha256": "sha256:070f3db06a3ce1add32e45e9aba92f62b9124a0d290b752bd08e633039551332",
+      "bytes": 2856,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/source-before.md.txt",
+      "original": "current-v4/local-first/source-before.md",
+      "sha256": "sha256:37e4e26fb04c40e79b6879d30b91536d8cd355c652ff6f91c1410b66e4053d12",
+      "bytes": 1541,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/source-after.md.txt",
+      "original": "current-v4/local-first/source-after.md",
+      "sha256": "sha256:f37b9f31dd6cc3f01759dc78a4836e14f5ad2e4f8ae3f5e877dd21c547a63271",
+      "bytes": 1611,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/source.diff",
+      "original": "current-v4/local-first/source.diff",
+      "sha256": "sha256:4cfe53a8222487f56f09fe46cb35ed8ace692c64d88c7cdfab781eeea37c1b00",
+      "bytes": 1619,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/output.txt",
+      "original": "current-v4/local-first/output.txt",
+      "sha256": "sha256:fc188f16cb68ee7264250ff6ab41f5a6a5afadf9b78f8062ed9e722602613f46",
+      "bytes": 575,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-first/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/original-seal.json.txt",
+      "original": "current-v4/local-first/seal.json",
+      "sha256": "sha256:a27465fcd42fb80d1da14bc910e45bdafe45a5311c0fa7296accb02a65ff2d24",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/host-receipt.json.txt",
+      "original": "current-v4/local-first/host-receipt.json",
+      "sha256": "sha256:4e8a177613b5f56a77ecc6995b3a2dd70b9102f5a3f86172a67008c0b84d767a",
+      "bytes": 487,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-first/tool-order.jsonl.txt",
+      "original": "current-v4/local-first/host-transcript.jsonl",
+      "original_sha256": "sha256:878c00aac7928fb552ec9ee1e331af3c2c9a75b583451e68f986774b7e16d5ab",
+      "original_bytes": 58987,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 17
+    },
+    {
+      "archive_file": "current-source/local-second/prompt.txt",
+      "original": "current-v4/local-second/prompt.txt",
+      "sha256": "sha256:abf70251bcb4a22c0dd6e6f452b01e4fb37c4a647cffccff4b533039dc3a9d7f",
+      "bytes": 2002,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/source-before.md.txt",
+      "original": "current-v4/local-second/source-before.md",
+      "sha256": "sha256:f37b9f31dd6cc3f01759dc78a4836e14f5ad2e4f8ae3f5e877dd21c547a63271",
+      "bytes": 1611,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/source-after.md.txt",
+      "original": "current-v4/local-second/source-after.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/source.diff",
+      "original": "current-v4/local-second/source.diff",
+      "sha256": "sha256:4659d9adabedba1d7abb1cba96bbee939d7e25c8dfa3212fa79973e2f8f698f8",
+      "bytes": 4292,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/output.txt",
+      "original": "current-v4/local-second/output.txt",
+      "sha256": "sha256:46eb0dcbada8579f001f0d8422bb671c3c8d139da6511b571e1343f928f000b3",
+      "bytes": 784,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-second/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/original-seal.json.txt",
+      "original": "current-v4/local-second/seal.json",
+      "sha256": "sha256:cebc6667b38a8ef764f939aecf1dd262010bd0ca4152ccd5c2eefd81753f3d98",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/host-receipt.json.txt",
+      "original": "current-v4/local-second/host-receipt.json",
+      "sha256": "sha256:43d67c77ff1559f947dd4ce6eabefa2683422a00d0516c6250c573f976a04898",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-second/tool-order.jsonl.txt",
+      "original": "current-v4/local-second/host-transcript.jsonl",
+      "original_sha256": "sha256:2ff00ece07680de1361a132d1627bf11a0a85d6e54effda27a936063497ab464",
+      "original_bytes": 81123,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 23
+    },
+    {
+      "archive_file": "current-source/local-reentry/prompt.txt",
+      "original": "current-v4/local-reentry/prompt.txt",
+      "sha256": "sha256:27152e6e202205097092525054c530bbfbad68258e5eec6255336b2ed6c23949",
+      "bytes": 1505,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/source-before.md.txt",
+      "original": "current-v4/local-reentry/source-before.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/source-after.md.txt",
+      "original": "current-v4/local-reentry/source-after.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/source.diff",
+      "original": "current-v4/local-reentry/source.diff",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/output.txt",
+      "original": "current-v4/local-reentry/output.txt",
+      "sha256": "sha256:a6e36b5f5f90c5581e05f72aa30b81669ff3074cb1ba54427b1ab708fa64a707",
+      "bytes": 1063,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-reentry/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/original-seal.json.txt",
+      "original": "current-v4/local-reentry/seal.json",
+      "sha256": "sha256:aa8b028dbc212159d7c23d7cc3a98806fe9ce8b7566b3a4f903ac43c21454eca",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/host-receipt.json.txt",
+      "original": "current-v4/local-reentry/host-receipt.json",
+      "sha256": "sha256:f4bbeeb690a6d563884d0466cb7c86bffc455eac01100030f4c78b653091ec00",
+      "bytes": 489,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-reentry/tool-order.jsonl.txt",
+      "original": "current-v4/local-reentry/host-transcript.jsonl",
+      "original_sha256": "sha256:e737cf18e5daa3873e59f7fd86a21c7418817117ba89b19e8f4ffe17177976c5",
+      "original_bytes": 26425,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 14
+    },
+    {
+      "archive_file": "current-source/local-duplicate/prompt.txt",
+      "original": "current-v4/local-duplicate/prompt.txt",
+      "sha256": "sha256:6df818d4e5a752828b99b5f3e07d0fbd0c92243028917b526e6276629b83c337",
+      "bytes": 1514,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/source-before.md.txt",
+      "original": "current-v4/local-duplicate/source-before.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/source-after.md.txt",
+      "original": "current-v4/local-duplicate/source-after.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/source.diff",
+      "original": "current-v4/local-duplicate/source.diff",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/output.txt",
+      "original": "current-v4/local-duplicate/output.txt",
+      "sha256": "sha256:4cbaa3d504ac18609632ba339e2802a6c5bd037355156c956c7e4e9e260bccd4",
+      "bytes": 1069,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-duplicate/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/original-seal.json.txt",
+      "original": "current-v4/local-duplicate/seal.json",
+      "sha256": "sha256:448e45b5057c14d5231f99cacda033cbafe7ce1511c60625d90c6dd6776b1dd8",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/host-receipt.json.txt",
+      "original": "current-v4/local-duplicate/host-receipt.json",
+      "sha256": "sha256:9e7844eaff44e1d616ec8a9632ea798e1ca012c8e2da4f968cef37626a5cd9ca",
+      "bytes": 491,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-duplicate/tool-order.jsonl.txt",
+      "original": "current-v4/local-duplicate/host-transcript.jsonl",
+      "original_sha256": "sha256:9940b3a15211da79110c28835d26281ab6e33268c71a98541aea975c032cf3a8",
+      "original_bytes": 56517,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 12
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/prompt.txt",
+      "original": "current-v4/local-allowance-one/prompt.txt",
+      "sha256": "sha256:aab1e4da3e1a8b7f217c564c72ae4457b0c34f8f1b77c7b75f2ae93d03a6548c",
+      "bytes": 1779,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/source-before.md.txt",
+      "original": "current-v4/local-allowance-one/source-before.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/source-after.md.txt",
+      "original": "current-v4/local-allowance-one/source-after.md",
+      "sha256": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+      "bytes": 4414,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/source.diff",
+      "original": "current-v4/local-allowance-one/source.diff",
+      "sha256": "sha256:7fa937ae5ff4a0899042d0f907e600405addceb9001e22c9d1564194095ae5e2",
+      "bytes": 6632,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/output.txt",
+      "original": "current-v4/local-allowance-one/output.txt",
+      "sha256": "sha256:c0c1950ea07e7decb48d0e05198ddfd5a93707364ff2ee77344b1ddddfff7ff9",
+      "bytes": 756,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-allowance-one/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/original-seal.json.txt",
+      "original": "current-v4/local-allowance-one/seal.json",
+      "sha256": "sha256:2eaf427704a0fffd7c5848fa40a14c3f6200b7bad8226a302e06b5156425c87e",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/host-receipt.json.txt",
+      "original": "current-v4/local-allowance-one/host-receipt.json",
+      "sha256": "sha256:b4886be1ad26c4fab5ccbe6ddb9ba9aae9cd46c7ec0d7098e8874cdb674e9e5e",
+      "bytes": 495,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-one/tool-order.jsonl.txt",
+      "original": "current-v4/local-allowance-one/host-transcript.jsonl",
+      "original_sha256": "sha256:4799c3f15d8af48e7e00cebd3111c9af3334d5e95286d53eae64f318e056588c",
+      "original_bytes": 42526,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 21
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/prompt.txt",
+      "original": "current-v4/local-allowance-duplicate/prompt.txt",
+      "sha256": "sha256:9cbb9c78624b39a498e46a71ddd4da5a9a74c5c4f85141e793071a7a3069d865",
+      "bytes": 1495,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/source-before.md.txt",
+      "original": "current-v4/local-allowance-duplicate/source-before.md",
+      "sha256": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+      "bytes": 4414,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/source-after.md.txt",
+      "original": "current-v4/local-allowance-duplicate/source-after.md",
+      "sha256": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+      "bytes": 4414,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/source.diff",
+      "original": "current-v4/local-allowance-duplicate/source.diff",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/output.txt",
+      "original": "current-v4/local-allowance-duplicate/output.txt",
+      "sha256": "sha256:7385e7542811cdf849ccb6c64ff1111d82244eb5c9ff41d6aeb4057d1cf7549a",
+      "bytes": 1048,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-allowance-duplicate/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/original-seal.json.txt",
+      "original": "current-v4/local-allowance-duplicate/seal.json",
+      "sha256": "sha256:2c32bf1a562875a39c1183916c587a66e6ca4d9e65764c49eaf2d293818af63e",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/host-receipt.json.txt",
+      "original": "current-v4/local-allowance-duplicate/host-receipt.json",
+      "sha256": "sha256:b334e9bb81b92239871f0979b35c251a2b94e334a118d12db0313489141b2df8",
+      "bytes": 501,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-duplicate/tool-order.jsonl.txt",
+      "original": "current-v4/local-allowance-duplicate/host-transcript.jsonl",
+      "original_sha256": "sha256:6a757e57045d0652af80e5321b7d2898d219fff3476865f7272cbf5e6fcc3b0e",
+      "original_bytes": 43524,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 14
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/prompt.txt",
+      "original": "current-v4/local-allowance-two/prompt.txt",
+      "sha256": "sha256:789357186142526ae34aa132cffe2f00def6ae52dc3710286dc2fc8148ff3538",
+      "bytes": 1802,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/source-before.md.txt",
+      "original": "current-v4/local-allowance-two/source-before.md",
+      "sha256": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+      "bytes": 4414,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/source-after.md.txt",
+      "original": "current-v4/local-allowance-two/source-after.md",
+      "sha256": "sha256:932dc6c0ee4d7fd87060f083e26f6d62e3f7ea7bbe4ebdb134658e3b56aef736",
+      "bytes": 4486,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/source.diff",
+      "original": "current-v4/local-allowance-two/source.diff",
+      "sha256": "sha256:3a1f020efb70a0c8cb6cb1265f6abded24ea81796477a4c6e8af6cff85910747",
+      "bytes": 7488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/output.txt",
+      "original": "current-v4/local-allowance-two/output.txt",
+      "sha256": "sha256:8512927f275ec5c4b6ada1b049e2fa8d68e43fd6fe837fdc83d72caab8e09244",
+      "bytes": 730,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-allowance-two/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/original-seal.json.txt",
+      "original": "current-v4/local-allowance-two/seal.json",
+      "sha256": "sha256:bc5da093cb737c03e3dacfcbddffc9194b42b375bd2796e92de6eb46e62d0599",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/host-receipt.json.txt",
+      "original": "current-v4/local-allowance-two/host-receipt.json",
+      "sha256": "sha256:acae35938d74496aa416603d0bb730ee1eff6cb2dea34e718ffed99c365da386",
+      "bytes": 495,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-allowance-two/tool-order.jsonl.txt",
+      "original": "current-v4/local-allowance-two/host-transcript.jsonl",
+      "original_sha256": "sha256:8b2465853211fc665525714fed86c080c6d12b6639ab9fdf167cdcba643b5d59",
+      "original_bytes": 44500,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 19
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/prompt.txt",
+      "original": "current-v4/local-exhaustion/prompt.txt",
+      "sha256": "sha256:8fac60d5df50d4656f86ae68e276a676d5a74f2e396288be74c869d1749fdc1f",
+      "bytes": 1589,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/source-before.md.txt",
+      "original": "current-v4/local-exhaustion/source-before.md",
+      "sha256": "sha256:932dc6c0ee4d7fd87060f083e26f6d62e3f7ea7bbe4ebdb134658e3b56aef736",
+      "bytes": 4486,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/source-after.md.txt",
+      "original": "current-v4/local-exhaustion/source-after.md",
+      "sha256": "sha256:932dc6c0ee4d7fd87060f083e26f6d62e3f7ea7bbe4ebdb134658e3b56aef736",
+      "bytes": 4486,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/source.diff",
+      "original": "current-v4/local-exhaustion/source.diff",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/output.txt",
+      "original": "current-v4/local-exhaustion/output.txt",
+      "sha256": "sha256:a7019ae1673d50a5101bb1d50fe40aec9203b7255a32ac3bf5e78a74b3da9ff0",
+      "bytes": 994,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-exhaustion/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/original-seal.json.txt",
+      "original": "current-v4/local-exhaustion/seal.json",
+      "sha256": "sha256:7b2036904e90a96a833d53b3280f82b43ec0d91f2fc5bea91ac0157ee396d9e2",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/host-receipt.json.txt",
+      "original": "current-v4/local-exhaustion/host-receipt.json",
+      "sha256": "sha256:1f5e894d5e86023d1435d081b6bbdcdf5587a32f5ca41e99e660ec0dff2f6434",
+      "bytes": 492,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-exhaustion/tool-order.jsonl.txt",
+      "original": "current-v4/local-exhaustion/host-transcript.jsonl",
+      "original_sha256": "sha256:853f6f02a4164b12abf0e3d0ec363d9492c91e34c1428cd48a1cc28742637123",
+      "original_bytes": 60446,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 14
+    },
+    {
+      "archive_file": "current-source/local-expansion/prompt.txt",
+      "original": "current-v4/local-expansion/prompt.txt",
+      "sha256": "sha256:3f72db8d8048359b5e959405975b7cebcac3d91274fe6fbaee180be320187c38",
+      "bytes": 1668,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/source-before.md.txt",
+      "original": "current-v4/local-expansion/source-before.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/source-after.md.txt",
+      "original": "current-v4/local-expansion/source-after.md",
+      "sha256": "sha256:58e28a7b545f6d323a456db4082db678f8df0ebd4e17dec3696b0628e1d63106",
+      "bytes": 5058,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/source.diff",
+      "original": "current-v4/local-expansion/source.diff",
+      "sha256": "sha256:a85f11196e6feb9ccd40f6fff4a5a571c7854cbd4ff1f94035afdc59f380765d",
+      "bytes": 7298,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/output.txt",
+      "original": "current-v4/local-expansion/output.txt",
+      "sha256": "sha256:29e16e925ce7356e0c00ef979b238e75f69fa22b94b0f478bb35547cafc40e45",
+      "bytes": 664,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-expansion/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/original-seal.json.txt",
+      "original": "current-v4/local-expansion/seal.json",
+      "sha256": "sha256:c6f98a66053f6bc5601298c46ca1bce2ab90314d8a4b02734751b75213e2cce6",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/host-receipt.json.txt",
+      "original": "current-v4/local-expansion/host-receipt.json",
+      "sha256": "sha256:59345b2079f5ec5c637ae9445c73ae1a3279103118cd7f808219afd4b82a35f8",
+      "bytes": 491,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-expansion/tool-order.jsonl.txt",
+      "original": "current-v4/local-expansion/host-transcript.jsonl",
+      "original_sha256": "sha256:cb769b3995d116d5bd0ad4a658dadf1a0ab8c5ec398c61bffb8dd6332103dd48",
+      "original_bytes": 80960,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 23
+    },
+    {
+      "archive_file": "current-source/local-safety/prompt.txt",
+      "original": "current-v4/local-safety/prompt.txt",
+      "sha256": "sha256:729be895bbdcb212fa87d0f77f4cf7d42c556b92c67da2275a30356ff4af9eee",
+      "bytes": 1627,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/source-before.md.txt",
+      "original": "current-v4/local-safety/source-before.md",
+      "sha256": "sha256:084eadc88622ff2e33ec8491c72a06aa02983cbe94610327b418ff80681fd786",
+      "bytes": 4121,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/source-after.md.txt",
+      "original": "current-v4/local-safety/source-after.md",
+      "sha256": "sha256:5b0019e53da001793d5a45ffbcc3071786a143273cdd6ce116ea6e1b120508cc",
+      "bytes": 5260,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/source.diff",
+      "original": "current-v4/local-safety/source.diff",
+      "sha256": "sha256:85be57a82a8cf495f983911fb85285c866bd6bef9c98034678340d0efc24c748",
+      "bytes": 7942,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/output.txt",
+      "original": "current-v4/local-safety/output.txt",
+      "sha256": "sha256:9fc1166fd174b744cfba920a23b5f6c08c4253ca5e6e3cc7b7a353a8e6753db3",
+      "bytes": 696,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-safety/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/original-seal.json.txt",
+      "original": "current-v4/local-safety/seal.json",
+      "sha256": "sha256:d20143dd338da37fb6fed6492bb3593aad0e7a0dc1597a4113ae829de2943093",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/host-receipt.json.txt",
+      "original": "current-v4/local-safety/host-receipt.json",
+      "sha256": "sha256:0e20f6f737bee801691f54188a33b95438466e7dc134d89553c9827d8499583a",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-safety/tool-order.jsonl.txt",
+      "original": "current-v4/local-safety/host-transcript.jsonl",
+      "original_sha256": "sha256:07a33f3c20b1e4e3e5de264af25dd8b7628e416df4de09debf965d4316a182dd",
+      "original_bytes": 48906,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 19
+    },
+    {
+      "archive_file": "current-source/local-advance/prompt.txt",
+      "original": "current-v4/local-advance/prompt.txt",
+      "sha256": "sha256:86b46ca731252446bf2422ac4307d223faa2398b55feaffbd54b1bd037460537",
+      "bytes": 1670,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/source-before.md.txt",
+      "original": "current-v4/local-advance/source-before.md",
+      "sha256": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+      "bytes": 4414,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/source-after.md.txt",
+      "original": "current-v4/local-advance/source-after.md",
+      "sha256": "sha256:7f7f9b08ccfa038e8527ccda489569854794631cfcf4f6d26e4f73840b93bf85",
+      "bytes": 4032,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/source.diff",
+      "original": "current-v4/local-advance/source.diff",
+      "sha256": "sha256:891f209e71b6e94625d42947f1523affa8b2d17e8e54daabb816eaac338c2eec",
+      "bytes": 7012,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/output.txt",
+      "original": "current-v4/local-advance/output.txt",
+      "sha256": "sha256:e22988c57977019ca96f988ae25659fc703abf90946df2d6b85b5c6be3e26e7d",
+      "bytes": 598,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-advance/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/original-seal.json.txt",
+      "original": "current-v4/local-advance/seal.json",
+      "sha256": "sha256:27acf2fd042152f7641b938d8210c8c1098d4c04828cd6e5c355228b193233fc",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/host-receipt.json.txt",
+      "original": "current-v4/local-advance/host-receipt.json",
+      "sha256": "sha256:0b0bf60f811a3bd1661067f47688c515d42025e5940e9819b77cc4acb6e516af",
+      "bytes": 489,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-advance/tool-order.jsonl.txt",
+      "original": "current-v4/local-advance/host-transcript.jsonl",
+      "original_sha256": "sha256:04cfac1b40430ecbae4486c4c8225f8ececaec74cc9efa3c25124988f91c090f",
+      "original_bytes": 54890,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 25
+    },
+    {
+      "archive_file": "current-source/local-negative/prompt.txt",
+      "original": "current-v4/local-negative/prompt.txt",
+      "sha256": "sha256:cf50f6bf527390f4699ba7033cbf0844fbccf7c2aa8aac0eb536888d80a4150f",
+      "bytes": 1795,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/source-before.md.txt",
+      "original": "current-v4/local-negative/source-before.md",
+      "sha256": "sha256:7a7fde28183cc904fdec6223862f51cf659e11dc528a40d8cc76fee24d0949fc",
+      "bytes": 4414,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/source-after.md.txt",
+      "original": "current-v4/local-negative/source-after.md",
+      "sha256": "sha256:284b186fe9e94768bed3ee25ac7e284900e32006b0905ae724e621c1fb636953",
+      "bytes": 4399,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/source.diff",
+      "original": "current-v4/local-negative/source.diff",
+      "sha256": "sha256:b0e3d834b4e23d56b50344ef2aec1aedb0dee1d67fe26cb335c2d33a981dff9a",
+      "bytes": 7381,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/output.txt",
+      "original": "current-v4/local-negative/output.txt",
+      "sha256": "sha256:91eeb850f2a9016df9a1cfe3b76d8a1ddc35c31a67d3c5d42e224f8d2e5935bc",
+      "bytes": 668,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-negative/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/original-seal.json.txt",
+      "original": "current-v4/local-negative/seal.json",
+      "sha256": "sha256:f4fe99288c256f92c1c1e191a28ef14a9a7705de1d74ee8cfe755c7e94db04f6",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/host-receipt.json.txt",
+      "original": "current-v4/local-negative/host-receipt.json",
+      "sha256": "sha256:8849c4f0b768f997e2face0e367e5bcea7d4018635ef701e96f9f492540d2219",
+      "bytes": 490,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-negative/tool-order.jsonl.txt",
+      "original": "current-v4/local-negative/host-transcript.jsonl",
+      "original_sha256": "sha256:3049944d2975409eabaa657902cfba9922a8658988dbf37a2738c7c4652ee6c8",
+      "original_bytes": 80884,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 23
+    },
+    {
+      "archive_file": "current-source/local-legacy/prompt.txt",
+      "original": "current-v4/local-legacy/prompt.txt",
+      "sha256": "sha256:d2e4228f491487e437bb35ca1ee7349c63cc587109565ab6bbe11d100d5f43a1",
+      "bytes": 1728,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/source-before.md.txt",
+      "original": "current-v4/local-legacy/source-before.md",
+      "sha256": "sha256:89843012ca8d51da7d3f05bcebd13b681a44ec23e924722d01045c8ccdf65be3",
+      "bytes": 700,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/source-after.md.txt",
+      "original": "current-v4/local-legacy/source-after.md",
+      "sha256": "sha256:2e6e28af67c653f810cf9b74afa44f9de01052d7a3d631ed37085430027a27f0",
+      "bytes": 3721,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/source.diff",
+      "original": "current-v4/local-legacy/source.diff",
+      "sha256": "sha256:eef2e12eb203873d82bb2be60e799366f77f363252b554717505b6294454b940",
+      "bytes": 3890,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/output.txt",
+      "original": "current-v4/local-legacy/output.txt",
+      "sha256": "sha256:c677280149708ba95944b183bab12edfcc4938613b6608a3e2b51e7f972681fd",
+      "bytes": 753,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/tracker-calls.jsonl.txt",
+      "original": "current-v4/local-legacy/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/original-seal.json.txt",
+      "original": "current-v4/local-legacy/seal.json",
+      "sha256": "sha256:03d5db7cb91ef2ab024407d11ec98e1b3bcbd9b439c4d6b0977f67987b7d6b2b",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/host-receipt.json.txt",
+      "original": "current-v4/local-legacy/host-receipt.json",
+      "sha256": "sha256:0e9b376d8c9502d27956bff0aa66ca45bde8744ca18afe44f8f01abbc50c5b2a",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/local-legacy/tool-order.jsonl.txt",
+      "original": "current-v4/local-legacy/host-transcript.jsonl",
+      "original_sha256": "sha256:f725e49aa1959e220278a93fae201c39bb15b3b708c47d52150617f40c3add73",
+      "original_bytes": 87555,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 15
+    },
+    {
+      "archive_file": "current-source/canonical-first/prompt.txt",
+      "original": "current-v4/canonical-first/prompt.txt",
+      "sha256": "sha256:6a2cb155bd1aba21ce70debaabb28e828a219285983ce91bd6667baa7d553ec4",
+      "bytes": 2318,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/source-before.md.txt",
+      "original": "current-v4/canonical-first/source-before.md",
+      "sha256": "sha256:66fc1b40d60d1f96f1f5ce9650a9f96a690b90be635127079f98a4a058baacde",
+      "bytes": 1325,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/source-after.md.txt",
+      "original": "current-v4/canonical-first/source-after.md",
+      "sha256": "sha256:0bec016ac80ad9c88726ef347785b11d5faeb106125f110effa880d7a5f9ee85",
+      "bytes": 1897,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/source.diff",
+      "original": "current-v4/canonical-first/source.diff",
+      "sha256": "sha256:90af7ae1f7db7a2d0fd7aa7a0cf524d87fe2c9f2e5614e181a6a1daf6a7ebcce",
+      "bytes": 2137,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/output.txt",
+      "original": "current-v4/canonical-first/output.txt",
+      "sha256": "sha256:bbc455d20f0a2d601bdfee4de594a89916b33b7d6950777a749e393d8b05282f",
+      "bytes": 604,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/tracker-calls.jsonl.txt",
+      "original": "current-v4/canonical-first/tracker-calls.jsonl",
+      "sha256": "sha256:66e2e5a57ce906221ffc35fc0727eab9c1fdee675b7a930bde997c55748c575a",
+      "bytes": 19112,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/original-seal.json.txt",
+      "original": "current-v4/canonical-first/seal.json",
+      "sha256": "sha256:c595338f587ec17fce55d8c006c70ad18a405cc387b4c5f8f69e02368d28fdf4",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/host-receipt.json.txt",
+      "original": "current-v4/canonical-first/host-receipt.json",
+      "sha256": "sha256:3ec9dbeaa0fb0e17e66d1c893a03ff97c2d1d8c4c5ab25846fecfabf510ce2ed",
+      "bytes": 491,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-first/tool-order.jsonl.txt",
+      "original": "current-v4/canonical-first/host-transcript.jsonl",
+      "original_sha256": "sha256:12603f7d5c282cf0e190131e16a8e804652a2352329ab11c190a56bc809ef302",
+      "original_bytes": 95744,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 37
+    },
+    {
+      "archive_file": "current-source/canonical-second/prompt.txt",
+      "original": "current-v4/canonical-second/prompt.txt",
+      "sha256": "sha256:b26968ca4ca5c494ae53a12988dabc977b795778a9d50f12bd9d6d99237db090",
+      "bytes": 2316,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/source-before.md.txt",
+      "original": "current-v4/canonical-second/source-before.md",
+      "sha256": "sha256:0bec016ac80ad9c88726ef347785b11d5faeb106125f110effa880d7a5f9ee85",
+      "bytes": 1897,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/source-after.md.txt",
+      "original": "current-v4/canonical-second/source-after.md",
+      "sha256": "sha256:8c1be90c608438160ec856753689e48783cfb7c8ddc610b9a66512df7e34ce6b",
+      "bytes": 2979,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/source.diff",
+      "original": "current-v4/canonical-second/source.diff",
+      "sha256": "sha256:68c34161554154c6dafee5e896a33c23b47da60f264c6b897c9677da46b55ea0",
+      "bytes": 3880,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/output.txt",
+      "original": "current-v4/canonical-second/output.txt",
+      "sha256": "sha256:7e5cb7e6fe21a8d474c7c35d4f8f4b16367647ac658f35b660340f57f6fe24fb",
+      "bytes": 516,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/tracker-calls.jsonl.txt",
+      "original": "current-v4/canonical-second/tracker-calls.jsonl",
+      "sha256": "sha256:6245b4f2381a6c30bb3d728642854740c5fd4829d7056b897433934cfbac5c96",
+      "bytes": 24827,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/original-seal.json.txt",
+      "original": "current-v4/canonical-second/seal.json",
+      "sha256": "sha256:71fe3066cd2c434c03406460ca12a2e270e50f9de68544fa89eb86bfbb6d5924",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/host-receipt.json.txt",
+      "original": "current-v4/canonical-second/host-receipt.json",
+      "sha256": "sha256:a96e76c902dee8df90bb1a774af3adc79e8be3f18d4ef3c3b8777ce92711d61d",
+      "bytes": 492,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-second/tool-order.jsonl.txt",
+      "original": "current-v4/canonical-second/host-transcript.jsonl",
+      "original_sha256": "sha256:260b23a4f4a5ff19fe07252ad84f8a8c1425e14f75bcf39de761e71e568f5f43",
+      "original_bytes": 79021,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 38
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/prompt.txt",
+      "original": "current-v4/canonical-readonly/prompt.txt",
+      "sha256": "sha256:2277c770705575123841c41ff360b06942f877e00f76553cf7a737ac0c44bfa8",
+      "bytes": 1995,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/source-before.md.txt",
+      "original": "current-v4/canonical-readonly/source-before.md",
+      "sha256": "sha256:8c1be90c608438160ec856753689e48783cfb7c8ddc610b9a66512df7e34ce6b",
+      "bytes": 2979,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/source-after.md.txt",
+      "original": "current-v4/canonical-readonly/source-after.md",
+      "sha256": "sha256:8c1be90c608438160ec856753689e48783cfb7c8ddc610b9a66512df7e34ce6b",
+      "bytes": 2979,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/source.diff",
+      "original": "current-v4/canonical-readonly/source.diff",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/output.txt",
+      "original": "current-v4/canonical-readonly/output.txt",
+      "sha256": "sha256:2a5593f03440f9814cf3a4e838c3f394285627b3b2ba9ce321eb959cffd7d732",
+      "bytes": 1193,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/tracker-calls.jsonl.txt",
+      "original": "current-v4/canonical-readonly/tracker-calls.jsonl",
+      "sha256": "sha256:a164e84826a31382a7db60e7e74a10c12e1c2a2f4eb07c156aa52f87bb739301",
+      "bytes": 4598,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/original-seal.json.txt",
+      "original": "current-v4/canonical-readonly/seal.json",
+      "sha256": "sha256:03f0c79deb320a07db3e5d637cb2e7fd0a899edc525f3dced240af9f1ee916de",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/host-receipt.json.txt",
+      "original": "current-v4/canonical-readonly/host-receipt.json",
+      "sha256": "sha256:9b3884c82b5a576ccda3e570be98ca307967c2069f1b01a386d7bfc155d4a725",
+      "bytes": 494,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/canonical-readonly/tool-order.jsonl.txt",
+      "original": "current-v4/canonical-readonly/host-transcript.jsonl",
+      "original_sha256": "sha256:4ab0e808cfce6167d12ec4a54fb46ee19393404750cdda6aa90aab2eb70b5a02",
+      "original_bytes": 68198,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 23
+    },
+    {
+      "archive_file": "current-source/plain-first/prompt.txt",
+      "original": "current-v4/plain-first/prompt.txt",
+      "sha256": "sha256:238b8869aeb7a734087c53045ef571345864fbe16e5350839e146f0ff02f229f",
+      "bytes": 2327,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/source-before.md.txt",
+      "original": "current-v4/plain-first/source-before.md",
+      "sha256": "sha256:b6a4eb3b7b5f90bd419da0f3f7b2e7945ae13e2a82841102b8d8fcdaed2f931e",
+      "bytes": 1301,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/source-after.md.txt",
+      "original": "current-v4/plain-first/source-after.md",
+      "sha256": "sha256:c3a61fdc6cf96b13f3317223404b119f75d74f061094e28b313634c309a46007",
+      "bytes": 2017,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/source.diff",
+      "original": "current-v4/plain-first/source.diff",
+      "sha256": "sha256:74927dbea7edc65828e4573c4c056effb31fd3d945a76bfe89281953e3a88d45",
+      "bytes": 2360,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/output.txt",
+      "original": "current-v4/plain-first/output.txt",
+      "sha256": "sha256:a8e6144c7a68416a1edef4a5953f1677f13d1702c24ab5d1eccf5fbb343318c5",
+      "bytes": 565,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/tracker-calls.jsonl.txt",
+      "original": "current-v4/plain-first/tracker-calls.jsonl",
+      "sha256": "sha256:418192add3033ab61942e7287e4fc2ad226484499f3fcefbea0c6eaeec77a111",
+      "bytes": 19720,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/original-seal.json.txt",
+      "original": "current-v4/plain-first/seal.json",
+      "sha256": "sha256:e0406840cd55ff38f02b79fa5564d63b18902b160b8754c1d0a49f42fc87c3b0",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/host-receipt.json.txt",
+      "original": "current-v4/plain-first/host-receipt.json",
+      "sha256": "sha256:d4eb6bce6f026d1b527a53f8401bac2f3565584710ddfb50a0c7cfea66d92f34",
+      "bytes": 487,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-first/tool-order.jsonl.txt",
+      "original": "current-v4/plain-first/host-transcript.jsonl",
+      "original_sha256": "sha256:eed70f287fcc5dfc8169e4e1213350132b23e9652d53e328bf490bd2d7a75318",
+      "original_bytes": 93810,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 31
+    },
+    {
+      "archive_file": "current-source/plain-second/prompt.txt",
+      "original": "current-v4/plain-second/prompt.txt",
+      "sha256": "sha256:e729726997327a51e17994aa39382091f79814df0f461ccf60b04a65a5ae1158",
+      "bytes": 2302,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/source-before.md.txt",
+      "original": "current-v4/plain-second/source-before.md",
+      "sha256": "sha256:c3a61fdc6cf96b13f3317223404b119f75d74f061094e28b313634c309a46007",
+      "bytes": 2017,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/source-after.md.txt",
+      "original": "current-v4/plain-second/source-after.md",
+      "sha256": "sha256:680e3779e9e699621bbcd67238fb46ba05154b5a4d6a93a3abcfa5a254fb6653",
+      "bytes": 3289,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/source.diff",
+      "original": "current-v4/plain-second/source.diff",
+      "sha256": "sha256:4764c805ddff0a082131b67695ae59fa09228995589f2acb813d8740b2b5e802",
+      "bytes": 4352,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/output.txt",
+      "original": "current-v4/plain-second/output.txt",
+      "sha256": "sha256:1bdf06185184e189ec6ca276bcfa2ac3acf9b02e749754fa4e862b8b76b66a08",
+      "bytes": 592,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/tracker-calls.jsonl.txt",
+      "original": "current-v4/plain-second/tracker-calls.jsonl",
+      "sha256": "sha256:c8cab6f4e8210d2b493799468ee293b5313fa61717647eeaee8882ce155c3c7e",
+      "bytes": 29505,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/original-seal.json.txt",
+      "original": "current-v4/plain-second/seal.json",
+      "sha256": "sha256:a6f6b764e9bde1ccf4568ac090301adb610fb3a01370ca363fadd4ebd91e12a0",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/host-receipt.json.txt",
+      "original": "current-v4/plain-second/host-receipt.json",
+      "sha256": "sha256:840d32c6bcfac48dc3ab7fd7b248c2c074afe45d3371f36320c2334d2f6bee70",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/plain-second/tool-order.jsonl.txt",
+      "original": "current-v4/plain-second/host-transcript.jsonl",
+      "original_sha256": "sha256:2f3bde56547c82d7235941a67afe6e26343fdd865d9828077c7a667277dbd8ae",
+      "original_bytes": 110440,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 28
+    },
+    {
+      "archive_file": "current-source/handoff-first/prompt.txt",
+      "original": "current-v4/handoff-first/prompt.txt",
+      "sha256": "sha256:a9f27e6e64c18642efe533e3bb0ac233c2bce39b8c4ef06132345cdf7c648f87",
+      "bytes": 3117,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/source-before.md.txt",
+      "original": "current-v4/handoff-first/source-before.md",
+      "sha256": "sha256:c28c3151383216c7240cc724aa7ef117c171c02233768ce1fd595177e14fe7ea",
+      "bytes": 1315,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/source-after.md.txt",
+      "original": "current-v4/handoff-first/source-after.md",
+      "sha256": "sha256:1f247d94e90af8a29964c1242062db77ddd8986003fef12e3dc7c0dcd4234391",
+      "bytes": 1757,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/source.diff",
+      "original": "current-v4/handoff-first/source.diff",
+      "sha256": "sha256:fbd51052844a0fea958a07a7c094f15ec15f94e2a7ca781a633497217d0b436a",
+      "bytes": 3059,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/output.txt",
+      "original": "current-v4/handoff-first/output.txt",
+      "sha256": "sha256:1f247d94e90af8a29964c1242062db77ddd8986003fef12e3dc7c0dcd4234391",
+      "bytes": 1757,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/tracker-calls.jsonl.txt",
+      "original": "current-v4/handoff-first/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/original-seal.json.txt",
+      "original": "current-v4/handoff-first/seal.json",
+      "sha256": "sha256:d226d7cb09fb6947c2412442d106d36b44f5d0e50b14568dab7ec6996375fddf",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/host-receipt.json.txt",
+      "original": "current-v4/handoff-first/host-receipt.json",
+      "sha256": "sha256:3fe6fec5f987ae1dc22dca62edd001871f8c721148204f8f6e8aa8e638c9e9e7",
+      "bytes": 489,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-first/tool-order.jsonl.txt",
+      "original": "current-v4/handoff-first/host-transcript.jsonl",
+      "original_sha256": "sha256:5c9b4db21f433824ff0870ee8ba864efe446a630bd3cc08ca14bfa7f627528a2",
+      "original_bytes": 64433,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 16
+    },
+    {
+      "archive_file": "current-source/handoff-second/prompt.txt",
+      "original": "current-v4/handoff-second/prompt.txt",
+      "sha256": "sha256:a29de0b877304085f32cd6449cdf0f44a85c7ee60a32f97b3f221e16a85201bc",
+      "bytes": 3491,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/source-before.md.txt",
+      "original": "current-v4/handoff-second/source-before.md",
+      "sha256": "sha256:1f247d94e90af8a29964c1242062db77ddd8986003fef12e3dc7c0dcd4234391",
+      "bytes": 1757,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/source-after.md.txt",
+      "original": "current-v4/handoff-second/source-after.md",
+      "sha256": "sha256:0057d43255f6ec16711b6c8d4d89f7381e268740cfebe47536ad35ee29aa36d2",
+      "bytes": 2338,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/source.diff",
+      "original": "current-v4/handoff-second/source.diff",
+      "sha256": "sha256:86aa343f4b29971b1050ab95452764a6aee40ca9ff113eb5b643b202327284aa",
+      "bytes": 4539,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/output.txt",
+      "original": "current-v4/handoff-second/output.txt",
+      "sha256": "sha256:0057d43255f6ec16711b6c8d4d89f7381e268740cfebe47536ad35ee29aa36d2",
+      "bytes": 2338,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/tracker-calls.jsonl.txt",
+      "original": "current-v4/handoff-second/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/original-seal.json.txt",
+      "original": "current-v4/handoff-second/seal.json",
+      "sha256": "sha256:0da406015d6fbeb3061aaa381a228a5c7cdcc9db64d0d09b1615fd31ff0ca2bd",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/host-receipt.json.txt",
+      "original": "current-v4/handoff-second/host-receipt.json",
+      "sha256": "sha256:f1c9c805b8742a6c539e2ca67d76a1d841d8d3cb9a1b602eac2a0f62cb2105b5",
+      "bytes": 490,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-second/tool-order.jsonl.txt",
+      "original": "current-v4/handoff-second/host-transcript.jsonl",
+      "original_sha256": "sha256:29629d0815d2c5a3ab978c4fc54dbc168320e24e5b7e6f1102ec3a11e059aacc",
+      "original_bytes": 74970,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 25
+    },
+    {
+      "archive_file": "current-source/handoff-lost/prompt.txt",
+      "original": "current-v4/handoff-lost/prompt.txt",
+      "sha256": "sha256:c9c9567e9348e3997ba8f463e70f03399f715e781fd19852490b5fd4569b66cd",
+      "bytes": 1737,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/source-before.md.txt",
+      "original": "current-v4/handoff-lost/source-before.md",
+      "sha256": "sha256:245a9ab1c18277b60645d2183185194e3dfbeee678709db6a40b42498649945a",
+      "bytes": 67,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/source-after.md.txt",
+      "original": "current-v4/handoff-lost/source-after.md",
+      "sha256": "sha256:b22b1baeef6fc272bfb3d7cfd9fbff56f256ef54957d930d1f78d4be350b25d3",
+      "bytes": 1453,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/source.diff",
+      "original": "current-v4/handoff-lost/source.diff",
+      "sha256": "sha256:de5c1dc0682d19cb40ebe934142675af8ebdd1ad1467359fcacb66cd95d0d833",
+      "bytes": 1966,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/output.txt",
+      "original": "current-v4/handoff-lost/output.txt",
+      "sha256": "sha256:b22b1baeef6fc272bfb3d7cfd9fbff56f256ef54957d930d1f78d4be350b25d3",
+      "bytes": 1453,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/tracker-calls.jsonl.txt",
+      "original": "current-v4/handoff-lost/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/original-seal.json.txt",
+      "original": "current-v4/handoff-lost/seal.json",
+      "sha256": "sha256:ad32a2a1be4afe1dda4d251e64392ee337ffea7e4997e1e3404b6a3c80346a46",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/host-receipt.json.txt",
+      "original": "current-v4/handoff-lost/host-receipt.json",
+      "sha256": "sha256:eea5a67ba831a09e6504901a1862d42a4b512730fdf6c115b0f3872dd839f005",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "current-source/handoff-lost/tool-order.jsonl.txt",
+      "original": "current-v4/handoff-lost/host-transcript.jsonl",
+      "original_sha256": "sha256:bc8da5792cfdb667177c63457b51433e9686cab7edf8df1762b04e96764e4731",
+      "original_bytes": 66241,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 18
+    },
+    {
+      "archive_file": "reviews/recommendations.md",
+      "original": "independent-review/final-current-next-steps-qualitative-review.md",
+      "sha256": "sha256:a47e518d0088f20ceb4d1fdc17386eca7eb7674371586580714207d316389732",
+      "bytes": 6929,
+      "retention": "authored review; original digest before one formatter pass"
+    },
+    {
+      "archive_file": "reviews/source-exercise.md",
+      "original": "independent-review/v4-source-complete.md",
+      "sha256": "sha256:b51476558698ae1883bb6e61486098c7e1f20d96030a0123f42092fe08f713b5",
+      "bytes": 10901,
+      "retention": "authored review; original digest before one formatter pass"
+    },
+    {
+      "archive_file": "reviews/recommendations.json.txt",
+      "original": "independent-review/final-current-next-steps-qualitative-review.json",
+      "sha256": "sha256:810757c9ffe3be9c7c85309803d7beda7244ee88b9279c5d507ad8672350d596",
+      "bytes": 27811,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "reviews/source-exercise.json.txt",
+      "original": "independent-review/v4-source-complete.json",
+      "sha256": "sha256:dfca3f763b7bf296dda79f828ab7d90c364aea6b953172f6939bbff9f88feba7",
+      "bytes": 35081,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/prompt.txt",
+      "original": "historical-v1/local-duplicate/prompt.txt",
+      "sha256": "sha256:be171e44356871c34f19c80967372ffae047d43fcafa86106e209f512f3aebb7",
+      "bytes": 1508,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/source-before.md.txt",
+      "original": "historical-v1/local-duplicate/source-before.md",
+      "sha256": "sha256:6af302ada5da2e544d35486e1d4754a4e31458f737c8cc2bf4b8382dd7889be3",
+      "bytes": 4426,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/source-after.md.txt",
+      "original": "historical-v1/local-duplicate/source-after.md",
+      "sha256": "sha256:25f88f646ddaef28f23c99d4fd0c0dba9ae3485e3541225fb71e81099675b927",
+      "bytes": 4842,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/source.diff",
+      "original": "historical-v1/local-duplicate/source.diff",
+      "sha256": "sha256:d67fe3d639941ea275faaa89f959fff39d7b759ef776f173c26938d7eee5c302",
+      "bytes": 3741,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/output.txt",
+      "original": "historical-v1/local-duplicate/output.txt",
+      "sha256": "sha256:04d0c14b518af87fa4ea7a9e0f2ccf16d73f8fb269c74aa013c18cacf49a6121",
+      "bytes": 590,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/tracker-calls.jsonl.txt",
+      "original": "historical-v1/local-duplicate/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/original-seal.json.txt",
+      "original": "historical-v1/local-duplicate/seal.json",
+      "sha256": "sha256:2afb8e0c86794e92e73ab481e16ab2e54d8d37dcb6e93a040d987d741a1ef406",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/host-receipt.json.txt",
+      "original": "historical-v1/local-duplicate/host-receipt.json",
+      "sha256": "sha256:bedeff16e710e785758eb5d5e19ccf4d68799c324f405aae332272a6167148d7",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/tool-order.jsonl.txt",
+      "original": "historical-v1/local-duplicate/host-transcript.jsonl",
+      "original_sha256": "sha256:d54ca5444a29a1c4d2a3a32f5194b8214f4c780600e39098a22bdd01aeba39b5",
+      "original_bytes": 64301,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 19
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/review.json.txt",
+      "original": "independent-review/source-duplicate-finding.json",
+      "sha256": "sha256:058462f52df7f5c0325a0ef1cd929df331b6c959061072a3cc4c62507bedd38c",
+      "bytes": 4691,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f1-duplicate-source-rewrite/review.md",
+      "original": "independent-review/source-duplicate-finding.md",
+      "sha256": "sha256:de85a90503b0af67b0c4e3df09622fa14646da1b1cab153815b9b29107998431",
+      "bytes": 2336,
+      "retention": "authored historical review; original digest before one formatter pass"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/prompt.txt",
+      "original": "historical-v2/local-legacy/prompt.txt",
+      "sha256": "sha256:a66abe322cf5ceade21be7bbae62df8cf79896b7621401a8f43ca6c2072f76bf",
+      "bytes": 1728,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/source-before.md.txt",
+      "original": "historical-v2/local-legacy/source-before.md",
+      "sha256": "sha256:89843012ca8d51da7d3f05bcebd13b681a44ec23e924722d01045c8ccdf65be3",
+      "bytes": 700,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/source-after.md.txt",
+      "original": "historical-v2/local-legacy/source-after.md",
+      "sha256": "sha256:7845efa2b0ec920e1713a8eff09b8801af7da61f248db04c558293d7bb35ba10",
+      "bytes": 3755,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/source.diff",
+      "original": "historical-v2/local-legacy/source.diff",
+      "sha256": "sha256:63a1471b1eb711cf7055e5da743355c875975197d7b4d1cea0c162038de6c294",
+      "bytes": 3924,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/output.txt",
+      "original": "historical-v2/local-legacy/output.txt",
+      "sha256": "sha256:d1c43038ab7f52af88ddb5b9d1a5916702c42fc0d0ea73b980012405c83bc361",
+      "bytes": 732,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/tracker-calls.jsonl.txt",
+      "original": "historical-v2/local-legacy/tracker-calls.jsonl",
+      "sha256": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/original-seal.json.txt",
+      "original": "historical-v2/local-legacy/seal.json",
+      "sha256": "sha256:52502f81df35c1c979cbd9253266d37a343036fc5653ecbb5d5c9eb66d7190e2",
+      "bytes": 1280,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/host-receipt.json.txt",
+      "original": "historical-v2/local-legacy/host-receipt.json",
+      "sha256": "sha256:1d00b55c8b73bafbd75577fc72d4a78685ce5d8357d1d43e8de83bb5d5b16735",
+      "bytes": 488,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/tool-order.jsonl.txt",
+      "original": "historical-v2/local-legacy/host-transcript.jsonl",
+      "original_sha256": "sha256:38581821557b56c9710e7d9d0da18092f770c595e7bbc2f1c3bf9f8afb1b1ccc",
+      "original_bytes": 86108,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 22
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/original-observer.mjs.txt",
+      "original": "preserved-v2-instrument/continuation-exercise.mjs",
+      "sha256": "sha256:9ef58730c61c5ebc17de58eb3f76ecb51c731aaedebe6556da687a63209872dd",
+      "bytes": 21785,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/review.json.txt",
+      "original": "independent-review/v2-local-legacy-format-classification.json",
+      "sha256": "sha256:c2f04a7f9657f4ef5d45e48e4dfbd2d81a7b2ddfb76ad3428125611356d02ee8",
+      "bytes": 4846,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/v2-legacy-observer-format/review.md",
+      "original": "independent-review/v2-local-legacy-format-classification.md",
+      "sha256": "sha256:0d1089ecfa91cf51dc54e5cabd5f3e793634a9c5ec9af84890d3d7fa2c350176",
+      "bytes": 2577,
+      "retention": "authored historical review; original digest before one formatter pass"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/prompt.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/prompt.txt",
+      "sha256": "sha256:568aabcee7bb19a8f4a87e4791a4d57c9dbd523f46788dcaff991153a62d3d67",
+      "bytes": 2208,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/fixture.json.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/fixture.json",
+      "sha256": "sha256:8b3734461a3f5c693e3a4fbae6a885ada745ffac5c447ae42613fc00ea1c0350",
+      "bytes": 2599,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/source.md.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/2026-10-08-packages.md",
+      "sha256": "sha256:8b77264dc69102b444a9bb99b61a6fbca1246456ef2926361fdc823681672adf",
+      "bytes": 1106,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/report-channel.jsonl.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/report-channel.jsonl",
+      "sha256": "sha256:603a2771480df3c32b369b32f6f48b277e69a484c9b89682ae94457e76a1df0c",
+      "bytes": 2298,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/original-seal.json.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/seal.json",
+      "sha256": "sha256:9f326f793cea1b4217095754a8ec9e008c5ba71f0427adc851bf1ff24e7625d3",
+      "bytes": 1296,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/output.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/last.txt",
+      "sha256": "sha256:5e3f9577e61790a81cddc4145476d74e177949eb7b25fa96ce5547421b0a1fe1",
+      "bytes": 2055,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/host-receipt.json.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/host-receipt.json",
+      "sha256": "sha256:fbef7fd192359c31881d2e756ef18124f8c85e745786a1579ed107dbcf609060",
+      "bytes": 579,
+      "retention": "verbatim"
+    },
+    {
+      "archive_file": "history/f2-unverified-count-reconstruction/tool-order.jsonl.txt",
+      "original": "historical-v2-recommendation/expansion-slot-3/host-stdout.jsonl",
+      "original_sha256": "sha256:70c8c6d81893c148b4699f8505a43a8916bd322ae97dba8c62c4b7b44ac8c3c1",
+      "original_bytes": 48393,
+      "retention": "safe ordered event projection; no stdout, reasoning, usage, thread/session/task identifiers or account/auth envelope",
+      "projected_records": 18
+    }
+  ]
+}

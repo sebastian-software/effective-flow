@@ -1,0 +1,6 @@
+Kommentar 731 in `example/flow#37` wurde aktualisiert und anschließend wortgetreu zurückgelesen.
+
+- `plain-continuation-1` einmal bewertet: neue Parser-Modell-Fixtures und grüne lokale Tests, kein Fortschritt bei P1/P2.
+- Checkpoint: No-progress-Zähler `0 → 1`; Duplikatfrage, realer Export und Rollback-/Isolationsnachweis bleiben offen.
+- Bestehende Entscheidung erhalten: keine Sonderfreigabe, ausschließlich akzeptierter Single-Process-Ansatz. Keine erneute Bewertung ausgelöst.
+- Grenze eingehalten: keine weitere Implementierung oder optionale Arbeit.

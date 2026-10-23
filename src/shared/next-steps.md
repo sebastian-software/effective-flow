@@ -103,6 +103,17 @@ instead of relying on the receiving tool to notice.
    an intentionally open parent for later packages is insufficient. If no valid candidate remains,
    emit no block. This is read-only advice: it grants no authority and starts no action.
 
+Before selecting any outward invocation for an existing outcome chain, apply its retained
+continuation decision to both plan-aware selection and fallback. Read-only selection returns a
+proposed checkpoint delta/pending source update; it neither persists state nor guesses missing
+history as zero. A blocked endpoint emits no substitute planning, review or issue-creation option;
+name its specific decision/context blocker. Independent authorized delivery may remain applicable.
+
+```lazy-include
+outcome-continuation
+when: the completed run belongs to an outcome-directed continuation, history is unknown, or a candidate next step materially expands the approach
+```
+
 ## Generic fallback edge table
 
 The table between the marker comments is a build-validated fallback contract, not an exhaustive

@@ -1,0 +1,5 @@
+Der [Checkpoint](docs/plan/2026-10-22-export-proof.md) ist aktualisiert und rückgelesen; außerhalb blieb die Quelle unverändert.
+
+- Bewerteter Versuch bleibt `continuation-2`, Zähler weiterhin **2**. Kein neuer Versuch, kein neuer P1/P2-Nachweis.
+- Neue Grenzanforderung: persistente Queue und separat gewartetes Deployment. Die sofortige Neubewertung beendet die bisherige Freigabe vorzeitig; beide Versuche bleiben unverbraucht.
+- **Eigentümerentscheidung erforderlich:** Routine-Reparaturfreigabe deckt die neuen Betriebsgrenzen nicht ab. Frühere Entscheidungen bleiben dokumentiert; P1/P2 bleiben offen und verbindlich. Keine Implementierung ausgeführt.

@@ -1,0 +1,13 @@
+PR #42 ist gemergt; Paket A mit Parser-Fixtures ist abgeschlossen. Lokale Tests und Fixtures bestehen. Das ursprüngliche Ergebnis bleibt offen: P1, ein realer Export mit erhaltenen Datensatzzahlen, und P2, die verpflichtende Rollback-Prüfung, sind nicht nachgewiesen.
+
+Paket B ist nicht zur Ausführung freigegeben. Der persistente Queue-Dienst würde eine zusätzliche gewartete Komponente, Betriebsverantwortung und ein Deployment-Ziel einführen. Die Zustimmung zur Parser-Reparatur und das Planreview decken diese Erweiterung nicht ab. Grüne Tests ändern diese Autoritätsgrenze nicht.
+
+Für den zugeordneten Plan `docs/plan/2026-10-08-packages.md` ergibt sich folgender vorgeschlagener Checkpoint-Abgleich; er wurde mangels Schreibbefugnis nicht gespeichert:
+
+- `attempt-2` bleibt der letzte ausgewertete Versuch; der zurückgekehrte Validierungsworker zählt nicht zusätzlich.
+- Die zwei dokumentierten Fortsetzungen brachten Fixtures und lokale Tests, aber keinen belegten Fortschritt bei P1 oder P2. Der vorgeschlagene No-progress-Zähler ist deshalb `2` statt `0`.
+- Die Entscheidung für die Queue-Erweiterung lautet `Owner decision required`. P1 und P2 sowie die bisherige Single-Process-Grenze bleiben verbindlich.
+
+Die minimale Abwägung ohne verfügbare Ownerentscheidung: Ein begrenzter Nachweis im bestehenden Prozess hält die akzeptierten Grenzen ein; seine Erfolgsaussicht ist noch unbelegt. Die Queue vergrößert Betrieb und Wartung ohne nachgewiesene Freigabe. Ein Stopp dieses Ansatzes vermeidet zusätzliche Verpflichtungen, erfüllt aber P1 und P2 nicht. Bisheriger Zeit- und Kostenaufwand ist unbekannt. Als Grenze für eine später freigegebene Fortsetzung ist höchstens ein Versuch mit vorab festgelegtem P1-/P2-Nachweis sinnvoll; ohne diesen Nachweis ist erneut zu entscheiden.
+
+Die Queue-Fortsetzung bleibt blockiert. Es wurde keine Folgearbeit gestartet und kein Tracker-, Git- oder Planstand verändert. Eine Ersatzempfehlung für Planung, Review oder Umsetzung würde die fehlende Entscheidung umgehen und entfällt.

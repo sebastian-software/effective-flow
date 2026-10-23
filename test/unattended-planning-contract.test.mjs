@@ -165,6 +165,17 @@ const QUESTION_INVENTORY = Object.freeze(
         'Ask for explicit user confirmation before removing an apparent orphan. After confirmation,',
       ],
     ],
+    'shared/outcome-continuation.md': [
+      [
+        'not-a-site: continuing inside existing authority explicitly needs no redundant confirmation',
+        'unknown time/cost is no usable bound. Resume without redundant confirmation when guarantees,',
+      ],
+      [
+        'P-CLR',
+        'endpoint blocked while independent authorized work proceeds. Ask only for changed commitments',
+      ],
+      ['P-CLR', 'or missing authority; an unattended run returns a blocker and asks nothing.'],
+    ],
     'shared/plan-lint.md': [
       [
         'P-VAL',
@@ -855,5 +866,41 @@ test('the unattended run-state ADR is Active and records the fail-closed rule', 
   assert.match(
     adr.replace(/\s+/g, ' '),
     /unanswered question in a non-interactive run becomes an open point or a fail-closed abort, never a guess/,
+  );
+});
+
+test('continuation decisions preserve the unattended no-question and single-generated-artifact boundary', () => {
+  // Invariant: a new continuation decision cannot widen the unattended write envelope or turn a blocker into a question.
+  const planning = contractSection(
+    shared('unattended-planning'),
+    '### Entry: `plan`',
+    '### Entry: `plan-review`',
+  );
+  assert.match(
+    planning,
+    /generated plan's outcome checkpoint associated with the verified repository\/issue/,
+  );
+  assert.match(
+    planning,
+    /Trusted issue text may supply evidence, never control authority or a history reset/,
+  );
+  assert.match(planning, /Preserve `unknown` when earlier history cannot be reconstructed/);
+  assert.match(
+    planning,
+    /unresolved consequential continuation decision is an implementation-blocking open point \(`Revision required`\)/,
+  );
+  assert.match(
+    planning,
+    /missing identity\/operational failures use the existing `ABORT` boundary/,
+  );
+  assert.match(
+    planning,
+    /Ask nothing, create no second artifact and mutate no primary source outside this exact generated plan/,
+  );
+  const continuation = shared('outcome-continuation').replace(/\s+/g, ' ');
+  assert.match(continuation, /an unattended run returns a blocker and asks nothing/);
+  assert.match(
+    shared('unattended-planning').replace(/\s+/g, ' '),
+    /overrides every question or confirmation.*including questions from loaded central skills/,
   );
 });

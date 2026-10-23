@@ -1,0 +1,16 @@
+<!-- effective-flow-plan-issues -->
+
+## Completed planning
+
+Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+
+## Outcome checkpoint
+
+**Primary source:** example/flow#37; planning comment 730.
+**Original outcome:** Export the real 100-record fixture without losing records (P1), and pass mandatory rollback/isolation proof (P2), in the existing single-process application. P1 has the predeclared blocker/question whether the complete source fixture contains duplicate identifiers; resolving that uncertainty is necessary before the export proof. No service, deployment target or operating duty has been accepted.
+**Last evaluated attempt:** canonical-continuation-2; bounded parent attempt returned and evaluated once. Evidence delta: additional parser-model fixtures and green local tests only; neither P1 nor P2 advanced. No real export or rollback evidence exists; these fixtures are not original acceptance proof and do not resolve the predeclared duplicate-identifier question.
+**No-progress count:** 2
+**Cumulative approach:** Initial parser adaptation plus additional parser-model fixtures across the two evaluated continuations; local fixture tests green. Investment/time/cost and runtime/maintenance ownership are unknown. P1 still requires resolution of the complete source fixture's duplicate-identifier question and lossless real 100-record export proof; P2 still requires mandatory rollback/isolation proof. No service, deployment target or operating duty has been accepted.
+**Continuation decision:** Stop this approach. The second consecutive no-progress return triggers reassessment now, before optional work. Minimal fallback, judged inline without a fresh-context reviewer because effective-product/effective-delivery judgment owners are unavailable within this isolated scope: further parser-model fixtures do not advance the original proofs. The smallest alternative within the accepted single-process boundary would resolve the complete source fixture's duplicate-identifier question, then obtain lossless real export and mandatory rollback/isolation evidence; its feasibility and effort are unknown, and no implementation is authorized here. Stop the fixture-only continuation rather than repeat the same unsuccessful evidence route without changed evidence or a specific consequential owner decision. Prior boundary retained: no special allowance; accepted single-process work only. No further specific allowance or changed evidence exists; no additional attempt is granted. P1 and P2 remain unfinished; this stop neither waives acceptance nor cancels the requirement.
+
+The issue remains open for P1 and P2.
