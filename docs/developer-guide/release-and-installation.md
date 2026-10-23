@@ -81,8 +81,61 @@ suite and the claim it supports is about the delivered build rather than about e
 way there. When the head ref starts with `release-please--` — the prefix of release-please's own
 `release-please--branches--develop--components--effective-flow`, matched rather than the full name
 so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
-absent corpus in either suite fails the check. There is no waiver: without a current round of every
-suite there is no release.
+absent corpus in either suite fails the check. There is no general waiver: without a current round
+of every suite there is no release.
+
+#### The separately named PR581 provisional disposition
+
+The `build-context` suite has one release-only disposition for the bounded provisional
+implementation on feature PR581. It does not change `pnpm eval build-context verify --mode strict`.
+The full verifier still reports `FAILED`/`UNPROVEN` until all six behavioural scenario families,
+all twenty portable Quality pairs (Codex and Claude, simple and review-correction, five slots each),
+and one complete native lane for each harness are current and valid. Partial, invalid, stale,
+synthetic, failed, or archived records are not converted into passes; missing diagnostics remain
+outside `results/`.
+
+The disposition is a separate blocking step after the complete ordinary evidence loop. It can run
+only when the release PR is a live `release-please--*` pull request and both repository variables
+are present: `BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB` (a 40-hex Git Blob object ID) and
+`BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256` (a `sha256:` digest with 64 hex characters). The
+ordinary `merge-gate`, `iterate`, and `next-steps` suites remain strict. The provisional branch is
+admitted only when the full `build-context` verdict is a truthful strict failure with no archived
+results and its absence list is exactly the 22 entries implemented by the suite: 16 behavioural
+variants, four paired cells, and the two native lanes. No model, role, authority, or quality
+invariant may fail.
+
+`node evals/build-context/provisional-release.mjs inspect` and `verify` are read-only. `inspect`
+reports the candidate's commit, tree, instrument, policy, and release-version binding. `verify`
+loads only the pinned Git Blob and re-observes the original authenticated protected-host run,
+jobs, logs, materialization manifest, and exact file modes and digests through the existing backend.
+The authorization JSON is schema
+`effective-flow.build-context-provisional-pr581/1`; it binds repository, feature PR581, the exact
+release PR/ref/version, source/tree/instrument/policy, a maximum seven-day window, the user's
+actual authority text and digest, an independent policy report with closed material findings, and
+the original protected host request/preparation/policy/run. The live release PR must remain open,
+unmerged, based on `develop`, and point at the authorized source commit. After the final source,
+original host qualification, and bound review exist, the release operator creates the detached
+authorization JSON, publishes it as a detached Git Blob through the API, and then sets both
+trusted repository variables before rerunning CI. GitHub Blob availability is not guaranteed
+throughout the maximum seven-day authorization window; the two pins provide no storage guarantee.
+If the exact blob is unavailable, reading it and verifying admission fail closed. The original
+validation snapshot branch is create-only and immutable: never move or overwrite it. No record or
+pin is created now, and no new branch or delivery PR is used for this bridge.
+
+This bridge is a practical bootstrap for a missing complete population, not evidence of
+performance, cost, context reduction, or quality equivalence. The final source must first be a
+clean committed candidate (the CLI rejects tracked changes and untracked files), with foreign
+plans preserved separately; the candidate must then be inspected, independently reviewed against
+the bound source/tree/instrument/policy, and positively qualified on the protected host. There is
+no release-please stamp exception. The exact final release-PR tree must pass its original protected
+host qualification and technical checks. Stop on an unauthorized action, false completion,
+skipped required review or validation, repeated implementation on resume, lost or contradictory
+evidence, or an unrecoverable lifecycle state. Retain the failure and recoverable artifacts,
+preserving the previous release or complete inline fallback as appropriate; do not claim a
+successful isolated delivery. Initial production Feature diagnostics do not populate the controlled
+paired matrix. Preserve failed attempts and fallback outcomes, obtain the original assignment,
+then use frozen controlled Codex recordings and deferred Claude recordings. Do not activate Fast
+or restart the stopped pilot through production configuration.
 
 A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
 the release branch, which release-please owns and force-pushes. Merging that pull request into

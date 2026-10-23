@@ -5,6 +5,60 @@ behavioural recordings, paired workloads or native compatibility recordings**. C
 quality preservation and release readiness remain unproven. Unit tests use synthetic fixtures;
 CI never launches a model. Report mode reports missing evidence; strict mode fails it.
 
+## Bounded PR581 release disposition
+
+The complete strict verifier remains the acceptance authority. It stays `FAILED`/`UNPROVEN`
+until all required populations below are current, valid, and bound to the same candidate and
+instrument: 16 behavioural variants with five recordings each, four five-pair portable Quality
+cells, and one complete native lane for Codex and Claude. A partial, stale, invalid, failed,
+synthetic, or archived record is not an absence and cannot be converted into a pass. Missing
+diagnostics remain outside `results/`.
+
+For the bounded provisional implementation on feature PR581, CI has a separate named blocking
+disposition after the ordinary evidence loop. It admits only the exact complete absence of those
+22 populations, as listed by `ABSENT_POPULATIONS` in
+`evals/build-context/_scaffold/provisional-release.mjs`: 16 behavioural entries, four paired
+cells, and two native lanes. The other behavioural suites remain strict. No model, role,
+authority, or quality invariant may fail, and the disposition makes no performance, cost, context,
+or quality-equivalence claim.
+
+The read-only commands are:
+
+```sh
+node evals/build-context/provisional-release.mjs inspect
+node evals/build-context/provisional-release.mjs verify
+```
+
+`inspect` derives the exact committed source/tree, instrument, policy, and release-version binding.
+`verify` first preserves the failed full strict verdict, then accepts only an externally pinned Git
+Blob authorization. The authorization schema is
+`effective-flow.build-context-provisional-pr581/1`; it binds feature PR581, the exact live
+release-please PR/ref/version, source/tree/instrument/policy digests, a maximum seven-day expiry,
+the actual user authority and digest, an independent policy report with closed material findings,
+and the original protected host request, preparation, policy, run, jobs, logs, and materialization
+files. The live release PR must remain open and unmerged against `develop` at the authorized head.
+After final source, original host qualification, and bound review are complete, the release
+operator creates the detached authorization JSON, publishes it as a Git Blob through the API,
+then sets both trusted repository variables and reruns CI. GitHub Blob availability is not
+guaranteed throughout the maximum seven-day authorization window; the pins provide no storage
+guarantee. If the exact blob is unavailable, reading it and verifying admission fail closed. The
+original validation snapshot branch is create-only and immutable: never move or overwrite it.
+No record or pin is created now, and no new branch or delivery PR is used. Repository variables
+provide only the 40-hex blob ID and its `sha256:` digest; absent pins fail the ordinary strict route.
+
+Bootstrap requires a clean, committed final source candidate. The CLI rejects tracked changes and
+untracked files, so foreign plans are preserved separately and a separate clean committed source
+must be qualified. Inspect and independent policy review bind the final source/tree/instrument/
+policy before the original protected host qualification and technical checks are considered. Stop
+on an unauthorized action, false completion, skipped required review or validation, repeated
+implementation on resume, lost or contradictory evidence, or an unrecoverable lifecycle state.
+Retain the failure and recoverable artifacts, preserving the previous release or complete inline
+fallback as appropriate; do not claim a successful isolated delivery. Initial production Feature
+diagnostics do not populate the controlled paired matrix. Preserve failed attempts and fallback
+outcomes, obtain the original assignment, then use frozen controlled Codex recordings and deferred
+Claude recordings. No release-please stamp exception or Fast activation is implied; `inspect` and
+`verify` do not write pins, activate configuration, or resume the stopped pilot.
+
 ## Required populations
 
 | Population                       | Required observations                                                                                                                                                       |

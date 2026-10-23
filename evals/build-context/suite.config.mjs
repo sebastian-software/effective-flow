@@ -37,6 +37,7 @@ const suite = {
     resolve(root, 'profiles.json'),
     resolve(root, 'record.mjs'),
     resolve(root, 'identity.mjs'),
+    resolve(root, 'provisional-release.mjs'),
     resolve(root, 'coordinator.mjs'),
     tracker,
     // Native inventory admission executes the canonical parser and its local dependencies.

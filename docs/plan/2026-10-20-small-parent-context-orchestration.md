@@ -362,6 +362,79 @@ recordings and do not close the original-assignment, full workload or acceptance
 instrument requires repinning; this plan remains Not implemented and unarchived, with both PRs
 in draft.
 
+## 2026-10-23 — Bounded PR581 provisional release disposition (documentation addendum)
+
+This addendum documents a separate release disposition for the bounded provisional
+implementation on feature PR581. It does not complete this plan, change the full acceptance
+criteria, archive the plan, or alter the ordinary strict verifier. Full strict acceptance remains
+`FAILED`/`UNPROVEN` while the six behavioural scenario families, the twenty portable Quality pairs,
+and one complete native lane per harness are absent. The plan remains **Not implemented** and
+unarchived.
+
+The provisional branch may authorize only the exact complete absence represented by the
+implementation's 22 `ABSENT_POPULATIONS` entries: 16 behavioural variants, four paired cells
+(Codex and Claude, simple and review-correction), and one native lane each for Codex and Claude.
+Partial, invalid, stale, synthetic, failed, or archived records remain rejected. Missing
+diagnostics stay outside `results/`; no model, role, authority, or quality invariant may fail.
+The ordinary `merge-gate`, `iterate`, and `next-steps` suites remain strict, and the new default
+orchestration plus complete inline fallback remain unchanged.
+
+The implementation binds a detached Git Blob authorization with schema
+`effective-flow.build-context-provisional-pr581/1`. The exact repository, feature PR581,
+release PR/ref/version, final source commit and tree, instrument and policy digests, maximum
+seven-day expiry, actual user authority text and digest, independent policy report and closed
+material findings, and original protected-host request/preparation/policy/run are all required.
+The release PR must remain open and unmerged against `develop` at the authorized head. `inspect`
+and `verify` are read-only; they load only the pinned blob and the original authenticated GitHub
+run/jobs/logs through the existing backend, then verify exact materialization files, modes, and
+digests. Absent repository pins fail the normal full strict route. No release-please stamp
+exception, Fast activation, pilot resume, or hosted publication is implied.
+
+The practical bootstrap sequence is: complete the remaining owned implementation work; refresh
+the other suites; qualify a separate clean committed source candidate (the CLI rejects dirty or
+untracked input while foreign plans remain preserved); inspect that candidate; obtain an
+independent policy report bound to its source/tree/instrument/policy; and then run the original
+protected-host and technical checks against the exact final release-PR tree. The later release
+decision must report the full strict result and the provisional disposition separately. A stop or
+recovery condition retains failed evidence and leaves the full acceptance unproven.
+
+Documentation surface inventory for this slice:
+
+| Surface                                                    | Disposition                                                                        | Reason                                                                                                                                                                 |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `evals/build-context/provisional-release.mjs` and CLI help | Updated by implementation; docs describe its read-only `inspect`/`verify` contract | The implementation owns exact validation and backend re-observation; this plan records the reader-facing release decision.                                             |
+| `evals/build-context/README.md`                            | Updated                                                                            | The suite needs the exact provisional boundary, 22-entry absence list, identities, and bootstrap constraints.                                                          |
+| `docs/developer-guide/release-and-installation.md`         | Updated                                                                            | Release operators need the post-loop blocking step, pinned variables, live-PR checks, and no-waiver distinction.                                                       |
+| This plan                                                  | Updated with this addendum                                                         | The slice needs a traceable open status and recovery path without marking full acceptance complete.                                                                    |
+| Root `README.md` / `README.md.src`                         | No impact                                                                          | This is a release-policy and developer-evidence route, not an end-user installation change.                                                                            |
+| Technical tests and workflow contracts                     | No documentation edit                                                              | Implementation and test owners retain these files; current evidence is intermediate and the final report follows the remaining regression and independent-review work. |
+
+Current evidence to report accurately: 63 focused build-context tests and 438 workflow tests pass
+for the present slice; the prior expected last-step contract failure was corrected. The new
+`test/build-context-provisional-host.test.mjs` covers 32/32 admission cases for the complete
+`verifyHostedCandidate` → `observeBackend` → raw API/ZIP/source-and-transport Git-chain path; the
+original backend/transport tests are 39/39 green. These are unit fixtures and regression tests,
+not actual hosted admission proof. The initial fixture failure remains retained in the named
+private log. The full strict verifier still fails as required. These counts are not final release
+acceptance.
+
+### 2026-10-23 — Independent policy review of this slice
+
+Independent policy review passed 470/470 targeted tests and identified two Important findings of
+low complexity. Both are corrected: the operator guides no longer suggest anchoring the detached
+blob in the immutable validation transport or guarantee its availability, and the workflow ordering
+assertion is formatted. No known findings remain open for this slice; the bounded corrections
+await their independent recheck.
+
+GitHub Blob availability is not guaranteed throughout the maximum seven-day authorization window.
+The two trusted pins provide no storage guarantee; an unavailable exact blob fails reading and
+admission closed. The original validation snapshot branch remains create-only and immutable, with
+no new branch or delivery PR for this bridge.
+
+The parent workflow still owns the separate Hosted fix, final four checks, exact-candidate review,
+and original exact-source host qualifications. Full acceptance remains unproven and this plan
+remains Not implemented and open.
+
 ## Review findings
 
 **Date:** 2026-10-20

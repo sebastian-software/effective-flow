@@ -9716,23 +9716,22 @@ test('the behavioural eval gate always reports and turns strict only for release
       'requires; anywhere else it reports nothing the release pull request can be blocked on',
   );
 
-  // Last, not next to `Unit tests`: a strict failure aborts the job where it happens, so an
-  // earlier position would skip `Build distribution` and `pnpm test:distribution` on exactly the
-  // pull request that ships, hiding a real build failure behind an owed eval round.
+  // All build and distribution checks must complete before the full strict evidence verdict. The
+  // provisional disposition is a separate blocking step that may run only after that verdict has
+  // been recorded, so a release cannot publish while its ordinary build checks are still pending.
   const steps = [...buildJob.matchAll(/^ {6}- (?:name|uses|run): (.*)$/gm)].map(
     (match) => match[1],
   );
-  assert.equal(
-    steps.at(-1),
-    'Behavioural eval evidence',
-    'the eval-evidence step must stay the last step of `Format, test and build`; ahead of the ' +
-      'distribution steps a strict failure would mask a genuine build failure',
+  assert.ok(
+    steps.indexOf('Behavioural eval evidence') <
+      steps.indexOf('Build-context provisional PR581 release disposition'),
   );
   ordered(
     buildJob,
     'name: Build distribution',
     'name: Distribution and installation smoke tests',
     'name: Behavioural eval evidence',
+    'name: Build-context provisional PR581 release disposition',
   );
 
   // No condition at either level. A required status check that never reports blocks the pull
