@@ -1,21 +1,23 @@
 {
   "scenario": "unreadable-associated-plan-fallback",
-  "digest": "sha256:ba9360a22800cc846f200089d4ac663f430235db005478a192f6d9ec4aca51ce",
+  "digest": "sha256:ed2e8d826767dd7101181ac443653b9bf78038a6857fb40fc4a304b6415a2e55",
   "skill": {
-    "digest": "sha256:f779720fad4862a772d8f2d0e3f3b980fe58414228b7317752bcc669c8d9b463",
-    "versionNeutralDigest": "sha256:5c7da46eabcaa67f9c624da74c8a9edf3fe173c6b4be5381802fe0584a2df3f0",
+    "digest": "sha256:67f8059a2d8e141b524c06894c55fcbf5c3afcfe5f688bd07183a6e5dd19b488",
+    "versionNeutralDigest": "sha256:5e53fc00874951c5c1e612d522c5d7b6f1a096f3f76115c90d998f881fe0ae66",
     "files": {
-      "SKILL.md": "sha256:5ebf26f6faabb28f091101570e5defb02be42153b9d737d7d04d3fab5dd088e9",
+      "SKILL.md": "sha256:55bb8669377e761bca97bdd2cdad231ab5dd5feb1c559e321c8f6fceb9ed8953",
       "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
-      "shared/next-steps.md": "sha256:61a25fb824fe0ad8056c4d66ac3201d67bae9f9f99ca24a47a92e43cec0ab15e",
+      "shared/next-steps.md": "sha256:214a4c64b240c292c3f2cb4a7800dbdc57361da8ea3b8ac16220369c6a0e53ef",
+      "shared/outcome-continuation.md": "sha256:46fbaae9ef6a317a4602037f9d8710230e7c1b3dbba8a50c9336ce1fe336cfeb",
       "shared/plan-reference-routing.md": "sha256:db70e611e3a53a83e7861ddb6ef6f4503bcd366609f2c885571c494f6a57fee6"
     }
   },
   "instrument": {
-    "digest": "sha256:8e48c137dc51c3a1f1296b312b90e36f697f7de81d5608dd2661384234808015",
+    "digest": "sha256:5596222ff35890b7976bc92da6a8207ff77ee57c81144533e73da6c712433240",
     "files": {
-      "evals/next-steps/suite.config.mjs": "sha256:1021ded43145da1a254d4c4ed6778c1d6bbdd5cf259bb00f133d55c153df2edd",
+      "evals/next-steps/suite.config.mjs": "sha256:c643a6a746dab037d3d13e8e978906d0301362135109768ba9b827423858440e",
       "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
+      "evals/_scaffold/host-qualification.mjs": "sha256:5f69be3378dac1b2ef01d6a839c286bd10f1ae207a3ed92dd55375a5c41a25dc",
       "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
       "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",
       "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",

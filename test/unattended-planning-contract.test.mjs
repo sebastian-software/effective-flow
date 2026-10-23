@@ -262,7 +262,7 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
-        'when: a delivery created or reused a pull request, `delivery.prReview` is `ask` or unset, and the run is gated',
+        'when: a delivery created or reused a pull request, `delivery.prReview` is `ask` or unset, and the run is gated or a validated interactive build relay',
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',

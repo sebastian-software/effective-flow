@@ -659,6 +659,16 @@ export function explainUnreadable(stderr) {
 export function explainSkipped(stderr) {
   for (const line of String(stderr ?? '').split('\n')) {
     const text = line.replace(/\r$/, '');
+    // These macOS Git shim diagnostics report host cache setup, not a skipped repository path.
+    if (
+      text ===
+        "git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead" ||
+      /^git: error: couldn't create cache file '\/tmp\/xcrun_db-[A-Za-z0-9]{8}' \(errno=Operation not permitted\)$/.test(
+        text,
+      )
+    ) {
+      continue;
+    }
     const directory = /^warning: could not open directory '(.+)': (.+)$/.exec(text);
     const perror = /^(?:warning|hint|error|fatal):/.test(text) ? null : /^(.+): (.+)$/.exec(text);
     const found = directory ?? perror;

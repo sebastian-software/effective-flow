@@ -46,22 +46,22 @@ one declaration that does not, so it sits in `scenario-registry.mjs` and is hash
 adding a scenario therefore costs its own evidence and no other scenario's. `validateSuite` holds
 both halves, and neither is safe alone.
 
-| Path                                         | What it is                                                                              |
-| -------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                      |
-| `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it |
-| `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument          |
+| Path                                         | What it is                                                                                                                              |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                                                                      |
+| `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it                                               |
+| `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument                                                          |
 | `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace, and which one changes a base configuration row |
-| `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads           |
-| `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                    |
-| `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`        |
-| `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace                         |
-| `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in  |
-| `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                  |
-| `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                 |
-| `results/<name>/run-<n>.prompt.txt`          | The exact rendered prompt supplied to the fresh session                                 |
-| `results/<name>/run-<n>.metadata.json`       | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata     |
-| `results/<name>/run-<n>.iterate.jsonl`       | Configured-reviewer handoff trace; required for that scenario, forbidden for any other  |
+| `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads                                                           |
+| `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                                                                    |
+| `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`                                                        |
+| `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace                                                                         |
+| `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in                                                  |
+| `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                                                                  |
+| `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                                                                 |
+| `results/<name>/run-<n>.prompt.txt`          | The exact rendered prompt supplied to the fresh session                                                                                 |
+| `results/<name>/run-<n>.metadata.json`       | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata                                                     |
+| `results/<name>/run-<n>.iterate.jsonl`       | Configured-reviewer handoff trace; required for that scenario, forbidden for any other                                                  |
 
 The shared half, for reference: `../eval.mjs` is the round lifecycle CLI and `../prepare.mjs` its
 deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs` (round, slot,
@@ -239,6 +239,83 @@ which runs multi-agent v2, the probe found:
 
 Re-run the probe after a CLI or model change. If no host setting stops a spawned agent from
 spawning, the scenario cannot be composed on that host; stop and decide rather than record it.
+
+Before **every** prospective pinned Codex spawn, the external coordinator must call
+[`verifyHostQualification({ bundlePath, launch, now })`](../_scaffold/host-qualification.mjs)
+with integer epoch milliseconds and the exact launch object it will immediately execute. Derive
+`suite` and `scenario` from the original manifest/task; pass exactly those fields plus `profile`,
+`argv`, `cwd`, `attemptRoot`, `home`, `codexHome`, `lastMessagePath`, `stdinPath`, `tmpdir`, `cliTmpdir`
+and `env`. The exact four-key `env` object is
+`{HOME: home, CODEX_HOME: codexHome, PWD: cwd, TMPDIR: cliTmpdir}`.
+Use its verified argv, cwd, roots and profile unchanged, send the exact stdin file bytes, and merge
+these four overrides into the existing process environment (for example, `dict(os.environ, **launch.env)`).
+This mapping does not replace the inherited environment or PATH. The ordered argv binds the tool's
+separate temporary paths with `-c shell_environment_policy.set.TMPDIR=<JSON-quoted tmpdir>` and then
+`-c shell_environment_policy.set.TMPPREFIX=<JSON-quoted join(tmpdir, 'zsh')>` immediately after
+`sandbox_workspace_write.exclude_slash_tmp=true`. Both temporary-root exclusions remain true;
+network access remains false and the sole writable root remains `[attemptRoot]`.
+The verifier is synchronous and read-only; a refusal stops the spawn. It does not launch, write
+receipts, repair a host or change the lifecycle API.
+
+Retain a closed schema-1 bundle with hashed toolchain/provenance references and one actual command
+probe for each source-owned mode: normal merge-gate, negative nesting, iterate and next-steps.
+The verifier owns the exact profiles, ordered flags, CLI/companion/archive pins, probe command and
+raw-evidence checks. All four probes must remain younger than 24 hours on every call. Probe roots
+use `attempt-1/project`, with HOME, CODEX_HOME and last-message output outside writable `attempt-1`;
+measured cwd likewise equals the physical `attemptRoot/project`. Use physical paths without symlink
+components, fresh homes without staged user configuration/rules/skills, and an absent measured
+last-message path. Only the launch-only CODEX_HOME authentication symlink is allowed; never copy or
+read credentials. Preserve the original provenance receipts: local hashing does not independently
+authenticate GitHub or prove extraction. Probe metadata is an attestation; retained raw JSONL,
+stderr, stdin, last message and actual input/output files provide the command evidence.
+
+For each unique original attempt root, the trusted coordinator must exclusively create
+`tmpdir = join(attemptRoot, 'tmp')` and
+`cliTmpdir = join(dirname(attemptRoot), basename(attemptRoot) + '-cli-tmp')` without an
+existing-directory fallback. Both must be physical, empty directories owned by the current user
+with exact mode `0700`, including absence of special permission bits. The tool's `tmpdir` is a
+sibling of `project/` inside the already writable attempt root. The outer CLI's `cliTmpdir` is
+outside that root and must neither contain nor be contained by `attemptRoot`, HOME, CODEX_HOME,
+stdin or last-message paths. This split keeps the CLI's excluded temporary root outside the tool's
+writable temporary directory. The verifier checks current topology, ownership, mode and emptiness;
+those checks do not prove historical freshness. The coordinator must never reuse either directory.
+Prevent replacement before spawning, and remove temporary trees only after the existing
+process-group cleanup requirements are satisfied. These directories do not change the project
+snapshot, initial working root or original host receipt.
+
+Each actual probe uses a distinct 48-character lowercase hexadecimal nonce in exactly two
+LF-terminated input lines, `host-command-probe-<nonce>` and `heredoc-payload-<same nonce>`. Run the
+source-owned explicit `/bin/zsh -lc` command with a quoted here-document piped to its stdin consumer.
+Only the exact command, the exact legacy JSON wrapper, or the pinned native shlex 1.3.0 display of
+`['/bin/zsh', '-lc', command]` is accepted. The verifier renders trusted expected text and compares
+bytes; it never parses or normalizes an observed command. The consumer compares
+all stdin bytes with `input.txt`, checks both shell and Node TMPDIR against `tmpdir`, checks shell
+and Node TMPPREFIX against `join(tmpdir, 'zsh')`, and checks cwd. It exclusively creates a
+mode-`0600` temporary file under the tool's temporary directory, verifies its physical path while
+it exists, writes and reads the exact input, and removes it. The same sole command must then try an
+exclusive mode-`0600` create at `join(cliTmpdir, 'host-denied-' + sha256hex(input) + '.tmp')` and
+observe actual `EPERM` or `EACCES` from that open. It explicitly checks that the denied target is
+absent. An unexpected successful open closes and removes only that exclusively owned file and
+fails; cleanup errors cannot stand in for a denied open. It then writes uppercase output, echoes
+the unchanged two-line input and writes `project/actual-environment.json`. Add that physical
+artifact as the probe's hashed `environment` reference. Its bytes must equal one of two complete
+source-owned fifteen-key JSON receipts plus LF, with the denial code exactly `EPERM` or `EACCES`.
+The receipt binds schema version, tool TMPDIR and shell/Node values, shell/Node TMPPREFIX, the
+separate CLI temporary path and actual write denial, cwd, stdin digest/length, temporary path and
+successful exclusive creation/removal. A bare Node probe, a mismatched or empty stream, an altered
+receipt, an outside write success, or a zsh here-document temporary-file denial fails qualification
+even when a pipeline reports exit 0.
+Pinned CLI parsing and shell inheritance require all four actual probes; deterministic fixtures
+and a local shell check cannot establish them.
+
+Record the returned qualification, verifier-policy and selected-probe digests, mode, profile and
+verification/expiry times alongside the identical actual launch identity in an external audit.
+The coordinator owns identical spawning, isolation, credential handling and replacement protection
+between verification and execution. Keep qualification material out of measured prompts and the
+existing host-receipt schema. This new instrument identity requires 40 merge-gate, 35 iterate and
+75 next-steps fresh behavioral recordings with their existing five valid independent runs and
+qualitative gates. Deterministic verifier fixtures are not behavioral evidence; retain prior
+attempts and findings unchanged without treating them as qualification or full acceptance.
 
 Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
 the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
@@ -458,13 +535,13 @@ the files that moved behind the first of them; it exits 0 even when a scenario i
 A scenario is one of five states, and they are kept apart because each one sends an operator
 somewhere different:
 
-| State     | Meaning                                                    | Remedy                                             |
-| --------- | ---------------------------------------------------------- | -------------------------------------------------- |
-| `current` | every archived stamp still describes this tree             | nothing to do                                      |
-| `stale`   | a stamp describes another build, or a run carries none     | re-record the round                                |
-| `short`   | fewer runs than the five-of-five bar                       | finish the round                                   |
-| `surplus` | more runs than that bar — the shape publication rejects     | reconcile the directory before publishing again    |
-| `absent`  | no archived runs at all                                    | record a round; nothing is proven about this gate  |
+| State     | Meaning                                                 | Remedy                                            |
+| --------- | ------------------------------------------------------- | ------------------------------------------------- |
+| `current` | every archived stamp still describes this tree          | nothing to do                                     |
+| `stale`   | a stamp describes another build, or a run carries none  | re-record the round                               |
+| `short`   | fewer runs than the five-of-five bar                    | finish the round                                  |
+| `surplus` | more runs than that bar — the shape publication rejects | reconcile the directory before publishing again   |
+| `absent`  | no archived runs at all                                 | record a round; nothing is proven about this gate |
 
 The count is read before the content, so a round that is both short and stale reports `short`; the
 remedies chain correctly, because a run recorded against the current tree leaves the rest of that

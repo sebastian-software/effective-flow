@@ -1,25 +1,25 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvfvua1r-bedc9ff6-5676-430d-bbe2-7c6c5992dad1",
+  "roundId": "mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a",
   "scenario": "non-interactive-dispatch-reports",
   "slot": 4,
   "attempt": 1,
-  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
-  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvfvua1r-bedc9ff6-5676-430d-bbe2-7c6c5992dad1/slots/non-interactive-dispatch-reports/slot-4/attempt-1/project",
+  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
+  "projectRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/non-interactive-dispatch-reports/slot-4/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
     "reportedVersion": "0.159.3",
-    "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
   },
-  "promptDigest": "sha256:8f4a9b4fe2fb23711757b40a192c85b83e97a91e8e555f5dfb0de18115420813",
+  "promptDigest": "sha256:cb3302f44e31729d1c8feac3b6192ec64f2a6909400fbdb77a7f0e33ebda9543",
   "fixtureDigest": "sha256:029c69c5e9585fe1f896454147597ef8ff5c0667527cc5fcd5319ff18dc2a98a",
-  "buildDigest": "sha256:d1a6a149627fd67e722e69f260f12385d1f14f73b1c11e099abc44d2fe7a8e23",
+  "buildDigest": "sha256:61ad5d9c9977d73b290e6c3482fb32acddb153d413ebb5d66c07eb4ea7ad8195",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvfvua1r-bedc9ff6-5676-430d-bbe2-7c6c5992dad1/slots/non-interactive-dispatch-reports/slot-4/attempt-1/project",
+    "initialWorkingRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/non-interactive-dispatch-reports/slot-4/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
@@ -27,7 +27,7 @@
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
       "reportedVersion": "0.159.3",
-      "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
     }
   }
 }

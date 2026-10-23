@@ -14,6 +14,7 @@ prompt-writing rule.
 
 ```sh
 node build.mjs          # builds native + portable targets into dist/ (alias: pnpm build)
+pnpm test:preflight     # verifies required capabilities in the test environment
 pnpm test               # runs the unit test suite (node:test)
 pnpm format             # formats with oxfmt (Markdown + JS)
 pnpm agent:check        # oxfmt --check, CI mode without write access
@@ -36,6 +37,20 @@ releases of those managers. After every source or installer change, use the same
 The build first writes into a temporary directory (`dist.tmp/`) and swaps it atomically against
 `dist/` only after a fully successful run. If the build fails, the previous `dist/` stays
 untouched.
+
+`pnpm test:preflight` probes the actual execution environment before the full test suite: it must
+create and clean a temporary fixture, bind an ephemeral loopback TCP listener, and, on macOS,
+apply a distinct nested Seatbelt policy that proves a real write is denied. `pnpm test` runs this
+guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
+correct. Before pilot readiness, attempt allocation or product writes, qualify the selected executor
+lane under [the protected-validation contract](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
+The local lane runs this preflight in the exact native worker sandbox and environment; failure blocks
+that lane. The equally strong protected lane instead proves the real local bridge boundary and frozen
+host/observer capabilities plus the unchanged full preflight, all checks and five native cases in its
+actual remote executor for a fresh immutable full-source qualification snapshot. Preserve failed local
+capability probes as failures. Do not skip, xfail, relax or substitute a check, or treat an unprotected
+host as native-worker proof. On macOS, the nested policy remains a legitimate full-suite requirement
+because the suite must exercise a different native sandbox policy.
 
 ## Placeholder and directive syntax
 
@@ -256,12 +271,14 @@ PR-review integration load it at their admission decision. Keep admission before
 artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
 One consequence is worth knowing before you write the fence. Each behavioural eval suite under
-`evals/<tool>/` — `merge-gate`, `iterate`, and `next-steps` — derives the content identity each archived
+`evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, and `build-context` — derives the content identity each archived
 round is stamped with by following exactly these rendered pointers through the built tree from its
 own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
 invalidates every archived round of that suite, and owes a re-record of the affected scenario
 evidence by hand through fresh agent sessions. `iterate` is inside the `merge-gate` load set, so a
-fragment `iterate` reaches stales both suites; changing shared `next-steps` affects all three.
+fragment `iterate` reaches stales both suites; changing shared `next-steps` affects its suite and any
+suite whose seeds reach it. The `build-context` suite owns native/portable continuation and host-policy
+evidence for the planned-build boundary; its README owns its scenario inventory and recording protocol.
 That debt comes due before the next release rather than before the next merge: `pnpm test`
 asserts only that the archived evidence is structurally
 sound, while `pnpm eval <tool> verify` reports the staleness on every pull request and fails the
@@ -274,7 +291,8 @@ it. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round,
 [`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ,
 [`evals/next-steps/README.md`](../../evals/next-steps/README.md) for the bounded final-report suite,
-and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all three suites on
+[`evals/build-context/README.md`](../../evals/build-context/README.md) for planned-build host evidence,
+and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all four suites on
 every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
 and recording requirements.
 
@@ -436,8 +454,9 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Ten subsystems and 27 runtime scripts carry this today: the pairs
-  `config-resolve.mjs`/
+  misread as one. Eleven subsystems and 31 runtime scripts carry this today: the pairs
+  `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
+  `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs` and
@@ -702,9 +721,46 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Ten dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 27 files: eight two-file subsystems, the remote tracker's seven-file family,
-the pilot measurement three-file family, and the shared `process-runner.mjs`. Each entry
+### Protected native macOS validation
+
+The protected validation bridge is an internal transport for native Codex on a supported macOS host.
+Its [owning contract](../../src/shared/protected-validation.md) defines the equally strong executor
+alternatives, pre-write qualification and later feature acceptance. The immutable `remoteValidation`
+descriptor `{protocol,requiredGates,policyDigest}` must be in the original `create` control before child
+spawn. Commands, native requirements and closure policy are bound indirectly through `policyDigest`.
+The closed operations are one read-only `validation-await-admission` poll returning
+`{state,bootstrapRef,diagnostic}`, append-only `validation-request`, and read-only `validation-result`.
+The admitted native handle is already host-observed, not returned by the admission poll; `bootstrapRef`
+references policy/guard evidence. The same validator waits for the exact result and submits the
+ordinary receipt. A result does not itself grant the gate.
+
+Before pilot readiness, allocation or product writes, the protected lane proves actual local
+worker/descendant write, `chmod`, replace, unlink, create and private-read denials for the physical
+mailbox, private host areas and actual sessions/transcript root, with frozen host/observer capabilities.
+It also proves the unchanged full preflight, every check and all five native cases in the actual remote
+executor for a fresh immutable full-source qualification snapshot. A failed local capability probe
+remains failed; it does not block this alternative when both its local boundary and remote executor
+proofs succeed. The normal local lane still requires its exact worker’s successful full preflight.
+
+After implementation, each required gate needs fresh full-candidate GitHub attempt/jobs/raw-log proof
+for all unchanged checks and five native cases. Before sealing completion or accepting the run, host
+postcheck consumes successful canonical helper calls request → verified poll → ordinary receipt in the
+same admitted native validator session, with identical run/gate/request/result identities. This later
+helper chain is not a pre-write prerequisite. Initial model-free qualification does not establish future
+model-role adherence or full pilot acceptance; transport never authorizes activation.
+
+Only the validation workflow is active in the pushed transport tree. Every other original workflow is
+an inert payload there. The already-started job restores all original workflows at their original
+paths, exact bytes and modes in one separate Git execution repository used locally by that job and
+never pushed. The closure and source snapshot are immutable; stale or incomplete proof fails closed.
+The owning contract also requires bounded complete history reachable from the exact source HEAD,
+snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
+identity through completion; changed history or closure requires a fresh attempt.
+
+Eleven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 31 files: nine two-file subsystems, the remote tracker's seven-file family,
+the pilot measurement three-file family, the two protected-validation helper modules, and the shared
+`process-runner.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
@@ -796,8 +852,11 @@ point is an I/O boundary over testable core or protocol modules:
   and an empty private `core.hooksPath`, so no split-index write and no hook reaches the real
   `.git/`. They pin `core.safecrlf=false`, so a line-ending round trip cannot abort the snapshot,
   and every helper git call runs with `LC_ALL=C`, so git's messages stay parseable. Both snapshots
-  use the identical procedure, so filter, line-ending and sparse-checkout effects cancel out. An
-  unreadable file or directory makes `capture` or `render` fail closed, naming the path. `render` verifies `executionRoot` and
+  use the identical procedure, so filter, line-ending and sparse-checkout effects cancel out. The
+  skipped-path check ignores only the literal macOS Git shim diagnostics for `DARWIN_USER_TEMP_DIR`
+  and an anchored `/tmp/xcrun_db-` cache path with eight alphanumeric characters and `Operation not
+permitted`, when Git exits successfully; a true unreadable file or directory still makes
+  `capture` or `render` fail closed with its path, and any nonzero status remains a failure. `render` verifies `executionRoot` and
   `baselineTree` against the recorded `baseline.json` and fails closed when its baseline is
   missing instead of capturing again. The helper refuses before any write when `.effective-flow/`
   is tracked, not ignored, or reached through a symlink; directories are created with mode `0700`
@@ -832,6 +891,64 @@ point is an I/O boundary over testable core or protocol modules:
   `src/shared/setup-execution-profiles.md`. No workflow run calls `begin-baseline` or `resume`. The
   exact developer contract and build-validated projection are in the
   [model-tiering pilot protocol guide](model-tiering-pilot-protocol.md).
+- **Build-run.** Invoke it as `node <skill-root>/scripts/build-run.mjs <operation>` with one
+  JSON object on standard input. The supported operations are `create`, `validate`, `bind-agent`,
+  `authorize-execution`, `transition-execution`, `prepare-completion`, `seal-delivery`, `handoff`,
+  `record-return`, `retain-evidence`, `checkpoint`, `question`, `reply`, `resume`, `receipt`, `terminal`,
+  `verify-terminal`, `continuation`, and `verify-continuation`; the operation name is the only argv
+  value. The
+  dependency-free core owns the versioned schemas, immutable source and request digests,
+  execution-root and repository-identity checks, one-operation lock, bounded question/reply
+  binding, active execution authorization/transition, completion transformation proof, delivery
+  sealing, post-commit handoff, checkout-return proof, gate receipts, terminal verification, and
+  the next-workflow projection. It writes only
+  under `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, uses 8 KiB UTF-8 for the
+  dispatch projection and 16 KiB UTF-8 for each control record, and fails closed on unknown fields,
+  unsafe paths, content drift, foreign evidence, stale replies, or incomplete terminal gates.
+  The build caller remains the authority for user-channel provenance, approval and gate judgments;
+  `build-run-core.mjs` proves identity and evidence but never grants consent or replaces the
+  phases-2–7 workflow. `build-run-contract.md` is the caller/runner lifecycle contract and
+  `build-delegated-run.md` owns the delegated phases and complete inline fallback. The helper is
+  shipped to all three targets through `RUNTIME_SCRIPT_FILES`; it is not a scheduler or a
+  persistent capability store.
+
+  `retain-evidence` is the bounded runtime-only evidence handoff. Its payload carries the common
+  run controls, an exact `evidenceId`, and exactly one of `content` or
+  `source:{root,path,digest}`. `content` must be nonempty, well-formed UTF-8 text without NUL;
+  both forms are limited to 1 MiB of actual bytes. A source is checked against the caller's
+  allowed single-file roots and copied byte-for-byte. The helper exclusively creates
+  `evidence-<evidenceId>.txt` below the verified runtime run and returns the standard file
+  reference, so callers never choose a write path. For example:
+
+  ```json
+  {"runtimeStateRoot":"/repo","repositoryIdentity":"/repo/.git","runId":"run-1","requestDigest":"sha256:<digest>","evidenceId":"final-plan","source":{"root":"/repo","path":"docs/plan/current.md","digest":"sha256:<digest>"}}
+  ```
+
+  Caller-supplied text is retained as text only: the returned digest identifies the retained bytes,
+  not native execution, a gate judgment, or delivery success. Retention is allowed after verified
+  handoff only as runtime-only retention and is refused after terminal completion. Before
+  `terminal`, a non-Git final plan must be retained from its source and the returned reference
+  must be used; a caller attestation cannot replace the plan bytes. The normal nonzero/`ok:false`
+  failure contract, runtime guard, operation lock, and exclusive-create collision rules apply.
+
+  Before a caller reads bound artifacts or mutates project state, it follows the helper invocation
+  and failure contract in [`build-run-contract.md`](../../src/shared/build-run-contract.md): the
+  operation is the sole argv value, the JSON payload is the only stdin content, and a JSON
+  `operation` field cannot replace the argv value. A nonzero exit, `ok:false`, missing or malformed
+  envelope, including `INVALID_OPERATION`, stops the run without an implicit retry or inline
+  fallback. `ABORT` is recorded only when the bound controls are valid.
+
+  `authorize-execution` records an already resolved delivery mode and owning agent before setup;
+  `transition-execution` binds the fresh receipt and lifecycle proof before baseline capture or
+  worker writes. `prepare-completion` binds the existing independent-review and final-validation
+  receipts before the approved plan receives its deterministic completion section and status/archive
+  transformation. `seal-delivery` proves that staged paths and modes match that basis; changed
+  product bytes require the independent marked `code-validator` formatting-only proof or renewed
+  affected gates. `handoff` ends product authority after the verified commit, leaving only the
+  existing runtime-only delivery/cleanup/pilot/completion outcomes; `record-return` proves an actual
+  in-place checkout restore. The original agent handle is retained for the one allowed pilot
+  finalization and is never persisted as a transferable capability.
+
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
   closed-schema JSON object on standard input: `cwd` (the verified absolute root, which is
   `RUNTIME_STATE_ROOT` for a hidden-mode plan directory), `planDir` relative to it, and optional
@@ -892,7 +1009,7 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 27 identical, usable scripts,
+checks prove that all three installed payloads contain all 29 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target
@@ -920,7 +1037,7 @@ and directive syntax").
   `apply-clarity-gate`, `delegation-mandate`, `chat-language`, `remote-helper-contract`, and the
   status markers in `plan-status`. `goal-completion` governs every remaining phase rather than one
   decision point, and `apply-clarity-gate` is a safety gate whose failure mode — silently not
-  running — is the one nobody notices. Neither is deferred, however tempting their size.
+  running — is the one nobody notices. Neither is deferred, however tempting their size, except the explicit planned-build execution boundary below.
   `delegation-mandate` is eager for the same reason: a lazy pointer at the delegation decision point
   would let the very host default this fragment corrects skip the pointer's own trigger, so the
   mandate must be present before the model plans the run. `base-branch-resolution` is eager in both
@@ -942,6 +1059,21 @@ and directive syntax").
   `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
   its core keeps every record write and transition and makes reading the fragment mandatory before
   such a worktree is created.
+- **Planned-build execution has one explicit boundary.** The current built `build` caller reports 208
+  split-newline lines against a 214-line budget. Its intent/source classification, canonical status,
+  clarification, configuration/retired-key preflight and approval basis stay eager. Only after those
+  guards pass does it read `build-run-contract` and select one fresh `deep` built-in runner or the
+  complete inline fallback. The runner loads `build-delegated-run` once; that fragment eagerly owns
+  `skill-discovery`, `completion-protocol`, `goal-completion`, `worktree-record-obligation`,
+  `delegation-mandate` and `pre-commit-gate` for phases 2–7. Their execution gates move together
+  with their owning phases; none is hidden behind its own decision. Existing
+  implementation/profile/review/validation markers move with those phases unchanged. The caller,
+  probe and completion-transform markers reconcile against `model-tiers`; the probe is `standard`,
+  never down, and the completion transform is an independent `code-validator` check. `build-run.mjs`
+  and `build-run-core.mjs` are explicitly shipped runtime files. The helper's 8 KiB dispatch and
+  16 KiB control bounds measure UTF-8 bytes, while the build reports caller lines; neither is a token
+  measurement. The inline fallback reads the exact same complete phases, so it preserves every
+  quality gate while recording isolation unavailable.
 - **Mode-gated blocks are lazy** – needed only when the branch is reached: `language-rules`,
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
@@ -1287,6 +1419,13 @@ role and verifies the effective model and reasoning values. The probe must also 
 precedence contract from [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents):
 the role file wins over conflicting spawn parameters. Treat the probe as compatibility evidence,
 not as a reason to activate the pilot.
+
+Before launching that probe or writing product files, satisfy the selected lane’s
+[launch qualification](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
+The local lane requires a separate successful `pnpm test:preflight` in the exact worker sandbox; the
+protected lane requires actual local bridge-boundary qualification and the unchanged full remote
+executor proof. An honest local capability failure is not relabeled. This process qualification proves
+observable capabilities only; the later feature helper chain and model-role observations remain owed.
 
 The acceptance checklist remains open until all of these are available: accessible original
 assignment and role evidence and complete actual helper observations; actual Claude model,

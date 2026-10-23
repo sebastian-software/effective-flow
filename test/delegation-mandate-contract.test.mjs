@@ -1152,3 +1152,133 @@ test('investigate Phase 3b runs a deep skeptic and Phase 4 folds its verdict con
     'German label is in the label list',
   );
 });
+
+// Planned build may isolate execution only after eager approval/source guards and owns no second runner.
+test('planned build dispatch keeps caller guards eager and all execution gates in one complete runner', () => {
+  const caller = readSource('tools', 'build.md');
+  const runner = readSource('shared', 'build-delegated-run.md');
+  const callerIncludes = collectIncludeNames(caller);
+  for (const guard of [
+    'chat-language',
+    'delegation-mandate',
+    'plan-status',
+    'apply-clarity-gate',
+  ]) {
+    assert.ok(callerIncludes.eager.has(guard), `caller must eagerly retain ${guard}`);
+  }
+  assert.equal((caller.match(/<!-- spawn-site:build\/delegated-run -->/g) ?? []).length, 1);
+  assert.doesNotMatch(caller, /### Phase [2-7]:/);
+  assert.ok(callerIncludes.lazy.has('build-run-contract'));
+  assert.ok(
+    callerIncludes.lazy.has('build-delegated-run'),
+    'complete inline fallback remains reachable',
+  );
+  const runnerIncludes = collectIncludeNames(runner);
+  for (const gate of [
+    'delegation-mandate',
+    'skill-discovery',
+    'completion-protocol',
+    'goal-completion',
+    'worktree-record-obligation',
+    'documentation-sync',
+    'pre-commit-gate',
+  ]) {
+    assert.ok(runnerIncludes.eager.has(gate), `runner eagerly owns ${gate}`);
+  }
+  let previous = -1;
+  for (const phase of [2, 3, 4, 5, 6, 7]) {
+    const current = runner.indexOf(`### Phase ${phase}:`);
+    assert.ok(current > previous, `phase ${phase} remains ordered and present`);
+    previous = current;
+  }
+  assert.equal(
+    (runner.match(/<!-- spawn-site:build-delegated-run\/nested-spawn-probe -->/g) ?? []).length,
+    1,
+  );
+  assert.doesNotMatch(runner, /<!-- spawn-site:build\/delegated-run -->/);
+  const control = readSource('shared', 'build-run-contract.md');
+  for (const contract of [
+    /\*\*same\*\* opaque agent handle/,
+    /relevant untracked files/,
+    /transient pilot state only in the original agent/,
+    /release all lifecycle\/pilot locks/,
+    /Truly non-interactive and merge-gate relays gain no authority/,
+    /completionBasis.*renewedGates/s,
+    /verify-terminal/,
+    /verify-continuation/,
+  ]) {
+    assert.match(control, contract);
+  }
+});
+
+test('build-run contract freezes helper invocation and fail-closed handoff behavior', () => {
+  const control = readSource('shared', 'build-run-contract.md');
+  assert.match(control, /^## Helper invocation and failure handling$/m);
+  assert.match(
+    control,
+    /exactly one positional operation(?: argument)?[^\n]*JSON payload[^\n]*stdin/i,
+    'the helper contract must keep the operation in argv and the payload on stdin',
+  );
+  assert.match(
+    control,
+    /JSON[^\n]*operation[^\n]*(?:never|not)[^\n]*(?:accepted|used)[^\n]*(?:argv|argument)/i,
+    'the helper contract must reject an operation supplied through JSON',
+  );
+  assert.match(
+    control,
+    /missing[^\n]*argv[^\n]*INVALID_OPERATION/i,
+    'missing argv must stop as INVALID_OPERATION',
+  );
+  assert.match(
+    control,
+    /nonzero[^\n]*ok:false|ok:false[^\n]*nonzero/i,
+    'nonzero and ok:false helper outcomes must stop the run',
+  );
+  assert.match(
+    control,
+    /malformed[\s\S]{0,180}INVALID_OPERATION|INVALID_OPERATION[\s\S]{0,180}malformed/i,
+    'malformed helper output, including INVALID_OPERATION, must stop the run',
+  );
+  assert.match(
+    control,
+    /no implicit retry[\s\S]{0,180}(?:inline fallback|fallback)/i,
+    'helper failure must not trigger an implicit retry or inline fallback',
+  );
+  assert.match(
+    control,
+    /terminal[^\n]*ABORT[^\n]*(?:only|if)[^\n]*bound[^\n]*valid/i,
+    'terminal ABORT requires a valid bound result',
+  );
+  assert.match(
+    control,
+    /never[\s\S]{0,180}(?:fabricate|treat|accept|turn)[\s\S]{0,180}(?:earlier|failed)[\s\S]{0,100}call/i,
+    'terminal handling must not fabricate or accept an earlier failed call',
+  );
+});
+
+test('build-run contract requires runtime-owned retention for non-Git terminal evidence', () => {
+  const control = readSource('shared', 'build-run-contract.md');
+  const retention = control.slice(control.indexOf('retain-evidence'));
+  assert.notEqual(retention, control, 'build-run contract must name the retention helper');
+  assert.match(retention, /required phase\/wisdom evidence/i, 'retention must cover run evidence');
+  assert.match(
+    retention,
+    /source[\s\S]{0,120}copies its exact bytes/i,
+    'retention must cover source artifacts',
+  );
+  assert.match(
+    retention,
+    /returns its standard file ref/i,
+    'retention must return a runtime-owned reference',
+  );
+  assert.match(
+    retention,
+    /non-Git final plan/i,
+    'terminal non-Git finalPlan evidence must be retained first',
+  );
+  assert.match(
+    retention,
+    /durable (?:evidence|private plan copy)/i,
+    'retention must preserve durable evidence rules',
+  );
+});

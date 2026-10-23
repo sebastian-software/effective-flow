@@ -5293,7 +5293,7 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
 // which is exactly the skip this gate removes. The detail contract behind the
 // core stays lazy and is deliberately not required here.
 export const DOCUMENTATION_SYNC_CONSUMERS = Object.freeze([
-  'tools/build.md',
+  'shared/build-delegated-run.md',
   'tools/fix.md',
   'tools/refactor.md',
   'tools/maintain.md',

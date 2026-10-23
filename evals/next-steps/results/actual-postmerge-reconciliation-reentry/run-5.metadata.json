@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef",
+  "roundId": "mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d",
   "scenario": "actual-postmerge-reconciliation-reentry",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
-  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/actual-postmerge-reconciliation-reentry/slot-5/attempt-1/project",
+  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
+  "projectRoot": "/private/tmp/effective-flow-next-steps-eval/rounds/mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d/slots/actual-postmerge-reconciliation-reentry/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6.1-sol",
@@ -13,13 +13,13 @@
     "reportedVersion": "0.159.3",
     "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
   },
-  "promptDigest": "sha256:ab67ab532186428b8c38d7d2e00d69dc2f3aa6c9a2b836e491a1961da42348ad",
+  "promptDigest": "sha256:1241279fb8e7fa3dfaa72a3c14e7773fba55e5cace57c12ec9b20ff92832534a",
   "fixtureDigest": "sha256:6c2b907243a2a51566e673eba87830bf90054ba2a552ecbd293254050f856447",
-  "buildDigest": "sha256:38626b2d6d7f6e23944bccc330b0aea858662e3d3f5da55c44d37258f4661ddd",
+  "buildDigest": "sha256:9081f40e79e88308e4f6cccbbcce3cfa0cdc611da4242ec4f1460a0399a6991d",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/actual-postmerge-reconciliation-reentry/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/private/tmp/effective-flow-next-steps-eval/rounds/mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d/slots/actual-postmerge-reconciliation-reentry/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
