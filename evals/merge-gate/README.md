@@ -240,6 +240,36 @@ which runs multi-agent v2, the probe found:
 Re-run the probe after a CLI or model change. If no host setting stops a spawned agent from
 spawning, the scenario cannot be composed on that host; stop and decide rather than record it.
 
+Before **every** prospective pinned Codex spawn, the external coordinator must call
+[`verifyHostQualification({ bundlePath, launch, now })`](../_scaffold/host-qualification.mjs)
+with integer epoch milliseconds and the exact launch object it will immediately execute. Derive
+`suite` and `scenario` from the original manifest/task; pass exactly those fields plus `profile`,
+`argv`, `cwd`, `attemptRoot`, `home`, `codexHome`, `lastMessagePath` and `stdinPath`. Use its verified
+argv, cwd, roots and profile unchanged, send the exact stdin file bytes, and set HOME, CODEX_HOME
+and PWD to the corresponding verified fields. The verifier is synchronous and read-only; a refusal
+stops the spawn. It does not launch, write receipts, repair a host or change the lifecycle API.
+
+Retain a closed schema-1 bundle with hashed toolchain/provenance references and one actual command
+probe for each source-owned mode: normal merge-gate, negative nesting, iterate and next-steps.
+The verifier owns the exact profiles, ordered flags, CLI/companion/archive pins, probe command and
+raw-evidence checks. All four probes must remain younger than 24 hours on every call. Probe roots
+use `attempt-1/project`, with HOME, CODEX_HOME and last-message output outside writable `attempt-1`;
+measured cwd likewise equals the physical `attemptRoot/project`. Use physical paths without symlink
+components, fresh homes without staged user configuration/rules/skills, and an absent measured
+last-message path. Only the launch-only CODEX_HOME authentication symlink is allowed; never copy or
+read credentials. Preserve the original provenance receipts: local hashing does not independently
+authenticate GitHub or prove extraction. Probe metadata is an attestation; retained raw JSONL,
+stderr, stdin, last message and actual input/output files provide the command evidence.
+
+Record the returned qualification, verifier-policy and selected-probe digests, mode, profile and
+verification/expiry times alongside the identical actual launch identity in an external audit.
+The coordinator owns identical spawning, isolation, credential handling and replacement protection
+between verification and execution. Keep qualification material out of measured prompts and the
+existing host-receipt schema. This new instrument identity requires 40 merge-gate, 35 iterate and
+75 next-steps fresh behavioral recordings with their existing five valid independent runs and
+qualitative gates. Deterministic verifier fixtures are not behavioral evidence; retain prior
+attempts and findings unchanged without treating them as qualification or full acceptance.
+
 Do not launch these as repository-root sub-agents or give them the scenario file: either can expose
 the expected outcome and turn the eval into a memory test. The repository CLI deliberately has no
 model launcher and cannot independently prove what the host supplied. It validates and archives the
