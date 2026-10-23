@@ -221,6 +221,11 @@ live sender.
 
 ## Running a round
 
+Launch every prepared slot with the shared [`host-run` runner](../host-run.md). Reuse one
+dedicated profiles root across rounds so an interrupted host can be recovered with `--recover`;
+the runner retains the suite's state and evidence while removing only its four Codex cache paths.
+Keep this suite's pinned model, prompt, sandbox, and host launch arguments unchanged.
+
 Exactly as for `merge-gate`, with `iterate` as the tool name, the same pinned profile (harness
 `codex-cli`, model `gpt-6-sol`, reasoning effort `medium`) and the sandbox under
 `/tmp/effective-flow-iterate-eval/rounds/`. As there, the pinned profile is the **caller's**: the
