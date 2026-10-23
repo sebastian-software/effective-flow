@@ -169,6 +169,14 @@ class Driver:
             raise ValueError('unsafe slot identity')
 
     def run_slot(self, task):
+        try:
+            return self._run_slot(task)
+        except Exception:
+            # A failed future may not be collected by run_all immediately.
+            self.block()
+            raise
+
+    def _run_slot(self, task):
         if self.stop.is_set() or self.blocker.exists():
             return {**{k: task[k] for k in ('suite', 'scenario', 'slot')},
                     'state': 'not-launched-after-blocker', 'actualModelStarted': False,

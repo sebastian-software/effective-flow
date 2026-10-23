@@ -13,8 +13,9 @@ import sys
 import tempfile
 import time
 import unittest
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import ThreadPoolExecutor, wait
 from pathlib import Path
+from unittest import mock
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -244,6 +245,102 @@ class HostDriverTests(unittest.TestCase):
         self.assertTrue((self.output / "cohorts/launch-blocked").exists())
         self.assertTrue(any(item["state"] == "qualification-refused-before-launch" for item in outcomes))
         self.assertTrue(any(not item["actualModelStarted"] for item in outcomes))
+
+    def test_worker_exception_blocks_before_cleanup(self) -> None:
+        driver = self.driver()
+        spec = importlib.util.spec_from_file_location("worker_fixture", DRIVER_PATH.with_name("eval_host_worker.py"))
+        worker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(worker)
+        home = self.work / "profile/home"
+        codehome = self.work / "profile/codex-home"
+        home.mkdir(parents=True)
+        codehome.mkdir()
+        task = self.task("worker-exceptions")
+        good = {"qualificationDigest": "fixture-qualification", "profile": task["profile"]}
+        cases = (
+            ("initial-pin", ValueError, json.dumps(good), [ValueError("pin changed")]),
+            ("timeout", subprocess.TimeoutExpired, subprocess.TimeoutExpired("qualify", 120), [None]),
+            ("malformed", json.JSONDecodeError, "not-json", [None]),
+            ("missing-profile", KeyError, json.dumps({"qualificationDigest": "fixture-qualification"}), [None]),
+            ("digest", ValueError, json.dumps({**good, "qualificationDigest": "changed"}), [None]),
+            ("profile", ValueError, json.dumps({**good, "profile": {}}), [None]),
+            ("final-pin", ValueError, json.dumps(good), [None, ValueError("pin changed")]),
+        )
+        for name, error, response, pins in cases:
+            with self.subTest(case=name):
+                directory = self.work / f"worker-{name}"
+                directory.mkdir()
+                job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
+                       "task": task, "node": NODE, "operator": str(self.operator),
+                       "configFile": str(self.config), "source": str(self.source),
+                       "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
+                       "blockerPath": str(driver.blocker), "launchGatePath": str(driver.gate)}
+                def cleanup(*_args):
+                    # The wrapper can remain in cleanup while another slot qualifies.
+                    self.assertTrue(driver.blocker.exists(), "worker cleanup started with launch gate open")
+                response_args = ({"side_effect": response} if isinstance(response, Exception)
+                                 else {"return_value": subprocess.CompletedProcess([], 0, response, "")})
+                with mock.patch.dict(os.environ, {"HOME": str(home), "CODEX_HOME": str(codehome)}), \
+                        mock.patch.object(worker, "registered_profile", return_value={"childPgid": 42, "ownerPid": 42}), \
+                        mock.patch.object(worker, "assert_pins", side_effect=pins), \
+                        mock.patch.object(worker, "launch_record", return_value={"stdinPath": task["prompt"]}), \
+                        mock.patch.object(worker.os, "fork", return_value=42), \
+                        mock.patch.object(worker.os, "waitpid", side_effect=cleanup), \
+                        mock.patch.object(worker.subprocess, "run", **response_args), \
+                        mock.patch.object(worker.subprocess, "Popen") as launch:
+                    with self.assertRaises(error):
+                        worker.execute_job(job)
+                    launch.assert_not_called()
+                self.assertTrue(driver.blocker.exists())
+                driver.blocker.unlink()
+
+    def test_slot_exceptions_block_before_future_collection(self) -> None:
+        cases = ("preflight-pin", "wrapper", "completion", "final-pin", "seal-timeout", "seal-malformed")
+        for name in cases:
+            with self.subTest(case=name):
+                driver = self.round_driver(name)
+                task = self.task(name)
+                error = ValueError(name)
+                cleanup = {"groupGone": True, "cleanupComplete": True}
+                def completed_wrapper(_command, directory, **_kwargs):
+                    if name == "wrapper":
+                        raise error
+                    for filename, value in (
+                        ("worker-result.json", {"exitCode": 0}),
+                        ("runner-profile.json", {"profilePath": "unused-fixture-profile"}),
+                        ("launch.json", {"cwd": str(self.project)}),
+                        ("process-start.json", {}),
+                    ):
+                        (directory / filename).write_text(json.dumps(value))
+                    (directory / "stdout.jsonl").write_text('{"type":"turn.completed"}\n')
+                    (directory / "last-message.txt").write_text("done\n")
+                    return 0
+                pins = [error] if name == "preflight-pin" else [None, error] if name == "final-pin" else None
+                native_run = subprocess.run
+                def seal_response(command, *args, **kwargs):
+                    if len(command) > 3 and command[3] == "seal":
+                        if name == "seal-timeout":
+                            raise subprocess.TimeoutExpired("seal", 180)
+                        return subprocess.CompletedProcess(command, 0, "not-json", "")
+                    return native_run(command, *args, **kwargs)
+                overrides = {"execute_wrapper": completed_wrapper,
+                             "verify_cleanup": mock.Mock(side_effect=error) if name == "completion" else mock.Mock(return_value=cleanup)}
+                with mock.patch.dict(driver.run_slot.__func__.__globals__, overrides), \
+                        mock.patch.object(driver, "check_pins", side_effect=pins), \
+                        mock.patch.object(driver, "check_source"), \
+                        mock.patch.object(subprocess, "run", side_effect=seal_response):
+                    with ThreadPoolExecutor(max_workers=1) as pool:
+                        future = pool.submit(driver.run_slot, task)
+                        done, pending = wait([future], timeout=5)
+                        self.assertEqual(done, {future})
+                        self.assertFalse(pending)
+                        # No run_all loop or caller has collected the failure yet.
+                        self.assertTrue(driver.blocker.exists(), "failed slot left launch gate open")
+                        self.assertTrue(driver.stop.is_set())
+                        expected = subprocess.TimeoutExpired if name == "seal-timeout" else ValueError
+                        with self.assertRaises(expected):
+                            future.result()
+                self.assertFalse(self.start_marker.exists())
 
     def test_driver_sigkill_allows_worker_watchdog_to_clean_profile(self) -> None:
         task = self.task("driver-kill")

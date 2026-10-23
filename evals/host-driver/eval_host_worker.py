@@ -106,34 +106,45 @@ def launch_record(job, home, codehome):
                     'PWD': task['projectRoot'], 'TMPDIR': str(cli_tmpdir)}}
 
 
+def block_launches(job):
+    with open(job['launchGatePath'], 'rb') as gate:
+        fcntl.flock(gate, fcntl.LOCK_EX)
+        Path(job['blockerPath']).touch(mode=0o600, exist_ok=True)
+
+
 def execute_job(job, *, fixture=False):
-    directory, root = Path(job['artifactDir']), Path(job['profilesRoot'])
-    home, codehome = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
-    profile_path = home.parent
-    record = registered_profile(profile_path, root, own_group=True)
-    if home != profile_path / 'home' or codehome != profile_path / 'codex-home':
-        raise ValueError('runner did not supply its recorded homes')
-    save(directory / 'runner-profile.json', {'profilePath': str(profile_path),
-         'childPgid': record['childPgid'], 'ownerPid': record['ownerPid'], 'bridgePid': os.getpid()})
-    if not fixture:
-        assert_pins(job)
-    fixture_only = fixture or bool(job.get('fixtureTools'))
-    if job.get('authFile'):
-        # The strict verifier allows this link only, not HOME/.codex/auth.json.
-        (codehome / 'auth.json').symlink_to(job['authFile'])
-    read_fd, write_fd = os.pipe()
-    watcher = os.fork()
-    if watcher == 0:
-        os.close(write_fd)
-        try:
-            watchdog(profile_path, root, record['ownerPid'], os.getppid(),
-                     float(job['timeoutSeconds']), float(job.get('modelTimeoutSeconds', job['timeoutSeconds'])),
-                     read_fd, directory)
-        finally:
-            os._exit(0)
-    os.close(read_fd)
-    started = now()
-    begin = time.monotonic()
+    try:
+        directory, root = Path(job['artifactDir']), Path(job['profilesRoot'])
+        home, codehome = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
+        profile_path = home.parent
+        record = registered_profile(profile_path, root, own_group=True)
+        if home != profile_path / 'home' or codehome != profile_path / 'codex-home':
+            raise ValueError('runner did not supply its recorded homes')
+        save(directory / 'runner-profile.json', {'profilePath': str(profile_path),
+             'childPgid': record['childPgid'], 'ownerPid': record['ownerPid'], 'bridgePid': os.getpid()})
+        if not fixture:
+            assert_pins(job)
+        fixture_only = fixture or bool(job.get('fixtureTools'))
+        if job.get('authFile'):
+            # The strict verifier allows this link only, not HOME/.codex/auth.json.
+            (codehome / 'auth.json').symlink_to(job['authFile'])
+        read_fd, write_fd = os.pipe()
+        watcher = os.fork()
+        if watcher == 0:
+            os.close(write_fd)
+            try:
+                watchdog(profile_path, root, record['ownerPid'], os.getppid(),
+                         float(job['timeoutSeconds']), float(job.get('modelTimeoutSeconds', job['timeoutSeconds'])),
+                         read_fd, directory)
+            finally:
+                os._exit(0)
+        os.close(read_fd)
+        started = now()
+        begin = time.monotonic()
+    except Exception:
+        if not fixture:
+            block_launches(job)
+        raise
     try:
         if fixture:
             launch = {'argv': job['command'], 'cwd': job['cwd'], 'home': str(home),
@@ -149,9 +160,7 @@ def execute_job(job, *, fixture=False):
             (directory / 'qualification.stdout.json').write_text(q.stdout)
             (directory / 'qualification.stderr.log').write_text(q.stderr)
             if q.returncode:
-                with open(job['launchGatePath'], 'rb') as gate:
-                    fcntl.flock(gate, fcntl.LOCK_EX)
-                    Path(job['blockerPath']).touch(mode=0o600, exist_ok=True)
+                block_launches(job)
                 save(directory / 'worker-result.json', {'state': 'qualification-refused-before-launch',
                      'actualModelStarted': False, 'qualificationExit': q.returncode,
                      'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
@@ -198,6 +207,11 @@ def execute_job(job, *, fixture=False):
              'elapsedSeconds': time.monotonic() - begin,
              'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
         return code if code >= 0 else 128 - code
+    except Exception:
+        # Close the launch gate before watchdog/wrapper cleanup can delay failure.
+        if not fixture:
+            block_launches(job)
+        raise
     finally:
         try:
             os.write(write_fd, b'done\n')
