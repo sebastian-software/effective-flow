@@ -139,13 +139,16 @@ titles, raw content, or user paths belong in this guide.
 
 ## Fresh model validation evidence
 
-Ten zero-inherited built-in model cases were run against the final target and a local synthetic
-reader contract. The cases covered admitted partial evidence with two exact-reference and scope
-calls, returned-cursor pagination with repeated-page stopping, missing scope, denial, identity
-mismatch, sensitive and embedded source-switch instructions, absent reader capability, ambiguous
-title input, compacted current context, an exact four-line export, and an admitted redacted
-summary-only analysis leaf. The valid cases produced zero findings and no mutation. Native request
-logs recorded five bounded content calls across the valid positive and negative cases.
+Ten zero-inherited built-in model cases covered the native extension, current/export paths, and
+analysis leaf against a built target and a local synthetic reader contract. The cases covered
+admitted partial evidence with two exact-reference and scope calls, returned-cursor pagination with
+repeated-page stopping, missing scope, denial, identity mismatch, sensitive and embedded
+source-switch instructions, absent reader capability, ambiguous title input, compacted current
+context, an exact four-line export, and an admitted redacted summary-only analysis leaf. The native
+admission and gateway cases used unchanged contracts; the final sensitivity case was rerecorded
+after the redaction and provenance clarifications. Final passing cases produced zero findings and no
+mutation. Native request logs recorded five bounded content calls across the valid positive and
+negative cases.
 
 The cases established that missing scope, absent capability, ambiguity, denial, and identity mismatch
 stop before continuation or source substitution; partial coverage retains missing-output limits;
@@ -154,18 +157,20 @@ an empty repository scope with no native discovery, source expansion, or writes.
 the visible fallback and started no children. This exercises the built-in method and does not claim
 normal child topology or an external model-provider API.
 
-Earlier observations remain excluded from the evidence: an initial permissive stub produced two
-schema-invalid traces; a strict instrument then type-checked. The first valid sensitive case exposed
-raw synthetic secret text and led to a Flow redaction clarification. The next valid case redacted the
-value but invented a P1 finding from quoted source text and led to a provenance clarification; review
-confirmed no source finding. Only the final fresh sensitive case is counted as passing: redaction and
-zero unsupported findings. An attempted CLI auth/egress recording never reached a model turn or
-reader and is not evidence; no auth file, private path, or new service was used.
+Earlier observations are retained separately from passing results. An initial permissive stub
+produced two schema-invalid traces; those traces are excluded, and a strict instrument then
+type-checked. The first valid sensitive case exposed raw synthetic secret text and is retained as
+failed behavioral evidence that led to a Flow redaction clarification. The next valid case redacted
+the value but invented a P1 finding from quoted source text and is retained as failed behavioral
+evidence that led to a provenance clarification; review confirmed no source finding. Only the final
+fresh sensitive case is counted as passing: redaction and zero unsupported findings. An attempted CLI
+auth/egress recording never reached a model turn or reader and is not evidence. Its initial startup
+had an explicit auth-file handle; the built-in tests used no CLI auth file or new service.
 
 Repository validation recorded 2,976 passing tests, one skipped test, and zero failures out of 2,977;
 the agent check, build, and offline distribution checks all completed with zero failures, and the
 focused native set completed 8/8. The three existing behavioral eval verifications still report
-stale release evidence, with all five scenarios in each suite carrying that recording obligation.
+stale release evidence, with all five recorded runs per scenario remaining stale in each suite.
 These results are separate from the two-page real-desktop observation above and do not establish
 provider-wide or CLI/Claude/portable native support.
 
