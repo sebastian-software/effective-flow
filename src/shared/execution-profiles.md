@@ -302,8 +302,7 @@ applies the `pilot-measurement-workflow` fragment's finalization.
 
 **Delegation.** One keyword-less resume is the same delegation; every retry is a new Quality spawn.
 A Fast spawn passes only its Fast reference's own values, never the spawn site's tier line: on
-Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on Codex the
-reference's `model` and `reasoning_effort`. The Quality spawn and every correction pass the site's
+Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex the `-fast` sidecar without per-spawn `model` or `reasoning_effort`. The Quality spawn and every correction pass the site's
 tier.
 
 **Requirements check.** For a packet whose Fast attempt returned without a fallback, repairing a

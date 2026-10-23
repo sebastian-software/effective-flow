@@ -2726,7 +2726,7 @@ test('profile refs render the exact Claude, Codex, and portable contracts', () =
   );
   assert.equal(
     transformRefs(token, 'codex', profileRefConfig),
-    '`effective-flow-nodejs-implementer` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"`',
+    '`effective-flow-nodejs-implementer-fast`',
   );
   assert.equal(
     transformRefs(token, 'portable', profileRefConfig),
@@ -7124,7 +7124,7 @@ test('renderSpawnSiteLine renders several roles of one tier once and differing t
       '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
       'codex',
     ),
-    'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`, no downward move).',
+    'Tier `standard`: select the named role’s configured sidecar (rules: `model-tiers`, no downward move).',
   );
   const mixed = '| `build/mixed` | Both | `role:nodejs-implementer,code-validator` | `no` |';
   assert.equal(

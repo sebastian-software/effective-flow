@@ -28,7 +28,6 @@ import { AGENT_PROFILE_MAPPINGS, MODEL_TIER_MAPPINGS } from './support/native-pr
 import { copyRepository } from './support/repository-copy.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
-const CODEX_FAST = AGENT_PROFILE_MAPPINGS.fast.codex;
 const PROVIDER_MODEL_NAMES = [
   ...new Set(
     [...Object.values(MODEL_TIER_MAPPINGS), ...Object.values(AGENT_PROFILE_MAPPINGS)].flatMap(
@@ -45,6 +44,21 @@ const FAST_WORKERS = [
   'effective-flow-rust-implementer-fast',
   'effective-flow-ui-implementer-fast',
 ];
+const STANDARD_WORKERS = readdirSync(join(ROOT_DIR, 'src/agents'))
+  .filter(
+    (name) =>
+      name.endsWith('.md') &&
+      getField(
+        extractFrontmatter(readFileSync(join(ROOT_DIR, 'src/agents', name), 'utf8')),
+        'tier',
+      ) === 'standard',
+  )
+  .map((name) => `effective-flow-${name.slice(0, -3)}`)
+  .sort();
+const TIER_WORKERS = STANDARD_WORKERS.flatMap((role) => [
+  `${role}-tier-mechanical`,
+  `${role}-tier-deep`,
+]).sort();
 
 let sandbox;
 let outputRoot;
@@ -144,23 +158,32 @@ test('native inventories are canonical and reconcile to exact asymmetric artifac
   assert.equal(codexBytes.endsWith('\n'), true);
   assert.equal(codexBytes.endsWith('\n\n'), false);
   assert.deepEqual(claudeInventory, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     harness: 'claude',
     baseWorkers,
     fastWorkers: FAST_WORKERS,
+    tierWorkers: [],
+    standardWorkers: STANDARD_WORKERS,
   });
   assert.deepEqual(codexInventory, {
-    schemaVersion: 1,
+    schemaVersion: 2,
     harness: 'codex',
     baseWorkers,
-    fastWorkers: [],
+    fastWorkers: FAST_WORKERS,
+    tierWorkers: TIER_WORKERS,
+    standardWorkers: STANDARD_WORKERS,
   });
   assert.deepEqual(
     reconcileNativeAgentInventories(claudeInventory, codexInventory, {
       claudeArtifacts: readdirSync(join(distRoot, 'claude/agents')),
       codexArtifacts: readdirSync(join(distRoot, 'codex/agents')),
     }),
-    { baseWorkers, claudeFastWorkers: FAST_WORKERS },
+    {
+      baseWorkers,
+      claudeFastWorkers: FAST_WORKERS,
+      codexFastWorkers: FAST_WORKERS,
+      codexTierWorkers: TIER_WORKERS,
+    },
   );
   assert.equal(
     existsSync(join(distRoot, 'portable/effective-flow/native-agent-inventory.json')),
@@ -237,8 +260,10 @@ test('all base workers retain complete native metadata and independent native ar
     );
   }
   assert.deepEqual(
-    readdirSync(codexAgents).filter((name) => name.endsWith('-fast.toml')),
-    [],
+    readdirSync(codexAgents)
+      .filter((name) => name.endsWith('-fast.toml'))
+      .sort(),
+    FAST_WORKERS.map((name) => `${name}.toml`),
   );
 });
 
@@ -303,8 +328,7 @@ test('the adopted selector lines render the exact per-target Fast representation
   ];
   const expected = {
     claude: (worker) => `Fast: \`${worker}-fast\`.`,
-    codex: (worker) =>
-      `Fast: \`${worker}\` with \`model: "${CODEX_FAST.model}"\` and \`reasoning_effort: "${CODEX_FAST.reasoning_effort}"\`.`,
+    codex: (worker) => `Fast: \`${worker}-fast\`.`,
     portable: (worker) => `Fast: \`${worker}\` (portable build: Fast unavailable, Quality only).`,
   };
   for (const [tool, bounds] of Object.entries(ADOPTED_RENDERED_PHASES)) {
@@ -325,9 +349,9 @@ test('the adopted selector lines render the exact per-target Fast representation
       }
       // Whole-file counts: no Fast rendering exists outside the five selector lines.
       const fastReferences = text.match(/effective-flow-[a-z-]+-fast\b/g) ?? [];
-      assert.equal(fastReferences.length, target === 'claude' ? 5 : 0, `${where} Fast sidecars`);
+      assert.equal(fastReferences.length, target !== 'portable' ? 5 : 0, `${where} Fast sidecars`);
       const overrides = text.match(/reasoning_effort: "[a-z]+"/g) ?? [];
-      assert.equal(overrides.length, target === 'codex' ? 5 : 0, `${where} per-spawn overrides`);
+      assert.equal(overrides.length, 0, `${where} per-spawn overrides`);
       assert.equal(
         (text.match(/\(portable build: Fast unavailable, Quality only\)/g) ?? []).length,
         target === 'portable' ? 5 : 0,
@@ -724,8 +748,8 @@ test('spawn-site markers and the model-tiers fragment render per target', () => 
     ],
     codex: [
       'Tier `standard`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`, no downward move).',
-      '   Tier `deep` for `effective-flow-nodejs-implementer`: pass `model: gpt-6.1-sol` and `reasoning_effort: high` on the spawn. ' +
-        'Tier `standard` for `effective-flow-code-validator`: pass `model: gpt-5.6-luna` and `reasoning_effort: medium` on the spawn (rules: `model-tiers`).',
+      '   Tier `deep` for `effective-flow-nodejs-implementer`: select the named role’s configured sidecar. ' +
+        'Tier `standard` for `effective-flow-code-validator`: select the named role’s configured sidecar (rules: `model-tiers`).',
     ],
     portable: [
       'Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).',

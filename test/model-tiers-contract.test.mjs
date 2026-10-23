@@ -728,8 +728,8 @@ test('margin, floor, retry and host-override rules live only in model-tiers.md',
 // adopting site binds its rendered line to the Quality selectors.
 const FAST_CARVE_OUT =
   "A Fast spawn passes only its Fast reference's own values, never the spawn site's tier line: on " +
-  'Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on Codex the ' +
-  "reference's `model` and `reasoning_effort`. The Quality spawn and every correction pass the " +
+  'Claude Code the `-fast` sidecar without a per-invocation `model` or `effort`, on native Codex the ' +
+  '`-fast` sidecar without per-spawn `model` or `reasoning_effort`. The Quality spawn and every correction pass the ' +
   "site's tier.";
 const QUALITY_BINDING = 'The tier line below binds each Quality selector, never a Fast reference:';
 const flatten = (text) => text.replace(/\s+/g, ' ');
@@ -925,7 +925,11 @@ test('rendered tier text carries only its own provider in native targets and bot
             `${where}: ${line}`,
           );
         } else if (target === 'codex') {
-          assert.match(line, /on the spawn/, `${where}: ${line}`);
+          assert.match(
+            line,
+            /on the spawn|select the named role’s configured sidecar/,
+            `${where}: ${line}`,
+          );
           assert.ok(!namesAny(line, CLAUDE_MODELS) && !/`effort:/.test(line), `${where}: ${line}`);
         } else {
           assert.match(

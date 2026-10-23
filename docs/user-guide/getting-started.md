@@ -117,12 +117,13 @@ means a distinct native lower-cost, lower-latency implementation capability for 
 that passes a fail-closed gate. Neither intent names a provider model, changes the caller setting,
 or weakens later validation and review.
 
-Native builds now contain the enforcement representation for that policy. Claude Code receives five
-generated Fast implementer sidecars, while Codex keeps each base worker and can apply explicit
-`model` and `reasoning_effort` parameters to an individual spawn. Native inventories let the local
-installer reject missing, extra, malformed, or cross-target-inconsistent sidecars before it changes
-an installation. Those artifacts establish build and installation consistency, not runtime
-discovery or activation.
+Native builds now contain the enforcement representation for that policy. Claude Code and Codex
+receive five generated Fast implementer sidecars; Codex also receives generated mechanical and
+deep tier variants for its standard roles. Codex role-file model and reasoning settings take
+precedence over spawn parameters, so direct invocation of a base role remains safe. Native
+inventories let the local installer reject missing, extra, malformed, or cross-target-inconsistent
+generated roles before it changes an installation. Those artifacts establish build and installation
+consistency, not runtime discovery or activation.
 
 `build` and `refactor` are the two workflows that request that representation, and only inside
 their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and
@@ -131,9 +132,9 @@ activates the generation automatically once the preregistered baseline condition
 generation, Fast may be requested only for the first implementation attempt of an eligible native
 packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
 scope-growth continuation uses Quality; coupled packets also share Quality. A project without the opt-in
-stays Quality-only. Portable installations remain
-Quality-only in V1 and contain no native sidecar inventory, Fast sidecar or native model
-metadata. See the
+stays Quality-only. Portable installations remain Quality-only in V1 and contain no native sidecar
+inventory, Fast sidecar, or native profile artifact; their spawn-site tier text still carries the
+provider values generated for the executing harness. See the
 [configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
 
 Claude skills can request a different caller model or effort for their current turn, but that

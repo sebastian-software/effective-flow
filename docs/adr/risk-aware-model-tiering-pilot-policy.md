@@ -74,7 +74,7 @@ happened. An unknown attempt, from an abandoned and reconciled run, is never cou
 and its missing cost keeps the cost comparison unavailable, so the cost gate stays fail-closed.
 
 The policy is now paired with rendered native capability and a local measurement subsystem:
-generated Claude Fast implementer sidecars, a Codex per-spawn override representation, strict
+generated Fast implementer sidecars for each native harness, Codex tier variants, strict schema-2
 native inventories, and a dependency-free runtime helper with preregistered lifecycle, evidence,
 aggregation, evaluation, purge, and exceptional discard operations. Evidence remains private below
 `.effective-flow/model-tiering-pilot/`. Minimal structured records exclude content and identity;

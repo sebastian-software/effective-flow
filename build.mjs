@@ -1977,18 +1977,40 @@ try {
         const tomlDesc = cleanDescription(getField(a.fm, 'description'));
 
         const codexAgentName = `${AGENT_PREFIX}${a.name}`;
-        let toml = `name = ${tomlString(codexAgentName)}\n`;
-        toml += `description = ${tomlString(tomlDesc)}\n`;
-        toml += `model = ${tomlString(codexModel)}\n`;
-        toml += `model_reasoning_effort = ${tomlString(codexEffort)}\n`;
-        if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
         const codexBody = assertNoWorkerTierLine(
           renderGeneratedBody(a.body, 'codex', { ...refConfig, context }),
           'codex',
           context,
         );
-        toml += `developer_instructions = '''\n${codexBody.replace(/\n+$/, '')}\n'''\n`;
-        writeFileSync(join(CODEX_AGENTS_DIR, `${codexAgentName}.toml`), toml);
+        const writeCodexAgent = (name, description, mapping) => {
+          let toml = `name = ${tomlString(name)}\n`;
+          toml += `description = ${tomlString(description)}\n`;
+          toml += `model = ${tomlString(mapping.model)}\n`;
+          toml += `model_reasoning_effort = ${tomlString(mapping.reasoning_effort)}\n`;
+          if (codexSandbox) toml += `sandbox_mode = ${tomlString(codexSandbox)}\n`;
+          toml += `developer_instructions = '''\n${codexBody.replace(/\n+$/, '')}\n'''\n`;
+          writeFileSync(join(CODEX_AGENTS_DIR, `${name}.toml`), toml);
+        };
+        writeCodexAgent(codexAgentName, tomlDesc, {
+          model: codexModel,
+          reasoning_effort: codexEffort,
+        });
+        if (fastProfileAgents.has(a.name)) {
+          writeCodexAgent(
+            `${codexAgentName}-fast`,
+            `${tomlDesc}${FAST_PROFILE_DESCRIPTION_SUFFIX}`,
+            AGENT_PROFILE_MAPPINGS.fast.codex,
+          );
+        }
+        if (a.tier === 'standard') {
+          for (const tier of ['mechanical', 'deep']) {
+            writeCodexAgent(
+              `${codexAgentName}-tier-${tier}`,
+              `${tomlDesc} ${tier} tier variant; use only for an allowed tier move.`,
+              MODEL_TIER_MAPPINGS[tier].codex,
+            );
+          }
+        }
       } else {
         const workerName = `${AGENT_PREFIX}${a.name}`;
         const description = cleanDescription(getField(a.fm, 'description'));
@@ -2013,18 +2035,33 @@ try {
   const claudeFastWorkerStems = [...fastProfileAgents]
     .map((name) => `${AGENT_PREFIX}${name}-fast`)
     .sort();
+  const standardWorkerStems = agents
+    .filter(({ tier }) => tier === 'standard')
+    .map(({ name }) => `${AGENT_PREFIX}${name}`)
+    .sort();
+  const codexTierWorkerStems = agents
+    .filter(({ tier }) => tier === 'standard')
+    .flatMap(({ name }) => [
+      `${AGENT_PREFIX}${name}-tier-mechanical`,
+      `${AGENT_PREFIX}${name}-tier-deep`,
+    ])
+    .sort();
   const nativeInventories = {
     claude: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       harness: 'claude',
       baseWorkers: baseWorkerStems,
       fastWorkers: claudeFastWorkerStems,
+      tierWorkers: [],
+      standardWorkers: standardWorkerStems,
     },
     codex: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       harness: 'codex',
       baseWorkers: baseWorkerStems,
-      fastWorkers: [],
+      fastWorkers: claudeFastWorkerStems,
+      tierWorkers: codexTierWorkerStems,
+      standardWorkers: standardWorkerStems,
     },
   };
   const nativeInventoryPaths = {
@@ -2141,7 +2178,7 @@ try {
       root: DIST_CODEX,
       workerPath: (ref) => join(CODEX_AGENTS_DIR, `${ref}.toml`),
       metadata: (ref) => `name = ${tomlString(ref)}`,
-      workerNames: new Set(baseWorkerStems),
+      workerNames: new Set([...baseWorkerStems, ...claudeFastWorkerStems, ...codexTierWorkerStems]),
     },
     {
       name: 'portable',
@@ -2516,7 +2553,7 @@ process.stdout.write(
   `  Claude Code (native): ${exposedCount} tools (+${internalCount} internal) -> dist/claude/${SKILL_NAME}/, ${agents.length} base + ${fastProfileAgents.size} Fast agents -> dist/claude/agents/${AGENT_PREFIX}*.md\n`,
 );
 process.stdout.write(
-  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${SKILL_NAME}/, ${agents.length} base agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
+  `  Codex (native):      ${exposedCount} tools (+${internalCount} internal) -> dist/codex/${SKILL_NAME}/, ${agents.length} base + ${fastProfileAgents.size} Fast + ${agents.filter(({ tier }) => tier === 'standard').length * 2} tier agents -> dist/codex/agents/${AGENT_PREFIX}*.toml\n`,
 );
 process.stdout.write(
   `  Managers (portable): ${exposedCount} tools (+${internalCount} internal), ${agents.length} worker contracts -> dist/portable/${SKILL_NAME}/\n`,

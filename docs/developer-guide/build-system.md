@@ -45,17 +45,18 @@ written by hand.
 **Inline references** sit in the middle of the text (including in the frontmatter `description:`
 string) and use the Mustache syntax `{{…}}`:
 
-| Placeholder                    | Meaning                          | Replacement                                                                                                                                                                                                                                                       |
-| ------------------------------ | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `{{FLOW}}`                     | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                                                |
-| `{{SKILL:X}}`                  | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                                                    |
-| `{{AGENT:X}}`                  | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                                              |
-| `{{AGENT_PROFILE:X:fast}}`     | Fast implementation reference    | Claude `` `effective-flow-X-fast` ``; Codex `` `effective-flow-X` with `model: "gpt-5.6-luna"` and `reasoning_effort: "medium"` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) ``                                            |
-| `{{BUILD_TARGET}}`             | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                                                           |
-| `{{VERSION}}`                  | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                                                   |
-| `{{TOOL_LIST}}`                | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                                                       |
-| `{{MODEL_TIER_ROLE_DEFAULTS}}` | Role default tiers               | A Role / Tier table built from every `src/agents/*.md` `tier:`; allowed once, in `src/shared/model-tiers.md` only                                                                                                                                                 |
-| `{{MODEL_TIER_TABLE}}`         | Harness values per tier          | The marked table between `<!-- model-tier-table:start -->` and `<!-- model-tier-table:end -->`: Claude column in `dist/claude`, Codex column in `dist/codex`, both keyed by spawn mechanism in `dist/portable`; allowed once, in `src/shared/model-tiers.md` only |
+| Placeholder                     | Meaning                          | Replacement                                                                                                                                                                                                                                                       |
+| ------------------------------- | -------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `{{FLOW}}`                      | Bare skill invocation            | `/effective-flow` (Claude), `$effective-flow` (Codex), `effective-flow` (portable)                                                                                                                                                                                |
+| `{{SKILL:X}}`                   | Tool reference                   | `/effective-flow X` (exposed) or `` `tools/X.md` `` (internal)                                                                                                                                                                                                    |
+| `{{AGENT:X}}`                   | Base worker reference            | `` `effective-flow-X` `` in all targets; native role or portable contract identifier                                                                                                                                                                              |
+| `{{AGENT_PROFILE:X:fast}}`      | Fast implementation reference    | Claude and Codex `` `effective-flow-X-fast` ``; portable `` `effective-flow-X` (portable build: Fast unavailable, Quality only) ``                                                                                                                                |
+| `{{BUILD_TARGET}}`              | Rendered consumer target         | `claude`, `codex`, or `portable`; lets a shared fragment tell a portable installation from a native one                                                                                                                                                           |
+| `{{VERSION}}`                   | Version including git short hash | Manifest version + `git rev-parse --short HEAD`                                                                                                                                                                                                                   |
+| `{{TOOL_LIST}}`                 | Router tool list                 | The `EXPOSED_TOOLS` names joined with `, ` in catalog order                                                                                                                                                                                                       |
+| `{{MODEL_TIER_ROLE_DEFAULTS}}`  | Role default tiers               | A Role / Tier table built from every `src/agents/*.md` `tier:`; allowed once, in `src/shared/model-tiers.md` only                                                                                                                                                 |
+| `{{MODEL_TIER_TABLE}}`          | Harness values per tier          | The marked table between `<!-- model-tier-table:start -->` and `<!-- model-tier-table:end -->`: Claude column in `dist/claude`, Codex column in `dist/codex`, both keyed by spawn mechanism in `dist/portable`; allowed once, in `src/shared/model-tiers.md` only |
+| `{{MODEL_TIER_ROLE_SELECTION}}` | Native role selection            | Codex's generated base, mechanical/deep tier, retry, and built-in/default selection contract; Claude's direct Harness-values instruction; allowed once, in `src/shared/model-tiers.md` only                                                                       |
 
 A third form is the **spawn-site marker**, a line of its own inside the paragraph or list item of a
 spawn instruction in `src/tools` or `src/shared`:
@@ -343,13 +344,16 @@ The build aborts with an error message if any of these guards is violated:
   spawn-site checks (marker syntax, table, reconciliation, surviving marker), the native
   cross-provider guard, the portable provider-name guard and the pilot Quality-identity guard are
   described under "Model tiers".
-- **Native-agent inventory guard:** The build emits canonical schema-version-1
+- **Native-agent inventory guard:** The build emits canonical schema-version-2
   `native-agent-inventory.json` files inside the Claude and Codex skill targets. Both inventories
-  must use the exact key order, sorted unique worker stems, and identical base membership. Claude
-  lists the five generated Fast stems; Codex lists no Fast sidecars. The shared parser and
-  reconciler require each inventory to match its agent directory exactly, while portable output
-  must contain no inventory. The inventory proves build/install consistency, not signed provenance
-  or runtime discovery.
+  must use the exact key order `schemaVersion`, `harness`, `baseWorkers`, `fastWorkers`,
+  `tierWorkers`, `standardWorkers`, sorted unique worker stems, and identical base membership. Each
+  inventory has `baseWorkers`, `fastWorkers`, `standardWorkers`, and `tierWorkers`; `standardWorkers`
+  lists the six standard roles on both targets. Claude has five Fast stems and an empty tier list,
+  while Codex has five Fast stems and twelve tier variants for those six roles. The shared parser
+  and reconciler require each inventory to match its agent directory
+  exactly, while portable output must contain no inventory. The inventory proves build/install
+  consistency, not signed provenance or runtime discovery.
 - **Central-skill ownership guard (#168):** The dependency-free guard reconciles
   `docs/developer-guide/skill-ownership.json` with the dedicated table in
   `skill-ownership.md`, every token in source `## Recommended skills` fallback chains, and the
@@ -1141,15 +1145,16 @@ natively; instead each portable spawn site passes the tier's values for the harn
 
 Fast-capable routes are classified centrally after the project-routing table is parsed. The five
 current routes—tooling, frontend JavaScript/TypeScript, Node.js, Rust, and generic product
-implementation—resolve to five unique base workers. For each one, the Claude renderer generates an
-`effective-flow-<name>-fast.md` sidecar from the base contract, changing only its name,
-description, model, and effort. The current generated stems are
+implementation—resolve to five unique base workers. For each one, both native renderers generate an
+`effective-flow-<name>-fast` sidecar from the base contract, changing only its name, description,
+model, and effort. The current generated stems are
 `effective-flow-generic-implementer-fast`, `effective-flow-ui-implementer-fast`,
 `effective-flow-nodejs-implementer-fast`, `effective-flow-rust-implementer-fast`, and
-`effective-flow-generic-product-implementer-fast`. No `src/agents/*-fast.md` source exists. Codex generates no Fast
-TOML sidecar; `{{AGENT_PROFILE:X:fast}}` instead renders the base worker with explicit per-spawn
-`model` and `reasoning_effort` parameters. The provider mappings live only in `build.mjs` and are
-validated before rendering. The current operational mapping is Claude `sonnet`/`medium` and Codex
+`effective-flow-generic-product-implementer-fast`. No `src/agents/*-fast.md` source exists. Codex
+also generates `-tier-mechanical` and `-tier-deep` TOML variants for the six standard roles. A
+Codex role file's model and reasoning settings take precedence over matching spawn parameters,
+which keeps direct base-role invocation safe. The provider mappings live only in `build.mjs` and
+are validated before rendering. The current operational mapping is Claude `sonnet`/`medium` and Codex
 `gpt-5.6-luna`/`medium`; these aliases are replaceable build metadata, not part of project
 configuration or the durable representation decision.
 
@@ -1163,11 +1168,18 @@ provider model names there outside build-generated tier text (see "Model tiers")
 implementers.
 
 Native builds also write `native-agent-inventory.json` beside each skill. Its `baseWorkers` list is
-identical across harnesses; Claude's `fastWorkers` lists the five generated sidecars and Codex's is
-empty. `scripts/native-agent-inventory.mjs validate <claude-inventory> <claude-agents-dir>
+identical across harnesses. Claude's `fastWorkers` and Codex's `fastWorkers` each list the five
+generated sidecars; Claude's `tierWorkers` is empty and Codex's lists twelve generated variants.
+`standardWorkers` lists the six standard base roles on both targets.
+`scripts/native-agent-inventory.mjs validate <claude-inventory> <claude-agents-dir>
 <codex-inventory> <codex-agents-dir>` exposes the shared strict validation for the local installer.
 Success is silent; usage, read, schema, canonical-byte, or reconciliation failures produce one
 stable diagnostic on standard error and exit with status 1.
+
+New builds emit schema 2. The historical baseline utility may opt into schema-1 read compatibility
+explicitly; current installation and inventory validation remain schema-2 strict. Legacy reads do
+not authorize schema-1 generation or omit `standardWorkers` or `tierWorkers` from a current
+inventory.
 
 Portable tool references use the harness-neutral notation `effective-flow <tool>`. Its router
 also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
@@ -1207,7 +1219,11 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   `opus`/`high` and `gpt-6.1-sol`/`high`.
 - **Role default.** An agent's `tier:` is the single source of its native Claude and Codex model
   and effort. `{{MODEL_TIER_ROLE_DEFAULTS}}` renders the role table into `model-tiers` from the same
-  field.
+  field. `{{MODEL_TIER_ROLE_SELECTION}}` then renders the target-specific selection rule: Codex
+  chooses a generated mechanical/deep variant only for an allowed one-step move of a standard
+  role, returns to the base role for standard, and uses the base role for retries and corrections.
+  A mechanical variant is never a new retry default; deep roles have no tier variants. Named Codex
+  roles must not be overridden with spawn model or effort parameters because the role file wins.
 - **Spawn sites.** `src/shared/model-tiers.md` holds the `## Spawn sites` table with the columns
   `Site | Spawn | Tier | Down`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
   placeholders, `Tier` one of `` `mechanical` ``, `` `standard` ``, `` `deep` `` or
@@ -1260,6 +1276,25 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
 
   `pr/body-draft` (the PR body draft in `pr` step 9) is the first real `mechanical` site; the
   no-op `merge-gate-delegated-run/nested-spawn-probe` is the only other one.
+
+### Manual native compatibility acceptance
+
+Build and inventory checks are static acceptance: they prove that the generated files and
+references agree. They do not prove that a host applies the intended model and reasoning settings.
+Before accepting native Codex
+profile changes for issue #581, record a real host probe that invokes each generated Fast and tier
+role and verifies the effective model and reasoning values. The probe must also verify the
+precedence contract from [Codex agent configuration](https://learn.chatgpt.com/docs/agent-configuration/subagents):
+the role file wins over conflicting spawn parameters. Treat the probe as compatibility evidence,
+not as a reason to activate the pilot.
+
+The acceptance checklist remains open until all of these are available: accessible original
+assignment and role evidence and complete actual helper observations; actual Claude model,
+reasoning and workload evidence after capacity becomes available; six behavioral scenarios with
+five independently recorded valid runs each, twenty portable paired workloads, and two native
+compatibility lanes. Metadata and inventory tests cannot substitute for those runtime
+observations. Do not fabricate evidence, relax the gates, or activate the pilot automatically
+while any item is open.
 
 ## Optional upstream ownership audit
 
