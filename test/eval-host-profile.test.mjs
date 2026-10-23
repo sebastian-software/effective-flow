@@ -20,7 +20,7 @@ import { test } from 'node:test';
 // homes it was given and creates the cache locations whose lifetime is the public contract.
 const CHILD_SOURCE = String.raw`
 import { spawn } from 'node:child_process';
-import { mkdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 const [mode, evidence, code = '0'] = process.argv.slice(2);
 const home = process.env.HOME;
@@ -35,25 +35,27 @@ const cachePaths = [
 for (const path of cachePaths) { mkdirSync(path, { recursive: true }); writeFileSync(join(path, 'fixture.cache'), 'cache'); }
 mkdirSync(join(run, 'state'), { recursive: true });
 writeFileSync(join(run, 'state', 'retained.log'), 'must survive cleanup');
-writeFileSync(evidence, JSON.stringify({ home, codexHome, pid: process.pid }));
-if (mode === 'exit') process.exit(Number(code));
+const record = { home, codexHome, pid: process.pid };
 if (mode === 'grandchild') {
   const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { detached: false, stdio: 'ignore' });
-  writeFileSync(evidence, JSON.stringify({ home, codexHome, pid: process.pid, childPid: child.pid }));
+  record.childPid = child.pid;
 }
 if (mode === 'stubborn-grandchild') {
   const child = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { detached: false, stdio: 'ignore' });
-  writeFileSync(evidence, JSON.stringify({ home, codexHome, pid: process.pid, childPid: child.pid }));
-  process.exit(0);
+  record.childPid = child.pid;
 }
 if (mode === 'replace-cache') {
   const cache = join(codexHome, 'cache');
   rmSync(cache, { recursive: true, force: true });
   symlinkSync(code, cache);
 }
-if (mode === 'replace-cache') process.exit(0);
 process.on('SIGTERM', () => process.exit(143));
 process.on('SIGINT', () => process.exit(130));
+// Evidence is the readiness signal: publish it only after setup is complete.
+writeFileSync(evidence + '.tmp', JSON.stringify(record));
+renameSync(evidence + '.tmp', evidence);
+if (mode === 'exit') process.exit(Number(code));
+if (mode === 'replace-cache' || mode === 'stubborn-grandchild') process.exit(0);
 setInterval(() => {}, 1000);
 `;
 
