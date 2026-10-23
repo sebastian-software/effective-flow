@@ -25,6 +25,9 @@ const LEAN_SENTENCE =
 const PROGRESS_SENTENCE =
   ' **Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.';
 
+const COMPACT_PROGRESS_SENTENCE =
+  ' **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.';
+
 const BASE_BODY = `\n## Delegation mandate\n\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
 const MANDATE_BODY = `\n## Delegation mandate\n\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
 
@@ -121,6 +124,7 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'delegation-mandate-model-tiers',
       'delegation-mandate-lean-orchestrator',
       'delegation-mandate-subagent-progress',
+      'delegation-mandate-compact-checkpoint',
     ],
   );
 });
@@ -154,6 +158,70 @@ test('the conditional progress delta composes and rejects relocation or conditio
           codex({ body }),
         ),
       /body drift outside the expected deltas/,
+    );
+  }
+});
+
+// Invariant: the new exact replacement composes from the older baseline and the previous
+// progress-bearing PR body without authorizing another edit or a native permission change.
+test('the compact checkpoint delta composes from older and previous progress baselines', () => {
+  const older = BASE_BODY.replace(WORKER, `${ANALYSIS}\n${WORKER}`);
+  const previous = MANDATE_BODY.replace(WORKER, `${ANALYSIS}${LEAN_SENTENCE}\n${WORKER}`).replace(
+    `${WORKER}${TIER_SENTENCE}`,
+    `${WORKER}${TIER_SENTENCE}${PROGRESS_SENTENCE}`,
+  );
+  const current = previous.replace(PROGRESS_SENTENCE, COMPACT_PROGRESS_SENTENCE);
+  for (const [harness, sidecar] of [
+    ['claude', claude],
+    ['codex', codex],
+  ]) {
+    const compare = (baseline, working) =>
+      compareNativeSidecar(
+        harness,
+        'effective-flow-rust-reviewer',
+        sidecar({ effort: 'high', body: baseline }),
+        sidecar({ effort: 'high', body: working }),
+      );
+    assert.deepEqual(
+      compare(older, current),
+      [
+        'delegation-mandate-model-tiers',
+        'delegation-mandate-lean-orchestrator',
+        'delegation-mandate-subagent-progress',
+        'delegation-mandate-compact-checkpoint',
+      ],
+      harness,
+    );
+    assert.deepEqual(
+      compare(previous, current),
+      ['delegation-mandate-compact-checkpoint'],
+      harness,
+    );
+    for (const body of [
+      current.replace('Another bullet.', 'Another bullet!'),
+      current.replace('workers never load it', 'workers may load it'),
+      current.replace('at most 20 words', 'at most 200 words'),
+      current.replace('ordinary parent event wait', 'any parent wait'),
+      current
+        .replace(COMPACT_PROGRESS_SENTENCE, '')
+        .replace('- Another bullet.', `- Another bullet.${COMPACT_PROGRESS_SENTENCE}`),
+      current + COMPACT_PROGRESS_SENTENCE,
+    ]) {
+      assert.throws(
+        () => compare(previous, body),
+        /body drift outside the expected deltas/,
+        harness,
+      );
+    }
+    const baseline = sidecar({ effort: 'high', body: previous });
+    const permissionDrift = sidecar({ effort: 'high', body: current }).replace(
+      harness === 'claude' ? 'tools: Read, Skill' : 'model_reasoning_effort = "high"',
+      harness === 'claude' ? 'tools: Read, Skill, SendMessage' : 'model_reasoning_effort = "xhigh"',
+    );
+    assert.throws(
+      () =>
+        compareNativeSidecar(harness, 'effective-flow-rust-reviewer', baseline, permissionDrift),
+      /configuration drift outside the expected deltas/,
     );
   }
 });

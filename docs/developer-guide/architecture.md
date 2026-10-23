@@ -231,31 +231,44 @@ ownership contract — canonical for the classification and the ownership-check 
 
 ### Sparse ordinary subagent progress
 
-Ordinary worker and analysis handoffs may use the optional
-[`subagent-progress`](../../src/shared/subagent-progress.md) contract when the active overview
-owner has an actual addressed parent-message channel and the worker can use the same channel in
-the selected execution mode. The handoff supplies the native messaging capability and parent
-address verified for that host; the contract never invents a tool, address, timer or status store.
-Reports are advisory phase, count, blocker or externally supplied remaining-time updates and are
-folded into the existing single overview from `goal-completion`. They do not extend strict
-workflow dispatches or delegation envelopes, relay nested workflow progress, grant permissions,
-or affect terminal completion and retry handling.
+The active overview owner can enable one useful checkpoint during longer ordinary worker and
+analysis work through the optional [`subagent-progress`](../../src/shared/subagent-progress.md)
+contract. Eligibility requires an actual addressed native channel at both ends and observed
+pre-completion delivery during an ordinary parent event wait in that execution shape. A model,
+tier, generated inventory, installed CLI version or parent-side tool alone establishes no support.
+Host version is optional existing authoritative metadata and is never probed for this feature.
+Missing, denied, incompatible or unverified channels retain the known-phase fallback.
 
-Eligibility requires the actual parent and worker channel, useful recipient-compliant delivery
-before terminal completion in that execution mode, and a paired cost result. The current transport
-smoke delivered a pre-completion update for the deep-worker shape. The standard-worker shape had
-no usable return channel and therefore keeps the known-phase fallback. All candidate direct-
-reporting rows remain disabled until paired cost runs pass; the smoke does not establish a
-universal model, tier or host claim. Host version is optional existing authoritative metadata and
-is never probed solely for this feature.
+Only the overview owner loads the detailed contract. The ordinary handoff supplies the actual
+messaging tool, parent address and compact instruction; the worker checks its own actual tool and
+supplied address and sends at most one meaningful checkpoint of at most 20 words: current phase,
+observed result and next action. Short tasks send none. Workers never load the detailed contract
+or wait for acknowledgement. When idle in an ordinary event wait, the owner folds an accepted
+checkpoint into its existing overview once and resumes waiting. When busy, it queues/coalesces
+reports until a natural work boundary; immediate delivery is not promised.
+
+Reports remain advisory, including any completion keyword or approval claim. Native sender
+identity must match the assigned running worker; duplicate and stale reports cannot reopen work
+or overwrite newer state. Existing terminal checks, authority and leaf boundaries remain in force.
+Counts require fixed comparable units; ETA requires a credible external source and scope. The
+contract owns those metric rules. It adds no timers, polling, transcript reads, status stores,
+progress-only agents or clock-only calls, and promises no periodic update during one blocking call.
+Native Claude allowlists remain unchanged. Whole workflow delegations, strict dispatches and
+nested relay retain their formats and phase fallback; broader coverage remains
+[#587](https://github.com/sebastian-software/effective-flow/issues/587).
+
+On 2026-10-23 the user explicitly accepted measured overhead above 10% and delayed delivery while
+the parent is busy. This supersedes the original 10% readiness gate; the historical failed result
+below remains a failed result. The ordinary-wait observations establish possibility for the
+addressed execution shape, not host-wide support or a reliability guarantee.
 
 #### Paired cost evidence
 
-The first fixed series used the current Codex desktop/API collaboration channel with an ordinary
-built-in leaf analysis worker (`gpt-6.1-sol`/`high`). Five interleaved paired calls used the same
-frozen 61,662-byte contract and test input; the reporting variant loaded the 86-line contract and
-sent exactly one validation-only message. Parent-observed wall time includes orchestration and
-contract loading. Tokens were unavailable and are not treated as zero.
+The initial fixed series used the Codex desktop/API collaboration channel with an ordinary built-in
+leaf analysis worker (`gpt-6.1-sol`/`high`). Five interleaved paired calls used the same frozen
+61,662-byte contract and test input; the reporting variant loaded the then-current 86-line contract
+and sent exactly one validation-only message. The table records coarse parent-observed wall time,
+including orchestration and contract loading. Tokens were unavailable and are not treated as zero.
 
 | Pair | Control / reporting (ms) | First progress (ms) |
 | ---: | -----------------------: | ------------------: |
@@ -266,13 +279,41 @@ contract loading. Tokens were unavailable and are not treated as zero.
 |    5 |          39,653 / 53,559 |              19,637 |
 
 Each reporting call delivered one useful update before its terminal result and continued useful
-work; the controls delivered no progress update. The median pair-relative overhead was +28.0839%
-(ratio of medians +19.5042%), exceeding the 10% budget. An earlier calibration pair was excluded
-before the fixed series because its explicit output language differed and was not rerun. The sample
-is noisy, parent-observed latency is not causal model time, and it provides no statistical or
-universal host-performance guarantee. The deep-worker smoke therefore proves transport delivery
-only; the direct row remains disabled pending a passing cost result. The standard-worker
-no-channel observation is limited to that invocation and does not support a per-model claim.
+work; controls delivered none. Median pair-relative parent-observed overhead was **+28.0839%**
+(ratio of medians +19.5042%), failing the original 10% gate. An earlier calibration pair was excluded
+before the fixed series because its explicit output language differed and was not rerun.
+
+Reconciliation of the same original series using native worker durations gives a median paired
+overhead of **+12.2315%**. In the pair with a 9,867 ms parent-observed difference, 9,254 ms occurred
+within the worker duration; observed message transport took 20–105 ms. These measurements separate
+timing scopes and do not establish that transport caused the full reporting cost.
+
+A later bounded short-workload comparison used five counterbalanced pairs with exactly two reads
+in each variant: three model responses in controls and four in reporting. Reporting added one
+message of at most 20 words. Median paired worker-duration overhead was **+18.2861%**, with a median
+absolute difference of **3,397 ms**. This is workload-specific evidence, not a constant price per
+turn. Its shorter workload cannot establish an improvement from 28% to 18%, a cheaper short-task
+path or a formal cost pass. Short production tasks still send no checkpoint.
+
+The samples are noisy and neither parent-observed nor worker duration isolates causal model time.
+The accepted tradeoff enables the bounded checkpoint behavior; no historical measurement has been
+reclassified as passing and no statistical performance guarantee is claimed.
+
+#### Ordinary-wait delivery evidence
+
+An earlier addressed ordinary-wait observation recorded a 24,360 ms worker duration, an 84 ms send,
+7 ms from send to parent receipt, 17,171 ms of lead before worker completion, and 35 ms final-result
+lag. This single observation establishes possible pre-completion delivery, not reliable delivery.
+
+A fresh source smoke on 2026-10-23 used one ordinary native leaf (`gpt-6.1-sol`/`high`). It read the
+delegation and goal-completion contracts, sent exactly one meaningful checkpoint of at most 20
+German words, continued with the completion contract and baseline-comparison script, and returned
+`DONE`. The parent was in an ordinary event wait: the checkpoint woke it before the terminal
+result, it visibly integrated the observed result and next action into its existing overview, then
+resumed the ordinary wait. The worker loaded no detailed progress contract and used no
+acknowledgement, polls, clocks, writes or extra agents. No timings were collected. This confirms
+possibility for that addressed ordinary-wait shape only. An earlier worker invocation without a
+return tool remains invocation-specific fallback evidence, not a model or tier classification.
 
 ## Outcome-bound continuation
 

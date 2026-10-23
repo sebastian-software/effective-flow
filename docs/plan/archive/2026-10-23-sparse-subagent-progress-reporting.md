@@ -6,11 +6,18 @@
 
 ## Requirement
 
-Make long delegated work easier to follow from the main session without materially slowing it
-down. Workers should report meaningful progress through an existing parent-message capability;
-the orchestrator folds those reports into its existing overview. The requested preference is a
-credible remaining-time estimate, otherwise measurable progress, otherwise the current phase.
-Availability and evidence govern which information can actually be shown.
+Make long delegated work easier to follow from the main session. Eligible ordinary workers send
+one compact meaningful checkpoint through an existing parent-message capability; the orchestrator
+folds it into its existing overview. A credible remaining-time estimate or measurable progress
+requires evidence; otherwise the checkpoint gives the phase, observed result and next action.
+
+**Current acceptance, 2026-10-23:** the user explicitly accepts measured overhead above 10% and
+delivery delay while the parent is busy. This supersedes the original “no material slowdown”
+requirement and 10% readiness gate. The initial failed measurements remain historical failures.
+The activated slice requires actual addressed tools at both ends and observed delivery during an
+ordinary parent event wait before terminal completion. It establishes possibility for that
+execution shape, not host-wide support or reliable timing. The archived status and location remain
+unchanged; the initial fallback outcome and checks are preserved below as dated history.
 
 The first iteration covers ordinary worker and analysis handoffs issued by the active overview
 owner. The user selected this scope during deep review. Whole delegated workflows keep their
@@ -66,23 +73,27 @@ will edit Markdown instructions. It does not add a dashboard or change a host ap
    notifications. Describe that as the last known state, without claiming worker confirmation.
    The new fragment holds one small, canonical eligibility table for tested native channel semantics,
    execution mode, enablement and evidence. An available parent channel and worker channel, observed
-   pre-completion delivery and the paired cost gate determine eligibility. Missing/incompatible
+   pre-completion delivery during an ordinary parent event wait and recorded bounded cost evidence
+   determine eligibility under the user's accepted tradeoff. Missing/incompatible
    channels or unproven behavior select the phase fallback. Record host family/version only when
    authoritative metadata is already available; version is not a gate and introduces no probe.
    The user explicitly approved this channel-and-behavior rule during implementation preflight on
    2026-10-23, replacing the stricter version-identity requirement from the planning review.
 3. **Keep one contract owner.** Add a short lazy pointer at the ordinary worker/analysis handoff
    seam owned by `delegation-mandate` and put the
-   detailed contract in `src/shared/subagent-progress.md`. The orchestrator loads it only for long
-   or multi-stage work with an actual candidate channel; a worker loads it only when its handoff
-   explicitly enables reporting after eligibility checks. Known fallback workers never load it.
+   detailed contract in `src/shared/subagent-progress.md`. Only the active overview owner loads it,
+   for longer ordinary worker/analysis work with an actual candidate channel and ordinary event
+   wait. Workers never load it; their compact handoff supplies the actual tool, parent address and
+   checkpoint instruction, and they check their own actual tool and supplied address before sending.
    Keep overview ownership in `goal-completion` and
    terminal handling in `completion-protocol`; refer to them instead of copying their rules.
 4. **Bound reporting cost.** The orchestrator's assignment already supplies the initial phase;
-   workers need no separate acknowledgement. Send at most one report per meaningful phase or
-   work-unit boundary, coalesce small steps, and aim for no more than one non-blocker update per
-   minute when timestamps are already available. This is best effort, never a timer guarantee.
-   Short tasks normally return only their final result. A material blocker is reported promptly.
+   workers send no acknowledgement. During longer eligible work, send at most one meaningful
+   checkpoint of at most 20 words: phase, observed result and next action. Coalesce smaller steps
+   and continue productive work without an acknowledgement wait. Short tasks send no checkpoint.
+   An idle parent integrates the message into its existing overview and resumes ordinary waiting;
+   a busy parent queues/coalesces it until a natural boundary. No periodic or immediate guarantee
+   applies, especially during a single blocking call.
 5. **Prefer evidence over apparent precision.** Show an ETA only when the underlying running
    operation supplies a credible remaining-time estimate; label its source and scope, and retract
    stale estimates. Do not derive a deadline from elapsed time, token use, model tier, or phase
@@ -138,12 +149,15 @@ will edit Markdown instructions. It does not add a dashboard or change a host ap
    every message. Existing output-language and single-owner rules remain authoritative. Do not add
    progress fields to workflow dispatches, strict control-line formats or delegation envelopes.
 3. **Connect only supported transports.** Codex and portable handoffs use only their actual native
-   parent channel after the support-table and cost checks pass. Claude workers retain their existing
-   permissions and phase fallback. Missing/denied messaging degrades once to the known phase without retry loops or
-   failure of the underlying task. Reporting never requires a worker to wait for acknowledgement.
+   parent channel after the observed ordinary-wait eligibility checks. The user accepts the
+   recorded checkpoint overhead; the old 10% gate no longer blocks activation. Claude workers
+   retain their existing permissions and phase fallback. Missing/denied messaging degrades once
+   to the known phase without retry loops or failure of the underlying task. Reporting never
+   requires a worker to wait for acknowledgement.
 4. **Verify contracts and benefit.** Add focused assertions for the invariants below, inspect all
    generated targets and execute the representative smoke cases. Record the cost comparison and
-   whether it passes the rollout condition before treating the feature as ready.
+   its timing scope and limitations under the accepted tradeoff; do not relabel a failed historical
+   cost result as passing or generalize a single smoke into a reliability guarantee.
 5. **Reconcile build and evidence obligations.** Measure the built eager-core sizes using
    `node build.mjs`, retain existing ratchets and at most ten lines of headroom, and document any
    necessary budget adjustment. Reconcile ownership and existing guide sections. Run CI's source
@@ -177,8 +191,14 @@ delegation-envelope extensions and nested progress forwarding are outside this i
 
 ## Acceptance criteria
 
-- [ ] A supported long-running worker can deliver a useful intermediate phase/outcome report to
-      its parent before the terminal result; the parent updates the existing overview once.
+- [x] One addressed ordinary worker delivered a useful checkpoint before its terminal result
+      while its parent was in an ordinary event wait; the parent integrated it into the existing
+      overview once and resumed waiting. This demonstrates possibility for that shape only.
+- [x] Only the active overview owner loads the detailed contract. The handoff supplies the actual
+      tool and parent address; the worker checks both and sends at most one meaningful checkpoint
+      of at most 20 words containing phase, observed result and next action, without acknowledgement.
+- [x] An idle parent integrates and resumes ordinary waiting; a busy parent queues/coalesces until
+      a natural work boundary. No immediate or periodic delivery is promised during blocking work.
 - [x] A short task requires no extra status call. No reporting path adds timers, polling,
       transcript reads, status files, progress-only agents or acknowledgement waits.
 - [x] Missing transport, denied messaging and blocking foreground execution retain an honest
@@ -192,57 +212,58 @@ delegation-envelope extensions and nested progress forwarding are outside this i
       with the instructed recipient policy without claiming enforced per-recipient tool isolation.
 - [x] Native Claude workers retain the leaf tool exclusions; shared and portable instructions
       contain no Claude-specific transport assumption. Every target documents its fallback.
-- [x] Representative paired runs demonstrate a useful pre-completion update and meet the cost
-      gate below. If a target fails, its direct reporting stays disabled in the delivered behavior.
+- [x] Bounded cost evidence is recorded with its timing scope and limitations. The user's
+      2026-10-23 acceptance of overhead above 10% supersedes the original cost gate; no historical
+      failed measurement is claimed as passing.
 - [x] Eligibility requires a matching enabled channel-contract row, available parent and worker
-      channels, proven pre-completion delivery and cost evidence; unproven modes or incompatible
+      addressed channels, observed pre-completion delivery during an ordinary event wait and
+      bounded cost evidence under the accepted tradeoff; unproven modes or incompatible
       channels use the fallback. Host-version metadata is optional and never actively probed.
       No Claude role receives broader messaging permissions as part of this feature.
 - [x] Direct reports cover ordinary worker/analysis handoffs from the overview owner only;
       whole workflow delegations retain existing formats and phase fallback without new fields.
-- [x] CI's checks pass in the prescribed order; build budgets and ownership checks pass without
+- [x] Activation checks pass in CI's prescribed order; build budgets and ownership checks pass without
       editing generated `dist/`. Affected behavioral evidence is identified for release upkeep.
 
-The unchecked direct-reporting criterion is not a released capability: the candidate channel
-passed the validation-only transport proof, but no production shape met the cost gate. The delivered
-behavior is the disabled-contract/phase-fallback outcome explicitly allowed above. Checked metric
-and edge-case criteria describe enforced contract invariants; they do not claim runtime coverage
-for an enabled reporting path. Activation requires fresh passing evidence.
+The direct-reporting criterion is supported by the fresh ordinary-wait smoke described below.
+Checked metric and edge-case criteria describe contract invariants, not exhaustive runtime coverage.
+Independent activation checks and review passed for the current source/test snapshot. Their
+results are recorded separately below; the initial delivery checks remain historical evidence.
 
 ## Validation plan
 
 - Run targeted contract tests with `node --test test/delegation-mandate-contract.test.mjs
 test/workflow-contracts.test.mjs`; add only invariants that static tests can actually establish.
   Static prose matching does not establish message delivery, latency or runtime overhead.
-- In a native Codex host and a portable host proposed for direct reporting, observe intermediate
-  delivery, unchanged-state silence, a blocker, terminal completion and missing-channel fallback.
-  Verify the Claude phase-only path with unchanged allowlists. Record tested versions/capabilities
-  and mirror only the support eligibility into the canonical table; untested targets stay on fallback.
-- Include unknown ETA, fixed comparable units, unequal phases, changed denominator and stale
-  worker messages in those bounded behavioral checks; inspect both parent-visible output and calls.
-- Compare the complete proposed behavior against the current behavior, including eligibility lookup,
-  contract loading and phase fallback, not just message calls. Cover each direct-reporting target
-  and a long task on a disabled target, plus a short-task control, with identical model/effort and tool
-  permissions except the message capability. Use at least five interleaved paired runs; record
-  wall time, tokens where available, added status calls and useful visible updates. Proposed
-  readiness threshold: median extra wall time at most 10%, zero extra status calls for the short
-  control, and no duplicate/unchanged-state chatter. This threshold operationalizes "no material
-  slowdown"; it is a rollout condition, not an existing measurement or statistical guarantee.
-  Inconclusive/noisy results keep direct reporting off for that target rather than asserting success.
-  A fallback-path regression requires reducing its added loading cost before delivery.
+- Verify the addressed ordinary-wait path with one ordinary leaf: a meaningful checkpoint arrives
+  before the terminal result, the parent integrates it into its existing overview and resumes the
+  ordinary wait, and the worker continues useful work without loading the detailed contract.
+  Record actual capability and observed behavior; do not infer support from model, tier, inventory,
+  parent-only tools or an installed CLI version. Keep missing/denied/unverified paths on fallback
+  and native Claude allowlists unchanged.
+- Check advisory/terminal separation, native sender association, stale/duplicate handling, short-task
+  silence and fallback in focused contract tests. Static matches establish only those invariants;
+  do not claim runtime coverage for every ETA, denominator, blocker or unavailable-channel case.
+- Preserve the existing paired cost evidence and the five counterbalanced short-workload pairs.
+  Distinguish coarse parent-observed time from native worker duration and transport latency.
+  The 10% threshold was the original rollout condition and was explicitly superseded on
+  2026-10-23; no new benchmark is required or authorized for activation. Report overhead and
+  workload limits without claiming a formal cost pass or comparing different workloads as an
+  improvement. Short production tasks still add zero status calls.
 - Run `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution` in that order.
   Inspect Claude sidecars, Codex role variants and portable workers for permission/contract parity.
 - Compare `pnpm eval merge-gate verify`, `pnpm eval iterate verify` and
   `pnpm eval next-steps verify` before/after. New lazy pointers may enter derived load sets even
   when a particular run never opens them; follow each suite's recording requirements before release.
-- During this planning run, format and lint only this plan; no implementation tests are claimed.
+- Keep initial planning and delivery results dated separately from activation results. Record
+  fresh full-check counts only after the independent validator supplies them.
 
 ## Assumptions and open points
 
-- Phase-only visibility is useful when richer reporting cannot meet the user's cost constraint.
+- Phase-only visibility remains useful when the actual channel or execution shape is ineligible.
   It must remain honest about which state was observed and which was only assigned.
-- The 10% median cost budget is a conservative planning choice, subject to actual paired evidence.
-  A lack of evidence never justifies a zero-overhead claim or default enabling for an untested host.
+- The user accepts the recorded overhead above 10% and busy-parent delay. A lack of evidence
+  still never justifies a zero-overhead claim or default enabling for an unverified execution shape.
 - Effective Flow owns this orchestration contract. Existing Effective Delivery ownership remains;
   no domain craft playbook is duplicated into the new fragment.
 
@@ -254,7 +275,8 @@ Effective Delivery supplied independent read-only judgment for gap analysis and 
 The gap analysis found one Important item and one Note, both incorporated below. The internal
 review found no further issues. Deep interactive review then found two Important items and one
 Note; direct fixes and the user's scope decision are recorded below. No blocking item remains.
-Runtime delivery and overhead remain implementation-time gates.
+At this initial planning review, runtime delivery and overhead remained implementation-time
+checks. The later user decision above supersedes its 10% cost gate.
 
 The scorecard passes clarity, measurable verification, verified context, overall purpose, no-code
 scope, code frugality and workflow fit; documentation-only target fields are not applicable.
@@ -309,6 +331,52 @@ performance claim was inferred from static evidence.
 
 ## Implementation outcome
 
+### Activated ordinary-wait slice, 2026-10-23
+
+The current source enables one compact checkpoint for eligible longer ordinary worker and analysis
+handoffs issued by the active overview owner. Eligibility uses actual addressed native tools at
+both ends and observed useful delivery before terminal completion during an ordinary parent event
+wait. The user explicitly accepts measured overhead above 10% and delayed delivery while the
+parent is busy; the original readiness gate is superseded.
+
+- Only the overview owner loads `subagent-progress`; workers receive the compact instruction,
+  check their actual tool and supplied parent address, and send at most one meaningful checkpoint
+  of at most 20 words containing phase, observed result and next action. Short tasks send none;
+  no acknowledgement, detail-contract read, timer, poll, transcript read, status store or extra agent
+  is introduced. Native Claude permissions and leaf boundaries remain unchanged.
+- An idle owner integrates the checkpoint into the existing overview then resumes ordinary waiting;
+  a busy owner queues/coalesces until a natural boundary. Native sender, stale/duplicate, advisory,
+  terminal, authority and fallback rules remain in force. ETA and count honesty remain unchanged.
+- The fresh source smoke used one ordinary native leaf (`gpt-6.1-sol`/`high`): it read the mandate
+  and goal-completion sources, sent exactly one meaningful checkpoint of at most 20 German words,
+  then read the completion protocol and baseline script and returned `DONE`. The parent was in an
+  ordinary event wait, received and visibly integrated the checkpoint before terminal completion,
+  and resumed waiting. There was no worker detail-contract read, acknowledgement, poll, clock,
+  write or extra agent. No timings were collected. This establishes possibility for that addressed
+  shape only, not host-wide support or reliable timing.
+- Historical coarse parent-observed median paired overhead remains **+28.0839%**, failing the old
+  10% gate; native worker-duration reconciliation of those pairs is **+12.2315%**. Five later
+  counterbalanced short pairs with exactly two reads in each variant, three model responses in
+  controls and four in reporting, adding one message of at most 20 words, give median paired
+  worker overhead **+18.2861%** and median absolute
+  difference **3,397 ms**. Different workloads establish no 28%-to-18% improvement or formal cost
+  pass. The [architecture guide](../../developer-guide/architecture.md#paired-cost-evidence)
+  preserves the historical table, timing-scope reconciliation and separate ordinary-wait timing.
+- The baseline comparator adds only the exact declared compact-checkpoint replacement. Unique-edit
+  matching and byte equality contain allowed deltas; optional delta matching is not proof of a
+  total migration. Technical docs reflect activation and the accepted tradeoff. In-code/CLI,
+  user documentation/README and AGENTS have no affected surface; Effective Flow still owns the
+  orchestration, with no duplicated central domain playbook or new ownership relationship.
+
+Whole workflow delegation, strict dispatch and nested relay remain outside this slice under
+[#587](https://github.com/sebastian-software/effective-flow/issues/587). The plan's implemented
+status and archived location are preserved. Independent validation and deep review passed for
+this activation slice without fixes or residual findings; the initial checks below remain historical.
+
+### Historical initial fallback outcome, 2026-10-23
+
+The following records the initial delivery before the user superseded the cost gate.
+
 Delivered on 2026-10-23 as a guarded, disabled direct-reporting contract with the known-phase
 fallback. This is the conditional fallback outcome, not a successful live-reporting rollout.
 The user-approved channel-and-behavior gate replaced mandatory host-version discovery; the
@@ -342,15 +410,39 @@ The user-approved channel-and-behavior gate replaced mandatory host-version disc
   user documentation/README and AGENTS have no affected surface; no new central-skill ownership
   relationship required manifest changes.
 
-Remaining activation proof includes a passing cost result and runtime edge-case checks for the
-particular eligible host/channel shape. Neither richer metric behavior nor other hosts are
-released by this change. Full coverage across sub-agents and delegated workflows remains a
-separate planning issue, [#587](https://github.com/sebastian-software/effective-flow/issues/587),
-which this delivery does not close.
+At that initial checkpoint, activation still required a passing cost result and runtime checks.
+The later user decision supersedes the cost gate and the fresh smoke establishes the bounded
+ordinary-wait path. Richer runtime metric coverage and other hosts remain unproven; #587 remains
+open for broader sub-agent and delegated-workflow coverage.
 
 ## Test results
 
-Independent validation in the delivery checkout passed CI's required order:
+### Activation validation, 2026-10-23
+
+Independent validation passed CI's prescribed order on the activation source/test snapshot:
+
+| Check                    | Result                                                                         |
+| ------------------------ | ------------------------------------------------------------------------------ |
+| `pnpm agent:check`       | Passed; 1,027 files formatted correctly.                                       |
+| `pnpm test`              | 2,969 total, 2,968 passed, 0 failed, 1 known filesystem skip (`EILSEQ`).       |
+| `node build.mjs`         | Passed; all three targets and all context/ownership budgets, without warnings. |
+| `pnpm test:distribution` | Passed; offline distribution smoke.                                            |
+
+Focused checks passed 47/47 and `git diff --check` passed. The actual native-agent baseline at
+`2a47de0` accepted only the exact compact-checkpoint delta; the older `6055c94` baseline and negative
+drift guards remain covered. Validation introduced no tracked source changes. The fresh source
+smoke already recorded above demonstrates the addressed ordinary-wait possibility; it collected
+no timings and establishes no reliability guarantee. Independent deep review passed without fixes
+or residual findings on the same source/test snapshot.
+
+All three eval verifiers exited successfully, but behavioral evidence remains **stale**:
+`merge-gate` 8 scenarios × 5 recorded runs, `iterate` 7 × 5 and `next-steps` 11 × 5. These suites
+were already stale before the feature. Affected recordings are due before release, not before
+merge; no fresh model round or formal cost pass is claimed.
+
+### Historical initial delivery validation, 2026-10-23
+
+Independent validation of the initial fallback snapshot passed CI's required order:
 
 | Check                    | Result                                                                   |
 | ------------------------ | ------------------------------------------------------------------------ |
@@ -379,6 +471,17 @@ validation. Completion and archival are approved only for the guarded fallback s
 **Date:** 2026-10-23
 **Reviewer:** Independent code-validator (deep tooling/documentation review, all severities)
 
+### Activation review, 2026-10-23
+
 No findings found. Critical 0, Important 0, Note 0; complexity Low 0, Medium 0, High 0.
-The review explicitly approved only disabled-contract/fallback delivery after required checks
-and plan reconciliation. No residual finding report or publication is needed.
+The independent deep review accepted the narrow ordinary-wait activation, advisory/terminal and
+authority boundaries, fallback, explicit cost decision, documentation, ownership and exact baseline
+guards. The reviewed source/test snapshot matched full validation. No fixes or residual findings
+remain, and no separate review report is needed. This approval establishes neither a historical
+cost pass nor broader host or workflow support.
+
+### Historical initial fallback review, 2026-10-23
+
+No findings found. Critical 0, Important 0, Note 0; complexity Low 0, Medium 0, High 0.
+The initial review explicitly approved only disabled-contract/fallback delivery after required
+checks and plan reconciliation. No residual finding report or publication was needed.
