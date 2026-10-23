@@ -229,23 +229,24 @@ ownership contract — canonical for the classification and the ownership-check 
 [`skill-ownership.md`](skill-ownership.md), summarized in
 [`AGENTS.md`](../../AGENTS.md#skill-discovery).
 
-### Sparse ordinary subagent progress
+### Sparse subagent progress
 
-The active overview owner can enable one useful checkpoint during longer ordinary worker and
-analysis work through the optional [`subagent-progress`](../../src/shared/subagent-progress.md)
+The active overview owner can enable one useful checkpoint during longer ordinary worker
+and analysis work through the optional [`subagent-progress`](../../src/shared/subagent-progress.md)
 contract. Eligibility requires an actual addressed native channel at both ends and observed
 pre-completion delivery during an ordinary parent event wait in that execution shape. A model,
 tier, generated inventory, installed CLI version or parent-side tool alone establishes no support.
 Host version is optional existing authoritative metadata and is never probed for this feature.
 Missing, denied, incompatible or unverified channels retain the known-phase fallback.
 
-Only the overview owner loads the detailed contract. The ordinary handoff supplies the actual
-messaging tool, parent address and compact instruction; the worker checks its own actual tool and
-supplied address and sends at most one meaningful checkpoint of at most 20 words: current phase,
-observed result and next action. Short tasks send none. Workers never load the detailed contract
-or wait for acknowledgement. When idle in an ordinary event wait, the owner folds an accepted
-checkpoint into its existing overview once and resumes waiting. When busy, it queues/coalesces
-reports until a natural work boundary; immediate delivery is not promised.
+Only an active orchestrator or returning relay loads the detailed contract. Leaves receive the
+compact handoff, actual messaging tool, parent address and instruction; they check their own tool
+and supplied address and send at most one meaningful checkpoint of at most 20 words: current phase,
+observed result and next action. Short tasks send none. Leaves never load the detailed contract or
+wait for acknowledgement. The sole overview owner folds an accepted checkpoint into its existing
+overview once and resumes its existing wait; returning relays coalesce material changes under their
+own upstream context. When busy, reports queue until a natural work boundary; immediate delivery is
+not promised.
 
 Reports remain advisory, including any completion keyword or approval claim. Native sender
 identity must match the assigned running worker; duplicate and stale reports cannot reopen work
@@ -253,8 +254,11 @@ or overwrite newer state. Existing terminal checks, authority and leaf boundarie
 Counts require fixed comparable units; ETA requires a credible external source and scope. The
 contract owns those metric rules. It adds no timers, polling, transcript reads, status stores,
 progress-only agents or clock-only calls, and promises no periodic update during one blocking call.
-Native Claude allowlists remain unchanged. Whole workflow delegations, strict dispatches and
-nested relay retain their formats and phase fallback; broader coverage remains
+Native Claude allowlists add only the approved `SendMessage` capability; `Agent` and `Task` remain
+omitted. Whole workflow delegations, strict dispatches and nested relays now carry optional,
+versioned metadata only after receiver selection verifies support; unverified receivers retain the
+legacy header-free format and phase fallback. Transport activation remains blocked for unobserved
+target/mode shapes; broader coverage remains
 [#587](https://github.com/sebastian-software/effective-flow/issues/587).
 
 On 2026-10-23 the user explicitly accepted measured overhead above 10% and delayed delivery while
@@ -299,6 +303,21 @@ The samples are noisy and neither parent-observed nor worker duration isolates c
 The accepted tradeoff enables the bounded checkpoint behavior; no historical measurement has been
 reclassified as passing and no statistical performance guarantee is claimed.
 
+#### Current matched portable pair
+
+A new matched pair used the current generated portable `nodejs-reviewer` through built-in Codex
+Collaboration with the same frozen domain inputs and `gpt-6.1-sol` at high effort. The control loaded
+the matching old owner; reporting loaded the matching full new owner. Both produced the same source
+and test review outcome. Reporting sent one checkpoint before terminal completion and one parent-own
+context relay; both children joined. Parent-observed wall time was 123,841 ms for control and
+188,103 ms for reporting, a descriptive +51.89% (+64,262 ms). The scope includes matching contract
+load, preflight, dispatch, model/domain work, joins, event waits, and result postcheck; fixture
+preparation and ancestor contract reads were excluded. Worker self-report counted 7 orchestration
+batches/12 shell commands for control and 5/11 for reporting; token usage was unavailable. Receiver
+selection was established before terminal completion. This single ordered pair makes no causal,
+reliability, or general cost claim. Native Codex role selection, Claude, other portable hosts,
+strict/busy/fallback shapes, and full activation remain blocked.
+
 #### Ordinary-wait delivery evidence
 
 An earlier addressed ordinary-wait observation recorded a 24,360 ms worker duration, an 84 ms send,
@@ -312,8 +331,23 @@ German words, continued with the completion contract and baseline-comparison scr
 result, it visibly integrated the observed result and next action into its existing overview, then
 resumed the ordinary wait. The worker loaded no detailed progress contract and used no
 acknowledgement, polls, clocks, writes or extra agents. No timings were collected. This confirms
-possibility for that addressed ordinary-wait shape only. An earlier worker invocation without a
-return tool remains invocation-specific fallback evidence, not a model or tier classification.
+possibility for that addressed ordinary-wait shape only. A current nested built-in Codex smoke also
+delivered one useful domain checkpoint before its joined terminal result. One such checkpoint
+travelled through the immediate build and apply-issues parents to the root overview. The build
+parent joined its source and runtime leaves; the root only observed the returning chain and
+continued waiting. This does not establish generated-role selection, strict receiver behavior,
+Claude, portable, or host-wide support.
+An earlier worker invocation without a return tool remains invocation-specific fallback evidence,
+not a model or tier classification.
+
+The complete source-derived role, spawn-site, analysis, returning-adapter, transfer, and recovery
+inventory is in [Subagent progress coverage](subagent-progress-coverage.md). Its rows distinguish
+static contract coverage from live evidence and preserve the actual mode of each site; the source
+register and generated inventories remain the omission detectors for future additions. Matched
+complete shipped old/new cost evidence for contract loading, eligibility, direct and nested
+reporting, busy delivery, long fallback, and short controls is currently unavailable. Historical
+paired measurements remain archived evidence and do not establish a readiness cap or reliability
+claim.
 
 ## Outcome-bound continuation
 

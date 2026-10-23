@@ -164,3 +164,5 @@ when: the run's subject is fixed and a session title is about to be applied or e
 - Do not use a heuristic "newest source" when multiple candidates exist.
 - If the source type is unclear or ambiguous, ask instead of guessing.
 - Output paths relative to the project root.
+
+Apply keeps the existing overview through returning apply-issues/apply-review adapters; apply-plan transfers it to its target. Eligible cross-agent adapters use their own immediate-parent progress context under `shared/subagent-progress.md`; same-session adapters integrate directly. Never forward downstream headers or infer reporting support from an adapter name.

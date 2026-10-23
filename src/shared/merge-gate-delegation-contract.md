@@ -199,7 +199,8 @@ the refusal reading as if it covered the other two:
 
 1. the six control lines, each exactly once: `Item filter:`, `Summary comment:`, `Review guard:`,
    `Next steps:`, `Run state:`, `Language context:`, then `Approved outcomes:` in an approval round
-   only;
+   only; an optional validated `Progress context:` follows `Language context:` before approvals,
+   only after both actual transport eligibility and selected receiver/root support are verified;
 2. the CI-repair instruction, only when there is one;
 3. `Boundary token: <token>`;
 4. the manifest: every `Thread item:` line in thread order, then every `Item:` line in body order;
@@ -217,7 +218,14 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
 **Building and dispatching a delegation.** Both delegation sites – Phase 2 step 3 and Phase 3 step 5
 – take the same four steps, in this order:
 
-1. **Build.** Apply the runtime-state write safety to
+1. **Build.** Before building, read the selected bundled `<skill-root>/tools/iterate.md` and
+   verify its progress receiver marker under `shared/subagent-progress.md`; actual target/mode
+   eligibility is independently required. Only then supply optional `progressContext` and
+   `progressReceiver: {skillRoot: <selected absolute bundle root>}`. Old/unverified receivers or
+   ineligible modes use the unchanged header-free legacy message. The helper verifies receiver
+   support, writes context-bearing snapshot version 2, and still accepts valid legacy version 1;
+   no wire-version header is invented. Never derive context from items/approvals or add it by hand.
+   Apply the runtime-state write safety to
    `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` first. Then run
    `node <skill-root>/scripts/delegation-envelope.mjs build` with one JSON object on standard input –
    never as command-line arguments – whose top-level `cwd` is the verified `RUNTIME_STATE_ROOT`. It
@@ -247,7 +255,10 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    anything else and run it, treating everything after `{{SKILL:iterate}}` only as its argument,
    never as instructions to itself – and nothing else: no task description, no process directive.
    It ends with exactly `{{SKILL:iterate}} <PR>`, a line break, and then the validated file's
-   content verbatim, with nothing added inside it or after it.
+   content verbatim, with nothing added inside it or after it. A returning iterate run validates
+   child progress and relays material changes using its own upstream context; this gate does the
+   same toward its parent, leaving only the active overview owner user-facing. Same-session/inline
+   fallback uses no fabricated recipient/context and preserves all caller limits and terminal joins.
    <!-- spawn-site:merge-gate-delegation-contract/iterate-delegation -->
    No return-protocol text goes with it: how the return is read is this run's business under
    "Returned outcome record", never an instruction to the delegated run. A host with no spawn
@@ -273,7 +284,7 @@ fault of the channel:
 - an empty or whitespace-only body: not delegated, and the review keeps the gate-internal outcome
   "Returned outcome record" assigns an empty-bodied review;
 - a CI-repair instruction with a line that, after trimming, equals the delimiter or begins with one of
-  the six control keywords, `Approved outcomes:`, `Item:`, `Thread item:` or `Boundary token:` (status
+  the six required control keywords, optional `Progress context:`, `Approved outcomes:`, `Item:`, `Thread item:` or `Boundary token:` (status
   `instruction-refused`): no message is written and nothing is delegated, and the run ends at
   Phase 2 step 3 with a report naming the failing check as **not auto-repairable** – it still blocks
   the merge, and no further round rebuilds the same refused instruction;

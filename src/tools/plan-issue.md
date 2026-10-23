@@ -220,6 +220,10 @@ is never reassigned to another child slot. Every English child body carries exac
 
 ## Workflow
 
+Returning issue-plan review keeps this run's overview; eligible cross-agent context follows
+`shared/subagent-progress.md` and each hop's own parent. The canonical comment receipt, caller
+authority, body hash and same-artifact review rules remain unchanged.
+
 ### Phase 1: Tracker setup & collection
 
 1. Resolve the tracker target according to "Tracker target". On the forge target, determine the host and CLI and check availability/authentication according to "Remote helper contract"; precondition there is a Git repository with an `origin` remote. On an external target, establish exactly one connection per the loaded `tracker-target` contract and verify the capabilities this skill always needs — read issue and comments, list issues by classification, create a comment, update a comment by its ID, and add/remove a classification value. External decomposition additionally requires the complete native-container mechanism — native-child listing plus writable native sub-item completion — and atomic create-under-parent. Discover all three guarantees before proposing a split; when one is unavailable, keep ordinary comment-based planning available. If an always-required capability is missing: report clearly and abort without side effects.
