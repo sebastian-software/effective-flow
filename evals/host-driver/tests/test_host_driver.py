@@ -344,7 +344,22 @@ class HostDriverTests(unittest.TestCase):
                 self.assertFalse(self.start_marker.exists())
 
     def test_driver_sigkill_allows_worker_watchdog_to_clean_profile(self) -> None:
-        task = self.task("driver-kill")
+        self.check_worker_watchdog_cleanup("coordinator-disconnected")
+
+    def test_watchdog_receipt_failure_does_not_skip_group_shutdown(self) -> None:
+        for reason in ("coordinator-disconnected", "timeout"):
+            with self.subTest(reason=reason):
+                self.output = self.work / f"output-{reason}"
+                self.output.mkdir()
+                config = json.loads(self.config.read_text())
+                config["outputRoot"] = str(self.output)
+                self.config.write_text(json.dumps(config))
+                self.start_marker.unlink(missing_ok=True)
+                self.check_worker_watchdog_cleanup(reason, fail_receipt=True)
+
+    def check_worker_watchdog_cleanup(self, reason: str, *, fail_receipt: bool = False) -> None:
+        task = self.task("driver-kill-" + reason)
+        timeout = 2 if reason == "timeout" else 120
         script = self.work / "coordinator.py"
         script.write_text(
             "import importlib.util, sys\n"
@@ -354,7 +369,7 @@ class HostDriverTests(unittest.TestCase):
             f"driver=module.Driver({str(self.config)!r}, {str(self.profiles)!r}, "
             f"operator={str(self.operator)!r}, operator_sha256={digest(self.operator)!r}, "
             f"binary={str(self.binary)!r}, auth_file={str(self.auth)!r}, node={NODE!r}, "
-            "timeout_seconds=120, fixture_tools=True)\n"
+            f"timeout_seconds={timeout}, fixture_tools=True)\n"
             f"driver.run_slot({task!r})\n"
         )
         sys.path.insert(0, str(DRIVER_PATH.parent))
@@ -369,25 +384,37 @@ class HostDriverTests(unittest.TestCase):
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
             )
             deadline = time.monotonic() + 8
-            while time.monotonic() < deadline and not (artifact / "process-start.json").exists():
+            while time.monotonic() < deadline and not (
+                    (artifact / "process-start.json").exists() and self.start_marker.exists()):
                 time.sleep(0.03)
             self.assertTrue((artifact / "process-start.json").exists())
+            self.assertTrue(self.start_marker.exists())
             reference = json.loads((artifact / "runner-profile.json").read_text())
             model = json.loads((artifact / "process-start.json").read_text())
-            process.kill()
-            self.assertEqual(process.wait(timeout=5), -signal.SIGKILL)
-            # The model timeout is much longer than this cleanup window, and the
-            # fixture ignores TERM: only coordinator-loss shutdown can pass.
+            if fail_receipt:
+                # Exclusive receipt creation raises IsADirectoryError while the
+                # profile and process group remain valid.
+                (artifact / "watchdog-stop.json").mkdir()
+            if reason == "coordinator-disconnected":
+                process.kill()
+                self.assertEqual(process.wait(timeout=5), -signal.SIGKILL)
+            # The fixture ignores TERM, so cleanup requires watchdog KILL. For
+            # disconnect, its 120-second model deadline exceeds this window.
             deadline = time.monotonic() + 8
             cleanup = verify_cleanup(reference["profilePath"], self.profiles)
             while time.monotonic() < deadline and not cleanup["cleanupComplete"]:
                 time.sleep(0.05)
                 cleanup = verify_cleanup(reference["profilePath"], self.profiles)
-            self.assertTrue(cleanup["groupGone"], "model group survived coordinator loss")
+            self.assertTrue(cleanup["groupGone"], f"model group survived watchdog {reason}")
             self.assertTrue(cleanup["cleanupComplete"], "profile cleanup did not finish promptly")
             self.assertTrue(process_gone(model["pid"]))
-            watchdog = json.loads((artifact / "watchdog-stop.json").read_text())
-            self.assertEqual(watchdog["reason"], "coordinator-disconnected")
+            if fail_receipt:
+                self.assertTrue((artifact / "watchdog-stop.json").is_dir())
+            else:
+                watchdog = json.loads((artifact / "watchdog-stop.json").read_text())
+                self.assertEqual(watchdog["reason"], reason)
+            if reason == "timeout":
+                process.wait(timeout=5)
         finally:
             os.environ.pop("FIXTURE_MODE", None)
             if process is not None and process.poll() is None:

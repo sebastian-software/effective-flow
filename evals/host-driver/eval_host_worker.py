@@ -69,8 +69,12 @@ def watchdog(profile, root, owner_pid, bridge_pid, coordinator_pid, timeout, mod
     # No arbitrary retained receipt authorizes a signal. Re-prove current membership
     # and both owned directory identities immediately before signalling our group.
     record = registered_profile(profile, root, own_group=True)
-    save(directory / 'watchdog-stop.json', {'reason': reason, 'at': now(),
-                                          'childPgid': record['childPgid']})
+    try:
+        save(directory / 'watchdog-stop.json', {'reason': reason, 'at': now(),
+                                              'childPgid': record['childPgid']})
+    except OSError:
+        # Evidence is best effort; an unavailable artifact must not skip shutdown.
+        pass
     os.killpg(os.getpgrp(), signal.SIGTERM)
     time.sleep(1)
     registered_profile(profile, root, own_group=True)
