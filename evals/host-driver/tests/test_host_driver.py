@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import errno
 import hashlib
 import importlib.util
 import json
@@ -294,6 +295,79 @@ class HostDriverTests(unittest.TestCase):
                     launch.assert_not_called()
                 self.assertTrue(driver.blocker.exists())
                 driver.blocker.unlink()
+
+    def test_blocker_publication_failure_stops_qualified_waiter(self) -> None:
+        import fcntl
+
+        sys.path.insert(0, str(DRIVER_PATH.parent))
+        spec = importlib.util.spec_from_file_location("publication_worker", DRIVER_PATH.with_name("eval_host_worker.py"))
+        worker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(worker)
+        home, codehome = self.work / "profile/home", self.work / "profile/codex-home"
+        home.mkdir(parents=True)
+        codehome.mkdir()
+        native_touch, native_flock = Path.touch, fcntl.flock
+        for publisher in ("worker", "driver"):
+            for error_code in (errno.ENOSPC, errno.EACCES):
+                with self.subTest(publisher=publisher, errno=error_code):
+                    name = f"publication-{publisher}-{error_code}"
+                    driver = self.round_driver(name)
+                    task = self.task(name)
+                    directory = self.work / name
+                    directory.mkdir()
+                    job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
+                           "task": task, "node": NODE, "operator": str(self.operator),
+                           "configFile": str(self.config), "source": str(self.source),
+                           "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
+                           "coordinatorPid": os.getpid(), "blockerPath": str(driver.blocker),
+                           "launchGatePath": str(driver.gate), "pins": {str(self.config): "fixture", str(self.operator): "fixture"},
+                           "driverDigest": "fixture", "fixtureTools": True}
+                    good = {"qualificationDigest": "fixture-qualification", "profile": task["profile"]}
+                    publication_errors = []
+                    attempts = []
+                    def fail_marker(path, *args, **kwargs):
+                        if path == driver.blocker:
+                            attempts.append(error_code)
+                            raise OSError(error_code, os.strerror(error_code))
+                        return native_touch(path, *args, **kwargs)
+                    def publish_before_waiter_acquires(gate, operation):
+                        # The qualified worker already opened both output streams
+                        # and its gate descriptor before the publisher takes flock.
+                        if not attempts:
+                            self.assertTrue((directory / "stdout.jsonl").exists())
+                            self.assertTrue((directory / "stderr.log").exists())
+                            with mock.patch.object(worker.fcntl, "flock", side_effect=native_flock):
+                                try:
+                                    if publisher == "worker":
+                                        worker.block_launches(job)
+                                    else:
+                                        driver.block()
+                                except OSError as error:
+                                    publication_errors.append(error)
+                        return native_flock(gate, operation)
+                    begin = time.monotonic()
+                    with mock.patch.dict(os.environ, {"HOME": str(home), "CODEX_HOME": str(codehome)}), \
+                            mock.patch.object(worker, "registered_profile", return_value={"childPgid": 42, "ownerPid": 42}), \
+                            mock.patch.object(worker, "assert_pins"), \
+                            mock.patch.object(worker, "launch_record", return_value={"stdinPath": task["prompt"], "argv": ["fixture"], "cwd": str(self.project), "env": {}}), \
+                            mock.patch.object(worker.os, "fork", return_value=42), \
+                            mock.patch.object(worker.os, "write"), \
+                            mock.patch.object(worker.os, "waitpid", return_value=(42, 0)) as cleanup, \
+                            mock.patch.object(worker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(good), "")), \
+                            mock.patch.object(worker.subprocess, "Popen", return_value=mock.Mock(pid=42, wait=mock.Mock(return_value=0))) as launch, \
+                            mock.patch.object(Path, "touch", fail_marker), \
+                            mock.patch.object(worker.fcntl, "flock", side_effect=publish_before_waiter_acquires):
+                        result = worker.execute_job(job)
+                    cleanup.assert_called_once_with(42, 0)
+                    self.assertLess(time.monotonic() - begin, 5, "blocked waiter cleanup exceeded its bound")
+                    self.assertEqual(attempts, [error_code])
+                    self.assertFalse(driver.blocker.exists(), "fixture did not fail marker publication")
+                    self.assertEqual(launch.call_count, 0, "qualified waiter launched after failed blocker publication")
+                    self.assertEqual(result, 1)
+                    self.assertEqual(publication_errors, [], "marker failure escaped bounded cleanup")
+                    self.assertFalse((directory / "process-start.json").exists())
+                    self.assertEqual(json.loads((directory / "worker-result.json").read_text())["state"],
+                                     "not-launched-after-blocker")
 
     def test_slot_exceptions_block_before_future_collection(self) -> None:
         cases = ("preflight-pin", "wrapper", "completion", "final-pin", "seal-timeout", "seal-malformed")

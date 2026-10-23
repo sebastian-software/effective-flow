@@ -139,7 +139,13 @@ class Driver:
             self.stop.set()
             with self.gate.open('rb') as gate:
                 fcntl.flock(gate, fcntl.LOCK_EX)
-                self.blocker.touch(mode=0o600, exist_ok=True)
+                # Revoke the existing gate's shared launch permission before
+                # best-effort marker publication can fail or delay cleanup.
+                os.fchmod(gate.fileno(), 0o400)
+                try:
+                    self.blocker.touch(mode=0o600, exist_ok=True)
+                except OSError:
+                    pass
 
     def event(self, value):
         with self.lock:

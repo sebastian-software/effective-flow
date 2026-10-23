@@ -116,7 +116,14 @@ def launch_record(job, home, codehome):
 def block_launches(job):
     with open(job['launchGatePath'], 'rb') as gate:
         fcntl.flock(gate, fcntl.LOCK_EX)
-        Path(job['blockerPath']).touch(mode=0o600, exist_ok=True)
+        # The existing gate's owner-write bit is the shared launch permission.
+        # Revoking it needs no new artifact, even when marker creation fails.
+        os.fchmod(gate.fileno(), 0o400)
+        try:
+            Path(job['blockerPath']).touch(mode=0o600, exist_ok=True)
+        except OSError:
+            # The marker is evidence only; shutdown must still reach cleanup.
+            pass
 
 
 def execute_job(job, *, fixture=False):
@@ -195,7 +202,8 @@ def execute_job(job, *, fixture=False):
                 try:
                     if gate:
                         fcntl.flock(gate, fcntl.LOCK_EX)
-                        if Path(job['blockerPath']).exists():
+                        if (not (os.fstat(gate.fileno()).st_mode & 0o200)
+                                or Path(job['blockerPath']).exists()):
                             save(directory / 'worker-result.json', {'state': 'not-launched-after-blocker',
                                  'actualModelStarted': False,
                                  'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
