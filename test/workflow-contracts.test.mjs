@@ -21748,6 +21748,38 @@ test('the user guide explains publication, continuation, unavailable discovery, 
   assert.deepEqual(gaps, []);
 });
 
+test('ordinary next-package approval and dependency gaps require safe known-basis preparation without execution authority', () => {
+  const raw = source('src/shared/next-steps.md');
+  const eligibility = prose(section(raw, '1. **Check emission eligibility first.', '\n2. '));
+  assert.match(eligibility, /Suppression, aborts, explicit no-action endings/);
+  assert.match(eligibility, /finding-admission\/no-finding limits/);
+  assert.match(eligibility, /no-action setup\/cleanup\/commit endings/);
+  assert.match(eligibility, /Read no optional plan context/);
+  const choice = prose(
+    section(raw, '3. **Reconcile with the observed outcome, then choose.', '\n4. '),
+  );
+  assert.match(
+    choice,
+    /(?:ordinary|next-package)[^.]*approvals?[^.]*dependenc(?:y|ies)|(?:ordinary|next-package)[^.]*dependenc(?:y|ies)[^.]*approvals?/i,
+    'ordinary next-package approval/dependency gaps must be distinguished from retained continuation blocks',
+  );
+  assert.match(
+    choice,
+    /(?:use|recommend|leads? to)[^.]*`\{\{SKILL:plan\}\} <known-plan-path>`[^.]*`\{\{SKILL:plan-issue\}\} <known-issue>`/i,
+    'useful safe preparation must target the already known plan or issue',
+  );
+  assert.match(choice, /reconcile[^.]*verified completion/i);
+  assert.match(choice, /prepare[^.]*prerequisites?[^.]*approval decision/i);
+  assert.match(choice, /(?:grants? no|without granting)[^.]*approval[^.]*execution/i);
+  assert.match(
+    choice,
+    /Operational work without a matching tool[^.]*useful[^.]*preparation[^.]*when available[^.]*otherwise[^.]*blocker/i,
+    'a missing operational tool must not replace available safe preparation with only a blocker',
+  );
+  assert.match(choice, /never invent a tool/i);
+  assert.match(choice, /Require established readiness and authority before suggesting execution/);
+});
+
 test('plan-first recommendation selection owns completed merge, apply, PR review and automatic delivery emission', () => {
   const fragment = flat(source('src/shared/next-steps.md'));
   ordered(
@@ -23151,7 +23183,8 @@ test('all continuation entry and recommendation consumers defer one protocol and
   assert.match(next, /neither persists state nor guesses missing history as zero/);
   assert.match(
     next,
-    /blocked endpoint emits no substitute planning, review or issue-creation option/,
+    /endpoint blocked by (?:its |the )?retained (?:outcome-)?continuation decision or (?:by )?missing\/conflicting required continuation context[^.]*emits no substitute planning, review or issue-creation option/,
+    'only retained continuation decisions or missing/conflicting required continuation context suppress substitute planning',
   );
   assert.match(next, /At most two options/);
   for (const tool of ['investigate', 'review']) {
