@@ -951,13 +951,20 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `review-bot-state`, `review-bot-state-observation`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
   `plan-pr-continuation`, `outcome-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
+  `subagent-progress` is parent-only: the active overview owner reaches its lazy pointer through
+  the delegation mandate or `goal-completion` for eligible longer ordinary worker/analysis work.
+  Workers receive the compact handoff instruction and never load the detailed contract, even when
+  reporting is enabled. The pointer remains statically reachable for eval load-set discovery;
+  static reachability does not establish runtime eligibility or message delivery. The
+  [architecture guide](architecture.md#sparse-ordinary-subagent-progress) records the actual
+  ordinary-wait behavior, measured overhead and accepted tradeoff.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
   argument classification: only an absent argument or the explicit `profile` token loads it.
   The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
@@ -1255,9 +1262,13 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   a changed worker: `EXPECTED_NATIVE_DELTAS` allows only, in the ten `deep` workers, the Claude
   `effort` change `xhigh` to `high` (`claude-deep-tier-effort`) and the Codex `model` change
   `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
-  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer); any other byte
-  difference fails. Once this change
-  ships in a release, move the test's pinned `--base` to that release commit and empty
+  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer), the
+  lean-orchestrator sentence, the conditional `subagent-progress` pointer and its exact replacement
+  by the parent-only compact-checkpoint instruction. Each selected edit must match exactly once,
+  and its resulting body must equal the working body byte for byte; unrelated drift fails. These
+  optional declared deltas prove containment of allowed changes, not that every worker completed
+  a total migration. Once this change ships in a release, move the test's pinned `--base` to that
+  release commit and empty
   `EXPECTED_NATIVE_DELTAS`; until then, any further edit to a worker-included fragment needs its
   own exact allowlist entry.
 - **Context budget.** The mandate's tier sentence and lazy pointer add lines to every tool that

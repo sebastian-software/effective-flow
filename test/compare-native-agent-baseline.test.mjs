@@ -22,6 +22,12 @@ const ANALYSIS =
 const LEAN_SENTENCE =
   " The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.";
 
+const PROGRESS_SENTENCE =
+  ' **Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.';
+
+const COMPACT_PROGRESS_SENTENCE =
+  ' **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.';
+
 const BASE_BODY = `\n## Delegation mandate\n\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
 const MANDATE_BODY = `\n## Delegation mandate\n\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
 
@@ -114,8 +120,110 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
   );
   assert.deepEqual(
     EXPECTED_NATIVE_DELTAS.body.map(({ id }) => id),
-    ['delegation-mandate-model-tiers', 'delegation-mandate-lean-orchestrator'],
+    [
+      'delegation-mandate-model-tiers',
+      'delegation-mandate-lean-orchestrator',
+      'delegation-mandate-subagent-progress',
+      'delegation-mandate-compact-checkpoint',
+    ],
   );
+});
+
+// The progress delta permits only the exact conditional pointer on the worker-start bullet.
+// A relocated pointer or a weakened load condition remains an unrelated body edit.
+test('the conditional progress delta composes and rejects relocation or condition drift', () => {
+  const progress = MANDATE_BODY.replace(
+    `${WORKER}${TIER_SENTENCE}`,
+    `${WORKER}${TIER_SENTENCE}${PROGRESS_SENTENCE}`,
+  );
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ body: progress }),
+    ),
+    ['delegation-mandate-model-tiers', 'delegation-mandate-subagent-progress'],
+  );
+  for (const body of [
+    MANDATE_BODY.replace('- Another bullet.', `- Another bullet.${PROGRESS_SENTENCE}`),
+    progress.replace('known fallback workers skip it', 'all workers load it'),
+  ]) {
+    assert.throws(
+      () =>
+        compareNativeSidecar(
+          'codex',
+          'effective-flow-rust-reviewer',
+          codex({ body: MANDATE_BODY }),
+          codex({ body }),
+        ),
+      /body drift outside the expected deltas/,
+    );
+  }
+});
+
+// Invariant: the new exact replacement composes from the older baseline and the previous
+// progress-bearing PR body without authorizing another edit or a native permission change.
+test('the compact checkpoint delta composes from older and previous progress baselines', () => {
+  const older = BASE_BODY.replace(WORKER, `${ANALYSIS}\n${WORKER}`);
+  const previous = MANDATE_BODY.replace(WORKER, `${ANALYSIS}${LEAN_SENTENCE}\n${WORKER}`).replace(
+    `${WORKER}${TIER_SENTENCE}`,
+    `${WORKER}${TIER_SENTENCE}${PROGRESS_SENTENCE}`,
+  );
+  const current = previous.replace(PROGRESS_SENTENCE, COMPACT_PROGRESS_SENTENCE);
+  for (const [harness, sidecar] of [
+    ['claude', claude],
+    ['codex', codex],
+  ]) {
+    const compare = (baseline, working) =>
+      compareNativeSidecar(
+        harness,
+        'effective-flow-rust-reviewer',
+        sidecar({ effort: 'high', body: baseline }),
+        sidecar({ effort: 'high', body: working }),
+      );
+    assert.deepEqual(
+      compare(older, current),
+      [
+        'delegation-mandate-model-tiers',
+        'delegation-mandate-lean-orchestrator',
+        'delegation-mandate-subagent-progress',
+        'delegation-mandate-compact-checkpoint',
+      ],
+      harness,
+    );
+    assert.deepEqual(
+      compare(previous, current),
+      ['delegation-mandate-compact-checkpoint'],
+      harness,
+    );
+    for (const body of [
+      current.replace('Another bullet.', 'Another bullet!'),
+      current.replace('workers never load it', 'workers may load it'),
+      current.replace('at most 20 words', 'at most 200 words'),
+      current.replace('ordinary parent event wait', 'any parent wait'),
+      current
+        .replace(COMPACT_PROGRESS_SENTENCE, '')
+        .replace('- Another bullet.', `- Another bullet.${COMPACT_PROGRESS_SENTENCE}`),
+      current + COMPACT_PROGRESS_SENTENCE,
+    ]) {
+      assert.throws(
+        () => compare(previous, body),
+        /body drift outside the expected deltas/,
+        harness,
+      );
+    }
+    const baseline = sidecar({ effort: 'high', body: previous });
+    const permissionDrift = sidecar({ effort: 'high', body: current }).replace(
+      harness === 'claude' ? 'tools: Read, Skill' : 'model_reasoning_effort = "high"',
+      harness === 'claude' ? 'tools: Read, Skill, SendMessage' : 'model_reasoning_effort = "xhigh"',
+    );
+    assert.throws(
+      () =>
+        compareNativeSidecar(harness, 'effective-flow-rust-reviewer', baseline, permissionDrift),
+      /configuration drift outside the expected deltas/,
+    );
+  }
 });
 
 // Invariant: every native difference outside EXPECTED_NATIVE_DELTAS fails the baseline proof.

@@ -112,6 +112,28 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // The conditional progress pointer extends only the worker-start bullet; its native
+    // canonical prefix also keeps worker-only eval load-set discovery complete.
+    Object.freeze({
+      id: 'delegation-mandate-subagent-progress',
+      edits: Object.freeze([
+        Object.freeze({
+          from: `${MANDATE_WORKER_BULLET} The orchestrator gives every spawn it starts the tier rendered at its spawn site.\n`,
+          to: `${MANDATE_WORKER_BULLET} The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read \`shared/subagent-progress.md\` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.\n`,
+        }),
+      ]),
+    }),
+    // Compact checkpoints replace the historical worker load pointer without changing any
+    // native configuration, tool allowlist, or other worker text.
+    Object.freeze({
+      id: 'delegation-mandate-compact-checkpoint',
+      edits: Object.freeze([
+        Object.freeze({
+          from: '**Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.',
+          to: '**Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.',
+        }),
+      ]),
+    }),
   ]),
 });
 
