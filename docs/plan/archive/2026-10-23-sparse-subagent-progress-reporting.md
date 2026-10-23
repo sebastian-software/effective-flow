@@ -1,6 +1,6 @@
 # Sparse subagent progress reporting
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -64,17 +64,13 @@ will edit Markdown instructions. It does not add a dashboard or change a host ap
    parent-message capability and parent address, when available. Never invent tool names or
    addresses. Without a proven return channel, retain the known assigned phase and completion
    notifications. Describe that as the last known state, without claiming worker confirmation.
-   The new fragment holds one small, canonical eligibility table: tested host family and version
-   or explicitly verified version range, native channel contract, execution mode, reporting enabled
-   or phase fallback, and a pointer to the validation evidence in the architecture guide. Only a
-   matching enabled row plus an available channel permits a reporting handoff. Unknown identity,
-   an unlisted version or incompatible channel semantics select the phase fallback. This is shipped
-   support policy, not a runtime registry, active probe, user setting or new state store.
-   Each proposed enabled row names its authoritative identity source: metadata supplied by the
-   running host or an already available native session capability. If family/version/mode cannot
-   be established from that source, classify it as fallback before implementation or performance
-   runs for direct reporting. An installed CLI version and generated agent inventories do not prove
-   which host serves the current session; no extra identity probe is introduced for this feature.
+   The new fragment holds one small, canonical eligibility table for tested native channel semantics,
+   execution mode, enablement and evidence. An available parent channel and worker channel, observed
+   pre-completion delivery and the paired cost gate determine eligibility. Missing/incompatible
+   channels or unproven behavior select the phase fallback. Record host family/version only when
+   authoritative metadata is already available; version is not a gate and introduces no probe.
+   The user explicitly approved this channel-and-behavior rule during implementation preflight on
+   2026-10-23, replacing the stricter version-identity requirement from the planning review.
 3. **Keep one contract owner.** Add a short lazy pointer at the ordinary worker/analysis handoff
    seam owned by `delegation-mandate` and put the
    detailed contract in `src/shared/subagent-progress.md`. The orchestrator loads it only for long
@@ -183,28 +179,35 @@ delegation-envelope extensions and nested progress forwarding are outside this i
 
 - [ ] A supported long-running worker can deliver a useful intermediate phase/outcome report to
       its parent before the terminal result; the parent updates the existing overview once.
-- [ ] A short task requires no extra status call. No reporting path adds timers, polling,
+- [x] A short task requires no extra status call. No reporting path adds timers, polling,
       transcript reads, status files, progress-only agents or acknowledgement waits.
-- [ ] Missing transport, denied messaging and blocking foreground execution retain an honest
+- [x] Missing transport, denied messaging and blocking foreground execution retain an honest
       phase fallback; missing progress never fails or restarts productive work.
-- [ ] ETA appears only with a named external source and scope. Unknown estimates are omitted;
+- [x] ETA appears only with a named external source and scope. Unknown estimates are omitted;
       phase numbers and elapsed time never generate an ETA or an overall percentage.
-- [ ] A fixed comparable batch can show a scoped count/percentage; unknown/changing denominators
+- [x] A fixed comparable batch can show a scoped count/percentage; unknown/changing denominators
       and parallel unequal work use counts or phases without fabricated overall completion.
-- [ ] Intermediate reports do not complete tasks, trigger missing-keyword recovery, grant approval
+- [x] Intermediate reports do not complete tasks, trigger missing-keyword recovery, grant approval
       or create a second overview. Terminal results retain their checks; smoke runs verify compliance
       with the instructed recipient policy without claiming enforced per-recipient tool isolation.
-- [ ] Native Claude workers retain the leaf tool exclusions; shared and portable instructions
+- [x] Native Claude workers retain the leaf tool exclusions; shared and portable instructions
       contain no Claude-specific transport assumption. Every target documents its fallback.
-- [ ] Representative paired runs demonstrate a useful pre-completion update and meet the cost
+- [x] Representative paired runs demonstrate a useful pre-completion update and meet the cost
       gate below. If a target fails, its direct reporting stays disabled in the delivered behavior.
-- [ ] Eligibility requires a matching enabled support-table row and an available native channel;
-      unknown host/version, unlisted execution modes and incompatible contracts use the fallback.
+- [x] Eligibility requires a matching enabled channel-contract row, available parent and worker
+      channels, proven pre-completion delivery and cost evidence; unproven modes or incompatible
+      channels use the fallback. Host-version metadata is optional and never actively probed.
       No Claude role receives broader messaging permissions as part of this feature.
-- [ ] Direct reports cover ordinary worker/analysis handoffs from the overview owner only;
+- [x] Direct reports cover ordinary worker/analysis handoffs from the overview owner only;
       whole workflow delegations retain existing formats and phase fallback without new fields.
-- [ ] CI's checks pass in the prescribed order; build budgets and ownership checks pass without
+- [x] CI's checks pass in the prescribed order; build budgets and ownership checks pass without
       editing generated `dist/`. Affected behavioral evidence is identified for release upkeep.
+
+The unchecked direct-reporting criterion is not a released capability: the candidate channel
+passed the validation-only transport proof, but no production shape met the cost gate. The delivered
+behavior is the disabled-contract/phase-fallback outcome explicitly allowed above. Checked metric
+and edge-case criteria describe enforced contract invariants; they do not claim runtime coverage
+for an enabled reporting path. Activation requires fresh passing evidence.
 
 ## Validation plan
 
@@ -303,3 +306,79 @@ performance claim was inferred from static evidence.
 ## Open points
 
 - No open points.
+
+## Implementation outcome
+
+Delivered on 2026-10-23 as a guarded, disabled direct-reporting contract with the known-phase
+fallback. This is the conditional fallback outcome, not a successful live-reporting rollout.
+The user-approved channel-and-behavior gate replaced mandatory host-version discovery; the
+10% cost gate and ordinary-worker scope were preserved.
+
+- Added `src/shared/subagent-progress.md` as the single lazy contract owner. A canonical
+  conditional load pointer in `delegation-mandate` keeps both runtime and eval-load reachability;
+  the mandate remains 16 lines. `goal-completion` folds accepted reports into its one overview,
+  and `completion-protocol` separates advisory messages from terminal results.
+- The contract requires actual tools at both ends, observed pre-completion delivery and passing
+  cost evidence before an ordinary handoff can enable reporting. Native Claude permissions,
+  workflow dispatches, envelopes, scheduling and leaf boundaries remain unchanged. No new runtime
+  service, command, setting, dependency or estimator was introduced.
+- Five fixed interleaved paired runs used the same `gpt-6.1-sol`/`high` model/effort and frozen
+  input. Every reporting run sent exactly one useful parent-only update before completion and
+  continued useful work; controls sent none. Median paired parent-observed wall-time overhead
+  was **+28.0839%**, exceeding **10%**. Therefore the direct channel row is explicitly disabled.
+  The architecture guide records each pair and the method. Tokens were unavailable; noisy
+  parent-observed wall time is not causal model time or a statistical performance guarantee.
+- The short baseline/current controls and a long fallback control loaded no detailed progress
+  contract and sent zero parent status messages. These are qualitative observations only:
+  the baseline needed a terminal-protocol resume and the long response language differed, so
+  neither supports a matched timing claim. One standard-worker invocation lacked a return tool;
+  this is an invocation-specific fallback observation, not a universal model claim.
+- Focused invariants cover lazy entry, metrics, authority and terminal boundaries. Narrow
+  integration changes in `scripts/compare-native-agent-baseline.mjs` and its tests allow only
+  the exact new mandate delta; unrelated drift remains rejected. Explicit non-spawn mentions
+  avoid false model-tier inventory candidates. A worker-only/tool-seed regression protects the
+  static load graph. No generated `dist/` file was edited or committed.
+- Technical documentation was updated in `architecture.md` and `build-system.md`. In-code/CLI,
+  user documentation/README and AGENTS have no affected surface; no new central-skill ownership
+  relationship required manifest changes.
+
+Remaining activation proof includes a passing cost result and runtime edge-case checks for the
+particular eligible host/channel shape. Neither richer metric behavior nor other hosts are
+released by this change. Full coverage across sub-agents and delegated workflows remains a
+separate planning issue, [#587](https://github.com/sebastian-software/effective-flow/issues/587),
+which this delivery does not close.
+
+## Test results
+
+Independent validation in the delivery checkout passed CI's required order:
+
+| Check                    | Result                                                                   |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `pnpm agent:check`       | Passed; 1,027 files formatted correctly.                                 |
+| `pnpm test`              | 2,967 total, 2,966 passed, 0 failed, 1 known filesystem skip (`EILSEQ`). |
+| `node build.mjs`         | Passed; all three targets, role parity, ownership and context budgets.   |
+| `pnpm test:distribution` | Passed; offline distribution smoke.                                      |
+
+The initial validator found two guard-integration failures, both corrected through the Quality
+implementer before rerunning the full chain. The correction also repaired canonical deferred-load
+recognition, without increasing budgets or relaxing unrelated baseline guards. Focused correction
+tests passed 45/45. Review's final targeted checks and `git diff --check` passed.
+
+All three eval verifier commands completed, but their behavioral evidence remains **stale**:
+`merge-gate` 8/8 scenarios, `iterate` 7/7, `next-steps` 11/11, with five stale recorded runs per
+scenario. The same scenario counts were stale before implementation. New deferred-load inputs
+are identified correctly; no fresh behavioral round is claimed. Per AGENTS, affected suites owe
+new recordings before the next release, not as a prerequisite to this merge.
+
+Final independent reconciliation passed `pnpm agent:check`, `git diff --check` and
+`node --test test/plan-lint.test.mjs` (62/62). The source/test snapshot matched the prior full
+validation. Completion and archival are approved only for the guarded fallback slice.
+
+## Review findings
+
+**Date:** 2026-10-23
+**Reviewer:** Independent code-validator (deep tooling/documentation review, all severities)
+
+No findings found. Critical 0, Important 0, Note 0; complexity Low 0, Medium 0, High 0.
+The review explicitly approved only disabled-contract/fallback delivery after required checks
+and plan reconciliation. No residual finding report or publication is needed.

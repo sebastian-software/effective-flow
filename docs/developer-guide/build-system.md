@@ -951,7 +951,7 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `review-bot-state`, `review-bot-state-observation`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
@@ -1255,8 +1255,8 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   a changed worker: `EXPECTED_NATIVE_DELTAS` allows only, in the ten `deep` workers, the Claude
   `effort` change `xhigh` to `high` (`claude-deep-tier-effort`) and the Codex `model` change
   `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
-  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer); any other byte
-  difference fails. Once this change
+  tier sentence closing the worker-start bullet, plus the `model-tiers` pointer), and the
+  conditional `subagent-progress` pointer; any other byte difference fails. Once this change
   ships in a release, move the test's pinned `--base` to that release commit and empty
   `EXPECTED_NATIVE_DELTAS`; until then, any further edit to a worker-included fragment needs its
   own exact allowlist entry.

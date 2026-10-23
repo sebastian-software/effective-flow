@@ -22,6 +22,9 @@ const ANALYSIS =
 const LEAN_SENTENCE =
   " The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.";
 
+const PROGRESS_SENTENCE =
+  ' **Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.';
+
 const BASE_BODY = `\n## Delegation mandate\n\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
 const MANDATE_BODY = `\n## Delegation mandate\n\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
 
@@ -114,8 +117,45 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
   );
   assert.deepEqual(
     EXPECTED_NATIVE_DELTAS.body.map(({ id }) => id),
-    ['delegation-mandate-model-tiers', 'delegation-mandate-lean-orchestrator'],
+    [
+      'delegation-mandate-model-tiers',
+      'delegation-mandate-lean-orchestrator',
+      'delegation-mandate-subagent-progress',
+    ],
   );
+});
+
+// The progress delta permits only the exact conditional pointer on the worker-start bullet.
+// A relocated pointer or a weakened load condition remains an unrelated body edit.
+test('the conditional progress delta composes and rejects relocation or condition drift', () => {
+  const progress = MANDATE_BODY.replace(
+    `${WORKER}${TIER_SENTENCE}`,
+    `${WORKER}${TIER_SENTENCE}${PROGRESS_SENTENCE}`,
+  );
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: BASE_BODY }),
+      codex({ body: progress }),
+    ),
+    ['delegation-mandate-model-tiers', 'delegation-mandate-subagent-progress'],
+  );
+  for (const body of [
+    MANDATE_BODY.replace('- Another bullet.', `- Another bullet.${PROGRESS_SENTENCE}`),
+    progress.replace('known fallback workers skip it', 'all workers load it'),
+  ]) {
+    assert.throws(
+      () =>
+        compareNativeSidecar(
+          'codex',
+          'effective-flow-rust-reviewer',
+          codex({ body: MANDATE_BODY }),
+          codex({ body }),
+        ),
+      /body drift outside the expected deltas/,
+    );
+  }
 });
 
 // Invariant: every native difference outside EXPECTED_NATIVE_DELTAS fails the baseline proof.

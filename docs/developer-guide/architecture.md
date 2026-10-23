@@ -229,6 +229,51 @@ ownership contract — canonical for the classification and the ownership-check 
 [`skill-ownership.md`](skill-ownership.md), summarized in
 [`AGENTS.md`](../../AGENTS.md#skill-discovery).
 
+### Sparse ordinary subagent progress
+
+Ordinary worker and analysis handoffs may use the optional
+[`subagent-progress`](../../src/shared/subagent-progress.md) contract when the active overview
+owner has an actual addressed parent-message channel and the worker can use the same channel in
+the selected execution mode. The handoff supplies the native messaging capability and parent
+address verified for that host; the contract never invents a tool, address, timer or status store.
+Reports are advisory phase, count, blocker or externally supplied remaining-time updates and are
+folded into the existing single overview from `goal-completion`. They do not extend strict
+workflow dispatches or delegation envelopes, relay nested workflow progress, grant permissions,
+or affect terminal completion and retry handling.
+
+Eligibility requires the actual parent and worker channel, useful recipient-compliant delivery
+before terminal completion in that execution mode, and a paired cost result. The current transport
+smoke delivered a pre-completion update for the deep-worker shape. The standard-worker shape had
+no usable return channel and therefore keeps the known-phase fallback. All candidate direct-
+reporting rows remain disabled until paired cost runs pass; the smoke does not establish a
+universal model, tier or host claim. Host version is optional existing authoritative metadata and
+is never probed solely for this feature.
+
+#### Paired cost evidence
+
+The first fixed series used the current Codex desktop/API collaboration channel with an ordinary
+built-in leaf analysis worker (`gpt-6.1-sol`/`high`). Five interleaved paired calls used the same
+frozen 61,662-byte contract and test input; the reporting variant loaded the 86-line contract and
+sent exactly one validation-only message. Parent-observed wall time includes orchestration and
+contract loading. Tokens were unavailable and are not treated as zero.
+
+| Pair | Control / reporting (ms) | First progress (ms) |
+| ---: | -----------------------: | ------------------: |
+|    1 |          50,225 / 42,466 |              24,220 |
+|    2 |          42,147 / 47,387 |              21,176 |
+|    3 |          35,134 / 45,001 |              20,746 |
+|    4 |          37,191 / 64,549 |              36,936 |
+|    5 |          39,653 / 53,559 |              19,637 |
+
+Each reporting call delivered one useful update before its terminal result and continued useful
+work; the controls delivered no progress update. The median pair-relative overhead was +28.0839%
+(ratio of medians +19.5042%), exceeding the 10% budget. An earlier calibration pair was excluded
+before the fixed series because its explicit output language differed and was not rerun. The sample
+is noisy, parent-observed latency is not causal model time, and it provides no statistical or
+universal host-performance guarantee. The deep-worker smoke therefore proves transport delivery
+only; the direct row remains disabled pending a passing cost result. The standard-worker
+no-channel observation is limited to that invocation and does not support a per-model claim.
+
 ## Outcome-bound continuation
 
 [`src/shared/outcome-continuation.md`](../../src/shared/outcome-continuation.md) coordinates repeated
