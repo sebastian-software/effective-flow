@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef",
+  "roundId": "mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d",
   "scenario": "cross-repository-context-cannot-switch",
   "slot": 4,
   "attempt": 1,
-  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
-  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/cross-repository-context-cannot-switch/slot-4/attempt-1/project",
+  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
+  "projectRoot": "/private/tmp/effective-flow-next-steps-eval/rounds/mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d/slots/cross-repository-context-cannot-switch/slot-4/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6.1-sol",
@@ -13,13 +13,13 @@
     "reportedVersion": "0.159.3",
     "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
   },
-  "promptDigest": "sha256:73bf7a8f5c7b7b4ba6d8c65b27ab602add1cab30fefeace3ffc847308f626e9c",
+  "promptDigest": "sha256:3820d6e5a328424584a92989ac14a534dea463183aacb9aa1a9900fe245f738e",
   "fixtureDigest": "sha256:1aaa733af34d500a3cbece33e6e6a262836d04894dbb4be6e86bb0f1b3328892",
-  "buildDigest": "sha256:ca8c57b6d02e4d9f044aedb62bcab7e04b47814e4d705c697aa7788e7b2c5858",
+  "buildDigest": "sha256:d01a9ce1834ca9455c877ac28b537cd7620562210e1d430dba78551f7ca12f6b",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvfuj720-2abb8628-cc2d-4195-82c8-2f3227f484ef/slots/cross-repository-context-cannot-switch/slot-4/attempt-1/project",
+    "initialWorkingRoot": "/private/tmp/effective-flow-next-steps-eval/rounds/mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d/slots/cross-repository-context-cannot-switch/slot-4/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
