@@ -4767,6 +4767,7 @@ const NEXT_STEPS_EXEMPT = new Set([
   'apply-issues', // not user-invocable; its end states live on `apply`
   'plan-review', // not user-invocable; its end states live on `review` and `plan`
   'concept-review', // not user-invocable; its end states live on `review` and `concept`
+  'retro', // chat-only analysis result; there is no saved executable source to continue
   'apply-review-remote', // internal sub-file of apply-review with no completion phase
   'apply-review-commit-mechanics', // internal sub-file of apply-review with no completion phase
 ]);
