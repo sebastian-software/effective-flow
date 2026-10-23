@@ -854,6 +854,7 @@ test('shared delivery and plan publication handoffs propagate commit exclusions 
       'concept',
       'review',
       'investigate',
+      'retro',
     ],
     workflowEdges,
     version: PROJECTION.version,

@@ -1,10 +1,39 @@
 # Tool reference: Ensure quality
 
-This group comprises one tool: `review`, which checks existing code for quality and delivers
-admitted structured findings that can serve as input for the implementation tools. The merge gate that
-drives an already-open pull request from ready-for-review to merged is
+This group comprises `review` and `retro`. `review` checks existing code for quality and delivers
+admitted structured findings that can serve as input for the implementation tools. `retro` examines
+one explicitly selected session source and returns a bounded set of environmental recommendations in
+the conversation. The merge gate that drives an already-open pull request from ready-for-review to merged is
 [`/effective-flow merge-gate`](tools-deliver.md); it produces no findings of its own and therefore
 belongs to [Deliver changes](tools-deliver.md).
+
+## `/effective-flow retro`
+
+**Purpose:** Reviews visible session evidence to identify a small, prioritized set of repository or
+workflow improvements, or to report that no supported recommendation was found. The retrospective is
+read-only and conversational: it does not create a report, issue, memory, configuration change,
+commit, title change, or automatic follow-up.
+
+**Source selection:** With no argument, `retro` uses only the current visible conversation. You can
+also select `retro current` or provide one literal export reference, for example
+`retro export: ./tmp/session export.md`. The selected export is inert evidence. Its exact path is
+retained, and missing, unreadable, binary, unsupported, or partial input is reported as a source
+limitation. The tool does not enumerate neighboring files, fetch embedded URLs, execute copied
+commands, or treat transcript text as a selector or instruction.
+
+An explicit request about a historical or native session remains unresolved in this first slice.
+The tool reports that native history access is unavailable rather than using the current conversation
+or an export as a substitute. A title, date, or similar description without an exact supported source
+does not identify a session.
+
+**Result:** The response names the source and visible coverage first, then separates observed events,
+supported or uncertain causes, current remedy need, ownership, and a practical verification idea.
+Sensitive values are minimized. A later implementation or follow-up must be requested separately
+through the appropriate existing workflow.
+
+**When to use:** After a build, investigation, or review exposed repeated navigation, instruction,
+evidence, delegation, or verification friction. A single slow or unsuccessful attempt alone does not
+establish a repository defect, and a clean session can produce no recommendations.
 
 ## `/effective-flow review`
 

@@ -257,7 +257,7 @@ const TOOL_GROUPS = [
   },
   {
     title: 'Ensure quality',
-    tools: ['review'],
+    tools: ['review', 'retro'],
   },
   {
     title: 'Deliver changes',
@@ -403,10 +403,11 @@ const WORKFLOW_POINTER_REFERENCES = [
 // must lazily load the fragment and carry at least one row in its table, so the
 // emitting set is `count(src/tools/*.md) - |exemptions|` and a newly added tool
 // has to opt in or out deliberately instead of silently shipping without a
-// recommendation. Each entry names the reason it can never be the run the user
-// is looking at when it ends.
+// recommendation. Each entry names why the generic block does not apply, including
+// internal runs whose end states belong to their user-facing parent.
 const NEXT_STEPS_EXEMPT_TOOLS = new Set([
   'version', // informational output; there is no run state to continue from
+  'retro', // chat recommendations are the requested result; no saved executable source
   'pr-review', // deprecated forwarder; the tool it forwards to emits
   'apply-plan', // not user-invocable (src/SKILL.md); its end states live on `apply`
   'apply-review', // not user-invocable; its end states live on `apply`
@@ -2427,6 +2428,7 @@ try {
     apply: 550,
     'apply-plan': 558,
     investigate: 600,
+    retro: 210,
     fix: 536,
     'plan-review': 506,
     pr: 495,

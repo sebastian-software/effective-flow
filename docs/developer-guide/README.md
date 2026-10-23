@@ -24,9 +24,11 @@ is no runtime application – you edit `src/`, never `dist/`.
 6. [Skill ownership](skill-ownership.md) – the boundary between Effective Flow orchestration
    and central skill expertise (layered contract), including the loosely coupled inventory of
    actual Effective Flow relationships.
-7. [Release and installation](release-and-installation.md) – versioning via release-please,
+7. [Session retrospectives](session-retrospectives.md) – source admission, ownership, evidence
+   boundaries, and the manual behavioral coverage required for the read-only `retro` tool.
+8. [Release and installation](release-and-installation.md) – versioning via release-please,
    publishing, and installation of the built skill.
-8. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
+9. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
    artifact contracts; the configured project and surface languages select new output while
    existing artifact languages remain valid.
 

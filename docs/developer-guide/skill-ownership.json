@@ -45,6 +45,7 @@
           "classification": "route-when-relevant"
         },
         { "consumer": "investigate", "classification": "delegate" },
+        { "consumer": "retro", "classification": "delegate" },
         { "consumer": "investigation-method", "classification": "delegate" },
         { "consumer": "commit", "classification": "delegate" },
         { "consumer": "commit-message-rules", "classification": "delegate" }
