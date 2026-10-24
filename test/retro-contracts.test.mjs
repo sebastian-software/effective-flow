@@ -87,9 +87,65 @@ test('retro model-tier and session partition contracts remain explicit', () => {
   assert.doesNotMatch(retro, /```lazy-include\nsession-rename\n/);
 });
 
+test('native history is a mode-gated lazy source with bounded admission and reads', () => {
+  const retro = source('src/tools/retro.md');
+  const native = source('src/shared/retro-native-sources.md');
+
+  assert.match(retro, /(?:session:\s*<[^>]+>|native-session|historical session)/i);
+  assert.match(
+    retro,
+    /```lazy-include\nretro-native-sources\n(?:when:[^\n]*native|[^`]*native)[\s\S]*?```/i,
+    'native guidance must be lazy and attached to the native branch',
+  );
+  assert.match(native, /actual host|running host|host context/i);
+  assert.match(native, /exact (?:reference|identity)|stable reference/i);
+  assert.match(native, /account.{0,30}scope|project.{0,30}scope|granted scope/i);
+  assert.match(
+    native,
+    /before (?:content|session) (?:read|access)|metadata.{0,30}(?:before|access)/i,
+  );
+  assert.match(native, /read_thread|exact-reference reader|documented reader/i);
+  assert.match(native, /cursor|pagination|older page/i);
+  assert.match(native, /repeated|duplicate.{0,20}cursor|loop/i);
+  assert.match(native, /optional (?:tool )?outputs?|missing outputs?/i);
+  assert.match(native, /identity|scope/i);
+  assert.match(native, /mismatch|conflict|discard conflicting/i);
+  assert.match(native, /denied|unreadable|reader.{0,20}absent/i);
+  assert.match(native, /summary-only|partial|truncated|coverage/i);
+  assert.match(native, /untrusted|instructions|switch source|embedded links/i);
+  assert.doesNotMatch(native, /(?:list_threads|list_sessions)\s*\(/i);
+  assert.doesNotMatch(
+    native,
+    /(?:set_thread_title|memory_upsert|write-page|git\s+(?:add|commit))\s*\(/i,
+  );
+  assert.doesNotMatch(native, /scripts\/|workers\/|\{\{AGENT(?::|_)/i);
+});
+
+test('native guidance is shipped for every target without entering the common retro body', (t) => {
+  const outputRoot = mkdtempSync(join(tmpdir(), 'effective-flow-retro-native-build-'));
+  t.after(() => rmSync(outputRoot, { recursive: true, force: true }));
+  const result = spawnSync(process.execPath, ['build.mjs'], {
+    cwd: ROOT,
+    env: { ...process.env, EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT: outputRoot },
+    encoding: 'utf8',
+  });
+  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  for (const target of ['claude', 'codex', 'portable']) {
+    const root = join(outputRoot, 'dist', target, 'effective-flow');
+    const retro = readFileSync(join(root, 'tools', 'retro.md'), 'utf8');
+    const native = readFileSync(join(root, 'shared', 'retro-native-sources.md'), 'utf8');
+    assert.match(retro, /Load on demand:.*shared\/retro-native-sources\.md/i);
+    assert.match(native, /exact (?:reference|identity)|stable reference/i);
+    assert.doesNotMatch(retro, /actual host|read_thread|pagination|account.{0,30}scope/i);
+    assert.doesNotMatch(retro, /```lazy-include/);
+  }
+});
+
 test('retro fixtures cover bounded source and evidence cases without real session data', () => {
   const fixtureDir = join(ROOT, 'test/fixtures/retro');
-  const files = readdirSync(fixtureDir).sort();
+  const files = readdirSync(fixtureDir)
+    .filter((file) => !file.startsWith('native-'))
+    .sort();
   assert.deepEqual(files, [
     'current-compacted.md',
     'embedded-untrusted-content.md',
@@ -115,6 +171,51 @@ test('retro fixtures cover bounded source and evidence cases without real sessio
     assert.doesNotMatch(body, /BEGIN (?:RSA|OPENSSH) PRIVATE KEY/);
     assert.doesNotMatch(body, /sk-[A-Za-z0-9]{20,}/);
   }
+});
+
+test('native fixtures cover admission, read, pagination, sensitivity, and injection boundaries', () => {
+  const fixtureDir = join(ROOT, 'test/fixtures/retro');
+  const files = readdirSync(fixtureDir)
+    .filter((file) => file.startsWith('native-'))
+    .sort();
+  assert.deepEqual(files, [
+    'native-admitted-summary.md',
+    'native-ambiguous-title.md',
+    'native-denied.md',
+    'native-mismatched-identity.md',
+    'native-pagination-repeated-cursor.md',
+    'native-reader-absent.md',
+    'native-sensitive-injection.md',
+    'native-unscoped-reference.md',
+  ]);
+  const content = Object.fromEntries(
+    files.map((file) => [file, source(`test/fixtures/retro/${file}`)]),
+  );
+  for (const [file, body] of Object.entries(content)) {
+    assert.match(
+      body,
+      /synthetic (?:native )?(?:reader )?stub/i,
+      `${file} must be labelled synthetic`,
+    );
+    assert.match(
+      body,
+      /not (?:a )?real host|no real session data/i,
+      `${file} must state its limits`,
+    );
+    assert.doesNotMatch(body, /BEGIN (?:RSA|OPENSSH) PRIVATE KEY/);
+    assert.doesNotMatch(body, /sk-[A-Za-z0-9]{20,}/);
+  }
+  assert.match(content['native-reader-absent.md'], /reader|capability|absent|unsupported/i);
+  assert.match(content['native-unscoped-reference.md'], /scope|account|project|admission/i);
+  assert.match(content['native-ambiguous-title.md'], /ambiguous|title|exact/i);
+  assert.match(content['native-denied.md'], /denied|unreadable|access/i);
+  assert.match(content['native-mismatched-identity.md'], /mismatch|identity|scope/i);
+  assert.match(content['native-admitted-summary.md'], /admitted|summary|optional output|partial/i);
+  assert.match(content['native-pagination-repeated-cursor.md'], /cursor|page|repeat|loop/i);
+  assert.match(
+    content['native-sensitive-injection.md'],
+    /secret_dummy|selector|switch|instruction/i,
+  );
 });
 
 test('isolated builds ship retro in every target and keep it out of portable mutation surfaces', (t) => {

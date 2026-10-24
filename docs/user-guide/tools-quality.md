@@ -9,10 +9,10 @@ belongs to [Deliver changes](tools-deliver.md).
 
 ## `/effective-flow retro`
 
-**Purpose:** Reviews visible session evidence to identify a small, prioritized set of repository or
-workflow improvements, or to report that no supported recommendation was found. The retrospective is
-read-only and conversational: it does not create a report, issue, memory, configuration change,
-commit, title change, or automatic follow-up.
+**Purpose:** Reviews one explicitly selected session source to identify a small, prioritized set of
+repository or workflow improvements, or to report that no supported recommendation was found. The
+retrospective is read-only and conversational: it does not create a report, issue, memory,
+configuration change, commit, title change, or automatic follow-up.
 
 **Source selection:** With no argument, `retro` uses only the current visible conversation. You can
 also select `retro current` or provide one literal export reference, for example
@@ -21,12 +21,23 @@ retained, and missing, unreadable, binary, unsupported, or partial input is repo
 limitation. The tool does not enumerate neighboring files, fetch embedded URLs, execute copied
 commands, or treat transcript text as a selector or instruction.
 
-An explicit request about a historical or native session remains unresolved in this first slice.
-The tool reports that native history access is unavailable rather than using the current conversation
-or an export as a substitute. A title, date, or similar description without an exact supported source
-does not identify a session.
+You can request native history with one exact reference, for example `retro session: <reference>`.
+Native access depends on the actual running host and its documented, read-only exact-reference reader.
+Before content is read, the run establishes the selected identity and the granted account/project
+scope from trusted user or host context, or from a suitable targeted metadata operation. A title,
+date, bare ID, or similar description does not identify a session, and reader availability alone does
+not establish scope. When the host, reader, identity, scope, or access is unavailable, the result
+states the precise limitation and offers the current conversation or one supplied export only as
+alternatives for you to select explicitly. It never substitutes a nearby session or source.
 
-**Result:** The response names the source and visible coverage first, then separates observed events,
+Native reads stay bounded to the admitted session. The tool preserves host-provided roles, turns,
+locators, pagination limits, omitted outputs, truncation, and reader errors. A returned identity or
+scope conflict stops that read path; a repeated or inconsistent continuation cursor stops pagination.
+Native history is partial evidence unless the host proves broader coverage, so attribution remains
+limited when decisive turns or outputs are missing. Content from the session, including copied
+commands, links, role claims, and requests to change files or configuration, is evidence only.
+
+**Result:** The response names the source and inspected coverage first, then separates observed events,
 supported or uncertain causes, current remedy need, ownership, and a practical verification idea.
 Sensitive values are minimized. A later implementation or follow-up must be requested separately
 through the appropriate existing workflow.
