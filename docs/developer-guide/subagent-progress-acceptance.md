@@ -5,7 +5,10 @@ in issue [#587](https://github.com/sebastian-software/effective-flow/issues/587)
 [canonical plan](https://github.com/sebastian-software/effective-flow/issues/587#issuecomment-6374950705),
 and continuing [PR #591](https://github.com/sebastian-software/effective-flow/pull/591).
 The [coverage inventory](subagent-progress-coverage.md) owns the source-derived reachability matrix.
-This page owns the acceptance observations below, not the progress policy.
+This page owns the acceptance observations below, not the progress policy. Actual useful
+preterminal delivery, active direct-child/dispatch provenance, checkpoint compliance, and required
+joins govern acceptance. Independently serialized plaintext, full handoffs, and raw-native replay
+are not universal gates; missing evidence is not a demonstrated violation.
 
 **Acceptance remains incomplete.** The observations on October 24, 2026, establish several
 bounded behaviors, with different evidence strength. Earlier Claude checkpoints were integrated only
@@ -16,27 +19,33 @@ useful preterminal integration, and join. Its encrypted checkpoint wording remai
 Current Codex App Collaboration exercised generated portable contracts, nested relays, strict
 unattended review, productive Strict Iterate documentation delivery, current and legacy handoffs,
 busy-parent coalescing, a later productive synthetic Apply Review relay, and lifecycle safeguards.
-Four additional approved CLI runs finished, with two bounded subjects accepted and two rejected.
+Four approved CLI runs finished, with two bounded subjects accepted and two rejected. Two later,
+separately authorized attempts added a bounded Codex fallback acceptance with observability limits
+and a productive Claude attempt that was not accepted. Local reconciliation and receiver/helper
+checks add source and protocol evidence without activating runtime shapes.
 None establishes general support for a harness, all
 roles, or the full remote `apply-review` path. The policy owner remains
 `src/shared/subagent-progress.md`; these experiments do not change it.
 
-| Shape                                      | Observed                                                                                                                      | Partial or missing evidence                                                                                              |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Claude foreground and background validator | One generated leaf checkpoint in each run; real work continued; child completed and joined                                    | Parent integration occurred after native completion; no preterminal transport acceptance                                 |
-| Claude join discovery and excluded channel | Exact lookup found no callable join; foreground fallback completed; excluded-channel review completed without a send          | No global tool-availability claim or attempted runtime-denial coverage                                                   |
-| Later Claude background qualification      | Same-root native completion handling bound; zero pending launches; clean supervised completion                                | `NOT_QUALIFIED_NO_SEND`; transport `NOT_ACCEPTED`; wider capability `INCONCLUSIVE`; no pending-child yield established   |
-| Earlier native Codex generated roles       | Seven processes selected unmodified generated TOML files through session-only native role configuration and joined terminals  | Complete native role/sender/recipient and actual inference metadata were not serialized                                  |
-| Native Codex deep validator                | New CLI 0.159.3 exact deep role, model/effort, native send/receipt binding, useful preterminal integration, final join        | Encrypted checkpoint wording, dispatch, word bound, and field semantics unverified; earlier trace stays partial          |
-| Current App generated portable contracts   | Validator checkpoint, parent relay, and terminal join; controlled docs work traversed both relay hops                         | No native custom-role selector; full remote `apply-review` admission, source-report, and remote gates unproven           |
-| Productive synthetic Apply Review relay    | Two findings, one component, sequential Docs/validator joins, root-received preterminal component callbacks                   | Descendant callbacks are actor-reported; no independent native replay, remote admission, or multiple-component coverage  |
-| Strict unattended file review              | Valid three-control receiver plus one local five-control Plan run, read-only judgment and review joins                        | Question, partial-result, and answer re-dispatch paths remain missing; first deep attempt was an explicit ABORT          |
-| Controlled Iterate receiver handoffs       | Current snapshot-2/context-1 and header-absent handoffs plus unchanged old receiver handoff completed bounded work and joined | These earlier controlled runs omit full productive bootstrap and merge-gate admission; header-absent live body was empty |
-| Productive production Strict Iterate       | Direct user documentation instruction, Docs/validator/Commit joins, push, guarded PR readback, three preterminal checkpoints  | Runtime progress/delivery are caller/worker packet evidence; no full merge-gate admission or reviewer provenance         |
-| Busy-parent checkpoint coalescing          | Two distinct direct reviewers each sent once before terminal; parent combined confirmations once and joined both              | No simultaneous-arrival, blocking-tool interruption, latency, or all-mode guarantee                                      |
-| Alternative portable host discovery        | OpenCode native help and provider commands completed with temporary isolated state                                            | No established authorized provider route under that isolation, model run, transport, or fallback acceptance              |
-| Strict Iterate negative inputs             | Unknown context version and duplicate context rejected before authority-bearing work                                          | Original duplicate run violated final plain-line terminal format; fresh-process Retry 1 corrected it                     |
-| Lifecycle and progress metrics             | Stale dispatch ignored; recipient mismatch suppressed sending; cancellation stopped a partial audit; phase updates used       | No technical recipient isolation, resumed cancellation, credible scoped ETA, or changing-denominator percentage branch   |
+| Shape                                      | Observed                                                                                                                      | Partial or missing evidence                                                                                                                                    |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Claude foreground and background validator | One generated leaf checkpoint in each run; real work continued; child completed and joined                                    | Parent integration occurred after native completion; no preterminal transport acceptance                                                                       |
+| Claude join discovery and excluded channel | Exact lookup found no callable join; foreground fallback completed; excluded-channel review completed without a send          | No global tool-availability claim or attempted runtime-denial coverage                                                                                         |
+| Later Claude background qualification      | Same-root native completion handling bound; zero pending launches; clean supervised completion                                | `NOT_QUALIFIED_NO_SEND`; transport `NOT_ACCEPTED`; wider capability `INCONCLUSIVE`; no pending-child yield established                                         |
+| Productive Claude source audit             | Native child completion before both root results; zero pending launches and clean supervised completion                       | `POLICY_FAIL` for two experiment-forbidden assigned-file Grep calls; no send; complete framed reports and completion-response binding unobservable             |
+| Productive Codex portable fallback         | Complete contract reads, 137 passing tests, eight correct findings, full root/leaf reports, two native threads joined         | Accepted with scope/observability limits; 15 hash-only shell commands and encrypted handoff/tool-schema gaps; no positive progress                             |
+| Local reconciliation and receiver bridge   | 17 reconciliation checks and seven actual rendered receiver/helper cases passed with independent validation                   | Static/protocol evidence only; no new model, native transport, or role activation                                                                              |
+| Earlier native Codex generated roles       | Seven processes selected unmodified generated TOML files through session-only native role configuration and joined terminals  | Complete native role/sender/recipient and actual inference metadata were not serialized                                                                        |
+| Native Codex deep validator                | New CLI 0.159.3 exact deep role, model/effort, native send/receipt binding, useful preterminal integration, final join        | Encrypted checkpoint wording, dispatch, word bound, and field semantics unverified; earlier trace stays partial                                                |
+| Current App generated portable contracts   | Validator checkpoint, parent relay, and terminal join; controlled docs work traversed both relay hops                         | No native custom-role selector; full remote `apply-review` admission, source-report, and remote gates unproven                                                 |
+| Productive synthetic Apply Review relay    | Two findings, one component, sequential Docs/validator joins, root-received preterminal component callbacks                   | Descendant callbacks are actor-reported; per-hop sender/dispatch/order/materiality detail, remote admission, and multiple-component coverage remain incomplete |
+| Strict unattended file review              | Valid three-control receiver plus one local five-control Plan run, read-only judgment and review joins                        | Question, partial-result, and answer re-dispatch paths remain missing; first deep attempt was an explicit ABORT                                                |
+| Controlled Iterate receiver handoffs       | Current snapshot-2/context-1 and header-absent handoffs plus unchanged old receiver handoff completed bounded work and joined | These earlier controlled runs omit full productive bootstrap and merge-gate admission; header-absent live body was empty                                       |
+| Productive production Strict Iterate       | Direct user documentation instruction, Docs/validator/Commit joins, push, guarded PR readback, three preterminal checkpoints  | Runtime progress/delivery are caller/worker packet evidence; no full merge-gate admission or reviewer provenance                                               |
+| Busy-parent checkpoint coalescing          | Two distinct direct reviewers each sent once before terminal; parent combined confirmations once and joined both              | No simultaneous-arrival, blocking-tool interruption, latency, or all-mode guarantee                                                                            |
+| Alternative portable host discovery        | OpenCode native help and provider commands completed with temporary isolated state                                            | No established authorized provider route under that isolation, model run, transport, or fallback acceptance                                                    |
+| Strict Iterate negative inputs             | Unknown context version and duplicate context rejected before authority-bearing work                                          | Original duplicate run violated final plain-line terminal format; fresh-process Retry 1 corrected it                                                           |
+| Lifecycle and progress metrics             | Stale dispatch ignored; recipient mismatch suppressed sending; cancellation stopped a partial audit; phase updates used       | No technical recipient isolation, resumed cancellation, credible scoped ETA, or changing-denominator percentage branch                                         |
 
 ## Evidence scope and provenance
 
@@ -189,6 +198,31 @@ result update retain “Revision required.” The unresolved Claude path returns
 production shape, nested exception, other role/variant, retry, additional model invocation, or
 release is authorized by this result. Full shipped coverage remains required.
 
+### Additional productive Claude source audit
+
+A later separately authorized source-audit attempt selected the unchanged generated background
+validator against current public source copies. Independent review found **`NOT_ACCEPTED`** and
+**`POLICY_FAIL`**: two observed `Grep` invocations targeted the assigned public test file but
+violated this experiment's frozen Read-only tool shape. The normal generated validator permits
+`Grep`; these calls establish neither a foreign or credential read, a global permission breach,
+nor a production validator defect. Subsequent assigned-file Reads do not erase the mismatch.
+
+Native child completion at ordinals 41–42 preceded both same-root results at 51–52. There were zero
+observed sends, pending-child agent-loop results, or preterminal receipts. Full framed child/root
+domain reports and exact completion-response bindings were unavailable: completion handling and
+terminal consumption remain `UNOBSERVABLE`. Do not borrow the earlier no-send attempt's stronger
+completion binding. A child text `DONE`, native `completed`, and exit `0` do not establish domain
+`DONE`, accurate source findings, or faithful final-report consumption. Wider capability remains
+`INCONCLUSIVE`; this adds no accepted transport or domain-report evidence.
+
+The process was reaped without timeout or a remaining group observed, with zero pending launches.
+Both native result frames repeat cumulative API duration 77,948 ms and cost USD 0.6496897; those
+repeated values must not be summed. They are native result scopes, not an independently verified
+invoice or matched cost comparison. The USD 4 CLI option was a setting, not a guaranteed billing
+ceiling. Both separately approved additional CLI permissions are consumed. This result authorizes
+no retry, new rule relaxation, nested exception, or production activation; the unresolved Claude
+path returns to planning. Earlier late-send and no-send observations retain their separate outcomes.
+
 ## Native Codex role and wait observations
 
 ### Earlier CLI 0.163.0 observations
@@ -244,8 +278,9 @@ counters describe one unpaired run and establish no cost or reliability result.
 
 Neither the stored checkpoint nor child assignment was decrypted. The literal `PROGRESS/1`
 prefix, dispatch, 20-word bound, field completeness, message semantics, and full readable handoff
-compliance remain encrypted and unverified. Native role/addressing/opaque-payload binding and useful
-running-status integration are the narrower established result. No other role, variant, Fast,
+compliance remain encrypted and unverified. Native role/addressing/opaque-payload binding, useful preterminal parent integration, and joins
+establish bounded direct transport/use evidence. The unverified literal properties are not
+observed violations; no universal plaintext-serialization prerequisite follows. No other role, variant, Fast,
 App TOML selector, host, background mode, or additional relay hop is covered. A separate capacity
 error occurred after this completed exit-0 experiment; it did not turn the experiment into a failed
 run, and no rerun followed.
@@ -379,10 +414,13 @@ synthetic `docs/cli-integration-guide.md` changed; 22 protected files, HEAD, bra
 semantics stayed unchanged. The report was reconciled after every component terminal, owned
 wisdom was safely deleted, and no correction, stash, commit, or publication occurred.
 
-The root directly received five material native component callbacks before the known terminal.
+The root directly received five material native component callbacks before the known terminal;
+these first-party observations retain their value without a later raw replay.
 The component reports four native callbacks per Docs child; each Docs workflow reports one
 callback per leaf (four leaves total). These are different evidence owners: descendant callbacks
-were not received directly by the root, and no independent serialized native replay was added.
+were not received directly by the root. Their actor records are relevant, but this compact packet
+lacks specific per-hop sender/dispatch/order/materiality facts needed to prove every relay claim.
+The gap is those facts, not the absence of a preferred serialized replay.
 This supports a bounded returning-relay observation through actual workflows, without native
 custom-role selection, Claude, remote admission, multiple components, or real reviewer provenance.
 The root used memory-only recorder exec calls; no zero-overhead, comparable timing/token,
@@ -509,6 +547,17 @@ reporting stale archived evidence. No manual model round was re-recorded. Passin
 checks and these bounded runtime experiments do not refresh behavioral eval archives or satisfy
 the full cross-harness acceptance matrix.
 
+A later local package independently reconciled 16 base roles with 70 generated artifacts
+(21 Claude, 33 Codex, 16 portable), 54 spawn sites, 14 analysis sites, and 30 adapters. Seventeen
+reconciliation checks and seven actual rendered-receiver/helper cases passed, then passed an
+independent replay and integrity review. The bridge uses the actual three generated receiver roots
+with and without trusted context, plus the frozen legacy selection. It preserves exact synthetic
+reviewer-body bytes, inert body-only controls, trusted-context selection, and legacy fallback.
+Eight retained source copies match current owning bytes; native TOML equivalence supplies byte
+provenance only. These finite dimensions are neither a Cartesian-product experiment requirement
+nor a future-host obligation. Local helper/source proof adds no native/model acceptance. The
+unchanged 2,995-test suite was not repeated for this package.
+
 ## Cost and interpretation limits
 
 | Run                     | Final cumulative cost reported by host (USD) | Wall time (s) |
@@ -623,6 +672,38 @@ cost-success pass. This finite batch establishes neither four passing subjects, 
 benefit, causal savings, reliability, nor full coverage. Rejected arms remain valid descriptive
 cost records, not successful comparisons. Cost acceptance remains incomplete; there is no 10%
 readiness gate or automatic requirement for two new pairs.
+
+A later independent counter audit confirmed all four original native call totals—15, 22, 25,
+and 33, totaling 95—across all 11 retained threads. It counts both native function-call and custom
+call shapes with matching outputs, without counting shell commands inside exec as additional native
+calls. Original wall times, tree-token totals, subject outcomes, and limitations are unchanged;
+no historical correction or retagging is needed.
+
+### Additional productive Codex portable fallback
+
+One later separately authorized CLI 0.159.3 source-validation attempt used a built-in portable-contract
+validator leaf at `gpt-6.1-sol`/high, with no native custom-role activation. Independent review found
+**`ACCEPTED_WITH_SCOPE_AND_OBSERVABILITY_LIMITS`**: complete byte-matching parent/leaf contract
+reads, three observed test commands passing 61/14/62 tests (137 total), eight source-correct bounded
+findings, complete mandatory native root/leaf final reports, and two native threads with a matching
+terminal/wait join. The 102.221-second child duration is descriptive, not a progress eligibility gate.
+
+The supervised wall region was 135.7320107081905 seconds. Distinct native threads total 1,149,794
+tokens, including 1,030,144 cached input tokens; 21 native calls comprise 18 exec calls, one spawn,
+and two waits. Shell command events are a different count. The 16-file payload remained unchanged,
+source HEAD/status were clean, and owned cleanup was verified. These protection checks do not
+replace the earlier arms' 389-Git-file baseline or establish OS confinement.
+
+Fifteen other shell commands retain only hashes and narrow metadata. Universal source permission,
+no-self-timing, and no-hidden-repeat compliance remain `UNOBSERVABLE`, as do the actual messaging
+tool schema and exact encrypted handoff. No concrete violation was observed; missing visibility is
+not zero activity or blanket compliance. This limit adds no universal command-innocence gate,
+and a JSON projection gap alone justifies no architecture change. No native progress send or useful nested benefit is
+established. The original accepted old fallback remains 283.6596 seconds and 687,330 tokens under
+its narrower qualification. Different reporting, fixture placement, privacy instrumentation, cache,
+and background conditions prevent a causal speedup, matched cost-success, billing, savings, or
+reliability conclusion. This new bounded acceptance neither retags the original failed current-long
+attempts nor repairs the four-run batch into a successful comparison. No automatic retry follows.
 
 ## Integrity and private retention
 
@@ -758,7 +839,25 @@ update were published and read back on the same issue #587 plan comment.
 | Actual Claude independent review                 | `480aca4b42451ff339e5c65eefc0999e66f9e1343d07ebaac5cace7c7b555e67` |
 | Sealed Claude actual-evidence manifest           | `ce254421b8934802c30d6dd338a5b1c640f08a2baaea3641a4bf529548634144` |
 | Published/read-back qualification amendment body | `5611949ef69e2206887f1b8d7a23f45f00e7e6ff23fcb4637072674d9c8520bf` |
-| Current published/read-back canonical body       | `46a40ad5e7b2ef86008f87412b969df1076b99f6118561cd160ab30ad7e2c65e` |
+| Earlier completed no-send canonical body         | `46a40ad5e7b2ef86008f87412b969df1076b99f6118561cd160ab30ad7e2c65e` |
+
+### Additional reconciliation and productive-attempt artifacts
+
+These independently reviewed packages remain separate from the historical runs. The canonical
+pre-attempt body was published and read back before the additional Claude attempt. The later
+additional-outcome body records both completed attempts and the evidence interpretation separately.
+
+| Artifact                                       | SHA-256                                                            |
+| ---------------------------------------------- | ------------------------------------------------------------------ |
+| Independent local reconciliation manifest      | `e0f7ee5fa22c198d68836f145797a130608204854e442a8a257976529b867b4b` |
+| Productive Codex fallback independent review   | `402077e3e3d41ed61d93d15a78748455c258d56b8d8464a1f5a31bb20fca9c0c` |
+| Productive Codex fallback review manifest      | `38f6b8265f1ceb365275ed2c7fc105ab0d7b825ceb08a9b4251ee784b9c4ee9f` |
+| Productive Claude independent review           | `5f349689c9b75438ad664dc13d0026ca5a5471dd651e3d3e4d0520639c3002c7` |
+| Productive Claude safe projection              | `9fb13042f14e96c39032190f07a7e2362e9703129023e39e666416bf4a490ca5` |
+| Pre-attempt published/read-back canonical body | `084c405bc3b1081874fc91a706ec679b2f6cf067188b255866fa5daf53907139` |
+| Published/read-back additional-outcome body    | `a601a254a5bdcfeb8db3a62e3f2017b1389ca3af00cc676179294495583ca937` |
+| Historical native counter audit                | `a34e6617fe39afc87e1dd3a27a1e7b03f61390be21e94645a4044ce3f7bed2a4` |
+| Historical native counter audit data           | `823226c6812e5ae021c56c04a86bf941a9137baa786de2fc74d25a26a315b165` |
 
 Raw event streams, transcripts, and authentication or account details stay private. This document
 publishes only selected derived facts, fixture names, source provenance, and artifact hashes. It
@@ -780,13 +879,17 @@ runtime denial, generated variants, calibrated fallback comparisons, and qualifi
 remain open. App completed-dispatch ignoring is supported only by the bounded caller observation
 above. OpenCode discovery did not establish an authorized provider route under isolation or run a
 model. The shared 150 behavioral eval recordings belong to separate #581/#584 work after final joint
-source; none of these observations refreshes them. Preserve original strict terminal-format,
+source; the final joint-source round remains 0/150. A fresh configured review of the current head
+remains absent, with its trigger held for a qualified healthy reviewer service. Neither local
+checks nor maintenance supplies that review. None of these observations refreshes evals. Preserve original strict terminal-format,
 sandbox validation, and cost timer-policy failures with their separate recovery status.
 
 **Full issue #587 acceptance remains incomplete.** The user answered the scope question:
 full coverage is required before release, with no tested-slice waiver. The canonical issue #587
-plan comment now contains the published lifecycle amendment and completed Claude result update;
-its status is “Revision required.” The unresolved Claude path returns to planning without another
-authorized model run. Issue #587 remains open and PR #591 remains Draft. This decision does not establish readiness, merge, or release acceptance.
+plan comment retains status “Revision required.” Its lifecycle amendment, earlier completed
+no-send update, and pre-attempt productive-task clarification have separate historical bindings.
+The same comment also records both completed additional outcomes and the evidence interpretation above.
+Both additional one-use CLI approvals were consumed; neither completed attempt authorizes another
+model run. The unresolved Claude path returns to planning. Issue #587 remains open and PR #591 remains Draft. This decision does not establish readiness, merge, or release acceptance.
 The source-derived [coverage inventory](subagent-progress-coverage.md) remains distinct
 from live acceptance.
