@@ -14,7 +14,7 @@ preterminal parent integration, but omits the complete native role and sender/re
 Current Codex App Collaboration exercised generated portable contracts, nested relays, one strict
 unattended review, controlled current and legacy Iterate handoffs, busy-parent coalescing, and
 lifecycle safeguards. None establishes general support for a harness, all
-roles, or the full productive `apply-review` path. The policy owner remains
+roles, or the full remote `apply-review` path. The policy owner remains
 `src/shared/subagent-progress.md`; these experiments do not change it.
 
 | Shape                                      | Observed                                                                                                                      | Partial or missing evidence                                                                                            |
@@ -23,8 +23,8 @@ roles, or the full productive `apply-review` path. The policy owner remains
 | Claude join discovery and excluded channel | Exact lookup found no callable join; foreground fallback completed; excluded-channel review completed without a send          | No global tool-availability claim or attempted runtime-denial coverage                                                 |
 | Native Codex generated roles               | Seven processes selected unmodified generated TOML files through session-only native role configuration and joined terminals  | Complete native role/sender/recipient and actual inference metadata were not serialized                                |
 | Native Codex deep validator                | Wait → useful parent integration → Wait → joined final result                                                                 | One partial positive trace; no full role/sender identity activation                                                    |
-| Current App generated portable contracts   | Validator checkpoint, parent relay, and terminal join; controlled docs work traversed both relay hops                         | No native custom-role selector; full `apply-review` admission, source-report, and remote gates unproven                |
-| Strict unattended file review              | Valid three-control receiver, read-only judgment leaf, checkpoint relay, and join                                             | One bounded path; five-control, question, partial-result, and answer re-dispatch paths missing                         |
+| Current App generated portable contracts   | Validator checkpoint, parent relay, and terminal join; controlled docs work traversed both relay hops                         | No native custom-role selector; full remote `apply-review` admission, source-report, and remote gates unproven         |
+| Strict unattended file review              | Valid three-control receiver plus one local five-control Plan run, read-only judgment and review joins                        | Question, partial-result, and answer re-dispatch paths remain missing; first deep attempt was an explicit ABORT        |
 | Controlled Iterate receiver handoffs       | Current snapshot-2/context-1 and header-absent handoffs plus unchanged old receiver handoff completed bounded work and joined | Full productive bootstrap and merge-gate admission remain unobserved; header-absent live body was empty                |
 | Busy-parent checkpoint coalescing          | Two distinct direct reviewers each sent once before terminal; parent combined confirmations once and joined both              | No simultaneous-arrival, blocking-tool interruption, latency, or all-mode guarantee                                    |
 | Alternative portable host discovery        | OpenCode native help and provider commands completed with temporary isolated state                                            | No established authorized provider route under that isolation, model run, transport, or fallback acceptance            |
@@ -276,6 +276,48 @@ The official [CLI documentation](https://opencode.ai/docs/cli/) supplies context
 transport or missing-channel fallback passed. Gemini, Amp, Aider, and Goose were absent from PATH
 only; no broader availability claim follows.
 
+## Current PR591 runtime packages
+
+The following two synthetic local packages extend the bounded observations above. They ran on
+the current generated contracts and returned cleanly, but they do not activate production,
+remote, or cross-host acceptance.
+
+### Productive local Apply Review
+
+The local Phase 1–8 run admitted two fresh distinct v1 findings with sixteen failing CLI
+reproductions. Two parallel read-only preanalysis leaves joined, and their combined-scope advice
+was corrected before writes. One overlap component then ran Docs writer and validator workflows
+twice: the first pair joined at 8 passing and 8 known failures, and the second at 16 passing and
+0 failures. Four leaf joins and the component join completed before a fresh report reconciliation.
+An independent final validator confirmed 16 passing and 0 failing checks, two exact implementation
+notes, only `docs/archive-guide.md` changed, an empty index, no commits or stashes, unchanged
+protected sources, and removed owned wisdom. The component supplied one direct native checkpoint
+before its component terminal;
+the short leaves supplied no fresh checkpoint. This is a bounded local synthetic fixture, not
+remote Apply Review, multiple parallel components, or a general leaf-relay result.
+
+### Productive full unattended Plan
+
+The local Plan 1–7 run used a 447-byte envelope with five required controls plus optional context,
+digest `add06a6f0ff5648d7b23c8916f457abeb983ba29099f79c501f2256fb068ba06`, trusted issue 41, and
+inert embedded issue/control-like strings. The code-context, plan, gap-judgment, and separate
+review phases completed with no question. The gap judgment corrected an invented boundary using
+the actual predicate and owner comment. The first deep reviewer remains an explicit `ABORT`:
+its broad integrity reread of the forbidden trusted issue-JSON bytes crossed the no-reread boundary,
+and its terminal and counterexample
+artifacts remain retained. One fresh Retry 1 used seven enumerated tracked paths without recursive
+or private reads; the independent judgment and reviewer returned `DONE` with no findings. Final
+lint was open/en/Feature with zero placeholders, duplicates, or open points; one new plan was
+created, the legacy plan was preserved, seven tracked hashes plus HEAD and index stayed unchanged,
+and the non-interactive, no-consent publication gate with configured completion `pr` ended before
+availability, Git, or forge operations. Direct native checkpoints arrived before their corresponding
+terminals, and the Plan relayed its own context; no judgment-leaf relay proof follows.
+
+These packages are bounded synthetic evidence through real local workflows. They leave native
+roles, variants, hosts, both transport hops, remote Apply Review and full Merge Gate, productive
+partial/question/re-dispatch, attempted-send denial or completed-dispatch ignoring, calibrated
+fallback cost/metrics, and other previously listed gaps open.
+
 ## Strict rejection, terminal failure, and recovery
 
 Two authenticated Claude processes read the full current generated Iterate receiver and supplied
@@ -446,6 +488,29 @@ remain unchanged.
 | Current portable reviewer contract      | `d0ea00a43fd3535e20de6b403f83934548383adb89e8a666b4bf0a19c6af4ac7` |
 | Regression test file with 98-line patch | `8d5e50bfd4f8e3e9eded1db921856f48682a83bfb7d41154e706e64367751006` |
 
+### Current PR591 packet artifacts
+
+The local Apply Review and unattended Plan packages were independently checked against
+`packet-evidence-manifest.json`. These are the 14 retained packet artifacts used for the bounded
+observations above.
+
+| Artifact                              | SHA-256                                                            |
+| ------------------------------------- | ------------------------------------------------------------------ |
+| `apply-final-evidence.json`           | `3df7796cfdd53eab568093cb831a65e2da8c9029dd66e59bf16513e6c25d84c0` |
+| `apply-initial-report.md`             | `9025d92bd5b32ed7f63647d5c5daa3dc6a53c301ce23d2aff40993ea9812126e` |
+| `apply-final-report.md`               | `fa609fa13f6408d2dcb47901af37167e95756d8a37e314400d9e511b5e158c07` |
+| `apply-guide.patch`                   | `ea6094ee635060cc5779dee39af9dcbc7577136a267a3d5973d19362ff9a12cd` |
+| `apply-baseline-validation.json`      | `c2126430f25ffe0d13d0ba4c5a3666d8b2e4cbbd0876c3c56fa31970fed51167` |
+| `plan-final-evidence.json`            | `798fe05c4ba5ba548847ac8059a4d29ae3d27f29877e5ca07cb7da2fc8afe6da` |
+| `plan-final-artifact.md`              | `92d0112916c8e498144200afcaaead5ced0e1cfc3dbfc3d87877ebff8ac0c484` |
+| `plan-final-lint.json`                | `46e2bb203d5a8380ca473c57f7c0bf75712017a539b288f157d78796629d6f13` |
+| `plan-five-envelope.txt`              | `add06a6f0ff5648d7b23c8916f457abeb983ba29099f79c501f2256fb068ba06` |
+| `plan-deep-first-terminal.md`         | `3f4df1bc9477029f70afae51e7d255d1bc0e2cc910d73103b09d6f9ba9352854` |
+| `plan-deep-first-counterexample.json` | `a47b461915631aa34a55b521bb6eeb4ee57ae3e684ada2f2a19ad7347e1a0893` |
+| `plan-deep-first-aborted-artifact.md` | `aac817a54e0b2ed99db697f8302c6b5973a4e677db15ec621730c1233ccebce1` |
+| `plan-review-retry1-envelope.txt`     | `aa1d46785c07bd2af378c2e63fe8edf9a3505b06e44162baa61474f9b7e7881a` |
+| `plan-deep-retry1-terminal.md`        | `bb54ab89a7f19299970dcab8164745832f2df4747df6e6d220102bb14db9a4c0` |
+
 Raw event streams, transcripts, and authentication or account details stay private. This document
 publishes only selected derived facts, fixture names, source provenance, and artifact hashes. It
 contains no thinking content, socket details, credentials, or raw transcripts.
@@ -457,8 +522,8 @@ and terminal joins exist for bounded current App shapes. Claude preterminal pare
 remains unproven, and the native Codex deep trace still lacks independently serialized full
 role/sender/recipient identity. No general role, tier, Fast, host, or workflow activation follows.
 
-Full productive `apply-review` admission, source-report and remote paths, complete strict
-merge-gate/Iterate execution, five-control unattended planning, other busy/delayed native receiving
+Full remote `apply-review` admission, source-report and remote paths, complete strict
+merge-gate/Iterate execution, other unattended-planning variants, other busy/delayed native receiving
 modes, productive partial/question/re-dispatch paths, attempted-send runtime denial, App
 completed-dispatch ignoring, generated variants, calibrated long fallback, and whole-tree cost
 remain open. OpenCode discovery did not establish an authorized
