@@ -3,7 +3,7 @@ description: "Thin documentation adapter: applies the central effective-delivery
 tier: standard
 claude:
   color: blue
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: workspace-write
 ---

@@ -303,3 +303,5 @@ Exactly one continuation line:
 - stopped, with the named reason, including the no-delivery stop.
 
 Each ignored foreign pull request is reported alongside that line.
+
+A returning publication/PR continuation retains the existing overview and its upstream context under `shared/subagent-progress.md`. Same-session calls integrate directly; transferred ownership follows goal-completion. Preserve verified roots, source/attempt association and all completion checks.

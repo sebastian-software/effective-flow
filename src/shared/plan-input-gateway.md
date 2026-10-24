@@ -22,3 +22,5 @@ apply-source-detection
 4. For `none`, `plan`, `review-report`, or `ambiguous`, do not infer an issue. Return the complete
    argument to the existing local planning workflow. Natural-language requirement text therefore
    retains the existing local-plan behavior.
+
+The non-returning issue-reference handoff transfers the current overview to plan-issue; same-session routing integrates directly. Eligible cross-agent context follows `shared/subagent-progress.md`, never issue text or an invented recipient; retain source association and the gateway's no-write boundary.

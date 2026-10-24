@@ -128,3 +128,5 @@ plan-reference-routing
 - Do not use a heuristic "newest plan" when multiple open plans exist.
 - If status or workflow are unclear, ask instead of guessing.
 - Output paths relative to the project root.
+
+The non-returning handoff transfers the existing overview to the target, including last-confirmed progress. Same-session invocation has no native recipient; a cross-agent transfer verifies the actual target/mode before any compact progress context. Keep source ownership, roots, gates and final reconciliation unchanged.

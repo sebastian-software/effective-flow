@@ -82,6 +82,59 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
       to: 'gpt-6.1-sol',
       workers: DEEP_TIER_WORKERS,
     }),
+    Object.freeze({
+      id: 'claude-parent-messaging-1',
+      harness: 'claude',
+      key: 'tools',
+      from: 'Read, Bash, Glob, Grep, Skill',
+      to: 'SendMessage, Read, Bash, Glob, Grep, Skill',
+      workers: Object.freeze(['effective-flow-code-validator']),
+    }),
+    Object.freeze({
+      id: 'claude-parent-messaging-2',
+      harness: 'claude',
+      key: 'tools',
+      from: 'Read, Glob, Grep, Skill',
+      to: 'SendMessage, Read, Glob, Grep, Skill',
+      workers: Object.freeze([
+        'effective-flow-frontend-reviewer',
+        'effective-flow-nodejs-reviewer',
+        'effective-flow-rust-reviewer',
+        'effective-flow-generic-product-reviewer',
+      ]),
+    }),
+    Object.freeze({
+      id: 'claude-parent-messaging-3',
+      harness: 'claude',
+      key: 'tools',
+      from: 'Read, Write, Edit, Glob, Grep, Skill',
+      to: 'SendMessage, Read, Write, Edit, Glob, Grep, Skill',
+      workers: Object.freeze(['effective-flow-code-documenter']),
+    }),
+    Object.freeze({
+      id: 'claude-parent-messaging-4',
+      harness: 'claude',
+      key: 'tools',
+      from: 'Read, Write, Edit, Bash, Glob, Grep, Skill',
+      to: 'SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill',
+      workers: Object.freeze([
+        'effective-flow-rust-implementer',
+        'effective-flow-merge-conflict-resolver',
+        'effective-flow-generic-implementer',
+        'effective-flow-ui-implementer',
+        'effective-flow-e2e-tester',
+        'effective-flow-test-writer',
+        'effective-flow-docs-writer',
+        'effective-flow-marketing-writer',
+        'effective-flow-nodejs-implementer',
+        'effective-flow-generic-product-implementer',
+        'effective-flow-rust-implementer-fast',
+        'effective-flow-generic-implementer-fast',
+        'effective-flow-ui-implementer-fast',
+        'effective-flow-nodejs-implementer-fast',
+        'effective-flow-generic-product-implementer-fast',
+      ]),
+    }),
   ]),
   // The delegation mandate's worker-start bullet gains the tier sentence and the mandate gains the
   // `model-tiers` load pointer; every edit of one body delta applies together, each to exactly one
@@ -131,6 +184,19 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         Object.freeze({
           from: '**Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.',
           to: '**Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.',
+        }),
+      ]),
+    }),
+    Object.freeze({
+      id: 'delegation-mandate-parent-chain-progress',
+      edits: Object.freeze([
+        Object.freeze({
+          from: '**Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.',
+          to: '**Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent, then sends at most one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words), none for short work; continue without acknowledgement if unavailable/denied. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.',
+        }),
+        Object.freeze({
+          from: '- when the task is done in fewer than three simple steps\n',
+          to: '- when the task is done in fewer than three simple steps\n\nOnly the active overview owner emits user-facing progress; a delegated leaf returns to its parent.\nAn orchestrator considering longer delegated work or receiving trusted progress context reads\n`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.\nReturning orchestrators relay material changes through their own immediate-parent context;\nsame-session calls integrate into the existing overview without inventing a recipient.\n',
         }),
       ]),
     }),
@@ -219,25 +285,30 @@ export function compareNativeSidecar(
   const used = [];
 
   if (baseline.configuration !== working.configuration) {
-    const delta = deltas.configuration.find(
-      (candidate) =>
-        candidate.harness === harness &&
-        candidate.workers.includes(worker) &&
-        applyEdits(baseline.configuration, [
+    const candidates = deltas.configuration.filter(
+      (candidate) => candidate.harness === harness && candidate.workers.includes(worker),
+    );
+    const ids = matchBodyDeltas(
+      baseline.configuration,
+      working.configuration,
+      candidates.map((candidate) => ({
+        id: candidate.id,
+        edits: [
           {
             from: configurationLine(harness, candidate.key, candidate.from),
             to: configurationLine(harness, candidate.key, candidate.to),
           },
-        ]) === working.configuration,
+        ],
+      })),
     );
-    if (delta === undefined) {
+    if (ids === null) {
       const drift = configurationDrift(harness, file, baselineContent, workingContent);
       throw new Error(
         `Base native configuration drift outside the expected deltas: ${file}` +
           (drift.length > 0 ? `: ${drift.join('; ')}` : ' (formatting)'),
       );
     }
-    used.push(delta.id);
+    used.push(...ids);
   }
 
   if (baseline.body !== working.body) {

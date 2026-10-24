@@ -11,18 +11,14 @@ import {
   errorEnvelope,
   executeOperation,
   exitCodeFor,
+  parseEnvelopeJson,
 } from './delegation-envelope-core.mjs';
 
 async function readStdin(stream = process.stdin) {
   let value = '';
   stream.setEncoding('utf8');
   for await (const chunk of stream) value += chunk;
-  let parsed;
-  try {
-    parsed = JSON.parse(value);
-  } catch (error) {
-    throw new DelegationEnvelopeError('INVALID_PAYLOAD', `invalid JSON input: ${error.message}`);
-  }
+  const parsed = parseEnvelopeJson(value, 'stdin JSON');
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
     throw new DelegationEnvelopeError('INVALID_PAYLOAD', 'stdin JSON must be an object');
   }

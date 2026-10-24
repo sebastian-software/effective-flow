@@ -51,3 +51,7 @@ Important: The plan file in the completion phase gets its date-slug name accordi
 In hidden mode (`visibility: hidden`) `<plan.dir>` is the forced local plan directory in the main
 checkout (`RUNTIME_STATE_ROOT`): the initial-state plan lives only there and is never staged,
 committed, or taken into a delivery branch.
+
+For eligible longer analysis, the orchestrator supplies the delegation mandate's compact progress
+handoff; the leaf never loads the detailed contract. Keep checkpoints on the separate parent
+channel and preserve this analysis's exact terminal output and read-only authority.

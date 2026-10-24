@@ -221,7 +221,7 @@ returns `ABORT: NESTED_SPAWN_UNAVAILABLE` to the parent and stops the whole pass
 verdict/retry. Never plan inline after that refusal. Every child must finish before its parent ends.
 <!-- spawn-site:issue-buddy/nested-spawn-probe -->
 
-After the probe, invoke `plan` with exactly WP2's five-line argument envelope and delimiter,
+After the probe, invoke `plan` with WP2's five required argument control lines and delimiter,
 substituting concrete values; the separate brief is not appended inside or after the envelope:
 
 ```text
@@ -232,6 +232,13 @@ Issue: #<N>
 Issue text: <absolute trustedTextPath>
 --- end of control lines ---
 ```
+
+Only if the actual target/execution shape has observed useful pre-terminal delivery plus joined
+terminals, read the selected canonical plan receiver/root marker before dispatch and add one
+trusted `Progress context:` above the delimiter per `shared/subagent-progress.md`. Otherwise
+retain the exact five-line header-free legacy envelope. The no-op probe proves no reporting
+support. The unattended plan and returning review relay through their own immediate-parent
+contexts; the existing issue-buddy overview remains sole owner.
 
 No issue prose is in the handoff. WP2 owns the new-file name/header, internal review, unanswered
 questions as blocking points and no-publication boundary. Require terminal `DONE` or `ABORT`;

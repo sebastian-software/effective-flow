@@ -21930,9 +21930,15 @@ test('merge-gate defines relayed, the closed question-id set, instances and the 
     runStates,
     /`BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies to it/,
   );
-  assert.ok(
-    !source('src/shared/completion-protocol.md').includes('BLOCKED-USER'),
-    'the eager completion protocol stays unchanged and never learns the local keyword',
+  assert.doesNotMatch(
+    source('src/shared/completion-protocol.md'),
+    /^\d+\. `BLOCKED-USER`/m,
+    'BLOCKED-USER is advisory text here, never an added generic completion result',
+  );
+  assert.match(
+    prose(source('src/shared/completion-protocol.md')),
+    /advisory progress messages.*`BLOCKED-USER`.*never enter these checks/,
+    'the local terminal word in a checkpoint must stay outside generic recovery',
   );
   const contract = prose(
     boundedSlice(

@@ -210,3 +210,5 @@ incomplete until merge reconciliation. `wontfix` findings keep their existing de
 Final validation and summary as in local mode; the summary additionally names the resolved tracker
 target, direct finding references, created PRs, any optional legacy container mechanism/epic, and
 findings retained for post-merge reconciliation.
+
+Returning per-finding implementation, PR and review adapters retain the caller's overview. Eligible cross-agent progress uses each hop's own immediate-parent context under `shared/subagent-progress.md`; same-session calls integrate directly. Preserve failed/unassessed outcomes, roots, receipts and terminal joins.
