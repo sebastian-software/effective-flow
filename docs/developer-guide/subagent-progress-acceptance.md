@@ -8,28 +8,35 @@ The [coverage inventory](subagent-progress-coverage.md) owns the source-derived 
 This page owns the acceptance observations below, not the progress policy.
 
 **Acceptance remains incomplete.** The observations on October 24, 2026, establish several
-bounded behaviors, with different evidence strength. Claude emitted checkpoints but did not
-integrate them before native child completion. A native Codex deep-validator trace contains
-preterminal parent integration, but omits the complete native role and sender/recipient payload.
-Current Codex App Collaboration exercised generated portable contracts, nested relays, one strict
-unattended review, controlled current and legacy Iterate handoffs, busy-parent coalescing, and
-lifecycle safeguards. None establishes general support for a harness, all
+bounded behaviors, with different evidence strength. Earlier Claude checkpoints were integrated only
+after native child completion; a later authorized background attempt completed without a send and
+added no preterminal transport acceptance. An earlier native Codex deep-validator trace omitted
+full role and addressing metadata; a new CLI `0.159.3` run independently binds the exact deep role, native addressing, opaque payload,
+useful preterminal integration, and join. Its encrypted checkpoint wording remains unverified.
+Current Codex App Collaboration exercised generated portable contracts, nested relays, strict
+unattended review, productive Strict Iterate documentation delivery, current and legacy handoffs,
+busy-parent coalescing, a later productive synthetic Apply Review relay, and lifecycle safeguards.
+Four additional approved CLI runs finished, with two bounded subjects accepted and two rejected.
+None establishes general support for a harness, all
 roles, or the full remote `apply-review` path. The policy owner remains
 `src/shared/subagent-progress.md`; these experiments do not change it.
 
-| Shape                                      | Observed                                                                                                                      | Partial or missing evidence                                                                                            |
-| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Claude foreground and background validator | One generated leaf checkpoint in each run; real work continued; child completed and joined                                    | Parent integration occurred after native completion; no preterminal transport acceptance                               |
-| Claude join discovery and excluded channel | Exact lookup found no callable join; foreground fallback completed; excluded-channel review completed without a send          | No global tool-availability claim or attempted runtime-denial coverage                                                 |
-| Native Codex generated roles               | Seven processes selected unmodified generated TOML files through session-only native role configuration and joined terminals  | Complete native role/sender/recipient and actual inference metadata were not serialized                                |
-| Native Codex deep validator                | Wait → useful parent integration → Wait → joined final result                                                                 | One partial positive trace; no full role/sender identity activation                                                    |
-| Current App generated portable contracts   | Validator checkpoint, parent relay, and terminal join; controlled docs work traversed both relay hops                         | No native custom-role selector; full remote `apply-review` admission, source-report, and remote gates unproven         |
-| Strict unattended file review              | Valid three-control receiver plus one local five-control Plan run, read-only judgment and review joins                        | Question, partial-result, and answer re-dispatch paths remain missing; first deep attempt was an explicit ABORT        |
-| Controlled Iterate receiver handoffs       | Current snapshot-2/context-1 and header-absent handoffs plus unchanged old receiver handoff completed bounded work and joined | Full productive bootstrap and merge-gate admission remain unobserved; header-absent live body was empty                |
-| Busy-parent checkpoint coalescing          | Two distinct direct reviewers each sent once before terminal; parent combined confirmations once and joined both              | No simultaneous-arrival, blocking-tool interruption, latency, or all-mode guarantee                                    |
-| Alternative portable host discovery        | OpenCode native help and provider commands completed with temporary isolated state                                            | No established authorized provider route under that isolation, model run, transport, or fallback acceptance            |
-| Strict Iterate negative inputs             | Unknown context version and duplicate context rejected before authority-bearing work                                          | Original duplicate run violated final plain-line terminal format; fresh-process Retry 1 corrected it                   |
-| Lifecycle and progress metrics             | Stale dispatch ignored; recipient mismatch suppressed sending; cancellation stopped a partial audit; phase updates used       | No technical recipient isolation, resumed cancellation, credible scoped ETA, or changing-denominator percentage branch |
+| Shape                                      | Observed                                                                                                                      | Partial or missing evidence                                                                                              |
+| ------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Claude foreground and background validator | One generated leaf checkpoint in each run; real work continued; child completed and joined                                    | Parent integration occurred after native completion; no preterminal transport acceptance                                 |
+| Claude join discovery and excluded channel | Exact lookup found no callable join; foreground fallback completed; excluded-channel review completed without a send          | No global tool-availability claim or attempted runtime-denial coverage                                                   |
+| Later Claude background qualification      | Same-root native completion handling bound; zero pending launches; clean supervised completion                                | `NOT_QUALIFIED_NO_SEND`; transport `NOT_ACCEPTED`; wider capability `INCONCLUSIVE`; no pending-child yield established   |
+| Earlier native Codex generated roles       | Seven processes selected unmodified generated TOML files through session-only native role configuration and joined terminals  | Complete native role/sender/recipient and actual inference metadata were not serialized                                  |
+| Native Codex deep validator                | New CLI 0.159.3 exact deep role, model/effort, native send/receipt binding, useful preterminal integration, final join        | Encrypted checkpoint wording, dispatch, word bound, and field semantics unverified; earlier trace stays partial          |
+| Current App generated portable contracts   | Validator checkpoint, parent relay, and terminal join; controlled docs work traversed both relay hops                         | No native custom-role selector; full remote `apply-review` admission, source-report, and remote gates unproven           |
+| Productive synthetic Apply Review relay    | Two findings, one component, sequential Docs/validator joins, root-received preterminal component callbacks                   | Descendant callbacks are actor-reported; no independent native replay, remote admission, or multiple-component coverage  |
+| Strict unattended file review              | Valid three-control receiver plus one local five-control Plan run, read-only judgment and review joins                        | Question, partial-result, and answer re-dispatch paths remain missing; first deep attempt was an explicit ABORT          |
+| Controlled Iterate receiver handoffs       | Current snapshot-2/context-1 and header-absent handoffs plus unchanged old receiver handoff completed bounded work and joined | These earlier controlled runs omit full productive bootstrap and merge-gate admission; header-absent live body was empty |
+| Productive production Strict Iterate       | Direct user documentation instruction, Docs/validator/Commit joins, push, guarded PR readback, three preterminal checkpoints  | Runtime progress/delivery are caller/worker packet evidence; no full merge-gate admission or reviewer provenance         |
+| Busy-parent checkpoint coalescing          | Two distinct direct reviewers each sent once before terminal; parent combined confirmations once and joined both              | No simultaneous-arrival, blocking-tool interruption, latency, or all-mode guarantee                                      |
+| Alternative portable host discovery        | OpenCode native help and provider commands completed with temporary isolated state                                            | No established authorized provider route under that isolation, model run, transport, or fallback acceptance              |
+| Strict Iterate negative inputs             | Unknown context version and duplicate context rejected before authority-bearing work                                          | Original duplicate run violated final plain-line terminal format; fresh-process Retry 1 corrected it                     |
+| Lifecycle and progress metrics             | Stale dispatch ignored; recipient mismatch suppressed sending; cancellation stopped a partial audit; phase updates used       | No technical recipient isolation, resumed cancellation, credible scoped ETA, or changing-denominator percentage branch   |
 
 ## Evidence scope and provenance
 
@@ -153,7 +160,38 @@ experiment inputs to public source policy and synthetic fixtures. The runner use
 settings and contains no credential inspection or global configuration/authentication mutation;
 this observation does not audit the CLI's internal authentication behavior.
 
+### Later authorized background qualification
+
+One separately human-authorized top-level Claude attempt selected the unchanged generated
+background validator. Independent review of the bounded projection found **`NOT_QUALIFIED_NO_SEND`**:
+transport **`NOT_ACCEPTED`**, wider capability **`INCONCLUSIVE`**. Native launch/task/run associations
+bind the child's completion and the same root session's later completion handling.
+
+The parent issued its assigned `Read` calls for `contract.test.mjs` and `boundary.md`; the bound
+child issued its two for `delegation-envelope-core.mjs` and `delegation-envelope.mjs`. These are
+observed path/actor bindings, not retained full tool-result or success records. Native child
+completion at projection ordinals 25–26 preceded both root agent-loop results at 31 and 39–40.
+Both results had zero pending launches. No observed `SendMessage`, peer binding, checkpoint, or
+pending-child agent-loop result establishes a yield, active-child continuation, or useful
+preterminal receipt/integration. An agent-loop result alone is not whole-workflow completion.
+
+The retained completion excerpt contains useful postterminal domain reporting, but is truncated;
+complete `DONE`/`ABORT` and terminal-report fidelity and the full child tool inventory remain
+unverified. Parent-side tool availability does not establish child availability. No send does not
+prove a missing or denied capability, and permitted short-work silence is not a diagnosed cause.
+The supervised process exited `0`, was reaped, had no timeout or remaining process group observed,
+and left no pending launch. This supports clean supervised completion, not full lifecycle or
+progress acceptance. The projection is an allowlisted view, not a complete native transcript.
+
+The earlier late-send chronology remains separate; combining its send with this attempt's
+completion handling would not form a passing trace. The published canonical amendment and actual
+result update retain “Revision required.” The unresolved Claude path returns to planning: no
+production shape, nested exception, other role/variant, retry, additional model invocation, or
+release is authorized by this result. Full shipped coverage remains required.
+
 ## Native Codex role and wait observations
+
+### Earlier CLI 0.163.0 observations
 
 A separately installed Codex CLI `0.163.0` ran seven sequential processes with native V2 subagents:
 three role observations and four old/current controls. Each selected an unmodified generated TOML
@@ -178,6 +216,39 @@ configuration and parent/child reports support provenance, but do not independen
 full native role and sender identity. The base/deep developer-instruction bodies are identical;
 configured model/effort differences do not prove the cause of their observed tool difference.
 No permission, tier, or scheduling change was made to obtain progress.
+
+### Independently typed CLI 0.159.3 deep-role observation
+
+One new non-ephemeral native run on source `c651aba17cc33d4e7fa85d686b388b91d1fa5fb0`
+selected the exact generated `effective-flow-code-validator-tier-deep` TOML with zero inherited
+turns and no child model or effort override. Source and registered role bytes match
+`e3116f02489bc66d963bc1c196eaad513bd1093024a2282c3c5d780943cf4a21`.
+Typed native metadata records that role and its actual immediate parent; inference contexts record
+child `gpt-6.1-sol`/high and parent `gpt-6-sol`/medium. The standard validator was promoted one tier
+to deep for cross-artifact and protocol-boundary validation, using Quality. This resolves the role
+and addressing evidence gap for this new shape; the earlier trace retains its missing fields.
+
+An actual child send and native parent receipt have matching sender, recipient, and opaque-body
+SHA-256 `e5f9046e8eefb90cca479370c9ce5e6b8e724f8da4a4e25e8c4861bf1ecf7843`.
+The parent integrated the archive result of 16/16 about 69 seconds before the child's terminal;
+ten further child checks completed after integration. The final native wait returned after child
+completion, and both terminals were joined. Independent review corroborated typed native events,
+role bytes, domain outputs, and protected hashes; the root verified all 26 retained artifact hashes.
+The parent stdout report alone is not the basis for these observations.
+
+Domain work passed 16/16 archive checks and the unchanged planning baseline 1/1, with all 16
+protected fixture hashes unchanged. Earlier workflow packages were consistency-checked, not rerun.
+The isolated child disclosed that the central delivery skill was unavailable and used its permitted
+minimal validation fallback. Recorded wall time was 119.05 seconds; separate per-thread token
+counters describe one unpaired run and establish no cost or reliability result.
+
+Neither the stored checkpoint nor child assignment was decrypted. The literal `PROGRESS/1`
+prefix, dispatch, 20-word bound, field completeness, message semantics, and full readable handoff
+compliance remain encrypted and unverified. Native role/addressing/opaque-payload binding and useful
+running-status integration are the narrower established result. No other role, variant, Fast,
+App TOML selector, host, background mode, or additional relay hop is covered. A separate capacity
+error occurred after this completed exit-0 experiment; it did not turn the experiment into a failed
+run, and no rerun followed.
 
 ## Current App portable contracts and relays
 
@@ -278,9 +349,9 @@ only; no broader availability claim follows.
 
 ## Current PR591 runtime packages
 
-The following two synthetic local packages extend the bounded observations above. They ran on
-the current generated contracts and returned cleanly, but they do not activate production,
-remote, or cross-host acceptance.
+The earlier sixteen-case Apply Review and unattended Plan packages, a later eight-case Apply Review
+relay, and a production Strict Iterate continuation have separate evidence scopes. None grants
+general remote or cross-host acceptance.
 
 ### Productive local Apply Review
 
@@ -295,6 +366,28 @@ protected sources, and removed owned wisdom. The component supplied one direct n
 before its component terminal;
 the short leaves supplied no fresh checkpoint. This is a bounded local synthetic fixture, not
 remote Apply Review, multiple parallel components, or a general leaf-relay result.
+
+### Later productive synthetic Apply Review relay
+
+A separate current portable Apply Review Phase 1–8 run used a private synthetic standalone local
+repository and two distinct admitted v1 documentation findings. Two parallel read-only preanalyses
+joined, then one overlap component ran two fresh Docs workflows sequentially, each with a writer
+and independent validator. All four leaves, both Docs workflows, and the component joined.
+The baseline was 0/8; the first finding reached an intermediate 4/8, the second independent
+validation reached 8/8, and the root's existing Phase 7 gate freshly confirmed 8/8. Only the
+synthetic `docs/cli-integration-guide.md` changed; 22 protected files, HEAD, branch, and staging
+semantics stayed unchanged. The report was reconciled after every component terminal, owned
+wisdom was safely deleted, and no correction, stash, commit, or publication occurred.
+
+The root directly received five material native component callbacks before the known terminal.
+The component reports four native callbacks per Docs child; each Docs workflow reports one
+callback per leaf (four leaves total). These are different evidence owners: descendant callbacks
+were not received directly by the root, and no independent serialized native replay was added.
+This supports a bounded returning-relay observation through actual workflows, without native
+custom-role selection, Claude, remote admission, multiple components, or real reviewer provenance.
+The root used memory-only recorder exec calls; no zero-overhead, comparable timing/token,
+reliability, or cost claim follows. This eight-case packet neither replaces nor retags the earlier
+sixteen-case fixture, whose short leaves remained silent.
 
 ### Productive full unattended Plan
 
@@ -313,10 +406,36 @@ and the non-interactive, no-consent publication gate with configured completion 
 availability, Git, or forge operations. Direct native checkpoints arrived before their corresponding
 terminals, and the Plan relayed its own context; no judgment-leaf relay proof follows.
 
-These packages are bounded synthetic evidence through real local workflows. They leave native
-roles, variants, hosts, both transport hops, remote Apply Review and full Merge Gate, productive
-partial/question/re-dispatch, attempted-send denial or completed-dispatch ignoring, calibrated
-fallback cost/metrics, and other previously listed gaps open.
+The earlier sixteen-case Apply Review and unattended Plan packages are bounded synthetic evidence
+through real local workflows. They do not establish native roles, variants, hosts, both transport
+hops, remote Apply Review, full Merge Gate, or productive partial/question/re-dispatch. Separate
+observations narrow only their recorded gaps.
+
+### Productive production Strict Iterate documentation delivery
+
+The selected full current Iterate receiver accepted a real direct user free-text documentation
+instruction with helper-validated snapshot 2/context 1. Independent packet audit confirmed zero
+`bodyItems`, zero `threadItems`, and `outcomes: []`. This is productive directly authorized work;
+it supplies no reviewer BodyItem, reviewer identifier, or invented review provenance.
+
+The completed worker/caller packet records actual Docs writer and independent validator joins,
+then the Commit workflow, exactly the two progress guides committed as
+`c651aba17cc33d4e7fa85d686b388b91d1fa5fb0`, a normal push to PR #591, and fresh
+body-hash-guarded exact PR-description readback. The root freshly observed all four CI checks green
+at that head. The audit independently confirmed the commit's two-path scope and retained passing
+Retry 1 logs. Initial sandbox validation failed signature/network checks and build `EPERM`; it
+never passed. Separate outside-sandbox Retry 1 passed the ordered gate with 2,994/2,995 tests
+passing, one skipped, then successful build and distribution checks. Sandbox context and process
+provenance remain worker/caller evidence rather than facts inferred from text logs alone.
+
+The parent packet records three material preterminal direct returning-workflow checkpoints
+integrated into its overview. An initial unframed acknowledgement was ignored and not counted.
+One fourth, earlier-generated queued checkpoint arrived after the root already knew the child had
+completed; it was ignored, with no relay, authority effect, or resumption. This is a bounded App
+completed-dispatch association observation, not an assertion that a send occurred after terminal.
+Progress timing, preterminal UI, workflow joins, push, and PR readback remain retained caller/worker
+packet evidence; this audit did not independently replay raw native events for those claims.
+Full Merge Gate admission/transport and positive reviewer-body provenance remain open.
 
 ## Strict rejection, terminal failure, and recovery
 
@@ -348,8 +467,9 @@ The App's actual `send_message` schema exposes only `target` and `message`, with
 permission or failure-injection hook. Sending to the allowed parent cannot safely force a denial
 without changing the permission boundary or violating recipient rules. Actual attempted-send
 denial therefore remains unobserved; the Claude excluded-channel run proves fallback only.
-Claude's post-completion integration is observed negative chronology, not a positive App
-completed-dispatch-ignore result.
+Claude's post-completion integration remains negative chronology. The later production Strict
+Iterate packet separately records bounded App completed-dispatch ignoring as caller evidence;
+no host-wide guarantee or postterminal send follows.
 
 A native checkpoint from an active direct child used an old dispatch and contained terminal and
 approval words. The parent ignored it because the dispatch did not match, with no relay,
@@ -364,10 +484,12 @@ The audit stayed partial, was not reported as `DONE`, and was not resumed or res
 visibility. These controlled observations do not cover every productive failure, partial-result,
 question, retry, or replacement path.
 
-The operations supplied no credible scoped remaining-time estimate or stable comparable
-remaining-work denominator. Phase updates and exact completed test counts were used. No positive
-ETA branch or changing-denominator percentage correction was observed; no timer or helper was
-added to manufacture one. Evidence inspection after completion is not a runtime status channel.
+Use a scoped ETA when the operation/provider supplies a credible estimate; otherwise use fixed
+comparable counts, then phase updates. These operations supplied no credible ETA or comparable
+remaining-work denominator. Exact check counts, including 0/8 → 4/8 → 8/8, are valid count updates,
+not overall percentages. No positive ETA or changing-denominator percentage correction was
+observed; this evidence gap does not require manufacturing either. Evidence inspection after
+completion is not a runtime status channel.
 
 ## Repository verification and behavioral evidence
 
@@ -424,6 +546,84 @@ support no causal savings, whole-tree cost, cheaper-short-path, reliability, or 
 claim. The historical portable pair (123,841 → 188,103 ms, +51.89%) remains a separate experiment in
 the [coverage inventory](subagent-progress-coverage.md#current-matched-portable-pair).
 
+### Recovered current fallback telemetry
+
+A later recovery reconciled four retained native trees under CLI 0.159.3 and `gpt-6.1-sol`/high,
+using the complete matching old/current generated portable contracts and frozen domain inputs.
+Successful spawn-returned paths were matched to unique child metadata, terminals, native joins,
+and final counters: 2, 2, 3, and 3 threads respectively, with no missing edge or counter. This
+resolves the initial audit's tree-completeness finding independently of the old summary helper's
+inadequate completeness flag. Owned process groups are gone and cache cleanup was verified.
+The missing original protected `.git`/index hash baseline remains a historical evidence gap.
+
+| Run                    | External wall time (s) | Reconciled tree tokens, including cached input | Qualification                                                                 |
+| ---------------------- | ---------------------: | ---------------------------------------------: | ----------------------------------------------------------------------------- |
+| Long fallback, old     |               283.6596 |                                        687,330 | Exit 0; bounded checks passed                                                 |
+| Long fallback, current |               224.8671 |                                        558,128 | Policy failed: actual `Date.now` self-measurement; exit 0 does not qualify it |
+| Busy parent, current   |               120.6757 |                                        335,314 | Exit 0; bounded checks passed                                                 |
+| Busy parent, old       |            Unavailable |                                        675,875 | `HOST_INTERRUPTED_UNQUALIFIED`; no external exit/wall receipt                 |
+
+All four were fallback runs with no `send_message`, qualified checkpoint benefit, or comparative
+cost pass. Long arms each passed the 61-, 14-, and 62-test groups; busy leaves passed 61 and 62
+while their parent read the fourteen progress-test protections. The current long arm's forbidden
+self-timing remains a policy failure. The old busy tree eventually reached native terminals, but
+recovery did not invent an external exit code or wall time. Stored child assignments and returns
+remain encrypted; metadata establishes joins and identity, not every plaintext compliance detail.
+Concurrent work, n=1 samples, fixed order, and absent cache counterbalance prevent causal,
+overhead-percentage, reliability, billing, or cheaper-short-task conclusions.
+
+That recovery completed without a new model run. Its four remaining planned runs—current long
+Retry 1, supervised old busy parent, and nested strict old/current—were not executed during that
+recovery. Automatic approval review rejected the proposed runner edit and first new run because
+explicit payload/destination authority was not recognized; no workaround occurred. The user later
+approved exactly four prepared runs; their separate completed results follow. Original errors and
+artifacts remain retained; the recovery itself is not retroactively qualified.
+
+| Completed recovery artifact | SHA-256                                                            |
+| --------------------------- | ------------------------------------------------------------------ |
+| Completion report           | `f583d9ab022fcefc9a31bfceb5886a30cc5ced08b40185f0f58267ae6a2d3435` |
+| Final verification          | `d749621649dd19c142d93f5e41f2b35c27e01437ffaa865b2999a935ca9fd695` |
+| Completion manifest         | `6b32f177cb3aa015ac639c8308cd300ca95678ef28c9c48fdf54998f94dcc7ee` |
+
+### Completion of the four approved runs
+
+Exactly four sequential CLI 0.159.3 runs used `gpt-6.1-sol`/high with a 600-second bound. All finished,
+were independently reviewed, and were cleaned; no fifth run occurred. Execution completion and
+subject acceptance remain distinct:
+
+| Approved package             | Independent outcome                      | Wall time (s) | Retained tree tokens | Native tool calls |
+| ---------------------------- | ---------------------------------------- | ------------: | -------------------: | ----------------: |
+| Supervised busy-old recovery | Accepted with receipt-retention caveat   |        85.112 |              395,682 |                15 |
+| Long-current Retry 1         | ABORT / not accepted                     |       438.690 |            1,280,799 |                22 |
+| Nested strict old            | ABORT / not accepted                     |       331.447 |            1,069,532 |                25 |
+| Nested strict current        | Accepted with scope and transport limits |       323.047 |            1,543,447 |                33 |
+
+Busy-old passed 61+62 tests and supports bounded compatibility. Its standalone cleanup-receipt
+timestamp is mutable during later recovery; the original embedded receipt remains the immutable
+anchor. Long-current Retry 1 passed 61+14+62 tests but ABORTed over self-reported embedded-contract
+transcription errors and a confirmed missing terminal schema declaration. Nested-old performed
+meaningful independent review and joined its children, but actually ran prohibited broad
+`git ls-files`; its ABORT remains. Nested-current completed independent judgment, only authorized
+synthetic-plan edits, accurate single-plan lint, and all joins. Its plan remains “Revision required”
+with two open points; accepted review execution does not approve that plan.
+
+All 11 retained native threads reconcile through unique spawn-return/native-parent metadata,
+terminal outputs, and final counters. Owned groups and caches are gone. All 389 Git-file
+hashes per arm stayed unchanged; payload changes were limited to authorized synthetic-plan edits. Original
+results and embedded cleanup receipts remain bound in the 32-file completion manifest.
+
+The four host-run wall regions total 1,178.296 seconds, excluding preparation, external review,
+and re-entry pauses. Aggregate retained native tokens total 4,289,460, including cached input;
+these are neither billing figures nor disjoint-context sizes. Native calls count recorded
+exec/spawn/wait calls; an exec can contain multiple commands. The earlier qualified busy-current
+arm was 120.676 seconds, 335,314 tokens, and 12 calls, with narrower protection and different
+supervision. Both busy samples are n=1 with known confounds; its earlier qualification is preserved,
+not upgraded. The rejected current-long and old-nested attempts prevent a matched long or nested
+cost-success pass. This finite batch establishes neither four passing subjects, useful live-progress
+benefit, causal savings, reliability, nor full coverage. Rejected arms remain valid descriptive
+cost records, not successful comparisons. Cost acceptance remains incomplete; there is no 10%
+readiness gate or automatic requirement for two new pairs.
+
 ## Integrity and private retention
 
 The following SHA-256 values identify the artifacts reviewed for this record. Hashes support
@@ -445,7 +645,7 @@ comparison with retained evidence; they do not make private events publicly repr
 | Background `contract.test.mjs` fixture          | `14584616a73f002b0565142e0fe1e607f80b8b4c620a361dd44619e415d5e6c2` |
 
 Additional retained artifacts bind the later observations. Generated role hashes attest the
-selected files, not independently serialized native inference identity. Derived summaries retain
+selected files; the new CLI 0.159.3 run separately binds native identity through typed events. Derived summaries retain
 measurement scope; raw-stream hashes retain the original failures as well as successful results.
 
 | Artifact                                        | SHA-256                                                            |
@@ -511,6 +711,55 @@ observations above.
 | `plan-review-retry1-envelope.txt`     | `aa1d46785c07bd2af378c2e63fe8edf9a3505b06e44162baa61474f9b7e7881a` |
 | `plan-deep-retry1-terminal.md`        | `bb54ab89a7f19299970dcab8164745832f2df4747df6e6d220102bb14db9a4c0` |
 
+### Later four-run completion and synthetic relay artifacts
+
+The four-run completion manifest binds 32 retained files; the separate actual Apply Review manifest
+binds 13. Their reviewed hashes matched the retained bytes. Earlier packet hashes above continue
+to identify the separate sixteen-case fixture.
+
+| Artifact                                            | SHA-256                                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| Four-approved-run completion report                 | `69aef90d29cfae1e9879ffe623bf05590e44f5d564eee8bb4991965cd0ae97da` |
+| Four-approved-run completion manifest               | `a8e58c57b56b120672e23afda2286bcd2c911ed640e4981b8685a14132dd3d1d` |
+| Actual synthetic Apply Review evidence              | `514be2a76fd645883da1c3428a94cf9bdef29f907e4a2f592450f23ac181f55a` |
+| Actual synthetic Apply Review manifest              | `48e9a758be96235d7b7dd1c3b1cc44e09b7b4b8e257ea1b2390fa292c5f60c79` |
+| Actual synthetic Apply Review final validation      | `0e3e01ab015dfa86107ab146ace09f8bde6fc4e02a220dce3a088d72444ca7b4` |
+| Actual synthetic Apply Review final wisdom snapshot | `66edced7bf28e9e895414e4940520e48a05d6e3aa76f21a564346e2df1b02c3f` |
+
+### Productive Strict Iterate and new native-role artifacts
+
+The four Strict Iterate manifest hashes matched the retained inputs. Its independent audit
+separates inspectable structure and commit/log facts from caller/worker runtime claims. The native
+package has separate independent typed-event review; only derived facts and hashes are published.
+
+| Artifact                                      | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| Production Strict Iterate manifest            | `b184346f87e1b822844868784c983ed5ae8321059bf77fa085f9ec3312a01170` |
+| Production Strict Iterate final evidence      | `5b6029d42c032c800783a6967e50024deb5fdcea334b74fcfa2d7742ddc66c6f` |
+| Production Strict Iterate message             | `d8f2aa5e9a21d5ea21035e05023a6e949fc0bd52c35f3c4e382faa3700e6f6f2` |
+| Production Strict Iterate snapshot            | `a37abf6ceb5b31dbb7e655d52f968322ef8b13e045c3457f9a158708f416ae4b` |
+| Production Strict Iterate parent observations | `acc5d31bc278357cb79d5b1fb3900a5f1032e8dff7924c96c3ae039b7ce576b9` |
+| CLI 0.159.3 native-role evidence              | `10650ef827714ade192108226e362df2e15500060bfd3804e712257931d32a81` |
+| CLI 0.159.3 native-message evidence           | `10628b38c7126fe073165bd3428078f5a95e7813aeda173dc1f4e864d89506ee` |
+| CLI 0.159.3 independent native review         | `ac2ff4adf96c207c766080bf4aa6354703334772de19c553895101b52dde8c41` |
+| CLI 0.159.3 private artifact manifest         | `8a7e3a4ca453356a3116369ff2c4430fc043adba53b8cdf2236b3f83efb1ba02` |
+| Independent acceptance evidence audit         | `6380a3fd2ff77e25e0b883b9925662991847ce2471b97aed0000f976ab2c6090` |
+
+### Later Claude qualification and canonical status artifacts
+
+The sealed actual-evidence manifest binds nine retained artifacts. Independent review scopes the
+projection's native observations and omissions; the canonical amendment and completed-result
+update were published and read back on the same issue #587 plan comment.
+
+| Artifact                                         | SHA-256                                                            |
+| ------------------------------------------------ | ------------------------------------------------------------------ |
+| Authorized Claude qualification package          | `8045a54404fe74c65745210e2ddc9b5b5a033799056cdb23ef191505f0193c90` |
+| Actual Claude bounded projection                 | `a01ad63ab21e84a1a1b00af5d5551b2103c81118fb10f7d447f7d1a01cbecfb1` |
+| Actual Claude independent review                 | `480aca4b42451ff339e5c65eefc0999e66f9e1343d07ebaac5cace7c7b555e67` |
+| Sealed Claude actual-evidence manifest           | `ce254421b8934802c30d6dd338a5b1c640f08a2baaea3641a4bf529548634144` |
+| Published/read-back qualification amendment body | `5611949ef69e2206887f1b8d7a23f45f00e7e6ff23fcb4637072674d9c8520bf` |
+| Current published/read-back canonical body       | `46a40ad5e7b2ef86008f87412b969df1076b99f6118561cd160ab30ad7e2c65e` |
+
 Raw event streams, transcripts, and authentication or account details stay private. This document
 publishes only selected derived facts, fixture names, source provenance, and artifact hashes. It
 contains no thinking content, socket details, credentials, or raw transcripts.
@@ -519,15 +768,25 @@ contains no thinking content, socket details, credentials, or raw transcripts.
 
 The observed/partial/missing matrix above is the acceptance boundary. Useful preterminal delivery
 and terminal joins exist for bounded current App shapes. Claude preterminal parent integration
-remains unproven, and the native Codex deep trace still lacks independently serialized full
-role/sender/recipient identity. No general role, tier, Fast, host, or workflow activation follows.
+remains unproven, and production is unchanged.
+New native Codex deep-role, inference, and sender/recipient binding are established
+for one CLI 0.159.3 shape; encrypted checkpoint wording and full readable dispatch compliance remain
+unverified. No general role, tier, Fast, host, or workflow activation follows.
 
-Full remote `apply-review` admission, source-report and remote paths, complete strict
-merge-gate/Iterate execution, other unattended-planning variants, other busy/delayed native receiving
-modes, productive partial/question/re-dispatch paths, attempted-send runtime denial, App
-completed-dispatch ignoring, generated variants, calibrated long fallback, and whole-tree cost
-remain open. OpenCode discovery did not establish an authorized
-provider route under isolation or run a model. Manual stale-eval rounds also remain open before
-release. Preserve the original strict terminal-format failure and its separate retry when assessing
-that work. The source-derived
-[coverage inventory](subagent-progress-coverage.md) remains distinct from live acceptance.
+Full remote `apply-review` admission, source-report and remote paths, complete Merge Gate
+admission/transport, positive reviewer-body provenance, other unattended-planning variants, other
+busy/delayed native receiving modes, productive partial/question/re-dispatch paths, attempted-send
+runtime denial, generated variants, calibrated fallback comparisons, and qualified whole-tree cost
+remain open. App completed-dispatch ignoring is supported only by the bounded caller observation
+above. OpenCode discovery did not establish an authorized provider route under isolation or run a
+model. The shared 150 behavioral eval recordings belong to separate #581/#584 work after final joint
+source; none of these observations refreshes them. Preserve original strict terminal-format,
+sandbox validation, and cost timer-policy failures with their separate recovery status.
+
+**Full issue #587 acceptance remains incomplete.** The user answered the scope question:
+full coverage is required before release, with no tested-slice waiver. The canonical issue #587
+plan comment now contains the published lifecycle amendment and completed Claude result update;
+its status is “Revision required.” The unresolved Claude path returns to planning without another
+authorized model run. Issue #587 remains open and PR #591 remains Draft. This decision does not establish readiness, merge, or release acceptance.
+The source-derived [coverage inventory](subagent-progress-coverage.md) remains distinct
+from live acceptance.
