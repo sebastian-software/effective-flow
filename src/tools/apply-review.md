@@ -465,6 +465,14 @@ Example (across actions) with five findings over multiple actions:
      user-invocable and would otherwise close a per-finding recommendation into the chat, although
      it returns its result here and this run is an intermediate result of `{{SKILL:apply}}`.
    - the completion protocol
+   - for eligible longer work, the compact progress context from `shared/subagent-progress.md`;
+     apply-review retains the single overview. Each overlap component is a returning orchestrator:
+     give every per-finding workflow its own child association and await its terminal result;
+     each workflow validates worker progress and relays only material changes to the component,
+     which validates/coalesces and relays using its own upstream context. Never forward downstream
+     headers or message an ancestor. Same-session per-finding calls integrate directly. Unsupported
+     modes keep phase fallback; partial/failed findings, questions, recovery resumes and new attempts
+     keep their existing authority and completion rules, never using progress as terminal evidence.
 3. Check each sub-agent for `DONE` or `ABORT`.
 4. On `ABORT`:
    - inform the user, mark the finding as `failed (delegation)` in the wisdom file.

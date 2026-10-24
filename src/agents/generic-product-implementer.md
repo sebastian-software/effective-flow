@@ -3,7 +3,7 @@ description: "Implements product code in languages and frameworks without a dedi
 tier: deep
 claude:
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: danger-full-access
 ---

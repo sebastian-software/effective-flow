@@ -3,7 +3,7 @@ description: "Performs read-only qualitative review of product code without a de
 tier: deep
 claude:
   color: red
-  tools: [Read, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Glob, Grep, Skill]
 codex:
   sandbox_mode: read-only
 ---

@@ -3,7 +3,7 @@ description: "Implements Node.js backend code, CLI tools and server-side applica
 tier: deep
 claude:
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: danger-full-access
 ---

@@ -3,7 +3,7 @@ description: "Creates the root README.md as a marketing entry page entirely from
 tier: standard
 claude:
   color: magenta
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: workspace-write
 ---

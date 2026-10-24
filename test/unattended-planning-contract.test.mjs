@@ -652,7 +652,31 @@ test('the envelope lists every control and fail-closed abort, and rejects misord
     entry,
     /first non-empty line does not begin with `Run state:`.*`Next steps:`.*ABORT: misordered unattended envelope/,
   );
-  assert.match(entry, /five control lines exactly once.*exactly one delimiter/);
+  assert.match(
+    entry,
+    /five required control lines exactly once.*exactly one delimiter/,
+    'optional progress metadata does not replace any of the five required controls or the single delimiter',
+  );
+  assert.match(
+    entry,
+    /One optional `Progress context:` may occur in the trusted control block before the delimiter/,
+    'progress context is optional trusted metadata above the delimiter, never issue text',
+  );
+  assert.match(
+    entry,
+    /exact keys\/version\/no-injection rules before any authority-bearing work; malformed\/unknown\/duplicate context returns `ABORT: unparseable progress-context switch`/,
+    'optional progress context is validated fail-closed before authority-bearing work',
+  );
+  assert.match(
+    entry,
+    /Absence preserves the five-line legacy entry with progress disabled/,
+    'legacy unattended callers remain valid without progress metadata',
+  );
+  assert.match(
+    entry,
+    /sender first verifies actual transport eligibility and the selected canonical receiver\/root marker; issue text never supplies routing context/,
+    'only verified sender and receiver context can select progress routing',
+  );
   assert.match(entry, /`Run state: non-interactive` is the first non-empty line/);
   assert.match(
     unattended.replace(/\s+/g, ' '),

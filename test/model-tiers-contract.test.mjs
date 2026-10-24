@@ -346,7 +346,7 @@ const SPAWN_MENTION_ALLOWLIST = [
   ],
   [
     'shared/subagent-progress.md',
-    '## Sparse ordinary subagent progress',
+    '## Sparse subagent progress',
     'contract heading; starts no worker',
   ],
   // The tool itself running as a delegated sub-agent.
@@ -448,6 +448,108 @@ const SPAWN_MENTION_ALLOWLIST = [
     'shared/execution-profiles.md',
     'Portable is Quality-only and unmeasured',
     'Fast host detection; the Quality respawn resolves to the role default',
+  ],
+
+  // Existing progress receivers and adapters mention the owner but create no new spawn.
+  [
+    'tools/apply-issues.md',
+    'Each issue implementation, returning PR/delivery and review adapter uses',
+    'returning-adapter progress policy; issue-delegation owns the spawn',
+  ],
+  [
+    'tools/apply-review-remote.md',
+    'Returning per-finding implementation, PR and review adapters retain',
+    'returning-adapter overview policy; starts no worker',
+  ],
+  [
+    'tools/apply.md',
+    'Apply keeps the existing overview through returning apply-issues/apply-review adapters',
+    'overview ownership across existing dispatches; starts no spawn',
+  ],
+  [
+    'tools/concept.md',
+    'Returning concept-review keeps this run',
+    'returning review ownership; existing review call owns delegation',
+  ],
+  [
+    'tools/deliver.md',
+    'Returning commit groups and commit-only PR publication retain',
+    'publication ownership; no worker starts here',
+  ],
+  [
+    'tools/issue-buddy.md',
+    'Only if the actual target/execution shape has observed useful pre-terminal delivery',
+    'progress eligibility after the registered plan-run; not another spawn',
+  ],
+  [
+    'tools/iterate.md',
+    '**Optional progress context.**',
+    'receiver parsing policy; item-delegation owns spawning',
+  ],
+  [
+    'tools/iterate.md',
+    'Every one of those delegations carries the literal line',
+    'existing item dispatch controls; registered item-delegation owns spawning',
+  ],
+  [
+    'tools/merge-gate.md',
+    '- optionally one trusted `Progress context:`',
+    'strict dispatch metadata; delegated-run owns spawning',
+  ],
+  [
+    'tools/plan-issue.md',
+    'Returning issue-plan review keeps this run',
+    'existing review return overview policy; no new spawn',
+  ],
+  [
+    'tools/plan-review.md',
+    'Before normalization or authority-bearing work, validate an announced trusted',
+    'strict receiver validation; no spawn',
+  ],
+  [
+    'tools/plan.md',
+    'Before normalization or authority-bearing work, validate an announced trusted',
+    'strict receiver validation; no spawn',
+  ],
+  [
+    'shared/merge-gate-delegated-run.md',
+    '1. **Input lines.**',
+    'strict receiver metadata validation; no spawn',
+  ],
+  [
+    'shared/merge-gate-delegation-contract.md',
+    '1. **Build.** Before building, read the selected bundled',
+    'helper build and selected receiver negotiation; iterate-delegation owns spawning',
+  ],
+  [
+    'shared/plan-input-gateway.md',
+    'The non-returning issue-reference handoff transfers',
+    'existing gateway ownership transfer; no new spawn',
+  ],
+  [
+    'shared/plan-pr-continuation.md',
+    'A returning publication/PR continuation retains',
+    'publication continuation ownership; no new spawn',
+  ],
+  [
+    'shared/plan-publication.md',
+    'Returning commit/PR publication adapters retain',
+    'existing publication ownership; no spawn',
+  ],
+  [
+    'shared/task-tracking.md',
+    'Only the active overview owner emits user-facing progress',
+    'task-tracking consumer policy; no spawn',
+  ],
+  [
+    'shared/unattended-planning.md',
+    'One optional `Progress context:` may occur',
+    'strict payload validation; existing plan review call owns spawning',
+  ],
+  [
+    'shared/worktree-integration.md',
+    'Returning commit, PR and review handoffs retain',
+    'existing returning delivery ownership; no new spawn',
   ],
 ].map(([source, anchor, reason]) => ({ source, anchor, reason }));
 

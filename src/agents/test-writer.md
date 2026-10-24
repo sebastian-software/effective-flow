@@ -3,7 +3,7 @@ description: "Thin test adapter: routes browser test depth to effective-web, foc
 tier: standard
 claude:
   color: green
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: workspace-write
 ---

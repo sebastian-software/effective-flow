@@ -385,3 +385,5 @@ Exactly one publication line, in one of these shapes:
 
 Each ignored foreign pull request is reported alongside that line. Under `consent: given-by-caller`,
 the caller relays this line in its own report.
+
+Returning commit/PR publication adapters retain the planning workflow's overview. Eligible cross-agent reporting uses each hop's own immediate-parent context under `shared/subagent-progress.md`; same-session calls integrate directly. No progress grants publication consent or changes artifact/commit verification.

@@ -504,3 +504,5 @@ source path from a removed execution worktree. Suppressed delegations still emit
    `auto`, to the recorded resolved local base branch, provided the working tree is clean.
    Do not switch a reused harness-managed checkout. If an applicable switch-back fails,
    explicitly report the actual branch as a side effect.
+
+Returning commit, PR and review handoffs retain the implementing workflow's overview. Apply `shared/subagent-progress.md` for eligible cross-agent relays with each hop's own context; same-session calls integrate directly. Delivery/cleanup receipts, approval gates and terminal joins remain authoritative.

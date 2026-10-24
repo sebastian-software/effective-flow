@@ -5,11 +5,15 @@ When you use internal sub-agents, give them this response protocol:
 - `DONE` for fully completed
 - `ABORT: [reason]` for not completable
 
-Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
+Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT`, `BLOCKED-USER` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
 
 1. `DONE`: phase completed.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
 3. No keyword: resume once, then retry with escalation.
+
+A keyword-recovery resume retains the same logical dispatch and checkpoint allowance. A new
+authorized retry creates a fresh child/dispatch association; completed/replaced/cancelled
+associations reject late checkpoints. Progress never authorizes an agent resume.
 
 ### Retry escalation
 
