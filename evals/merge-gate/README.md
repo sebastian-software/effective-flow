@@ -182,6 +182,12 @@ its own collision-resistant directory under `/tmp/effective-flow-merge-gate-eval
 
 ### 2. Launch fresh sessions at the host boundary
 
+Use the shared [`host-run` runner](../host-run.md) for every manual or cohort launch. It creates
+fresh `HOME`/`CODEX_HOME` profiles, stops the complete process group, and removes only the four
+Codex cache paths while retaining profile state and evidence. Reuse one dedicated profiles root
+across rounds and run `--recover` after a host `SIGKILL`; do not invent per-slot home wrappers.
+The runner does not choose or modify this suite's model, prompt, sandbox, or launch arguments.
+
 The recording host needs a Codex CLI that carries the pinned model — `codex-cli 0.156.1` or newer —
 before the first slot is launched; upgrade it there (for example `brew upgrade --cask codex`, or the
 npm equivalent) and declare the version it reports through `--reported-version`. For every row, the

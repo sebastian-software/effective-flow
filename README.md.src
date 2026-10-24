@@ -15,6 +15,10 @@ session changes into coherent commits on a fresh branch and opens a pull request
 `issue-buddy` reviews trusted GitHub issues into implementation plans, defaults to a local dry run,
 and publishes draft, plan-only pull requests with `--publish` only for public repositories; private
 and unknown repositories remain dry-run-only. See the [Issue Buddy guide](docs/user-guide/tools-understand.md#effective-flow-issue-buddy).
+`/effective-flow retro` reviews the current visible conversation, one supplied transcript export, or,
+when the running host supports it and an exact identity plus granted account/project scope are available,
+one native historical session, then returns a small, evidence-backed set of environmental improvements
+directly in read-only chat.
 
 ## Why Effective Flow
 
@@ -25,6 +29,11 @@ and unknown repositories remain dry-run-only. See the [Issue Buddy guide](docs/u
   committed. `merge-gate` drives an open pull request the rest of the way – answering automatic
   reviewers and merging once it is genuinely clean, but never past an open comment from an
   account other than the one it runs as – with no break between the phases.
+- **Evidence-backed quality improvements.** `/effective-flow retro` reads the current visible
+  conversation, one supplied transcript export, or, when the running host supports it and an exact
+  identity plus granted account/project scope are available, one native historical session, and
+  returns a bounded, read-only chat result; see
+  the [retrospective guide](docs/user-guide/tools-quality.md#effective-flow-retro).
 - **Thin router, lazy loading.** Effective Flow loads only the tool catalog at startup; the
   full instruction of a tool arrives only on invocation. This keeps sessions lean and
   prevents the token limit from being exhausted by tools loaded up front.

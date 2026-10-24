@@ -5,7 +5,7 @@ When you use internal sub-agents, give them this response protocol:
 - `DONE` for fully completed
 - `ABORT: [reason]` for not completable
 
-Check by the orchestrator:
+Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
 
 1. `DONE`: phase completed.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.

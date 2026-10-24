@@ -43,6 +43,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'plan-review',
   'concept-review',
   'concept',
+  'retro',
   'pr',
 ]);
 

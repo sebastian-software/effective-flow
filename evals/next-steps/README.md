@@ -92,6 +92,11 @@ report is the positive completion observable.
 
 ## Recording and lifecycle
 
+Launch each fresh host context with the shared [`host-run` runner](../host-run.md). Reuse one
+dedicated profiles root across rounds and run `--recover` after a host `SIGKILL`; cache cleanup
+retains the completed-run state, receipts, and evidence needed by this suite. Keep the pinned
+model, prompt, sandbox, and prescribed host arguments unchanged.
+
 Use the shared lifecycle in [merge-gate](../merge-gate/README.md) and [iterate](../iterate/README.md):
 prepare, fresh session per slot, truthful host receipt, seal, status, publish, then read-only verify.
 Never synthesize receipts or copy a subagent answer into reports. Behavioral findings cannot be

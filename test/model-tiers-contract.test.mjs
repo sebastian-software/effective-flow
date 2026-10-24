@@ -343,6 +343,16 @@ const SPAWN_MENTION_ALLOWLIST = [
     '**Verify independently.**',
     'principle; validator and reviewer spawns are marked at the hosts',
   ],
+  [
+    'shared/goal-completion.md',
+    '**Visible progress.**',
+    'overview and advisory report integration; starts no worker',
+  ],
+  [
+    'shared/subagent-progress.md',
+    '## Sparse ordinary subagent progress',
+    'contract heading; starts no worker',
+  ],
   // The tool itself running as a delegated sub-agent.
   ['tools/apply-issues.md', '**Dropping the gate:**', 'this run as a sub-agent of a caller'],
   [

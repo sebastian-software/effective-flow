@@ -123,6 +123,7 @@ const EXPECTED_TOOLS = [
   'pr',
   'pr-review',
   'refactor',
+  'retro',
   'review',
   'setup',
   'version',
