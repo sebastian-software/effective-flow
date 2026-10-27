@@ -1,21 +1,21 @@
 {
   "scenario": "outcome-advancing-continuation",
-  "digest": "sha256:4c7827fdfc38107716a204cdcb47c9a312f0b39e88a4e7cd4bdc9bb33ced30a4",
+  "digest": "sha256:46466258374f149648f503798027dfeb21088833e1c5c4046aea5aa8caf07ca5",
   "skill": {
-    "digest": "sha256:1fe17410ae671c5d6d60f90940cdd419841c52e9a922a94e885650f2d6f2730b",
-    "versionNeutralDigest": "sha256:64b993438660cd69bccc7c5d45306138c4f6df9b34b32b578faf9932d6d54c54",
+    "digest": "sha256:02b692d1e6daac23b0e63c84d90d9b52fe074963e3ed79c2f45d8b3ac50ece25",
+    "versionNeutralDigest": "sha256:9fa9d1a1f98914ec5c68b32c4af4f135bc8ca20f9a1d3f5866ceb33a299eb52b",
     "files": {
-      "SKILL.md": "sha256:55bb8669377e761bca97bdd2cdad231ab5dd5feb1c559e321c8f6fceb9ed8953",
+      "SKILL.md": "sha256:8a4986dc94e4542f264c652082e820e774deccbbd2a7600d4ad37a81540e1de8",
       "scripts/report-channel.mjs": "sha256:6f5f96d074c3325fe277c2d6962e4f6a5c849322400966cb8a463fd92936c69f",
-      "shared/next-steps.md": "sha256:ea5a005052f3b81af5c65f90868217d4127955a6057f90a9fd4bc5f2ed015b0a",
+      "shared/next-steps.md": "sha256:414e3b6f1c4286aa2a63a8be3a1ffae7dd1ebd9034114bed4678636cd6bdf17e",
       "shared/outcome-continuation.md": "sha256:46fbaae9ef6a317a4602037f9d8710230e7c1b3dbba8a50c9336ce1fe336cfeb",
       "shared/plan-reference-routing.md": "sha256:db70e611e3a53a83e7861ddb6ef6f4503bcd366609f2c885571c494f6a57fee6"
     }
   },
   "instrument": {
-    "digest": "sha256:9cf040ad82075cc45633c05b8c49f3737b9164d94d0716b6ece46a4e5773d8eb",
+    "digest": "sha256:d2c954703522c45d3d4632f5f21491fb8a34a449543b074906a0484eba85790e",
     "files": {
-      "evals/next-steps/suite.config.mjs": "sha256:8730f02bfb54a3dac5650f17ae3253f8885808d7a5c078eeda99cd7d31c954b0",
+      "evals/next-steps/suite.config.mjs": "sha256:5f5ca396b67b3c7ec80732b849fec99570c60393504e40a217d107ffc7e36a96",
       "evals/_scaffold/remote-tracker.mjs": "sha256:b1cce8bd1148827fbecb2b4b4c6af582cece501adb531528e0739aa751f07fd8",
       "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
       "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",

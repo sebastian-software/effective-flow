@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c",
+  "roundId": "mvr74z0f-fd933487-d9ba-42cc-b7cf-e265c5fc84cf",
   "scenario": "duplicated-control-line-aborts",
   "slot": 2,
   "attempt": 1,
-  "sourceRevision": "de23f9b2ab7a93b747aa22a4d985824899d2c916",
-  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c/slots/duplicated-control-line-aborts/slot-2/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvr74z0f-fd933487-d9ba-42cc-b7cf-e265c5fc84cf/slots/duplicated-control-line-aborts/slot-2/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "0.159.3",
+    "reportedVersion": "0.163.0",
     "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
   },
-  "promptDigest": "sha256:851d65313a463560bf4c61fc45aea2896b4326873be8179aa2990621e6026dc8",
+  "promptDigest": "sha256:497c433aea4f817814f395f17d034b23992cb931cf8398980785cf428debe06e",
   "fixtureDigest": "sha256:0629d8978ba3ab686ddb7e250a0a83bb83be478603426bb889435c3aa3a97bb8",
-  "buildDigest": "sha256:6a9e92c493a2976fb5d94bebfc3e80f5b5c9edaacb70b3df9a504b874b01154c",
+  "buildDigest": "sha256:98b2e95247132b6a98d1f69009f5c5c480dcad07e486fa28a4ca2c58408f9762",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvfujlgp-eddb3110-04a5-4b1a-bef6-95db00968f9c/slots/duplicated-control-line-aborts/slot-2/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvr74z0f-fd933487-d9ba-42cc-b7cf-e265c5fc84cf/slots/duplicated-control-line-aborts/slot-2/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "0.159.3",
+      "reportedVersion": "0.163.0",
       "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
     }
   }
