@@ -455,6 +455,114 @@ function excludeEntries(path) {
     .filter((line) => line === '.effective-flow/');
 }
 
+test('directory predicates preserve intent across ignore sources and existing state', (t) => {
+  for (const fixture of [
+    { name: 'gitignore', gitignore: '.effective-flow/' },
+    { name: 'info/exclude', hidden: true },
+  ]) {
+    const root = createRepository(t, {
+      gitignore: fixture.gitignore === undefined ? undefined : `${fixture.gitignore}\n`,
+    });
+    if (fixture.hidden) addHiddenExclude(root);
+
+    // Git distinguishes a missing directory operand from the same directory with its intent
+    // preserved. The guard must pass the latter before mkdir, even though an existing directory
+    // happens to make the slashless spelling pass later.
+    assert.equal(
+      runGit(root, ['check-ignore', '--no-index', '--', '.effective-flow/']).status,
+      0,
+      `${fixture.name}: absent directory with slash is ignored`,
+    );
+    assert.equal(
+      runGit(root, ['check-ignore', '--no-index', '--', '.effective-flow']).status,
+      1,
+      `${fixture.name}: absent slashless directory is not a valid directory predicate`,
+    );
+
+    mkdirSync(join(root, '.effective-flow'), { recursive: true });
+    assert.equal(
+      runGit(root, ['check-ignore', '--no-index', '--', '.effective-flow/']).status,
+      0,
+      `${fixture.name}: existing directory with slash remains ignored`,
+    );
+    assert.equal(
+      runGit(root, ['check-ignore', '--no-index', '--', '.effective-flow']).status,
+      0,
+      `${fixture.name}: existing slashless directory is accepted after creation`,
+    );
+  }
+
+  for (const fixture of [
+    {
+      name: 'gitignore',
+      gitignore: '.effective-flow/*\n!.effective-flow/review/\n',
+    },
+    {
+      name: 'info/exclude',
+      hidden: '.effective-flow/*\n!.effective-flow/review/\n',
+    },
+  ]) {
+    const root = createRepository(t, { gitignore: fixture.gitignore });
+    if (fixture.hidden !== undefined) {
+      const excludePath = commonExcludePath(root);
+      mkdirSync(dirname(excludePath), { recursive: true });
+      writeFileSync(excludePath, `${fixture.hidden}\n`);
+    }
+    assert.equal(
+      runGit(root, ['check-ignore', '--no-index', '--', '.effective-flow/review/']).status,
+      1,
+      `${fixture.name}: negated concrete directory is not ignored`,
+    );
+    assertBlockedWithoutMutation(
+      root,
+      '.effective-flow/review/report.md',
+      undefined,
+      /review\/ is not ignored/,
+    );
+    assert.equal(
+      existsSync(join(root, '.effective-flow/review')),
+      false,
+      `${fixture.name}: rejected directory target creates no empty directory`,
+    );
+  }
+
+  for (const fixture of [
+    {
+      name: 'gitignore',
+      gitignore:
+        '.effective-flow/*\n!.effective-flow/review/\n.effective-flow/review/*\n!.effective-flow/review/report.md\n',
+    },
+    {
+      name: 'info/exclude',
+      hidden:
+        '.effective-flow/*\n!.effective-flow/review/\n.effective-flow/review/*\n!.effective-flow/review/report.md\n',
+    },
+  ]) {
+    const root = createRepository(t, { gitignore: fixture.gitignore });
+    if (fixture.hidden !== undefined) {
+      const excludePath = commonExcludePath(root);
+      mkdirSync(dirname(excludePath), { recursive: true });
+      writeFileSync(excludePath, `${fixture.hidden}\n`);
+    }
+    assert.equal(
+      runGit(root, ['check-ignore', '--no-index', '--', '.effective-flow/review/report.md']).status,
+      1,
+      `${fixture.name}: negated concrete file is not ignored`,
+    );
+    assertBlockedWithoutMutation(
+      root,
+      '.effective-flow/review/report.md',
+      undefined,
+      /review\/report\.md is not ignored/,
+    );
+    assert.equal(
+      existsSync(join(root, '.effective-flow/review')),
+      false,
+      `${fixture.name}: rejected file target creates no empty parent directory`,
+    );
+  }
+});
+
 test('hidden mode: an info/exclude entry alone passes the guard and leaves Git status empty', (t) => {
   const root = createRepository(t);
   assert.equal(existsSync(join(root, '.gitignore')), false);
