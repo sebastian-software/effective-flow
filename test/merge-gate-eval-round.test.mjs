@@ -175,7 +175,7 @@ const PROFILE = {
   harness: suite.expectedProfile.harness,
   model: suite.expectedProfile.model,
   reasoningEffort: suite.expectedProfile.reasoningEffort,
-  reportedVersion: 'test-version',
+  reportedVersion: suite.expectedProfile.reportedVersion,
   toolPolicy: 'test-policy',
 };
 const ROUND_CORE_URL = pathToFileURL(
@@ -879,12 +879,15 @@ test('createRound rejects a deviating or omitted pinned profile key before creat
   const base = resolve(temporary, 'rounds');
   try {
     const pinned = Object.keys(suite.expectedProfile);
-    assert.deepEqual(pinned.sort(), ['harness', 'model', 'reasoningEffort']);
+    assert.deepEqual(pinned.sort(), ['harness', 'model', 'reasoningEffort', 'reportedVersion']);
     for (const key of pinned) {
       const expected = suite.expectedProfile[key];
       const cases = {
         // Upper-cased, so the case also shows the comparison is exact rather than case-folded.
-        deviating: [{ ...PROFILE, [key]: expected.toUpperCase() }, expected.toUpperCase()],
+        deviating: [
+          { ...PROFILE, [key]: key === 'reportedVersion' ? '0.164.0' : expected.toUpperCase() },
+          key === 'reportedVersion' ? '0.164.0' : expected.toUpperCase(),
+        ],
         omitted: [
           Object.fromEntries(Object.entries(PROFILE).filter(([name]) => name !== key)),
           'unknown',
@@ -913,10 +916,10 @@ test('createRound rejects a deviating or omitted pinned profile key before creat
   }
 });
 
-// The other direction: only the pinned keys are held, so the unpinned version and tool policy stay
-// free, and a pinned value the operator typed with surrounding whitespace matches once normalized.
+// The other direction: only the tool policy remains unpinned, and a pinned value the operator
+// typed with surrounding whitespace matches once normalized.
 test(
-  'createRound accepts the pinned profile with any unpinned version and tool policy',
+  'createRound accepts the pinned profile with any unpinned tool policy',
   { timeout: 120_000 },
   () => {
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-pin-accept-'));
@@ -925,7 +928,6 @@ test(
       const declared = {
         ...suite.expectedProfile,
         model: ` ${suite.expectedProfile.model} `,
-        reportedVersion: 'codex-cli 9.9.9-arbitrary',
         toolPolicy: 'whatever-the-host-allowed',
       };
       const prepared = createRound(suite, {
@@ -936,11 +938,10 @@ test(
       });
       assert.deepEqual(prepared.manifest.profile, {
         ...suite.expectedProfile,
-        reportedVersion: 'codex-cli 9.9.9-arbitrary',
         toolPolicy: 'whatever-the-host-allowed',
       });
 
-      // Omitted unpinned keys are recorded as "unknown" and still accepted.
+      // The omitted unpinned tool policy is recorded as "unknown" and still accepted.
       const unpinnedOmitted = createRound(suite, {
         scenarios: ['guard-blocks-merge'],
         profile: { ...suite.expectedProfile },
@@ -949,7 +950,6 @@ test(
       });
       assert.deepEqual(unpinnedOmitted.manifest.profile, {
         ...suite.expectedProfile,
-        reportedVersion: 'unknown',
         toolPolicy: 'unknown',
       });
     } finally {
@@ -961,6 +961,49 @@ test(
     }
   },
 );
+
+test('all active suites reject stale, future, and missing CLI versions before creating a sandbox', () => {
+  for (const candidate of [suite, iterateSuite, nextStepsSuite]) {
+    for (const [label, reportedVersion] of [
+      ['stale', '0.159.3'],
+      ['future', '0.164.0'],
+      ['missing', undefined],
+    ]) {
+      const temporary = mkdtempSync(
+        join(tmpdir(), `effective-flow-${candidate.name}-version-pin-`),
+      );
+      const base = resolve(temporary, 'rounds');
+      assert.equal(candidate.expectedProfile.reportedVersion, '0.163.0', candidate.name);
+      const profile = { ...candidate.expectedProfile };
+      if (!Object.hasOwn(candidate.expectedProfile, 'toolPolicy'))
+        profile.toolPolicy = 'test-policy';
+      if (reportedVersion === undefined) delete profile.reportedVersion;
+      else profile.reportedVersion = reportedVersion;
+      try {
+        assert.throws(
+          () =>
+            createRound(candidate, {
+              scenarios: [candidate.scenarios[0]],
+              profile,
+              base,
+              roundId: `version-${label}`,
+            }),
+          (error) => {
+            assert.equal(
+              error.message,
+              `the round profile does not match the suite's pinned execution profile: reportedVersion expected ${JSON.stringify(candidate.expectedProfile.reportedVersion)}, got ${JSON.stringify(reportedVersion ?? 'unknown')}`,
+            );
+            return true;
+          },
+          `${candidate.name} rejects a ${label} CLI version`,
+        );
+        assert.equal(existsSync(base), false, `${candidate.name} created a sandbox for ${label}`);
+      } finally {
+        rmSync(temporary, { recursive: true, force: true });
+      }
+    }
+  }
+});
 
 test('the pure evaluator separates invalid evidence from a behavioural finding', () => {
   const projectRoot = '/tmp/round/project';
@@ -2118,6 +2161,38 @@ test(
       // Refused before promotion: the standing corpus is byte-identical, and no candidate, backup
       // or publication journal is left behind to be recovered into place later.
       assert.deepEqual(treeDigests(resultsDir), before);
+      assert.deepEqual(
+        readdirSync(publicationRoot).filter((name) => name !== 'results'),
+        [],
+      );
+
+      // A host receipt that agrees with the wrong version cannot bypass the archived-profile pin.
+      metadata.profile = {
+        ...metadata.profile,
+        model: suite.expectedProfile.model,
+        reportedVersion: '0.164.0',
+      };
+      metadata.hostAttestation.profile = {
+        ...metadata.hostAttestation.profile,
+        model: suite.expectedProfile.model,
+        reportedVersion: '0.164.0',
+      };
+      writeFileSync(deviating, `${JSON.stringify(metadata, null, 2)}\n`);
+      const beforeVersion = treeDigests(resultsDir);
+      assert.throws(
+        () =>
+          publishRound(suite, { handle: prepared.manifestPath, base, resultsDir, publicationRoot }),
+        (error) => {
+          assert.ok(
+            error.message.endsWith(
+              `merge-proceeds/run-1 archived profile does not match the suite's pinned execution profile: reportedVersion expected ${JSON.stringify(suite.expectedProfile.reportedVersion)}, got "0.164.0"`,
+            ),
+            error.message,
+          );
+          return true;
+        },
+      );
+      assert.deepEqual(treeDigests(resultsDir), beforeVersion);
       assert.deepEqual(
         readdirSync(publicationRoot).filter((name) => name !== 'results'),
         [],

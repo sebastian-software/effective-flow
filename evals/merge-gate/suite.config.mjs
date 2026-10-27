@@ -165,10 +165,9 @@ const suite = {
   // does. The profile is an operator attestation: this enforces what is declared and archived, not
   // what the host actually ran.
   //
-  // `reportedVersion` and `toolPolicy` are deliberately not pinned. The CLI version moves often, and
-  // pinning it would cost a full re-recorded round for every CLI update; the minimum version that
-  // carries this model is documented in the README instead. The tool policy is an operational
-  // detail of the recording host rather than a property of the measurement.
+  // The CLI version is pinned across the active behavioural suites. `toolPolicy` remains unpinned
+  // here: it describes the recording host's operating conditions rather than a property of the
+  // measurement.
   //
   // This file is hashed, so editing the pin deliberately stales every archived stamp: the first
   // round after a pin change has to cover the whole corpus, which the instrument digest enforces.
@@ -176,6 +175,7 @@ const suite = {
     harness: 'codex-cli',
     model: 'gpt-6-sol',
     reasoningEffort: 'medium',
+    reportedVersion: '0.163.0',
   }),
 };
 

@@ -81,7 +81,6 @@ const ITERATE_ROOT = resolve(import.meta.dirname, '..', 'evals', 'iterate');
 const REPORT_CHANNEL = resolve(ITERATE_ROOT, '_scaffold', 'report-channel.mjs');
 const PROFILE = {
   ...suite.expectedProfile,
-  reportedVersion: 'test-version',
   toolPolicy: 'test-policy',
 };
 
