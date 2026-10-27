@@ -227,7 +227,7 @@ the runner retains the suite's state and evidence while removing only its four C
 Keep this suite's pinned model, prompt, sandbox, and host launch arguments unchanged.
 
 Exactly as for `merge-gate`, with `iterate` as the tool name, the same pinned profile (harness
-`codex-cli`, model `gpt-6-sol`, reasoning effort `medium`) and the sandbox under
+`codex-cli`, model `gpt-6-sol`, reasoning effort `medium`, reported version `0.163.0`) and the sandbox under
 `/tmp/effective-flow-iterate-eval/rounds/`. As there, the pinned profile is the **caller's**: the
 profile of the fresh session the host starts, which here runs `iterate` itself on the handed-over
 delegation. A spawn that session starts runs on its own model tier (`shared/model-tiers.md`), which
@@ -239,7 +239,7 @@ pnpm eval iterate prepare \
   --harness codex-cli \
   --model gpt-6-sol \
   --reasoning-effort medium \
-  --reported-version MODEL_VERSION \
+  --reported-version 0.163.0 \
   --tool-policy HOST_TOOL_POLICY
 ```
 

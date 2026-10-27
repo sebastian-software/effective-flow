@@ -68,7 +68,7 @@ export default {
     harness: 'codex-cli',
     model: 'gpt-6.1-sol',
     reasoningEffort: 'high',
-    reportedVersion: '0.159.3',
+    reportedVersion: '0.163.0',
     toolPolicy:
       'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral',
   }),

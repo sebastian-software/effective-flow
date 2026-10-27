@@ -4959,6 +4959,59 @@ test('the next-steps fragment ships standalone and states the emission rule', ()
   );
 });
 
+test('next-steps reconciles a verified completion with an unfinished associated record before later blockers', () => {
+  const fragment = source('src/shared/next-steps.md');
+  const flatFragment = flat(fragment);
+  const knownTools = new Set(
+    readdirSync(new URL('src/tools/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  const knownAgents = new Set(
+    readdirSync(new URL('src/agents/', repositoryRoot))
+      .filter((entry) => entry.endsWith('.md'))
+      .map((entry) => entry.replace(/\.md$/, '')),
+  );
+  const refConfig = {
+    exposedTools: [...knownTools],
+    agentPrefix: 'effective-flow-',
+    skillName: 'effective-flow',
+    knownTools,
+    knownAgents,
+  };
+  const resolved = resolveEagerIncludes(fragment, {
+    context: 'shared/next-steps.md',
+    readFragment: (name) => source(`src/shared/${name}.md`),
+  });
+
+  const assertContract = (text, context) => {
+    const body = flat(text);
+    assert.match(
+      body,
+      /verified completed package[\s\S]{0,100}still marked unfinished[\s\S]{0,100}associated plan record/i,
+      context,
+    );
+    assert.match(
+      body,
+      /associated plan record[\s\S]{0,100}needs this reconciliation even when an[\s\S]{0,140}(?:approval|dependency|workflow) blocker[\s\S]{0,100}later package/i,
+      context,
+    );
+    assert.match(
+      body,
+      /reconciliation does not grant authority to execute that blocked package/i,
+      context,
+    );
+  };
+
+  assertContract(flatFragment, 'source contract');
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const context = `shared/next-steps.md (${harness})`;
+    const rendered = renderBody(resolved, harness, { ...refConfig, context });
+    assertNoUnresolvedEagerIncludes(rendered, { context });
+    assertContract(rendered, `${harness}: rendered contract`);
+  }
+});
+
 test('every returning delegation announces the next-step suppression', () => {
   // A delegation whose result returns to its caller is marked; a handoff that gives the
   // receiving tool the rest of the run is not. The distinction is mechanical, so it can be

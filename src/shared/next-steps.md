@@ -84,7 +84,10 @@ instead of relying on the receiving tool to notice.
    mapped to an existing exposed tool with actual arguments, even without a matching table row.
    Require established readiness and authority before suggesting execution. Missing preparation or
    a recoverably stale record leads to `{{SKILL:plan}} <known-plan-path>` or
-   `{{SKILL:plan-issue}} <known-issue>`; otherwise name the blocker. An implemented/archived plan
+   `{{SKILL:plan-issue}} <known-issue>`; otherwise name the blocker. A verified completed package
+   still marked unfinished in its associated plan record needs this reconciliation even when an
+   approval, dependency or workflow blocker prevents a later package; reconciliation does not grant
+   authority to execute that blocked package. An implemented/archived plan
    with apparent unfinished work needs `plan` reconciliation, never `apply` of that completed
    basis, unless an independently established active successor supplies the execution basis.
    Operational work without a matching tool also needs useful preparation or a named blocker;
