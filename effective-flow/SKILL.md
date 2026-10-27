@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, apply, build, fix, refactor, docs, maintain, iterate, review, deliver, commit, pr, merge-gate, setup, cleanup, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|apply|build|fix|refactor|docs|maintain|iterate|review|deliver|commit|pr|merge-gate|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, apply, build, fix, refactor, docs, maintain, iterate, review, retro, deliver, commit, pr, merge-gate, setup, cleanup, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|apply|build|fix|refactor|docs|maintain|iterate|review|retro|deliver|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.69.0 (b575bee)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.70.0 (694e0cc)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -59,6 +59,7 @@ _from a clarified plan/issue to code_
 ### Ensure quality
 
 - `effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
+- `effective-flow retro` — Reviews one session for supported improvements – current conversation, supplied export, or available native history.
 
 ### Deliver changes
 

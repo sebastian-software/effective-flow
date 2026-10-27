@@ -7,7 +7,7 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 
 ## Tier rules
 
-- Pass the tier's "Harness values" on the spawn; the rendered site line is authoritative, and
+- Apply the tier through "Harness values" and the role selection rule below; the rendered site line is authoritative, and
   "Spawn sites" below is its source. A spawn without a rendered line, such as a correction or
   respawn, takes its role default for a named worker, otherwise the tier of the row whose Spawn
   entry describes it; without one, `standard`.
@@ -66,6 +66,14 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 | `deep` | `model: opus`, `effort: high` | `model: gpt-6.1-sol`, `reasoning_effort: high` |
 <!-- model-tier-table:end -->
 
+Pass the Harness values directly on the spawn.
+
+The orchestrator obtains these values through the executable `model-selection` contract before
+dispatch and checks independent host execution evidence at result acceptance. The rendered values
+remain the policy; neither a catalog omission nor an inherited-model preference changes them.
+
+**Load on demand:** Read `shared/model-selection.md`, when acting as the orchestrator before dispatch, resume, or terminal result acceptance.
+
 ## Spawn sites
 
 | Site                                                | Spawn                                                                                      | Tier                                                                                                      | Down  |
@@ -109,6 +117,7 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 | `refactor/review`                                   | Routed reviewers of the refactoring                                                        | `role:frontend-reviewer,nodejs-reviewer,rust-reviewer,generic-product-reviewer`                           | `no`  |
 | `refactor/post-validation-checks`                   | Post-validation checks (validates a Fast packet)                                           | `role:code-validator`                                                                                     | `no`  |
 | `refactor/post-validation-tests`                    | Post-validation test run (validates a Fast packet)                                         | `role:test-writer`                                                                                        | `no`  |
+| `retro/session-analysis`                            | Read-only analysis leaf for one selected session source                                    | `standard`                                                                                                | `yes` |
 | `review/design-decision-sources`                    | Read-only design-decision search per active source                                         | `standard`                                                                                                | `yes` |
 | `review/technical-validation`                       | Technical validation of the review scope                                                   | `role:code-validator`                                                                                     | `yes` |
 | `review/quality-review`                             | Routed reviewers per bucket and directory split                                            | `role:frontend-reviewer,nodejs-reviewer,rust-reviewer,generic-product-reviewer`                           | `no`  |

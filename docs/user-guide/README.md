@@ -16,7 +16,7 @@ New to Effective Flow? Read in this order:
      `plan`, `open-plans`, `plan-issue`, `issue-buddy`.
    - [Implement a change](tools-implement.md) – `apply`, `build`, `fix`,
      `refactor`, `docs`, `maintain`, `iterate`.
-   - [Ensure quality](tools-quality.md) – `review`.
+   - [Ensure quality](tools-quality.md) – `review`, `retro`.
    - [Deliver changes](tools-deliver.md) – `deliver`, `commit`, `pr`, `merge-gate`.
    - [Set up & info](tools-setup.md) – profile-first `setup`, explicit Express/Guided modes, the read-only
      `setup status` diagnosis, `cleanup`, and `version`.
@@ -46,7 +46,7 @@ New to Effective Flow? Read in this order:
 | [tool-flow.md](tool-flow.md)                         | Next-step recommendations after a completed run         |
 | [tools-understand.md](tools-understand.md)           | Tool reference: analysis & planning                     |
 | [tools-implement.md](tools-implement.md)             | Tool reference: implementation                          |
-| [tools-quality.md](tools-quality.md)                 | Tool reference: review                                  |
+| [tools-quality.md](tools-quality.md)                 | Tool reference: review and retro                        |
 | [tools-deliver.md](tools-deliver.md)                 | Tool reference: local delivery, commit, PR & merge gate |
 | [tools-setup.md](tools-setup.md)                     | Tool reference: profiles, setup, cleanup & version      |
 | [configuration.md](configuration.md)                 | Project-setup ADR and profile overlay reference         |

@@ -67,15 +67,16 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
 - For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
-- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
 
 **Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
 
 This mandate authorizes **read-only** analysis fan-out only. The `Hard scope boundary` below is unaffected: never start an implementer, test writer, validator, code reviewer, or documentation specialist.
 Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+Model selection site: `concept-review/analysis-fan-out` (`shared/model-selection.md`).
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
@@ -232,16 +233,27 @@ authoritative skill is not available (not installed, `skills.enabled: false`, or
 implementation risks) so the tool stays functional and degrades cleanly — **not** a full local
 handbook.
 
+For an outcome-continuation reassessment, `effective-product` owns proportionality and the
+smallest coherent outcome; `effective-delivery` owns delivery evidence/complexity. Carry the
+verified primary association, original outcome and boundaries, cumulative approach/ownership,
+evaluated attempt/evidence delta, remaining proof, current trigger, finite decision and authority
+into the same judgment handoff. Retained handoff-only state is valid input where no artifact is
+writable; do not create one merely for judgment. Return findings plus the bounded recommendation
+needed by `outcome-continuation`; source updates and the consequential decision stay with the
+orchestrator. This conditional judgment adds no full review to a successful initial change.
+
 ### Judgment handoff
 
 Each step that applies these skills to the written artifact, or obtains their judgment on it, runs
 that judgment outside this run:
 
-1. Write the artifact first; the judgment reads only what is persisted.
+1. Write the artifact first; the judgment reads only what is persisted. For continuation with no
+   writable carrier, pass the retained checkpoint and verified source instead.
 2. Start one read-only sub-agent with the artifact path, the scope (calling step and criteria), the
    resolved artifact language, the owners, relevance gate and fallback above, and the output
    contract. It loads the owning skills itself, starts no sub-agent and writes nothing.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Model selection site: `central-reasoning-delegation/judgment` (`shared/model-selection.md`).
 3. Normalize its findings into the tool's artifact form; incorporating them, user questions,
    writes, and the status decision stay with the orchestrator. No finding is dropped silently: each
    is incorporated, documented as deliberately not incorporated, or made a decision point; a
@@ -259,7 +271,8 @@ a review section already in the artifact as an unfilled template, not a result (
 alternatives, all-zero summary, placeholder findings, "Not reviewed in depth yet"), or, once an
 earlier judgment step filled it, in this run or before, as prior-round history to judge anew.
 
-**Output contract:** findings only, each with area, proposed severity (Critical, Important, Note),
+**Output contract:** for continuation reassessment, include the bounded recommendation above;
+otherwise findings only, each with area, proposed severity (Critical, Important, Note),
 problem with its artifact location, evidence (file:line or source, for the orchestrator's check
 only, never added to the artifact's finding form), and whether it is directly incorporable or needs
 a decision; no report, artifact, comment, or tracker write of its own, and no mere summary; with no

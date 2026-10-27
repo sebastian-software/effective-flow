@@ -55,6 +55,29 @@ the already established owning context. A full URL is usable only where that too
 preserving identity grants no cross-repository routing. Otherwise, the report names the limitation
 and offers a valid fallback or no option, without establishing a new repository context or connection.
 
+## Continuing toward the original outcome
+
+Repeated runs retain the original outcome and acceptance criteria in a compact Outcome checkpoint
+in the associated plan, existing issue comment, or retained handoff. Only its source-owning workflow
+updates that state. Changing workflow, session or child issue does not restart the history; a
+read-only review or recommendation returns a proposed update instead of writing the primary source.
+If earlier history is unavailable, it stays `unknown` and receives one compact reassessment before
+dependent continuation. Missing new metadata alone does not force a planning step.
+
+After two consecutive bounded continuations without verified progress on the original acceptance
+proof, the second return reassesses the approach before more optional work. A material expansion,
+such as a new maintained component or trust boundary, triggers the same judgment immediately,
+even when intermediate tests pass. The result is a finite next attempt allowance with observable
+proof and a stop condition, a consequential decision for you, or a stop that leaves unfinished
+acceptance visible. A justified allowance can cover more than one attempt without repeating the
+same review; it ends when consumed or its assumptions change. Required safety and quality checks
+remain binding throughout.
+
+This decision applies before both plan-based and generic suggestions. A blocked continuation names
+its blocker instead of suggesting another plan, review or issue to bypass it. Independent authorized
+delivery can still be recommended. There is no new command or configuration switch, and advice
+still starts no work and changes no source state.
+
 ## Why a recommendation is sometimes missing
 
 Effective Flow only names an invocation it can back with a real argument from this run. If the

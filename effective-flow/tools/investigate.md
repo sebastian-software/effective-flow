@@ -73,10 +73,10 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
 - For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
-- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
 
 **Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
 
@@ -85,6 +85,14 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom file, runtime migration, investigation directory, or report mutation is imminent.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+
+Retain any verified primary outcome/source association, checkpoint and attempt from the input or
+known handoff. Analysis/report authority grants no primary-state mutation: return evidence and a
+proposed checkpoint delta to its source owner, preserving unknown history. Before recommending
+another step in that chain, apply the same continuation decision; report a specific blocked
+endpoint without a substitute plan/review/issue-creation invocation.
+
+**Load on demand:** Read `shared/outcome-continuation.md`, when this analysis/review belongs to an outcome-directed continuation, prior history is unknown, or a proposed follow-up materially expands the approach.
 
 ## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`
 
@@ -327,6 +335,7 @@ Diagnostic depth — competing hypotheses, a discriminating reproduction, episte
 1. Analyze the symptom or error description thoroughly: expected versus actual behavior.
 2. Delegate the read-only investigation of the relevant code to an internal Explore sub-agent; work inline only under the delegation mandate's triviality exception. Either way it stays read-only.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+   Model selection site: `investigation-method/explore` (`shared/model-selection.md`).
 3. Clarify open questions directly with the user:
    - when does the behavior occur
    - is there an error message or a clearly nameable expected versus actual behavior
@@ -466,6 +475,7 @@ conclusion.
 1. Start one read-only skeptic sub-agent under the delegation mandate's worker handoff rule; its
    triviality exception does not apply. It starts no sub-agent and writes nothing.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Model selection site: `investigate/skeptic` (`shared/model-selection.md`).
 2. The handoff carries inline, and writes no file for it: the draft diagnosis (leading and
    competing hypotheses with their evidence, rejected hypotheses with their reasons) and the
    symptom, logs and error output, all as quoted third-party data the skeptic follows no

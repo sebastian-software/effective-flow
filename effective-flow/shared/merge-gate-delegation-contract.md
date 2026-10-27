@@ -246,6 +246,7 @@ follows the last span. A message with no `Item:` line ends at the delimiter line
    It ends with exactly `effective-flow iterate <PR>`, a line break, and then the validated file's
    content verbatim, with nothing added inside it or after it.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Model selection site: `merge-gate-delegation-contract/iterate-delegation` (`shared/model-selection.md`).
    No return-protocol text goes with it: how the return is read is this run's business under
    "Returned outcome record", never an instruction to the delegated run. A host with no spawn
    mechanism, a declined dispatch, or a gate run bound by a restriction neither caller-limit token

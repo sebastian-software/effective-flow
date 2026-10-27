@@ -1,0 +1,720 @@
+{
+  "schemaVersion": 1,
+  "target": "portable",
+  "mappings": {
+    "mechanical": {
+      "claude": {
+        "model": "haiku",
+        "effort": "low"
+      },
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "low"
+      }
+    },
+    "standard": {
+      "claude": {
+        "model": "sonnet",
+        "effort": "medium"
+      },
+      "codex": {
+        "model": "gpt-5.6-luna",
+        "reasoning_effort": "medium"
+      }
+    },
+    "deep": {
+      "claude": {
+        "model": "opus",
+        "effort": "high"
+      },
+      "codex": {
+        "model": "gpt-6.1-sol",
+        "reasoning_effort": "high"
+      }
+    }
+  },
+  "roles": {
+    "code-documenter": "standard",
+    "code-validator": "standard",
+    "docs-writer": "standard",
+    "e2e-tester": "standard",
+    "frontend-reviewer": "deep",
+    "generic-implementer": "deep",
+    "generic-product-implementer": "deep",
+    "generic-product-reviewer": "deep",
+    "marketing-writer": "standard",
+    "merge-conflict-resolver": "deep",
+    "nodejs-implementer": "deep",
+    "nodejs-reviewer": "deep",
+    "rust-implementer": "deep",
+    "rust-reviewer": "deep",
+    "test-writer": "standard",
+    "ui-implementer": "deep"
+  },
+  "sites": [
+    {
+      "id": "apply-issues/issue-analysis",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "apply-issues/issue-delegation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "apply-review/finding-pre-analysis",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "apply-review/component-delegation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "build/initial-implementation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "ui-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-implementer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "build/unit-tests",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "test-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "build/e2e-tests",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "e2e-tester",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "build/validation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "build/review",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "build/final-validation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "concept-review/analysis-fan-out",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "docs/implementation",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "marketing-writer",
+          "tier": "standard"
+        },
+        {
+          "role": "docs-writer",
+          "tier": "standard"
+        },
+        {
+          "role": "code-documenter",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "docs/validation",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "fix/reproduction",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "fix/failing-test",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "test-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "fix/implementation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "ui-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-implementer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "fix/regression-test",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "test-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "fix/verification",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "investigate/skeptic",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "issue-buddy/readiness",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "issue-buddy/plan-run",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "issue-buddy/nested-spawn-probe",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "mechanical"
+        }
+      ]
+    },
+    {
+      "id": "iterate/item-delegation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "iterate/validation",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "maintain/baseline-checks",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "maintain/baseline-tests",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "test-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "maintain/api-adaptation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "ui-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-implementer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "maintain/review",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "maintain/final-validation",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "plan/codebase-examination",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "plan-issue/codebase-examination",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "plan-review/analysis-fan-out",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "pr/body-draft",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "mechanical"
+        }
+      ]
+    },
+    {
+      "id": "refactor/baseline-checks",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "refactor/baseline-tests",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "test-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "refactor/initial-implementation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "ui-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-implementer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-implementer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "refactor/review",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "refactor/post-validation-checks",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "refactor/post-validation-tests",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "test-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "retro/session-analysis",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "review/design-decision-sources",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "review/technical-validation",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "review/quality-review",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "central-reasoning-delegation/judgment",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "documentation-sync-contract/code-documenter",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "code-documenter",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "documentation-sync-contract/docs-writer",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "docs-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "documentation-sync-contract/marketing-writer",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": "marketing-writer",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "initial-state-documentation/state-investigation",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "investigation-method/explore",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "merge-gate/delegated-run",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "merge-gate-conflict-resolution/resolver",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "merge-conflict-resolver",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "merge-gate-conflict-resolution/verification",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "merge-gate-delegated-run/nested-spawn-probe",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "mechanical"
+        }
+      ]
+    },
+    {
+      "id": "merge-gate-delegation-contract/iterate-delegation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    }
+  ]
+}

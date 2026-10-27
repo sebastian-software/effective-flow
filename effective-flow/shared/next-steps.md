@@ -84,7 +84,10 @@ instead of relying on the receiving tool to notice.
    mapped to an existing exposed tool with actual arguments, even without a matching table row.
    Require established readiness and authority before suggesting execution. Missing preparation or
    a recoverably stale record leads to `effective-flow plan <known-plan-path>` or
-   `effective-flow plan-issue <known-issue>`; otherwise name the blocker. An implemented/archived plan
+   `effective-flow plan-issue <known-issue>`; otherwise name the blocker. A verified completed package
+   still marked unfinished in its associated plan record needs this reconciliation even when an
+   approval, dependency or workflow blocker prevents a later package; reconciliation does not grant
+   authority to execute that blocked package. An implemented/archived plan
    with apparent unfinished work needs `plan` reconciliation, never `apply` of that completed
    basis, unless an independently established active successor supplies the execution basis.
    Operational work without a matching tool also needs useful preparation or a named blocker;
@@ -102,6 +105,14 @@ instead of relying on the receiving tool to notice.
    `effective-flow merge-gate <PR>` re-entry only for actual unfinished reconciliation it can address;
    an intentionally open parent for later packages is insufficient. If no valid candidate remains,
    emit no block. This is read-only advice: it grants no authority and starts no action.
+
+Before selecting any outward invocation for an existing outcome chain, apply its retained
+continuation decision to both plan-aware selection and fallback. Read-only selection returns a
+proposed checkpoint delta/pending source update; it neither persists state nor guesses missing
+history as zero. A blocked endpoint emits no substitute planning, review or issue-creation option;
+name its specific decision/context blocker. Independent authorized delivery may remain applicable.
+
+**Load on demand:** Read `shared/outcome-continuation.md`, when the completed run belongs to an outcome-directed continuation, history is unknown, or a candidate next step materially expands the approach.
 
 ## Generic fallback edge table
 

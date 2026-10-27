@@ -122,6 +122,7 @@ checkout is the one step 1 provisioned – never a second one.
    "Conflict-resolution delegation contract". The human-comment guard does **not** block this
    delegation, for the reason stated beside the CI repair.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Model selection site: `merge-gate-conflict-resolution/resolver` (`shared/model-selection.md`).
 3. **Consume the worker's outcome.** `ABORT` ends this step as a controlled stop under step 1's last
    bullet. `DONE` continues.
 4. **Reconcile, then verify independently** – in that order, per that contract, ending with the
@@ -129,6 +130,7 @@ checkout is the one step 1 provisioned – never a second one.
    the record does not name and justify, a failing verdict from either role, or a verification that
    executed **no** check at all ends this step as a stop that commits nothing.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
+   Model selection site: `merge-gate-conflict-resolution/verification` (`shared/model-selection.md`).
 5. **Commit and push.** The gate – not the worker – completes the merge commit and pushes the head
    branch normally. Keep Git's default merge-commit message, which already lists the conflicted paths;
    add no `Co-Authored-By` trailer and no AI attribution. Then re-read the status, exactly as the

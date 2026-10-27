@@ -119,6 +119,9 @@ plan review section. For documentation plans, the header adds `**Doc category:**
 throughout—header fields, sections, plan review, open points, and status marker are all German or
 all English. An existing plan retains its recognizable language when edited or completed. Explicit
 issue input instead produces the canonical issue-planning comment described under `plan-issue`.
+New local plans and canonical planning comments also retain a compact Outcome checkpoint for
+[continuation toward the original outcome](tool-flow.md#continuing-toward-the-original-outcome);
+legacy sources remain usable without a bulk migration.
 
 **Interplay:** A finished local plan is implemented later with `/effective-flow apply <plan file>`,
 which reads the plan's own `**Recommended workflow:**` field and routes to the matching

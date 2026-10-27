@@ -66,10 +66,10 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
 - For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
-- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.
+- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
 
 **Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
 
@@ -143,9 +143,9 @@ When you use internal sub-agents, give them this response protocol:
 - `DONE` for fully completed
 - `ABORT: [reason]` for not completable
 
-Check by the orchestrator:
+Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
 
-1. `DONE`: phase completed.
+1. `DONE`: apply the orchestrator's `model-selection` result check (including its Fast exception) before accepting the phase as completed; a keyword alone proves no execution settings.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
 3. No keyword: resume once, then retry with escalation.
 
@@ -164,6 +164,15 @@ When an internal sub-agent ends without `DONE` or `ABORT`, its result counts as 
 
 Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run, and the workflow's regular approval gates always apply.
 
+Retain one original outcome and verified primary-source association at entry; a package completion
+condition does not replace its parent operational outcome. Initial work establishes its first return checkpoint without counting a continuation. At return,
+the source owner reconciles once after returning children and carries unfinished acceptance into
+the handoff.
+
+**Load on demand:** Read `shared/outcome-continuation.md`, when entering or returning from an outcome-directed continuation, prior continuation history is unknown, or the proposed approach materially expands.
+
+**Load on demand:** Read `shared/subagent-progress.md`, when the active overview owner considers eligible longer ordinary worker/analysis progress under the delegation mandate; workers never load this contract.
+
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
@@ -172,10 +181,15 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
    - Before work, list every known remaining numbered phase; add findings, issues or parallel subtasks as soon as their set is known; on resume, continue the existing list; keep more specific per-finding, per-issue, per-source and per-reviewer rules authoritative.
-   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input.
+   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input. Fold eligible ordinary worker checkpoints into this same overview once: during an ordinary event wait, integrate then resume waiting; while busy, coalesce until a natural boundary, using the subagent-progress contract.
    - Mark skipped, terminally failed and aborted steps as such; keep a step awaiting user input open with its blocker; never treat terminal failure or abort as satisfying the completion condition.
    - If tracking fails irrecoverably, report that failure once, move still-open tracking to chat without claiming a successful tool update, and continue the domain work.
    - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.
+
+For an investigation-report fix or direct request without another writable primary source, return
+the verified association and checkpoint in the existing completion/handoff. This grants no right
+to rewrite the diagnosis or create a bookkeeping report. For a review finding, reuse only its
+already authorized implementation note; a returning delegate sends evidence to its source owner.
 
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined.
 
@@ -192,6 +206,7 @@ Diagnostic depth — competing hypotheses, a discriminating reproduction, episte
 1. Analyze the symptom or error description thoroughly: expected versus actual behavior.
 2. Delegate the read-only investigation of the relevant code to an internal Explore sub-agent; work inline only under the delegation mandate's triviality exception. Either way it stays read-only.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+   Model selection site: `investigation-method/explore` (`shared/model-selection.md`).
 3. Clarify open questions directly with the user:
    - when does the behavior occur
    - is there an error message or a clearly nameable expected versus actual behavior
@@ -299,6 +314,7 @@ Run the read-only investigation per "Investigation method", section "Investigate
    possible, specify a failing test that documents the behavior (file, case, expected failure)
    without writing it; Phase 3 writes it once the diff baseline exists.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+   Model selection site: `fix/reproduction` (`shared/model-selection.md`).
 2. Perform a gap analysis for the diagnosis and fix strategy:
    - over-engineering
    - unspoken assumptions
@@ -413,10 +429,12 @@ removes or claims a worktree and never creates or backfills a record.
    return to Phase 2 with the result. Re-entering Phase 3 skips step 0, keeping the receipt and
    diff baseline, and resumes here: the test-writer revises the already written test in place.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+   Model selection site: `fix/failing-test` (`shared/model-selection.md`).
 2. Start every implementer selected by the canonical routing contract. Before
    ``effective-flow-generic-product-implementer``, emit the reduced-depth notice. Never send product code
    to ``effective-flow-generic-implementer``.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Model selection site: `fix/implementation` (`shared/model-selection.md`).
 3. Give a precise assignment:
    - root cause
    - affected files
@@ -448,9 +466,11 @@ surface prevents completion under the blocking rule of the detail contract.
 
 1. First ``effective-flow-test-writer``
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+   Model selection site: `fix/regression-test` (`shared/model-selection.md`).
    - confirms that the Phase 3 failing test now passes, or writes a regression test
 2. Then render the diff baseline and hand the path list per "Diff baseline" to, in parallel if possible:
    Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium`. Tier `deep` for `effective-flow-generic-product-reviewer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+   Model selection site: `fix/verification` (`shared/model-selection.md`).
    - ``effective-flow-code-validator``: repository-native lint, type, build and documentation checks that
      can be discovered safely
    - for every degraded generic product bucket, ``effective-flow-generic-product-reviewer``: a read-only

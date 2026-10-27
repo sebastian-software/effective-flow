@@ -104,6 +104,14 @@ both harnesses' values at each spawn and uses the pair that belongs to the host.
 neither mechanism inherits the caller model and says so once. When `effective-flow pr` has to draft
 the PR body, it does so on the `mechanical` tier.
 
+Before dispatch, workflows resolve the role and spawn-site policy through the shipped
+`model-selection` helper instead of choosing from the caller's model or the host's catalog.
+The completion summary distinguishes the requested settings from checked execution settings.
+The current verifier can read a host-provided exact Codex child rollout, checking its parent,
+child identity and every recorded turn's model and effort. A mismatch prevents accepting the
+delegation as successful. Missing or unsupported metadata is explicitly `unverified`, including
+hosts without that adapter; it is never presented as proof that the requested model ran.
+
 To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
 judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
 read-only `deep` sub-agent after the artifact is written, and `merge-gate` runs as one delegated
@@ -117,12 +125,13 @@ means a distinct native lower-cost, lower-latency implementation capability for 
 that passes a fail-closed gate. Neither intent names a provider model, changes the caller setting,
 or weakens later validation and review.
 
-Native builds now contain the enforcement representation for that policy. Claude Code receives five
-generated Fast implementer sidecars, while Codex keeps each base worker and can apply explicit
-`model` and `reasoning_effort` parameters to an individual spawn. Native inventories let the local
-installer reject missing, extra, malformed, or cross-target-inconsistent sidecars before it changes
-an installation. Those artifacts establish build and installation consistency, not runtime
-discovery or activation.
+Native builds now contain the enforcement representation for that policy. Claude Code and Codex
+receive five generated Fast implementer sidecars; Codex also receives generated mechanical and
+deep tier variants for its standard roles. Codex role-file model and reasoning settings take
+precedence over spawn parameters, so direct invocation of a base role remains safe. Native
+inventories let the local installer reject missing, extra, malformed, or cross-target-inconsistent
+generated roles before it changes an installation. Those artifacts establish build and installation
+consistency, not runtime discovery or activation.
 
 `build` and `refactor` are the two workflows that request that representation, and only inside
 their opt-in field pilot: the project sets `executionProfiles.fast.enabled` in Guided setup and
@@ -131,9 +140,9 @@ activates the generation automatically once the preregistered baseline condition
 generation, Fast may be requested only for the first implementation attempt of an eligible native
 packet. Any retry, correction, validation repair, review incorporation, conflict resolution, or
 scope-growth continuation uses Quality; coupled packets also share Quality. A project without the opt-in
-stays Quality-only. Portable installations remain
-Quality-only in V1 and contain no native sidecar inventory, Fast sidecar or native model
-metadata. See the
+stays Quality-only. Portable installations remain Quality-only in V1 and contain no native sidecar
+inventory, Fast sidecar, or native profile artifact; their spawn-site tier text still carries the
+provider values generated for the executing harness. See the
 [configuration reference](./configuration.md#block-executionprofiles) for the default-off key.
 
 Claude skills can request a different caller model or effort for their current turn, but that

@@ -7,6 +7,10 @@ issue, or emitting an executable outward handoff. A direct user request, the act
 and a roadmap commitment explicitly authorized before the observation are primary work and do not
 pass through this gate. An observation cannot authorize itself by being renamed as roadmap work;
 only a later user-initiated explicit instruction can establish new primary scope.
+Primary/current-scope status does not exempt the approach from outcome-continuation reassessment;
+admission and permission to continue are separate decisions.
+
+**Load on demand:** Read `shared/outcome-continuation.md`, when primary/current-scope work continues an existing outcome or the proposed approach materially expands.
 
 The workflow/tool orchestrator owns this decision point. After the owning workflow's existing
 configuration preflight, it sends all unresolved candidates as one compact, self-contained batch to

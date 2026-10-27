@@ -405,6 +405,15 @@ to avoid duplicate maintenance.
 
 Internal "repeat until done" loops of this workflow follow a uniform completion pattern instead of an ad-hoc formulated loop. The pattern pairs one declared completion goal with independent verification and visible progress control. It steers the workflow's own run, and the workflow's regular approval gates always apply.
 
+Retain one original outcome and verified primary-source association at entry; a package completion
+condition does not replace its parent operational outcome. Initial work establishes its first return checkpoint without counting a continuation. At return,
+the source owner reconciles once after returning children and carries unfinished acceptance into
+the handoff.
+
+**Load on demand:** Read `shared/outcome-continuation.md`, when entering or returning from an outcome-directed continuation, prior continuation history is unknown, or the proposed approach materially expands.
+
+**Load on demand:** Read `shared/subagent-progress.md`, when the active overview owner considers eligible longer ordinary worker/analysis progress under the delegation mandate; workers never load this contract.
+
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
@@ -413,7 +422,7 @@ Internal "repeat until done" loops of this workflow follow a uniform completion 
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
    - Before work, list every known remaining numbered phase; add findings, issues or parallel subtasks as soon as their set is known; on resume, continue the existing list; keep more specific per-finding, per-issue, per-source and per-reviewer rules authoritative.
-   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input.
+   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input. Fold eligible ordinary worker checkpoints into this same overview once: during an ordinary event wait, integrate then resume waiting; while busy, coalesce until a natural boundary, using the subagent-progress contract.
    - Mark skipped, terminally failed and aborted steps as such; keep a step awaiting user input open with its blocker; never treat terminal failure or abort as satisfying the completion condition.
    - If tracking fails irrecoverably, report that failure once, move still-open tracking to chat without claiming a successful tool update, and continue the domain work.
    - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.
@@ -527,6 +536,9 @@ embed. This reference rule does not duplicate that check separately.
 4. Pass as context:
    - that ``tools/apply-plan.md`` has already checked the plan status, the workflow recommendation and the clarification gate
    - the full plan path as source association; return any archive move and observed outcome with it
+   - the verified original outcome/parent association, checkpoint and retained attempt reference;
+     transfer source ownership to the receiving workflow along with progress ownership. This router
+     neither counts an attempt nor writes the checkpoint; the target reconciles after its children
    - the detected workflow
    - that the basis is already clarified
    - for documentation plans, additionally the values found in the matching German

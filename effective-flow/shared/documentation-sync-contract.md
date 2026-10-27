@@ -38,10 +38,13 @@ Whether an enumerated surface is genuinely stale is the owner's judgment, not a 
 
 - ``effective-flow-code-documenter`` — in-code documentation, inline comments, CLI help text
   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+  Model selection site: `documentation-sync-contract/code-documenter` (`shared/model-selection.md`).
 - ``effective-flow-docs-writer`` — user and technical documents, including category entry points
   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+  Model selection site: `documentation-sync-contract/docs-writer` (`shared/model-selection.md`).
 - ``effective-flow-marketing-writer`` — the root `README.md` in its marketing entry-point role
   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+  Model selection site: `documentation-sync-contract/marketing-writer` (`shared/model-selection.md`).
 
 Disjoint file sets may run in parallel. The `Doc categories` write boundary and its conditional
 root-README follow-up-link rule apply unchanged.

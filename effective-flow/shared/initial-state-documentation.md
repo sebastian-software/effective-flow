@@ -8,6 +8,7 @@ Before the actual workflow starts, check whether the project already has documen
    - delegate the read-only investigation of the current project state to an internal sub-agent;
      work inline only under the delegation mandate's triviality exception:
      Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
+     Model selection site: `initial-state-documentation/state-investigation` (`shared/model-selection.md`).
      - project structure
      - existing files
      - technologies used

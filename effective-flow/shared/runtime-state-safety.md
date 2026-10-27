@@ -194,7 +194,9 @@ repair):
 1. Run the non-verbose decision predicate
    `git check-ignore --no-index -- .effective-flow/config.json`.
 2. Run the same non-verbose predicate for the concrete pending target:
-   `git check-ignore --no-index -- <target>`.
+   `git check-ignore --no-index -- <target>`. Preserve known directory intent through physical
+   canonicalization and repository-relative conversion. Pass directory targets with a trailing slash,
+   including absent directories before `mkdir` (e.g. `.effective-flow/`); leave file targets unchanged.
 3. Interpret each exit code exactly: `0` means ignored and passes; `1` means not ignored and
    blocks; any other exit code or command-launch error blocks. Do not use `-v` for the decision:
    a negation match may still produce verbose output with exit code `0`. Use

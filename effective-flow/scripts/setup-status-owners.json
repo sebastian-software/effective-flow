@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.69.0",
+  "version": "1.70.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -16,6 +16,7 @@
     "maintain",
     "iterate",
     "review",
+    "retro",
     "deliver",
     "commit",
     "pr",
@@ -626,6 +627,284 @@
     },
     {
       "skill": "effective-delivery",
+      "consumer": "outcome-continuation",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "cleanup",
+        "commit",
+        "concept",
+        "deliver",
+        "docs",
+        "fix",
+        "investigate",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "open-plans",
+        "plan",
+        "plan-issue",
+        "pr",
+        "refactor",
+        "review",
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-plan"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-remote"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "cleanup",
+          "scope": "tools.cleanup"
+        },
+        {
+          "tool": "commit",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "concept",
+          "scope": "tools.concept"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.deliver"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "open-plans",
+          "scope": "tools.open-plans"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "pr",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        },
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
       "consumer": "review",
       "consumerKind": "tool",
       "classification": "delegate",
@@ -954,6 +1233,21 @@
         {
           "tool": "investigate",
           "scope": "tools.investigate"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "retro",
+      "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "retro"
+      ],
+      "reach": [
+        {
+          "tool": "retro",
+          "scope": "tools.retro"
         }
       ]
     },
@@ -2388,6 +2682,7 @@
         "plan-issue",
         "pr",
         "refactor",
+        "retro",
         "review",
         "setup"
       ],
@@ -2651,6 +2946,10 @@
         {
           "tool": "refactor",
           "scope": "tools.refactor"
+        },
+        {
+          "tool": "retro",
+          "scope": "tools.retro"
         },
         {
           "tool": "review",
@@ -3010,6 +3309,284 @@
         {
           "tool": "review",
           "scope": "tools.review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-product",
+      "consumer": "outcome-continuation",
+      "consumerKind": "shared",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "cleanup",
+        "commit",
+        "concept",
+        "deliver",
+        "docs",
+        "fix",
+        "investigate",
+        "issue-buddy",
+        "iterate",
+        "maintain",
+        "merge-gate",
+        "open-plans",
+        "plan",
+        "plan-issue",
+        "pr",
+        "refactor",
+        "review",
+        "setup"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.apply"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-issues"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-plan"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.apply-review-remote"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "cleanup",
+          "scope": "tools.cleanup"
+        },
+        {
+          "tool": "commit",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "concept",
+          "scope": "tools.concept"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.deliver"
+        },
+        {
+          "tool": "deliver",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "docs",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "fix",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "investigate",
+          "scope": "tools.investigate"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "issue-buddy",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.maintain"
+        },
+        {
+          "tool": "maintain",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.iterate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.merge-gate"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "open-plans",
+          "scope": "tools.open-plans"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "plan",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "plan-issue",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "pr",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "refactor",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "tools.review"
+        },
+        {
+          "tool": "setup",
+          "scope": "tools.setup"
         }
       ]
     },
