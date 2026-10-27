@@ -125,6 +125,7 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'delegation-mandate-lean-orchestrator',
       'delegation-mandate-subagent-progress',
       'delegation-mandate-compact-checkpoint',
+      'delegation-mandate-model-selection',
     ],
   );
 });

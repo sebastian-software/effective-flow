@@ -654,7 +654,9 @@ export function renderSpawnSiteMarkers(body, harness, { sites, mappings, context
       throw new Error(`Unknown spawn-site "${id}"${contextSuffix(context)}`);
     }
     const indent = lines[line - 1].match(/^[ \t]*/)[0];
-    lines[line - 1] = `${indent}${renderSpawnSiteLine(site, harness, { mappings, context })}`;
+    lines[line - 1] =
+      `${indent}${renderSpawnSiteLine(site, harness, { mappings, context })}\n` +
+      `${indent}Model selection site: \`${id}\` (\`shared/model-selection.md\`).`;
   }
   return lines.join('\n');
 }

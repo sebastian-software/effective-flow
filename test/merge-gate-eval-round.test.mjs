@@ -1619,7 +1619,7 @@ test(
       const predecessorResultPromise = childResult(predecessor);
       parked.push({ child: predecessor, release: releaseSignal, result: predecessorResultPromise });
       await waitForFile(releaseMarker);
-      const displacedLock = resolve(temporary, 'displaced-publication-lock');
+      const displacedLock = `${publicationLock}.displaced-${randomUUID()}`;
       renameSync(publicationLock, displacedLock);
       const successorToken = randomUUID();
       mkdirSync(publicationLock);

@@ -134,6 +134,15 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    Object.freeze({
+      id: 'delegation-mandate-model-selection',
+      edits: Object.freeze([
+        Object.freeze({
+          from: `${MANDATE_LAST_BULLET}\n`,
+          to: `${MANDATE_LAST_BULLET} Before dispatch, resume, or terminal result acceptance, the orchestrator reads \`shared/model-selection.md\` and applies its executable selection and result checks.\n`,
+        }),
+      ]),
+    }),
   ]),
 });
 

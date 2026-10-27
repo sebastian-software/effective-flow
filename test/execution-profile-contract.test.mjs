@@ -140,6 +140,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'diff-baseline.mjs',
   'issue-buddy-core.mjs',
   'issue-buddy.mjs',
+  'model-selection-core.mjs',
+  'model-selection.mjs',
   'pilot-measurement-core.mjs',
   'pilot-measurement-protocol.mjs',
   'pilot-measurement.mjs',
@@ -901,11 +903,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 27);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 29);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 27 approved runtime scripts',
+    'build.mjs must register exactly the 29 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));
@@ -1030,11 +1032,14 @@ test('an isolated build ships Fast only through the adopted build and refactor p
       EXPECTED_TOOLS,
       `${target} tool inventory changed`,
     );
-    // Besides the copied scripts, `scripts/` holds only the build-generated setup-status ownership
-    // projection the status script reads beside itself.
+    // Runtime data is generated from the same validated ownership and model-selection sources.
     assert.deepEqual(
       readdirSync(join(root, 'scripts')).sort(),
-      [...EXPECTED_RUNTIME_SCRIPTS, 'setup-status-owners.json'].sort(),
+      [
+        ...EXPECTED_RUNTIME_SCRIPTS,
+        'setup-status-owners.json',
+        'model-selection-contract.json',
+      ].sort(),
       `${target} runtime-script inventory changed`,
     );
     for (const file of EXPECTED_RUNTIME_SCRIPTS) {

@@ -130,6 +130,8 @@ const RUNTIME_SCRIPT_FILES = [
   'delivery-selection-core.mjs',
   'issue-buddy.mjs',
   'issue-buddy-core.mjs',
+  'model-selection.mjs',
+  'model-selection-core.mjs',
   'remote-tracker.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-shared-core.mjs',
@@ -152,6 +154,7 @@ const RUNTIME_SCRIPT_FILES = [
 ];
 // Generated beside the runtime scripts in every target: the setup-status ownership projection.
 const SETUP_STATUS_PROJECTION_FILE = 'setup-status-owners.json';
+const MODEL_SELECTION_CONTRACT_FILE = 'model-selection-contract.json';
 
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).
@@ -1877,6 +1880,25 @@ try {
       join(skillDir, 'scripts', SETUP_STATUS_PROJECTION_FILE),
       setupStatusProjectionJson,
     );
+    // Project the validated build-owned policy; runtime selection never maintains another map.
+    writeFileSync(
+      join(skillDir, 'scripts', MODEL_SELECTION_CONTRACT_FILE),
+      `${JSON.stringify(
+        {
+          schemaVersion: 1,
+          target: harness,
+          mappings: MODEL_TIER_MAPPINGS,
+          roles: Object.fromEntries(agentTiers),
+          sites: spawnSites.map(({ id, downAllowed, clauses }) => ({
+            id,
+            downAllowed,
+            clauses: clauses.map(({ role, tier }) => ({ role: role ?? null, tier })),
+          })),
+        },
+        null,
+        2,
+      )}\n`,
+    );
 
     // Tools (exposed + internal), no frontmatter — loaded on demand by the router.
     for (const t of tools) {
@@ -2409,30 +2431,30 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    iterate: 1581,
+    iterate: 1586,
     setup: 1564,
-    'apply-review': 1049,
-    'apply-issues': 969,
+    'apply-review': 1054,
+    'apply-issues': 974,
     'merge-gate': 888,
     cleanup: 833,
-    refactor: 953,
-    deliver: 796,
-    'plan-issue': 786,
-    'issue-buddy': 477,
-    review: 783,
-    plan: 764,
+    refactor: 962,
+    deliver: 800,
+    'plan-issue': 789,
+    'issue-buddy': 484,
+    review: 787,
+    plan: 767,
     'apply-review-commit-mechanics': 656,
-    maintain: 709,
-    docs: 644,
-    build: 650,
+    maintain: 717,
+    docs: 649,
+    build: 659,
     apply: 550,
     'apply-plan': 558,
-    investigate: 600,
-    retro: 210,
-    fix: 536,
-    'plan-review': 506,
-    pr: 495,
-    'concept-review': 400,
+    investigate: 603,
+    retro: 215,
+    fix: 545,
+    'plan-review': 509,
+    pr: 500,
+    'concept-review': 403,
     'apply-review-remote': 382,
     concept: 396,
     commit: 224,
