@@ -94,14 +94,10 @@ question belongs to `pnpm eval merge-gate verify`.
 
 ### 1. Prepare every slot from one build
 
-The suite pins part of the execution profile in `suite.config.mjs` (`expectedProfile`): harness
-`codex-cli`, model `gpt-6-sol`, reasoning effort `medium`. Replace the uppercase values below with
-the non-sensitive execution profile the host will use for every slot in this round; the three pinned
-flags must carry exactly those values, while the reported version and the tool policy stay free and
-record what the host actually used. The pinned model is in the Codex CLI model catalog from
-`codex-cli 0.156.1` onwards, so that is the minimum version a round can be recorded with; it is
-documented rather than enforced, because pinning the CLI version would owe a full round for every
-CLI update.
+The suite pins its execution profile in `suite.config.mjs` (`expectedProfile`): harness `codex-cli`,
+model `gpt-6-sol`, reasoning effort `medium`, and reported version `0.163.0`. Use those exact values
+for every slot in this round. The tool policy remains unpinned and records the host conditions that
+were actually used.
 
 **The pinned profile is the caller's.** The fresh session the host starts is the gate's caller: it
 runs Phase 0 and dispatches the rest of the gate to a delegated run ("Dispatching the delegated run"
@@ -115,10 +111,10 @@ it, through the host's nesting depth (see "Delegation scenarios and the host's n
 
 ```sh
 pnpm eval merge-gate prepare \
-  --harness HARNESS_NAME \
-  --model MODEL_NAME \
-  --reasoning-effort REASONING_EFFORT \
-  --reported-version MODEL_VERSION \
+  --harness codex-cli \
+  --model gpt-6-sol \
+  --reasoning-effort medium \
+  --reported-version 0.163.0 \
   --tool-policy HOST_TOOL_POLICY
 ```
 
@@ -129,18 +125,18 @@ the option; each selected scenario still receives all five canonical slots:
 pnpm eval merge-gate prepare \
   --scenario guard-blocks-merge \
   --scenario merge-proceeds \
-  --harness HARNESS_NAME \
-  --model MODEL_NAME \
-  --reasoning-effort REASONING_EFFORT \
-  --reported-version MODEL_VERSION \
+  --harness codex-cli \
+  --model gpt-6-sol \
+  --reasoning-effort medium \
+  --reported-version 0.163.0 \
   --tool-policy HOST_TOOL_POLICY
 ```
 
 The command builds once for the whole round, records one execution profile in an immutable manifest,
 and prints the manifest path followed by one tab-separated row per slot. The last column is the
-rendered prompt path. An omitted value of an unpinned key (`--reported-version`, `--tool-policy`) is
-recorded explicitly as `"unknown"`; it is not inferred later. A pinned key is never recorded that
-way: `prepare` compares the normalized profile with the pin before it creates the round root or
+rendered prompt path. An omitted value of the unpinned key (`--tool-policy`) is recorded explicitly
+as `"unknown"`; it is not inferred later. A pinned key is never recorded that way: `prepare` compares
+the normalized profile with the pin before it creates the round root or
 builds anything, and exits non-zero naming every deviating key with its expected and declared value
 — an omitted pinned flag normalizes to `"unknown"` and is rejected like any other mismatch, and the
 comparison is exact, so `GPT-6-SOL` does not match. The profile is an operator attestation: the pin
@@ -188,10 +184,9 @@ Codex cache paths while retaining profile state and evidence. Reuse one dedicate
 across rounds and run `--recover` after a host `SIGKILL`; do not invent per-slot home wrappers.
 The runner does not choose or modify this suite's model, prompt, sandbox, or launch arguments.
 
-The recording host needs a Codex CLI that carries the pinned model — `codex-cli 0.156.1` or newer —
-before the first slot is launched; upgrade it there (for example `brew upgrade --cask codex`, or the
-npm equivalent) and declare the version it reports through `--reported-version`. For every row, the
-calling host must start a **new, non-forked session** with:
+Before the first slot is launched, verify that the recording host reports exactly Codex CLI `0.163.0`
+(for example, with `codex --version`). A different version is not qualified for this round. For every
+row, the calling host must start a **new, non-forked session** with:
 
 - the slot's `project/` directory as its initial working root;
 - the contents of that slot's `prompt.txt` as its only task input; and
@@ -229,8 +224,17 @@ token. Like every other part of the profile, the token attests and does not enfo
 Establish both settings on the recording host with a throwaway session before the first slot: one
 under which a spawned agent can itself spawn twice more (the gate's per-item runs and their workers
 sit two levels below it), for every slot but the nested-spawn scenario's, and one under which a
-spawned agent cannot spawn, for that scenario's slots. On `codex-cli 0.159.3` with the pinned model,
-which runs multi-agent v2, the probe found:
+spawned agent cannot spawn, for that scenario's slots. The current host qualification, recorded on
+2026-10-27 with Codex CLI `0.163.0` and the pinned model, used non-ephemeral sessions. With
+`-c features.multi_agent_v2.max_concurrent_threads_per_session=100`, the real spawn chain reached
+root → A → B → C (depth 3); every spawn returned its real output and the task completed. With the
+cap set to `2`, root → A was allowed, then A's attempt to spawn B failed with the actual error
+`collab spawn failed: agent thread limit reached`; no B rollout was produced. This qualifies the
+recording host for the two nesting settings above. It does not re-test `--ephemeral` or
+`agents.max_depth`.
+
+**Historical probe (Codex CLI 0.159.3).** The earlier probe, retained for its historical evidence,
+found:
 
 - `--ephemeral` breaks every spawn ("collab spawn failed: … no rollout found for thread id"), so no
   slot of a delegating suite may pass it; the throwaway `CODEX_HOME` keeps the rollouts it writes.
@@ -277,10 +281,10 @@ After a session finishes, create a host receipt with exactly these fields:
   "taskInput": "rendered-prompt-only",
   "completed": true,
   "profile": {
-    "harness": "HARNESS_NAME",
-    "model": "MODEL_NAME",
-    "reasoningEffort": "REASONING_EFFORT",
-    "reportedVersion": "MODEL_VERSION",
+    "harness": "codex-cli",
+    "model": "gpt-6-sol",
+    "reasoningEffort": "medium",
+    "reportedVersion": "0.163.0",
     "toolPolicy": "HOST_TOOL_POLICY"
   }
 }
