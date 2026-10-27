@@ -1218,6 +1218,23 @@ category-wide assumption. The conditional Profile contract remains in the lazy
 Every spawn runs on a provider-neutral model tier: `mechanical`, `standard` or `deep`. Rationale
 and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mechanics are:
 
+The build also emits `scripts/model-selection-contract.json` in each target, derived from the
+same validated mapping, role defaults and spawn sites. The shipped `model-selection.mjs` CLI
+resolves dispatch settings from it, enforcing allowed moves and retry floors. Every rendered
+spawn marker adds its exact selection-site ID and a pointer to `shared/model-selection.md`.
+No second provider mapping or project configuration is introduced.
+
+`select` emits the role/parameters, normalized expected model/effort and contract digest. `verify`
+recomputes that selection and reads a supported independent execution source. The initial adapter
+reads only an explicitly supplied exact Codex rollout file: no session discovery or directory
+enumeration. It binds `session_meta.id` and the parent spawn identity, checks every `turn_context`
+model/effort, and returns sanitized settings and coverage. Requested values, sidecar text and
+inline worker assertions are rejected as execution proof. Missing/unsupported evidence is
+`UNVERIFIED`; contradictory settings are `MODEL_MISMATCH`. Only matching evidence is `verified`.
+Recheck at terminal result acceptance after resumes; a previous snapshot proves no future turn.
+This is a check of host-recorded settings, not provider billing telemetry. Fast keeps its existing
+native eligibility and measurement owner.
+
 - **One mapping.** `MODEL_TIER_MAPPINGS` in `build.mjs` maps each tier to Claude Code
   `model`/`effort` and Codex `model`/`reasoning_effort` (frozen, next to `AGENT_PROFILE_MAPPINGS`,
   which keeps the Fast values). It is validated against the supported vocabularies before any
@@ -1264,7 +1281,8 @@ and decisions: [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). The mec
   `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
   tier sentence closing the worker-start bullet, plus the `model-tiers` pointer), the
   lean-orchestrator sentence, the conditional `subagent-progress` pointer and its exact replacement
-  by the parent-only compact-checkpoint instruction. Each selected edit must match exactly once,
+  by the parent-only compact-checkpoint instruction, and the executable model-selection sentence
+  on the mandate's workflow boundary. Each selected edit must match exactly once,
   and its resulting body must equal the working body byte for byte; unrelated drift fails. These
   optional declared deltas prove containment of allowed changes, not that every worker completed
   a total migration. Once this change ships in a release, move the test's pinned `--base` to that

@@ -39,6 +39,8 @@ const RUNTIME_SCRIPT_FILES = [
   'delivery-selection-core.mjs',
   'issue-buddy.mjs',
   'issue-buddy-core.mjs',
+  'model-selection.mjs',
+  'model-selection-core.mjs',
   'remote-tracker.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-shared-core.mjs',
@@ -477,6 +479,37 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     }
     for (const file of ['session-title.mjs', 'session-title-core.mjs']) {
       if (existsSync(join(scripts, file))) fail(`${target} must not ship scripts/${file}`);
+    }
+    const modelContract = parseJson(
+      readFileSync(join(scripts, 'model-selection-contract.json'), 'utf8'),
+      `${target} model selection contract`,
+    );
+    if (modelContract.schemaVersion !== 1 || modelContract.target !== target) {
+      fail(`${target} model selection contract has the wrong identity`);
+    }
+    const modelHelper = join(scripts, 'model-selection.mjs');
+    const selected = spawnSync(process.execPath, [modelHelper, 'select'], {
+      encoding: 'utf8',
+      input: JSON.stringify({
+        harness: target === 'claude' ? 'claude' : 'codex',
+        site: 'apply-issues/issue-analysis',
+      }),
+    });
+    const modelSelection = parseJson(selected.stdout.trim(), `${target} model selection`);
+    if (selected.status !== 0 || !modelSelection.ok || modelSelection.data.tier !== 'standard') {
+      fail(`${target} installed model selector did not resolve the standard analysis site`);
+    }
+    const missingProof = spawnSync(process.execPath, [modelHelper, 'verify'], {
+      encoding: 'utf8',
+      input: JSON.stringify({
+        selection: modelSelection.data,
+        parentId: 'smoke-parent',
+        childId: 'smoke-child',
+      }),
+    });
+    const unverified = parseJson(missingProof.stdout.trim(), `${target} missing model proof`);
+    if (missingProof.status === 0 || unverified.error?.code !== 'UNVERIFIED') {
+      fail(`${target} installed model verifier accepted missing execution evidence`);
     }
     const helper = join(scripts, 'remote-tracker.mjs');
     const result = spawnSync(process.execPath, [helper, 'body-hash'], {

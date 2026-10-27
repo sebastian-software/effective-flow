@@ -13,6 +13,7 @@ import {
   resolveAgentTier,
 } from '../build-lib.mjs';
 import { MODEL_TIER_MAPPINGS } from './support/native-profile-config.mjs';
+import { executeOperation } from '../src/scripts/model-selection-core.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const SRC_DIR = join(ROOT_DIR, 'src');
@@ -854,6 +855,77 @@ test('built worker bodies keep the leaf rule unqualified and the tier sentence n
   }
 });
 
+// The executable selector must receive precisely the same validated policy as the prompt renderer.
+test('every shipped selector resolves every generated site from the canonical build policy', async () => {
+  const expectedRoles = Object.fromEntries(agentTiers());
+  const expectedSites = spawnSites().map(({ id, downAllowed, clauses }) => ({
+    id,
+    downAllowed,
+    clauses: clauses.map(({ role, tier }) => ({ role: role ?? null, tier })),
+  }));
+  for (const target of TARGETS) {
+    const scripts = join(distRoot, target, 'effective-flow/scripts');
+    const contract = JSON.parse(
+      readFileSync(join(scripts, 'model-selection-contract.json'), 'utf8'),
+    );
+    assert.deepEqual(contract, {
+      schemaVersion: 1,
+      target,
+      mappings: MODEL_TIER_MAPPINGS,
+      roles: expectedRoles,
+      sites: expectedSites,
+    });
+    const harness = target === 'claude' ? 'claude' : 'codex';
+    for (const site of contract.sites) {
+      for (const { role, tier } of site.clauses) {
+        const request = {
+          harness,
+          site: site.id,
+          ...(role ? { role, native: target !== 'portable' } : {}),
+        };
+        const resolved = await executeOperation('select', request, { contract });
+        assert.equal(
+          resolved.ok,
+          true,
+          `${target} ${site.id} ${role}: ${JSON.stringify(resolved)}`,
+        );
+        assert.equal(resolved.data.tier, tier);
+        const mapping = MODEL_TIER_MAPPINGS[tier][harness];
+        assert.deepEqual(resolved.data.expected, {
+          model: mapping.model,
+          effort: mapping.reasoning_effort ?? mapping.effort,
+        });
+        if (target === 'codex' && role) {
+          assert.equal(resolved.data.spawn.role, `effective-flow-${role}`);
+          assert.deepEqual(resolved.data.spawn.parameters, {});
+        }
+      }
+    }
+    // Exercise the installed CLI, rather than importing a source-only helper absent from delivery.
+    const run = spawnSync(process.execPath, [join(scripts, 'model-selection.mjs'), 'select'], {
+      input: JSON.stringify({
+        harness: target === 'claude' ? 'claude' : 'codex',
+        site: 'apply-issues/issue-analysis',
+      }),
+      encoding: 'utf8',
+    });
+    assert.equal(run.status, 0, run.stderr || run.stdout);
+    const selection = JSON.parse(run.stdout);
+    assert.equal(selection.ok, true);
+    assert.equal(selection.data.tier, 'standard');
+    assert.equal(
+      selection.data.expected.model,
+      MODEL_TIER_MAPPINGS.standard[target === 'claude' ? 'claude' : 'codex'].model,
+    );
+    for (const relativePath of walk(join(distRoot, target, 'effective-flow'))) {
+      if (!relativePath.endsWith('.md')) continue;
+      const body = readFileSync(relativePath, 'utf8');
+      const siteLines = [...body.matchAll(/^\s*Model selection site: `([^`]+)`/gm)];
+      for (const [, id] of siteLines) assert.ok(expectedSites.some((site) => site.id === id));
+    }
+  }
+});
+
 // The lean-orchestrator sentence ships into every worker body with the mandate, so it binds the
 // orchestrator by name and leaves the leaf rule beside it untouched in every target; the judgment
 // handoff it motivates is a spawn site, so no worker body may carry that fragment's tier line.
@@ -891,7 +963,11 @@ test('the initial-implementation tier line renders right after its Quality-only 
       const at = lines.findIndex((line) => line.endsWith(QUALITY_BINDING));
       assert.ok(at >= 0, `${where}: the Quality-only binding renders`);
       assert.match(lines[at + 1], /^ {3}Tier `deep`: /, `${where}: ${lines[at + 1]}`);
-      assert.match(lines[at + 2], /^ {3}- Frontend: /, `${where}: ${lines[at + 2]}`);
+      assert.equal(
+        lines[at + 2],
+        `   Model selection site: \`${tool}/initial-implementation\` (\`shared/model-selection.md\`).`,
+      );
+      assert.match(lines[at + 3], /^ {3}- Frontend: /, `${where}: ${lines[at + 3]}`);
     }
   }
 });

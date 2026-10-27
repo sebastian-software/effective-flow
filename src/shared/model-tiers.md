@@ -45,6 +45,15 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 
 {{MODEL_TIER_ROLE_SELECTION}}
 
+The orchestrator obtains these values through the executable `model-selection` contract before
+dispatch and checks independent host execution evidence at result acceptance. The rendered values
+remain the policy; neither a catalog omission nor an inherited-model preference changes them.
+
+```lazy-include
+model-selection
+when: acting as the orchestrator before dispatch, resume, or terminal result acceptance
+```
+
 ## Spawn sites
 
 | Site                                                | Spawn                                                                                      | Tier                                                                                                      | Down  |

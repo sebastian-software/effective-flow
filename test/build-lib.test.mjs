@@ -7156,7 +7156,7 @@ test('renderSpawnSiteMarkers replaces each marker line, keeps its indentation, a
   });
   assert.equal(
     rendered,
-    '1. Spawn an Explore sub-agent.\n   Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).\n2. Next.\n',
+    '1. Spawn an Explore sub-agent.\n   Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).\n   Model selection site: `build/explore` (`shared/model-selection.md`).\n2. Next.\n',
   );
   assert.doesNotMatch(rendered, /^\s*(?:model|effort|reasoning_effort)\s*[:=]/m);
   assert.throws(
