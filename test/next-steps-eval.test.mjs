@@ -742,6 +742,26 @@ test('scenario fixtures establish executable local scope and configured external
   assert.match(setupAdr, /tracker.externalTool \| linear/);
 });
 
+test('approval and dependency blockers distinguish verified completion from an unfinished record', () => {
+  const blocked = fixtureFor('approval-and-dependency-block-execution');
+  const blockedPlan = blocked.artifacts[blocked.snapshot.sourceAssociation.path];
+  assert.match(blocked.snapshot.outcome.completedWork.join(' '), /A parser implemented and merged/);
+  assert.match(blockedPlan, /- \[ \] A: implement parser\./);
+  assert.equal(
+    EXPECTATIONS['approval-and-dependency-block-execution'].first,
+    'plan docs/plan/2026-10-08-packages.md',
+  );
+
+  const advancing = fixtureFor('outcome-advancing-continuation');
+  const advancingPlan = advancing.artifacts[advancing.snapshot.sourceAssociation.path];
+  assert.match(advancing.snapshot.outcome.completedWork.join(' '), /A: parser fixtures merged/);
+  assert.match(advancingPlan, /- \[x\] A: add parser fixtures\./);
+  assert.equal(
+    EXPECTATIONS['outcome-advancing-continuation'].first,
+    'apply docs/plan/2026-10-08-packages.md',
+  );
+});
+
 test('outcome blockers reject execution and substitute workflows while advancing original proof retains exact apply identity', () => {
   const blocked = [
     'outcome-threshold-requires-reassessment',
