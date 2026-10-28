@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a",
+  "roundId": "mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640",
   "scenario": "non-interactive-dispatch-reports",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
-  "projectRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/non-interactive-dispatch-reports/slot-5/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/non-interactive-dispatch-reports/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "0.159.3",
-    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+    "reportedVersion": "0.163.0",
+    "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
   },
-  "promptDigest": "sha256:2159891fc5bf33fe298b9c767110f1a6677cb6119e3279bf320fac27e099d8fa",
+  "promptDigest": "sha256:6a921dfe1255a9087b18a3147ded66188e4338346a63eadd31858570d7cd1f66",
   "fixtureDigest": "sha256:029c69c5e9585fe1f896454147597ef8ff5c0667527cc5fcd5319ff18dc2a98a",
-  "buildDigest": "sha256:61ad5d9c9977d73b290e6c3482fb32acddb153d413ebb5d66c07eb4ea7ad8195",
+  "buildDigest": "sha256:2c3f150b4612dac2e8219b3233f45863f2d27cf8cb381dc715a929384efdc972",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/non-interactive-dispatch-reports/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/non-interactive-dispatch-reports/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "0.159.3",
-      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+      "reportedVersion": "0.163.0",
+      "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
     }
   }
 }

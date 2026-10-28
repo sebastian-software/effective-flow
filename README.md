@@ -96,9 +96,9 @@ npx skills@1.5.19 add sebastian-software/effective-flow --agent codex --skill ef
 Both managers consume the same portable `effective-flow/` candidate and its bundled worker
 contracts from the default branch.
 
-Then, in Claude Code or Codex, call `/effective-flow plan` (Codex: `$effective-flow plan`) to
-start planning a first task. For a brand-new application whose shape is not settled yet, start one
-step earlier with `/effective-flow concept`.
+Then, in Claude Code, Codex, or T3 Code, call `/effective-flow plan` (Codex and T3 Code:
+`$effective-flow plan`) to start planning a first task. For a brand-new application whose shape is
+not settled yet, start one step earlier with `/effective-flow concept`.
 
 ## Read on
 

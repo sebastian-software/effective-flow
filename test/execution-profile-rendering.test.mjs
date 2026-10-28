@@ -288,15 +288,36 @@ test('portable output contains only base workers and no native profile represent
   for (const path of files) {
     const content = readFileSync(path, 'utf8');
     assert.doesNotMatch(content, /\{\{AGENT_PROFILE:/, path);
-    assert.doesNotMatch(
-      content,
-      /^\s*(?:model|effort|model_reasoning_effort|reasoning_effort)\s*[:=]/m,
-      path,
-    );
-    // Provider model names appear only as build-generated tier text: the marked harness table and
-    // the two-harness values of a rendered spawn-site line.
+    if (path === join(portable, 'scripts/model-selection-core.mjs')) {
+      // Executable object properties are not native profile metadata. Their copied source must
+      // remain byte-identical, and the provider-name check below still forbids hardcoded models.
+      assert.equal(
+        content,
+        readFileSync(join(ROOT_DIR, 'src/scripts/model-selection-core.mjs'), 'utf8'),
+      );
+    } else {
+      assert.doesNotMatch(
+        content,
+        /^\s*(?:model|effort|model_reasoning_effort|reasoning_effort)\s*[:=]/m,
+        path,
+      );
+    }
+    // The generated executable contract carries exactly the canonical mapping, without allowing
+    // provider names anywhere else in its policy or in portable prompt text.
+    let providerContent = content;
+    if (path === join(portable, 'scripts/model-selection-contract.json')) {
+      const contract = JSON.parse(content);
+      assert.deepEqual(
+        Object.keys(contract).sort(),
+        ['schemaVersion', 'target', 'mappings', 'roles', 'sites'].sort(),
+      );
+      assert.equal(contract.schemaVersion, 1);
+      assert.equal(contract.target, 'portable');
+      assert.deepEqual(contract.mappings, MODEL_TIER_MAPPINGS);
+      providerContent = JSON.stringify({ ...contract, mappings: {} });
+    }
     assert.deepEqual(
-      findProviderModelNames(content, {
+      findProviderModelNames(providerContent, {
         modelNames: PROVIDER_MODEL_NAMES,
         allowGenerated: true,
         mappings: MODEL_TIER_MAPPINGS,
@@ -428,7 +449,8 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta delegation-mandate-model-tiers: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-lean-orchestrator: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-subagent-progress: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
-      'Expected delta delegation-mandate-compact-checkpoint: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
+      'Expected delta delegation-mandate-compact-checkpoint: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
+      'Expected delta delegation-mandate-model-selection: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
 });
 

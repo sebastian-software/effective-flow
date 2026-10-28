@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a",
+  "roundId": "mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640",
   "scenario": "guard-blocks-merge",
   "slot": 1,
   "attempt": 1,
-  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
-  "projectRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/guard-blocks-merge/slot-1/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/guard-blocks-merge/slot-1/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "0.159.3",
-    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+    "reportedVersion": "0.163.0",
+    "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
   },
-  "promptDigest": "sha256:88b175858c47b3773261c6e6e90b45e3ed1fdd1ed9f06922164b50ff04e677d9",
+  "promptDigest": "sha256:e4ab40d4a30eab75cd0a85029797f4a26228d422f430be22ff2b942dbc4bf822",
   "fixtureDigest": "sha256:81ad471baebc1d630ddc8d1d994c1e8bb3734001727fa43b7f1a7fe9f57c61dc",
-  "buildDigest": "sha256:bef02df3f878081d42c1f41885df1da8d897f6d87e170a23db42f4ba7d8bd5e0",
+  "buildDigest": "sha256:e37bcc116daa730fdd117b88d0a98513d46f225a3b13e8c7b92cf308a050baa1",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/guard-blocks-merge/slot-1/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/guard-blocks-merge/slot-1/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "0.159.3",
-      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+      "reportedVersion": "0.163.0",
+      "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
     }
   }
 }

@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d",
+  "roundId": "mvr74z0h-4d90a662-490a-432d-b535-cc1e7b64e204",
   "scenario": "active-local-next-ready-slice",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
-  "projectRoot": "/private/tmp/effective-flow-next-steps-eval/rounds/mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d/slots/active-local-next-ready-slice/slot-5/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvr74z0h-4d90a662-490a-432d-b535-cc1e7b64e204/slots/active-local-next-ready-slice/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6.1-sol",
     "reasoningEffort": "high",
-    "reportedVersion": "0.159.3",
+    "reportedVersion": "0.163.0",
     "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
   },
-  "promptDigest": "sha256:f7e9aec06898884057dce8860b6dc1d4ecd328c28aae52ddbff31a4ab2106eef",
+  "promptDigest": "sha256:67ae76818a12dfe9b5bde72cc3781ce99101a7e482562fd754de826cb9fbf0b7",
   "fixtureDigest": "sha256:e3c65d31cf2116060ca8351f524840b0bc9037a9bec3e34c482232a0fd76bb97",
-  "buildDigest": "sha256:f39ec3bd31e1a5b984003a338472f81b97b95992309a0e411e2dd5f77586f24a",
+  "buildDigest": "sha256:535a3494f05651deed377622f62425f4561faea1457509e1208557190bf735f7",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/private/tmp/effective-flow-next-steps-eval/rounds/mvkyeirj-f763d0cb-e683-4f3c-a95f-ce2fef2cb71d/slots/active-local-next-ready-slice/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-next-steps-eval/rounds/mvr74z0h-4d90a662-490a-432d-b535-cc1e7b64e204/slots/active-local-next-ready-slice/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6.1-sol",
       "reasoningEffort": "high",
-      "reportedVersion": "0.159.3",
+      "reportedVersion": "0.163.0",
       "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
     }
   }

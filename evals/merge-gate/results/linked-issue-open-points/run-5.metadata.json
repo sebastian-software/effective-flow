@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a",
+  "roundId": "mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640",
   "scenario": "linked-issue-open-points",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
-  "projectRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/linked-issue-open-points/slot-5/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/linked-issue-open-points/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "0.159.3",
-    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+    "reportedVersion": "0.163.0",
+    "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
   },
-  "promptDigest": "sha256:419df9b1abb32fe873d043411c035a557d24355f5b2d409845a231bc8beee285",
+  "promptDigest": "sha256:bd037092ec39af2b3f3035ed0008071a6ccfee74230daa124cef2847caecaec1",
   "fixtureDigest": "sha256:6f0103fe5ba9c47264f25aba45ce601c74d452f7d791f4d91644a2f71f12b0c7",
-  "buildDigest": "sha256:fc844a94c061164f2fea930294f5e1f1f44a0fa2ebee9c2a211e3c2ca5d10d42",
+  "buildDigest": "sha256:03e5a0e3c4f380a72a56a6103f7beed0b2ee888042f26567119bfd145d792f6b",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/linked-issue-open-points/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/linked-issue-open-points/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "0.159.3",
-      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+      "reportedVersion": "0.163.0",
+      "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
     }
   }
 }

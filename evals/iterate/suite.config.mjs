@@ -151,6 +151,7 @@ const suite = {
     harness: 'codex-cli',
     model: 'gpt-6-sol',
     reasoningEffort: 'medium',
+    reportedVersion: '0.163.0',
   }),
 };
 

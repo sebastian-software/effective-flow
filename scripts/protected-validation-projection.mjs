@@ -337,8 +337,10 @@ export function materializeTransport({
   destination,
   expectedCommit = null,
   timeoutMs = 120000,
+  runGit = gitCommand,
 }) {
-  const git = (cwd, ...args) => gitCommand(cwd, args, timeoutMs);
+  ensure(typeof runGit === 'function', 'materialization Git runner must be callable');
+  const git = (cwd, ...args) => runGit(cwd, args, timeoutMs);
   checkout = realpathSync(checkout);
   if (expectedCommit !== null)
     ensure(

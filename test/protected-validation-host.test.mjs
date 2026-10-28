@@ -2,7 +2,7 @@
 import test from 'node:test';
 import { execFileSync } from 'node:child_process';
 import assert from 'node:assert/strict';
-import {
+import fs, {
   mkdtempSync,
   mkdirSync,
   writeFileSync,
@@ -12,6 +12,7 @@ import {
   readdirSync,
   existsSync,
 } from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -424,6 +425,122 @@ test('coordinator checks the protected native chain before either launch or comp
     complete.indexOf('verifyProtectedValidationCompletion(') <
       complete.indexOf("envelope('completion'"),
   );
+});
+
+// A final JSON name is a publication boundary: readers must never observe its open/truncated
+// state. Intercept the actual filesystem write boundary, without a timing-dependent poll.
+test('protected JSON publication stays complete across interruption and a late target collision', async (t) => {
+  for (const mode of ['complete', 'interrupted', 'collision'])
+    await t.test(mode, (t) => {
+      const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'flow-json-publication-unit-')));
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const stopFile = resolve(root, 'stop.json'),
+        summaryName = 'publication-validation-observer-summary.json',
+        summary = { rootIds: ['synthetic-root'] };
+      writeFileSync(resolve(root, summaryName), JSON.stringify(summary));
+      const originalWrite = fs.writeFileSync;
+      const intercepted = t.mock.method(fs, 'writeFileSync', (file, bytes, options) => {
+        const fd = fs.openSync(file, options.flag, options.mode);
+        try {
+          assert.equal(
+            existsSync(stopFile),
+            false,
+            'the final JSON name must remain absent while its payload is incomplete',
+          );
+          if (mode === 'interrupted') {
+            originalWrite(fd, '{');
+            throw new Error('interrupted JSON publication');
+          }
+          originalWrite(fd, bytes);
+          if (mode === 'collision')
+            originalWrite(stopFile, 'late collision\n', { flag: 'wx', mode: 0o600 });
+        } finally {
+          fs.closeSync(fd);
+        }
+      });
+      syncBuiltinESMExports();
+      try {
+        const publish = () => stopProtectedValidationObserver({ stopFile }, root, 'publication');
+        if (mode === 'interrupted') {
+          assert.throws(publish, /interrupted JSON publication/);
+          assert.equal(existsSync(stopFile), false);
+        } else if (mode === 'collision') {
+          assert.throws(publish, { code: 'EEXIST' });
+          assert.equal(readFileSync(stopFile, 'utf8'), 'late collision\n');
+        } else {
+          assert.deepEqual(publish(), summary);
+          const published = JSON.parse(readFileSync(stopFile, 'utf8'));
+          assert.deepEqual(Object.keys(published), ['stoppedAt']);
+          assert.ok(Number.isFinite(published.stoppedAt));
+          assert.equal(fs.lstatSync(stopFile).mode & 0o777, 0o600);
+        }
+      } finally {
+        intercepted.mock.restore();
+        syncBuiltinESMExports();
+      }
+      assert.deepEqual(
+        readdirSync(root).sort(),
+        (mode === 'interrupted' ? [summaryName] : [summaryName, 'stop.json']).sort(),
+        'failed and successful publications clean up their private temporary entries',
+      );
+    });
+});
+
+test('protected JSON publication refuses existing, symlink, invalid and unwritable targets', async (t) => {
+  for (const kind of [
+    'valid',
+    'invalid',
+    'empty',
+    'symlink',
+    'dangling',
+    'directory',
+    'parent-file',
+    'permission',
+  ])
+    await t.test(kind, (t) => {
+      const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'flow-json-refusal-unit-')));
+      t.after(() => rmSync(root, { recursive: true, force: true }));
+      const target = resolve(root, 'stop.json'),
+        sentinel = resolve(root, 'sentinel');
+      let stopFile = target;
+      if (['valid', 'invalid', 'empty'].includes(kind))
+        writeFileSync(
+          target,
+          kind === 'valid' ? '{"existing":true}\n' : kind === 'invalid' ? '{' : '',
+        );
+      else if (kind === 'directory') mkdirSync(target);
+      else if (kind === 'parent-file') {
+        writeFileSync(target, 'parent sentinel');
+        stopFile = resolve(target, 'child.json');
+      } else if (kind === 'symlink' || kind === 'dangling') {
+        if (kind === 'symlink') writeFileSync(sentinel, 'symlink sentinel');
+        fs.symlinkSync(sentinel, target);
+      }
+      const before = readdirSync(root).sort(),
+        original = ['valid', 'invalid', 'empty', 'parent-file'].includes(kind)
+          ? readFileSync(target)
+          : null;
+      if (kind === 'permission') fs.chmodSync(root, 0o500);
+      try {
+        assert.throws(
+          () => stopProtectedValidationObserver({ stopFile }, root, 'refusal'),
+          (error) =>
+            (kind === 'permission' && ['EACCES', 'EPERM'].includes(error.code)) ||
+            (kind === 'parent-file' && ['EEXIST', 'ENOTDIR'].includes(error.code)) ||
+            (!['permission', 'parent-file'].includes(kind) && error.code === 'EEXIST'),
+        );
+      } finally {
+        if (kind === 'permission') fs.chmodSync(root, 0o700);
+      }
+      assert.deepEqual(readdirSync(root).sort(), before);
+      if (original) assert.deepEqual(readFileSync(target), original);
+      if (kind === 'symlink' || kind === 'dangling') {
+        assert.equal(fs.readlinkSync(target), sentinel);
+        if (kind === 'symlink') assert.equal(readFileSync(sentinel, 'utf8'), 'symlink sentinel');
+        else assert.equal(existsSync(sentinel), false);
+      }
+      if (kind === 'directory') assert.deepEqual(readdirSync(target), []);
+    });
 });
 
 test(

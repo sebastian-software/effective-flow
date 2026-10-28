@@ -104,6 +104,14 @@ both harnesses' values at each spawn and uses the pair that belongs to the host.
 neither mechanism inherits the caller model and says so once. When `effective-flow pr` has to draft
 the PR body, it does so on the `mechanical` tier.
 
+Before dispatch, workflows resolve the role and spawn-site policy through the shipped
+`model-selection` helper instead of choosing from the caller's model or the host's catalog.
+The completion summary distinguishes the requested settings from checked execution settings.
+The current verifier can read a host-provided exact Codex child rollout, checking its parent,
+child identity and every recorded turn's model and effort. A mismatch prevents accepting the
+delegation as successful. Missing or unsupported metadata is explicitly `unverified`, including
+hosts without that adapter; it is never presented as proof that the requested model ran.
+
 To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
 judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
 read-only `deep` sub-agent after the artifact is written, and `merge-gate` runs as one delegated
@@ -233,7 +241,7 @@ says nothing once several runs are open at the same time. Two things help:
 
 ## Choose a workflow topology
 
-Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex to choose one of
+Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex or T3 Code to choose one of
 three common topologies. The standard Profile flow asks only **Chat** and then **Profile** before
 its normal confirmation and any conditional safety questions:
 
@@ -297,7 +305,8 @@ For new functionality or a larger change, this is the usual three-step process:
    derived from the commits.
 
 In Codex the syntax is identical – only the prefix changes from `/effective-flow` to
-`$effective-flow`. The handoff there is thus `$effective-flow plan "<description of the task>"`
+`$effective-flow`. T3 Code uses `$effective-flow` too, regardless of the selected model or provider
+(including Claude). The handoff there is thus `$effective-flow plan "<description of the task>"`
 followed by `$effective-flow build docs/plan/2026-07-17-user-login.md`.
 
 Details on worktree, delivery branch, and the three completion types are in

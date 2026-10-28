@@ -2,6 +2,9 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync, execFileSync } from 'node:child_process';
 import {
   chmodSync,
+  accessSync,
+  constants,
+  statSync,
   cpSync,
   existsSync,
   mkdirSync,
@@ -44,7 +47,31 @@ import suite from '../evals/build-context/suite.config.mjs';
 
 const repositoryRoot = fileURLToPath(new URL('../', import.meta.url));
 const helper = path.join(repositoryRoot, 'src/scripts/build-run.mjs');
-const codex = '/opt/homebrew/bin/codex';
+function nativeTestExecutable(environment = process.env) {
+  if (!Object.hasOwn(environment, 'EFFECTIVE_FLOW_TEST_CODEX')) return '/opt/homebrew/bin/codex';
+  const executable = environment.EFFECTIVE_FLOW_TEST_CODEX;
+  assert.equal(typeof executable, 'string', 'explicit native test executable must be a path');
+  assert.ok(executable.length > 0, 'explicit native test executable must not be empty');
+  assert.ok(statSync(executable).isFile(), 'explicit native test executable must be a file');
+  accessSync(executable, constants.X_OK);
+  return realpathSync(executable);
+}
+const codex = nativeTestExecutable();
+test('explicit native test executable selection refuses invalid overrides without default fallback', (t) => {
+  const root = realpathSync(mkdtempSync(path.resolve(tmpdir(), 'flow-native-selection-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(nativeTestExecutable({}), '/opt/homebrew/bin/codex');
+  assert.equal(
+    nativeTestExecutable({ EFFECTIVE_FLOW_TEST_CODEX: process.execPath }),
+    realpathSync(process.execPath),
+  );
+  for (const value of ['', undefined, path.resolve(root, 'missing'), root])
+    assert.throws(() => nativeTestExecutable({ EFFECTIVE_FLOW_TEST_CODEX: value }));
+  const file = path.resolve(root, 'not-executable');
+  writeFileSync(file, 'fixture', { mode: 0o600 });
+  assert.throws(() => nativeTestExecutable({ EFFECTIVE_FLOW_TEST_CODEX: file }));
+});
+
 const validatorHandle = '/root/build/validator';
 const env = {
   ...process.env,
@@ -359,7 +386,7 @@ function backendFixture(fx, preparation, mutate = () => {}) {
     runnerImage: 'macos-15-arm64',
     closure: fx.policy.executionClosure,
     codex: {
-      path: codex,
+      path: '/opt/homebrew/bin/codex',
       version: '0.163.0',
       digest: validationDigest('synthetic hosted executable fixture'),
     },

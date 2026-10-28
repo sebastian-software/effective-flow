@@ -1,32 +1,32 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvkye9u6-61a5dece-69e2-48bc-b098-d147a11d7afe",
+  "roundId": "mvr74z0f-fd933487-d9ba-42cc-b7cf-e265c5fc84cf",
   "scenario": "unparseable-run-state-aborts",
   "slot": 4,
   "attempt": 1,
-  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
-  "projectRoot": "/private/tmp/effective-flow-iterate-eval/rounds/mvkye9u6-61a5dece-69e2-48bc-b098-d147a11d7afe/slots/unparseable-run-state-aborts/slot-4/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-iterate-eval/rounds/mvr74z0f-fd933487-d9ba-42cc-b7cf-e265c5fc84cf/slots/unparseable-run-state-aborts/slot-4/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "0.159.3",
+    "reportedVersion": "0.163.0",
     "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
   },
-  "promptDigest": "sha256:9feb599106753aaa62a96019dc78d6a0e80b176ccb6f1c01d4577d64a22c0d57",
+  "promptDigest": "sha256:41185174a5dfbcd4a91f456341695b5e7e5c69ff7571766623c7495d42b128a3",
   "fixtureDigest": "sha256:4443955ed4d7afcfb446d445bf60daa99ba55ef0471917d246aab2e13c20a55d",
-  "buildDigest": "sha256:440e971cc8905698275416a43d5e22bda919faf20738d6421c70a27151de9caf",
+  "buildDigest": "sha256:d8c40fa01eb75d2d8146bab9d313b7cdbf74a67cc56d83516ca0f701e84e9d20",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/private/tmp/effective-flow-iterate-eval/rounds/mvkye9u6-61a5dece-69e2-48bc-b098-d147a11d7afe/slots/unparseable-run-state-aborts/slot-4/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-iterate-eval/rounds/mvr74z0f-fd933487-d9ba-42cc-b7cf-e265c5fc84cf/slots/unparseable-run-state-aborts/slot-4/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "0.159.3",
+      "reportedVersion": "0.163.0",
       "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules"
     }
   }

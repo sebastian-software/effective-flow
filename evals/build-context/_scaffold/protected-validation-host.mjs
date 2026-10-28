@@ -4,6 +4,9 @@ import {
   readFileSync,
   writeFileSync,
   mkdirSync,
+  mkdtempSync,
+  linkSync,
+  rmSync,
   readdirSync,
   lstatSync,
   realpathSync,
@@ -31,7 +34,15 @@ const ensure = (condition, message) => {
 };
 const write = (file, value) => {
   mkdirSync(dirname(file), { recursive: true, mode: 0o700 });
-  writeFileSync(file, canonicalJSON(value) + '\n', { flag: 'wx', mode: 0o600 });
+  const temporary = mkdtempSync(resolve(dirname(file), '.protected-validation-'));
+  try {
+    const complete = resolve(temporary, 'record');
+    writeFileSync(complete, canonicalJSON(value) + '\n', { flag: 'wx', mode: 0o600 });
+    // A same-filesystem hard link publishes complete bytes without replacing an existing name.
+    linkSync(complete, file);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
 };
 function physicalDirectoryFrom(root, parts) {
   let path = realpathSync(root);

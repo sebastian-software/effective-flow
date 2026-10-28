@@ -12,6 +12,9 @@ import {
   readdirSync,
   cpSync,
   chmodSync,
+  accessSync,
+  constants,
+  statSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
@@ -67,6 +70,30 @@ import {
 } from '../evals/build-context/_scaffold/native-sandbox.mjs';
 import { checkoutBasis, fileMembership } from '../evals/build-context/_scaffold/basis.mjs';
 import { observeToolFailure } from '../evals/build-context/_scaffold/tool-failure.mjs';
+function nativeTestExecutable(environment = process.env) {
+  if (!Object.hasOwn(environment, 'EFFECTIVE_FLOW_TEST_CODEX')) return '/opt/homebrew/bin/codex';
+  const executable = environment.EFFECTIVE_FLOW_TEST_CODEX;
+  assert.equal(typeof executable, 'string', 'explicit native test executable must be a path');
+  assert.ok(executable.length > 0, 'explicit native test executable must not be empty');
+  assert.ok(statSync(executable).isFile(), 'explicit native test executable must be a file');
+  accessSync(executable, constants.X_OK);
+  return realpathSync(executable);
+}
+const codex = nativeTestExecutable();
+test('explicit native test executable selection refuses invalid overrides without default fallback', (t) => {
+  const root = realpathSync(mkdtempSync(resolve(tmpdir(), 'flow-native-selection-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  assert.equal(nativeTestExecutable({}), '/opt/homebrew/bin/codex');
+  assert.equal(
+    nativeTestExecutable({ EFFECTIVE_FLOW_TEST_CODEX: process.execPath }),
+    realpathSync(process.execPath),
+  );
+  for (const value of ['', undefined, resolve(root, 'missing'), root])
+    assert.throws(() => nativeTestExecutable({ EFFECTIVE_FLOW_TEST_CODEX: value }));
+  const file = resolve(root, 'not-executable');
+  writeFileSync(file, 'fixture', { mode: 0o600 });
+  assert.throws(() => nativeTestExecutable({ EFFECTIVE_FLOW_TEST_CODEX: file }));
+});
 const profile = {
   harness: 'codex-cli',
   model: 'gpt-6.1-sol',
@@ -461,6 +488,27 @@ test('E1 provider alias resolution cannot relabel an unrelated actual model', ()
   assert.equal(actualModelMatches('opus', 'claude-opus-5-5', 'claude-code'), true);
   assert.equal(actualModelMatches('opus', 'claude-sonnet-5-5', 'claude-code'), false);
   assert.equal(actualModelMatches('gpt-5.6-luna', 'gpt-6.1-sol', 'codex-cli'), false);
+});
+
+test('native sandbox rejects an actual 0.165.0 version result against the unchanged 0.163.0 pin', (t) => {
+  const root = temporary(t),
+    executable = resolve(root, 'codex');
+  writeFileSync(executable, '#!' + process.execPath + '\nconsole.log("codex-cli 0.165.0");\n', {
+    mode: 0o755,
+  });
+  assert.throws(
+    () =>
+      probeNativeSandbox({
+        executable,
+        reportedVersion: '0.163.0',
+        policy: {},
+        environment: process.env,
+        execArgs: ['exec'],
+      }),
+    process.platform === 'darwin'
+      ? /actual native CLI version differs/
+      : /established only on macOS/,
+  );
 });
 
 test('E2 system bootstrap pin rejects arbitrary .system contents as well as user skills', (t) => {
@@ -1096,7 +1144,7 @@ test('closed fail retains CLI exit zero and null metrics for an actual associate
 
 test(
   'actual Codex native guard permits fixture Git push and missing stub ledger while denying host writes in descendants',
-  { skip: process.platform !== 'darwin' || !existsSync('/opt/homebrew/bin/codex') },
+  { skip: process.platform !== 'darwin' || !existsSync(codex) },
   (t) => {
     const root = temporary(t),
       fixture = resolve(root, 'project'),
@@ -1154,7 +1202,7 @@ test(
     assert.equal(existsSync(policy.ledger), false);
     assert.equal(existsSync(policy.lock), false);
     const observed = probeNativeSandbox({
-      executable: '/opt/homebrew/bin/codex',
+      executable: codex,
       reportedVersion: '0.163.0',
       policy,
       environment: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
@@ -1168,7 +1216,7 @@ test(
     assert.equal(existsSync(policy.ledger), false);
     assert.equal(existsSync(policy.lock), false);
     const command = {
-      executable: '/opt/homebrew/bin/codex',
+      executable: codex,
       args,
       home,
       codexHome: config,
@@ -1250,7 +1298,7 @@ test(
     );
     assert.ok(!JSON.stringify(preparedSettings.arguments).includes(root));
     const actualStub = spawnSync(
-      '/opt/homebrew/bin/codex',
+      codex,
       nativeSandboxArgs(
         policy,
         [process.execPath, resolve(skill, 'scripts/remote-tracker.mjs'), 'host-guard-probe'],
@@ -1280,7 +1328,7 @@ test(
       recordingSettings(command, settingsInput).stubFixtureDigest,
       preparedSettings.stubFixtureDigest,
     );
-    const help = spawnSync('/opt/homebrew/bin/codex', [...args.slice(0, -1), '--help'], {
+    const help = spawnSync(codex, [...args.slice(0, -1), '--help'], {
       cwd: fixture,
       env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
       encoding: 'utf8',
@@ -1303,15 +1351,11 @@ test(
       policy,
       { resume: true },
     );
-    const resumeHelp = spawnSync(
-      '/opt/homebrew/bin/codex',
-      [...resumeArgs.slice(0, -1), '--help'],
-      {
-        cwd: fixture,
-        env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
-        encoding: 'utf8',
-      },
-    );
+    const resumeHelp = spawnSync(codex, [...resumeArgs.slice(0, -1), '--help'], {
+      cwd: fixture,
+      env: { PATH: process.env.PATH, HOME: home, CODEX_HOME: config },
+      encoding: 'utf8',
+    });
     assert.equal(resumeHelp.status, 0, resumeHelp.stderr);
   },
 );
@@ -2208,7 +2252,7 @@ async function phaseSevenControlFixture(fixture, skill) {
 
 test(
   'production coordinator initializes native trust before capture and preserves raw outcomes before postcheck failure',
-  { skip: process.platform !== 'darwin' || !existsSync('/opt/homebrew/bin/codex') },
+  { skip: process.platform !== 'darwin' || !existsSync(codex) },
   async (t) => {
     const root = temporary(t),
       host = resolve(root, 'journal');
@@ -2279,7 +2323,7 @@ test(
           `import {spawnSync} from 'node:child_process';
 import {readFileSync,appendFileSync,writeFileSync} from 'node:fs';
 const args=process.argv.slice(2);
-if(!args.includes('exec')) { const r=spawnSync('/opt/homebrew/bin/codex',args,{stdio:'inherit'}); process.exit(r.status??1); }
+if(!args.includes('exec')) { const r=spawnSync(${JSON.stringify(codex)},args,{stdio:'inherit'}); process.exit(r.status??1); }
 ${mode === 'timeout' ? `Atomics.wait(new Int32Array(new SharedArrayBuffer(4)),0,0,${startupDelayMs});` : ''}
 const input=readFileSync(0), rootId='12345678-1234-1234-1234-123456789abc', runnerId='22345678-1234-1234-1234-123456789abc';
 const resumed=args.includes('resume'), rootFile=process.env.CODEX_HOME+'/sessions/rollout-unit-root.jsonl', childFile=process.env.CODEX_HOME+'/sessions/rollout-unit-child.jsonl';
@@ -2317,6 +2361,10 @@ process.stderr.write(Buffer.from('stderr\\n'));
 ${mode === 'timeout' ? 'setInterval(()=>{},1000);' : ''}`,
       );
       chmodSync(wrapper, 0o755);
+      assert.ok(
+        readFileSync(wrapper, 'utf8').includes('spawnSync(' + JSON.stringify(codex) + ',args,'),
+        'initialization and diagnostics forward to the selected actual executable',
+      );
       const callerArgs = [
         'exec',
         '--json',

@@ -77,6 +77,12 @@ test('the canonical guard specifies fail-closed Git predicates and non-mutation'
     [/from `RUNTIME_STATE_ROOT`/, 'main-checkout guard root'],
     [/safety pass from\s+`EXECUTION_ROOT` never authorizes/, 'no execution-root fallback'],
     [/root\/common-directory mismatch/, 'repository mismatch rejection'],
+    [
+      /(?:preserv|retain|keep)[\s\S]{0,160}directory[\s\S]{0,160}(?:intent|trailing slash)/i,
+      'directory intent preservation',
+    ],
+    [/directory (?:target|operand)[\s\S]{0,160}trailing slash/i, 'directory operand slash'],
+    [/file (?:target|operand)[\s\S]{0,160}(?:unchanged|as[- ]is)/i, 'file operand preservation'],
   ];
 
   for (const [pattern, clause] of requiredClauses) {
@@ -142,6 +148,21 @@ test('the canonical guard and lazy-load pointer survive every harness render', (
       renderedContract,
       /exact absolute runtime-state handle/,
       `absolute runtime handle in ${harness}`,
+    );
+    assert.match(
+      renderedContract,
+      /(?:preserv|retain|keep)[\s\S]{0,160}directory[\s\S]{0,160}(?:intent|trailing slash)/i,
+      `directory intent in ${harness}`,
+    );
+    assert.match(
+      renderedContract,
+      /directory (?:target|operand)[\s\S]{0,160}trailing slash/i,
+      `directory slash in ${harness}`,
+    );
+    assert.match(
+      renderedContract,
+      /file (?:target|operand)[\s\S]{0,160}(?:unchanged|as[- ]is)/i,
+      `file operand in ${harness}`,
     );
     assert.doesNotMatch(renderedContract, /\{\{(?:SKILL|AGENT):/);
     assert.match(renderedFix, /shared\/runtime-state-safety\.md/, `lazy pointer in ${harness}`);

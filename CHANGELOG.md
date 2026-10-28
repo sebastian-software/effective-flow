@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.70.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.69.0...effective-flow-v1.70.0) (2026-10-27)
+
+
+### Features
+
+* add current and export session retrospectives ([#589](https://github.com/sebastian-software/effective-flow/issues/589)) ([10748c0](https://github.com/sebastian-software/effective-flow/commit/10748c0fb2dc362d4845efa8f78f8e512afa5c81))
+* bind workflow continuation to the original outcome ([c1f6dc8](https://github.com/sebastian-software/effective-flow/commit/c1f6dc864bd0c8def2ea8331c079753c52336d71))
+* **evals:** add portable qualified cohort host driver ([c6b65e0](https://github.com/sebastian-software/effective-flow/commit/c6b65e003ac4fc2b46e5cd7d96895cc821b75dc4))
+* report compact worker progress during ordinary waits ([#586](https://github.com/sebastian-software/effective-flow/issues/586)) ([3661898](https://github.com/sebastian-software/effective-flow/commit/36618984b1b210901f57c1a18d312229fc83f1d5))
+* **retro:** support scoped native session history ([#590](https://github.com/sebastian-software/effective-flow/issues/590)) ([ce627d0](https://github.com/sebastian-software/effective-flow/commit/ce627d079ceb40b1d030f43dbc8a57237b677afe))
+
+
+### Bug Fixes
+
+* clean up isolated eval host caches ([#585](https://github.com/sebastian-software/effective-flow/issues/585)) ([ca53946](https://github.com/sebastian-software/effective-flow/commit/ca53946ac0c1c94b69eced731a9101b3df24b0bd))
+* **evals:** qualify release workflows on Codex 0.163.0 ([#593](https://github.com/sebastian-software/effective-flow/issues/593)) ([4f37be3](https://github.com/sebastian-software/effective-flow/commit/4f37be38b85c51e8c7f1f1c33e04d8711668f348))
+* honor native Codex Fast and tier selections ([66ba847](https://github.com/sebastian-software/effective-flow/commit/66ba84756f0ed32b2929cf385bef0c19dcc804a6))
+* resolve spawn model tiers and verify execution settings ([#592](https://github.com/sebastian-software/effective-flow/issues/592)) ([307e989](https://github.com/sebastian-software/effective-flow/commit/307e989ff587a37e0bf3532777fa186ce6d57a58))
+
 ## [1.69.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.68.0...effective-flow-v1.69.0) (2026-10-20)
 
 

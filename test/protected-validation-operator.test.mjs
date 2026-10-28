@@ -6,6 +6,7 @@ import {
   mkdirSync,
   mkdtempSync,
   readFileSync,
+  realpathSync,
   rmSync,
   statSync,
   writeFileSync,
@@ -26,6 +27,7 @@ import {
   materializeTransport,
   sourceBasis,
 } from '../scripts/protected-validation-projection.mjs';
+import { boundedExecFileSync } from '../scripts/protected-validation-runner.mjs';
 import { projectManifest } from '../src/scripts/protected-validation-core.mjs';
 import { parseExecutionLogs, unzipLogs } from '../scripts/protected-validation-backend.mjs';
 
@@ -165,6 +167,106 @@ test('operator projection round-trips dirty tracked, deleted, executable and ine
   assert.equal(git(source, 'write-tree'), indexBefore);
   assert.deepEqual(sourceBasis(source), before);
   assert.equal(git(execution, 'archive', '--format=tar', 'HEAD').length > 0, true);
+});
+
+test('materialization runGit forwards the existing Git command arguments and timeout with default-runner parity', (t) => {
+  const source = sourceFixture(t);
+  const manifest = fixtureManifest(source);
+  const transport = temporaryCheckout(t, 'protected-validation-runner-', 'transport');
+  const baseline = temporaryCheckout(t, 'protected-validation-runner-', 'baseline');
+  const execution = temporaryCheckout(t, 'protected-validation-runner-', 'execution');
+  const mapping = createTransport({ source, destination: transport, manifest });
+  const expected = materializeTransport({
+    checkout: transport,
+    destination: baseline,
+    expectedCommit: mapping.snapshotCommit,
+  });
+  const calls = [];
+  const actual = materializeTransport({
+    checkout: transport,
+    destination: execution,
+    expectedCommit: mapping.snapshotCommit,
+    timeoutMs: 45000,
+    runGit(cwd, args, timeoutMs) {
+      calls.push({ cwd, args: [...args], timeoutMs });
+      return boundedExecFileSync('git', args, {
+        cwd,
+        encoding: 'utf8',
+        timeoutMs,
+        operation: args.find((arg) => !arg.startsWith('-')) ?? 'git',
+        diagnosticKind: 'MATERIALIZATION',
+      }).trim();
+    },
+  });
+  // Synthetic forwarding observations; both materializations still use real Git.
+  assert.ok(calls.length > 0, 'the supplied direct-call runner must execute');
+  assert.ok(calls.every((call) => call.timeoutMs === 45000));
+  assert.deepEqual(calls.slice(0, 3), [
+    { cwd: realpathSync(transport), args: ['rev-parse', 'HEAD'], timeoutMs: 45000 },
+    {
+      cwd: realpathSync(transport),
+      args: ['status', '--porcelain', '--untracked-files=all'],
+      timeoutMs: 45000,
+    },
+    { cwd: realpathSync(transport), args: ['rev-parse', 'HEAD'], timeoutMs: 45000 },
+  ]);
+  assert.deepEqual(calls.slice(-4), [
+    {
+      cwd: execution,
+      args: [
+        'commit-tree',
+        mapping.executionTree,
+        '-p',
+        actual.sourceHead,
+        '-m',
+        'Materialized protected validation source',
+      ],
+      timeoutMs: 45000,
+    },
+    {
+      cwd: execution,
+      args: ['update-ref', 'refs/heads/execution', actual.executionCommit],
+      timeoutMs: 45000,
+    },
+    { cwd: execution, args: ['symbolic-ref', 'HEAD', 'refs/heads/execution'], timeoutMs: 45000 },
+    { cwd: execution, args: ['status', '--porcelain'], timeoutMs: 45000 },
+  ]);
+  for (const key of ['executionTree', 'sourceCommit', 'sourceHead', 'materializationDigest'])
+    assert.equal(actual[key], expected[key]);
+  assert.equal(
+    git(execution, 'rev-parse', 'HEAD^{tree}'),
+    git(baseline, 'rev-parse', 'HEAD^{tree}'),
+  );
+  const sentinel = new Error('synthetic runner refusal');
+  const refused = temporaryCheckout(t, 'protected-validation-runner-', 'refused');
+  assert.throws(
+    () =>
+      materializeTransport({
+        checkout: transport,
+        destination: refused,
+        runGit(cwd, args, timeoutMs) {
+          assert.equal(cwd, realpathSync(transport));
+          assert.deepEqual(args, ['status', '--porcelain', '--untracked-files=all']);
+          assert.equal(timeoutMs, 120000);
+          throw sentinel;
+        },
+      }),
+    (error) => error === sentinel,
+  );
+  assert.equal(existsSync(refused), false);
+});
+
+test('materialization rejects a non-callable runGit before filesystem access or mutation', (t) => {
+  const checkout = temporaryCheckout(t, 'protected-validation-runner-invalid-', 'missing');
+  const destination = temporaryCheckout(t, 'protected-validation-runner-invalid-', 'execution');
+  for (const runGit of [null, false, 1, 'git', {}, []]) {
+    assert.throws(
+      () => materializeTransport({ checkout, destination, runGit }),
+      /materialization Git runner must be callable/,
+    );
+    assert.equal(existsSync(checkout), false);
+    assert.equal(existsSync(destination), false);
+  }
 });
 
 test('production backend log parser rejects missing, duplicate, skipped and forged runner events', () => {
@@ -339,9 +441,10 @@ test('materialization bounds a hanging commit-tree and leaves no proof or partia
   chmodSync(fakeGit, 0o755);
   const harness = path.join(harnessRoot, 'run.mjs');
   const projection = path.resolve('scripts/protected-validation-projection.mjs');
+  const runner = path.resolve('scripts/protected-validation-runner.mjs');
   writeFileSync(
     harness,
-    `const { materializeTransport } = await import(${JSON.stringify(projection)});\ntry {\n  await materializeTransport({ checkout: ${JSON.stringify(transport)}, destination: ${JSON.stringify(execution)}, expectedCommit: ${JSON.stringify(mapping.snapshotCommit)}, timeoutMs: 250 });\n  process.stdout.write('UNEXPECTED_SUCCESS\\n');\n  process.exitCode = 2;\n} catch (error) {\n  process.stderr.write(String(error?.message ?? error) + '\\n');\n  if (!String(error?.message ?? error).includes('commit-tree')) process.exitCode = 3;\n}\n`,
+    `const { materializeTransport } = await import(${JSON.stringify(projection)});\nconst { boundedExecFileSync } = await import(${JSON.stringify(runner)});\ntry {\n  await materializeTransport({ checkout: ${JSON.stringify(transport)}, destination: ${JSON.stringify(execution)}, expectedCommit: ${JSON.stringify(mapping.snapshotCommit)}, runGit(cwd, args, timeoutMs) { return boundedExecFileSync('git', args, { cwd, encoding: 'utf8', timeoutMs: args[0] === 'commit-tree' ? 250 : timeoutMs, operation: args.find((arg) => !arg.startsWith('-')) ?? 'git', diagnosticKind: 'MATERIALIZATION' }).trim(); } });\n  process.stdout.write('UNEXPECTED_SUCCESS\\n');\n  process.exitCode = 2;\n} catch (error) {\n  process.stderr.write(String(error?.message ?? error) + '\\n');\n  if (!String(error?.message ?? error).includes('commit-tree')) process.exitCode = 3;\n}\n`,
   );
   const started = Date.now();
   const result = spawnSync(process.execPath, [harness], {
@@ -373,6 +476,28 @@ test('materialization bounds a hanging commit-tree and leaves no proof or partia
   assert.match(
     result.stderr,
     /^EF_PROTECTED_VALIDATION_MATERIALIZATION_TIMEOUT .*operation=commit-tree .*timeoutMs=250/m,
+  );
+  const processEvents = result.stderr
+    .split('\n')
+    .filter((line) => line.startsWith('EF_PROTECTED_VALIDATION_PROCESS '))
+    .map((line) => JSON.parse(line.slice('EF_PROTECTED_VALIDATION_PROCESS '.length)));
+  const healthy = processEvents.filter((event) => event.operation !== 'commit-tree');
+  assert.ok(healthy.length > 0);
+  assert.ok(healthy.every((event) => event.timeoutMs === 120000 && event.timedOut !== true));
+  const hanging = processEvents.filter((event) => event.operation === 'commit-tree');
+  assert.equal(hanging.length, 2);
+  assert.equal(hanging[0].phase, 'start');
+  assert.equal(hanging[0].timeoutMs, 250);
+  assert.equal(hanging[1].phase, 'end');
+  assert.equal(hanging[1].timeoutMs, 250);
+  assert.equal(hanging[1].timedOut, true);
+  assert.equal(hanging[1].errorCode, 'ETIMEDOUT');
+  assert.equal(hanging[1].signal, 'SIGKILL');
+  t.diagnostic(
+    result.stderr
+      .split('\n')
+      .filter((line) => line.includes('commit-tree'))
+      .join('\n'),
   );
   assert.doesNotMatch(`${result.stdout}\n${result.stderr}`, /^EF_PROTECTED_VALIDATION \{/m);
   assert.equal(existsSync(descendantPid), true, 'the SIGTERM-ignoring descendant was created');

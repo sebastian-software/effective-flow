@@ -103,18 +103,19 @@ Never synthesize receipts or copy a subagent answer into reports. Behavioral fin
 retried as invalid evidence. Retain five runs and the existing five-discard limit per slot. Only
 an actually stopped host session may use `retry-aborted`.
 
-The pin matches the verified recording host: Codex CLI 0.159.3, `gpt-6.1-sol`, high reasoning. The
-host launches isolated-home nonforked `codex exec` rooted at each prepared project, with only
-`prompt.txt`, `--ignore-user-config`, `--ephemeral`, JSON output and last-message output. No
+The required recording profile is Codex CLI `0.163.0`, `gpt-6.1-sol`, high reasoning. The recording
+host must report that exact version; prior verification on Codex CLI 0.159.3 does not qualify the new
+host. The host launches isolated-home nonforked `codex exec` rooted at each prepared project, with
+only `prompt.txt`, `--ignore-user-config`, `--ephemeral`, JSON output and last-message output. No
 repository-root subagent or installed user skill runs. The policy declaration below must describe
-the actual host sandbox and launch flags. Other suites retain their existing pins.
+the actual host sandbox and launch flags.
 
 ```sh
 pnpm eval next-steps prepare \
   --harness codex-cli \
   --model gpt-6.1-sol \
   --reasoning-effort high \
-  --reported-version 0.159.3 \
+  --reported-version 0.163.0 \
   --tool-policy 'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral'
 ```
 
@@ -173,7 +174,7 @@ prepare one step, supplying the unmodified current portable build:
 ```js
 import { prepare, record, verify, STEPS } from './evals/next-steps/_scaffold/continuation-exercise.mjs';
 const profile = {
-  harness: 'codex-cli', model: 'gpt-6.1-sol', reasoningEffort: 'high', reportedVersion: '0.159.3',
+  harness: 'codex-cli', model: 'gpt-6.1-sol', reasoningEffort: 'high', reportedVersion: '0.163.0',
   toolPolicy: 'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral',
 };
 const exerciseRoot = '/tmp/effective-flow-continuation-exercise-UNIQUE';

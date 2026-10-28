@@ -1,33 +1,33 @@
 {
   "schemaVersion": 1,
-  "roundId": "mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a",
+  "roundId": "mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640",
   "scenario": "unreported-checks-block-merge",
   "slot": 5,
   "attempt": 1,
-  "sourceRevision": "fe556d82c8c5ab56c4458836e528b28fec9544b3",
-  "projectRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
+  "sourceRevision": "bb38cd5d010e4ed8b6a2c0476833734a3580a06b",
+  "projectRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
   "profile": {
     "harness": "codex-cli",
     "model": "gpt-6-sol",
     "reasoningEffort": "medium",
-    "reportedVersion": "0.159.3",
-    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+    "reportedVersion": "0.163.0",
+    "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
   },
-  "promptDigest": "sha256:baa54e9952cfdabd6095e70bb58b29eea49fcc8b61088450f06e711992db7790",
+  "promptDigest": "sha256:830cfa5900272cdb13ceba5b52d08bababcc8f7db0a4deced62450d0234f045e",
   "fixtureDigest": "sha256:d8335c2b002a8a1203214d1ee241e14013dcea88709ad2dee7649c22152715ff",
-  "buildDigest": "sha256:48df79f09f12344c2fe95671481a274ae906efeade2cf95365d24691b996d20c",
+  "buildDigest": "sha256:f3acd309862fb6dd0bc978501e613f082c221b1ab085bab5a2213943a566d98a",
   "hostAttestation": {
     "schemaVersion": 1,
     "nonForked": true,
-    "initialWorkingRoot": "/private/tmp/effective-flow-merge-gate-eval/rounds/mvkye5ue-c4c79293-c3e7-4d74-afec-e48721133d5a/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
+    "initialWorkingRoot": "/tmp/effective-flow-merge-gate-eval/rounds/mvr9g1mr-e5eeee97-24fb-4a41-a01f-ee043cc3d640/slots/unreported-checks-block-merge/slot-5/attempt-1/project",
     "taskInput": "rendered-prompt-only",
     "completed": true,
     "profile": {
       "harness": "codex-cli",
       "model": "gpt-6-sol",
       "reasoningEffort": "medium",
-      "reportedVersion": "0.159.3",
-      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario"
+      "reportedVersion": "0.163.0",
+      "toolPolicy": "workspace-write,approval-never,network-disabled,isolated-home,attempt-root-writable,ignore-user-config,ignore-rules,nesting-by-scenario"
     }
   }
 }

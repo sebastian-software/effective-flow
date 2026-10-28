@@ -1506,7 +1506,6 @@ test(
     const roundId = 'iterate-synthetic-publication';
     const profile = {
       ...iterateSuite.expectedProfile,
-      reportedVersion: 'test-version',
       toolPolicy: 'test-policy',
     };
     const legacyLog = (projectRoot, operations) =>
