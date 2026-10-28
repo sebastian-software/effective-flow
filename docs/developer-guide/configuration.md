@@ -357,6 +357,16 @@ login is the app slug inherit a configured reviewer's identity. Only rows whose 
 ADR; see [`docs/adr/effective-flow-project-setup.md`](../adr/effective-flow-project-setup.md) for
 this repository's own rows.
 
+### Non-reviewer bot list (`mergeGate.botAccounts`)
+
+`mergeGate.botAccounts` is a plain comma-separated list of logins with no per-login sub-keys: it
+declares automated accounts the forge types as users (for example `codecov-commenter`), which the
+human-comment guard's bot rule then excludes on top-level comments and review-thread items. Unlike
+`mergeGate.bots` it names no reviewer, so it has no `.trigger` or `.check` rows. The list is never
+collapsed: only exact duplicates are removed, because collapsing `foo[bot], foo` to `foo[bot]` would
+stop matching a user-typed `foo`. Entries are compared as in "Matching a configured login" in
+`src/shared/review-bot-state.md`, which is exact for a record that is not bot-typed.
+
 `mergeGate.*` configures the merge-gate tool. It is not `delivery.prReview`, which is an unrelated
 key (`ask`, the default, `always`, or `off`) deciding whether a delivery workflow publishes its own
 review findings onto the pull request it just created. `delivery.prReview` keeps its name deliberately: it belongs to the

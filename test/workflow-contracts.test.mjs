@@ -7581,6 +7581,7 @@ test("the merge gate's own Configuration table carries every key with its defaul
     ['mergeGate.maxRounds', '`10`'],
     ['mergeGate.botWaitMinutes', '`10`'],
     ['mergeGate.bots', '`(empty)`'],
+    ['mergeGate.botAccounts', '`(empty)`'],
     // The two per-login rows have no default: an unset trigger or check is what keeps a
     // configured reviewer from being triggered or waited on by accident, so `unset` is the
     // contract rather than a gap in the table.
@@ -7619,6 +7620,7 @@ test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys 
     ['mergeGate.maxRounds', '`10`'],
     ['mergeGate.botWaitMinutes', '`10`'],
     ['mergeGate.bots', '`(empty)`'],
+    ['mergeGate.botAccounts', '`(empty)`'],
   ]) {
     assert.equal(
       defaultCell(table, `\`${key}\``),
@@ -7667,6 +7669,7 @@ test('the user guide disambiguates mergeGate.* from the pre-existing delivery.pr
     ['maxRounds', '`10`'],
     ['botWaitMinutes', '`10`'],
     ['bots', '`(empty)`'],
+    ['botAccounts', '`(empty)`'],
   ]) {
     assert.equal(
       defaultCell(block, `\`${key}\``),
@@ -7717,7 +7720,11 @@ test("the user guide's two overview tables repeat the mergeGate.* defaults uncha
     ['mergeGate.botWaitMinutes', '10'],
     ['delivery.mergeMethod', 'squash'],
   ];
-  for (const [key, value] of [...shared, ['mergeGate.bots', '(empty)']]) {
+  for (const [key, value] of [
+    ...shared,
+    ['mergeGate.bots', '(empty)'],
+    ['mergeGate.botAccounts', '(empty)'],
+  ]) {
     assert.equal(
       valueCell(example, key),
       value,
@@ -9585,6 +9592,7 @@ test('the shared configuration fragment documents every merge-gate key and the r
     'mergeGate.bots',
     'mergeGate.bots.<login>.trigger',
     'mergeGate.bots.<login>.check',
+    'mergeGate.botAccounts',
   ]) {
     assert.ok(block.includes(`\`${key}\``), `the configuration fragment must document ${key}`);
   }
@@ -9607,6 +9615,7 @@ test('the shared configuration fragment documents every merge-gate key and the r
     ['mergeGate.bots', '`(empty)`'],
     ['mergeGate.bots.<login>.trigger', 'unset'],
     ['mergeGate.bots.<login>.check', 'unset'],
+    ['mergeGate.botAccounts', '`(empty)`'],
   ]) {
     assert.equal(
       defaultCell(block, `\`${key}\``),
@@ -11409,11 +11418,13 @@ test('external done-state configuration mirrors the started state and never abor
   );
 });
 
-test('the completion offer adds no mergeGate.* key: all four key tables still carry nine rows', () => {
+test('the completion offer adds no mergeGate.* key: all four key tables agree on the same ten rows', () => {
   // The operator chose "report, transition nothing" for the non-interactive case, so there is no
   // mode to configure and setup.md's "The gate is safe without any of these keys" stays true. A
-  // tenth row would be a fifth place to keep in sync and a guarantee that quietly became
-  // configurable — which is why the row set is asserted rather than only its length.
+  // further row would be a fifth place to keep in sync and a guarantee that quietly became
+  // configurable — which is why the row set is asserted rather than only its length. The tenth
+  // row, `mergeGate.botAccounts`, was added deliberately by the bot-accounts feature; the invariant
+  // is that the four tables carry the identical row set, whatever its size.
   //
   // The gate's own Configuration table is the fourth copy and was, until this assertion, the one
   // nobody compared: the configuration split gave `merge-gate` a table of its own precisely so it
@@ -11428,6 +11439,7 @@ test('the completion offer adds no mergeGate.* key: all four key tables still ca
     '`mergeGate.bots`',
     '`mergeGate.bots.<login>.trigger`',
     '`mergeGate.bots.<login>.check`',
+    '`mergeGate.botAccounts`',
   ];
   const bare = prefixed.map((key) => key.replace('mergeGate.', ''));
 
@@ -11477,7 +11489,160 @@ test('the completion offer adds no mergeGate.* key: all four key tables still ca
   );
 });
 
-// The fail-closed rule for one of those nine keys, pinned in every source that carries it. It is
+// Invariant: `mergeGate.botAccounts` is one row in all four key tables, with the same default and
+// the same meaning of "list of logins", so no table promises a key the gate does not read (the gate's
+// own `## Configuration` table is the copy that can drift alone).
+test('mergeGate.botAccounts is one comma-list row with an empty default in all four key tables', () => {
+  const tables = [
+    section(
+      source('src/shared/config-merge-gate-keys.md'),
+      '### Merge-gate keys (`mergeGate.*`) and their legacy namespace',
+      '\n### ',
+    ),
+    section(mergeGateSource(), '## Configuration', '\n## '),
+    boundedSlice(
+      section(
+        source('src/shared/setup-advanced-settings.md'),
+        '### Block 9: the merge gate (`mergeGate.*`)',
+      ),
+      '| Key                              | Values',
+      '\n\n',
+    ),
+  ];
+  for (const table of tables) {
+    assert.equal(defaultCell(table, '`mergeGate.botAccounts`'), '`(empty)`');
+    assert.match(flat(table), /\| `mergeGate\.botAccounts` \| comma list of logins \|/);
+  }
+  // The fourth copy is setup.md's catalogue line, which is prose rather than a table.
+  assert.match(
+    flat(source('src/tools/setup.md')),
+    /`botAccounts` \(comma list of non-reviewer bot logins, default empty/,
+  );
+});
+
+// Invariant: guard rule 1 reaches a user-typed non-reviewer account only through
+// `mergeGate.botAccounts`, only on comments and threads, and never through the identity lookup.
+test('guard rule 1 names mergeGate.botAccounts, scoped to comments and threads, without viewer-read', () => {
+  const gate = prose(mergeGateSource());
+  const rule = gate.slice(
+    gate.indexOf('The author is a bot'),
+    gate.indexOf("The author is this run's own account"),
+  );
+  assert.ok(rule.length > 0, 'rule 1 must be locatable between rule 1 and rule 2');
+  assert.match(rule, /on a top-level comment or a review-thread item only/);
+  assert.match(rule, /a login listed in `mergeGate\.botAccounts`/);
+  assert.match(rule, /The identity lookup is deliberately not consulted for such an item/);
+  // A submitted review is out of scope: a changes-requested review from a listed login still counts.
+  assert.match(rule, /A submitted review is outside the third case/);
+  assert.match(
+    rule,
+    near('changes-requested review from a listed login', 'still counts', 120),
+    'a changes-requested review from a listed login must still count',
+  );
+  // The submitted-review bullet of step 3 is where the fall-through is restated for that surface.
+  const reviewBullet = prose(
+    boundedSlice(
+      mergeGateSource(),
+      'a **submitted review counts only while its state is changes-requested**',
+      '**Set the guard.**',
+    ),
+  );
+  assert.match(reviewBullet, /the same bot rule without its `mergeGate\.botAccounts` case/);
+});
+
+// Invariant: the botAccounts list is never collapsed (`foo[bot], foo` must keep matching a
+// user-typed `foo`), only exact duplicates de-duplicated, and a `mergeGate.bots` match stays a reviewer.
+test('rule 1 states that mergeGate.botAccounts is never collapsed and that a bots match stays a reviewer', () => {
+  const gate = prose(
+    boundedSlice(mergeGateSource(), 'The author is a bot', "The author is this run's own account"),
+  );
+  assert.match(gate, /excluded when it matches any entry/);
+  assert.match(gate, /never collapsed/);
+  assert.match(gate, /only exact duplicates are de-duplicated/);
+  assert.match(gate, /collapsing `foo\[bot\], foo` to `foo\[bot\]`/);
+  assert.match(gate, /A record a `mergeGate\.bots` entry matches stays a reviewer/);
+});
+
+// Invariant: the unconfigured-reviewer advisory never recommends a reviewer entry for an account the
+// project already declared a non-reviewer bot.
+test('the advisory records nothing for a login a mergeGate.botAccounts entry matches', () => {
+  const advisory = prose(
+    section(mergeGateSource(), '## Unconfigured automatic-reviewer advisory', '\n## '),
+  );
+  assert.match(
+    advisory,
+    near('matches a `mergeGate\\.botAccounts` entry', 'records nothing', 200),
+    'a botAccounts-only login must not appear in the advisory',
+  );
+});
+
+// Invariant: Phase 6 reports every botAccounts exclusion and overlap, and hands the operator a
+// targeted setup invocation that is suppressed wherever the key would not help.
+test('Phase 6 carries the botAccounts exclusion line, overlap line and guarded targeted invocation', () => {
+  const gate = prose(section(mergeGateSource(), '### Phase 6: Summary', '\n## '));
+  assert.match(gate, /every item rule 1's `mergeGate\.botAccounts` case alone excluded/);
+  assert.match(gate, /one line per login with a count per surface/);
+  assert.match(gate, /never again in the configured-reviewer unmatched-thread report/);
+  assert.match(gate, /every overlap between `mergeGate\.bots` and `mergeGate\.botAccounts`/);
+  assert.match(gate, /with the per-record outcome/);
+  // Identical entries (`bots: foo`, `botAccounts: foo`) leave a user-typed `foo` a reviewer, because
+  // rule 1's bots case matches first; only a record no bots entry matches is excluded.
+  assert.match(
+    gate,
+    /a record any `mergeGate\.bots` entry matches is handled as the reviewer; only a user-typed record that matches no `mergeGate\.bots` entry and exactly matches the `mergeGate\.botAccounts` entry is excluded/,
+  );
+  // The targeted invocation, and the three suppressions that keep it from being offered in vain.
+  assert.match(
+    gate,
+    /\{\{SKILL:setup\}\} add <login> to mergeGate\.botAccounts|`[^`]*setup[^`]* add <login> to mergeGate\.botAccounts`/,
+  );
+  assert.match(
+    gate,
+    /Leave out the login `viewer-read` returned, an absent login, and a login whose only counting item is a changes-requested review/,
+  );
+  assert.match(
+    gate,
+    /when the identity is unknown, give no `mergeGate\.botAccounts` invocation at all/,
+  );
+  // The operator-only clause: neither this run nor a caller executes the invocation.
+  assert.match(
+    gate,
+    /Neither this run nor a calling workflow executes the invocation, and nothing writes configuration/,
+  );
+  assert.match(gate, /a person's comment must be answered or resolved instead/);
+});
+
+// Invariant: an item of this run's own login that rule 1's botAccounts case excluded first is still
+// recorded and reported as an own-account item; the botAccounts record leaves it out by design, so
+// without this it would be excluded and reported nowhere.
+test('an own-login item excluded by the botAccounts case still reaches the identity-rule record and report', () => {
+  const wisdom = prose(section(mergeGateSource(), '## Wisdom accumulation', '\n## '));
+  assert.match(
+    wisdom,
+    /plus every item rule 1's `mergeGate\.botAccounts` case excluded whose login equals the one `viewer-read` returned/,
+  );
+  assert.match(wisdom, /not written by the login `viewer-read` returned/);
+  const summary = prose(section(mergeGateSource(), '### Phase 6: Summary', '\n## '));
+  assert.match(
+    summary,
+    /including an item of that login the `mergeGate\.botAccounts` case excluded first, which the line above leaves out/,
+  );
+});
+
+// Invariant (decision: no built-in list): which accounts are automated is the project's call, so no
+// source may hard-code a known coverage bot's login.
+test('no source under src/ names codecov-commenter', () => {
+  for (const path of readdirSync(new URL('src/', repositoryRoot), { recursive: true })) {
+    if (!path.endsWith('.md') && !path.endsWith('.mjs')) continue;
+    assert.equal(
+      source(`src/${path}`).includes('codecov-commenter'),
+      false,
+      `src/${path} must not carry a built-in bot login`,
+    );
+  }
+});
+
+// The fail-closed rule for one of those keys, pinned in every source that carries it. It is
 // the rule the configuration split nearly lost: `merge-gate` stopped loading
 // `config-merge-gate-keys`, the paragraph stayed behind in the fragment, and the gate's own
 // Configuration section restated the table and the mode semantics but not this. An unparseable
@@ -17424,7 +17589,11 @@ test('Phase 6 gives the complete setup route before the literal final next-step 
     args: match[1].trim(),
   }));
   const guided = invocations.find(({ args }) => args === 'guided');
-  const targeted = invocations.filter(({ args }) => args !== '' && args !== 'guided');
+  // The `mergeGate.botAccounts` invocation belongs to Phase 6's guard-block item, not to this
+  // advisory; it is pinned by its own test, so this advisory scan leaves it out.
+  const targeted = invocations.filter(
+    ({ args }) => args !== '' && args !== 'guided' && !/\bmergeGate\.botAccounts\b/.test(args),
+  );
   assert.ok(guided, 'the Guided setup route must remain as the fallback');
   const exactlyOne = (form, pattern) => {
     const matches = targeted.filter(({ args }) => pattern.test(args));

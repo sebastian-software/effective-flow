@@ -106,7 +106,7 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
 | `tracker.mode`, `tracker.remoteToolOverride`                   | core switches (Tracker)                            | see below                                                                     |
 | `tracker.externalTool`, `…Hint`, `…StartedState`, `…DoneState` | core switches (external), block 7                  | see below                                                                     |
 | `skills.*`                                                     | block 8                                            | `agents.<name>` / `tools.<name>` only with source agent or tool names         |
-| `mergeGate.*`, `.bots`, `.trigger`, `.check`                   | block 9, Step 5 collapse                           | see below                                                                     |
+| `mergeGate.*`, `.bots`, `.trigger`, `.check`, `.botAccounts`   | block 9, Step 5 collapse                           | see below                                                                     |
 
 - Adding a reviewer to `mergeGate.bots` also touches its `.trigger` and `.check`. Collapse first
   ("Collapsing two `mergeGate.bots` spellings of one reviewer", Step 5), then block 9's
@@ -114,6 +114,8 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
   request touching only an existing reviewer's `.check` asks only `.check`; untouched reviewers are
   not asked. Removing a login from `mergeGate.bots` also removes its `.trigger` and `.check` rows in
   the same preview.
+- Adding a login to either `mergeGate.bots` or `mergeGate.botAccounts` first runs block 9's two-way
+  overlap check against the other list and changes that list only with the user's answer.
 - Changing `tracker.mode` to `external` also touches the owner's external follow-ups
   (`tracker.externalTool`, `…Hint`, started and done state discovery) for every value that is
   missing or invalid. Changing it to `remote` touches `tracker.remoteToolOverride` only on

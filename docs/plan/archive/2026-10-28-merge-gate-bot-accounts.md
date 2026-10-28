@@ -1,6 +1,6 @@
 # Declare user-typed accounts as bots for the merge gate
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -74,8 +74,9 @@ set it. Projects that do not set the key see no change.
   **configured** lists is detected with the configuration-to-configuration comparison: equal after
   trimming one trailing `[bot]` from each. That comparison is deliberately broad, so setup **asks**
   on a hit. The check runs in both directions. The Phase 6 overlap line describes the per-record
-  outcome: a bot-typed record of that account is handled as the reviewer, while a user-typed record
-  spelled exactly like the `botAccounts` entry is excluded.
+  outcome: a record any `mergeGate.bots` entry matches is handled as the reviewer, and only a
+  user-typed record that matches no `mergeGate.bots` entry and exactly matches the `botAccounts`
+  entry is excluded.
 - **No built-in list of known accounts.** This is the user's decision. Excluding an account always
   takes an explicit project decision.
 - **A blocked run points to the fix, for the human operator only.** When the guard is active, the
@@ -100,20 +101,20 @@ set it. Projects that do not set the key see no change.
 
 ## Affected files
 
-| File                                                                                                                                                                                                                                                      | Description                                                                                                                                                                                                                                                                                                                                                                                      |
-| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `src/shared/config-merge-gate-keys.md`                                                                                                                                                                                                                    | Add the `mergeGate.botAccounts` row and one short paragraph that separates it from `mergeGate.bots`, names the comment-and-thread scope, and states per-record precedence. Keep it short: `setup` and `iterate` both include this fragment eagerly.                                                                                                                                              |
-| `src/shared/merge-gate-delegated-run.md`                                                                                                                                                                                                                  | Add the row to `## Configuration` (before `delivery.mergeMethod`, ~292). Rule 1 gets the third case: surfaces, matching, no collapse, and a rewritten three-case justification. The advisory skips `botAccounts`-only logins. Add the wisdom record and the Phase 6 per-login line, the blocked-run hint, and the overlap line.                                                                  |
-| `src/shared/merge-gate-configured-reviewer.md`                                                                                                                                                                                                            | Unmatched-thread rationale (~741-747): "one of two things" becomes three, the "only escape" sentence points to `botAccounts`, and items already reported in the `botAccounts` line are not reported again. Changes-requested report (~752-762): unchanged in behaviour. Check that its "already holds condition 4's guard" claim stays true, which it does under the comments-and-threads scope. |
-| `src/shared/setup-advanced-settings.md`                                                                                                                                                                                                                   | Block 9: add the table row and one explanation bullet (what qualifies, contrast with `mergeGate.bots`, the comments-only scope, copying the login exactly). Ask it as free text after `mergeGate.bots`. Run the two-way overlap question.                                                                                                                                                        |
-| `src/shared/setup-targeted-change.md`                                                                                                                                                                                                                     | Add `mergeGate.botAccounts` to the block 9 row. Run the overlap check when adding to either list.                                                                                                                                                                                                                                                                                                |
-| `src/tools/setup.md`                                                                                                                                                                                                                                      | Add `botAccounts` (comma list of non-reviewer bot logins, default empty) to the `mergeGate` entry of the key catalogue line (~93), and list it in the closing summary (~966-976).                                                                                                                                                                                                                |
-| `docs/user-guide/configuration.md`                                                                                                                                                                                                                        | Add the row to the Complete table example (~202) and to the defaults list in "Block `mergeGate`" (~222-228/382). Add a paragraph with the Codecov example. The Safe defaults table (~746) stays unchanged, following the `mergeGate.bots` precedent.                                                                                                                                             |
-| `docs/user-guide/tools-deliver.md`                                                                                                                                                                                                                        | In the guard description (~249-258, ~720-724), name the user-typed case and `mergeGate.botAccounts`.                                                                                                                                                                                                                                                                                             |
-| `docs/developer-guide/configuration.md`                                                                                                                                                                                                                   | Next to "Bot registry encoding", note that `botAccounts` is a plain login list with no per-login sub-keys and no collapse.                                                                                                                                                                                                                                                                       |
-| `build.mjs`                                                                                                                                                                                                                                               | Set `CONTEXT_BUDGET_LINES` for every tool whose always-loaded core changes, which is `setup` and `iterate`, from the `node build.mjs` report. `merge-gate` should not move, because its delegated-run fragment is a lazy include. Adjust it only if the report says so.                                                                                                                          |
-| `test/workflow-contracts.test.mjs`                                                                                                                                                                                                                        | New contract tests, and a deliberate update of the nine-row test (see Validation plan).                                                                                                                                                                                                                                                                                                          |
-| `evals/merge-gate/scenarios/bot-account-excluded.md`, `evals/merge-gate/fixtures/bot-account-excluded.json`, `evals/merge-gate/_scaffold/evaluate.mjs`, `evals/merge-gate/scenario-registry.mjs`, `BRANCHED_SCENARIOS` (per `evals/merge-gate/README.md`) | One new scenario with its fixture (`servesMerge: true` plus a `pr-merge` entry), its evaluator branch, and its registrations.                                                                                                                                                                                                                                                                    |
+| File                                                                                                                                                                                                                                                  | Description                                                                                                                                                                                                                                                                                                                                                                                      |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/shared/config-merge-gate-keys.md`                                                                                                                                                                                                                | Add the `mergeGate.botAccounts` row and one short paragraph that separates it from `mergeGate.bots`, names the comment-and-thread scope, and states per-record precedence. Keep it short: `setup` and `iterate` both include this fragment eagerly.                                                                                                                                              |
+| `src/shared/merge-gate-delegated-run.md`                                                                                                                                                                                                              | Add the row to `## Configuration` (before `delivery.mergeMethod`, ~292). Rule 1 gets the third case: surfaces, matching, no collapse, and a rewritten three-case justification. The advisory skips `botAccounts`-only logins. Add the wisdom record and the Phase 6 per-login line, the blocked-run hint, and the overlap line.                                                                  |
+| `src/shared/merge-gate-configured-reviewer.md`                                                                                                                                                                                                        | Unmatched-thread rationale (~741-747): "one of two things" becomes three, the "only escape" sentence points to `botAccounts`, and items already reported in the `botAccounts` line are not reported again. Changes-requested report (~752-762): unchanged in behaviour. Check that its "already holds condition 4's guard" claim stays true, which it does under the comments-and-threads scope. |
+| `src/shared/setup-advanced-settings.md`                                                                                                                                                                                                               | Block 9: add the table row and one explanation bullet (what qualifies, contrast with `mergeGate.bots`, the comments-only scope, copying the login exactly). Ask it as free text after `mergeGate.bots`. Run the two-way overlap question.                                                                                                                                                        |
+| `src/shared/setup-targeted-change.md`                                                                                                                                                                                                                 | Add `mergeGate.botAccounts` to the block 9 row. Run the overlap check when adding to either list.                                                                                                                                                                                                                                                                                                |
+| `src/tools/setup.md`                                                                                                                                                                                                                                  | Add `botAccounts` (comma list of non-reviewer bot logins, default empty) to the `mergeGate` entry of the key catalogue line (~93), and list it in the closing summary (~966-976).                                                                                                                                                                                                                |
+| `docs/user-guide/configuration.md`                                                                                                                                                                                                                    | Add the row to the Complete table example (~202) and to the defaults list in "Block `mergeGate`" (~222-228/382). Add a paragraph with the Codecov example. The Safe defaults table (~746) stays unchanged, following the `mergeGate.bots` precedent.                                                                                                                                             |
+| `docs/user-guide/tools-deliver.md`                                                                                                                                                                                                                    | In the guard description (~249-258, ~720-724), name the user-typed case and `mergeGate.botAccounts`.                                                                                                                                                                                                                                                                                             |
+| `docs/developer-guide/configuration.md`                                                                                                                                                                                                               | Next to "Bot registry encoding", note that `botAccounts` is a plain login list with no per-login sub-keys and no collapse.                                                                                                                                                                                                                                                                       |
+| `build.mjs`                                                                                                                                                                                                                                           | Set `CONTEXT_BUDGET_LINES` for every tool whose always-loaded core changes, which is `setup` and `iterate`, from the `node build.mjs` report. `merge-gate` should not move, because its delegated-run fragment is a lazy include. Adjust it only if the report says so.                                                                                                                          |
+| `test/workflow-contracts.test.mjs`                                                                                                                                                                                                                    | New contract tests, and a deliberate update of the nine-row test (see Validation plan).                                                                                                                                                                                                                                                                                                          |
+| `evals/merge-gate/scenarios/bot-login-excluded.md`, `evals/merge-gate/fixtures/bot-login-excluded.json`, `evals/merge-gate/_scaffold/evaluate.mjs`, `evals/merge-gate/scenario-registry.mjs`, `BRANCHED_SCENARIOS` (per `evals/merge-gate/README.md`) | One new scenario with its fixture (`servesMerge: true` plus a `pr-merge` entry), its evaluator branch, and its registrations.                                                                                                                                                                                                                                                                    |
 
 ## Implementation details
 
@@ -157,7 +158,7 @@ set it. Projects that do not set the key see no change.
    rule, which the advisory's own suggested invocation reaches.
 10. **Docs and budgets.** Update the three guides. Run `node build.mjs` and set every changed budget
     entry from the `Always-loaded core (lines/budget)` report, not from `wc -l`.
-11. **Eval scenario `bot-account-excluded`.** The fixture carries a top-level comment from a
+11. **Eval scenario `bot-login-excluded`.** The fixture carries a top-level comment from a
     `type: User` login named like a coverage reporter, `mergeGate.botAccounts` lists that login, and
     every other precondition holds. The evaluator asserts that `pr-merge` is applied exactly once.
     The suite captures no chat report (`evals/merge-gate/README.md`). The Phase 6 lines and the
@@ -169,7 +170,8 @@ set it. Projects that do not set the key see no change.
 - **A listed login posts a changes-requested review**: the review counts and activates the guard,
   and the hint gives no `botAccounts` invocation for it.
 - **The listed login is this run's own account** (for example a shared machine-user gate account):
-  the item is excluded, but not recorded in the `botAccounts` line. The own-account report covers it.
+  the item is excluded, but not recorded in the `botAccounts` line. The identity-rule record and its
+  Phase 6 item take it explicitly, because rule 1 runs before rule 2.
 - **The comment comes from a different user-typed account than the one listed**: matching is exact,
   so the item still counts. This is the safe direction.
 - **Case mismatch** (`Codecov-Commenter` configured, `codecov-commenter` reported): no match,
@@ -214,7 +216,7 @@ set it. Projects that do not set the key see no change.
 - [ ] No file under `src/` contains `codecov-commenter`.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass in that
       order.
-- [ ] Scenario `bot-account-excluded` is complete: scenario file, fixture, evaluator branch, and
+- [ ] Scenario `bot-login-excluded` is complete: scenario file, fixture, evaluator branch, and
       registrations. `pnpm eval merge-gate verify` and `pnpm eval iterate verify` run. Re-recorded
       `merge-gate` and `iterate` rounds are owed before the next release, not before merge.
 
@@ -320,6 +322,38 @@ The counts cover both review rounds. All findings are incorporated.
   excluded from it.
 - Maintainability, Note: the edit would have put unrelated text into `iterate`'s fragment. The rule
   is now stated once in rule 1, and `review-bot-state.md` stays unchanged.
+
+## Test results
+
+**Date:** 2026-10-28
+
+- `pnpm agent:check`: passed.
+- `pnpm test`: 3011 tests, 3008 passed, 0 failed, 3 skipped. Two of the skips are the
+  `bot-login-excluded` archive checks, which wait for recorded evidence.
+- `node build.mjs`: passed. Always-loaded core: `iterate` 1588/1592, `setup` 1569/1573,
+  `merge-gate` 885/888.
+- `pnpm test:distribution`: passed.
+- `pnpm eval merge-gate verify` and `pnpm eval iterate verify`: both ran. The evidence is stale, as
+  expected, and `bot-login-excluded` has no runs yet. Re-recording both suites is owed before the
+  next release.
+- Deviation: the scenario was renamed from `bot-account-excluded` to `bot-login-excluded`. The eval
+  round's host-receipt guard (`evals/_scaffold/round-core.mjs`) rejects any value containing
+  `account`, and the scenario name appears in the receipt's working-root path.
+
+## Review findings
+
+**Date:** 2026-10-28
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     9 |
+| Open / Not implemented |     0 |
+
+Two further Notes were closed without a change: the phrasing they flagged was already consistent
+with the plan.
 
 ## Open points
 

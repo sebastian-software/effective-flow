@@ -291,6 +291,7 @@ building block. A missing line means the default.
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
 | `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
 
 Resolve whether the configuration contains a `mergeGate.bots` row before parsing its value. Row
@@ -327,6 +328,8 @@ any reviewer entry, trigger, or check value.
 - The former `prReview.*` names are retired and never read: the loaded retired-key rule decides at
   this run's first configuration read, before any wait, delegation or write, whether a row stops it.
   This workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
+- `mergeGate.botAccounts` lists non-reviewer bots: this gate never triggers, waits for, or assesses
+  them. Phase 1's rule 1 owns what the list excludes and how a login matches it.
 - `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
   integrates a pull request.
 - **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
@@ -363,7 +366,8 @@ duplicate entries, and never a retired `prReview.*` row; create no second login 
 
 1. **No effective reviewer login:** record `missing reviewer`. The advisory may recommend adding the
    observed login to `mergeGate.bots`; setup then asks for its trigger and its exact `.check` context,
-   and the user decides on both.
+   and the user decides on both. A candidate that matches a `mergeGate.botAccounts` entry under the
+   matching of Phase 1's rule 1 records **nothing** instead: listing it states that it is no reviewer.
 2. **Effective reviewer login, no effective `.check`:** record `missing check`. Preserve the
    configured spelling and every existing trigger; the advisory recommends only completing the
    `.check` value. A conflicting collapsed `.check` pair supplies no effective value and stays on
@@ -396,14 +400,21 @@ gate run inline generates it at the start. Use
 - the caller limits of every dispatch, recorded before its first return, so Entry step 3 can reject
   a narrowing re-dispatch
 - the authenticated login `viewer-read` returned, or the reason it could not be read
-- the human-comment guard state and the evidence that set it
-- every item the guard's identity rule excluded that would otherwise have counted: its author, the
-  surface it sits on – unresolved review thread, top-level comment, or changes-requested review – and
+- the human-comment guard state and the evidence that set it, plus every login whose top-level
+  comment or review-thread item the catch-all counted at **any** fresh read, with the surfaces it
+  counted on; append-only, like the record below
+- every item the guard's identity rule excluded that would otherwise have counted, plus every item
+  rule 1's `mergeGate.botAccounts` case excluded whose login equals the one `viewer-read` returned
+  (rule 1 runs first, so the identity rule never sees it): its author, the surface it sits on – unresolved review thread, top-level comment, or changes-requested review – and
   its thread, comment, or **review** identifier. This is the list Phase 6 must report, and it is
   **appended at every fresh read, not only Phase 1's**: it may only be **added to** – never
   re-derived from the latest read, and never shortened because a later read no longer reports an
   entry. Key each entry by its thread, comment, or review identifier, so a re-read of an item
   already recorded appends no duplicate
+- every item excluded **solely** through rule 1's `mergeGate.botAccounts` case – not bot-typed,
+  matching no `mergeGate.bots` entry, and not written by the login `viewer-read` returned: its login,
+  its surface – top-level comment or review-thread item – and its comment or thread-item identifier,
+  appended and keyed exactly like the identity-rule record above
 - per round: the round number, the check result, the merge state, what was delegated, and what came
   back – for every delegation the identifier → durable-key map `build` returned, recorded before
   dispatch, with its message path until the file is deleted, every refused item with its reason, and
@@ -501,18 +512,33 @@ rule a second exception.
    name, so the name is told here what it means, and both halves of that definition are needed: a
    bot is an account other than this run's own, and a definition naming only the identity would make
    every automatic reviewer's note human:
-   1. **The author is a bot** – either a login listed in `mergeGate.bots`, matched through "Matching
-      a configured login" so one account is recognized whichever surface reported it, or an item
-      whose normalized `authorType` is `bot`. **The two cases overlap; they do not divide the items
+   1. **The author is a bot** – a login listed in `mergeGate.bots`, matched through "Matching a
+      configured login" so one account is recognized whichever surface reported it; an item whose
+      normalized `authorType` is `bot`; or, **on a top-level comment or a review-thread item only**, a
+      login listed in `mergeGate.botAccounts`. **The cases overlap; they do not divide the items
       between them.** That rule trims the `[bot]` suffix only for a bot-typed record, so every item
-      the first case reaches through the trim is one the second reaches anyway. Both still earn their
-      place: only the first reaches a configured login a surface reported unchanged and typed as
-      anything else, and only the second carries app mode – the account this gate posts as appears in
-      no configuration table, so it is recognized by `authorType` alone. The item is **excluded** and
-      the evaluation stops there – the forge's own authorship record already separates those writes.
+      the first case reaches through the trim is one the second reaches anyway. Each still earns its
+      place: only the first reaches a configured reviewer a surface reported unchanged and typed as
+      anything else; only the second carries app mode – the account this gate posts as appears in
+      no configuration table, so it is recognized by `authorType` alone; and only the third reaches a
+      user-typed **non-reviewer** account, which only the project can know is automated.
+
+      **Matching for the third case.** A reported record matches a `mergeGate.botAccounts` entry
+      under the configured-vs-reported comparison of "Matching a configured login" – exact for a
+      record that is not bot-typed – and is excluded when it matches **any** entry. This list is
+      **never collapsed**: only exact duplicates are de-duplicated, and order never matters, because
+      collapsing `foo[bot], foo` to `foo[bot]` would stop matching a user-typed `foo`. A record a
+      `mergeGate.bots` entry matches stays a reviewer, whether or not this list names it too. **A
+      submitted review is outside the third case:** a changes-requested review from a listed login
+      falls through to rules 2 and 3 and still counts, so a mistyped or wrongly added entry never
+      silences a standing objection.
+
+      The item is **excluded** and the evaluation stops there – the forge's own authorship record or
+      the project's declaration, matched on the item's own login, already separates those writes.
       **The identity lookup is deliberately not consulted for such an item.** `viewer-read` can
       legitimately fail on an installation token, so a rule that reached the identity here would fail
       closed and block precisely the one mode that never needed an identity.
+
    2. **The author is this run's own account** – the item's normalized `login` equals the login
       `viewer-read` returned. The item is **excluded**: whatever its body says, whichever of the two
       surfaces it sits on, and whether or not its thread is `resolved`.
@@ -542,7 +568,7 @@ rule a second exception.
    there is no login to compare against – so every non-bot item counts and the guard activates.
    Report the missing identity as the reason, so the block is explainable instead of mysterious.
    **Rule 1 needs no identity and stays untouched by this** – bot authorship is read from the item's
-   own record – and that is what keeps app mode running when the identity lookup does not.
+   own record and the configured lists – and that is what keeps app mode running when the identity lookup does not.
 
    **This is a same-account contract.** Rule 2 recognizes an item only when the account that wrote it
    is the one `viewer-read` returns for **this** run: a pull request annotated through
@@ -562,12 +588,13 @@ rule a second exception.
      this guard exists for;
    - a **top-level pull-request comment** has no resolved state on either provider, so it always
      counts unless rule 1 or rule 2 excluded it. A single old comment from another account therefore
-     keeps the guard active until it is deleted – the deliberate fail-safe reading, since the
-     alternative is merging a pull request under an open discussion;
+     keeps the guard active until it is deleted, or, for an automated account, until the project
+     lists it in `mergeGate.botAccounts` – the deliberate fail-safe reading, since the alternative is
+     merging a pull request under an open discussion;
    - a **submitted review counts only while its state is changes-requested**, and only as the
      **latest** review of that author under the supersession rule of the loaded "Automatic reviewer
-     state". Everything else about it is decided by the two rules above, verbatim: the same bot rule,
-     the same identity rule, the same catch-all, with no rule of its own and no exclusion that reads
+     state". Everything else about it is decided by the two rules above, verbatim: the same bot rule
+     without its `mergeGate.botAccounts` case, the same identity rule, the same catch-all, with no rule of its own and no exclusion that reads
      a body. Restricting by state is what keeps a routine commented "looks good" from activating a
      guard that is never cleared, and deciding on the **latest** review is what keeps a reviewer who
      later approves from holding one forever — a review cannot be deleted the way a comment can. A
@@ -960,11 +987,30 @@ reservation exactly once.
      `## Phase 6 configured-reviewer report items` in that fragment for the bot-round and
      collapsed-login items;
 
-   - whether comments from another account were found and what that blocked;
+   - whether comments from another account were found and what that blocked. When the guard is
+     active, name every login the wisdom record holds as counted by the catch-all at any fresh read,
+     then give the human operator one targeted invocation, `<login>` in the reported spelling and
+     several logins' clauses joined with "and" after one `{{SKILL:setup}}`:
+     `{{SKILL:setup}} add <login> to mergeGate.botAccounts`. Say that it is right only for an
+     automated account and that a person's comment must be answered or resolved instead. Leave out
+     the login `viewer-read` returned, an absent login, and a login whose only counting item is a
+     changes-requested review, which the key would not release; when the identity is unknown, give
+     no `mergeGate.botAccounts` invocation at all and name the missing identity as the cause. Neither
+     this run nor a calling workflow executes the invocation, and nothing writes configuration;
+   - **every item rule 1's `mergeGate.botAccounts` case alone excluded**, only when the wisdom record
+     holds one: one line per login with a count per surface – top-level comments, review-thread
+     items – and no identifiers, which stay in the wisdom record. Report such an item **once**, here,
+     never again in the configured-reviewer unmatched-thread report;
+   - **every overlap between `mergeGate.bots` and `mergeGate.botAccounts`** – a configured pair equal
+     after trimming one trailing `[bot]` from each – named once, with the per-record outcome: a
+     record any `mergeGate.bots` entry matches is handled as the reviewer; only a user-typed record
+     that matches no `mergeGate.bots` entry and exactly matches the `mergeGate.botAccounts` entry is
+     excluded;
    - **every item the guard's identity rule excluded that would otherwise have counted** – every
      unresolved review thread, every top-level comment, **and every changes-requested review** this
      run's own account wrote, each named with its author, the surface it sits on, and its thread,
-     comment, or review identifier. This is the only place such a **top-level
+     comment, or review identifier – including an item of that login the `mergeGate.botAccounts` case
+     excluded first, which the line above leaves out. This is the only place such a **top-level
      comment** or such a **review** is reported at all, and – for as long as `mergeGate.bots` is empty, which is the
      default – the only place any such item is reported: they no longer hold the guard, and Phase 4's
      unmatched-thread report fires only for a non-empty `mergeGate.bots` and reaches no top-level

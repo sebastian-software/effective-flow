@@ -19,6 +19,8 @@ import { test } from 'node:test';
 import { validateArchivedPairing } from '../evals/_scaffold/run-evidence.mjs';
 import { extractPrompt, renderPrompt } from '../evals/_scaffold/prompt.mjs';
 import {
+  BOT_ACCOUNT_ROWS,
+  BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
   scenarioSetup,
@@ -140,9 +142,22 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
     projectSetupRows: [['mergeGate.completion', 'ask']],
     iterateEcho: false,
   });
+  // The bot-account scenario is the one further exception: it appends exactly one row, the key the
+  // base table does not carry, and opts into nothing else.
+  assert.deepEqual(scenarioSetup(BOT_LOGIN_SCENARIO), {
+    projectSetupRows: [['mergeGate.botAccounts', 'coverage-reporter']],
+    iterateEcho: false,
+  });
+  assert.deepEqual(BOT_ACCOUNT_ROWS, [['mergeGate.botAccounts', 'coverage-reporter']]);
   for (const file of fixtureFiles()) {
     const scenario = file.slice(0, -'.json'.length);
-    if ([CONFIGURED_REVIEWER_SCENARIO, NON_INTERACTIVE_DISPATCH_SCENARIO].includes(scenario))
+    if (
+      [
+        CONFIGURED_REVIEWER_SCENARIO,
+        NON_INTERACTIVE_DISPATCH_SCENARIO,
+        BOT_LOGIN_SCENARIO,
+      ].includes(scenario)
+    )
       continue;
     assert.deepEqual(
       scenarioSetup(scenario),
