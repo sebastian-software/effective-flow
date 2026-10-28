@@ -38,6 +38,9 @@ import {
   validateRefs,
   assertQuotedDescription,
   transformRefs,
+  invocationGuidanceForHarness,
+  assertRouterInvocationGuidance,
+  RENDERED_TARGETS,
   parseAskBlock,
   renderBody,
   missingCategoryReadmes,
@@ -2806,6 +2809,78 @@ test('transformRefs rejects legacy sf- refs for exposed, internal, and agent nam
       );
     }
   }
+});
+
+// --- invocationGuidanceForHarness ---
+
+test('invocationGuidanceForHarness pins the single native prefix for claude and codex', () => {
+  assert.equal(invocationGuidanceForHarness('claude'), '`/effective-flow <tool> [arguments]`');
+  assert.equal(invocationGuidanceForHarness('codex'), '`$effective-flow <tool> [arguments]`');
+});
+
+// Protects the invariant that the portable router, the only target without a baked-in
+// prefix, tells the model to pick the chat prefix from the client surface, not the
+// model or provider: T3 Code runs Claude models but takes the Codex-style `$` prefix.
+// Each marker is the smallest stable phrase of one property, so rewording stays free.
+test('invocationGuidanceForHarness portable text carries the surface rule', () => {
+  const text = invocationGuidanceForHarness('portable');
+  const prose = text.replace(/\s+/g, ' ');
+  const surfaceLines = [
+    [/^- Claude Code\b[^\n]*`\/effective-flow/m, 'Claude Code takes the `/` prefix'],
+    [/^- Codex\b[^\n]*`\$effective-flow/m, 'Codex takes the `$` prefix'],
+    [/^- T3 Code[^\n]*`\$effective-flow/m, 'T3 Code takes the `$` prefix'],
+  ];
+  for (const [pattern, property] of surfaceLines) {
+    assert.match(text, pattern, `portable invocation guidance lost: ${property}`);
+  }
+  const rules = [
+    [/client surface/, 'the client surface picks the prefix'],
+    [/not of the model or provider/, 'the model or provider does not pick the prefix'],
+    [/context signals/, 'the surface is identified from context signals'],
+    [/shell or environment check/, 'no shell or environment check identifies the surface'],
+    [/invoked with is no signal/, 'the invoked form is no signal'],
+    [
+      /Persisted artifacts[^.]*harness-neutral notation/,
+      'persisted artifacts keep the harness-neutral notation',
+    ],
+  ];
+  for (const [pattern, property] of rules) {
+    assert.match(prose, pattern, `portable invocation guidance lost: ${property}`);
+  }
+});
+
+// Protects the router build guard: build.mjs runs assertRouterInvocationGuidance on every
+// rendered router, so an `{{INVOCATION_GUIDANCE}}` insertion that alters the guidance fails
+// the build. A plain replacement string is the known hazard: it reads the portable "`$`"
+// chip text as a "$`" pattern and splices the preceding router text into the section.
+test('assertRouterInvocationGuidance rejects guidance that was not inserted verbatim', () => {
+  const raw = '## Invocation\n\n{{INVOCATION_GUIDANCE}}\n\n## Dispatch rule\n';
+  const placeholder = /\{\{INVOCATION_GUIDANCE\}\}/g;
+  for (const harness of RENDERED_TARGETS) {
+    const guidance = invocationGuidanceForHarness(harness);
+    assert.doesNotThrow(
+      () =>
+        assertRouterInvocationGuidance(
+          raw.replace(placeholder, () => guidance),
+          harness,
+        ),
+      `verbatim ${harness} guidance must pass the guard`,
+    );
+  }
+  assert.throws(
+    () =>
+      assertRouterInvocationGuidance(
+        raw.replace(placeholder, invocationGuidanceForHarness('portable')),
+        'portable',
+      ),
+    /does not contain invocationGuidanceForHarness\('portable'\) verbatim/,
+    'a pattern-expanded portable insertion must fail the guard',
+  );
+  assert.throws(
+    () => assertRouterInvocationGuidance(raw, 'codex'),
+    /verbatim/,
+    'an unrendered placeholder must fail the guard',
+  );
 });
 
 // --- renderDeprecatedAliasClause ---

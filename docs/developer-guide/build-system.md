@@ -1189,8 +1189,12 @@ not authorize schema-1 generation or omit `standardWorkers` or `tierWorkers` fro
 inventory.
 
 Portable tool references use the harness-neutral notation `effective-flow <tool>`. Its router
-also states the executable `/effective-flow` (Claude Code) and `$effective-flow` (Codex) forms,
-so both managers install the same bytes instead of selecting by traversal order.
+also states the executable forms `/effective-flow` (Claude Code) and `$effective-flow` (Codex,
+and T3 Code with any provider), so both managers install the same bytes instead of selecting by
+traversal order. The router tells the model to pick the
+prefix by the client surface the user types into, identified only from context signals (never a
+shell or environment check); `invocationGuidanceForHarness` in `build-lib.mjs` owns the rule and
+its wording.
 
 **Context budget.** The always-loaded core of every tool is measured and enforced during the
 build (see "Guards"), each against its own per-tool budget. No tool now shares a broad allowance

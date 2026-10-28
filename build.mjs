@@ -97,6 +97,8 @@ import {
   parsePlanContractMarkedTable,
   assertPlanContractProjection,
   assertPlanPlaceholderProjection,
+  invocationGuidanceForHarness,
+  assertRouterInvocationGuidance,
 } from './build-lib.mjs';
 import {
   PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY,
@@ -1764,16 +1766,6 @@ try {
     }
     return "bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism";
   };
-  const invocationGuidanceForHarness = (harness) => {
-    if (harness === 'claude') return '`/effective-flow <tool> [arguments]`';
-    if (harness === 'codex') return '`$effective-flow <tool> [arguments]`';
-    return [
-      '- Claude Code: `/effective-flow <tool> [arguments]`',
-      '- Codex: `$effective-flow <tool> [arguments]`',
-      '',
-      'The portable instructions below use `effective-flow <tool>` as harness-neutral notation; invoke the skill with the syntax of the active harness.',
-    ].join('\n');
-  };
   const catalogForHarness = (harness) =>
     TOOL_GROUPS.map((group) => {
       const lines = [`### ${group.title}`];
@@ -1850,16 +1842,19 @@ try {
     // Router SKILL.md
     const routerBody = renderGeneratedBody(
       routerBodyRaw
-        .replace(/\{\{TOOL_CATALOG\}\}/g, catalogForHarness(harness))
-        .replace(/\{\{DEPRECATED_ALIASES\}\}/g, deprecatedAliasesForHarness(harness))
-        .replace(/\{\{WORKER_RESOLUTION\}\}/g, workerResolutionForHarness(harness))
-        .replace(/\{\{INVOCATION_GUIDANCE\}\}/g, invocationGuidanceForHarness(harness)),
+        // Replacer functions insert generated text literally; a replacement string
+        // would read `$` sequences (such as the portable "`$`" chip text) as patterns.
+        .replace(/\{\{TOOL_CATALOG\}\}/g, () => catalogForHarness(harness))
+        .replace(/\{\{DEPRECATED_ALIASES\}\}/g, () => deprecatedAliasesForHarness(harness))
+        .replace(/\{\{WORKER_RESOLUTION\}\}/g, () => workerResolutionForHarness(harness))
+        .replace(/\{\{INVOCATION_GUIDANCE\}\}/g, () => invocationGuidanceForHarness(harness)),
       harness,
       {
         ...refConfig,
         context: 'SKILL.md',
       },
     );
+    assertRouterInvocationGuidance(routerBody, harness);
     const routerContent = [
       '---',
       `name: ${routerName}`,
