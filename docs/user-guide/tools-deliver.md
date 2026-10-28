@@ -255,7 +255,10 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    comment from the gate's own account never holds it – including, in the usual manual mode, a
    comment you typed yourself – and neither does an item whose author the forge reports as a bot
    account, on either surface and whether or not that bot is listed in `mergeGate.bots`, so a CI,
-   coverage, or dependency bot commenting on the pull request does not block the merge either. CI
+   coverage, or dependency bot commenting on the pull request does not block the merge either. Some
+   such bots are typed by the forge as ordinary users (Codecov's `codecov-commenter`); the guard
+   cannot recognize those, so list the login in `mergeGate.botAccounts` to exclude its top-level
+   comments and review-thread items. That key never excludes a changes-requested review. CI
    repair stays permitted even when the guard is active, and so does the repair of a conflict with
    the base. A bot finding the run assesses but does not implement – because the guard is active, or
    because the finding was rejected – gets no thread reply at all: it is named in the run's chat
@@ -731,6 +734,11 @@ thread resolution state takes any part in it. Two operating modes exist:
   item the forge reports without a login cannot match, so it counts. If the identity read fails or
   is unavailable, nothing can be proven as the gate's own, so every non-bot item counts and the
   guard activates – reported as the reason.
+
+A third source of authorship is declared by the project rather than reported by the forge:
+`mergeGate.botAccounts` lists automated accounts the forge types as users, and the guard excludes
+their top-level comments and review-thread items. It does not apply to a submitted review, so a
+changes-requested review from a listed login still counts.
 
 **What this means for a comment you write yourself.** In manual mode you and the gate are the same
 account, so a comment you type on the pull request does **not** hold the guard – not as a top-level

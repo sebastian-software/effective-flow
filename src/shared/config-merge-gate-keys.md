@@ -23,9 +23,15 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.botAccounts` is not `mergeGate.bots`.** It lists non-reviewer bots: automated accounts,
+possibly typed as users, whose top-level comments and review-thread items {{SKILL:merge-gate}}
+treats as bot comments. The gate never triggers or waits for them, and their changes-requested
+reviews still count. A record a `mergeGate.bots` entry matches is a reviewer either way.
 
 **`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
 row; one that exists anyway is retired like any other `prReview.<key>` row, with successor

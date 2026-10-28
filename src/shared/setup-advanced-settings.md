@@ -79,6 +79,7 @@ value or default as the pre-selection:
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
 
 - `mergeGate.conflictResolution`: what a gate run does when the head branch conflicts with its base.
   `auto` (the default) has the conflict resolved by the gate's dedicated worker, the result verified
@@ -134,6 +135,17 @@ value or default as the pre-selection:
   under exactly the name to configure here. When in doubt, configure it. The two mistakes are not
   symmetric: a wrongly set context is named in the gate's own block and is corrected the moment it
   blocks, while an omitted one leaves the reviewer on the fallback and can never be reported at all.
+- `mergeGate.botAccounts`: free text, a comma list asked after `mergeGate.bots` and its per-reviewer
+  follow-ups. It is for accounts that post automatic reports – coverage, deployment previews,
+  dependency or licence scanners – but are typed as users, so the gate counts their comments as
+  human and refuses to merge. Listed, their top-level comments and review-thread items no longer
+  block the merge; their changes-requested reviews still do, and the gate never triggers or waits
+  for them, unlike a `mergeGate.bots` reviewer. Say to copy each login exactly as the comment shows
+  it, because a user-typed login matches only exactly, and never collapse two of its entries.
+- **Overlap check, both directions, before writing either list.** When a `mergeGate.bots` entry and
+  a `mergeGate.botAccounts` entry are equal after trimming one trailing `[bot]` from each, name the
+  pair and ask whether that account is a reviewer or a non-reviewer bot; change the other list only
+  with that answer.
 
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.
