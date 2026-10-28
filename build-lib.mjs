@@ -4256,6 +4256,39 @@ export function assertQuotedDescription(frontmatter, { context } = {}) {
 // The three rendered consumer targets, in build order.
 export const RENDERED_TARGETS = Object.freeze(['claude', 'codex', 'portable']);
 
+// Router `{{INVOCATION_GUIDANCE}}` per rendered target. The native targets bake
+// their one prefix in at build time. The portable router owns the only copy of
+// the surface rule: the client surface the user types into picks the prefix,
+// read from context signals only — an environment check would cost a shell
+// call (and possibly a permission prompt) at the end of nearly every run.
+export function invocationGuidanceForHarness(harness) {
+  if (harness === 'claude') return '`/effective-flow <tool> [arguments]`';
+  if (harness === 'codex') return '`$effective-flow <tool> [arguments]`';
+  return [
+    '- Claude Code (CLI, desktop, IDE): `/effective-flow <tool> [arguments]`',
+    '- Codex: `$effective-flow <tool> [arguments]`',
+    '- T3 Code, with any provider including Claude: `$effective-flow <tool> [arguments]`',
+    '',
+    'The portable instructions below use `effective-flow <tool>` as harness-neutral notation.',
+    'Chat text you write yourself (tool catalog, deprecated-alias notice, next-step block, invocation suggestions) never shows that notation; it uses the syntax of the client surface the user types into, not of the model or provider.',
+    "Identify the surface only from context signals, such as the host's self-identification in the session context (T3 Code's runtime information or its `t3-code` MCP tools), never from a shell or environment check; without such a signal, use the running harness's native syntax.",
+    'The form this skill was invoked with is no signal: T3 Code forwards a `$` chip as a native slash command.',
+    'Persisted artifacts (plans, issues, PRs, commits) keep the harness-neutral notation, and relayed worker reports keep their wording.',
+  ].join('\n');
+}
+
+// Router build guard: every rendered router body must carry its target's guidance
+// verbatim. A plain replacement string would read the portable "`$`" chip text as a
+// "$`" pattern and splice the preceding router text into the Invocation section.
+export function assertRouterInvocationGuidance(routerBody, harness) {
+  if (!routerBody.includes(invocationGuidanceForHarness(harness))) {
+    throw new Error(
+      `Router SKILL.md (${harness}) does not contain invocationGuidanceForHarness('${harness}') verbatim; ` +
+        'insert {{INVOCATION_GUIDANCE}} through a replacer function, not a replacement string',
+    );
+  }
+}
+
 // --- Reference transforms ---
 //
 // {{SKILL:X}} -> harness-specific exposed tool invocation, or
@@ -4321,8 +4354,8 @@ export function transformRefs(
     throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
   }
   return body
-    .replace(/\{\{FLOW\}\}/g, command)
-    .replace(/\{\{BUILD_TARGET\}\}/g, harness)
+    .replace(/\{\{FLOW\}\}/g, () => command)
+    .replace(/\{\{BUILD_TARGET\}\}/g, () => harness)
     .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
       exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
     )

@@ -62,7 +62,8 @@ discarding work or deleting state, is not scored at all.
 The environment in which Effective Flow runs as a skill – currently Claude Code and Codex.
 Effective Flow is built from a shared source tree for both harnesses; as a user you usually
 notice nothing of this, except in the exact call syntax (`/effective-flow <tool>` on Claude Code,
-`$effective-flow <tool>` on Codex).
+`$effective-flow <tool>` on Codex). The client surface you type into decides the prefix, not the
+model: T3 Code uses `$effective-flow <tool>` for every provider, including Claude.
 
 ## Clarification gate
 
