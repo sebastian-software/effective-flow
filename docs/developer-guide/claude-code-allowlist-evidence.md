@@ -71,10 +71,12 @@ Under default mode with the rule `Bash(node <abs stub> lock acquire *)`:
 - a prompt for the multi-line heredoc (`<<'JSON'` … `JSON`)
 
 Claude Code evaluates the lines of a multi-line heredoc as separate commands, so an allow rule
-cannot cover it. The documented heredoc shape of the shipped helpers is therefore incompatible with
-allow rules. The maintainer decided to measure the here-string as the primary non-destructive shape
-and to record the heredoc as an additional call. This is a recorded deviation from the plan's
-decision rule, which named the heredoc.
+cannot cover it. Only `plan-publication`'s contract prescribes a multi-line here-document, offered
+as an alternative to a file, so it must move to a here-string, pipe, or file form before that helper
+can be allowlisted. The other helper contracts leave the stdin shape open. The maintainer decided to
+measure the here-string as the primary non-destructive shape and to record the heredoc as an
+additional call. This is a recorded deviation from the plan's decision rule, which named the
+heredoc.
 
 ## Path-form probe
 
@@ -260,7 +262,9 @@ unchanged. The sandbox repository is kept until work package 4.
 ## Hand-off to work package 2
 
 - Helpers must receive their JSON through a here-string, a pipe, or a file, never a multi-line
-  heredoc. The shipped helpers' prose shape must change for any helper meant to be allowlisted.
+  heredoc. `plan-publication`'s contract must move off its here-document. The other helpers leave the
+  stdin shape open, so work package 2 should fix an allowlistable shape (here-string, pipe, or
+  file) in every helper contract it means to allowlist.
 - Allowlisted prefixes must reject any extra argument and any argument containing substitution,
   because the rule's trailing `*` admits them.
 - Destructive operations must stay outside every rule. In auto mode they are left to the
