@@ -47,11 +47,22 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // it runs no delegation-envelope helper, because it receives envelopes rather than building them.
 // The exit channel is a seed of its own, contributed by the overlay at the path the run executes it
 // from.
+//
+// The mechanics helper is seeded as well, with the three cores its core imports and the process
+// runner its CLI imports: the `worktree-integration` and `base-branch-resolution` fragments in this
+// suite's load closure execute the shipped `scripts/effective-flow-mechanics.mjs`, no load pointer
+// names it, and nothing stubs it.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/iterate.md',
   'scripts/config-resolve.mjs',
   'scripts/config-resolve-core.mjs',
+  'scripts/effective-flow-mechanics.mjs',
+  'scripts/effective-flow-mechanics-core.mjs',
+  'scripts/plan-lint-core.mjs',
+  'scripts/delivery-selection-core.mjs',
+  'scripts/remote-tracker-shared-core.mjs',
+  'scripts/process-runner.mjs',
 ]);
 
 // Shared with `merge-gate`: the stub is fixture-driven and names no tool (see its own header).

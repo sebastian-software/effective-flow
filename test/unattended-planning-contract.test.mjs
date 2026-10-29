@@ -186,9 +186,6 @@ const QUESTION_INVENTORY = Object.freeze(
         'fall back to evaluating these rules by hand. The clarification gate treats the plan as **not',
       ],
     ],
-    'shared/plan-numbering.md': [
-      ['P-NUM', '- If more than one file matches, ask; never heuristically pick the "newest".'],
-    ],
     'shared/plan-publication.md': [
       ['P-PUB', 'plan stays local as today. Ask nothing and report no publication line.'],
       ['P-PUB', 'no separate completion question is asked.'],
@@ -210,7 +207,10 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
     ],
     'shared/plan-reference-routing.md': [
-      ['P-NUM', '4. If multiple files match: ask the user for the specific file.'],
+      [
+        'P-NUM',
+        '- `ambiguous`: ask the user which of `data.candidates` is meant; never pick one heuristically.',
+      ],
       [
         'P-REV',
         '- exactly one status line `**Planungsstatus:** Umgesetzt` or `**Plan status:** Implemented` → ask the user whether the plan should be implemented again, only checked, or whether the workflow should be aborted.',
@@ -430,7 +430,7 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       [
         'P-VAL',
-        '**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to the next free numeric suffix per Phase 3); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.',
+        '**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to a fresh Phase 3 `name-allocate` result); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.',
       ],
       [
         'P-CRT',
@@ -669,7 +669,11 @@ test('planning and file review keep distinct entry controls and the exact artifa
     '### Question-site outcomes',
   );
   assert.match(planning, /Only a \*\*new\*\* plan is writable/);
-  includesLiteral(planning, '<plan.dir>/YYYY-MM-DD-issue-<N>-<slug>.md');
+  // The writable name comes only from the helper's `unattended-plan` family; the restated name
+  // form and its collision suffixes stay out of this fragment.
+  includesLiteral(planning, '`name-allocate`');
+  includesLiteral(planning, '`family` `unattended-plan`, `issue` `<N>`');
+  assert.doesNotMatch(planning, /YYYY-MM-DD-issue-<N>-<slug>|`-2`, `-3`/);
   assert.match(
     planning,
     /No other plan, runtime file, Git index, branch, forge object or configuration is writable/,

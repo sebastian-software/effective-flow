@@ -43,11 +43,10 @@ Stage A needs no tracker I/O and is available to every skill. Determine the
 type in this order (first matching rule wins):
 
 1. **Empty/no argument** → `none`.
-2. **Plan reference** → `plan`, if the argument resolves to exactly one file under
-   `<plan.dir>/` or `<plan.dir>/archive/`. Permitted forms as in
-   `plan-reference-routing`: full path (`<plan.dir>/YYYY-MM-DD-…md`),
-   date-slug file name (`YYYY-MM-DD-…md`), legacy number without path (`NNNN`, resolved primarily
-   via the H1) or — as a fallback — the title slug.
+2. **Plan reference** → `plan`, if `node <skill-root>/scripts/effective-flow-mechanics.mjs
+plan-reference-resolve` (stdin JSON: `cwd` the root holding `<plan.dir>`, `planDir`, `reference`
+   the argument) returns `resolved`; `outside-plan-dir`, `not-found` or `ambiguous` → next rule. A
+   nonzero exit, unparsable envelope or `ok: false` (`UNSAFE_PATH` included) stops (fail closed).
 3. **Review report** → `review-report`, if the argument resolves to exactly one `*.md` file
    below absolute `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Resolve a filename-only
    argument directly below that directory; resolve a project-relative

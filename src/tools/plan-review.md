@@ -87,13 +87,8 @@ when: the delegation payload carries Run state: non-interactive
 
 Expect exactly one of these explicit modes:
 
-- **File mode:** one plan reference under `<plan.dir>/` or `<plan.dir>/archive/`, for example:
-
-  - `<plan.dir>/2024-06-01-interaktive-plan-review-iteration.md`
-  - `<plan.dir>/archive/2024-06-01-interaktive-plan-review-iteration.md`
-  - `2024-06-01-interaktive-plan-review-iteration.md`
-  - `interaktive-plan-review-iteration` (title slug)
-  - `0066` (legacy number of a migrated old plan, resolved primarily via the H1)
+- **File mode:** one plan reference under `<plan.dir>/` or `<plan.dir>/archive/`, in any form
+  `plan-reference-resolve` accepts (Phase 1).
 
 - **Issue mode:** a delegation receipt from `{{SKILL:plan-issue}}` containing exactly one issue
   reference, the canonical planning-comment ID, its freshly read body and `expectedBodyHash`, the
@@ -125,12 +120,14 @@ central-reasoning-delegation
 ### Phase 1: Load and normalize through the artifact adapter
 
 1. Select exactly one adapter from the explicit input:
-   - **File adapter:** resolve the plan reference to exactly one file under `<plan.dir>/` or
-     `<plan.dir>/archive/`. Search both locations and determine uniqueness across their combined
-     candidates; a missing archive contributes no candidates. Support a full path, date-slug file
-     name, title slug, or four-digit legacy number. Resolve a legacy number primarily via its H1
-     `# NNNN: …`; use the file name segment only as the existing secondary signal. Read that file
-     fresh from the file system.
+   - **File adapter:** resolve the plan reference with
+     `node <skill-root>/scripts/effective-flow-mechanics.mjs plan-reference-resolve` and exactly
+     one JSON object on standard input — `cwd` the verified root `plan.dir` resolves against (the
+     checkout root, or `RUNTIME_STATE_ROOT` in hidden mode), `planDir` the configured `plan.dir`,
+     `reference` the argument. `resolved`: read `data.path` fresh from the file system, reporting
+     a true `data.archiveIgnored`; `ambiguous`, `not-found` or `outside-plan-dir`: handle as a
+     missing or ambiguous reference under "Input". A nonzero exit, an unparsable envelope or
+     `ok: false` stops the run, naming the error code; never resolve the reference by hand.
    - **Issue adapter:** accept only the complete delegation receipt from `plan-issue`. Verify that
      the supplied body starts with `<!-- effective-flow-plan-issues -->` (the caller canonicalizes
      the old marker before delegation), that the comment ID is positive, and that one issue and one

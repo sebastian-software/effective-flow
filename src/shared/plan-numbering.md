@@ -10,14 +10,19 @@ collision resolution: a plan is simply written under its final name when it is p
 
 ### New plan: date + slug
 
-- File name: `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date
-  (ISO, e.g. from `date +%F`). `<slug>` is a kebab-case slug derived from the title (only `a–z`,
-  `0–9`, hyphen).
+- File name: `<plan.dir>/YYYY-MM-DD-<slug>.md`, allocated by the helper: run
+  `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate` with exactly one JSON
+  object on standard input — `cwd` the verified root `plan.dir` resolves against (the checkout
+  root, or `RUNTIME_STATE_ROOT` in hidden mode), `family` `plan`, `dir` the
+  configured `plan.dir`, `text` the title. `allocated`: write to `data.path`; the helper owns the
+  date, slug and same-day collision suffix, and counts a name in `<plan.dir>/archive/` as taken.
+  `archive-unusable`: `<plan.dir>/archive` exists but is not a safe directory; stop, naming it.
+  **Fail closed:** a nonzero exit, an envelope that does not parse, or `ok: false` (such as
+  `INVALID_INPUT` for a title that yields an empty slug) stops the run, naming the error code;
+  never compose the name by hand.
 - **No advance reservation, no stub, no number.** The file is created only when the
   plan is actually written. There is no reservation timestamp, no
-  read-back, and no renumbering.
-- **Name collision on the same day:** if the name already exists, append a numeric
-  suffix (`YYYY-MM-DD-<slug>-2.md`, `-3`, …). No silent overwriting.
+  read-back, and no renumbering. No silent overwriting.
 - The plan's H1 is the title without a number: `# <Title>`.
 
 ### Migration of old plans (NNNN → date)
@@ -65,16 +70,5 @@ Umgesetzt/Implemented marker is retained in the file.
 
 ### Resolve a plan reference
 
-A plan reference can be: a full path, a file name, a legacy number, or a
-title slug. Search in `<plan.dir>/` **and** `<plan.dir>/archive/`.
-
-- **Resolve a legacy number unambiguously:** a four-digit number `NNNN` is resolved **primarily via
-  the H1** `# NNNN: …`, not via the file name segment. Reason: a new plan
-  with a slug that starts with four digits (title "2024 Retrospective" →
-  `YYYY-MM-DD-2024-retrospective.md`) is indistinguishable at the file name from the migrated
-  legacy pattern `YYYY-MM-DD-NNNN-slug.md`. Only migrated old plans
-  carry a `# NNNN:` H1; new plans have `# <Title>` without a number. The H1 is thus the
-  reliable discriminator; the file name segment is only a secondary signal when the H1
-  is missing.
-- **The slug** is the stable anchor for new plans (which carry no number).
-- If more than one file matches, ask; never heuristically pick the "newest".
+Resolve a plan reference with `plan-reference-resolve` as under "Plan references"; it searches
+`<plan.dir>/` **and** `<plan.dir>/archive/`.

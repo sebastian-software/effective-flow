@@ -321,7 +321,10 @@ export function resolveVisibility(value, field = 'visibility') {
 // `effective_flow`, `effectiveflow`) are matched case-insensitively because they are identifiers
 // and every marker contains one; the spaced form is matched only as the product's title-cased name,
 // because "an effective flow of data" is ordinary English a review reply may legitimately contain.
-const PRODUCT_NAME_PATTERNS = Object.freeze([/effective[-_.]?flow/i, /\bEffective\s+Flow\b/]);
+export const PRODUCT_NAME_PATTERNS = Object.freeze([
+  /effective[-_.]?flow/i,
+  /\bEffective\s+Flow\b/,
+]);
 
 export function assertUndisclosed(text, field) {
   if (PRODUCT_NAME_PATTERNS.some((pattern) => pattern.test(text))) {

@@ -310,23 +310,23 @@ options:
    this source state to detect intervening changes without inventing an undefined handle. A
    several-match result is not one of those recorded values, because it ends the run instead of
    travelling forward as a state a later step has to interpret.
-3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup
-   ADR resolved, resolve the ADR file-name convention as defined in the building block above
-   (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved
-   form, the resolution tier (a declaring source, the observed evidence, or the Effective Flow
-   default), the zero-pad width where the form carries numbers, and the file path that established
-   it where that tier has one, plus any unanimous observed evidence that contradicted the
-   declaration, every speaking source with its classified outcome wherever more than one spoke, any
-   width divergence between speaking sources that agreed on the classification axis, and a flag
-   recording whether the ambiguity fence was reached but could not be posed. Step 6 item 4 writes
-   through this value and Step 8 reports it, that flag included — so the flag is a carried component
-   rather than something Step 8 has to reconstruct. If the resolution reaches its
-   ambiguity fence, answer the fence before continuing; nothing is written until it is answered.
-   A run that cannot ask does not stall there: an unanswered, skipped, or non-interactive run
-   resolves exactly as the fence's `Inconclusive` option does — every declaration set aside, the
-   observed evidence deciding next, and the Effective Flow default only where that is inconclusive
-   too — sets the not-posed flag, and carries every speaking source and its outcome forward for
-   Step 8.
+3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup ADR
+   resolved, resolve the ADR file-name convention as defined in the building block above
+   (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved form,
+   the resolution tier (a declaring source, the observed evidence, or the Effective Flow default),
+   the zero-pad width where the form carries numbers (`adr-observe`'s or `adr-allocate`'s
+   `data.width`), and the file path that established it where that tier has one, plus any unanimous
+   observed evidence that contradicted the declaration, every speaking source with its classified
+   outcome wherever more than one spoke, any width divergence between speaking sources that agreed
+   on the classification axis, and a flag recording whether the ambiguity fence was reached but
+   could not be posed. Step 6 item 4 writes through this value and Step 8 reports it, that flag
+   included — so the flag is a carried component rather than something Step 8 has to reconstruct. If
+   the resolution reaches its ambiguity fence, answer the fence before continuing; nothing is
+   written until it is answered. A run that cannot ask does not stall there: an unanswered, skipped,
+   or non-interactive run resolves exactly as the fence's `Inconclusive` option does — every
+   declaration set aside, the observed evidence deciding next, and the Effective Flow default only
+   where that is inconclusive too — sets the not-posed flag, and carries every speaking source and
+   its outcome forward for Step 8.
 4. **Form the current values.** Take the "current values" overview (key → currently recorded
    `raw` value) from `data.values`, which keeps every known and unknown key, and retain
    `data.source.language` as the envelope language and `data.source.rows` (each table row's exact
@@ -564,10 +564,10 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      `docs/adr/effective-flow-project-setup.md`, a path this run did not resolve and where a
      different project setup ADR can already sit — one the locator passed over because its
      configuration envelope is missing, or one it never looked for because a marker pointed
-     straight at the legacy path. Run `project-adr-convention`'s unconditional pre-write existence
-     check on the switched target before writing it, and where a file already sits there, stop and
-     report both paths — the resolved legacy-slug ADR and the occupied current-slug target —
-     rather than overwriting a different project setup ADR. The no-rename rule
+     straight at the legacy path. Check the switched target per `project-adr-convention`, "No
+     rename on the convention axis", never through `adr-allocate`: where a file already sits there,
+     stop and report both paths — the resolved legacy-slug ADR and the occupied current-slug target
+     — rather than overwriting a different project setup ADR. The no-rename rule
      decides only which path is written, not whether writing it is safe: that existing path stays
      subject to `project-adr-convention`'s symlink hard stop and its physical containment check,
      evaluated in that order. A symlink at that path is never a write target — report the path and

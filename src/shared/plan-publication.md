@@ -166,13 +166,12 @@ A plan pull request that was merged has already been archived by its delivery, a
 closed without merging is not open. Neither is a candidate, so publishing that plan again starts a
 fresh branch.
 
-**Branch name, first publication only.** Construct `<delivery.branchPrefix>/<skill>/<slug>` under
-"Shared preconditions" step 4. `<skill>` is the tool named in the plan's recommended-workflow field
-(`build`, `fix`, `refactor`, or `docs`), and `<slug>` comes from the plan title. The name is never
-the discovery key. A name counts as taken when `refs/heads/<name>` exists locally or
-`git -C <RUNTIME_STATE_ROOT> ls-remote --heads origin <name>` lists `origin/<name>`, so a stale
-remote-tracking ref cannot hide a remote branch. Append the next numeric suffix until neither
-holds, and report the chosen name.
+**Branch name, first publication only.** Name it by "Shared preconditions" step 4, with `cwd`
+`RUNTIME_STATE_ROOT`, `skill` the tool in the plan's recommended-workflow field (`build`, `fix`,
+`refactor`, or `docs`) and `text` the plan title. The name is never the discovery key. A returned
+name that `git -C <RUNTIME_STATE_ROOT> ls-remote --heads origin <name>` lists is taken as well, so a
+stale remote-tracking ref cannot hide a remote branch: add it to `excludeNames` and call again until
+the listing is empty, then report the chosen name.
 
 ### Audience
 

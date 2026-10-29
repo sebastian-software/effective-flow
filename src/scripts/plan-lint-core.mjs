@@ -157,6 +157,31 @@ export const PLAN_PLACEHOLDERS = deepFreeze([
   },
 ]);
 
+// The unattended plan file name, `YYYY-MM-DD-issue-<N>-<slug>.md`, with the plan-numbering slug
+// alphabet. Owned here with the rest of the plan-file contract; `plan-publication-core` and the
+// mechanics helper import it.
+export const UNATTENDED_PLAN_NAME =
+  /^\d{4}-\d{2}-\d{2}-issue-([1-9]\d*)-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.md$/;
+
+// In-process ref-name rule for a branch prefix or a branch name: no empty segment (so no leading,
+// trailing or doubled `/`), no segment starting or ending with `.`, no `..`, no `.lock` segment
+// suffix, no `@{`, and no control, space or `~^:?*[\` character. `git check-ref-format` stays the
+// authority; this rule only keeps an unsafe name from reaching any command.
+const REF_FORBIDDEN = /[\u0000- \u007f~^:?*[\\]/;
+
+export function refPathProblem(value) {
+  if (typeof value !== 'string' || value === '') return 'empty';
+  if (REF_FORBIDDEN.test(value) || value.includes('..') || value.includes('@{') || value === '@') {
+    return 'forbidden-character';
+  }
+  for (const segment of value.split('/')) {
+    if (segment === '') return 'empty-segment';
+    if (segment.startsWith('.') || segment.endsWith('.')) return 'dot-segment';
+    if (segment.endsWith('.lock')) return 'lock-suffix';
+  }
+  return null;
+}
+
 export class PlanLintError extends Error {
   constructor(code, message) {
     super(message);
@@ -693,7 +718,7 @@ function missingPlanDir(fs, planDirAbs, cwdReal) {
   return null;
 }
 
-function resolveRoots(input, fs) {
+export function resolveRoots(input, fs) {
   if (!path.isAbsolute(input.cwd)) fail('INVALID_CWD', 'cwd must be an absolute path');
   const cwdStat = statOrNull(fs, input.cwd);
   if (!cwdStat || !cwdStat.isDirectory()) fail('INVALID_CWD', 'cwd is not an existing directory');
@@ -731,7 +756,7 @@ function regularFileExists(fs, target) {
 }
 
 // Resolves one caller-supplied `files` entry to its location and real path, or fails closed.
-function resolveFileEntry(entry, roots, fs) {
+export function resolveFileEntry(entry, roots, fs) {
   if (path.isAbsolute(entry) || path.win32.isAbsolute(entry)) {
     fail('UNSAFE_PATH', `files entry must be relative to cwd: ${entry}`);
   }
@@ -768,7 +793,7 @@ function resolveFileEntry(entry, roots, fs) {
 }
 
 // Every top-level `*.md` regular file (no symlink) in name order, with its identity at listing.
-function listTopLevel(roots, fs) {
+export function listTopLevel(roots, fs) {
   if (!roots.planDirReal) return [];
   const files = [];
   const names = fs
@@ -797,7 +822,7 @@ const READ_FLAGS =
 
 // Reads a plan through one descriptor that is proven to be the regular file the containment check
 // saw: no symlink at the last component, same device and inode, so a swap in between fails closed.
-function readPlanFile(file, fs, { publication = false } = {}) {
+export function readPlanFile(file, fs, { publication = false } = {}) {
   let descriptor;
   try {
     descriptor = fs.openSync(file.real, READ_FLAGS);
