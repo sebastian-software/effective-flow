@@ -851,7 +851,16 @@ is a `BREAK_MISMATCH` outcome before anything is deleted. `lock release` and `lo
 through a tombstone: after the guards and the last observation they rename the lock directory to
 a unique `<lock>.release-<hex>` or `<lock>.break-<hex>` sibling, verify identity, owner size and
 digest on the renamed node, and only then delete it, renaming a mismatch (an unobservable
-tombstone included) back while the lock name is free. A verified tombstone whose delete fails has
+tombstone included) back while the lock name is free. Every helper mutation of a lock path is
+serialized by that lock's guard, a bare `mkdir` sibling `<lock>.guard`: `lock acquire` holds it
+from its `mkdir` through the owner write, identity re-check and cleanup, and `lock release` and
+`lock break` from their final observation through rename, verification, restore and delete. No
+helper call can therefore release, break or re-acquire the lock between a final identity check and
+the path mutation relying on it, so removal and cleanup only touch the validated node, and the
+tombstone check remains for changes made outside the helper. A guard is never broken by age: a
+call that cannot take it within 10 seconds fails with `RUNTIME_STATE_UNSAFE` naming it and changes
+nothing, and a guard left by an interrupted helper is removed by hand (`rmdir`) only after
+confirming no `effective-flow-state` call is running. A verified tombstone whose delete fails has
 already freed the lock name, so the operation succeeds with `leftoverTombstone`. A tombstone is
 no lock name and never blocks `lock acquire`, but one left by an interrupted helper, a failed
 delete or a mismatch that could not be renamed back may hold an unverified directory;

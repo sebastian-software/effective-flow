@@ -24,11 +24,14 @@ import {
 } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { setTimeout as delay } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
 import {
   DEFAULT_WAIT_SECONDS,
+  GUARD_RETRY_MS,
+  GUARD_WAIT_MS,
   LOCKS,
   LOCK_NAMES,
   MAX_HASH_BYTES,
@@ -1274,7 +1277,7 @@ test('a replaced lock directory loses only the owner file this attempt wrote', a
 });
 
 // Invariant: while the lock path is occupied, a retry costs one lstat; the git guard runs only for
-// the first attempt.
+// the first attempt, once for the lock path and once for its mutation guard.
 test('retries probe the lock path before running the guard again', async (t) => {
   const root = fakeRoot(t);
   await acquire(root);
@@ -1289,7 +1292,7 @@ test('retries probe the lock path before running the guard again', async (t) => 
   assert.ok(outcome.attempts > 2);
   const guardRuns = git.calls.filter((call) => call.args.includes('ls-files')).length;
   // The existing `.effective-flow/` needs no guard to ensure; only the first attempt guards.
-  assert.equal(guardRuns, 1, 'only the first attempt runs the git guard');
+  assert.equal(guardRuns, 2, 'only the first attempt runs the git guard');
 });
 
 // ---------------------------------------------------------------------------------------------
@@ -1473,4 +1476,273 @@ test('a failed tombstone delete succeeds with leftoverTombstone and is listed', 
     .sort();
   assert.deepEqual(view.tombstones, expected);
   assert.equal(view.tombstoneCount, 2);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Mutation guard: acquire, release, break and acquisition cleanup are serialized
+
+function guardDir(root, lock) {
+  return `${lockDir(root, lock)}.guard`;
+}
+
+async function inspectLock(root, lock) {
+  return (await run('inspect', { cwd: root, lock }, fakeGit(root))).result;
+}
+
+// The deps of a rival helper call started inside an injected hook. A guard wait pauses on a short
+// real timer and never times out; `blocked` resolves at the rival's first guard wait, which proves
+// it reached the guard while the hooked call held it.
+function rival(root) {
+  const state = { waited: false };
+  let signal;
+  state.blocked = new Promise((resolve) => (signal = resolve));
+  let time = 0;
+  state.deps = {
+    ...fakeGit(root),
+    monotonicNow: () => time,
+    sleep: async (ms) => {
+      if (ms === GUARD_RETRY_MS) {
+        state.waited = true;
+        signal();
+        await delay(1);
+      } else {
+        time += ms;
+      }
+    },
+  };
+  return state;
+}
+
+// Starts `body` as a rival and returns once it waits for the guard (or, unguarded, has finished).
+async function startRival(state, body) {
+  state.done = body(state.deps);
+  await Promise.race([state.blocked, state.done]);
+}
+
+// After a race: the replacement owner `b` holds an intact lock that a third caller cannot take.
+async function assertSoleHolder(root, lock, b) {
+  assert.equal(b.ok, true, JSON.stringify(b));
+  const view = await inspectLock(root, lock);
+  assert.equal(view.owner.state, 'valid');
+  assert.equal(view.owner.fields.token, b.result.owner.token);
+  assert.deepEqual(view.entries, [LOCKS[lock].ownerFile]);
+  await expectOutcome(
+    'acquire',
+    { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 },
+    'LOCK_HELD',
+    fakeGit(root),
+  );
+  assert.deepEqual(stateEntries(root), [LOCKS[lock].directory]);
+}
+
+// Calls `hook` once, right before the first rename of the lock directory itself.
+function beforeLockRename(root, lock, hook) {
+  let fired = false;
+  return {
+    rename: async (from, to) => {
+      if (!fired && from === lockDir(root, lock)) {
+        fired = true;
+        await hook();
+      }
+      await renamePath(from, to);
+    },
+  };
+}
+
+// Invariant: a break and a re-acquire cannot land between a release's final observation and its
+// rename: both wait for the guard, the release removes only its own lock, and the replacement
+// owner then holds the lock alone.
+test('guard: a break and re-acquire racing a release never displace the new owner', async (t) => {
+  for (const lock of LOCK_NAMES) {
+    const root = fakeRoot(t);
+    const a = await acquire(root, lock);
+    const other = rival(root);
+    const fs = beforeLockRename(root, lock, () =>
+      startRival(other, async (deps) => {
+        const broken = await run('break', { cwd: root, lock, token: a.owner.token }, deps);
+        const b = await run(
+          'acquire',
+          { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 },
+          deps,
+        );
+        return { broken, b };
+      }),
+    );
+    const released = await run(
+      'release',
+      { cwd: root, lock, token: a.owner.token },
+      { ...fakeGit(root), fs },
+    );
+    const { broken, b } = await other.done;
+    assert.ok(other.waited, `${lock}: the rival waited for the guard`);
+    assert.equal(released.ok, true, JSON.stringify(released));
+    assert.equal(broken.outcome?.code, 'BREAK_MISMATCH', JSON.stringify(broken));
+    assert.equal(broken.outcome.reason, 'missing');
+    await assertSoleHolder(root, lock, b);
+  }
+});
+
+// Invariant: a release and a re-acquire cannot land between a break's final observation and its
+// rename, so the break removes exactly the observed lock and never the replacement owner's.
+test('guard: a release and re-acquire racing a break never displace the new owner', async (t) => {
+  for (const lock of LOCK_NAMES) {
+    const root = fakeRoot(t);
+    const a = await acquire(root, lock);
+    const other = rival(root);
+    const fs = beforeLockRename(root, lock, () =>
+      startRival(other, async (deps) => {
+        const released = await run('release', { cwd: root, lock, token: a.owner.token }, deps);
+        const b = await run(
+          'acquire',
+          { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 },
+          deps,
+        );
+        return { released, b };
+      }),
+    );
+    const broken = await run(
+      'break',
+      { cwd: root, lock, token: a.owner.token },
+      { ...fakeGit(root), fs },
+    );
+    const { released, b } = await other.done;
+    assert.ok(other.waited, `${lock}: the rival waited for the guard`);
+    assert.equal(broken.ok, true, JSON.stringify(broken));
+    assert.equal(broken.result.broken, true);
+    assert.equal(released.outcome?.code, 'NOT_HELD', JSON.stringify(released));
+    await assertSoleHolder(root, lock, b);
+  }
+});
+
+// Invariant: while a mismatching tombstone waits to be renamed back, a competing acquire cannot
+// take the free lock name: it waits for the guard, the observed lock is restored intact, and the
+// competitor then finds it held.
+test('guard: a competing acquire cannot take the lock name during a restore', async (t) => {
+  for (const lock of LOCK_NAMES) {
+    const root = fakeRoot(t);
+    const a = await acquire(root, lock);
+    const other = rival(root);
+    let calls = 0;
+    const fs = {
+      rename: async (from, to) => {
+        calls += 1;
+        await renamePath(from, to);
+        if (calls !== 1) return;
+        // A change outside the helper makes the tombstone a mismatch; the restore gap opens now.
+        writeFileSync(join(to, 'intruder'), 'x');
+        await startRival(other, (deps) =>
+          run('acquire', { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 }, deps),
+        );
+      },
+    };
+    const broken = await expectOutcome(
+      'break',
+      { cwd: root, lock, token: a.owner.token },
+      'BREAK_MISMATCH',
+      { ...fakeGit(root), fs },
+    );
+    const competitor = await other.done;
+    assert.ok(other.waited, `${lock}: the competitor waited for the guard`);
+    assert.equal(broken.reason, 'changed-before-removal');
+    assert.equal(competitor.outcome?.code, 'LOCK_HELD', JSON.stringify(competitor));
+    assert.equal(
+      competitor.outcome.owner.fields?.token,
+      a.owner.token,
+      'the restored lock is the observed one',
+    );
+    assert.deepEqual(stateEntries(root), [LOCKS[lock].directory]);
+    assert.deepEqual(
+      readdirSync(lockDir(root, lock)).sort(),
+      ['intruder', LOCKS[lock].ownerFile].sort(),
+    );
+    const stored = JSON.parse(
+      readFileSync(join(lockDir(root, lock), LOCKS[lock].ownerFile), 'utf8'),
+    );
+    assert.equal(stored.token, a.owner.token);
+  }
+});
+
+// Invariant: a failed acquisition's cleanup is never overtaken by a confirmed break and a
+// re-acquire: both wait for the guard, the cleanup removes only the attempt's own file and
+// directory, and the new owner's lock survives. Covers the cleanup before and after the owner file
+// exists.
+test('guard: acquisition cleanup never deletes a lock re-acquired after a break', async (t) => {
+  for (const ownerCreated of [false, true]) {
+    for (const lock of LOCK_NAMES) {
+      const root = fakeRoot(t);
+      const other = rival(root);
+      const race = () =>
+        startRival(other, async (deps) => {
+          const seen = await inspectLock(root, lock);
+          const breakInput = { cwd: root, lock, identity: seen.identity };
+          if (seen.owner.state === 'invalid') breakInput.ownerDigest = seen.owner.sha256;
+          const broken = await run('break', breakInput, deps);
+          const b = await run(
+            'acquire',
+            { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 },
+            deps,
+          );
+          return { broken, b };
+        });
+      const fs = {
+        open: async (target, flags, mode) => {
+          if (!isOwnerWrite(flags)) return openFile(target, flags, mode);
+          if (!ownerCreated) {
+            await race();
+            throw Object.assign(new Error('denied'), { code: 'EACCES' });
+          }
+          const handle = await openFile(target, flags, mode);
+          return {
+            writeFile: async () => {
+              await race();
+              throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+            },
+            sync: () => handle.sync(),
+            close: () => handle.close(),
+          };
+        },
+      };
+      await expectError(
+        'acquire',
+        { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 },
+        'WRITE_FAILED',
+        { ...fakeGit(root), fs },
+      );
+      const { broken, b } = await other.done;
+      assert.ok(other.waited, `${lock}: the rival waited for the guard`);
+      assert.equal(broken.outcome?.code, 'BREAK_MISMATCH', JSON.stringify(broken));
+      assert.equal(broken.outcome.reason, 'missing');
+      await assertSoleHolder(root, lock, b);
+    }
+  }
+});
+
+// Invariant: a guard left by an interrupted helper is never broken by age: after the bounded wait
+// every mutating operation fails closed with RUNTIME_STATE_UNSAFE naming it, the lock and the
+// guard stay as they were, and the read-only inspect still answers.
+test('guard: a leftover guard blocks every mutation and changes nothing', async (t) => {
+  for (const lock of LOCK_NAMES) {
+    const root = fakeRoot(t);
+    const a = await acquire(root, lock);
+    mkdirSync(guardDir(root, lock));
+    const clock = fakeClock();
+    const deps = () => ({ ...fakeGit(root), sleep: clock.sleep, monotonicNow: clock.monotonicNow });
+    const inputs = [
+      ['acquire', { cwd: root, lock, owner: OWNERS[lock], waitSeconds: 0 }],
+      ['release', { cwd: root, lock, token: a.owner.token }],
+      ['break', { cwd: root, lock, token: a.owner.token }],
+    ];
+    for (const [operation, input] of inputs) {
+      const start = clock.time;
+      const envelope = await expectError(operation, input, 'RUNTIME_STATE_UNSAFE', deps());
+      assert.ok(envelope.error.message.includes(guardDir(root, lock)), envelope.error.message);
+      assert.equal(clock.time - start, GUARD_WAIT_MS, 'the guard wait is bounded');
+    }
+    const view = await inspectLock(root, lock);
+    assert.equal(view.owner.fields.token, a.owner.token);
+    assert.deepEqual(
+      stateEntries(root),
+      [LOCKS[lock].directory, `${LOCKS[lock].directory}.guard`].sort(),
+    );
+  }
 });

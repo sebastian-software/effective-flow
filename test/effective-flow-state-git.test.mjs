@@ -396,9 +396,10 @@ test('race: an owner rewritten in place is BREAK_MISMATCH', async (t) => {
   assert.ok(existsSync(join(dir, 'owner.json')));
 });
 
-// Invariant: a release and re-acquire that lands between the break's last observation and its
-// rename, even on the reused inode with the observed mtime, is caught by the tombstone check and
-// renamed back, so the new holder's lock survives.
+// Invariant: a release and re-acquire outside the helper, which its guard cannot serialize, that
+// lands between the break's last observation and its rename, even on the reused inode with the
+// observed mtime, is caught by the tombstone check and renamed back, so the new holder's lock
+// survives.
 test('race: a re-acquire between the last observation and the rename is restored', async (t) => {
   const root = repository(t);
   const lock = 'iterate-commit';

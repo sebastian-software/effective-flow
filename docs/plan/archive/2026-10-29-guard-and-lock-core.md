@@ -284,6 +284,9 @@ Deviations and additions relative to the plan, all within its scope:
   - On a mismatch the tombstone is renamed back where the lock name is still free.
   - A delete that fails after verification returns success with `leftoverTombstone`.
   - `lock inspect` lists sibling tombstones.
+- **Mutation guard.** Each lock has a bare `mkdir` guard sibling, `<lock>.guard`. `lock acquire` holds it from its `mkdir` through the owner write, the identity re-check, and any cleanup. `lock release` and `lock break` hold it from their final observation through the rename, verification, restore, and delete.
+  - No helper call can release, break, or re-acquire the lock between a final identity check and the path mutation that relies on it, so removal and cleanup never move or delete a replacement owner's lock.
+  - A guard still held after 10 seconds fails the call with `RUNTIME_STATE_UNSAFE` naming it, and nothing changes. It is never broken by age. A guard left by an interrupted helper is removed by hand only after confirming that no helper call is running.
 - **Owner validation and limits.**
   - `host` must match a hostname pattern.
   - `acquiredAt` must be strict, round-tripping ISO-8601.

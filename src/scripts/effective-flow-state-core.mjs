@@ -27,6 +27,18 @@
 // no git spawn sits between the last check and the delete. A tombstone is no lock name: it never
 // blocks `lock acquire`, but one left behind (an interrupted helper, a failed delete, or a mismatch
 // that could not be renamed back) may hold an unverified directory. `lock inspect` lists them.
+//
+// Every helper mutation of a lock path is serialized by that lock's guard, a bare `mkdir` sibling
+// `<lock>.guard` below `.effective-flow/`. `lock acquire` holds it from its `mkdir` of the lock
+// directory through the owner write, the identity re-check and any cleanup; `lock release` and
+// `lock break` hold it from their final observation through the rename, the tombstone
+// verification, any restore and the delete. No other helper call can therefore release, break or
+// re-acquire the lock between a final identity check and the path mutation that relies on it, so a
+// removal or cleanup only ever moves or deletes the node it validated. The guard is held for a few
+// filesystem calls and at most one guard check; a caller that cannot take it within GUARD_WAIT_MS
+// fails with RUNTIME_STATE_UNSAFE naming it and changes nothing. A guard is never broken by age: one
+// left by an interrupted helper blocks every mutation of its lock, never displaces an owner, and is
+// removed by hand only after confirming that no `effective-flow-state` call is running.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
@@ -117,6 +129,9 @@ const FORBIDDEN_ROOT_CHARACTERS = /['$`\\\u0000-\u001f\u007f-\u009f]/;
 export const DEFAULT_WAIT_SECONDS = 30;
 export const MAX_WAIT_SECONDS = 30;
 export const RETRY_DELAY_MS = 200;
+// The bounded wait for a lock's guard, and the pause between two attempts to take it.
+export const GUARD_WAIT_MS = 10_000;
+export const GUARD_RETRY_MS = 20;
 export const MAX_STDIN_BYTES = 64 * 1024;
 const MAX_OWNER_BYTES = 64 * 1024;
 // An owner above this size is never hashed: it is `oversized`, identified by its size alone.
@@ -310,6 +325,7 @@ function lockPaths(cwd, lock) {
   return {
     stateDir,
     directory,
+    guard: `${directory}.guard`,
     ownerFile: LOCKS[lock].ownerFile,
     ownerPath: path.join(directory, LOCKS[lock].ownerFile),
   };
@@ -497,6 +513,45 @@ async function prepare(operation, input, deps) {
   return { lock, context: makeContext(deps) };
 }
 
+// Runs `fn` while holding the guard of `lock` (see the header). The guard path passes the git guard
+// once per operation, before it is first taken, so no git spawn runs while another helper waits.
+// `fn`'s own result or error is returned; a guard that cannot be removed afterwards is left in
+// place and reported by the next call that waits for it.
+async function withLockGuard(context, lock, deps, fn) {
+  const { fs } = context;
+  const { guard } = lockPaths(context.cwd, lock);
+  if (!context.guardChecked) {
+    await guardTarget(context, guard);
+    context.guardChecked = true;
+  }
+  const now = deps.monotonicNow ?? (() => performance.now());
+  const sleep = deps.sleep ?? ((ms) => delay(ms));
+  const deadline = now() + GUARD_WAIT_MS;
+  for (;;) {
+    try {
+      await fs.mkdir(guard, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') {
+        fail('WRITE_FAILED', `cannot create ${guard}: ${error?.code ?? error?.message}`);
+      }
+    }
+    const remaining = deadline - now();
+    if (remaining <= 0) {
+      fail(
+        'RUNTIME_STATE_UNSAFE',
+        `${guard} is still held after ${GUARD_WAIT_MS / 1000} seconds: another effective-flow-state call is changing the ${lock} lock, or an interrupted one left the guard; nothing was changed. Remove it by hand only after confirming that no effective-flow-state call is running`,
+      );
+    }
+    await sleep(Math.min(GUARD_RETRY_MS, remaining));
+  }
+  try {
+    return await fn();
+  } finally {
+    await fs.rmdir(guard).catch(() => {});
+  }
+}
+
 const WRITE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
 
 // Writes the owner record exclusively (never over an existing file, never through a symlink).
@@ -541,10 +596,16 @@ function localHost(deps) {
 }
 
 // One acquisition attempt. Returns the owner record on success, or null when the lock exists.
+// Everything from the `mkdir` on runs under the lock's guard, so no break and re-acquire can land
+// between an identity check below and the cleanup that relies on it.
 async function tryAcquire(context, lock, fields, deps) {
+  await guardTarget(context, lockPaths(context.cwd, lock).directory);
+  return withLockGuard(context, lock, deps, () => createLock(context, lock, fields, deps));
+}
+
+async function createLock(context, lock, fields, deps) {
   const { fs } = context;
   const paths = lockPaths(context.cwd, lock);
-  await guardTarget(context, paths.directory);
   try {
     await fs.mkdir(paths.directory, { mode: 0o700 });
   } catch (error) {
@@ -698,8 +759,9 @@ async function removeThroughTombstone(context, lock, paths, observed, tombstone)
     // An unobservable tombstone (UNSAFE_TARGET, EACCES, EMFILE, …) is unverified: a mismatch.
   }
   if (!matchesObservation(observed, renamed)) {
-    // rename(2) would replace an empty directory at the lock name; a racing acquirer's fresh
-    // directory replaced this way fails its own post-write identity check and reports WRITE_FAILED.
+    // Under the guard no helper can have taken the lock name; only an actor outside the helper can
+    // have changed it. rename(2) would replace an empty directory at the lock name; a racing
+    // non-helper `mkdir` replaced this way is the only one that could be lost.
     if (!(await lockPathOccupied(fs, paths.directory))) {
       try {
         await fs.rename(tombstone, paths.directory);
@@ -741,15 +803,20 @@ async function releaseLock(input, deps) {
   // The guards need the lock directory to exist; the decision uses the observation taken after them.
   await guardLockTargets(context, paths);
   const tombstone = await tombstonePath(context, lock, paths, 'release', deps);
-  const observed = await observeLock(context, lock);
-  if (!observed.present) return new LockOutcome('NOT_HELD', observed);
-  if (observed.owner.state !== 'valid' || observed.owner.fields.token !== token) {
-    return new LockOutcome('NOT_OWNER', { reason: 'token-mismatch', ...observed });
-  }
-  if (!onlyOwnerEntry(observed)) {
-    return new LockOutcome('NOT_OWNER', { reason: 'unexpected-entries', ...observed });
-  }
-  const removal = await removeThroughTombstone(context, lock, paths, observed, tombstone);
+  // The final observation, the decision and the removal share one guard hold.
+  const decision = await withLockGuard(context, lock, deps, async () => {
+    const observed = await observeLock(context, lock);
+    if (!observed.present) return new LockOutcome('NOT_HELD', observed);
+    if (observed.owner.state !== 'valid' || observed.owner.fields.token !== token) {
+      return new LockOutcome('NOT_OWNER', { reason: 'token-mismatch', ...observed });
+    }
+    if (!onlyOwnerEntry(observed)) {
+      return new LockOutcome('NOT_OWNER', { reason: 'unexpected-entries', ...observed });
+    }
+    return removeThroughTombstone(context, lock, paths, observed, tombstone);
+  });
+  if (decision instanceof LockOutcome) return decision;
+  const removal = decision;
   if (removal.status === 'gone') {
     return new LockOutcome('NOT_HELD', await observeLock(context, lock));
   }
@@ -830,12 +897,33 @@ async function breakLock(input, deps) {
     await guardLockTargets(context, paths);
     tombstone = await tombstonePath(context, lock, paths, 'break', deps);
   }
+  const mismatch = (reason, state) => new LockOutcome('BREAK_MISMATCH', { reason, ...state });
+  if (!tombstone) {
+    // Nothing was guarded for a lock absent at the first look, so nothing is removed.
+    const observed = await observeLock(context, lock);
+    return mismatch(observed.present ? 'changed-before-removal' : 'missing', observed);
+  }
+  // The final observation, the comparison and the removal share one guard hold.
+  const decision = await withLockGuard(context, lock, deps, () =>
+    decideBreak(context, lock, paths, tombstone, { token, identity, ownerDigest, ownerSize }),
+  );
+  if (decision instanceof LockOutcome) return decision;
+  const removal = decision;
+  if (removal.status === 'gone') return mismatch('missing', await observeLock(context, lock));
+  if (removal.status === 'restored') {
+    return mismatch('changed-before-removal', await observeLock(context, lock));
+  }
+  return removedResult({ lock, path: paths.directory, broken: true }, removal);
+}
+
+// Compares the final observation against the break's expectation and, on a match, removes it.
+// Returns a BREAK_MISMATCH outcome or the removal status. Runs under the lock's guard.
+async function decideBreak(context, lock, paths, tombstone, expected) {
+  const { token, identity, ownerDigest, ownerSize } = expected;
+  const byToken = token !== undefined;
   const observed = await observeLock(context, lock);
-  const mismatch = (reason, state = observed) =>
-    new LockOutcome('BREAK_MISMATCH', { reason, ...state });
+  const mismatch = (reason) => new LockOutcome('BREAK_MISMATCH', { reason, ...observed });
   if (!observed.present) return mismatch('missing');
-  // The lock appeared only after the unguarded first look: nothing was guarded for it.
-  if (!tombstone) return mismatch('changed-before-removal');
   if (!onlyOwnerEntry(observed)) return mismatch('unexpected-entries');
   if (byToken) {
     if (observed.owner.state !== 'valid' || observed.owner.fields.token !== token) {
@@ -854,12 +942,7 @@ async function breakLock(input, deps) {
       return mismatch('owner-mismatch');
     }
   }
-  const removal = await removeThroughTombstone(context, lock, paths, observed, tombstone);
-  if (removal.status === 'gone') return mismatch('missing', await observeLock(context, lock));
-  if (removal.status === 'restored') {
-    return mismatch('changed-before-removal', await observeLock(context, lock));
-  }
-  return removedResult({ lock, path: paths.directory, broken: true }, removal);
+  return removeThroughTombstone(context, lock, paths, observed, tombstone);
 }
 
 const HANDLERS = Object.freeze({

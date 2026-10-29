@@ -940,7 +940,10 @@ point is an I/O boundary over testable core or protocol modules:
   unique tombstone sibling, verify it against the last observation and only then delete it with
   raw calls. A leftover tombstone never blocks `lock acquire` but may hold an unverified
   directory; `lock inspect` lists it under `tombstones`, and it is removed by hand only after
-  checking that its contents are no live lock's.
+  checking that its contents are no live lock's. Acquire, release and break serialize every
+  mutation of a lock path through its `<lock>.guard` `mkdir` sibling, held from the final identity
+  check through the last path mutation that relies on it; a guard still held after 10 seconds is
+  `RUNTIME_STATE_UNSAFE` and is never broken by age.
   `waitSeconds` is an integer from 0 to 30 (default 30), and `runId` is required for the commit
   locks. Expected lock states are outcomes with exit 4 (`LOCK_HELD`, `NOT_OWNER`, `NOT_HELD`,
   `BREAK_MISMATCH`); invalid input (`INVALID_INPUT`, `INVALID_ROOT`) exits 2, an unsafe runtime
