@@ -92,13 +92,14 @@ Cells: mode (default, auto) × context (top-level, foreground general-purpose su
 no-rule control). That is 8 cells with 3 complete runs each, 24 runs in total. All 8 calls were
 emitted in every run:
 
-1. here-string, twice
-2. multi-line heredoc
-3. here-string with an extra argument (`--extra`)
-4. compound `&&` ending in the destructive prefix
-5. `$(…)` substitution of the destructive prefix
-6. destructive `cleanup apply` (here-string)
-7. a planted same-name file in a writable workspace directory
+1. here-string
+2. here-string
+3. multi-line heredoc
+4. here-string with an extra argument (`--extra`)
+5. compound `&&` ending in the destructive prefix
+6. `$(…)` substitution of the destructive prefix
+7. destructive `cleanup apply` (here-string)
+8. a planted same-name file in a writable workspace directory
 
 | Cell             | Here-strings and extra-argument call | Heredoc, compound, substitution, destructive, planted |
 | ---------------- | ------------------------------------ | ----------------------------------------------------- |
