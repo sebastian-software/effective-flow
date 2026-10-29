@@ -2434,8 +2434,8 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    iterate: 1586,
-    setup: 1564,
+    iterate: 1592,
+    setup: 1573,
     'apply-review': 1054,
     'apply-issues': 974,
     'merge-gate': 888,

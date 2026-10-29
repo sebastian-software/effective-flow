@@ -1,8 +1,9 @@
-// Scenario-local setup for the one configured-reviewer scenario, and the one configuration row the
-// non-interactive dispatch scenario changes. Every other scenario keeps the shared no-reviewer
-// project configuration and the production `iterate` tool; this module is the single place that
+// Scenario-local setup for the one configured-reviewer scenario, the one configuration row the
+// non-interactive dispatch scenario changes, and the one row the bot-account scenario appends.
+// Every other scenario keeps the shared no-reviewer project configuration and the production
+// `iterate` tool; this module is the single place that
 // decides which scenario receives the reviewer rows, the `iterate` echo overlay, the paired
-// `run-<n>.iterate.jsonl` evidence file, and a changed base row.
+// `run-<n>.iterate.jsonl` evidence file, a changed base row, and an appended row.
 
 import { copyFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -23,6 +24,14 @@ export const NON_INTERACTIVE_DISPATCH_SCENARIO = 'non-interactive-dispatch-repor
 
 export const NON_INTERACTIVE_DISPATCH_ROWS = [['mergeGate.completion', 'ask']];
 
+// The scenario in which a user-typed automated account comments on the pull request and the project
+// declares it a non-reviewer bot. Its one row is appended, since the base table carries no
+// `mergeGate.botAccounts` row; `mergeGate.bots` stays absent, so the comment is excluded by guard
+// rule 1's `mergeGate.botAccounts` case alone.
+export const BOT_LOGIN_SCENARIO = 'bot-login-excluded';
+
+export const BOT_ACCOUNT_ROWS = [['mergeGate.botAccounts', 'coverage-reporter']];
+
 // The echo and the trace helper it executes, and the path the helper is copied to inside the
 // slot's skill tree. Neither is an instrument file: both are hashed as part of `skill`, at the
 // sandbox paths the run executes, which is the membership rule stated in `build-identity.mjs`.
@@ -34,6 +43,12 @@ export function scenarioSetup(scenario) {
   if (scenario === NON_INTERACTIVE_DISPATCH_SCENARIO) {
     return {
       projectSetupRows: NON_INTERACTIVE_DISPATCH_ROWS.map(([key, value]) => [key, value]),
+      iterateEcho: false,
+    };
+  }
+  if (scenario === BOT_LOGIN_SCENARIO) {
+    return {
+      projectSetupRows: BOT_ACCOUNT_ROWS.map(([key, value]) => [key, value]),
       iterateEcho: false,
     };
   }

@@ -738,13 +738,16 @@ that pull request.
 
 **This reports only; it is not a condition and never blocks the merge.** An unresolved thread from
 another account already holds condition 4's human-comment guard, so what reaches this point is one of
-two things: a thread whose author is bot-typed – excluded from that guard by Phase 1's bot rule –
-under a login no entry names, **or** a thread this run's own account wrote, which the guard's
-identity rule excludes on either surface and whatever its body. Making that block would double-count
-the first case and could stall merges condition 4 correctly releases, it would re-block exactly what
-the identity rule was changed to release in the second, and it would strand a project that
-deliberately ignores a thread-posting bot: its only escape would be adding that bot to
-`mergeGate.bots`, which then makes this gate wait for it as a reviewer and trigger it. The residual gap is therefore accepted and made visible rather than closed –
+three things: a thread whose author is bot-typed – excluded from that guard by Phase 1's bot rule –
+under a login no entry names, a thread whose author a `mergeGate.botAccounts` entry names – excluded
+by that rule's third case – **or** a thread this run's own account wrote, which the guard's identity
+rule excludes on either surface and whatever its body. Making that block would double-count the
+first case and could stall merges condition 4 correctly releases, it would re-block what the
+project declared automated in the second and what the identity rule was changed to release in the
+third, and it would strand a project that deliberately ignores a thread-posting bot. For a
+user-typed author the escape is `mergeGate.botAccounts`, never `mergeGate.bots`, which would make
+this gate wait for it as a reviewer and trigger it; a bot-typed author keeps this report either way. A thread already reported in Phase
+6's `mergeGate.botAccounts` line is not reported here again. The residual gap is therefore accepted and made visible rather than closed –
 such a finding can still be merged past, but never without the run saying so. Note that "Matching a
 configured login" does not reach this case at all: a wholly wrong or absent login is not a spelling
 problem.

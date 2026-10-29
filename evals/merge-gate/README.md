@@ -51,7 +51,7 @@ both halves, and neither is safe alone.
 | `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                                                                      |
 | `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it                                               |
 | `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument                                                          |
-| `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace, and which one changes a base configuration row |
+| `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace, which one changes a base configuration row, and which one appends a row |
 | `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads                                                           |
 | `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                                                                    |
 | `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`                                                        |
@@ -153,6 +153,11 @@ The non-interactive dispatch scenario modifies only its own project-setup ADR: i
 `mergeGate.completion` row reads `ask` instead of `merge`. `project-setup.mjs` replaces a base row
 whose key a scenario row repeats in place, and appends every other row, so no key is ever stated
 twice.
+
+The `bot-login-excluded` scenario modifies only its own project-setup ADR as well: it appends
+`mergeGate.botAccounts: coverage-reporter`, a row the base table does not carry, and leaves
+`mergeGate.bots` absent, so the user-typed account's comment is excluded by the guard's
+`mergeGate.botAccounts` case alone.
 
 The configured-reviewer scenario modifies only its own slots. Provisioning appends the current
 `mergeGate.bots`, `mergeGate.bots.<login>.trigger`, and `mergeGate.bots.<login>.check` rows to that
@@ -322,7 +327,7 @@ Record the returned qualification, verifier-policy and selected-probe digests, m
 verification/expiry times alongside the identical actual launch identity in an external audit.
 The coordinator owns identical spawning, isolation, credential handling and replacement protection
 between verification and execution. Keep qualification material out of measured prompts and the
-existing host-receipt schema. This new instrument identity requires 40 merge-gate, 35 iterate and
+existing host-receipt schema. This new instrument identity requires 45 merge-gate, 35 iterate and
 75 next-steps fresh behavioral recordings with their existing five valid independent runs and
 qualitative gates. Deterministic verifier fixtures are not behavioral evidence; retain prior
 attempts and findings unchanged without treating them as qualification or full acceptance.
@@ -635,8 +640,8 @@ profile flags either, so for a suite that pins its profile, as this one does, th
 
 There is no per-run charge: this project runs on flat subscriptions. What a run consumes is
 subscription quota and elapsed time, and the one measured run took roughly **five minutes**. Five
-serial runs of one scenario are therefore about half an hour, and forty serial runs for the eight
-scenarios that exist today are about three and a half hours. The round layout makes those runs
+serial runs of one scenario are therefore about half an hour, and forty-five serial runs for the nine
+scenarios that exist today are about three hours and forty-five minutes. The round layout makes those runs
 independent, so elapsed time now depends primarily on how many fresh sessions the host can run at
 once; it does not promise a particular speedup. Where the suite has to be shortened, the scenario
 count gives way — never the five-of-five requirement, because for a fail-closed rule a single
@@ -755,8 +760,8 @@ correlated `complete` events are not additional calls.
 
 ## What this deliberately does not cover
 
-- **Eight scenarios exist: one pair, one observer, two unreported-check-list refusals, one
-  configured-reviewer refusal, and two delegation scenarios.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
+- **Nine scenarios exist: one pair, one observer, two unreported-check-list refusals, one
+  configured-reviewer refusal, two delegation scenarios, and one bot-account exclusion.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
   result from them proves that one refusal path holds and that the harness can reach a merge, and
   nothing about the breadth of the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
   decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`
@@ -770,7 +775,9 @@ correlated `complete` events are not additional calls.
   configured-reviewer route, delegates one thread and one review-body finding through the
   slot-local echo, and reaches the Phase-4 set-aside decision without an interactive operator. Its two
   traces prove those boundaries and the absence of a merge request, not the text of the gate's final
-  report. `non-interactive-dispatch-reports` and `nested-spawn-abort-runs-inline` are about the
+  report. `bot-login-excluded` is a second positive control: the `merge-proceeds` situation plus a
+  top-level comment from a user-typed account listed in `mergeGate.botAccounts`, and it asserts that
+  `pr-merge` **is** requested. `non-interactive-dispatch-reports` and `nested-spawn-abort-runs-inline` are about the
   handoff from the session to the delegated run: the first that a non-interactive caller dispatches
   with no completion answer and the delegated run, under `mergeGate.completion: ask`, reports instead
   of merging; the second that the caller completes the gate inline, once, after

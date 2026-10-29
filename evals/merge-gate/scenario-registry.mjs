@@ -20,6 +20,7 @@
 // two halves of the membership rule (the configuration is hashed, the registry is not), and
 // `test/merge-gate-eval.test.mjs` pins this module's exports to plain lists of names.
 export const SCENARIOS = Object.freeze([
+  'bot-login-excluded',
   'configured-reviewer-set-aside-blocks',
   'guard-blocks-merge',
   'linked-issue-open-points',

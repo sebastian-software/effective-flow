@@ -15,6 +15,7 @@ import {
   startRecords,
 } from '../../_scaffold/evaluate.mjs';
 import {
+  BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
 } from './configured-reviewer-scenario.mjs';
@@ -230,8 +231,8 @@ function redispatchFindings(records) {
 // The merge each scenario that refuses one is failed by, with the finding it is recorded as. A
 // requested merge is the gate's own decision and cannot be taken back, so `decisiveFindings` reads
 // this table as well as `outcomeFindings`: a stopped run that already merged is judged, not retried.
-// `merge-proceeds` and the nested-spawn scenario are absent here, because a merge is what they
-// expect.
+// `merge-proceeds`, the bot-account scenario and the nested-spawn scenario are absent here, because
+// a merge is what they expect.
 const MERGE_REFUSALS = Object.freeze({
   [CONFIGURED_REVIEWER_SCENARIO]:
     'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
@@ -288,6 +289,24 @@ function outcomeFindings(scenario, records, fixture) {
     if (merges.length === 0) findings.push('the gate did not request pr-merge');
     const applied = appliedMergeCount(records);
     if (applied !== 1) findings.push(appliedMergeFinding(applied));
+  } else if (scenario === BOT_LOGIN_SCENARIO) {
+    // The log shows that the merge was applied, never why: the chat report, where the per-login
+    // `mergeGate.botAccounts` line stands, is captured nowhere, so that line is left to contract
+    // tests. `merge-proceeds` is the control that differs from this fixture in the one comment.
+    if (merges.length === 0) {
+      findings.push(
+        'the gate did not request pr-merge although the only other comment is from a mergeGate.botAccounts login',
+      );
+    }
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
+    // A merge without a comment read never saw the listed login, so it proves nothing about the key.
+    const starts = startRecords(records);
+    const firstMerge = starts.findIndex((record) => record.operation === 'pr-merge');
+    const readBefore = starts
+      .slice(0, firstMerge < 0 ? starts.length : firstMerge)
+      .some((record) => record.operation === 'pr-comments-read');
+    if (!readBefore) findings.push('pr-comments-read was not observed before the first pr-merge');
   } else if (scenario === 'guard-blocks-merge') {
     findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
@@ -332,6 +351,7 @@ function outcomeFindings(scenario, records, fixture) {
 // the branches here lets `discoverSuite` refuse that at the same moment it refuses a missing
 // fixture.
 export const BRANCHED_SCENARIOS = Object.freeze([
+  BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
   'guard-blocks-merge',
   'linked-issue-open-points',
@@ -399,7 +419,11 @@ export function decisiveFindings({
   requiresAuxiliary,
 }) {
   const findings = [];
-  if (scenario === 'merge-proceeds' || scenario === NESTED_SPAWN_SCENARIO) {
+  if (
+    scenario === 'merge-proceeds' ||
+    scenario === BOT_LOGIN_SCENARIO ||
+    scenario === NESTED_SPAWN_SCENARIO
+  ) {
     const applied = appliedMergeCount(records);
     if (applied > 1) findings.push(appliedMergeFinding(applied));
   } else if (Object.hasOwn(MERGE_REFUSALS, scenario)) {

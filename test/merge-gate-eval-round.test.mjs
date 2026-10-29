@@ -326,10 +326,13 @@ function copyRestampedResults(resultsDir) {
 }
 
 // The smallest call log each not-yet-recorded scenario's evaluator passes, keyed by scenario. Every
-// discovered scenario is recorded today, so it is empty. These runs exist only in a test's temporary
+// recorded scenario needs none. `bot-login-excluded` has no round yet, so it carries the smallest
+// log its evaluator passes: a comment read, a requested merge, then the one applied merge. These runs exist only in a test's temporary
 // copy and are never evidence. A scenario that lands without a recorded round and without an entry
 // here fails loudly, naming the two ways out.
-const UNRECORDED_SCENARIO_LOGS = Object.freeze({});
+const UNRECORDED_SCENARIO_LOGS = Object.freeze({
+  'bot-login-excluded': ['pr-comments-read', 'pr-merge', { operation: 'pr-merge', apply: true }],
+});
 
 function synthesizeUnrecordedScenario(directory, scenario, identity) {
   const operations = UNRECORDED_SCENARIO_LOGS[scenario];
@@ -3102,9 +3105,10 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     assert.deepEqual(assessment.unjudgeable, [], scenario);
     return assessment.decisiveFindings;
   };
-  // The two scenarios a merge is expected in: the positive control, and the nested-spawn fallback,
-  // whose inline gate merges the same pull request.
-  const merging = ['merge-proceeds', 'nested-spawn-abort-runs-inline'];
+  // The scenarios a merge is expected in: the positive control, the bot-account scenario (its only
+  // other comment is excluded, so it differs from the control in that one comment), and the
+  // nested-spawn fallback, whose inline gate merges the same pull request.
+  const merging = ['merge-proceeds', 'bot-login-excluded', 'nested-spawn-abort-runs-inline'];
   for (const scenario of suite.scenarios) {
     assert.deepEqual(decisive(scenario, []), [], `${scenario}: an empty partial log`);
     assert.deepEqual(decisive(scenario, ['pr-status-read']), [], `${scenario}: a lone read`);
