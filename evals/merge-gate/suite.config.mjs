@@ -97,6 +97,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SHARED_SCAFFOLD, 'scaffold.mjs'),
   resolve(SHARED_SCAFFOLD, 'prompt.mjs'),
   resolve(SHARED_SCAFFOLD, 'suite.mjs'),
+  resolve(SHARED_SCAFFOLD, 'host-qualification.mjs'),
   resolve(SCAFFOLD, 'configured-reviewer-scenario.mjs'),
   resolve(SCAFFOLD, 'project-setup.mjs'),
 ]);

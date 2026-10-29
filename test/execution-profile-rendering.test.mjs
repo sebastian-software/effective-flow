@@ -356,7 +356,14 @@ test('the adopted selector lines render the exact per-target Fast representation
   for (const [tool, bounds] of Object.entries(ADOPTED_RENDERED_PHASES)) {
     for (const [target, render] of Object.entries(expected)) {
       const where = `${target} ${tool}`;
-      const text = readFileSync(join(distRoot, target, `effective-flow/tools/${tool}.md`), 'utf8');
+      const text = readFileSync(
+        join(
+          distRoot,
+          target,
+          `effective-flow/${tool === 'build' ? 'shared/build-delegated-run.md' : `tools/${tool}.md`}`,
+        ),
+        'utf8',
+      );
       const from = text.indexOf(bounds.start);
       const to = text.indexOf(bounds.end, from + 1);
       assert.ok(from >= 0 && to > from, `${where}: the adopted phase must render`);
@@ -541,7 +548,7 @@ test('route policy, authorization, eligibility, and generated-name errors fail b
         join(checkout, 'src/shared/goal-completion.md'),
         '\n{{AGENT_PROFILE:nodejs-implementer:fast}}\n',
       ),
-    /Fast-profile references are allowed only in tools\/build\.md and tools\/refactor\.md/,
+    /Fast-profile references are allowed only in the initial implementation phases of shared\/build-delegated-run\.md and tools\/refactor\.md/,
   );
 });
 
@@ -551,7 +558,7 @@ test('profile tokens are accepted only in the initial implementation sections', 
   // so the case tests token acceptance rather than the tool's current headroom.
   assertMutatedBuildSucceeds('build-phase-2-profile-token', (checkout) => {
     replaceOnce(
-      join(checkout, 'src/tools/build.md'),
+      join(checkout, 'src/shared/build-delegated-run.md'),
       '### Phase 2: Implementation\n',
       `### Phase 2: Implementation\n\n${token}\n`,
     );
@@ -581,7 +588,7 @@ test('profile tokens are accepted only in the initial implementation sections', 
     'build-validation-profile-token',
     (checkout) =>
       replaceOnce(
-        join(checkout, 'src/tools/build.md'),
+        join(checkout, 'src/shared/build-delegated-run.md'),
         '### Phase 5: Validation\n',
         `### Phase 5: Validation\n\n${token}\n`,
       ),

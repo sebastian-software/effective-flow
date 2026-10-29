@@ -246,6 +246,16 @@ pnpm eval iterate prepare \
 The deprecated `pnpm prepare:eval iterate <scenario>` forwards without profile flags and is
 therefore refused by the pin, as it is for `merge-gate`.
 
+Before every prospective pinned Codex spawn, follow the [host qualification coordinator
+contract](../merge-gate/README.md#2-launch-fresh-sessions-at-the-host-boundary): invoke the instrument-bound
+[`verifyHostQualification`](../_scaffold/host-qualification.mjs) on all four current raw probes and
+the exact next launch, then immediately spawn that same verified launch and audit the returned
+digests externally. Set HOME/CODEX_HOME/PWD from its fields and send its stdin file bytes unchanged.
+A refusal stops the spawn; qualification changes neither the host receipt nor measured prompts.
+Use physical `attemptRoot/project`, fresh isolated homes outside the writable root, and absent
+last-message output. The new instrument identity owes all 150 fresh recordings across the three
+suites; deterministic fixtures and old attempts cannot replace them.
+
 Launch each slot as a fresh, non-forked session rooted in its `project/`, with only its
 `prompt.txt` as input and no user-level skills — an installed Effective Flow release would shadow
 the slot's own skill. Seal, retry, publish and recover with the same commands and receipts the

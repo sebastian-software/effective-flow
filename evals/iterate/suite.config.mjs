@@ -64,6 +64,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SHARED_SCAFFOLD, 'scaffold.mjs'),
   resolve(SHARED_SCAFFOLD, 'prompt.mjs'),
   resolve(SHARED_SCAFFOLD, 'suite.mjs'),
+  resolve(SHARED_SCAFFOLD, 'host-qualification.mjs'),
   resolve(SCAFFOLD, 'scenario-setup.mjs'),
   resolve(SCAFFOLD, 'project-setup.mjs'),
   resolve(SCAFFOLD, 'checkout.mjs'),

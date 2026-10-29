@@ -9,6 +9,7 @@ import {
   realpathSync,
   writeFileSync,
 } from 'node:fs';
+import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { basename, dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
@@ -2267,8 +2268,44 @@ const NESTING_TOKEN = 'nesting-by-scenario';
 function toolPolicyTokens(run) {
   const metadata = JSON.parse(readFileSync(run.metadataPath, 'utf8'));
   return String(metadata.profile?.toolPolicy ?? '')
-    .split(',')
+    .split(/[,;]/)
     .map((token) => token.trim());
+}
+
+for (const [name, toolPolicy, expected] of [
+  [
+    'recognizes historical comma-delimited nesting policy',
+    'workspace-write, approval-never, nesting-by-scenario',
+    true,
+  ],
+  [
+    'recognizes native semicolon-delimited nesting policy',
+    'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;nesting-by-scenario',
+    true,
+  ],
+  ['trims whitespace around an exact nesting token', '\t nesting-by-scenario \n', true],
+  ['rejects a missing nesting token', undefined, false],
+  ['rejects an empty policy', '', false],
+  ['rejects empty tokens without a nesting token', 'workspace-write,,approval-never', false],
+  ['rejects a nesting token with a prefix', 'extra-nesting-by-scenario', false],
+  ['rejects a nesting token with a suffix', 'nesting-by-scenario-extra', false],
+  ['rejects a nesting token embedded in a substring', 'xnesting-by-scenarioy', false],
+  [
+    'rejects a nesting marker mentioned in prose',
+    'allows nesting-by-scenario when available',
+    false,
+  ],
+]) {
+  test(`tool policy token reader ${name}`, async () => {
+    const scratch = await mkdtemp(join(tmpdir(), 'effective-flow-tool-policy-'));
+    try {
+      const metadataPath = join(scratch, 'run.metadata.json');
+      await writeFile(metadataPath, JSON.stringify({ profile: { toolPolicy } }));
+      assert.equal(toolPolicyTokens({ metadataPath }).includes(NESTING_TOKEN), expected);
+    } finally {
+      await rm(scratch, { recursive: true, force: true });
+    }
+  });
 }
 
 function probeCounts(records) {

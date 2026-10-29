@@ -166,11 +166,12 @@ function printFreshness(report) {
   // makes possible — a verdict about some other directory — is exactly the one an operator cannot
   // spot from the scenario lines alone.
   process.stdout.write(`corpus: ${report.resultsDir}\n`);
-  for (const { scenario, state, runs, drift } of report.scenarios) {
+  for (const { scenario, state, runs, drift, details } of report.scenarios) {
     const summary = runs.length === 0 ? 'no archived runs' : runSummary(runs);
     process.stdout.write(
       `${scenario}\t${state}\t${runs.length}/${report.requiredRuns} run(s)\t${summary}\n`,
     );
+    if (details) process.stdout.write(`  ${details}\n`);
     // Named individually, because these are the runs somebody has to act on: which slots went
     // stale is what decides whether a scenario is re-recorded or the whole round is.
     //

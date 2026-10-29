@@ -130,6 +130,8 @@ const EXPECTED_TOOLS = [
 ];
 
 const EXPECTED_RUNTIME_SCRIPTS = [
+  'build-run-core.mjs',
+  'build-run.mjs',
   'config-resolve-core.mjs',
   'config-resolve.mjs',
   'delegation-envelope-core.mjs',
@@ -150,6 +152,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'plan-publication-core.mjs',
   'plan-publication.mjs',
   'process-runner.mjs',
+  'protected-validation-core.mjs',
+  'protected-validation-protocol.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-decomposition-core.mjs',
   'remote-tracker-forgejo-core.mjs',
@@ -185,7 +189,7 @@ function collectFiles(directory) {
 // its next phase heading, so every later phase, the rules, and every shared include rendered
 // outside it stay under the full guard.
 const ADOPTED_PHASES = {
-  'tools/build.md': {
+  'shared/build-delegated-run.md': {
     name: 'build Phase 2',
     start: '### Phase 2: Implementation',
     end: '### Phase 3: Documentation',
@@ -903,11 +907,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 29);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 33);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 29 approved runtime scripts',
+    'build.mjs must register exactly the 33 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

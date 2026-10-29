@@ -119,6 +119,16 @@ pnpm eval next-steps prepare \
   --tool-policy 'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral'
 ```
 
+Before every prospective pinned Codex spawn, follow the [host qualification coordinator
+contract](../merge-gate/README.md#2-launch-fresh-sessions-at-the-host-boundary): invoke the instrument-bound
+[`verifyHostQualification`](../_scaffold/host-qualification.mjs) on all four current raw probes and
+the exact next launch, then immediately spawn that same verified launch and audit the returned
+digests externally. Set HOME/CODEX_HOME/PWD from its fields and send its stdin file bytes unchanged.
+A refusal stops the spawn; qualification changes neither the host receipt nor measured prompts.
+Use physical `attemptRoot/project`, fresh isolated homes outside the writable root, and absent
+last-message output. The new instrument identity owes all 150 fresh recordings across the three
+suites; deterministic fixtures and old attempts cannot replace them.
+
 The coordinator owns launches, receipts, sealing and publication. No eval command launches a model.
 A native-worktree host coordinator may pass the verified physical main checkout of the same
 repository as `publicationRuntimeRoot` to the existing JavaScript `publishRound` or

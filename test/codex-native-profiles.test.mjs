@@ -72,7 +72,10 @@ function developerInstructions(source) {
 }
 
 function phaseText(target, tool) {
-  const path = join(distRoot, target, 'effective-flow', 'tools', `${tool}.md`);
+  const path =
+    tool === 'build'
+      ? join(distRoot, target, 'effective-flow', 'shared', 'build-delegated-run.md')
+      : join(distRoot, target, 'effective-flow', 'tools', `${tool}.md`);
   const text = readFileSync(path, 'utf8');
   const bounds =
     tool === 'build'

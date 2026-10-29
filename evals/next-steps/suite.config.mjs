@@ -30,6 +30,7 @@ export default {
   instrumentFiles: [
     resolve(root, 'suite.config.mjs'),
     tracker,
+    resolve(shared, 'host-qualification.mjs'),
     ...['sandbox.mjs', 'scaffold.mjs', 'prompt.mjs', 'suite.mjs'].map((name) =>
       resolve(shared, name),
     ),

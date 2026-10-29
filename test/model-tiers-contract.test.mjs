@@ -215,7 +215,11 @@ const SPAWN_MENTION_ALLOWLIST = [
   ],
   // Completion protocol given to sub-agents, or how their keywords are read.
   ['tools/apply-review.md', 'Prescribe the completion protocol', 'completion-protocol rule'],
-  ['tools/build.md', 'Give internal sub-agents the instruction', 'completion-protocol rule'],
+  [
+    'shared/build-delegated-run.md',
+    'Give internal sub-agents the instruction',
+    'completion-protocol rule',
+  ],
   ['tools/fix.md', 'give internal sub-agents the done protocol', 'completion-protocol rule'],
   [
     'tools/iterate.md',
@@ -579,10 +583,12 @@ test('conflict-resolution verification, Fast-packet validation and deep sites ne
   const sites = new Map(spawnSites().map((site) => [site.id, site]));
   for (const id of [
     'merge-gate-conflict-resolution/verification',
-    'build/unit-tests',
-    'build/e2e-tests',
-    'build/validation',
-    'build/final-validation',
+    'build/delegated-run',
+    'build-delegated-run/nested-spawn-probe',
+    'build-delegated-run/unit-tests',
+    'build-delegated-run/e2e-tests',
+    'build-delegated-run/validation',
+    'build-delegated-run/final-validation',
     'refactor/post-validation-checks',
     'refactor/post-validation-tests',
   ]) {
@@ -761,9 +767,13 @@ test('a Fast spawn passes only its own reference values, stated once in executio
     'model-tiers.md points at the owner instead of restating the Fast rule',
   );
   for (const tool of ['build', 'refactor']) {
-    const lines = readSource(`tools/${tool}.md`).split('\n');
+    const lines = readSource(
+      tool === 'build' ? 'shared/build-delegated-run.md' : `tools/${tool}.md`,
+    ).split('\n');
     const at = lines.findIndex(
-      (line) => line.trim() === `<!-- spawn-site:${tool}/initial-implementation -->`,
+      (line) =>
+        line.trim() ===
+        `<!-- spawn-site:${tool === 'build' ? 'build-delegated-run' : tool}/initial-implementation -->`,
     );
     assert.ok(at > 0, `${tool}: initial-implementation marker`);
     assert.ok(lines[at - 1].endsWith(QUALITY_BINDING), `${tool}: the marker follows its binding`);
@@ -952,12 +962,31 @@ test('built worker bodies carry the lean sentence for the orchestrator and keep 
 
 // In every target the initial-implementation tier line renders between its Quality-only binding
 // and the selector list, so no Fast reference shares a sentence with the tier values.
-test('the initial-implementation tier line renders right after its Quality-only binding', () => {
+test('the initial-implementation tier line renders right after its Quality-only binding', async () => {
+  const qualityRoles = [
+    'ui-implementer',
+    'nodejs-implementer',
+    'rust-implementer',
+    'generic-product-implementer',
+    'generic-implementer',
+  ];
   for (const target of TARGETS) {
+    const contract = JSON.parse(
+      readFileSync(
+        join(distRoot, target, 'effective-flow/scripts/model-selection-contract.json'),
+        'utf8',
+      ),
+    );
     for (const tool of ['build', 'refactor']) {
-      const where = `${target} ${tool}`;
+      const owner = tool === 'build' ? 'build-delegated-run' : tool,
+        site = `${owner}/initial-implementation`,
+        where = `${target} ${tool}`;
       const lines = readFileSync(
-        join(distRoot, target, `effective-flow/tools/${tool}.md`),
+        join(
+          distRoot,
+          target,
+          `effective-flow/${tool === 'build' ? 'shared/build-delegated-run.md' : `tools/${tool}.md`}`,
+        ),
         'utf8',
       ).split('\n');
       const at = lines.findIndex((line) => line.endsWith(QUALITY_BINDING));
@@ -965,9 +994,57 @@ test('the initial-implementation tier line renders right after its Quality-only 
       assert.match(lines[at + 1], /^ {3}Tier `deep`: /, `${where}: ${lines[at + 1]}`);
       assert.equal(
         lines[at + 2],
-        `   Model selection site: \`${tool}/initial-implementation\` (\`shared/model-selection.md\`).`,
+        `   Model selection site: \`${site}\` (\`shared/model-selection.md\`).`,
       );
       assert.match(lines[at + 3], /^ {3}- Frontend: /, `${where}: ${lines[at + 3]}`);
+      const renderedSite = lines[at + 2].match(/Model selection site: `([^`]+)`/)[1];
+      assert.deepEqual(
+        contract.sites.find(({ id }) => id === renderedSite),
+        {
+          id: site,
+          downAllowed: false,
+          clauses: qualityRoles.map((role) => ({ role, tier: 'deep' })),
+        },
+      );
+      for (const harness of target === 'portable' ? ['claude', 'codex'] : [target]) {
+        for (const role of qualityRoles) {
+          const request = { harness, site: renderedSite, role, native: target !== 'portable' },
+            selected = await executeOperation('select', request, { contract }),
+            mapping = MODEL_TIER_MAPPINGS.deep[harness];
+          assert.equal(selected.ok, true, JSON.stringify(selected));
+          assert.equal(selected.data.defaultTier, 'deep');
+          assert.equal(selected.data.tier, 'deep');
+          assert.deepEqual(selected.data.expected, {
+            model: mapping.model,
+            effort: mapping.reasoning_effort ?? mapping.effort,
+          });
+          assert.deepEqual(selected.data.spawn, {
+            role: target === 'portable' ? role : `effective-flow-${role}`,
+            parameters:
+              target === 'codex'
+                ? {}
+                : {
+                    model: mapping.model,
+                    [harness === 'codex' ? 'reasoning_effort' : 'effort']:
+                      mapping.reasoning_effort ?? mapping.effort,
+                  },
+          });
+          const lowered = await executeOperation(
+            'select',
+            { ...request, tier: 'standard', reason: 'attempted implementation downgrade' },
+            { contract },
+          );
+          assert.equal(lowered.ok, false);
+          assert.equal(lowered.error.code, 'TIER_POLICY');
+          const fast = await executeOperation(
+            'select',
+            { ...request, role: `${role}-fast` },
+            { contract },
+          );
+          assert.equal(fast.ok, false);
+          assert.equal(fast.error.code, 'INVALID_INPUT');
+        }
+      }
     }
   }
 });
@@ -1046,4 +1123,25 @@ test('rendered tier text carries only its own provider in native targets and bot
     { codex: counts.claude, portable: counts.claude },
     'every target renders the same spawn-site lines',
   );
+});
+
+test('all targets ship bounded build caller and complete runner control with helpers', () => {
+  for (const target of TARGETS) {
+    const skillRoot = join(distRoot, target, 'effective-flow');
+    const caller = readFileSync(join(skillRoot, 'tools/build.md'), 'utf8');
+    assert.ok(caller.split('\n').length <= 320, `${target}: caller exceeds approved cap`);
+    assert.equal(
+      (caller.match(/Tier `deep`:/g) ?? []).length,
+      1,
+      `${target}: one fresh runner site`,
+    );
+    for (const file of [
+      'shared/build-delegated-run.md',
+      'shared/build-run-contract.md',
+      'scripts/build-run.mjs',
+      'scripts/build-run-core.mjs',
+    ]) {
+      assert.ok(readFileSync(join(skillRoot, file), 'utf8').length > 0, `${target}: ${file}`);
+    }
+  }
 });

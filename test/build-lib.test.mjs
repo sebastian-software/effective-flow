@@ -3971,7 +3971,17 @@ test('no Markdown source under src/ reintroduces goal-mode wiring', () => {
 
 test('no former goal gate revives goal-mode wiring in any harness render', () => {
   for (const tool of FORMER_GOAL_GATE_TOOLS) {
-    const { context, body } = resolveSourceToolBody(tool);
+    const { context, body: callerBody } = resolveSourceToolBody(tool);
+    const body =
+      tool === 'build'
+        ? resolveEagerIncludes(
+            readFileSync(new URL('../src/shared/build-delegated-run.md', import.meta.url), 'utf8'),
+            {
+              readFragment: (name) =>
+                readFileSync(new URL(`../src/shared/${name}.md`, import.meta.url), 'utf8'),
+            },
+          )
+        : callerBody;
 
     for (const harness of ['claude', 'codex', 'portable']) {
       const rendered = renderBody(body, harness, { ...sourceRenderConfig, context });
@@ -5288,7 +5298,7 @@ test('documentation-sync consumer guard demands an eager include in every implem
   // A missing include is a violation naming the offending consumer.
   const missing = findDocumentationSyncViolations(
     new Map([
-      ['tools/build.md', collectIncludeNames(eagerBody)],
+      ['shared/build-delegated-run.md', collectIncludeNames(eagerBody)],
       ['tools/fix.md', collectIncludeNames('no includes here')],
       ['tools/refactor.md', collectIncludeNames(eagerBody)],
       ['tools/maintain.md', collectIncludeNames(eagerBody)],
@@ -6325,7 +6335,7 @@ test('workflow report consumers retain bilingual status and direct-finding prose
   const readSource = (path) => readFileSync(new URL(`../src/${path}`, import.meta.url), 'utf8');
   const localReviewStatusConsumers = [
     'shared/unresolved-review-report.md',
-    'tools/build.md',
+    'shared/build-delegated-run.md',
     'tools/fix.md',
     'tools/refactor.md',
     'tools/maintain.md',
@@ -6340,7 +6350,7 @@ test('workflow report consumers retain bilingual status and direct-finding prose
   assert.match(workflowReport, /English: `- \*\*Status\*\*: Fixed \| Open \| Not implemented`/);
   assert.match(workflowReport, /German: `- \*\*Status\*\*: Behoben \| Offen \| Nicht umgesetzt`/);
 
-  const build = readSource('tools/build.md');
+  const build = readSource('shared/build-delegated-run.md');
   assert.match(build, /status values \(`Behoben`, `Offen \/ Nicht umgesetzt`\)/);
   assert.doesNotMatch(build, /status tokens used by report readers remain unchanged/);
 
