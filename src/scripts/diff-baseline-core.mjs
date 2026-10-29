@@ -28,20 +28,31 @@
 import { spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import {
-  lstat,
-  mkdir,
-  open,
-  readdir,
-  realpath,
-  rename,
-  rm,
-  rmdir,
-  stat,
-  unlink,
-} from 'node:fs/promises';
+import { lstat, open, readdir, realpath, rm, rmdir } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  O_NOFOLLOW,
+  RuntimeStateError,
+  asBuffer,
+  assertDirectoryChain,
+  atomicWrite,
+  commonDir,
+  ensureGuardedDirectory,
+  git,
+  gitBaseEnv,
+  gitText,
+  guardTarget,
+  guardedMkdir,
+  guardedUnlink,
+  requireToplevel,
+  resolveDirectory,
+  resolveRuntimeRoot,
+} from './runtime-state-guard.mjs';
+
+// The guard, root check, write primitives and git wrapper live in the shared runtime-state
+// module; these names stay exported here so existing importers keep working.
+export { errorDetail, gitBaseEnv } from './runtime-state-guard.mjs';
 
 export const DIFF_BASELINE_VERSION = 1;
 
@@ -83,36 +94,6 @@ const BASELINE_FILE = 'baseline.json';
 const PATCH_FILE = 'diff.patch';
 const PATHS_FILE = 'paths.json';
 
-// Inherited variables that would redirect git to another repository, index or object store,
-// inject configuration, swap attributes, replace or graft objects, or reinterpret pathspecs and
-// diff output. The helper sets the ones it needs itself.
-const STRIPPED_GIT_ENV = Object.freeze([
-  'GIT_DIR',
-  'GIT_WORK_TREE',
-  'GIT_COMMON_DIR',
-  'GIT_INDEX_FILE',
-  'GIT_OBJECT_DIRECTORY',
-  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
-  'GIT_QUARANTINE_PATH',
-  'GIT_NAMESPACE',
-  'GIT_PREFIX',
-  'GIT_LITERAL_PATHSPECS',
-  'GIT_GLOB_PATHSPECS',
-  'GIT_NOGLOB_PATHSPECS',
-  'GIT_ICASE_PATHSPECS',
-  'GIT_EXTERNAL_DIFF',
-  'GIT_DIFF_OPTS',
-  'GIT_OPTIONAL_LOCKS',
-  'GIT_CONFIG_PARAMETERS',
-  'GIT_CONFIG_COUNT',
-  'GIT_ATTR_SOURCE',
-  'GIT_REPLACE_REF_BASE',
-  'GIT_NO_REPLACE_OBJECTS',
-  'GIT_SHALLOW_FILE',
-]);
-// `GIT_CONFIG_COUNT` pairs with any number of numbered key and value variables.
-const STRIPPED_GIT_ENV_PATTERN = /^GIT_CONFIG_(?:KEY|VALUE)_/;
-
 // Snapshot calls pin the settings that would otherwise let git start a daemon, write an extension
 // or a split-index shared file into the real git directory, abort on a line-ending round trip, or
 // create group- or world-readable snapshot objects. `core.hooksPath` is appended per call and
@@ -136,11 +117,12 @@ function snapshotConfig(hooksDir) {
   return [...SNAPSHOT_CONFIG, '-c', `core.hooksPath=${hooksDir}`];
 }
 
-export class DiffBaselineError extends Error {
+// A subclass of the shared `RuntimeStateError`, so a refusal raised by the shared guard keeps its
+// code here; the exit code always derives from `error.code` through this helper's own map.
+export class DiffBaselineError extends RuntimeStateError {
   constructor(code, message, options) {
-    super(message, options);
+    super(code, message, options);
     this.name = 'DiffBaselineError';
-    this.code = code;
     this.exitCode = EXIT_CODES[code] ?? 1;
   }
 }
@@ -185,61 +167,6 @@ export function createProcessRunner() {
         resolve({ status, stdout: Buffer.concat(stdout), stderr: Buffer.concat(stderr) }),
       );
     });
-}
-
-export function gitBaseEnv(source = process.env) {
-  const env = {};
-  for (const [key, value] of Object.entries(source ?? {})) {
-    if (value === undefined || STRIPPED_GIT_ENV.includes(key)) continue;
-    if (STRIPPED_GIT_ENV_PATTERN.test(key)) continue;
-    env[key] = value;
-  }
-  env.GIT_OPTIONAL_LOCKS = '0';
-  env.GIT_TERMINAL_PROMPT = '0';
-  // Untranslated messages keep the reported detail and the error parsing below locale-independent.
-  env.LC_ALL = 'C';
-  return env;
-}
-
-function asBuffer(value) {
-  if (Buffer.isBuffer(value)) return value;
-  if (value instanceof Uint8Array) return Buffer.from(value);
-  return Buffer.from(String(value ?? ''), 'utf8');
-}
-
-// The one stderr line worth reporting: the first `fatal:` or `error:` line, because warnings
-// such as a line-ending notice can precede the actual cause; otherwise the first non-empty line.
-export function errorDetail(buffer) {
-  const lines = asBuffer(buffer)
-    .toString('utf8')
-    .split('\n')
-    .map((line) => line.trim())
-    .filter((line) => line !== '');
-  return lines.find((line) => /^(?:fatal|error):/.test(line)) ?? lines[0] ?? '';
-}
-
-// Runs `git -C <cwd> <args>` and returns the raw result when its status is allowed. Any other
-// outcome is a GIT_FAILED error carrying one stderr line, never the full output; `explain` may
-// turn stderr into a more actionable message.
-async function git(context, cwd, args, { env = context.env, allowed = [0], explain } = {}) {
-  const result = await context.runner({ executable: 'git', args: ['-C', cwd, ...args], cwd, env });
-  if (result?.error || !allowed.includes(result?.status)) {
-    const detail = result?.error?.message ?? errorDetail(result?.stderr);
-    const command = args.find((arg, index) => arg !== '-c' && args[index - 1] !== '-c');
-    const explained = result?.error
-      ? undefined
-      : explain?.(asBuffer(result?.stderr).toString('utf8'));
-    fail('GIT_FAILED', explained ?? `git ${command} failed${detail ? `: ${detail}` : ''}`);
-  }
-  return {
-    status: result.status,
-    stdout: asBuffer(result.stdout),
-    stderr: asBuffer(result.stderr),
-  };
-}
-
-async function gitText(context, cwd, args, options) {
-  return (await git(context, cwd, args, options)).stdout.toString('utf8').trim();
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -321,154 +248,6 @@ export function normalizeScope(scope) {
 // ---------------------------------------------------------------------------------------------
 // Filesystem containment
 
-async function resolveDirectory(value, label) {
-  let canonical;
-  try {
-    canonical = await realpath(value);
-    if (!(await stat(canonical)).isDirectory()) throw new Error('not a directory');
-  } catch {
-    fail('INVALID_INPUT', `${label} must be an existing directory`);
-  }
-  return canonical;
-}
-
-function relativeToRoot(root, target) {
-  const relative = path.relative(root, target);
-  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) {
-    fail('UNSAFE_TARGET', `${target} is not below ${root}`);
-  }
-  return relative.split(path.sep).join('/');
-}
-
-// Proves that every existing component from `root` (exclusive) down to `target` (inclusive) is a
-// real directory. Returns false at the first missing component when `allowMissing` is set.
-async function assertDirectoryChain(root, target, { allowMissing = false } = {}) {
-  const parts = relativeToRoot(root, target).split('/');
-  let current = root;
-  for (const part of parts) {
-    current = path.join(current, part);
-    let info;
-    try {
-      info = await lstat(current);
-    } catch (error) {
-      if (error?.code === 'ENOENT' && allowMissing) return false;
-      if (error?.code === 'ENOENT') fail('UNSAFE_TARGET', `${current} does not exist`);
-      fail('UNSAFE_TARGET', `cannot inspect ${current}: ${error?.code ?? error?.message}`);
-    }
-    if (info.isSymbolicLink()) fail('UNSAFE_TARGET', `${current} is a symlink`);
-    if (!info.isDirectory()) fail('UNSAFE_TARGET', `${current} is not a directory`);
-  }
-  return true;
-}
-
-// The runtime-state guard. It runs from `cwd` immediately before every mutation below
-// `.effective-flow/`: the directory must be ignored and untracked, the concrete target must be
-// ignored, and the target's parent chain must hold no symlink.
-async function guardTarget(context, target) {
-  const { cwd } = context;
-  const relative = relativeToRoot(cwd, target);
-  if (relative !== STATE_DIR && !relative.startsWith(`${STATE_DIR}/`)) {
-    fail('UNSAFE_TARGET', `${target} is not below ${path.join(cwd, STATE_DIR)}`);
-  }
-  await assertDirectoryChain(cwd, path.dirname(target));
-  const tracked = await git(context, cwd, ['ls-files', '-z', '--', `${STATE_DIR}/`]);
-  if (tracked.stdout.length !== 0) {
-    fail('RUNTIME_STATE_UNSAFE', `${STATE_DIR}/ contains tracked files`);
-  }
-  for (const probe of [`${STATE_DIR}/config.json`, relative]) {
-    const result = await git(context, cwd, ['check-ignore', '--no-index', '-q', '--', probe], {
-      allowed: [0, 1],
-    });
-    if (result.status !== 0) fail('RUNTIME_STATE_UNSAFE', `${probe} is not ignored`);
-  }
-}
-
-async function guardedMkdir(context, target) {
-  await guardTarget(context, target);
-  try {
-    await mkdir(target, { mode: 0o700 });
-  } catch (error) {
-    if (error?.code === 'EEXIST') return false;
-    fail('WRITE_FAILED', `cannot create ${target}: ${error?.code ?? error?.message}`);
-  }
-  const info = await lstat(target);
-  if (info.isSymbolicLink() || !info.isDirectory()) {
-    fail('UNSAFE_TARGET', `${target} is not a real directory`);
-  }
-  return true;
-}
-
-async function ensureGuardedDirectory(context, target) {
-  let info;
-  try {
-    info = await lstat(target);
-  } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      fail('UNSAFE_TARGET', `cannot inspect ${target}: ${error?.code ?? error?.message}`);
-    }
-    await guardedMkdir(context, target);
-    info = await lstat(target);
-  }
-  if (info.isSymbolicLink()) fail('UNSAFE_TARGET', `${target} is a symlink`);
-  if (!info.isDirectory()) fail('UNSAFE_TARGET', `${target} is not a directory`);
-}
-
-const O_NOFOLLOW = fsConstants.O_NOFOLLOW ?? 0;
-const WRITE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
-
-// Writes `content` to a fresh temporary sibling (exclusive, never following a symlink, mode 0600)
-// and renames it over `target`, so a reader sees either the previous or the new file.
-async function atomicWrite(context, target, content) {
-  const directory = path.dirname(target);
-  const temporary = path.join(
-    directory,
-    `.${path.basename(target)}.${randomBytes(8).toString('hex')}.tmp`,
-  );
-  await guardTarget(context, temporary);
-  await guardTarget(context, target);
-  try {
-    const existing = await lstat(target);
-    if (!existing.isFile()) fail('UNSAFE_TARGET', `${target} is not a regular file`);
-  } catch (error) {
-    if (error instanceof DiffBaselineError) throw error;
-    if (error?.code !== 'ENOENT') {
-      fail('UNSAFE_TARGET', `cannot inspect ${target}: ${error?.code ?? error?.message}`);
-    }
-  }
-  let handle;
-  try {
-    handle = await open(temporary, WRITE_FLAGS, 0o600);
-  } catch (error) {
-    fail('UNSAFE_TARGET', `cannot create ${temporary}: ${error?.code ?? error?.message}`);
-  }
-  try {
-    await handle.writeFile(content);
-    await handle.sync();
-  } catch (error) {
-    await handle.close().catch(() => {});
-    await unlink(temporary).catch(() => {});
-    fail('WRITE_FAILED', `cannot write ${temporary}: ${error?.code ?? error?.message}`);
-  }
-  await handle.close();
-  try {
-    await rename(temporary, target);
-  } catch (error) {
-    await unlink(temporary).catch(() => {});
-    fail('WRITE_FAILED', `cannot replace ${target}: ${error?.code ?? error?.message}`);
-  }
-}
-
-async function guardedUnlink(context, target) {
-  await guardTarget(context, target);
-  try {
-    await unlink(target);
-  } catch (error) {
-    if (error?.code !== 'ENOENT') {
-      fail('WRITE_FAILED', `cannot remove ${target}: ${error?.code ?? error?.message}`);
-    }
-  }
-}
-
 function requireBaselineHandle(value) {
   const dir = requireAbsolutePath(value, 'dir');
   if (path.resolve(dir) !== dir) fail('INVALID_INPUT', 'dir must be a normalized absolute path');
@@ -504,56 +283,6 @@ async function resolveBaselineDir(cwd, dir) {
 
 // ---------------------------------------------------------------------------------------------
 // Repository identity
-
-async function commonDir(context, root) {
-  const value = await gitText(context, root, [
-    'rev-parse',
-    '--path-format=absolute',
-    '--git-common-dir',
-  ]);
-  try {
-    return await realpath(value);
-  } catch {
-    fail('UNSAFE_TARGET', `cannot resolve the git common directory of ${root}`);
-  }
-}
-
-async function requireToplevel(context, root, label) {
-  let top;
-  try {
-    top = await realpath(await gitText(context, root, ['rev-parse', '--show-toplevel']));
-  } catch (error) {
-    if (error instanceof DiffBaselineError && error.code === 'GIT_FAILED') {
-      fail('UNSAFE_TARGET', `${label} is not inside a git working tree`);
-    }
-    if (error instanceof DiffBaselineError) throw error;
-    fail('UNSAFE_TARGET', `cannot resolve the toplevel of ${label}`);
-  }
-  if (top !== root) fail('UNSAFE_TARGET', `${label} is not the toplevel of its working tree`);
-}
-
-// `cwd` must be the main checkout's toplevel: its git directory is the repository's common
-// directory, so it is never a linked worktree.
-async function resolveRuntimeRoot(context, value) {
-  const cwd = await resolveDirectory(value, 'cwd');
-  context.cwd = cwd;
-  await requireToplevel(context, cwd, 'cwd');
-  const common = await commonDir(context, cwd);
-  const gitDirValue = await gitText(context, cwd, [
-    'rev-parse',
-    '--path-format=absolute',
-    '--git-dir',
-  ]);
-  let gitDir;
-  try {
-    gitDir = await realpath(gitDirValue);
-  } catch {
-    fail('UNSAFE_TARGET', 'cannot resolve the git directory of cwd');
-  }
-  if (gitDir !== common)
-    fail('UNSAFE_TARGET', 'cwd must be the main checkout, not a linked worktree');
-  return { cwd, common };
-}
 
 async function resolveExecutionRoot(context, value, common) {
   const root = await resolveDirectory(value, 'executionRoot');
@@ -902,7 +631,7 @@ async function readBaselineRecord(dir) {
     if (info.size > MAX_RECORD_BYTES) fail('INVALID_INPUT', `${recordPath} is too large`);
     text = await handle.readFile('utf8');
   } catch (error) {
-    if (error instanceof DiffBaselineError) throw error;
+    if (error instanceof RuntimeStateError) throw error;
     fail('UNSAFE_TARGET', `cannot read ${recordPath}: ${error?.code ?? error?.message}`);
   } finally {
     await handle.close().catch(() => {});
@@ -1059,7 +788,7 @@ export async function executeOperation(operation, input = {}, deps = {}) {
 
 export function errorEnvelope(operation, error) {
   const normalized =
-    error instanceof DiffBaselineError
+    error instanceof RuntimeStateError
       ? error
       : new DiffBaselineError(
           'INTERNAL_ERROR',

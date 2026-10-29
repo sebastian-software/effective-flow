@@ -823,6 +823,57 @@ one only after explicit confirmation. Because the diff can carry working-tree se
 ignored runtime state with owner-only permissions and is never quoted into a tracker item, pull
 request, commit or report.
 
+## Runtime-state locks
+
+Three `mkdir` locks below `<RUNTIME_STATE_ROOT>/.effective-flow/` serialize shared writes:
+`memory.lock` for every `memory.json` writer, `iterate-commit.lock` for `iterate` commit critical
+sections and `apply-review-commit.lock` for `apply-review` commits. Workflows no longer replay the
+protocol from prose; the shipped `effective-flow-state` runtime helper
+(`effective-flow-state.mjs` over `effective-flow-state-core.mjs`) performs it, on top of the shared
+`runtime-state-guard.mjs` module that belongs to no pair, like `process-runner.mjs`. The guard
+proves `cwd` is the main checkout's toplevel and that every mutation target sits below an
+untracked, git-ignored, symlink-free `.effective-flow/`; `diff-baseline-core.mjs` uses the same
+module. Mechanics and error codes are described under
+[Runtime scripts](build-system.md#runtime-scripts).
+
+The helper has four operations, each exactly two argv tokens with one JSON object on stdin through
+a here-string. `lock acquire`, `lock release` and `lock inspect` are non-destructive or read-only.
+`lock break` is destructive and is never allowlisted; only the orchestrator calls it, after the
+user confirmed in the conversation. The lock is a closed enum, `memory`, `iterate-commit` or
+`apply-review-commit`, mapped to a fixed path, and the commit locks require a `runId`. The
+on-disk protocol is unchanged and stays compatible with installed releases: the lock is a
+directory created by `mkdir`, with `owner.json` (`memory`) or `owner` (commit locks) written
+exclusively inside it, now JSON with a helper-generated token. An owner the helper cannot parse,
+older prose-written ones included, is foreign and removable only by a confirmed `lock break`
+against the observed directory identity and owner digest; an owner above 16 MiB is never hashed,
+is reported as `oversized` with its size, and is broken by identity plus `ownerSize`. A mismatch
+is a `BREAK_MISMATCH` outcome before anything is deleted. `lock release` and `lock break` delete
+through a tombstone: after the guards and the last observation they rename the lock directory to
+a unique `<lock>.release-<hex>` or `<lock>.break-<hex>` sibling, verify identity, owner size and
+digest on the renamed node, and only then delete it, renaming a mismatch (an unobservable
+tombstone included) back while the lock name is free. A verified tombstone whose delete fails has
+already freed the lock name, so the operation succeeds with `leftoverTombstone`. A tombstone is
+no lock name and never blocks `lock acquire`, but one left by an interrupted helper, a failed
+delete or a mismatch that could not be renamed back may hold an unverified directory;
+`lock inspect` lists the lock's tombstones as `tombstones`, and one is removed by hand (`rm -r`)
+only after checking that its contents are no live lock's. An owner counts as the helper's own only
+with a hostname-shaped `host` and an `acquiredAt` that round-trips through `Date#toISOString`;
+anything else is reported as byte count and digest only. Expected lock states (`LOCK_HELD`,
+`NOT_OWNER`, `NOT_HELD`, `BREAK_MISMATCH`) exit 4, separate from errors.
+
+Waiting is bounded: `waitSeconds` runs from 0 to 30. For `memory`, one `LOCK_HELD` after 30
+seconds is reported with the owner and blocks the owning mutation, as before, and an apparent
+orphan (missing or malformed owner, or one the user identifies as stale) is broken only after
+explicit user confirmation; age alone never qualifies. For the commit locks, a worker stops after
+three unchanged `LOCK_HELD` results and returns to its orchestrator, which alone knows whether the
+owning delegation of the same `runId` is still active: while it is, the orchestrator re-dispatches
+the waiting commit section; once it has returned, the lock is foreign and treated under the same
+orphan criteria. `src/shared/commit-lock-contract.md` states these rules once for both hosts,
+with the ownership check before `git commit`. A worker never asks the user: it returns the
+`LOCK_HELD` diagnostics to its orchestrator, and a relayed or non-interactive run fails closed
+without offering a break. Any permission rule for the helper must name the full two-token
+operation, such as `lock acquire`, never `lock *`, so `lock break` stays outside it.
+
 ## Repo structure at a glance
 
 ```text

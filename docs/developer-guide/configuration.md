@@ -74,10 +74,11 @@ remains below its `.worktrees/` tree.
 
 All `memory.json` writers share the contract in
 [`src/shared/memory-state.md`](../../src/shared/memory-state.md). They acquire the atomic
-`.effective-flow/memory.lock` directory, record lock ownership, re-read and validate the complete
+`.effective-flow/memory.lock` directory through the `effective-flow-state` helper (`lock acquire`,
+`lock release`, `lock inspect`, and a user-confirmed `lock break`), which records lock ownership; re-read and validate the complete
 JSON object inside the lock, merge only their owned field or subtree, and replace the file through
 a unique same-directory temporary file and atomic rename. Lock acquisition retries for at most 30
-seconds; timeout reports the recorded owner, and a suspected orphan is removed only after explicit
+seconds inside the helper, unchanged in effect; one `LOCK_HELD` timeout reports the recorded owner and blocks the mutation, and a suspected orphan is removed only after explicit
 confirmation. Invalid JSON or counters, permissions, disk exhaustion, and failed replacement all
 fail closed without replacing the prior file or deleting foreign state.
 

@@ -1,6 +1,6 @@
 # Guard and lock core for the runtime-state helper
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -273,6 +273,58 @@ Out of scope here, because they belong to work package 3: the allowlist rule, th
 - **Note (Scope): the new scripts were not seeded although a memory write executes them.** Decision: seed them in both suites.
 - **Note (Scope): the spike outcome was not recorded in the Requirement.** Incorporated.
 - **Note (Data protection): inspect returned raw owner text without a cap.** Incorporated: an `invalid` owner is reported as a byte count and digest.
+
+## Implementation notes
+
+Deviations and additions relative to the plan, all within its scope:
+
+- **Shared commit-lock contract.** The commit-lock waiting, sibling, foreign-owner, ownership-check, and post-break rules live in one new eagerly included fragment, `src/shared/commit-lock-contract.md`, used by `iterate` and `apply-review-commit-mechanics`. This replaces two near-identical copies.
+- **Bounded worker wait.** A worker returns its diagnostics after three consecutive unchanged `LOCK_HELD` results. The orchestrator re-dispatches the commit section only after the owning sibling delegation has returned, and the re-dispatch keeps the original `delegation` value.
+- **Tombstone removal.** `lock release` and `lock break` rename the lock directory to a sibling tombstone, verify it against the observation, and only then delete it.
+  - On a mismatch the tombstone is renamed back where the lock name is still free.
+  - A delete that fails after verification returns success with `leftoverTombstone`.
+  - `lock inspect` lists sibling tombstones.
+- **Owner validation and limits.**
+  - `host` must match a hostname pattern.
+  - `acquiredAt` must be strict, round-tripping ISO-8601.
+  - Owners above 64 KiB are not parsed. Above 16 MiB they are reported as `oversized` and can be broken by identity plus size.
+- **Ownership check before commit.** Both commit critical sections check ownership with `lock inspect` and a token comparison right before `git commit`. `apply-review` fails a finding closed on a release `NOT_OWNER` or `NOT_HELD`.
+- **Context budgets grew rather than shrank.** The new outcome branching, worker reporting, and commit-lock rules add more prose than the removed lock replay. All entries stay within built count plus ten:
+
+  | Tool                            | Lines | Budget |
+  | ------------------------------- | ----- | ------ |
+  | `iterate`                       | 1627  | 1631   |
+  | `apply-review-commit-mechanics` | 690   | 694    |
+  | `investigate`                   | 606   | 610    |
+
+- **Documentation counts.** The runtime-script count in the developer guide was already stale before this change (27 instead of 29); it now states 32.
+
+## Test results
+
+- `pnpm agent:check`: pass (1069 files).
+- `pnpm test`: 3089 tests, 3086 pass, 0 fail, 3 skipped. This includes the new `runtime-state-guard`, `effective-flow-state`, and `effective-flow-state-git` suites with conformance, race, tombstone, and injected-failure cases. The existing `diff-baseline` tests pass unchanged.
+- `node build.mjs`: pass. All context budgets are within their entries.
+- `pnpm test:distribution`: offline checks passed. The three new scripts are byte-identical in every target, and the `lock acquire` / `lock release` smoke passes there.
+- `node evals/eval.mjs iterate verify` and `merge-gate verify`: stale evidence as expected, no instrument error. Both suites owe a re-recorded round before the next release.
+- Manual smoke against the built native Claude target:
+  - acquire, then a concurrent acquire returning `LOCK_HELD` (exit 4)
+  - inspect (no tombstones)
+  - release, then a second release returning `NOT_HELD`
+  - a prose-style orphan broken by identity plus digest
+  - a stale-identity break returning `BREAK_MISMATCH`
+  - an extra argv token rejected before stdin (exit 2)
+
+## Review findings
+
+**Date:** 2026-10-29
+**Reviewer:** Node.js reviewer (initial review and one re-review after the incorporation pass)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    20 |
+| Open / Not implemented |     0 |
 
 ## Open points
 

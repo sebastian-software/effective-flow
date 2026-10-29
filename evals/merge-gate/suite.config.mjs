@@ -61,7 +61,8 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 //
 // The configuration resolver pair is seeded for the same reason: the gate and the `iterate` round it
 // delegates run the shipped `scripts/config-resolve.mjs` at their first configuration read, no load
-// pointer names it, and nothing stubs it.
+// pointer names it, and nothing stubs it. So is the runtime-state helper with the guard module it
+// imports: a first memory write in either run executes it to take `memory.lock`.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/merge-gate.md',
@@ -72,6 +73,9 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/delegation-envelope-core.mjs',
   'scripts/config-resolve.mjs',
   'scripts/config-resolve-core.mjs',
+  'scripts/effective-flow-state.mjs',
+  'scripts/effective-flow-state-core.mjs',
+  'scripts/runtime-state-guard.mjs',
 ]);
 
 // The stub that answers the run and the scaffold that configures it: what turns the built tree into
