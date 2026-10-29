@@ -151,13 +151,13 @@ When delivery or worktree is active:
    created from the base branch does not contain this work. Only continue
    if the user confirms the chosen mode or the workflow creates a safe
    partial-diff PR by the procedure described below.
-4. Construct delivery branch names: `<delivery.branchPrefix>/<skill>/<slug>`, e.g.
-   `effective-flow/build/user-login`; an empty prefix, the hidden-mode default and valid in every
-   mode, drops the prefix segment and its slash: `<skill>/<slug>`, e.g. `build/user-login`. Derive
-   the slug from the plan title, the task description,
-   the issue or finding. In hidden mode (`visibility: hidden`), sanitize the slug before any existence check: remove from the slug every match of the helper's disclosure rule — `effective` and `flow` joined directly or by `-`, `_`, or `.`, case-insensitive, or `Effective Flow` —
-   together with the letters or digits attached to it up to the nearest hyphen, collapse repeated or edge hyphens, repeat both until the slug no longer matches the rule, use `change` if nothing remains, and report the original and the chosen slug in one line.
-   If the resulting branch name already exists, append a numeric suffix and report the chosen name.
+4. Name the delivery branch with the helper's `delivery-branch-name` (call and fail-closed rule as
+   under "Base-branch resolution"): `cwd`, `branchPrefix` (`delivery.branchPrefix`), `skill` (this
+   workflow), `text` (the plan title, task description, issue or finding), `visibility`,
+   `excludeNames: []`. Names read `<delivery.branchPrefix>/<skill>/<slug>`; an empty prefix, the
+   hidden-mode default and valid in every mode, drops the prefix segment and its slash: `<skill>/<slug>`.
+   `named`: use `data.branch`, reported when `data.suffix` is not `null`; when `data.sanitized`, report
+   `data.originalSlug` and `data.slug` in one line. `prefix-discloses`: stop, naming `delivery.branchPrefix` and {{SKILL:setup}}.
 
 ### Run-owned delivery state
 

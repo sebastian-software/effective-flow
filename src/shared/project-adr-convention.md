@@ -84,20 +84,15 @@ source and its classified outcome.
 
 ### Observed evidence
 
-Observed evidence supplies **a convention** only when no declared source speaks. Independently of
-that, the file names in the detected ADR directory are always read for zero-pad width and number
-allocation once the resolved convention is numbered, no matter which tier resolved it. The evidence
-set is the `*.md` files at the top level of the detected ADR directory — the scan is not recursive —
-excluding `README.md`, `index.md`, and any file whose stem equals `effective-flow-project-setup` or
-the legacy slug `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix.
-That exclusion is deliberately syntactic and identical to the **stem** half of the config locator's
-scan predicate, deliberately without the locator's second half — its canonical configuration
-envelope test — so it holds before any step has resolved the project setup ADR:
-
-- An **empty** evidence set is no observed convention. Evidence has to exist before it classifies anything, and without this rule the two tests below are both vacuously true for an empty directory, which would make it numbered and numberless at once.
-- **numbered** when the set is non-empty and every file in it carries a `^\d+-` prefix at one and the same zero-pad width.
-- **numberless** when the set is non-empty and no file in it carries a numeric prefix.
-- Anything else — a mix of prefixed and unprefixed files, numbered files at differing widths, or a `^\d+_` separator — is no observed convention, and the run reports the evidence as inconclusive.
+Observed evidence supplies **a convention** only when no declared source speaks. The helper reads
+it: run `node <skill-root>/scripts/effective-flow-mechanics.mjs adr-observe` with exactly one JSON
+object on standard input, `cwd` the verified repository root and `adrDir` the detected ADR directory
+relative to it. **Fail closed** for this and every call below: a nonzero exit, an envelope that does
+not parse, or `ok: false` stops the run, naming the error code; never replay these rules by hand.
+`data.outcome` is `numbered` (one zero-pad width, `data.width`), `numberless`, `inconclusive` or
+`none` (an empty evidence set); the last two are no observed convention, and the run reports
+inconclusive evidence as such. `outside-repo-stop` is the hard stop under "Allocation and
+collision".
 
 ### Precedence
 
@@ -107,104 +102,49 @@ Where the observed evidence is unanimous and contradicts the speaking declared s
 declared source still wins and the disagreement is named in the completion report, so a silent
 override becomes a visible one without adding a gate.
 
-### Number and width allocation
+### Allocation and collision
 
-This applies only to a resolved numbered convention:
+Every **new** ADR — one that does not already exist — takes its file name from `adr-allocate`, with
+`cwd`, `adrDir`, `convention` (the resolved `numbered` or `numberless`; the Effective Flow default
+is `numberless`), `declaredWidth` (the width a speaking source states, as stated, else `null`),
+`text` (the ADR title) and `previousTarget`. An ADR resolved for update is written at its own path
+(see "No rename on the convention axis") and is never a collision with itself; that is the single
+exemption. Call once with `previousTarget: null`, and again immediately before the write with that
+target: this second call is the unconditional pre-write existence check, under either convention.
+Write only to the second call's `data.path`, by `data.outcome`:
 
-- The zero-pad width comes from the declaration when it states one, otherwise from the numbered
-  files of the **observed-evidence set** defined under "Observed evidence" when they all share one
-  width, otherwise four digits. Width is a classification property, so it reads that set and never
-  the wider allocation scan below; the two sets differ, and naming the wrong one would make a
-  directory holding `001-foo.md` beside `0002-effective-flow-project-setup.md` resolve to width 3
-  one way and to four digits the other. A non-uniform observed-evidence set states no width and
-  falls through to four digits.
-- A declared width outside 1–10 digits is unrecognized **on the width axis** only: the width falls
-  back to the observed-evidence width and then to four digits, while the rest of that declaration
-  keeps speaking.
-- Width is not on the classification axis, so two speaking sources can agree that the convention
-  carries numbers while stating different widths — `NNN-<slug>.md` in one and `NNNNN-<slug>.md` in
-  the other. Those sources agree, decide the convention between them, and never reach the ambiguity
-  fence. Where speaking sources agree on the classification axis but state different widths, the
-  **width axis** is unrecognized in the same way: the width falls back to the observed-evidence
-  width and then to four digits, and the divergence is reported with every speaking source and the
-  width it stated. Without that rule two runs on one repository could write `007-…` and `00007-…`.
-- The number is the next unused integer above the highest number present in the directory. A file
-  contributes a number when its name matches `^(\d+)[-_]`, and the captured digits are that number.
-  This read-side parse tolerates both separators deliberately, independently of the hyphen-only
-  write-side axis, so a file like `0007_legacy.md` cannot have its number silently reused.
-- The allocation scan reads **all** `*.md` files at the top level of the detected ADR directory —
-  non-recursive, like the evidence scan — including the ones the observed-evidence set excludes. The
-  two scan sets differ deliberately, so a file the classification ignores can still not have its
-  number reused.
-- Allocation starts at `0001`, rendered at the resolved width, when the directory holds no numbered file at all.
-- When the highest number present saturates the resolved width, widen the pad by one digit and report that. Numbering never wraps.
+- `allocated`: the target is free.
+- `reallocated`: under a numbered convention the target was taken, so the number was re-allocated
+  once; report the new path.
+- `collision-stop`: report `data.paths` and write nothing — a second numbered collision, or a taken
+  numberless target. Only an explicit, confirmed overwrite decision obtained by the calling tool —
+  its invalid-source decision, for instance — may then write over that file.
+- `symlink-stop` (an existing symlink at the target, dangling included) or `outside-repo-stop` (the
+  ADR directory resolves outside the repository, `data.resolvedPath`): a hard stop — report the path
+  and write nothing, never re-allocate or reroute to the default.
+- `unrecognized` (the name or its resolved parent fails containment): under `numbered` the
+  Effective Flow default applies; call again with `convention: "numberless"`. Under `numberless`
+  it is a hard stop like `symlink-stop`; never call again.
 
-### Containment
-
-Two tests guard the target path, and their **order** is part of the rule: the symlink hard stop is
-evaluated first, and it overrides the fallback of the containment test. Applied the other way round,
-a symlink pointing outside the repository would fail containment, be called an unrecognized name,
-send the run to the Effective Flow default, and get written after a reroute — and a dangling symlink
-would defeat the protection entirely, because the containment resolution itself fails on it.
-
-**First, the symlink hard stop.** Before the containment predicate is evaluated, test the target
-path itself for an existing symlink, with a test that does not follow the link so a dangling one is
-seen rather than reported absent. An existing symlink at the target path is a hard stop of its own:
-it is never a write target, never triggers a re-allocation, and never reroutes to the Effective Flow
-default — report the path and write nothing. This holds for a dangling symlink too, which a plain
-existence check reports as absent while a write through it lands outside the repository.
-
-**Then, containment.** The resolved file name must be a single path segment matching
-`^(?:\d+-)?[a-z0-9][a-z0-9-]*\.md$`. Containment is then checked **physically** rather than
-lexically, because the name pattern already forbids a separator and a lexical test would be
-trivially satisfied: resolve both the detected ADR directory and the target path through their
-symlinks, then require **two** things of the result — the resolved target's parent equals the
-resolved directory, **and** both of them lie beneath the verified repository root.
-
-**The second requirement is not implied by the first.** Equality proves only that the two resolve to
-the same place, never that the place is inside the repository. Where the ADR **directory itself** is
-a symlink pointing outside it, both sides resolve to that one external directory, the equality holds,
-and the write lands outside the repository. The symlink hard stop above does not catch it either: it
-tests the target path, not the directory it sits in.
-
-**Those two failures have different outcomes, and the difference is what makes the second one safe.**
-A name failing the segment pattern, or a target whose resolved parent is some other directory, is
-unrecognized: the Effective Flow default applies, and nothing outside the detected directory is ever
-written. A resolved directory lying outside the repository root is instead a **hard stop** of the
-same kind as the symlink stop — report the resolved path and write nothing. Rerouting to the default
-would be no protection at all there, because the default name resolves inside that same external
-directory. Both fallbacks are reachable only where the symlink hard stop did not already fire; no
-hard stop is ever softened into a reroute.
-
-### Collision at write time
-
-This applies to every **new** ADR — one that does not already exist — under either resolved
-convention. An ADR resolved for update is written at its own path (see "No rename on the convention
-axis") and is never a collision with itself; that is the single exemption, and it is the only one,
-because the pre-write existence check is what stands between a new ADR and an overwritten file.
-
-Re-scan the detected ADR directory immediately before writing and read the resolved target path.
-The existence check on that path is **unconditional**, not scoped to a convention that allocates
-numbers: a file sits at a numberless target just as easily as at a numbered one. A project setup ADR
-whose configuration envelope was deleted or never finished does not resolve through the config
-locator, so a run treats that project as unconfigured, the numberless convention resolves to that
-same path, and without an unconditional check the new-ADR envelope would be written straight over
-the existing file.
-
-- Under a convention that carries **numbers**, an existing file at the resolved target path
-  re-allocates the number once; read the new target path again. A second collision stops the run
-  and reports both paths rather than overwriting.
-- Under a **numberless** convention there is no second name to allocate. An existing file at the
-  resolved target path stops the run and reports that path. Only an explicit, confirmed overwrite
-  decision obtained by the calling tool — its invalid-source decision, for instance — may then
-  write over that file; the procedure itself never overwrites on its own.
+A true `data.widened` means the highest number saturated the width and the pad grew by one digit;
+report it. Width is not on the classification axis, so speaking sources that agree on numbers but
+state different widths decide the convention between them and never reach the ambiguity fence; the
+width axis is then unrecognized: pass `declaredWidth: null` and report the divergence with every
+speaking source and the width it stated.
 
 ### No rename on the convention axis
 
-An already-resolved ADR is written at the path where it was found, even when that path
-contradicts the resolved convention; the divergence is reported once. This rule covers the naming
-convention only and leaves the legacy-slug switch unaffected: an ADR found under a legacy slug is
-still written under the current slug.
+An already-resolved ADR is written at the path where it was found, even when that path contradicts
+the resolved convention; the divergence is reported once. This rule covers the naming convention
+only: an ADR found under a legacy slug is still written under the current slug. A target that is
+not newly allocated — an update in place, or setup's switched slug — calls no `adr-allocate` and is
+never re-allocated; checking it by hand is the single exception to "never replay these rules by
+hand". In order: the symlink hard stop (tested without following the link), then the physical
+containment check — its resolved parent must equal the resolved ADR directory, both beneath the
+verified repository root — then, for a switched slug, the existence check (an update in place is
+never a collision with itself). Any hit stops the write with the consequences of `symlink-stop`,
+`outside-repo-stop` or `unrecognized`, or of `collision-stop` naming both paths for an occupied
+switched target; nothing falls back to the default.
 
 ### Reporting
 
@@ -218,10 +158,10 @@ surface.
 
 ### Mechanical rules and judgment
 
-Mechanical, and executed identically on every run: the observed-evidence scan and its width test,
-number and width allocation, the containment predicate, the collision procedure, and the no-rename
-rule. Deliberately judgmental, and named as such so a later reader does not mistake them for
-mechanical rules: whether a source states an ADR naming rule at all, whether a stated scheme falls
-outside the recognized axis, and whether two or more speaking sources genuinely contradict rather
-than restate one another. Anything not clearly matching falls through to the default rather than being
-approximated, which is what bounds the cost of that judgment.
+Mechanical, and executed by the helper: the observed-evidence scan and its width test, number and
+width allocation, the containment predicate and the collision procedure. Deliberately judgmental,
+and named as such so a later reader does not mistake them for mechanical rules: whether a source
+states an ADR naming rule at all, whether a stated scheme falls outside the recognized axis, and
+whether two or more speaking sources genuinely contradict rather than restate one another. Anything
+not clearly matching falls through to the default rather than being approximated, which is what
+bounds the cost of that judgment.

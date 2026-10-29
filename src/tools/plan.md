@@ -144,7 +144,7 @@ central-reasoning-delegation
 
 1. Analyze the requirement thoroughly.
 2. Review existing plan files in `<plan.dir>/` to adopt structure and existing architecture decisions.
-3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7 under `<plan.dir>/YYYY-MM-DD-<slug>.md` — there is no stub, no reservation, and no number.
+3. Check whether any plans in the old format (`NNNN-slug.md`) still exist in `<plan.dir>/`. If so, perform the bulk migration according to `Plan file convention`, section "Migration of old plans (NNNN → date)". The actual plan file for this run is only created in Phase 3/7, under the name `Plan file convention` allocates — there is no stub, no reservation, and no number.
 4. **Revision mode.** If the gateway returned source type `plan`, this run revises that existing
    plan file instead of writing a new one. Resolve the reference **after** the bulk migration of
    step 3 and against the post-migration file name — the gateway runs before that migration, so an
@@ -157,8 +157,8 @@ central-reasoning-delegation
    plan is not implementing it, so a recommendation pointing at another workflow is expected here
    and must trigger neither a warning nor a confirmation round.
 
-   Enter revision mode **without asking** only when both hold: the reference was **exact** — a full
-   path or a date-slug file name — and the resolved plan carries the canonical open status.
+   Enter revision mode **without asking** only when both hold: the reference was **exact**
+   (`data.exact`: a path or a file name) and the resolved plan carries the canonical open status.
    A legacy number or a title slug is a fuzzy match that can land far from the requirement at hand
    (`{{FLOW}} plan caching` resolves to an unrelated `2026-01-01-caching.md`), and a plan that is
    not open is the case the fragment would otherwise ask about. In either case, report the resolved
@@ -304,7 +304,7 @@ outcome-continuation
 when: planning continues an existing outcome, prior continuation history is unknown, or a proposed plan/revision materially expands the approach
 ```
 
-Write the plan file to `<plan.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (via `date +%F`), `<slug>` a kebab-case slug from the final title. On a name collision on the same day, append a numeric suffix (`-2`, `-3`, …). The H1 is `# <title>` without a number. On a revision run per Phase 1 step 4, this step targets the resolved existing path instead and none of these naming rules apply.
+Write the plan file to `data.path` of `name-allocate` per `Plan file convention`, with `text` the final title. The H1 is `# <title>` without a number. On a revision run per Phase 1 step 4, this step targets the resolved existing path instead and allocates no name.
 
 Before writing, resolve `language.workflow` once through the shared language resolver and retain that concrete value for all planning/review delegates. For an existing plan, preserve its clearly recognizable complete plan language. The legacy marker and existing-plan-corpus paths are only the transitional read fallbacks defined centrally; report the setup recommendation when either is used. Do not write configuration from this tool.
 
@@ -470,7 +470,7 @@ plan-lint
 when: the plan file is written and its mechanical check runs in Phase 5 or reruns in Phase 7
 ```
 
-**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to the next free numeric suffix per Phase 3); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.
+**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to a fresh Phase 3 `name-allocate` result); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.
 
 ### Phase 6: Plan review
 

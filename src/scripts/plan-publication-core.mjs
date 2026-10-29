@@ -32,7 +32,12 @@ import {
   inspectPlanPrMarker,
 } from './remote-tracker-core.mjs';
 import { assertPublishable } from './remote-tracker-shared-core.mjs';
-import { publicationMetadataFromText, PlanLintError } from './plan-lint-core.mjs';
+import {
+  publicationMetadataFromText,
+  PlanLintError,
+  UNATTENDED_PLAN_NAME,
+  refPathProblem,
+} from './plan-lint-core.mjs';
 import {
   SENSITIVE_CHILD_ASSIGNMENT,
   isLegitimateCredentialProse,
@@ -42,6 +47,10 @@ import {
   diagnosticText,
   nonInteractiveFetchEnv,
 } from './delivery-selection-core.mjs';
+
+// The unattended plan-name pattern and the in-process ref-path rule are owned by plan-lint-core;
+// they are re-exported here so a test can assert that both modules hold the identical objects.
+export { UNATTENDED_PLAN_NAME, refPathProblem };
 
 export const PLAN_PUBLICATION_OPERATIONS = Object.freeze([
   'scan',
@@ -235,25 +244,6 @@ function requireRemoteName(value) {
     fail('INVALID_INPUT', 'remote must be a remote name such as origin', { field: 'remote' });
   }
   return value;
-}
-
-// In-process ref-name rule for a branch prefix or a branch name: no empty segment (so no leading,
-// trailing or doubled `/`), no segment starting or ending with `.`, no `..`, no `.lock` segment
-// suffix, no `@{`, and no control, space or `~^:?*[\` character. `git check-ref-format` stays the
-// authority; this rule only keeps an unsafe name from reaching any command.
-const REF_FORBIDDEN = /[\u0000- \u007f~^:?*[\\]/;
-
-function refPathProblem(value) {
-  if (typeof value !== 'string' || value === '') return 'empty';
-  if (REF_FORBIDDEN.test(value) || value.includes('..') || value.includes('@{') || value === '@') {
-    return 'forbidden-character';
-  }
-  for (const segment of value.split('/')) {
-    if (segment === '') return 'empty-segment';
-    if (segment.startsWith('.') || segment.endsWith('.')) return 'dot-segment';
-    if (segment.endsWith('.lock')) return 'lock-suffix';
-  }
-  return null;
 }
 
 function requireRefPath(value, field) {
@@ -810,10 +800,6 @@ export function parsePlanBranch(name) {
   if (!Number.isSafeInteger(issue)) return null;
   return { branchPrefix, issue };
 }
-
-// `YYYY-MM-DD-issue-<N>-<slug>.md`, with the plan-numbering slug alphabet.
-const UNATTENDED_PLAN_NAME =
-  /^\d{4}-\d{2}-\d{2}-issue-([1-9]\d*)-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.md$/;
 
 function planNameViolation(name, issue) {
   const match = name.match(UNATTENDED_PLAN_NAME);

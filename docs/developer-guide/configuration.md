@@ -542,88 +542,16 @@ directory on an unattended run. Such a run reports that the fence could not be p
 speaking source and its classified outcome. The fence therefore never blocks an unattended run, and
 it never resolves silently either.
 
-### Number and width allocation
+### Allocation, containment and collision
 
-These rules apply only to a resolved convention that carries numbers:
-
-- The zero-pad width comes from the declaration where it states one, otherwise from the numbered
-  files of the **observed-evidence set** described above where they all share one width, otherwise
-  four digits. Width is a classification property, so it reads that set and never the wider
-  allocation scan below; the two sets differ, and a directory holding `001-foo.md` beside
-  `0002-effective-flow-project-setup.md` would otherwise resolve to width 3 one way and to four
-  digits the other. A non-uniform observed-evidence set states no width and falls through to four
-  digits.
-- A declared width outside 1–10 digits is unrecognized **on the width axis only**: the width falls
-  back to the observed-evidence width and then to four digits, while the rest of that declaration
-  keeps speaking.
-- Width is not on the classification axis, so two speaking sources can agree that the convention
-  carries numbers while stating different widths — `NNN-<slug>.md` in one, `NNNNN-<slug>.md` in the
-  other. Those sources agree, decide the convention between them, and never reach the ambiguity
-  fence. Where speaking sources agree on the classification axis but state different widths, the
-  width axis is unrecognized in the same way: the width falls back to the observed-evidence width
-  and then to four digits, and the divergence is reported with every speaking source and the width
-  it stated. Without that rule two runs on one repository could write `007-…` and `00007-…`.
-- The number is the next unused integer above the highest one present in the directory. A file
-  contributes a number when its name matches `^(\d+)[-_]`, and the captured digits are that number.
-  This read-side parse tolerates both separators deliberately, independently of the hyphen-only
-  write-side axis, so a file such as `0007_legacy.md` cannot have its number silently reused.
-- The allocation scan reads **all** `*.md` files at the top level of the detected directory —
-  non-recursive, like the evidence scan — including the ones the observed-evidence set excludes.
-  The two scan sets differ deliberately, so a file the classification ignores still cannot have its
-  number reused.
-- Allocation starts at `0001`, rendered at the resolved width, in a directory that holds no
-  numbered file at all. A highest number that saturates the resolved width widens the pad by one
-  digit and is reported. Numbering never wraps.
-
-### Containment and collision
-
-Two tests guard the target path, and their **order** is part of the rule: the symlink hard stop
-runs first and overrides the fallback of the containment test.
-
-An existing symlink at the target path is a hard stop of its own, tested before the containment
-predicate with a test that does not follow the link. It is never a write target, never triggers a
-re-allocation, and never reroutes to the Effective Flow default — the path is reported and nothing
-is written. This holds for a dangling symlink too, which a plain existence check reports as absent
-while a write through it would land outside the repository. Run the other way round, a symlink
-pointing outside the repository would fail containment, be called an unrecognized name, send the run
-to the default, and get written after a reroute — and a dangling one would defeat the protection
-entirely, because the containment resolution itself fails on it.
-
-Containment follows. The resolved file name must be a single path segment matching
-`^(?:\d+-)?[a-z0-9][a-z0-9-]*\.md$`. Containment is then checked **physically** rather than
-lexically, because the name pattern already forbids a separator and a lexical test would be
-trivially satisfied: both the detected ADR directory and the target path are resolved through
-their symlinks, and the result must then satisfy **two** requirements — the resolved target's
-parent equals the resolved directory, **and** both of them lie beneath the verified repository
-root.
-
-The second requirement is not implied by the first. Equality proves only that the two resolve to
-the same place, never that the place is inside the repository: where the ADR **directory itself**
-is a symlink pointing outside it, both sides resolve to that one external directory, the equality
-holds, and the write lands outside the repository. The symlink hard stop above does not catch that
-either, because it tests the target path and not the directory it sits in.
-
-The two failures therefore have different outcomes, and that difference is what makes the second one
-safe. A name failing the segment pattern, or a target whose resolved parent is some other directory,
-counts as unrecognized: the default applies and nothing outside the detected directory is written. A
-resolved directory lying outside the repository root is instead a **hard stop** of the same kind as
-the symlink stop — the resolved path is reported and nothing is written, because rerouting to the
-default would be no protection at all there: the default name resolves inside that same external
-directory. Both fallbacks are reachable only where the symlink hard stop did not already fire, and
-no hard stop is ever softened into a reroute.
-
-The collision procedure applies to every **new** ADR — one that does not already exist — under
-either resolved convention. An ADR resolved for update is written at its own path and is never a
-collision with itself; that is the single exemption. The directory is re-scanned immediately before
-writing and the resolved target path is read, and that existence check is **unconditional** rather
-than scoped to a convention that allocates numbers: a project-setup ADR whose configuration envelope
-was deleted or never finished does not resolve through the locator, so the run treats the project as
-unconfigured, the numberless convention resolves to that same path, and a scoped check would let the
-new-ADR envelope be written straight over it. Where the convention carries numbers, an existing file
-at the target re-allocates the number once and the new target path is read again; a second collision
-stops the run and reports both paths rather than overwriting. Under a numberless convention there is
-no second name to allocate, so an existing file at the target stops the run and reports that path —
-only an explicit, confirmed overwrite decision obtained by the calling tool may then write over it.
+Number and width allocation, the symlink hard stop, the physical containment check and the
+collision procedure are computed by the mechanics helper's `adr-observe` and `adr-allocate`
+operations in
+[`src/scripts/effective-flow-mechanics-core.mjs`](../../src/scripts/effective-flow-mechanics-core.mjs);
+[`src/shared/project-adr-convention.md`](../../src/shared/project-adr-convention.md) owns the call
+protocol, what each outcome writes, and the guards for a target that is not newly allocated (an
+update in place or setup's legacy-slug switch). Neither is restated here, so the rules have one
+source.
 
 ### Untrusted declared sources
 

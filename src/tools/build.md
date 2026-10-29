@@ -399,7 +399,6 @@ severity. An admitted Critical residual also requires the existing explicit comp
    not an architecture decision.
 9. If after the incorporation pass there remain `admitted` findings with a canonical open or unimplemented status in the complete report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`):
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
-   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - record the generated report path for Phase 7
 10. If this phase implemented a finding from an existing review-report file in `.effective-flow/review/`:
 
@@ -444,7 +443,7 @@ Review-Bericht:**`, and the German no-findings sentence. Stable paths and IDs re
 | Fixed | X |
 | Open / Not implemented | Y |
 
-**External review report:** `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md` <!-- only output if open findings were offloaded -->
+**External review report:** `<generated report path>` <!-- only output if open findings were offloaded -->
 
 No findings found. <!-- only output if no findings arose -->
 ```

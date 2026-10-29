@@ -436,12 +436,13 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Twelve subsystems and 32 runtime scripts carry this today: the pairs
+  misread as one. Thirteen subsystems and 34 runtime scripts carry this today: the pairs
   `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
-  `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
+  `diff-baseline.mjs`/`diff-baseline-core.mjs`,
+  `effective-flow-mechanics.mjs`/`effective-flow-mechanics-core.mjs`,
+  `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
-  `model-selection.mjs`/`model-selection-core.mjs`,
   `effective-flow-state.mjs`/`effective-flow-state-core.mjs` and
   `setup-status.mjs`/`setup-status-core.mjs`; the
   Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
@@ -453,7 +454,7 @@ The build aborts with an error message if any of these guards is violated:
   `pilot-measurement-protocol.mjs`. The shared `process-runner.mjs`, the remote tracker's
   `createProcessRunner`, and `runtime-state-guard.mjs`, the runtime-state guard and write
   primitives, belong to no subsystem and carry the same guard. That only CLI entries
-  (`remote-tracker.mjs`, `plan-publication.mjs`) import it and inject the runner into their cores is
+  (such as `remote-tracker.mjs`, `plan-publication.mjs` and `effective-flow-mechanics.mjs`) import it and inject the runner into their cores is
   no build guard: the unit test "no core imports the shared process runner" in
   `test/plan-publication.test.mjs` enforces it. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
@@ -705,8 +706,8 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 
 ## Runtime scripts
 
-Twelve dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 32 files: ten two-file subsystems, the remote tracker's seven-file family,
+Thirteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 34 files: eleven two-file subsystems, the remote tracker's seven-file family,
 the pilot measurement three-file family, and the shared `process-runner.mjs` and
 `runtime-state-guard.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
@@ -876,6 +877,50 @@ point is an I/O boundary over testable core or protocol modules:
   has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
   returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
   transport helpers, forge CLI calls).
+- **Mechanics.** Invoke it as `node <skill-root>/scripts/effective-flow-mechanics.mjs <operation>`
+  with one closed-schema JSON object on standard input (at most 64 KiB); the operation is always
+  the only argument, so each operation is its own command prefix. The operations are
+  `base-branch-resolve`, `base-branch-fetch`, `name-allocate`, `delivery-branch-name`,
+  `adr-observe`, `adr-allocate` and `plan-reference-resolve`. All of them compute or read, except
+  `base-branch-fetch`, which updates remote-tracking refs through a hardened `git fetch` (hooks
+  disabled, `--no-tags`, non-interactive environment, 60 s bound on the whole process group) and
+  is therefore separately allowlistable. It emits one `{ok, operation, data}` envelope whose
+  `data.outcome` names the result, so prose branches on the outcome instead of parsing text, or
+  `{ok: false, operation, error: {code, message, details}}` with a `CODE: message` line on standard
+  error. Exit 2 is `INVALID_INPUT`, exit 3 `UNSAFE_PATH`, and exit 1 `COMMAND_FAILED` or
+  `INTERNAL`; `SIGINT` and `SIGTERM` stop any fetch in flight, write one `INTERRUPTED` envelope and
+  exit 130 or 143. The outcomes per operation:
+  - `base-branch-resolve`: `resolved`, `resolved-substituted`, `fetch-required` or `unresolvable`;
+    with a remote configured it never resolves a local ref.
+  - `base-branch-fetch`: `resolved`, `fetch-failed`, `fetch-denied`, `tracking-stale` or
+    `unresolvable`; no outcome falls back to a local branch.
+  - `name-allocate`: `allocated` or `archive-unusable`, for the families `plan`, `concept`,
+    `unattended-plan`, `review-report-plan`, `review-report-workflow`, `review-report-security`,
+    `review-report-local` and `investigation`. Plans and concepts take `-2`, `-3`, … on a same-day
+    collision, reports and investigations `-1`, `-2`, …; a name in `<plan.dir>/archive/` counts as
+    taken for the plan families. It computes the name only and creates nothing.
+  - `delivery-branch-name`: `named` or `prefix-discloses`; it slugifies, strips disclosure matches
+    in hidden mode, and suffixes from `-2` against local branches, remote-tracking refs and the
+    caller's `excludeNames`.
+  - `adr-observe`: `numbered`, `numberless`, `inconclusive`, `none` or `outside-repo-stop`.
+  - `adr-allocate`: `allocated`, `reallocated`, `collision-stop`, `symlink-stop`,
+    `outside-repo-stop` or `unrecognized`, for new ADRs only.
+  - `plan-reference-resolve`: `resolved` (with location, status and an `exact` flag), `ambiguous`,
+    `not-found` or `outside-plan-dir` (a path reference outside `<plan.dir>/` and its archive), by
+    exact match only; unsafe plan-directory or plan-file state is `UNSAFE_PATH`, while an unusable
+    archive answers an archive reference in name or path form with `not-found` and
+    `archiveIgnored: true`.
+
+  The owning fragments (`base-branch-resolution`, `worktree-integration`, `plan-numbering`,
+  `concept-contract`, `unresolved-review-report`, `security-disclosure-gate`, `project-adr-convention`,
+  `plan-reference-routing` and their restating tools) keep the judgment and the outcome handling,
+  and fail closed: a nonzero exit, an unparseable envelope or `ok: false` stops the run, and no
+  host replays the rule by hand. The core imports only the leaf cores that own the rules —
+  `plan-lint-core.mjs`, `delivery-selection-core.mjs` and `remote-tracker-shared-core.mjs` — and
+  spawns nothing; the CLI injects `process-runner.mjs`. The rationale and the import rule that binds
+  later helpers: [Mechanics helpers import owning cores](../adr/mechanics-helpers-import-owning-cores.md).
+  The `merge-gate`, `iterate` and `next-steps` eval suites seed the pair, its three imported cores
+  and `process-runner.mjs`, because their runs execute it and no load pointer names it.
 
 - **Effective-flow-state.** Invoke it as `node <skill-root>/scripts/effective-flow-state.mjs lock
 <operation>` with one JSON object of at most 64 KiB on standard input, passed through a
@@ -928,9 +973,11 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 32 identical, usable scripts,
+checks prove that all three installed payloads contain all 34 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
-`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
+`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, that
+`effective-flow-mechanics` allocates a suffixed report name and resolves a plan by slug in every
+target (`assertMechanicsSmoke`), and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target
 (`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`), and that `setup-status status`
 reads its generated projection in every target with the release lookup stubbed offline

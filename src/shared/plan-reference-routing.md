@@ -2,18 +2,20 @@
 
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default `docs/plan`).
 
-When the user references an existing plan file on invocation — for example `<plan.dir>/2024-06-01-feature.md`, `2024-06-01-feature.md`, `0030` (legacy number), or `feature` (title slug) — check the plan before the first substantive workflow phase.
+When the user references an existing plan file on invocation, check the plan before the first substantive workflow phase.
 
 ### Resolve the reference
 
-1. Resolve the reference to exactly one file under `<plan.dir>/` **or** `<plan.dir>/archive/`.
-2. Permitted forms:
-   - full path, e.g. `<plan.dir>/2024-06-01-feature.md` or `<plan.dir>/archive/2024-06-01-feature.md`
-   - date-slug file name, e.g. `2024-06-01-feature.md`
-   - legacy number, e.g. `0030` (resolved primarily via the H1 `# 0030: …`, see `Plan file convention`, not via the file name segment)
-   - title slug, e.g. `feature`
-3. If no file matches: report the error and note that `{{SKILL:open-plans}}` can list open plans.
-4. If multiple files match: ask the user for the specific file.
+Run `node <skill-root>/scripts/effective-flow-mechanics.mjs plan-reference-resolve` with one JSON
+object on stdin (`cwd` the root `plan.dir` resolves against: the checkout root, or
+`RUNTIME_STATE_ROOT` in hidden mode; `planDir` the configured `plan.dir`; `reference` the argument).
+**Fail closed:** a nonzero exit, an unparsable envelope or `ok: false` stops the run, naming the
+error code. Report a true `data.archiveIgnored` (unsafe archive, unsearched). Outcomes:
+
+- `resolved`: the plan is `data.path`; `data.exact` is true for a path or file-name reference.
+- `ambiguous`: ask the user which of `data.candidates` is meant; never pick one heuristically.
+- `not-found`, or `outside-plan-dir` (a path outside `<plan.dir>/` and its archive): report the
+  error and note that `{{SKILL:open-plans}}` can list open plans.
 
 ### Check the status
 

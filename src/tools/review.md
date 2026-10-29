@@ -315,20 +315,18 @@ Delete the file at the end of the workflow, before `DONE`.
 
 Before Phase 1 and before any code-review-specific initialization
 (config migration, tracker mode, memory, cache, or wisdom file),
-check whether the user argument unambiguously points to a plan file under `<plan.dir>/`
-or `<plan.dir>/archive/`. Search both locations and determine uniqueness across their
-combined candidates; a missing archive contributes no candidates.
+check whether a non-blank user argument unambiguously points to a plan file. An empty or
+whitespace-only argument skips this and the concept-file special case without calling the helper
+and continues with Phase 1's "Without arguments" scope. Otherwise run
+`node <skill-root>/scripts/effective-flow-mechanics.mjs plan-reference-resolve` with exactly one
+JSON object on standard input — `cwd` the verified root `plan.dir` resolves against (the checkout
+root, or `RUNTIME_STATE_ROOT` in hidden mode), `planDir` the configured `plan.dir`, `reference`
+the argument. It searches `<plan.dir>/` and `<plan.dir>/archive/` and matches exactly.
+`outside-plan-dir`, `not-found` and `ambiguous` are no plan match; a nonzero exit, an unparsable
+envelope or `ok: false` (`UNSAFE_PATH` included) stops the run, naming the error code (fail
+closed). Report a true `data.archiveIgnored`: the archive was not searched.
 
-Allowed forms are:
-
-- full path, e.g. `<plan.dir>/2024-06-01-feature.md` or
-  `<plan.dir>/archive/2024-06-01-feature.md`
-- date-slug file name, e.g. `2024-06-01-feature.md`
-- title slug, e.g. `feature`
-- legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1
-  `# 0066: …`; the file name segment is only the existing secondary signal)
-
-If exactly one plan file is found, first resolve the same argument against `<concept.dir>/` per the
+If it returns `resolved`, first resolve the same argument against `<concept.dir>/` per the
 concept-file special case below. That cross-check belongs here, before the plan branch acts,
 because acting first would make the ambiguity unreachable:
 
@@ -348,7 +346,7 @@ For an unambiguous plan match:
 4. Emit the next-step block per `next-steps` for the returned state, then end this `review`
    workflow; do not start a code review.
 
-If no plan file or multiple plan files match and the user clearly wanted a plan
+If it returns `outside-plan-dir`, `not-found` or `ambiguous` and the user clearly wanted a plan
 review, do not continue with Phase 1: report the missing plan or ask for the specific
 file instead of guessing a code review. Only arguments without clear plan-review intent
 may fall through to the normal code-review scope.
@@ -357,7 +355,8 @@ may fall through to the normal code-review scope.
 
 Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
 legacy plan reference and is never read as a concept reference. Like the plan-file case, this
-branch runs before Phase 1 and before any code-review-specific initialization.
+branch needs a non-blank argument and runs before Phase 1 and any code-review-specific
+initialization.
 
 ```lazy-include
 concept-contract
@@ -585,8 +584,11 @@ numbering from `.effective-flow/memory.json` applies to admitted findings only.
    deduplication and admission, reserve the exact nonzero contiguous ID range through the shared memory
    contract against the retained absolute runtime-root memory handle, and release its lock before
    publishing the report. Guard the concrete report file again immediately before writing it,
-   then create `<RUNTIME_STATE_ROOT>/.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use
-   the report format below. Never inspect or create a report below a linked execution worktree.
+   then create the report at `data.path` of `name-allocate`
+   (`node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`, exactly one JSON object
+   on standard input: `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` `.effective-flow/review`,
+   `family` `review-report-local`; a nonzero exit, unparsable envelope or `ok: false` stops the
+   run, naming the error code). Use the report format below. Never inspect or create a report below a linked execution worktree.
 3. If the active finding scope only covers critical and important findings (default):
    - do not include notes in the main report
    - briefly mention that notes were filtered out and that a comprehensive review is available on request

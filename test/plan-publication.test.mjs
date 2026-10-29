@@ -2046,3 +2046,12 @@ test('the marker opener is exactly the one the shipped marker parser judges', ()
   const body = buildPullRequestBody(`Prose.${' '.repeat(40)}inner\n\ntext  `, PLAN_PATH, 12);
   assert.deepEqual(inspectPlanPrMarker(body), { status: 'valid', plan: PLAN_PATH });
 });
+
+// plan-lint-core owns the unattended plan name and the ref-path rule; plan-publication-core
+// re-exports the identical objects, so the two modules can never hold diverging copies.
+test('plan-publication-core re-exports the plan-lint-core name and ref rules by identity', async () => {
+  const lint = await import('../src/scripts/plan-lint-core.mjs');
+  const publication = await import('../src/scripts/plan-publication-core.mjs');
+  assert.equal(publication.UNATTENDED_PLAN_NAME, lint.UNATTENDED_PLAN_NAME);
+  assert.equal(publication.refPathProblem, lint.refPathProblem);
+});

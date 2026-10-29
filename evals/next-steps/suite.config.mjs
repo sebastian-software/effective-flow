@@ -21,11 +21,20 @@ export default {
   scenarios: SCENARIOS,
   scenarioRegistry: resolve(root, 'scenario-registry.mjs'),
   // Only final reporting executes. No implementation workflow or domain skill is entered.
+  // `plan-reference-routing` resolves a plan reference by executing the shipped mechanics helper,
+  // which no load pointer names and nothing stubs, so the helper, the three cores its core imports
+  // and the process runner its CLI imports are seeded beside it.
   loadSetSeeds: [
     'SKILL.md',
     'shared/next-steps.md',
     'shared/plan-reference-routing.md',
     'shared/outcome-continuation.md',
+    'scripts/effective-flow-mechanics.mjs',
+    'scripts/effective-flow-mechanics-core.mjs',
+    'scripts/plan-lint-core.mjs',
+    'scripts/delivery-selection-core.mjs',
+    'scripts/remote-tracker-shared-core.mjs',
+    'scripts/process-runner.mjs',
   ],
   instrumentFiles: [
     resolve(root, 'suite.config.mjs'),

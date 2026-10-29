@@ -206,9 +206,11 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
    path `.effective-flow/` immediately before its `mkdir`, then create it.
 2. If `.effective-flow/investigation/` is missing, apply the guard to that exact directory path
    immediately before its `mkdir`, then create it.
-3. Apply the guard again to the exact diagnosis-report path immediately before writing
-   `.effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`, then write it per the
-   report template below.
+3. Take the report path from `data.path` of
+   `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate` (one JSON object on stdin:
+   `cwd` `RUNTIME_STATE_ROOT`, `dir` `.effective-flow/investigation`, `family` `investigation`,
+   `text` the diagnosis title; fail closed on a nonzero exit, unparsable envelope or `ok: false`),
+   guarding it again immediately before writing it per the report template below.
 4. State exactly one diagnosis classification with its rationale (see “Routing outward”), then gate
    the derived workflow recommendation before rendering an invocation:
    - `current-scope`: refer back to the already authorized source artifact; do not create a second
@@ -269,7 +271,7 @@ fallback, skip, or reduced-scope record]
 **Admission outcome:** admitted | current-scope | closed | uncertain
 **Follow-up workflow:** {{FLOW}} fix | {{FLOW}} refactor | {{FLOW}} build | {{FLOW}} docs | further investigation needed | No action
 **Rationale:** [brief]
-**Invocation suggestion:** [e.g. `{{FLOW}} fix .effective-flow/investigation/investigation-YYYY-MM-DD-<slug>.md`]
+**Invocation suggestion:** [e.g. `{{FLOW}} fix <diagnosis-report path>`]
 
 ## Open points / needed decisions
 

@@ -550,3 +550,44 @@ test('an unexpected runner exception before the merge is a COMMAND_FAILED withou
   assert.equal(envelope.error.code, 'COMMAND_FAILED');
   assert.deepEqual(envelope.error.details, { mutationMayHaveSucceeded: false, cause: 'EBOOM' });
 });
+
+// The fetch guard and the hook suppression are exported for the mechanics helper, which composes
+// its base-branch fetch from them; their behaviour stays exactly what upstream-status relies on.
+test('the exported fetch guard refuses option-like remotes and malformed refs before git', async () => {
+  const { fetchableUpstream, HOOKS_DISABLED } =
+    await import('../src/scripts/delivery-selection-core.mjs');
+  assert.deepEqual(HOOKS_DISABLED, ['-c', 'core.hooksPath=/dev/null']);
+  // Frozen: an importer can spread the flags but never mutate the hook suppression for others.
+  assert.ok(Object.isFrozen(HOOKS_DISABLED));
+  const calls = [];
+  const runner = async (call) => {
+    calls.push(call);
+    const real = spawnSync('git', call.args.slice(2), { encoding: 'utf8' });
+    return { status: real.status, stdout: real.stdout, stderr: real.stderr };
+  };
+  for (const [remote, ref] of [
+    ['-x', 'refs/heads/main'],
+    ['ori\u0001gin', 'refs/heads/main'],
+    ['origin', 'main'],
+    ['origin', 'refs/heads/x:refs/heads/main'],
+    ['origin', 'refs/heads/+x'],
+    ['origin', 'refs/heads/a b'],
+    ['origin', 'refs/heads/a\u0001b'],
+  ]) {
+    assert.equal(await fetchableUpstream('/repo', remote, ref, runner), false, `${remote} ${ref}`);
+  }
+  assert.equal(calls.length, 0, 'the textual guard refuses before any git call');
+  assert.equal(await fetchableUpstream('/repo', 'origin', 'refs/heads/a..b', runner), false);
+  assert.equal(await fetchableUpstream('/repo', 'origin', 'refs/heads/main', runner), true);
+  // check-ref-format accepts a leading `-` inside the ref; `--` keeps it harmless at fetch time.
+  assert.equal(
+    await fetchableUpstream('/repo', 'origin', 'refs/heads/--upload-pack=x', runner),
+    true,
+  );
+  assert.deepEqual(calls.at(-1).args, [
+    '-C',
+    '/repo',
+    'check-ref-format',
+    'refs/heads/--upload-pack=x',
+  ]);
+});
