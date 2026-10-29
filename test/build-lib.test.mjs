@@ -5449,6 +5449,21 @@ test('findRuntimeStateSafetyViolations rejects an unguarded runtime writer', () 
   );
 });
 
+// Invariant: a lock mutation below `.effective-flow/` stays guarded even after the shipped lock
+// steps became helper calls, so new prose that replays a lock by hand fails the build.
+test('findRuntimeStateSafetyViolations rejects an unguarded lock mutation', () => {
+  const violations = findRuntimeStateSafetyViolations({
+    'tools/new-locker.md': 'Acquire the lock with `mkdir .effective-flow/iterate-commit.lock`.\n',
+  });
+
+  assert.equal(violations.length, 1);
+  assert.equal(violations[0].target, '.effective-flow/iterate-commit.lock');
+  assert.equal(
+    violations[0].reason,
+    'runtime mutation is not preceded by the canonical safety guard',
+  );
+});
+
 test('findRuntimeStateSafetyViolations accepts an earlier canonical include', () => {
   const sources = {
     'tools/guarded-writer.md': [

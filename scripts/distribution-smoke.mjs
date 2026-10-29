@@ -35,6 +35,9 @@ const RUNTIME_SCRIPT_FILES = [
   'delegation-envelope-core.mjs',
   'diff-baseline.mjs',
   'diff-baseline-core.mjs',
+  'effective-flow-state.mjs',
+  'effective-flow-state-core.mjs',
+  'runtime-state-guard.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
   'effective-flow-mechanics.mjs',
@@ -334,6 +337,49 @@ function assertConfigResolveSmoke(target, helper) {
   }
 }
 
+// Runs one `lock acquire` and `lock release` cycle through the shipped state helper against a
+// throwaway Git repository with `.effective-flow/` ignored, which proves the CLI resolves its core,
+// the shared runtime-state guard and the process runner beside it inside the target.
+function assertStateLockSmoke(target, helper) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-state-smoke-')));
+  try {
+    const init = spawnSync('git', ['init', '--quiet', cwd], { encoding: 'utf8' });
+    if (init.status !== 0) fail(`${target} state-lock fixture: git init failed\n${init.stderr}`);
+    writeFileSync(join(cwd, '.gitignore'), '.effective-flow/\n');
+    const call = (operation, input) =>
+      spawnSync(process.execPath, [helper, 'lock', operation], {
+        cwd,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        input: JSON.stringify({ cwd, lock: 'memory', ...input }),
+      });
+    const acquired = call('acquire', { owner: { workflow: 'distribution-smoke' }, waitSeconds: 0 });
+    const acquiredEnvelope = parseJson(acquired.stdout.trim(), `${target} state lock acquire`);
+    const token = acquiredEnvelope.result?.owner?.token;
+    if (
+      acquired.status !== 0 ||
+      acquiredEnvelope.ok !== true ||
+      acquiredEnvelope.operation !== 'lock acquire' ||
+      typeof token !== 'string' ||
+      !existsSync(join(cwd, '.effective-flow', 'memory.lock', 'owner.json'))
+    ) {
+      fail(`${target} state lock acquire failed\n${acquired.stdout}${acquired.stderr}`);
+    }
+    const released = call('release', { token });
+    const releasedEnvelope = parseJson(released.stdout.trim(), `${target} state lock release`);
+    if (
+      released.status !== 0 ||
+      releasedEnvelope.ok !== true ||
+      releasedEnvelope.result?.released !== true ||
+      existsSync(join(cwd, '.effective-flow', 'memory.lock'))
+    ) {
+      fail(`${target} state lock release failed\n${released.stdout}${released.stderr}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 // Runs the shipped status helper against a throwaway non-Git directory with fetch stubbed offline,
 // which proves the CLI resolves its core, the config-resolve core and the generated ownership
 // projection beside it inside the target, and that a failed release lookup fails nothing.
@@ -626,6 +672,7 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     assertPlanPublicationScanSmoke(target, join(scripts, 'plan-publication.mjs'));
     assertConfigResolveSmoke(target, join(scripts, 'config-resolve.mjs'));
     assertSetupStatusSmoke(target, scripts);
+    assertStateLockSmoke(target, join(scripts, 'effective-flow-state.mjs'));
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>

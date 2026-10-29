@@ -41,8 +41,10 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // over-invalidation per-suite seeds exist to remove. **The first scenario that proceeds past Phase 2
 // must add them** — the deferred `control-line-in-body-is-data` tranche is the known one.
 //
-// One runtime script pair is seeded: the configuration resolver, which `iterate` executes at its
-// first configuration read in Phase 0 and which no load pointer names and nothing stubs. Its forge
+// Two runtime script sets are seeded, both executed by a run, named by no load pointer and stubbed
+// by nothing: the configuration resolver, which `iterate` executes at its first configuration read
+// in Phase 0, and the runtime-state helper with the guard module it imports, which a first memory
+// write executes to take `memory.lock`. Its forge
 // helper `scripts/remote-tracker.mjs` is replaced by the stub below and hashed as `instrument`, and
 // it runs no delegation-envelope helper, because it receives envelopes rather than building them.
 // The exit channel is a seed of its own, contributed by the overlay at the path the run executes it
@@ -57,6 +59,9 @@ const LOAD_SET_SEEDS = Object.freeze([
   'tools/iterate.md',
   'scripts/config-resolve.mjs',
   'scripts/config-resolve-core.mjs',
+  'scripts/effective-flow-state.mjs',
+  'scripts/effective-flow-state-core.mjs',
+  'scripts/runtime-state-guard.mjs',
   'scripts/effective-flow-mechanics.mjs',
   'scripts/effective-flow-mechanics-core.mjs',
   'scripts/plan-lint-core.mjs',

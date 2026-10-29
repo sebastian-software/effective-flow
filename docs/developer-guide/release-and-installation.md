@@ -376,16 +376,17 @@ out a pull-request head or merge ref. Pull-request text is passed as data throug
 JavaScript context, not interpolated into shell code. Its token permissions are limited to
 reading repository contents and writing issues.
 
-Every target's minimal skill payload includes 31 dependency-free runtime scripts. The Issue Buddy
+Every target's minimal skill payload includes 34 dependency-free runtime scripts. The Issue Buddy
 pair is shipped as `scripts/issue-buddy.mjs` and `scripts/issue-buddy-core.mjs`; the thin CLI
 entry point accepts one JSON object on standard input and delegates deterministic collection,
 trust filtering, fingerprinting and pass-state operations to its core. The remaining named
 families include `scripts/remote-tracker.mjs`,
 `scripts/config-resolve.mjs`, `scripts/delivery-selection.mjs`, `scripts/delegation-envelope.mjs`,
 `scripts/diff-baseline.mjs`, `scripts/effective-flow-mechanics.mjs`, `scripts/model-selection.mjs`,
-`scripts/plan-lint.mjs`, `scripts/plan-publication.mjs`, and `scripts/setup-status.mjs`, each
+`scripts/plan-lint.mjs`, `scripts/plan-publication.mjs`, `scripts/setup-status.mjs`, and
+`scripts/effective-flow-state.mjs`, each
 beside its importable `-core.mjs` sibling; the shared `scripts/process-runner.mjs` that the CLI
-entries import and inject into their cores; and the pilot
+entries import and inject into their cores, and `scripts/runtime-state-guard.mjs`, the runtime-state guard; and the pilot
 measurement family `scripts/pilot-measurement.mjs` with its `-core.mjs` and `-protocol.mjs`
 modules, next to the router, tools, and shared resources. The build also generates the read-only
 `setup status` ownership projection `scripts/setup-status-owners.json`, which is data, not a

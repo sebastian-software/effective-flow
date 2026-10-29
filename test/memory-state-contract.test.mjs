@@ -43,16 +43,37 @@ function collectRuntimeSources() {
   return sources;
 }
 
+// The memory lock goes only through the runtime-state helper, called in the here-string shape an
+// allowlist rule can match; a multi-line heredoc cannot be allowlisted.
+const HELPER_HERE_STRING =
+  /node <skill-root>\/scripts\/effective-flow-state\.mjs lock acquire <<< '\{[^\n]*"lock":"memory"/;
+// A heredoc opener (`<<EOF`, `<<-'EOF'`), but not the here-string `<<<`.
+const HEREDOC = /(?<!<)<<(?!<)-?\s*['"]?[A-Za-z_]\w*/;
+
 const requiredClauses = [
+  [HELPER_HERE_STRING, 'helper acquisition in the here-string shape'],
+  [/`waitSeconds: 30`/, 'bounded 30-second acquisition wait'],
+  [/\(no `runId`\)/, 'memory owner without a run identity'],
   [
-    /atomic command\s+`mkdir <RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.lock`/,
-    'atomic lock acquisition',
+    /`LOCK_HELD`[\s\S]*report the `outcome` owner[\s\S]*block the owning mutation/,
+    'owner diagnostics and a blocked mutation on LOCK_HELD',
   ],
-  [/owner.*session.*timestamp/is, 'lock owner metadata'],
-  [/no more than 30\s+seconds/i, 'bounded acquisition retry'],
-  [/timeout[\s\S]*report[\s\S]*owner/i, 'owner diagnostics on timeout'],
-  [/apparent orphan[\s\S]*confirmation/i, 'confirmed orphan recovery'],
-  [/release.*only.*own lock/is, 'ownership-checked release'],
+  [
+    /delegated worker never asks the user[\s\S]*relayed or\s+non-interactive run fails closed[\s\S]*offers no break/,
+    'workers return diagnostics and non-gated runs never break',
+  ],
+  [
+    /Age alone never[\s\S]*apparent orphan[\s\S]*`lock inspect`[\s\S]*explicit user confirmation[\s\S]*`lock break`/,
+    'confirmed orphan recovery through inspect, confirmation and break',
+  ],
+  [
+    /immediately before the atomic rename of `memory\.json`, run `lock inspect`[\s\S]*token equals the retained token/,
+    'ownership re-check before the rename',
+  ],
+  [
+    /`finally`[\s\S]*`lock release`[\s\S]*`NOT_HELD` or `NOT_OWNER` is reported as lost ownership/,
+    'token-checked release reporting lost ownership',
+  ],
   [
     /re-read the retained absolute `<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle inside\s+the lock/is,
     'fresh locked read',
@@ -68,10 +89,14 @@ const requiredClauses = [
   [/invalid.*lastFindingNumber/is, 'invalid counter failure'],
 ];
 
+// Invariant: the memory lock runs only through the helper, with today's wait, orphan and release
+// semantics, and the memory.json protocol around it stays intact.
 test('the canonical memory contract covers locking, merging, atomic replacement, and reservation', () => {
   for (const [pattern, description] of requiredClauses) {
     assert.match(memoryContract, pattern, `missing ${description}`);
   }
+  assert.doesNotMatch(memoryContract, HEREDOC, 'a helper call must not use a heredoc');
+  assert.doesNotMatch(memoryContract, /`mkdir [^`]*memory\.lock`/, 'no prose replay of the lock');
 });
 
 // Invariant: every memory writer goes through the shared locked mutation contract.
@@ -87,10 +112,8 @@ test('all consumer targets preserve the memory mutation protocol', () => {
       context: `shared/memory-state.md (${harness})`,
     });
 
-    assert.match(
-      rendered,
-      /atomic command\s+`mkdir <RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.lock`/,
-    );
+    assert.match(rendered, HELPER_HERE_STRING);
+    assert.doesNotMatch(rendered, HEREDOC);
     assert.match(rendered, /Never inspect, lock, migrate, or mutate a same-named path below/);
     assert.match(rendered, /exact nonzero contiguous range/i);
     assert.match(rendered, /atomic rename/i);
