@@ -38,7 +38,7 @@ Verified repository context:
   - the untracked legacy runtime directories `.firmo/` and `.sf-plugin/` are removed physically; they lie outside `.effective-flow/` and were created by predecessor tools without any record
   - worktrees are removed with exactly `git worktree remove <path>` followed by `git branch -d`, never with force, and git itself refuses a dirty worktree or an unmerged branch
   - only stale diff baselines go through a script (`diff-baseline.mjs discard`)
-- Script-owned state already exists. A thin JSON CLI `<name>.mjs` wraps an importable `<name>-core.mjs` and is shipped byte-for-byte to every target through `RUNTIME_SCRIPT_FILES` in `build.mjs`. Tools invoke it as `node <skill-root>/scripts/<name>.mjs`, with the JSON on stdin, usually through a heredoc. Conventions vary:
+- Script-owned state already exists. A thin JSON CLI `<name>.mjs` wraps an importable `<name>-core.mjs` and is shipped byte-for-byte to every target through `RUNTIME_SCRIPT_FILES` in `build.mjs`. Tools invoke it as `node <skill-root>/scripts/<name>.mjs`, with the JSON on stdin. Only `plan-publication` prescribes a heredoc (as an alternative to a file); the other helper contracts leave the stdin shape open. Conventions vary:
   - `plan-publication`, `remote-tracker`, and `delivery-selection` treat writes as dry runs unless `--apply` is passed
   - `diff-baseline` uses operation names instead of a flag
   - `plan-lint`, `plan-publication`, `issue-buddy`, and `remote-tracker` use the shared `process-runner.mjs`; several other scripts spawn processes directly
