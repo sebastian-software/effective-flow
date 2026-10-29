@@ -1270,3 +1270,69 @@ test('checkpoint-bearing plans use the unchanged closed lint CLI input and outpu
     }
   });
 });
+
+// The moved plan-file symbols and the newly exported resolvers behave exactly as they did inside
+// their former modules: the mechanics helper imports them instead of copying the rules.
+test('the moved unattended plan name and ref-path rule behave as before', async () => {
+  const { UNATTENDED_PLAN_NAME, refPathProblem } =
+    await import('../src/scripts/plan-lint-core.mjs');
+  assert.match('2026-10-29-issue-12-fix-login.md', UNATTENDED_PLAN_NAME);
+  assert.equal('2026-10-29-issue-12-fix-login.md'.match(UNATTENDED_PLAN_NAME)[1], '12');
+  for (const name of [
+    '2026-10-29-issue-0-x.md',
+    '2026-10-29-issue-12-X.md',
+    '2026-10-29-issue-12--x.md',
+    '2026-10-29-issue-12-x-.md',
+    'issue-12-x.md',
+  ]) {
+    assert.doesNotMatch(name, UNATTENDED_PLAN_NAME, name);
+  }
+  assert.equal(refPathProblem('team/x'), null);
+  assert.equal(refPathProblem(''), 'empty');
+  assert.equal(refPathProblem(7), 'empty');
+  assert.equal(refPathProblem('a..b'), 'forbidden-character');
+  assert.equal(refPathProblem('a b'), 'forbidden-character');
+  assert.equal(refPathProblem('a@{b'), 'forbidden-character');
+  assert.equal(refPathProblem('@'), 'forbidden-character');
+  assert.equal(refPathProblem('a//b'), 'empty-segment');
+  assert.equal(refPathProblem('a/.b'), 'dot-segment');
+  assert.equal(refPathProblem('a/b.lock'), 'lock-suffix');
+});
+
+test('the exported plan resolvers keep their containment and reading contract', async (t) => {
+  const { resolveRoots, resolveFileEntry, readPlanFile, listTopLevel, PlanLintError } =
+    await import('../src/scripts/plan-lint-core.mjs');
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'plan-lint-test-')));
+  t.after(() => rmSync(cwd, { recursive: true, force: true }));
+  mkdirSync(join(cwd, 'docs', 'plan', 'archive'), { recursive: true });
+  writeFileSync(join(cwd, 'docs', 'plan', 'a.md'), ENGLISH_PLAN);
+  writeFileSync(join(cwd, 'docs', 'plan', 'archive', 'b.md'), ENGLISH_PLAN);
+  const roots = resolveRoots({ cwd, planDir: 'docs/plan' }, nodeFs);
+  assert.equal(roots.cwdReal, cwd);
+  assert.equal(roots.planDirPosix, 'docs/plan');
+  assert.equal(roots.planDirReal, join(cwd, 'docs', 'plan'));
+  assert.equal(roots.archiveReal, join(cwd, 'docs', 'plan', 'archive'));
+  const top = listTopLevel(roots, nodeFs);
+  assert.deepEqual(
+    top.map((file) => [file.path, file.location, file.name]),
+    [['docs/plan/a.md', 'top', 'a.md']],
+  );
+  assert.equal(readPlanFile(top[0], nodeFs), ENGLISH_PLAN);
+  const archived = resolveFileEntry('docs/plan/archive/b.md', roots, nodeFs);
+  assert.equal(archived.location, 'archive');
+  assert.throws(
+    () => resolveFileEntry('docs/plan/missing.md', roots, nodeFs),
+    (error) => error instanceof PlanLintError && error.code === 'NOT_FOUND',
+  );
+  assert.throws(
+    () => resolveFileEntry('/abs/x.md', roots, nodeFs),
+    (error) => error instanceof PlanLintError && error.code === 'UNSAFE_PATH',
+  );
+  assert.throws(
+    () => resolveRoots({ cwd, planDir: '../x' }, nodeFs),
+    (error) => error instanceof PlanLintError && error.code === 'UNSAFE_PATH',
+  );
+  const absent = resolveRoots({ cwd, planDir: 'nope/plan' }, nodeFs);
+  assert.equal(absent.planDirReal, null);
+  assert.deepEqual(listTopLevel(absent, nodeFs), []);
+});

@@ -1,6 +1,6 @@
 # Mechanics computation helper
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Refactoring (`effective-flow refactor`)
 
@@ -461,7 +461,7 @@ The concept's stage 3 criteria apply to all five procedures:
    5. plan-reference resolution, together with its restatements.
 
    Prose calls the helper with `node <skill-root>/scripts/effective-flow-mechanics.mjs
-   <operation>` and one JSON object on stdin, and names every outcome the host branches on. A rare
+<operation>` and one JSON object on stdin, and names every outcome the host branches on. A rare
    outcome (`resolved-substituted`, `fetch-denied`, `tracking-stale`, `prefix-discloses`,
    `archive-unusable`) or the `widened` flag goes behind a
    ` ```lazy-include ` only where progressive disclosure allows it. Every host treats a nonzero

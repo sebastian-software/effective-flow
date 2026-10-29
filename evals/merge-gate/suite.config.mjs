@@ -62,6 +62,12 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // The configuration resolver pair is seeded for the same reason: the gate and the `iterate` round it
 // delegates run the shipped `scripts/config-resolve.mjs` at their first configuration read, no load
 // pointer names it, and nothing stubs it.
+//
+// The mechanics helper is seeded for the same reason, with the three cores its core imports and the
+// process runner its CLI imports: the deferred `worktree-integration` fragment, with the
+// `base-branch-resolution` fragment it embeds, that a provisioning run loads executes the shipped
+// `scripts/effective-flow-mechanics.mjs` (`base-branch-resolve`, `base-branch-fetch`,
+// `delivery-branch-name`), and nothing stubs it.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/merge-gate.md',
@@ -72,6 +78,12 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/delegation-envelope-core.mjs',
   'scripts/config-resolve.mjs',
   'scripts/config-resolve-core.mjs',
+  'scripts/effective-flow-mechanics.mjs',
+  'scripts/effective-flow-mechanics-core.mjs',
+  'scripts/plan-lint-core.mjs',
+  'scripts/delivery-selection-core.mjs',
+  'scripts/remote-tracker-shared-core.mjs',
+  'scripts/process-runner.mjs',
 ]);
 
 // The stub that answers the run and the scaffold that configures it: what turns the built tree into

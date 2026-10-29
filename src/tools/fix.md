@@ -289,7 +289,6 @@ items, render again, then pass the residual batch through “Gated residual revi
    report language (`Open` / `Not implemented` or `Offen` / `Nicht umgesetzt`) remain from
    verification, regression test or review-like check:
    - write them into a new file under `.effective-flow/review/` per "Open review-finding reports"
-   - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
    - name the generated report path in the completion summary
 3. If this fix resolved a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding

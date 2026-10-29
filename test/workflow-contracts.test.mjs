@@ -374,7 +374,13 @@ test('plan gateway preserves local-input and legacy-plan precedence', () => {
   const detection = source('src/shared/apply-source-detection.md');
 
   ordered(detection, '**Plan reference**', '**Issue reference**', '**Otherwise**');
-  assert.match(detection, /full path \(`<plan\.dir>\/YYYY-MM-DD-…md`\)/);
+  // Stage A delegates plan-reference resolution to the helper's owning call instead of restating
+  // the permitted reference forms.
+  assert.match(
+    detection,
+    /\*\*Plan reference\*\* → `plan`, if `node <skill-root>\/scripts\/effective-flow-mechanics\.mjs\s+plan-reference-resolve`/,
+  );
+  assert.doesNotMatch(detection, /full path \(`<plan\.dir>\/YYYY-MM-DD-…md`\)|title slug/);
   assert.match(
     prose(detection),
     near('four-digit number without a path', 'never an issue reference', 80),
@@ -385,6 +391,64 @@ test('plan gateway preserves local-input and legacy-plan precedence', () => {
     /For `none`, `plan`, `review-report`, or `ambiguous`, do not infer an issue/,
     'a non-issue Stage-A result must never have an issue inferred for it',
   );
+});
+
+// Invariant: a path outside the plan directory is an answer (`outside-plan-dir`) that lets Stage A
+// and review fall through to their next rule, while `UNSAFE_PATH` (a dangling plan directory, a
+// symlink escape) stops like at every other host. Stage A carries the call shape itself, because
+// `apply`, `apply-review` and `apply-issues` do not load `plan-reference-routing`.
+test('Stage A and review continue on outside-plan-dir and stop on UNSAFE_PATH', () => {
+  const detection = prose(source('src/shared/apply-source-detection.md'));
+  const rule = boundedSlice(detection, 'Plan reference → `plan`', 'Review report → ');
+  assert.match(rule, /stdin JSON: `cwd` the root holding `<plan\.dir>`, `planDir`, `reference`/);
+  assert.match(rule, /`outside-plan-dir`, `not-found` or `ambiguous` → next rule/);
+  assert.match(
+    rule,
+    near('`ok: false` \\(`UNSAFE_PATH` included\\)', 'stops \\(fail closed\\)', 40),
+    'Stage A must stop on UNSAFE_PATH instead of reading it as no plan reference',
+  );
+  for (const tool of ['apply', 'apply-review', 'apply-issues']) {
+    assert.ok(
+      !source(`src/tools/${tool}.md`).includes('plan-reference-routing'),
+      `${tool} does not load plan-reference-routing, so Stage A must carry the call itself`,
+    );
+  }
+
+  const review = prose(
+    boundedSlice(source('src/tools/review.md'), '### Plan-file special case', '### Concept-file'),
+  );
+  assert.match(review, /`outside-plan-dir`, `not-found` and `ambiguous` are no plan match/);
+  assert.match(
+    review,
+    near('`ok: false` \\(`UNSAFE_PATH` included\\)', 'stops the run', 40),
+    'review must stop on UNSAFE_PATH instead of reading it as no plan match',
+  );
+  // Invariant: a clear plan-review intent stops on every non-match outcome; only an argument
+  // without that intent falls through to the code-review scope.
+  assert.match(
+    review,
+    /If it returns `outside-plan-dir`, `not-found` or `ambiguous` and the user clearly wanted a plan review, do not continue with Phase 1/,
+    'a clear plan-review intent must stop on outside-plan-dir as well as not-found and ambiguous',
+  );
+
+  const routing = prose(source('src/shared/plan-reference-routing.md'));
+  // A host treating the argument as a plan reference reports outside-plan-dir like not-found.
+  assert.match(
+    routing,
+    /`not-found`, or `outside-plan-dir` \(a path outside `<plan\.dir>\/` and its archive\): report the error/,
+  );
+});
+
+// Invariant: `name-allocate` rejects a `planSlug` outside the slug alphabet, so a hand-named or
+// legacy basis plan must fall back to the workflow family instead of stopping report persistence.
+test('the unresolved review report falls back to the workflow family for a non-slug plan name', () => {
+  const report = prose(source('src/shared/unresolved-review-report.md'));
+  assert.match(
+    report,
+    near('when that is a valid\\s+slug', 'else `review-report-workflow`', 40),
+    'a basis plan stem that is no valid slug must select review-report-workflow',
+  );
+  assert.match(report, /stem after its date \(or after the legacy `NNNN-` of an unmigrated name\)/);
 });
 
 // Step 6 item 7 offers a one-line `CLAUDE.md` that imports `AGENTS.md`. It is a numbered list
@@ -3550,12 +3614,14 @@ test('security findings stay local until the review publication gate is confirme
     gate,
     '### Local dedup',
     '### Local-first persistence',
-    'review-report-YYYY-MM-DD-security[-N].md',
+    '`family` `review-report-security`',
     '### Publication offer',
     'header: Security',
     '🔓 Published as #<issue number>',
     '### Silence in public artifacts',
   );
+  // The security report name comes only from the helper's family; no restated name form remains.
+  assert.doesNotMatch(gate, /review-report-YYYY-MM-DD-security/);
   assert.match(gate, /an unanswered, skipped, or\nnon-interactive run publishes nothing/);
   assert.match(
     gate,
@@ -12130,105 +12196,90 @@ test('the handback delegates archival instead of instructing a git mv', () => {
   }
 });
 
-// The rule's own arms, one entry per outcome bullet, with the lead-in classification prose kept as
-// entry 0. `oxfmt` puts a blank line between a paragraph and the list that follows it, and the
-// `\s*` in the split lookahead matches at both of that gap's newlines, so the raw split yields a
-// whitespace-only element between the prose and the first bullet. Dropping empties keeps the
-// positional reads below anchored to the arms themselves instead of to the formatter's line breaks
-// - without it `missing` silently binds a blank string and every assertion on it goes vacuous.
+// The rule's two helper calls, each cut with its outcome bullets, plus the opening prose. The
+// helper (`effective-flow-mechanics.mjs`) owns classification, derivation, fetch and divergence
+// detection; the fragment owns the outcome handling, so each pin below reads one call's section.
 function baseBranchRuleParts() {
-  const rule = boundedSlice(
-    source('src/shared/base-branch-resolution.md'),
-    '## Base-branch resolution',
-    '\n### Recorded results',
-  );
-  return rule
-    .split(/(?=\n\s*- )/)
-    .map(prose)
-    .filter((part) => part.trim() !== '');
+  const raw = source('src/shared/base-branch-resolution.md');
+  return {
+    opening: prose(
+      boundedSlice(raw, '## Base-branch resolution', '\n1. Run `base-branch-resolve`'),
+    ),
+    resolve: prose(boundedSlice(raw, '1. Run `base-branch-resolve`', '\n2. Remote-configured arm')),
+    fetch: prose(boundedSlice(raw, '2. Remote-configured arm', '\n### Recorded results')),
+  };
 }
 
-// Invariant: a configured remote whose fetch or resolution fails stops and never falls back to a
-// local branch; only an unconfigured remote substitutes the local branch, visibly; and a value that
-// resolves nowhere aborts without inventing a base branch.
-test('the base-branch resolution rule distinguishes a missing remote from a failed fetch', () => {
-  const step = boundedSlice(
-    source('src/shared/base-branch-resolution.md'),
-    '## Base-branch resolution',
-    '\n### Recorded results',
-  );
-
-  // The `git remote` check is what separates "this ref can never exist here" from "this ref
-  // exists but I could not reach it". Without it the two collapse into one failure, and a
-  // zero-config local project — the deployment line with no forge at all — cannot pass its
-  // first delivery preflight even though the local branch resolves perfectly.
-  assert.match(step, /`git remote`/, 'the rule must probe whether the remote is configured');
-
-  // Each case is its own bullet, taken with its continuation lines so a wrapped sentence is not
-  // read as belonging to the next case. Asserting only on the whole step would stay green if a
-  // later edit merged the fallback into the failure branch, which is the dangerous regression:
-  // a stale local branch silently becoming the base after an unreachable remote.
-  const cases = baseBranchRuleParts().slice(1);
-  assert.equal(cases.length, 3, 'the rule must carry exactly its three outcome bullets');
-  const [configured, missing, unresolvable] = cases;
-
-  assert.match(configured, /Remote configured/);
-  assert.match(configured, /git fetch REMOTE BRANCH/);
+// Invariant: the rule runs through the shared helper and fails closed; a failed call is never
+// replaced by evaluating the rule by hand.
+test('the base-branch resolution rule runs through the helper and fails closed', () => {
+  const { opening, resolve, fetch } = baseBranchRuleParts();
   assert.match(
-    configured,
-    near('fetch or the resolution fails', 'never fall back', 200),
-    'a reachable remote whose fetch or resolution fails must stop instead of falling back',
+    opening,
+    /`node <skill-root>\/scripts\/effective-flow-mechanics\.mjs <operation>` with exactly one JSON object on standard input/,
   );
-  assert.doesNotMatch(
-    configured,
-    /local branch part/,
-    'the failure branch must not offer the local-branch substitution',
-  );
-
-  assert.match(missing, /Remote not configured/);
   assert.match(
-    missing,
-    near('no such ref can exist', 'local branch part', 200),
-    'an unconfigured remote must fall back to the local branch part of the value',
+    opening,
+    near('a nonzero exit, an envelope that does not parse, or `ok: false`', 'stops the run', 40),
+    'every helper failure must stop the run',
   );
-  assert.match(missing, /report that substitution/, 'the substitution must be visible, not silent');
-  assert.doesNotMatch(missing, /git fetch/, 'there is nothing to fetch from an absent remote');
-
-  assert.match(
-    unresolvable,
-    /Neither the remote ref nor any local candidate for the value resolves/,
-  );
-  assert.match(unresolvable, /abort, naming both facts/);
-  assert.match(unresolvable, /Never\s+invent or create a base branch/);
+  assert.match(opening, /never replay the rule by hand/);
+  assert.match(resolve, /`base-branch-resolve`/);
+  assert.match(fetch, /`base-branch-fetch`/);
+  // The hand-run probes the helper replaced must not come back as a second copy of the rule.
+  const whole = prose(source('src/shared/base-branch-resolution.md'));
+  assert.doesNotMatch(whole, /git fetch REMOTE BRANCH/, 'only the helper fetches');
+  assert.doesNotMatch(whole, /git symbolic-ref/, 'only the helper derives the default');
 });
 
-// Invariant: a value is a remote ref only when its leading part names a configured remote, and the
-// full value is tried as a local ref before any part is cut off it.
-test('the base-branch resolution rule keeps a slash-containing local base branch whole', () => {
-  const [classification, , missing] = baseBranchRuleParts();
+// Invariant: a configured remote whose fetch fails stops and never falls back to a local branch;
+// only an unconfigured remote substitutes the local branch, visibly; and a value that resolves
+// nowhere aborts without inventing a base branch.
+test('the base-branch resolution rule distinguishes a missing remote from a failed fetch', () => {
+  const { resolve, fetch } = baseBranchRuleParts();
 
-  // Splitting the value at the first `/` is only correct when the leading part actually names a
-  // remote. Local branch names carry slashes all the time, and `setup` now proposes the current
-  // local branch — so `feature/foo` in a repository without remotes would probe a remote
-  // `feature`, take the fallback `foo` and abort, while the ref it was handed resolves.
+  // The fetch failures stop. Their handling sits only in the fetch section, so the substitution
+  // can never become a silent fallback after an unreachable remote.
+  for (const outcome of ['`fetch-failed`', '`tracking-stale`', '`unresolvable`']) {
+    assert.ok(fetch.includes(outcome), `the fetch section must handle ${outcome}`);
+  }
   assert.match(
-    classification,
-    near('part before its first `/`', '`git remote`', 200),
+    fetch,
+    near('report and stop', 'Never fall back to a local branch here', 80),
+    'a remote whose fetch fails must stop instead of falling back',
+  );
+  assert.doesNotMatch(fetch, /resolved-substituted/, 'the fetch arm offers no substitution');
+  // A sandbox refusal earns one escalated retry where the harness offers it, never a fallback.
+  assert.match(
+    fetch,
+    near('`fetch-denied`', 'rerun this call once', 200),
+    'a sandbox refusal must be retried once with escalation',
+  );
+  assert.match(fetch, /otherwise, or when it is refused again, stop as for `fetch-failed`/);
+
+  assert.match(
+    resolve,
+    near('`resolved-substituted`', 'report that substitution once', 160),
+    'the local-branch substitution must be visible, not silent',
+  );
+  assert.match(resolve, near('`unresolvable`', 'Never invent or create a base branch', 160));
+  assert.doesNotMatch(
+    resolve,
+    /base-branch-fetch/,
+    'there is nothing to fetch from an absent remote',
+  );
+});
+
+// Invariant: a value is a remote ref only when its leading part names a configured remote.
+test('the base-branch resolution rule keeps a slash-containing local base branch whole', () => {
+  const { resolve } = baseBranchRuleParts();
+  assert.match(
+    resolve,
+    near("part before the value's first `/`", '`git remote` lists', 80),
     'only a leading part that names a configured remote may make the value a remote ref',
   );
-
-  // `setup` proposes a bare local branch where no `origin` exists, so the slashless value is a
-  // real input to this rule and not a degenerate one. Left unstated, a reader has to infer the
-  // classification from a `/` that is not there.
-  assert.match(
-    classification,
-    /no `\/` at all/,
-    'a value without a slash has no leading part and can never be a remote ref',
-  );
-
-  // Order matters here, not just presence: the full value has to be tried before anything is cut
-  // off it, or `feature/foo` resolves to `foo` in every repository that has both branches.
-  ordered(missing, 'as a local ref', 'as it stands first', 'local branch part');
+  // The full value is tried first; the substitution is the later, narrower candidate.
+  ordered(resolve, 'as a local ref as it stands', 'only the local branch part');
 
   // The user guide restates the rule for readers who never open the fragment; a mirror that still
   // describes the unconditional split contradicts the contract it is documenting.
@@ -12239,155 +12290,54 @@ test('the base-branch resolution rule keeps a slash-containing local base branch
   );
 });
 
-// The opening prose is where the derived default has to live: `baseBranchRuleParts()` splits on
-// `\n\s*- `, so a fourth bullet — even a nested one — changes the arm count the rule is built on.
-// The three bullets classify *a value*; this states which value the rule starts from.
-test('the base-branch resolution rule states the derived default before classifying a value', () => {
-  const [opening] = baseBranchRuleParts();
-
-  // Arm one: an absent key derives from the repository itself. Hardcoding `origin/main` made the
-  // rule abort by its own third bullet in every repository whose default branch is not `main` —
-  // an avoidable failure, because `origin/HEAD` already carried the answer locally.
+// Invariant: an absent key is passed as `null` so the helper derives the default from
+// `origin/HEAD`, else `origin/main`; an explicit value is passed unchanged.
+test('the base-branch resolution rule passes an absent key as null and an explicit value as written', () => {
+  const { resolve } = baseBranchRuleParts();
   assert.match(
-    opening,
-    near('Absent', 'git symbolic-ref refs/remotes/origin/HEAD', 120),
-    'a missing key must derive its default from the repository, not from a hardcoded branch',
-  );
-
-  // Arm two: the fallback survives. `origin/HEAD` is absent after `git init` plus `git remote add`
-  // and in some CI checkouts, and that must stay a silent fall-through rather than an error.
-  assert.match(
-    opening,
-    near('git symbolic-ref refs/remotes/origin/HEAD', 'else `origin/main`', 80),
-    'the derivation must name `origin/main` as its fallback where `origin/HEAD` does not exist',
-  );
-
-  // Arm three: derivation applies to the *absent* key only. Without this an implementer could
-  // read the new default as a correction applied to a configured value — which is precisely the
-  // bug the key exists to prevent, since `origin/HEAD` answers a different question than
-  // `delivery.baseBranch` does in a repository that separates the two on purpose.
-  assert.match(
-    opening,
-    /[Aa]n explicit value is used as written/,
-    'an explicitly configured base branch must be used unchanged, whatever `origin/HEAD` names',
-  );
-
-  // Arm four, and the one the whole change rests on: the derived value must carry the `origin/`
-  // prefix. `git symbolic-ref refs/remotes/origin/HEAD` prints a ref whose branch part is bare, and
-  // this rule declares two lines later that a value with no `/` is never a remote ref. A derivation
-  // that yields `trunk` rather than `origin/trunk` therefore takes the remote-NOT-configured arm,
-  // skips the fetch, and starts delivery from a possibly stale local branch — reintroducing exactly
-  // the failure the remote-configured arm exists to prevent. Wording that leaves the prefix
-  // implicit reads as a location ("the branch under `origin/`") and is not enough.
-  assert.match(
-    opening,
-    near('`origin/`', 'git symbolic-ref refs/remotes/origin/HEAD', 60),
-    'the derived default must prefix `origin/`, not merely locate the branch under it',
+    resolve,
+    near('the configured value as written', '`null` when the key is absent', 60),
+    'an explicit value must be used unchanged, and only an absent key is derived',
   );
   assert.match(
-    opening,
-    /derived value is a\s+remote ref/,
-    'the derivation must say the value it produces is a remote ref, so classification agrees',
+    resolve,
+    near('`origin/` plus the branch', 'else `origin/main`', 80),
+    'the derivation the helper runs must stay stated, prefix and fallback included',
   );
 });
 
-// Invariant: the drift comparison is reached only by the arm that already fetched the remote ref.
-test('the base-branch drift comparison lives inside the remote-configured case', () => {
-  const cases = baseBranchRuleParts().slice(1);
-
-  // Asserted here as well as in the neighbouring case test, because this is the assertion that
-  // fails first when the drift prose is reshaped. `\s*` in the split spans newlines and
-  // indentation, so an indented sub-bullet counts as a fourth case — and the drift text is
-  // exactly the prose an editor "tidies" into one: a staleness caveat, a remediation hint and a
-  // no-gate statement read like a list.
-  assert.equal(cases.length, 3, 'the rule must carry exactly its three outcome bullets');
-
-  const fetching = cases.filter((part) => /git fetch REMOTE BRANCH/.test(part));
-  assert.equal(fetching.length, 1, 'exactly one outcome case may own the fetch');
-
-  // The comparison is a continuation of the arm that already resolved a remote ref. Split off
-  // into a case of its own it stops being reached by the arm that has both facts in hand.
+// Invariant: base-branch drift is reported, never gated, reaches only the arm that fetched, and the
+// configured value still wins.
+test('the base-branch drift report stays a report inside the fetch arm and carries its remediation', () => {
+  const { resolve, fetch } = baseBranchRuleParts();
+  assert.match(fetch, /`data\.divergence`/, 'the drift fact comes from the helper');
+  assert.doesNotMatch(resolve, /divergence/, 'only the fetch arm carries the drift comparison');
   assert.match(
-    fetching[0],
-    /`origin\/HEAD`/,
-    'the drift comparison must sit in the case that already fetched, not in a case of its own',
-  );
-  for (const part of cases.filter((candidate) => !/git fetch REMOTE BRANCH/.test(candidate))) {
-    assert.doesNotMatch(
-      part,
-      /origin\/HEAD/,
-      'no other outcome case may carry the drift comparison',
-    );
-  }
-});
-
-// Invariant: base-branch drift is reported, never gated; the configured value still wins, and the
-// report fires only where `origin/HEAD` resolves to another branch on `origin`.
-test('the base-branch drift report stays a report and carries its remediation', () => {
-  const configured = baseBranchRuleParts()
-    .slice(1)
-    .find((part) => /git fetch REMOTE BRANCH/.test(part));
-  assert.ok(configured, 'the remote-configured case must still exist');
-
-  // House style for a disagreement between a declared source and an observed fact is
-  // `project-adr-convention.md`: the declared source wins and the disagreement is named, so a
-  // silent override becomes a visible one without adding a gate. A drift check that blocked
-  // would stop delivery in every repository that separates its integration branch from its
-  // published default — this one included.
-  assert.match(
-    configured,
+    fetch,
     near('adds no gate', 'the configured value wins', 80),
     'the drift comparison must state that it reports and that the configured value still wins',
   );
-
-  // The report is conditional, and the condition is the whole point. Dropping "where it resolves
-  // and names another branch" leaves a rule that reports on every remote resolution, including the
-  // overwhelming majority where the two agree — noise that trains readers to ignore the one case
-  // that matters. Two further conditions guard the shapes that cannot be compared at all: an
-  // `origin/HEAD` that does not resolve (fresh `git init` plus `git remote add`, many CI checkouts)
-  // is a silent fall-through rather than a failed resolution, and a base on a differently named
-  // remote is never measured against origin's, which would otherwise hand a fork checkout a
-  // permanent report whose remediation cannot resolve it.
-  assert.match(
-    configured,
-    near('where it resolves and names', 'another branch', 40),
-    'the drift report must fire only where `origin/HEAD` resolves to a different branch',
-  );
-  assert.match(
-    configured,
-    near('does not resolve', 'not an error', 60),
-    'an unresolvable `origin/HEAD` must be a silent fall-through, never an abort',
-  );
-  assert.match(
-    configured,
-    near('only where REMOTE is `origin`', 'read `origin/HEAD`', 80),
-    'the comparison must be scoped to origin, never guessed across differently named remotes',
-  );
-
   // Neither side is authoritative: after an upstream rename the clone-time cache is the stale
-  // one, and after a deliberate divergence the configured value is right. A verdict either way
-  // would be wrong half the time, so the rule names both facts and offers the repair instead.
+  // one, and after a deliberate divergence the configured value is right.
   assert.match(
-    configured,
+    fetch,
     near('neither as authoritative', 'may be the stale side', 140),
     'the report must refuse to rule on which of the two facts is stale',
   );
   assert.match(
-    configured,
+    fetch,
     /`git remote set-head origin -a`/,
     'a report the reader cannot act on is noise; the refresh command is the remediation',
   );
 });
 
 // The suppression reads prose out of another document, and only these two tests connect them.
-// This one guards the *fragment* side: a paraphrase there — "on purpose", "for good" — leaves the
-// file reading correctly while the condition stops matching the ADR. It deliberately does not
-// guard the ADR side, and cannot: it locates the acknowledgement sentence by the very words it
-// then requires, so any reword that keeps them passes here. The ADR side is held by "the
-// project-setup ADR carries the acknowledgement sentence verbatim", which pins the literal.
-// Either failure is silent and permanent — this repository would report its own deliberate
-// divergence on every remote resolution, and the only symptom is noise nobody traces to a reword.
-test('the drift-check silence condition stays bound to the ADR sentence it reads', () => {
+// This one guards the *fragment* side: the `deliberateDivergence` flag is the run's judgment over the
+// ADR sentence, and a paraphrase there — "on purpose", "for good" — leaves the file reading correctly
+// while the judgment stops matching the ADR. The ADR side is held by "the project-setup ADR carries
+// the acknowledgement sentence verbatim", which pins the literal. Either failure is silent and
+// permanent — this repository would report its own deliberate divergence on every remote resolution.
+test('the deliberateDivergence flag stays bound to the ADR sentence it reads', () => {
   // Sentence-split on a period followed by whitespace, so `delivery.baseBranch` does not split.
   const sentences = (text) => prose(text).split(/(?<=\.)\s+/);
 
@@ -12396,35 +12346,32 @@ test('the drift-check silence condition stays bound to the ADR sentence it reads
   );
   assert.ok(
     acknowledgement,
-    'the setup ADR must still carry the acknowledgement sentence the drift check suppresses on; ' +
+    'the setup ADR must still carry the acknowledgement sentence the flag is set from; ' +
       'rewording it silently breaks the suppression in `base-branch-resolution.md`',
   );
 
-  const configured = baseBranchRuleParts()
-    .slice(1)
-    .find((part) => /git fetch REMOTE BRANCH/.test(part));
-  assert.ok(configured, 'the remote-configured case must still exist');
-  const silence = sentences(configured).find((sentence) => /[Ss]ilent where/.test(sentence));
-  assert.ok(silence, 'the remote-configured case must state when the drift report stays silent');
+  const { fetch } = baseBranchRuleParts();
+  const flag = sentences(fetch).find((sentence) =>
+    /`deliberateDivergence`: `true` only where/.test(sentence),
+  );
+  assert.ok(flag, 'the fetch call must state when `deliberateDivergence` is true');
+  assert.match(flag, /setup ADR/, 'the flag must name the ADR it reads');
+  assert.match(flag, /otherwise `false`/, 'the flag must default to reporting the divergence');
 
-  // The condition has to name the ADR as its source, or a reader cannot tell which document is
-  // consulted and a `setup` run has nothing to preserve.
-  assert.match(silence, /setup ADR/, 'the silence condition must name the ADR it reads');
-
-  // The binding itself: the distinctive words of the ADR sentence, asserted on both sides at
-  // once, so rewording either document fails here rather than nowhere.
   for (const token of ['divergence', 'deliberate and permanent']) {
     assert.ok(
       acknowledgement.includes(token),
-      `the ADR acknowledgement no longer uses "${token}"; the drift check recognizes it by that ` +
-        'wording, so the suppression in `base-branch-resolution.md` no longer matches',
+      `the ADR acknowledgement no longer uses "${token}"; the flag is set by that wording, so the ` +
+        'suppression in `base-branch-resolution.md` no longer matches',
     );
     assert.ok(
-      silence.includes(token),
-      `the silence condition no longer uses "${token}"; it must quote the ADR sentence's wording ` +
+      flag.includes(token),
+      `the flag condition no longer uses "${token}"; it must quote the ADR sentence's wording ` +
         'rather than paraphrase it, or the two drift apart unnoticed',
     );
   }
+  // The former silence sentence is gone: the helper suppresses the report through the flag.
+  assert.doesNotMatch(fetch, /[Ss]tay silent where/);
 });
 
 // `pr` step 4 picks its diff-base arm from the recorded pair, and a complete handoff supplies that
@@ -12482,10 +12429,10 @@ test('the partial-diff path defers to the single base-branch resolution rule', (
 });
 
 // One rule, one fetch, in both hosts. The count runs over the eagerly resolved composition rather
-// than over the fragment alone: a host that grows a second refresh sentence of its own is exactly
-// the defect the extraction removes, and a fragment-local count would never see it. The raw
-// zero-count is the other half - it is what fails when a host restates the fetch inline.
-test('base-branch resolution reaches both hosts eagerly, with exactly one fetch each', () => {
+// than over the fragment alone: a host that grows a second refresh of its own is exactly the defect
+// the extraction removes. The fetch itself is the helper's `base-branch-fetch`, so no host and no
+// resolved composition may instruct a raw `git fetch`.
+test('base-branch resolution reaches both hosts eagerly, with exactly one fetch call each', () => {
   for (const path of ['src/shared/worktree-integration.md', 'src/tools/pr.md']) {
     const raw = source(path);
     const { eager } = collectIncludeNames(raw);
@@ -12494,21 +12441,24 @@ test('base-branch resolution reaches both hosts eagerly, with exactly one fetch 
       `${path} must include the rule eagerly; a lazy pointer would leave the rule unrendered ` +
         'in a host that resolves a base on every run',
     );
-    assert.equal(
-      (raw.match(/git fetch/g) ?? []).length,
-      0,
-      `${path} must not restate the fetch the rule owns`,
-    );
+    for (const fetch of [/git fetch/g, /`base-branch-fetch`/g]) {
+      assert.equal(
+        (raw.match(fetch) ?? []).length,
+        0,
+        `${path} must not restate the fetch the rule owns`,
+      );
+    }
 
     const resolved = resolveEagerIncludes(raw, {
       context: path,
       readFragment: (name) => source(`src/shared/${name}.md`),
     });
     assert.equal(
-      (resolved.match(/git fetch/g) ?? []).length,
+      (resolved.match(/run `base-branch-fetch`/g) ?? []).length,
       1,
-      `${path} must carry the fetch instruction exactly once once its includes are resolved`,
+      `${path} must carry the fetch call exactly once once its includes are resolved`,
     );
+    assert.equal((resolved.match(/git fetch/g) ?? []).length, 0, `${path} must not run git fetch`);
   }
 });
 
@@ -12518,11 +12468,8 @@ test('base-branch resolution reaches both hosts eagerly, with exactly one fetch 
 // the rule entirely. So `pr` acts on the resolver's retired-row action in step 1, which every call
 // reaches, and the retired-key contract states that checkout provisioning is no successor read.
 test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared base-branch rule', () => {
-  const parts = baseBranchRuleParts();
-  assert.equal(parts.length, 4, 'the opening paragraph must stay prose ahead of the three arms');
-  const [opening] = parts;
   assert.doesNotMatch(
-    opening,
+    source('src/shared/base-branch-resolution.md'),
     /worktree\.baseBranch/,
     'the shared rule must not stop PR-mode checkout provisioning on a key those runs never read',
   );
@@ -17842,14 +17789,21 @@ test('the project ADR-naming fragment states every required element', () => {
     ['the inconclusive observed-evidence outcome', 'no observed convention'],
     ['the three-tier precedence', 'declared over observed over the Effective Flow default'],
     ['the unanimous-disagreement report', 'the disagreement is named in the completion report'],
-    ['number allocation', 'next unused integer'],
-    ['containment', 'single path segment'],
+    ['the observation call', 'effective-flow-mechanics.mjs adr-observe'],
+    ['the allocation call', 'takes its file name from `adr-allocate`'],
     ['the no-rename rule', 'is written at the path where it was found'],
     // The resolution decides file names only. Without this scoping a numbered convention would
     // read as licence to reintroduce the legacy numbered H1 as well.
     ['the title-axis scoping', 'the H1 title form always stays'],
   ]) {
     assert.ok(fragment.includes(pin), `the fragment must state ${element}: ${pin}`);
+  }
+  // The mechanics moved into the helper; their prose copies must not come back.
+  for (const removed of ['next unused integer', '`^(\\d+)[-_]`', 'Allocation starts at']) {
+    assert.ok(
+      !fragment.includes(removed),
+      `the fragment must not restate the helper rule: ${removed}`,
+    );
   }
 
   // The reporting obligation names the applied convention **and** where it came from. Only the
@@ -17910,70 +17864,81 @@ test('the project ADR-naming fragment states every required element', () => {
 });
 
 // Containment is the security boundary of the whole resolution: every tier above it reads
-// attacker-influenceable repository text, and this predicate is what keeps the resulting name
-// inside the detected directory. It is machine-readable, so it is pinned verbatim — rewriting it
-// to `^.*\.md$` admits `../../outside.md` while the prose around it still reads "single path
-// segment", and a prose-only pin never notices.
-test('the project ADR-naming fragment pins its containment predicate and its symlink stop', () => {
-  const containment = boundedSlice(
-    source('src/shared/project-adr-convention.md'),
-    '### Containment',
-    '\n### ',
-  );
-  const flatContainment = prose(containment);
-
-  assert.ok(
-    containment.includes('`^(?:\\d+-)?[a-z0-9][a-z0-9-]*\\.md$`'),
-    'the containment predicate must stay the verbatim single-segment pattern',
-  );
-  // Lexical containment would be trivially satisfied by a pattern that already forbids a
-  // separator, so the real check is the physical one.
+// attacker-influenceable repository text. The helper's `adr-allocate` evaluates the predicate; the
+// fragment owns what each outcome does, and the two hard stops may never be softened into a reroute,
+// because the default name resolves inside the same external directory or through the same link.
+test('the project ADR-naming fragment handles every containment outcome and keeps the hard stops hard', () => {
+  const raw = source('src/shared/project-adr-convention.md');
+  const allocation = prose(boundedSlice(raw, '### Allocation and collision', '\n### '));
   assert.match(
-    flatContainment,
-    near(
-      'Containment is then checked physically rather than lexically',
-      "the resolved target's parent equals the resolved directory",
-      400,
-    ),
-    'containment must be checked physically, with both paths resolved through their symlinks',
-  );
-  // Parent-equality alone proves only that the two resolve to the same place. A symlinked ADR
-  // directory makes both sides resolve to one external directory, so the equality holds and the
-  // write leaves the repository — and the symlink stop above does not see it, because it tests
-  // the target path rather than the directory it sits in.
-  assert.match(
-    flatContainment,
-    near(
-      "the resolved target's parent equals the resolved directory",
-      'both of them lie beneath the verified repository root',
-      200,
-    ),
-    'containment must additionally require both resolved paths to stay inside the repository root',
-  );
-  // The two failures may not share an outcome: rerouting to the default inside an ADR directory
-  // that itself resolves outside the repository would write the default name into that same
-  // external directory.
-  assert.match(
-    flatContainment,
-    near(
-      'A resolved directory lying outside the repository root',
-      'report the resolved path and write nothing',
-      300,
-    ),
-    'a resolved ADR directory outside the repository root must hard-stop, never reroute to the default',
-  );
-  assert.match(
-    flatContainment,
-    near(
-      'An existing symlink at the target path is a hard stop',
-      'report the path and write nothing',
-      300,
-    ),
-    'an existing symlink at the target must stop the run, not trigger a re-allocation',
-  );
-  assert.ok(
-    flatContainment.includes('dangling symlink'),
+    allocation,
+    near('`symlink-stop`', 'dangling included', 80),
     'the symlink stop must cover a dangling symlink, which an existence check reports as absent',
+  );
+  assert.match(
+    allocation,
+    near('`outside-repo-stop`', '`data.resolvedPath`', 120),
+    'an ADR directory resolving outside the repository must stop, naming the resolved path',
+  );
+  assert.match(
+    allocation,
+    near(
+      'a hard stop',
+      'report the path and write nothing, never re-allocate or reroute to the default',
+      40,
+    ),
+    'both hard stops must report and write nothing, never reroute',
+  );
+  assert.match(
+    allocation,
+    near('`unrecognized`', 'the Effective Flow default applies', 120),
+    'a name or parent failing containment must fall to the default',
+  );
+  // Under `numberless` the default is the convention already, so a re-call would loop.
+  assert.match(
+    allocation,
+    near('Under `numberless`', 'a hard stop like `symlink-stop`; never call again', 80),
+    'a numberless unrecognized name must stop instead of re-calling with the same convention',
+  );
+  // The observation call meets the same escape first.
+  assert.match(
+    prose(boundedSlice(raw, '### Observed evidence', '\n### ')),
+    /`outside-repo-stop` is the hard stop/,
+  );
+  // A path written in place calls no allocation, yet keeps both guards, symlink stop first, and a
+  // switched slug adds the existence check; any hit stops, because re-allocating would let setup
+  // write a second setup ADR beside the one occupying the target.
+  const noRename = prose(boundedSlice(raw, '### No rename on the convention axis', '\n### '));
+  ordered(
+    noRename,
+    'the symlink hard stop',
+    'the physical containment check',
+    'the existence check',
+  );
+  assert.match(
+    noRename,
+    near("an update in place, or setup's switched slug", 'is never re-allocated', 120),
+    'a target that is not newly allocated must never go through re-allocation',
+  );
+  assert.match(
+    noRename,
+    near('the single exception', 'never replay these rules by hand', 40),
+    'checking such a target by hand must be the stated single exception to the no-replay rule',
+  );
+  assert.match(
+    noRename,
+    near('Any hit stops the write', 'nothing falls back to the default', 260),
+    'every guard hit on such a target must stop the write rather than reroute',
+  );
+  assert.match(
+    noRename,
+    near('both beneath the verified repository root', '`outside-repo-stop`', 260),
+    'a path written in place must still be contained within the repository root',
+  );
+  // The predicate lives in the helper; a prose copy would be a second, drifting rule.
+  assert.ok(
+    !raw.includes('[a-z0-9][a-z0-9-]*\\.md$'),
+    'the fragment must not restate the predicate',
   );
 });
 
@@ -18178,154 +18143,100 @@ test('the project ADR-naming fragment keeps its declared-source surface at two s
   );
 });
 
-// "every file carries a prefix" and "no file carries a prefix" are both vacuously true for an
-// empty directory, so without an explicit empty-set rule the classification would call the same
-// directory numbered and numberless at once. A behavioural walkthrough of an empty ADR directory
-// surfaced exactly that, so the rule and this assertion exist together.
-test('the project ADR-naming fragment classifies an empty evidence set before its two tests', () => {
-  const observed = boundedSlice(
-    source('src/shared/project-adr-convention.md'),
-    '### Observed evidence',
-    '\n### ',
+// The observed-evidence outcomes, each read as the helper's `adr-observe` returns it. An empty set
+// is `none`, not numbered and numberless at once, and only `numbered` or `numberless` supply a
+// convention; the other two fall through to the default.
+test('the project ADR-naming fragment reads every observed-evidence outcome', () => {
+  const observed = prose(
+    boundedSlice(source('src/shared/project-adr-convention.md'), '### Observed evidence', '\n### '),
   );
-  const items = bullets(observed);
-
-  // Matched against `prose()`, so the emphasis around "empty" stays an editorial choice. Requiring
-  // the `**` made removing only the asterisks fail with a message about an ordering nobody had
-  // touched, which sends a maintainer looking in the wrong place.
   assert.match(
-    prose(items[0]),
-    /An empty evidence set is no observed convention/,
-    'the empty-set rule must be the first outcome, ahead of both vacuously satisfiable tests',
+    observed,
+    /run `node <skill-root>\/scripts\/effective-flow-mechanics\.mjs adr-observe`/,
   );
-  for (const [index, form] of [
-    [1, 'numbered'],
-    [2, 'numberless'],
-  ]) {
-    assert.match(
-      items[index],
-      /the set is non-empty and/,
-      `the ${form} test must require a non-empty evidence set`,
-    );
-  }
+  assert.match(
+    observed,
+    near(
+      'a nonzero exit, an envelope that does not parse, or `ok: false`',
+      'never replay these rules by hand',
+      120,
+    ),
+    'a helper failure must stop the run instead of reading the directory by hand',
+  );
+  assert.match(observed, near('`none` \\(an empty evidence set\\)', 'no observed convention', 80));
+  assert.match(observed, near('`inconclusive`', 'reports inconclusive evidence as such', 120));
+  assert.match(observed, /`numbered` \(one zero-pad width, `data\.width`\)/);
 });
 
-// Width and number allocation decide the file name a numbered convention actually produces, and
-// the collision procedure is what stops a second run from overwriting the first. Both arrived in
-// the source correction round with nothing asserting them.
-test('the project ADR-naming fragment allocates a width and a number and guards the collision', () => {
-  const raw = source('src/shared/project-adr-convention.md');
-  const allocation = boundedSlice(raw, '### Number and width allocation', '\n### ');
-  const flatAllocation = prose(allocation);
-
-  assert.match(
-    flatAllocation,
-    /This applies only to a resolved numbered convention/,
-    'allocation must be scoped to a resolved numbered convention',
-  );
-  assert.match(
-    flatAllocation,
-    near(
-      'The zero-pad width comes from the declaration when it states one',
-      'otherwise four digits',
-      240,
+// Width and number allocation decide the file name a numbered convention produces, and the
+// collision procedure is what stops a second run from overwriting the first. The helper computes
+// both; the fragment owns the call protocol and what each outcome writes.
+test('the project ADR-naming fragment allocates through the helper and guards the collision', () => {
+  const allocation = prose(
+    boundedSlice(
+      source('src/shared/project-adr-convention.md'),
+      '### Allocation and collision',
+      '\n### ',
     ),
-    'the width must fall from the declaration to the observed files to four digits',
-  );
-  // Read-side tolerance, deliberately wider than the hyphen-only write axis: a `0007_legacy.md`
-  // that contributed no number would have that number silently reused by the next allocation.
-  assert.ok(
-    allocation.includes('`^(\\d+)[-_]`'),
-    'the allocation parse must tolerate both separators when reading an existing number',
-  );
-  assert.match(
-    flatAllocation,
-    near('Allocation starts at', '0001', 80),
-    'allocation must start at 0001 in a directory holding no numbered file',
-  );
-  assert.match(
-    flatAllocation,
-    near('saturates the resolved width', 'widen the pad by one digit', 80),
-    'a saturated width must widen by one digit rather than wrap',
   );
 
-  // Width sits off the classification axis, so two sources stating `NNN-` and `NNNNN-` still agree
-  // and never reach the fence. That is exactly why the divergence needs a rule of its own: without
-  // it two runs on one repository could write `007-…` and `00007-…` and both be correct.
+  // Scope: every new ADR under either convention; update-in-place is the single exemption.
+  assert.match(allocation, near('Every new ADR', 'takes its file name from `adr-allocate`', 80));
   assert.match(
-    flatAllocation,
-    near('Width is not on the classification axis', 'never reach the ambiguity fence', 400),
-    'a width difference alone must not send two otherwise agreeing sources to the fence',
-  );
-  assert.match(
-    flatAllocation,
-    near(
-      'Where speaking sources agree on the classification axis but state different widths',
-      'the width axis is unrecognized in the same way',
-      160,
-    ),
-    'agreeing sources that state different widths must make the width axis unrecognized',
-  );
-  assert.match(
-    flatAllocation,
-    near(
-      'the divergence is reported with every speaking source and the width it stated',
-      'four digits',
-      200,
-    ),
-    'a diverging width must fall back to the observed width and then to four digits, and be reported',
-  );
-
-  const collision = boundedSlice(raw, '### Collision at write time', '\n### ');
-  const flatCollision = prose(collision);
-
-  // The scope is half the rule, and it widened: the procedure now covers every new ADR under either
-  // convention, because a numberless target is occupied just as easily as a numbered one. The
-  // single exemption is an ADR resolved for update, written at its own path and never a collision
-  // with itself; scoping the procedure to numbered names again would drop the numberless half of
-  // the pre-write existence check, which is what stands between a new ADR and an overwritten file.
-  assert.match(
-    flatCollision,
-    near('This applies to every new ADR', 'under either resolved convention', 80),
-    'the collision procedure must cover every new ADR under either resolved convention',
-  );
-  assert.match(
-    flatCollision,
+    allocation,
     near(
       'An ADR resolved for update is written at its own path',
-      'that is the single exemption, and it is the only one',
-      240,
+      'that is the single exemption',
+      200,
     ),
     'update-in-place must be the only exemption from the collision procedure',
   );
+  // The second call immediately before the write is the unconditional existence check: without
+  // it a numberless target would be written straight over an existing file.
   assert.match(
-    flatCollision,
+    allocation,
     near(
-      'Re-scan the detected ADR directory immediately before writing',
-      'The existence check on that path is unconditional',
+      'again immediately before the write',
+      'the unconditional pre-write existence check, under either convention',
+      120,
+    ),
+  );
+  assert.match(allocation, /Write only to the second call's `data\.path`/);
+  assert.match(allocation, near('`reallocated`', 'the number was re-allocated once', 120));
+  assert.match(
+    allocation,
+    near('`collision-stop`', 'write nothing', 60),
+    'a second numbered collision or a taken numberless target must stop rather than overwrite',
+  );
+  assert.match(
+    allocation,
+    near(
+      'Only an explicit, confirmed overwrite decision obtained by the calling tool',
+      'may then write over that file',
       160,
     ),
-    'the procedure must re-scan immediately before writing and check existence unconditionally',
   );
   assert.match(
-    flatCollision,
-    near('Under a convention that carries numbers', 're-allocates the number once', 160),
-    'a numbered convention must re-allocate the number once on a first collision',
+    allocation,
+    near('`data.widened`', 'report it', 160),
+    'a widened pad must be reported',
+  );
+
+  // Width sits off the classification axis, so two sources stating `NNN-` and `NNNNN-` still agree
+  // and never reach the fence; without the width-axis rule two runs could write `007-…` and
+  // `00007-…` and both be correct.
+  assert.match(
+    allocation,
+    near('Width is not on the classification axis', 'never reach the ambiguity fence', 240),
   );
   assert.match(
-    flatCollision,
-    near('A second collision stops the run', 'rather than overwriting', 80),
-    'a second collision must stop the run instead of overwriting',
-  );
-  // The numberless half has no second name to allocate, so a stop is its only safe outcome.
-  assert.match(
-    flatCollision,
+    allocation,
     near(
-      'Under a numberless convention there is no second name to allocate',
-      'stops the run and reports that path',
-      200,
+      'pass `declaredWidth: null`',
+      'report the divergence with every speaking source and the width it stated',
+      80,
     ),
-    'a numberless collision must stop and report rather than allocate a second name',
+    'agreeing sources that state different widths must leave the width to the helper and be reported',
   );
 });
 
@@ -18607,10 +18518,15 @@ test('the existing-ADR write target scopes its own path to the naming axis', () 
   assert.match(
     existing,
     near(
-      'unconditional pre-write existence check on the switched target',
-      'stop and report both paths',
-      280,
+      'Check the switched target per `project-adr-convention`, "No rename on the convention axis"',
+      'never through `adr-allocate`',
+      40,
     ),
+    'a slug-switched target must take the no-rename guards, since a numbered re-allocation would write a second setup ADR',
+  );
+  assert.match(
+    existing,
+    near('where a file already sits there', 'stop and report both paths', 80),
     'a slug-switched target must be checked for an existing file before it is written',
   );
   assert.match(
@@ -19041,6 +18957,8 @@ test('setup carries the resolved ADR convention forward and reports it from the 
     [/the resolved form/, 'the resolved naming form'],
     [/the resolution tier/, 'the resolution tier'],
     [/the zero-pad width where the form carries numbers/, 'the zero-pad width'],
+    // The width is the helper's, so setup never measures or pads a number by hand.
+    [/`adr-observe`'s or `adr-allocate`'s `data\.width`/, 'the helper width source'],
     [/the file path that established it/, 'the establishing file path'],
     [
       /unanimous observed evidence that contradicted the declaration/,
@@ -19679,59 +19597,87 @@ test('an empty delivery prefix drops the prefix segment: branches read <skill>/<
   );
 });
 
-// Invariant: in hidden mode the slug is sanitized before the existence check, repeatedly until
-// clean, with one shared disclosure rule at every construction site.
-test('hidden mode sanitizes the delivery slug at construction: disclosure rule, attached fragment, change fallback, one-line report', () => {
+// Invariant: delivery branch names come from the helper's `delivery-branch-name`, which owns the
+// hidden-mode disclosure stripping and the collision suffix; no construction site restates either,
+// a sanitized slug is still reported in one line, a disclosing prefix stops, and `pr` keeps only its
+// head-branch disclosure assertion.
+test('delivery branch names come from the helper, with no restated strip or suffix rule', () => {
   const step = prose(
     boundedSlice(
       source('src/shared/worktree-integration.md'),
-      '4. Construct delivery branch names',
+      '4. Name the delivery branch',
       '### Run-owned delivery state',
     ),
   );
-  // The disclosure rule's wording is pinned by the shared loop at the end of this test.
-  assert.match(
-    step,
-    near(
-      'sanitize the slug before any existence check',
-      'attached to it up to the nearest hyphen',
-      320,
-    ),
-    'hidden mode must sanitize the slug, attached fragment included, before the existence check',
-  );
-  // Sanitizing after the existence check would collision-check the unsanitized name only.
-  const sanitize = step.indexOf('In hidden mode (`visibility: hidden`), sanitize the slug');
-  const exists = step.indexOf(
-    'If the resulting branch name already exists, append a numeric suffix',
-  );
-  assert.ok(sanitize !== -1 && exists !== -1 && sanitize < exists);
-  // One pass can reassemble a match (`effective-effective-flow-flow`), so it repeats until clean.
-  const repeat =
-    /collapse repeated or edge hyphens, repeat both until the slug no longer matches the rule, use `change` if nothing remains/;
-  assert.match(step, repeat);
-  assert.match(step, /report the original and the chosen slug in one line/);
   const deliver = prose(
     boundedSlice(source('src/tools/deliver.md'), '2. Derive a collision-safe', '3. Create a fresh'),
   );
+  const publication = prose(
+    boundedSlice(
+      source('src/shared/plan-publication.md'),
+      '**Branch name, first publication only.**',
+      '### Audience',
+    ),
+  );
+  const pr = prose(source('src/tools/pr.md'));
+
+  // The call and the outcomes each construction site branches on.
+  for (const [site, text] of [
+    ['worktree-integration', step],
+    ['deliver', deliver],
+  ]) {
+    assert.match(text, /delivery-branch-name`/, `${site} must name the branch through the helper`);
+    assert.match(
+      text,
+      near('`data\.sanitized`', '`data\.originalSlug` and `data\.slug` in one line', 120),
+      `${site} must report the original and the chosen slug in one line when hidden mode sanitized it`,
+    );
+    assert.match(
+      text,
+      near('`prefix-discloses`', '\{\{SKILL:setup\}\}', 120),
+      `${site} must stop on a disclosing prefix and point to setup`,
+    );
+  }
+  assert.match(deliver, /`skill: "deliver"`/, 'deliver names its own skill segment');
+  // deliver does not load worktree-integration, so it carries the fail-closed rule itself.
   assert.match(
     deliver,
     near(
-      'In hidden mode, sanitize the slug first',
-      "remove every match of the helper's disclosure rule",
-      120,
+      'so do a nonzero exit, an unparsable envelope and `ok: false`',
+      'never derive the name by hand',
+      80,
     ),
-    'deliver must sanitize the slug first in hidden mode',
+    'a helper failure must stop deliver rather than fall back to a hand-built name',
   );
-  assert.match(deliver, /with the letters or digits attached to it up to the nearest hyphen/);
-  assert.match(deliver, repeat);
-  assert.match(deliver, /report the original and the chosen slug in one line/);
-  // `deliver` does not load `worktree-integration`, so it states the disclosure rule itself; all
-  // three sites must carry the exact wording `pr` step 2 uses, so none can drift from the helper.
-  const rule =
-    "the helper's disclosure rule(?::| —) `effective` and `flow` joined directly or by `-`, `_`, or `\\.`, case-insensitive, or `Effective Flow`";
-  for (const text of [prose(source('src/tools/pr.md')), step, deliver]) {
-    assert.match(text, new RegExp(rule));
+  // deliver's worktree check stays and feeds a taken name back to the helper.
+  assert.match(
+    deliver,
+    near('`git worktree list --porcelain`', 'goes into `excludeNames` for another call', 120),
+  );
+  assert.match(publication, /"Shared preconditions" step 4/);
+
+  // The removed rule: the strip mechanics and the suffix live in the helper alone.
+  for (const [site, text] of [
+    ['worktree-integration step 4', step],
+    ['deliver step 3.2', deliver],
+    ['plan-publication', publication],
+    ['pr', pr],
+  ]) {
+    for (const removed of [
+      /letters or digits attached/,
+      /nearest hyphen/,
+      /repeat both until the slug/,
+      /numeric suffix/,
+    ]) {
+      assert.doesNotMatch(text, removed, `${site} must not restate the helper's naming rule`);
+    }
   }
+
+  // pr keeps its head-branch assertion with the disclosure rule's wording.
+  assert.match(
+    pr,
+    /the helper's disclosure rule: `effective` and `flow` joined directly or by `-`, `_`, or `\.`, case-insensitive, or `Effective Flow`/,
+  );
 });
 
 test('plan archival takes the plan over from, and cleans it in, its own source checkout', () => {
@@ -21019,12 +20965,19 @@ test('plan publication commits only the plan, in a temporary worktree, and opens
     'the republication hash comparison',
   );
 
-  // Invariant: a new branch name is free locally and on `origin`, probed on the remote itself.
+  // Invariant: a new branch name is free locally and on `origin`, probed on the remote itself. The
+  // helper named by "Shared preconditions" step 4 owns the local check and the suffix; a name the
+  // `ls-remote` probe finds goes back through `excludeNames`, so no second suffix rule exists here.
   includesAll(
     discovery,
-    ['`refs/heads/<name>`', '`git -C <RUNTIME_STATE_ROOT> ls-remote --heads origin <name>`'],
+    [
+      'Name it by "Shared preconditions" step 4',
+      '`git -C <RUNTIME_STATE_ROOT> ls-remote --heads origin <name>`',
+      'add it to `excludeNames` and call again',
+    ],
     'the collision check',
   );
+  assert.doesNotMatch(discovery, /numeric suffix/, 'the suffix rule belongs to the helper alone');
 
   // Invariant: the invocation checkout is never switched; every write happens in a separate,
   // setup-free worktree, a sibling under a harness-managed receipt, owned by the calling workflow
@@ -21502,7 +21455,7 @@ test('the plan continuation hooks in after base resolution and supersedes only n
     preconditions,
     '2. **Resolve `delivery.baseBranch`',
     '3. If the current HEAD',
-    '4. Construct delivery branch names',
+    '4. Name the delivery branch',
   );
 
   // Invariant: discovery reads only normalized helper fields and never runs `pr-read` — an absent

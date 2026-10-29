@@ -27,6 +27,7 @@ import {
   nonInteractiveFetchEnv,
   reconcileDelivery,
   transferSelection,
+  UPSTREAM_FETCH_TIMEOUT_MS,
   upstreamStatus,
   verifySourceManifest,
 } from '../src/scripts/delivery-selection-core.mjs';
@@ -1625,4 +1626,37 @@ test('the CLI previews fast-forward by default and applies it only with --apply'
   assert.equal(applied.dryRun, false);
   assert.equal(applied.data.applied, true);
   assert.equal(ugit(local, 'rev-parse', 'HEAD'), upstreamOid);
+});
+
+// The mechanics helper composes its base-branch fetch from the exported guard, environment and
+// hook constants instead of reusing `fetchUpstream`, whose `timeout` key the shipped runner does
+// not read. For the same repository, remote and branch both cores must produce the same argv and
+// environment; the mechanics call carries the bound as `timeoutMs` inside its own process group.
+test('the mechanics base-branch fetch matches the upstream-status fetch argv and environment', async (t) => {
+  const { executeOperation } = await import('../src/scripts/effective-flow-mechanics-core.mjs');
+  const { local } = createUpstreamFixture(t);
+  const calls = [];
+  const capturing = (call) => {
+    calls.push(call);
+    return upstreamRunner({ ...call, timeout: call.timeout ?? call.timeoutMs });
+  };
+  const fetchCall = () => calls.filter((call) => call.args.includes('fetch')).at(-1);
+  const status = await upstreamStatus({ root: local, fetch: true }, { runner: capturing, env: {} });
+  assert.deepEqual(status.fetch, FETCHED);
+  const selection = fetchCall();
+  const envelope = await executeOperation(
+    'base-branch-fetch',
+    { cwd: local, remote: 'origin', branch: 'main', deliberateDivergence: false },
+    { runner: capturing, env: {} },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(envelope.data.outcome, 'resolved');
+  const mechanics = fetchCall();
+  assert.notEqual(mechanics, selection);
+  assert.deepEqual(mechanics.args, selection.args);
+  assert.deepEqual(mechanics.env, selection.env);
+  assert.equal(selection.timeout, UPSTREAM_FETCH_TIMEOUT_MS);
+  assert.equal(mechanics.timeoutMs, UPSTREAM_FETCH_TIMEOUT_MS);
+  assert.equal(mechanics.processGroup, true);
+  assert.equal(mechanics.timeout, undefined);
 });
