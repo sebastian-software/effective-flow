@@ -315,7 +315,9 @@ Delete the file at the end of the workflow, before `DONE`.
 
 Before Phase 1 and before any code-review-specific initialization
 (config migration, tracker mode, memory, cache, or wisdom file),
-check whether the user argument unambiguously points to a plan file: run
+check whether a non-blank user argument unambiguously points to a plan file. An empty or
+whitespace-only argument skips this and the concept-file special case without calling the helper
+and continues with Phase 1's "Without arguments" scope. Otherwise run
 `node <skill-root>/scripts/effective-flow-mechanics.mjs plan-reference-resolve` with exactly one
 JSON object on standard input — `cwd` the verified root `plan.dir` resolves against (the checkout
 root, or `RUNTIME_STATE_ROOT` in hidden mode), `planDir` the configured `plan.dir`, `reference`
@@ -353,7 +355,8 @@ may fall through to the normal code-review scope.
 
 Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
 legacy plan reference and is never read as a concept reference. Like the plan-file case, this
-branch runs before Phase 1 and before any code-review-specific initialization.
+branch needs a non-blank argument and runs before Phase 1 and any code-review-specific
+initialization.
 
 ```lazy-include
 concept-contract

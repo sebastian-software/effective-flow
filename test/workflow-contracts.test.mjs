@@ -423,6 +423,18 @@ test('Stage A and review continue on outside-plan-dir and stop on UNSAFE_PATH', 
     near('`ok: false` \\(`UNSAFE_PATH` included\\)', 'stops the run', 40),
     'review must stop on UNSAFE_PATH instead of reading it as no plan match',
   );
+  // Invariant: the documented no-argument review (working changes or whole codebase) never calls
+  // plan-reference-resolve, whose blank `reference` fails INVALID_INPUT and would stop the run.
+  ordered(review, 'An empty or whitespace-only argument skips', 'plan-reference-resolve');
+  assert.match(
+    review,
+    near(
+      'whitespace-only argument skips this and the concept-file special case',
+      'without calling the helper',
+      20,
+    ),
+    'a blank argument must skip both special cases without calling the helper',
+  );
   // Invariant: a clear plan-review intent stops on every non-match outcome; only an argument
   // without that intent falls through to the code-review scope.
   assert.match(
