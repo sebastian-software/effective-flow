@@ -1,6 +1,6 @@
 # Claude Code allowlist spike for the runtime-state helper
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -306,6 +306,17 @@ A classifier or host verdict on a negative probe does not decide the outcome, be
 - **Note (Testability): the `git status` validation ignored the `docs` handback and the DALO checkout.** Incorporated.
 - **Note (Testability): destructive prompts were not counted per operation.** Incorporated: a count and confirmation state per operation.
 - **Note (Maintainability): the Claude Code version could drift during the spike.** Incorporated: `DISABLE_AUTOUPDATER=1`, with the version checked on every run.
+
+## Test results
+
+- Measurement completed on 2026-10-29 in 67 headless runs for 9.40 USD in total (ceiling 150 USD): smoke tests, shape diagnosis, a 7-run path-form probe, a 24-run matrix, 12 hook-prototype runs, a pilot, and an 18-run baseline. Every matrix and hook run emitted all eight call types.
+- Interactive cross-checks by the maintainer in default mode (CLI 2.1.310) and auto mode (CLI 2.1.312) agree with the headless results call by call.
+- Conclusion by the decision rule, applied to the here-string shape: **hook fallback**. Recorded in `docs/developer-guide/claude-code-allowlist-evidence.md`.
+- Validation: all six cited digests match the evidence root; `manifest.sha256.txt` verifies against its 609 files; no absolute home path, session identifier, token, or private repository name in the published document; the evidence root is ignored and untracked and contains no token; the stub symlink is removed and the DALO checkout status matches its pre-spike snapshot; `pnpm agent:check` passes.
+
+## Review findings
+
+- No review phase runs in the documentation workflow. Deviations from the plan, recorded in the evidence document: the measurement host is JavaScript rather than TypeScript; auto mode was measured with `CLAUDE_CODE_AUTO_MODE_SERVER=0` because the default server-side review exposes no attribution signal; by the maintainer's decision the here-string replaced the multi-line heredoc as the primary non-destructive shape, because an allow rule cannot cover a multi-line heredoc; interactive declines interrupt the turn and the operator resumed after each one.
 
 ## Open points
 
