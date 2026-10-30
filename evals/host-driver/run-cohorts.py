@@ -325,8 +325,8 @@ class Driver:
 
     def run_all(self):
         prepared = [json.loads((self.root / f'prepared-{suite}.json').read_text()) for suite in SUITES]
-        if [len(p['tasks']) for p in prepared] != [40, 35, 75]:
-            raise ValueError('qualified cohorts require exactly [40, 35, 75] slots')
+        if [len(p['tasks']) for p in prepared] != [45, 35, 75]:
+            raise ValueError('qualified cohorts require exactly [45, 35, 75] slots')
         for suite, manifest in zip(SUITES, prepared):
             if (manifest['sourceHead'] != self.config['expectedFrozenHead']
                     or str(canonical(manifest['base'])) != manifest['base']):

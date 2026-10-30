@@ -185,6 +185,101 @@ class HostDriverTests(unittest.TestCase):
             "operatorSha256": digest(self.operator),
         }
 
+    def prepared_cohorts(self, driver, counts=(45, 35, 75)) -> dict:
+        """Use real input validation; replace only the unavailable model dispatch."""
+        manifests = {}
+        for suite, count in zip(("merge-gate", "iterate", "next-steps"), counts):
+            tasks = []
+            for slot in range(1, count + 1):
+                task = self.task(f"{driver.root.name}-{suite}-{slot}", slot=slot, suite=suite)
+                task["profile"] = driver.config["profiles"][suite]
+                tasks.append(task)
+            manifests[suite] = {
+                "sourceHead": self.head,
+                "base": str(self.project),
+                "tasks": tasks,
+            }
+        self.write_prepared_cohorts(driver, manifests)
+        return manifests
+
+    def write_prepared_cohorts(self, driver, manifests) -> None:
+        for suite, manifest in manifests.items():
+            (driver.root / f"prepared-{suite}.json").write_text(json.dumps(manifest))
+
+    def test_run_all_accepts_155_fixture_slots_without_model_dispatch(self) -> None:
+        driver = self.driver()
+        manifests = self.prepared_cohorts(driver)
+        def fixture_slot(task):
+            return {
+                **{key: task[key] for key in ("suite", "scenario", "slot")},
+                "state": "sealed",
+                "actualModelStarted": False,
+                "fixtureOnly": True,
+                "qualifiedHost": False,
+            }
+        with mock.patch.object(driver, "run_slot", side_effect=fixture_slot) as dispatch:
+            self.assertEqual(driver.run_all(), 0)
+        self.assertEqual(dispatch.call_count, 155)
+        expected = {
+            (task["suite"], task["scenario"], task["slot"])
+            for manifest in manifests.values() for task in manifest["tasks"]
+        }
+        actual = {
+            (call.args[0]["suite"], call.args[0]["scenario"], call.args[0]["slot"])
+            for call in dispatch.call_args_list
+        }
+        self.assertEqual(actual, expected)
+        summary = json.loads((driver.outroot / "summary.json").read_text())
+        self.assertEqual(summary["preparedTasks"], 155)
+        self.assertEqual(summary["sealed"], 155)
+        self.assertEqual(summary["started"], 0)
+        self.assertTrue(summary["fixtureOnly"])
+        self.assertFalse(summary["qualifiedHost"])
+        self.assertFalse(self.start_marker.exists())
+
+    def test_run_all_refuses_obsolete_and_incorrectly_sized_cohorts_before_dispatch(self) -> None:
+        for counts in ((40, 35, 75), (44, 35, 75), (46, 35, 75),
+                       (45, 34, 75), (45, 36, 75), (45, 35, 74), (45, 35, 76)):
+            with self.subTest(counts=counts):
+                driver = self.round_driver("-".join(map(str, counts)))
+                self.prepared_cohorts(driver, counts)
+                with mock.patch.object(driver, "run_slot", return_value={
+                    "state": "fixture-only", "actualModelStarted": False,
+                }) as dispatch:
+                    with self.assertRaisesRegex(ValueError, "exactly"):
+                        driver.run_all()
+                    dispatch.assert_not_called()
+                self.assertFalse(self.start_marker.exists())
+
+    def test_run_all_preserves_prepared_input_checks_before_dispatch(self) -> None:
+        for name, expected in (
+            ("source", "prepared source or base changed"),
+            ("base", "prepared source or base changed"),
+            ("suite", "prepared task suite changed"),
+            ("profile", "approved suite profile"),
+            ("duplicate", "duplicate prepared task identity"),
+        ):
+            with self.subTest(case=name):
+                driver = self.round_driver(name)
+                manifests = self.prepared_cohorts(driver)
+                manifest = manifests["merge-gate"]
+                if name == "source":
+                    manifest["sourceHead"] = "0" * 40
+                elif name == "base":
+                    manifest["base"] += "/."
+                elif name == "suite":
+                    manifest["tasks"][0]["suite"] = "iterate"
+                elif name == "profile":
+                    manifest["tasks"][0]["profile"] = {}
+                else:
+                    manifest["tasks"][1] = manifest["tasks"][0]
+                self.write_prepared_cohorts(driver, manifests)
+                with mock.patch.object(driver, "run_slot") as dispatch:
+                    with self.assertRaisesRegex(ValueError, expected):
+                        driver.run_all()
+                    dispatch.assert_not_called()
+                self.assertFalse(self.start_marker.exists())
+
     def test_success_failure_and_evidence(self) -> None:
         driver = self.driver()
         result = driver.run_slot(self.task())

@@ -5,12 +5,12 @@ import { basename, dirname, isAbsolute, join, normalize, parse, relative, sep } 
 import { fileURLToPath } from 'node:url';
 
 const PINS = Object.freeze({
-  binary: 'sha256:4d210f7c5a18fd0386434df23b5bdbb8c0e7257d3e8a2b30b0769c8bbe99a878',
-  companion: 'sha256:9a4f2a846c9f509ca2a9f68ace6f0df2f73c7ed21835e8b186ee52bfccdfa8f3',
-  binaryArchive: 'sha256:51de50a39ea592b5b0a64ae0474548c282181cb6b96d9bd08965a682ae12774c',
-  companionArchive: 'sha256:d1a3254374b733fff1fa31cbeb20f65e3ef871e3431c196353dea189df15d4c5',
+  binary: 'sha256:8813367285524ac798dd96d1b071aea30d58708c7226fd236cd275cf1cfdee31',
+  companion: 'sha256:79f123a85dbc61e8f5d0f0c050dfc3f4b81a8305d33a32b41e008b7f6e035698',
+  binaryArchive: 'sha256:61c4d9a92521bdb42b0c1d9f87c673f6da628a06de5945cbdd9a0010632f6d10',
+  companionArchive: 'sha256:2e28f49a4767a97586843c92692b96481be74d837199b49038f731cec88e9941',
 });
-const RELEASE = 'https://github.com/openai/codex/releases/tag/rust-v0.159.3';
+const RELEASE = 'https://github.com/openai/codex/releases/tag/rust-v0.163.0';
 const DAY = 24 * 60 * 60 * 1000;
 const POLICY =
   'workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules';
@@ -78,6 +78,7 @@ const EVENTS = new Set([
   'turn.completed',
 ]);
 // Codex 0.159.3 uses shlex 1.3.0 display quoting; render only trusted expected text.
+// Retain this strict matcher; 0.163.0 display compatibility requires fresh native probe evidence.
 function nativeQuote(value) {
   requireCondition(!value.includes('\0'), 'NUL in native display word');
   let remaining = value,
@@ -207,7 +208,7 @@ function profile(mode) {
     harness: 'codex-cli',
     model: policy.model,
     reasoningEffort: policy.effort,
-    reportedVersion: '0.159.3',
+    reportedVersion: '0.163.0',
     toolPolicy: POLICY + policy.suffix,
   };
 }
@@ -513,7 +514,7 @@ export function verifyHostQualification({ bundlePath, launch, now }) {
       binaryReceipt.binary === toolchain.binary.path &&
       binaryReceipt.binarySha256 === PINS.binary.slice(7) &&
       binaryReceipt.archiveSha256 === PINS.binaryArchive.slice(7) &&
-      binaryReceipt.version === 'codex-cli 0.159.3',
+      binaryReceipt.version === 'codex-cli 0.163.0',
     'binary provenance receipt mismatch',
   );
   requireCondition(

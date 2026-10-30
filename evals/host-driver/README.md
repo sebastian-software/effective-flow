@@ -5,9 +5,29 @@ host runner. It is a model-hosting driver, not a suite evaluator: the suite oper
 tasks and owns qualification and sealing; the driver starts each already-qualified slot, records
 local process evidence, and stops the cohort on the first unsafe or invalid result.
 
-The current implementation supports the future external qualified-round protocol. It does not
-ship the full host qualification, and it does not depend on an unmerged verifier. A successful
-fixture run is local process evidence only.
+The fixed local round contains 155 slots: 9 merge-gate, 7 iterate, and 15 next-steps scenarios,
+each with five independent runs (45/35/75). It does not establish native-executor acceptance.
+A successful fixture run is local process evidence only.
+
+## Pinned toolchain and fresh qualification
+
+The [host verifier](../_scaffold/host-qualification.mjs) pins Codex CLI `0.163.0` from the official
+[`rust-v0.163.0` release](https://github.com/openai/codex/releases/tag/rust-v0.163.0), including
+both archives and their executable members:
+
+| Release asset                                      | Executable member                           | Verifier SHA-256 keys           |
+| -------------------------------------------------- | ------------------------------------------- | ------------------------------- |
+| `codex-aarch64-apple-darwin.tar.gz`                | `codex-aarch64-apple-darwin`                | `binaryArchive`, `binary`       |
+| `codex-code-mode-host-aarch64-apple-darwin.tar.gz` | `codex-code-mode-host-aarch64-apple-darwin` | `companionArchive`, `companion` |
+
+The four source-owned hashes bind static release provenance only. They do not supply a reviewed
+operator pin, current model evidence, or a qualified native host. Before every launch, follow the
+[coordinator contract](../merge-gate/README.md#2-launch-fresh-sessions-at-the-host-boundary):
+all four actual probe modes (normal merge-gate, negative nesting, iterate, and next-steps) must
+remain younger than 24 hours, with the exact argv, environment, source/root isolation, permissions,
+write denials, and operator integrity preserved. Fixtures and archive hashes cannot replace them.
+Actual `0.163.0` native command-display compatibility remains unproven until fresh runtime evidence
+satisfies the retained strict matcher; an unknown display is refused.
 
 ## Inputs and layout
 
@@ -37,7 +57,7 @@ source, output root, and task attempt roots must remain disjoint. The caller mus
 output root before copying the config and receiving prepared manifests; the driver creates only
 the `outputRoot/cohorts` directory and never reuses an old output root. Prepared manifests belong
 under it as `prepared-merge-gate.json`,
-`prepared-iterate.json`, and `prepared-next-steps.json`, with exactly 40, 35, and 75 tasks. Each
+`prepared-iterate.json`, and `prepared-next-steps.json`, with exactly 45, 35, and 75 tasks. Each
 task must carry the approved suite profile, a fresh attempt root, a rendered prompt and matching
 metadata digest, and the same frozen source identity.
 

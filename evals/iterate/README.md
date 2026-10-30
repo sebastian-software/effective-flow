@@ -253,7 +253,7 @@ the exact next launch, then immediately spawn that same verified launch and audi
 digests externally. Set HOME/CODEX_HOME/PWD from its fields and send its stdin file bytes unchanged.
 A refusal stops the spawn; qualification changes neither the host receipt nor measured prompts.
 Use physical `attemptRoot/project`, fresh isolated homes outside the writable root, and absent
-last-message output. The new instrument identity owes all 150 fresh recordings across the three
+last-message output. The new instrument identity owes all 155 fresh recordings across the three
 suites; deterministic fixtures and old attempts cannot replace them.
 
 Launch each slot as a fresh, non-forked session rooted in its `project/`, with only its

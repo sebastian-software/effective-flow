@@ -20,6 +20,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import * as production from '../evals/_scaffold/host-qualification.mjs';
+import mergeGateSuite from '../evals/merge-gate/suite.config.mjs';
+import iterateSuite from '../evals/iterate/suite.config.mjs';
+import nextStepsSuite from '../evals/next-steps/suite.config.mjs';
 
 const SOURCE_PATH = fileURLToPath(
   new URL('../evals/_scaffold/host-qualification.mjs', import.meta.url),
@@ -27,12 +30,12 @@ const SOURCE_PATH = fileURLToPath(
 const SOURCE = readFileSync(SOURCE_PATH, 'utf8');
 const DAY = 86_400_000;
 const NOW = Date.parse('2026-10-23T10:00:00.000Z');
-const RELEASE = 'https://github.com/openai/codex/releases/tag/rust-v0.159.3';
+const RELEASE = 'https://github.com/openai/codex/releases/tag/rust-v0.163.0';
 const PINS = {
-  binary: 'sha256:4d210f7c5a18fd0386434df23b5bdbb8c0e7257d3e8a2b30b0769c8bbe99a878',
-  companion: 'sha256:9a4f2a846c9f509ca2a9f68ace6f0df2f73c7ed21835e8b186ee52bfccdfa8f3',
-  binaryArchive: 'sha256:51de50a39ea592b5b0a64ae0474548c282181cb6b96d9bd08965a682ae12774c',
-  companionArchive: 'sha256:d1a3254374b733fff1fa31cbeb20f65e3ef871e3431c196353dea189df15d4c5',
+  binary: 'sha256:8813367285524ac798dd96d1b071aea30d58708c7226fd236cd275cf1cfdee31',
+  companion: 'sha256:79f123a85dbc61e8f5d0f0c050dfc3f4b81a8305d33a32b41e008b7f6e035698',
+  binaryArchive: 'sha256:61c4d9a92521bdb42b0c1d9f87c673f6da628a06de5945cbdd9a0010632f6d10',
+  companionArchive: 'sha256:2e28f49a4767a97586843c92692b96481be74d837199b49038f731cec88e9941',
 };
 const MODES = ['merge-gate-normal', 'merge-gate-negative-nesting', 'iterate', 'next-steps'];
 const POLICY =
@@ -93,7 +96,7 @@ function profile(mode) {
     harness: 'codex-cli',
     model: mode === 'next-steps' ? 'gpt-6.1-sol' : 'gpt-6-sol',
     reasoningEffort: mode === 'next-steps' ? 'high' : 'medium',
-    reportedVersion: '0.159.3',
+    reportedVersion: '0.163.0',
     toolPolicy:
       POLICY +
       (mode.startsWith('merge-gate')
@@ -223,7 +226,7 @@ async function fixture(
     binary: toolchain.binary.path,
     binarySha256: toolchain.binary.sha256.slice(7),
     archiveSha256: toolchain.binaryArchive.sha256.slice(7),
-    version: 'codex-cli 0.159.3',
+    version: 'codex-cli 0.163.0',
   });
   toolchain.companionReceipt = writeJson(join(root, 'companion-receipt.json'), {
     source: RELEASE,
@@ -232,7 +235,7 @@ async function fixture(
     archive: toolchain.companionArchive.path,
     archiveSha256: toolchain.companionArchive.sha256.slice(7),
   });
-  // The root-approved seam substitutes exactly four immutable pin literals in a private copy.
+  // Fixture-only seam: substitute exactly four immutable pin literals in a private copy.
   // No validator logic, exports, API or provenance validation is changed.
   let copiedSource = SOURCE;
   let replacements = 0;
@@ -306,6 +309,7 @@ async function fixture(
     ...launchAt(join(root, 'measured'), mode, toolchain.binary.path, true),
   };
   const f = {
+    fixtureOnly: true,
     root,
     modulePath,
     copiedSource,
@@ -350,6 +354,23 @@ function refusal(name, mutate, expected = /host qualification refused|ENOENT|ENO
 }
 
 for (const mode of MODES)
+  test(`verified ${mode} profile matches every field required by its suite`, async (t) => {
+    const f = await fixture(t, mode);
+    const suite = mode.startsWith('merge-gate')
+      ? mergeGateSuite
+      : mode === 'iterate'
+        ? iterateSuite
+        : nextStepsSuite;
+    const result = f.verify();
+    assert.deepEqual(
+      Object.fromEntries(
+        Object.keys(suite.expectedProfile).map((key) => [key, result.profile[key]]),
+      ),
+      suite.expectedProfile,
+    );
+  });
+
+for (const mode of MODES)
   test(`deterministic four-mode bundle qualifies ${mode} with exact digests and inside-root measured stdin`, async (t) => {
     const f = await fixture(t, mode);
     const result = f.verify();
@@ -371,6 +392,7 @@ for (const mode of MODES)
 
 test('production exposes only the approved API and refuses the fictional runtime without substituted production pins', async (t) => {
   const f = await fixture(t);
+  assert.equal(f.fixtureOnly, true);
   assert.deepEqual(Object.keys(production), ['verifyHostQualification']);
   assert.throws(
     () =>
@@ -576,7 +598,33 @@ for (const now of [NaN, Infinity, NOW + 0.5, '2026-10-23', undefined])
 refusal('duplicate mode', (f) => {
   f.bundle.probes[1] = f.bundle.probes[0];
 });
-refusal('missing mode', (f) => f.bundle.probes.pop());
+for (const mode of MODES) {
+  refusal(`missing mandatory ${mode} probe`, (f) => {
+    f.bundle.probes = f.bundle.probes.filter((probe) => probe.mode !== mode);
+  });
+  refusal(
+    `exact 24-hour expiry of mandatory ${mode} probe`,
+    (f) => {
+      const index = f.bundle.probes.findIndex((probe) => probe.mode === mode);
+      f.record(
+        'launch',
+        (r) => {
+          r.startedAt = iso(NOW - DAY - 1);
+        },
+        index,
+      );
+      f.record(
+        'outcome',
+        (r) => {
+          r.startedAt = iso(NOW - DAY - 1);
+          r.finishedAt = iso(NOW - DAY);
+        },
+        index,
+      );
+    },
+    /stale, future or unordered probe times/,
+  );
+}
 refusal('extra mode', (f) => f.bundle.probes.push(f.bundle.probes[0]));
 refusal('unknown mode', (f) => {
   f.bundle.probes[0].mode = 'other';
@@ -678,15 +726,19 @@ for (const key of [
   refusal(`changed probe ${key} bytes after reference was recorded`, (f) =>
     writeFileSync(f.bundle.probes[0][key].path, 'changed'),
   );
-refusal('rehashed but unpinned binary', (f) => {
-  f.bundle.toolchain.binary = write(f.bundle.toolchain.binary.path, 'changed');
-});
+for (const key of Object.keys(PINS))
+  refusal(`rehashed but unpinned ${key}`, (f) => {
+    f.bundle.toolchain[key] = write(f.bundle.toolchain[key].path, 'changed');
+  });
 for (const [which, key, value] of [
   ['binaryReceipt', 'release', 'https://example.org/release'],
+  ['binaryReceipt', 'release', 'https://github.com/openai/codex/releases/tag/rust-v0.159.3'],
   ['binaryReceipt', 'binary', '/other'],
-  ['binaryReceipt', 'version', 'codex-cli 0.159.4'],
+  ['binaryReceipt', 'version', 'codex-cli 0.163.1'],
+  ['binaryReceipt', 'version', 'codex-cli 0.159.3'],
   ['binaryReceipt', 'archiveSha256', '0'.repeat(64)],
   ['companionReceipt', 'source', 'https://example.org/release'],
+  ['companionReceipt', 'source', 'https://github.com/openai/codex/releases/tag/rust-v0.159.3'],
   ['companionReceipt', 'executable', '/other'],
   ['companionReceipt', 'archive', '/other'],
   ['companionReceipt', 'executableSha256', '0'.repeat(64)],
@@ -718,7 +770,8 @@ for (const [key, value] of [
   ['harness', 'shell'],
   ['model', 'gpt-6.1-sol'],
   ['reasoningEffort', 'high'],
-  ['reportedVersion', '0.159.4'],
+  ['reportedVersion', '0.163.1'],
+  ['reportedVersion', '0.159.3'],
   ['toolPolicy', POLICY + ';extra'],
 ])
   refusal(`measured profile ${key} drift`, (f) => {
@@ -728,6 +781,14 @@ refusal('probe profile drift', (f) =>
   f.record('launch', (r) => {
     r.profile.model = 'gpt-6.1-sol';
   }),
+);
+refusal(
+  'retained probe using obsolete 0.159.3 profile',
+  (f) =>
+    f.record('launch', (r) => {
+      r.profile.reportedVersion = '0.159.3';
+    }),
+  /profile mismatch/,
 );
 refusal('unknown suite', (f) => {
   f.launch.suite = 'other';

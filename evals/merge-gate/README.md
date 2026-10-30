@@ -236,7 +236,7 @@ root → A → B → C (depth 3); every spawn returned its real output and the t
 cap set to `2`, root → A was allowed, then A's attempt to spawn B failed with the actual error
 `collab spawn failed: agent thread limit reached`; no B rollout was produced. This qualifies the
 recording host for the two nesting settings above. It does not re-test `--ephemeral` or
-`agents.max_depth`.
+`agents.max_depth`, or replace the four fresh command probes required before each launch below.
 
 **Historical probe (Codex CLI 0.159.3).** The earlier probe, retained for its historical evidence,
 found:
