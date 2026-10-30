@@ -1,54 +1,50 @@
 ## Base-branch resolution
 
-`delivery.baseBranch` has exactly one resolution rule, and this is it; every later step refers
-back to the results recorded here instead of restating the rule or re-deriving anything from the
-configured value. Absent, the key takes `origin/` prefixed to the branch
-`git symbolic-ref refs/remotes/origin/HEAD` names, else `origin/main`; the derived value is a
-remote ref like any other and is classified below as one. An explicit value is used as written. The value is a
-remote ref only when the part before its first `/` is a remote that `git remote` lists for this
-repository; local branch names carry slashes too, so `feature/foo` is that branch unless `feature`
-is a configured remote. A value with no `/` at all (`main`, `develop`, whatever `setup` proposes
-where no `origin` exists) has no such leading part and is therefore never a remote ref.
+`delivery.baseBranch` has exactly one resolution rule, and this is it; every later step uses the
+results recorded here instead of restating the rule or re-deriving anything from the configured
+value. The helper executes the rule: run
+`node <skill-root>/scripts/effective-flow-mechanics.mjs <operation>` with exactly one JSON object on
+standard input, `cwd` the verified absolute repository root. **Fail closed:** a nonzero exit, an
+envelope that does not parse, or `ok: false` stops the run, naming the error code; never replay the
+rule by hand.
 
-- Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
-  branch starts from the current remote state. If the fetch or the resolution fails (offline,
-  credentials, deleted branch), report and stop — never fall back here: a stale local branch
-  can be far behind and would start delivery from the wrong commit. After a successful
-  resolution, and only where REMOTE is `origin`, read `origin/HEAD`: where it resolves and names
-  another branch, name both facts once, neither as authoritative — the clone-time cache may be the
-  stale side — and offer `git remote set-head origin -a`. This adds no gate: the configured value
-  wins. A `origin/HEAD` that does not resolve is not an error and reports nothing; a base on a
-  differently named remote is not compared against origin's at all. Stay silent where the project
-  setup ADR carries, in prose outside its configuration table, a sentence calling the divergence
-  between `delivery.baseBranch` and the repository default deliberate and permanent.
-- Remote not configured: no such ref can exist in this repository. Resolve the value as a
-  local ref instead: as it stands first, and only if that fails the local branch part after
-  the first `/` (`main` for `origin/main`); report that substitution once.
-- Neither the remote ref nor any local candidate for the value resolves: abort, naming both
-  facts. Never invent or create a base branch.
+1. Run `base-branch-resolve` with `cwd` and `configured`: the configured value as written, or
+   `null` when the key is absent, from which the helper derives `origin/` plus the branch
+   `origin/HEAD` names, else `origin/main`. By `data.outcome`:
+   - `fetch-required`: the part before the value's first `/` is a remote that `git remote` lists
+     (the remote-configured arm); continue with step 2.
+   - `resolved`: the value resolved as a local ref as it stands (the remote-not-configured arm).
+   - `resolved-substituted`: the same arm, where only the local branch part after the first `/`
+     resolved (`main` for `origin/main`); report that substitution once.
+   - `unresolvable`: neither the remote ref nor any local candidate resolves; abort, naming the
+     value. Never invent or create a base branch.
+2. Remote-configured arm only: run `base-branch-fetch` with `cwd`, `remote` and `branch` from step
+   1, and `deliberateDivergence`: `true` only where the project setup ADR carries, in prose outside
+   its configuration table, a sentence calling the divergence between `delivery.baseBranch` and the
+   repository default deliberate and permanent, otherwise `false`. By `data.outcome`:
+   - `resolved`: delivery starts from the current remote state. A non-`null` `data.divergence`
+     means `origin/HEAD` names another branch, `data.divergence.originHead`: name both facts once,
+     neither as authoritative — the clone-time cache may be the stale side — and offer
+     `git remote set-head origin -a`. This adds no gate: the configured value wins.
+   - `fetch-failed` (with `data.error`), `tracking-stale` or `unresolvable`: report and stop. Never
+     fall back to a local branch here: a stale one would start delivery from the wrong commit.
+   - `fetch-denied`: the sandbox refused the network or a `.git` write. Where the harness can rerun
+     a command with escalated sandbox permissions (Codex), rerun this call once that way; otherwise,
+     or when it is refused again, stop as for `fetch-failed`.
 
 ### Recorded results
 
 The arm that ran records two named results. They are the only base-branch values later steps use,
 and no step recomputes either one from the configured value.
 
-- **Resolved base ref** — what a delivery branch is created from, and what a commit range is
-  computed against.
-- **Resolved local base branch** — the local branch every merge target, switch-back target and
-  pull-request target uses.
+- **Resolved base ref** (`data.baseRef`) — what a delivery branch is created from, and what a
+  commit range is computed against.
+- **Resolved local base branch** (`data.localBranch`) — the local branch every merge target,
+  switch-back target and pull-request target uses.
 
-The remote-configured arm records the fetched remote-tracking ref as the resolved base ref, and
-the branch name after the remote name as the resolved local base branch. The
-remote-not-configured arm records the candidate that actually resolved as **both** results: the
-value as it stands, or — only where the last-resort substitution above fired and was reported —
-the substituted local candidate. The aborting arm records nothing, and no consuming step runs.
-
-The pair therefore identifies its own arm, and a consuming step reads that arm off the two
-results rather than off which arm it watched run. This matters exactly where nothing ran: a
-delegated run handed both results resolved nothing itself and has no arm to remember. The
-remote-configured arm's two results always **differ**, because its resolved base ref carries the
-remote name in front of the branch while its resolved local base branch is that branch name
-alone. The remote-not-configured arm's two results are always **equal**, because it records one
-candidate as both — the value as it stands, or the substituted one. So equal results are the
-remote-not-configured arm and differing results are the remote-configured one. There is no third
-reading, and therefore no arm name any caller has to pass alongside the pair.
+The pair identifies its own arm, so a consuming step reads the arm off the two results, never off
+which arm it watched run (a delegated run handed both ran none). The remote-configured arm's results
+always **differ**, because its resolved base ref carries the remote name in front of the branch; the
+remote-not-configured arm's are always **equal**, because it records one candidate as both. So equal
+results are the remote-not-configured arm, and there is no arm name any caller passes alongside the
+pair. The aborting arm records nothing, and no consuming step runs.

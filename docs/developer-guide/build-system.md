@@ -454,12 +454,15 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Eleven subsystems and 31 runtime scripts carry this today: the pairs
+  misread as one. Fourteen subsystems and 38 runtime scripts carry this today: the pairs
   `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
   `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
-  `diff-baseline.mjs`/`diff-baseline-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
-  `plan-publication.mjs`/`plan-publication-core.mjs` and
+  `diff-baseline.mjs`/`diff-baseline-core.mjs`,
+  `effective-flow-mechanics.mjs`/`effective-flow-mechanics-core.mjs`,
+  `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
+  `plan-publication.mjs`/`plan-publication-core.mjs`,
+  `effective-flow-state.mjs`/`effective-flow-state-core.mjs` and
   `setup-status.mjs`/`setup-status-core.mjs`; the
   Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
@@ -468,8 +471,9 @@ The build aborts with an error message if any of these guards is violated:
   `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
   processed-thread ledger); and the pilot measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
   `pilot-measurement-protocol.mjs`. The shared `process-runner.mjs`, the remote tracker's
-  `createProcessRunner`, belongs to no subsystem and carries the same guard. That only CLI entries
-  (`remote-tracker.mjs`, `plan-publication.mjs`) import it and inject the runner into their cores is
+  `createProcessRunner`, and `runtime-state-guard.mjs`, the runtime-state guard and write
+  primitives, belong to no subsystem and carry the same guard. That only CLI entries
+  (such as `remote-tracker.mjs`, `plan-publication.mjs` and `effective-flow-mechanics.mjs`) import it and inject the runner into their cores is
   no build guard: the unit test "no core imports the shared process runner" in
   `test/plan-publication.test.mjs` enforces it. The remote-tracker's runtime prompts are
   additionally scanned with the unit-tested `findRemoteTrackerRecipeViolations` detector so direct `gh`/`tea` recipes, manual origin
@@ -757,10 +761,10 @@ The owning contract also requires bounded complete history reachable from the ex
 snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
 identity through completion; changed history or closure requires a fresh attempt.
 
-Eleven dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 31 files: nine two-file subsystems, the remote tracker's seven-file family,
+Fourteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 38 files: twelve two-file subsystems, the remote tracker's seven-file family,
 the pilot measurement three-file family, the two protected-validation helper modules, and the shared
-`process-runner.mjs`. Each entry
+`process-runner.mjs` and `runtime-state-guard.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
@@ -989,6 +993,85 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
   returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
   transport helpers, forge CLI calls).
+- **Mechanics.** Invoke it as `node <skill-root>/scripts/effective-flow-mechanics.mjs <operation>`
+  with one closed-schema JSON object on standard input (at most 64 KiB); the operation is always
+  the only argument, so each operation is its own command prefix. The operations are
+  `base-branch-resolve`, `base-branch-fetch`, `name-allocate`, `delivery-branch-name`,
+  `adr-observe`, `adr-allocate` and `plan-reference-resolve`. All of them compute or read, except
+  `base-branch-fetch`, which updates remote-tracking refs through a hardened `git fetch` (hooks
+  disabled, `--no-tags`, non-interactive environment, 60 s bound on the whole process group) and
+  is therefore separately allowlistable. It emits one `{ok, operation, data}` envelope whose
+  `data.outcome` names the result, so prose branches on the outcome instead of parsing text, or
+  `{ok: false, operation, error: {code, message, details}}` with a `CODE: message` line on standard
+  error. Exit 2 is `INVALID_INPUT`, exit 3 `UNSAFE_PATH`, and exit 1 `COMMAND_FAILED` or
+  `INTERNAL`; `SIGINT` and `SIGTERM` stop any fetch in flight, write one `INTERRUPTED` envelope and
+  exit 130 or 143. The outcomes per operation:
+  - `base-branch-resolve`: `resolved`, `resolved-substituted`, `fetch-required` or `unresolvable`;
+    with a remote configured it never resolves a local ref.
+  - `base-branch-fetch`: `resolved`, `fetch-failed`, `fetch-denied`, `tracking-stale` or
+    `unresolvable`; no outcome falls back to a local branch.
+  - `name-allocate`: `allocated` or `archive-unusable`, for the families `plan`, `concept`,
+    `unattended-plan`, `review-report-plan`, `review-report-workflow`, `review-report-security`,
+    `review-report-local` and `investigation`. Plans and concepts take `-2`, `-3`, … on a same-day
+    collision, reports and investigations `-1`, `-2`, …; a name in `<plan.dir>/archive/` counts as
+    taken for the plan families. It computes the name only and creates nothing.
+  - `delivery-branch-name`: `named` or `prefix-discloses`; it slugifies, strips disclosure matches
+    in hidden mode, and suffixes from `-2` against local branches, remote-tracking refs and the
+    caller's `excludeNames`.
+  - `adr-observe`: `numbered`, `numberless`, `inconclusive`, `none` or `outside-repo-stop`.
+  - `adr-allocate`: `allocated`, `reallocated`, `collision-stop`, `symlink-stop`,
+    `outside-repo-stop` or `unrecognized`, for new ADRs only.
+  - `plan-reference-resolve`: `resolved` (with location, status and an `exact` flag), `ambiguous`,
+    `not-found` or `outside-plan-dir` (a path reference outside `<plan.dir>/` and its archive), by
+    exact match only; unsafe plan-directory or plan-file state is `UNSAFE_PATH`, while an unusable
+    archive answers an archive reference in name or path form with `not-found` and
+    `archiveIgnored: true`.
+
+  The owning fragments (`base-branch-resolution`, `worktree-integration`, `plan-numbering`,
+  `concept-contract`, `unresolved-review-report`, `security-disclosure-gate`, `project-adr-convention`,
+  `plan-reference-routing` and their restating tools) keep the judgment and the outcome handling,
+  and fail closed: a nonzero exit, an unparseable envelope or `ok: false` stops the run, and no
+  host replays the rule by hand. The core imports only the leaf cores that own the rules —
+  `plan-lint-core.mjs`, `delivery-selection-core.mjs` and `remote-tracker-shared-core.mjs` — and
+  spawns nothing; the CLI injects `process-runner.mjs`. The rationale and the import rule that binds
+  later helpers: [Mechanics helpers import owning cores](../adr/mechanics-helpers-import-owning-cores.md).
+  The `merge-gate`, `iterate` and `next-steps` eval suites seed the pair, its three imported cores
+  and `process-runner.mjs`, because their runs execute it and no load pointer names it.
+
+- **Effective-flow-state.** Invoke it as `node <skill-root>/scripts/effective-flow-state.mjs lock
+<operation>` with one JSON object of at most 64 KiB on standard input, passed through a
+  here-string. It replaces the prose that acquired, released and broke three `mkdir` locks below
+  `<RUNTIME_STATE_ROOT>/.effective-flow/`. The operation is exactly two argv tokens and any other
+  argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
+  argument. `lock acquire`, `lock release` and `lock inspect` are non-destructive or read-only;
+  `lock break` is destructive and never allowlisted, and the orchestrator calls it only after the
+  user confirmed the break in the conversation. The lock is named by a closed enum, `memory`,
+  `iterate-commit` or `apply-review-commit`, mapped to a fixed path; no caller supplies a path.
+  The on-disk protocol is unchanged: a `mkdir` lock directory with `owner.json` (`memory`) or
+  `owner` (the commit locks) written exclusively inside it, now JSON with a helper-generated
+  token, timestamp, host and `pid: null`. An owner the helper cannot parse under its schema,
+  prose-written ones included, is foreign: it blocks `lock acquire`, `lock release` refuses it,
+  and only `lock break` against the observed directory identity and owner digest (`ownerSize`
+  for an `oversized` owner above 16 MiB) removes it. Release and break rename the lock to a
+  unique tombstone sibling, verify it against the last observation and only then delete it with
+  raw calls. A leftover tombstone never blocks `lock acquire` but may hold an unverified
+  directory; `lock inspect` lists it under `tombstones`, and it is removed by hand only after
+  checking that its contents are no live lock's. Acquire, release and break serialize every
+  mutation of a lock path through its `<lock>.guard` `mkdir` sibling, held from the final identity
+  check through the last path mutation that relies on it; a guard still held after 10 seconds is
+  `RUNTIME_STATE_UNSAFE` and is never broken by age.
+  `waitSeconds` is an integer from 0 to 30 (default 30), and `runId` is required for the commit
+  locks. Expected lock states are outcomes with exit 4 (`LOCK_HELD`, `NOT_OWNER`, `NOT_HELD`,
+  `BREAK_MISMATCH`); invalid input (`INVALID_INPUT`, `INVALID_ROOT`) exits 2, an unsafe runtime
+  state (`UNSAFE_TARGET`, `RUNTIME_STATE_UNSAFE`, `WRITE_FAILED`) exits 3, and `GIT_FAILED` or
+  `INTERNAL_ERROR` exits 1. Every mutation passes `runtime-state-guard.mjs`, which belongs to no
+  CLI pair like `process-runner.mjs`: it proves `cwd` is the main checkout's toplevel, keeps the
+  target below a symlink-free `.effective-flow/`, requires `git ls-files -- .effective-flow/` to
+  list nothing and `git check-ignore --no-index` to report the config file and the target as
+  ignored, and exports the guarded write primitives, `resolveRuntimeRoot`, the `git` wrapper with
+  `gitBaseEnv` and `RuntimeStateError`. `diff-baseline-core.mjs` imports it too, and the CLI
+  injects the shared runner into the core. Unit tests cover the guard and core, and a Git test
+  covers the root and ignore predicates.
 
 - **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
   closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
@@ -1009,9 +1092,11 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 29 identical, usable scripts,
+checks prove that all three installed payloads contain all 38 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
-`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, and that
+`plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, that
+`effective-flow-mechanics` allocates a suffixed report name and resolves a plan by slug in every
+target (`assertMechanicsSmoke`), and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target
 (`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`), and that `setup-status status`
 reads its generated projection in every target with the release lookup stubbed offline
@@ -1059,7 +1144,7 @@ and directive syntax").
   `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
   its core keeps every record write and transition and makes reading the fragment mandatory before
   such a worktree is created.
-- **Planned-build execution has one explicit boundary.** The current built `build` caller reports 208
+- **Planned-build execution has one explicit boundary.** The current built `build` caller reports 209
   split-newline lines against a 214-line budget. Its intent/source classification, canonical status,
   clarification, configuration/retired-key preflight and approval basis stay eager. Only after those
   guards pass does it read `build-run-contract` and select one fresh `deep` built-in runner or the

@@ -373,7 +373,6 @@ repeat. An incident the run survives leaves the status to the comparison.
      - if no matching report exists, write the findings into at most one new file under `.effective-flow/review/` per "Open review-finding reports"
      - if no findings with those canonical English or German open/unimplemented statuses remain,
        do not create a report
-     - if a plan file exists, use the file name `review-report-YYYY-MM-DD-plan-<slug>.md`
      - name any generated report path in the completion summary
    - if this refactoring implemented a finding from an existing review-report file in `.effective-flow/review/`:
      - add a short implementation note as the last entry directly in the affected finding

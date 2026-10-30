@@ -13,19 +13,26 @@ are canonical in the shipped `src/shared/plan-*.md` fragments (archival:
 New plan files no longer carry a running number prefix. The file name is
 `<plan.dir>/YYYY-MM-DD-<slug>.md`:
 
-- `YYYY-MM-DD` is the creation date (ISO, e.g. via `date +%F`).
+- `YYYY-MM-DD` is the creation date, the local calendar date (what `date +%F` prints).
 - `<slug>` is a kebab-case slug from the final title (only `a`–`z`, `0`–`9`, hyphen).
 - The H1 in the document is the title without a number: `# <Title>`.
+
+The source of truth for the name is the shipped mechanics helper, not this description: hosts call
+`effective-flow-mechanics.mjs name-allocate` with family `plan`, or `unattended-plan` for
+unattended planning, and write to the returned path. The helper owns the date, the slug
+transliteration and the collision suffix, and its fixtures pin them
+([build system: Runtime scripts](build-system.md#runtime-scripts)).
 
 There is **no pre-reservation, no stub, and no number**: the file is created directly under its
 final name as soon as the plan is actually written – unlike the earlier four-digit `NNNN`
 scheme, which required a number reservation up front. A name collision on the same day is
-resolved by a numeric suffix (`YYYY-MM-DD-<slug>-2.md`, `-3`, …); silent overwriting does not
+resolved by a numeric suffix starting at `-2` (`YYYY-MM-DD-<slug>-2.md`, `-3`, …); a name that
+already exists in `<plan.dir>/archive/` counts as taken as well. Silent overwriting does not
 happen.
 
 Unattended planning from one issue uses `YYYY-MM-DD-issue-<N>-<slug>.md`, retaining the date
-prefix and the same collision suffix rule. It always creates a new plan; it does not revise an
-existing plan or reserve a file in advance.
+prefix and the same collision suffix rule (`-2`, `-3`, …). It always creates a new plan; it does
+not revise an existing plan or reserve a file in advance.
 
 ### Migration of old plans (`NNNN` → date)
 
@@ -44,7 +51,8 @@ write boundary. Their result reports `legacy plans present` when applicable.
 
 The resolution of a legacy number happens primarily via the H1 `# NNNN: …`, not via the file
 name segment, since a new, number-like title slug would otherwise not be unambiguously
-distinguishable from the migrated old format.
+distinguishable from the migrated old format. The helper's `plan-reference-resolve` operation
+implements this resolution, together with path, file-name and exact title-slug references.
 
 ## One language per plan (German/English)
 

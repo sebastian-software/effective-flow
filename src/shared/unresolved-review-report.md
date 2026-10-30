@@ -55,13 +55,13 @@ absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required b
 “Shared memory-state mutation” contract. A blocked target remains unchanged.
 
 1. Create `<RUNTIME_STATE_ROOT>/.effective-flow/review/` if needed.
-2. If the workflow has a plan file as its basis, prefer:
-   - `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>.md`
-   - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-plan-<slug>-1.md`, `-2`, ...
-3. If no plan file exists as a basis, use:
-   - `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW.md`
-   - on collision: `.effective-flow/review/review-report-YYYY-MM-DD-WORKFLOW-1.md`, `-2`, ...
-4. Always write the origin at the top of the report using the complete report language:
+2. Allocate the name with `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`
+   and one JSON object on standard input: `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir`
+   `.effective-flow/review`, `family` `review-report-plan` with `planSlug` the basis plan file's
+   stem after its date (or after the legacy `NNNN-` of an unmigrated name) when that is a valid
+   slug, else `review-report-workflow` with `workflow` this workflow. Write to `data.path`. **Fail closed:** a nonzero exit, an unparsable envelope or
+   `ok: false` stops the run, naming the error code; never compose the name by hand.
+3. Always write the origin at the top of the report using the complete report language:
    - English: `**Origin plan:**`, `**Source workflow:**`, `**Source review:**`
    - German: `**Ursprungsplan:**`, `**Quell-Workflow:**`, `**Quell-Review:**`
    - Keep paths, skill references, and `None`/`Keiner` display semantics mapped internally.

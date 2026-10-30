@@ -213,7 +213,9 @@ First determine the tracker target via the "apply-source detection" (report file
 
 1. Establish the verified dual-root execution receipt before resolving the source. Load the
    Effective Flow configuration, migrate it if necessary and determine the commit-strategy
-   default, stash policy, worktree defaults and final validation profile.
+   default, stash policy, worktree defaults and final validation profile. Mint `runId` once per
+   run as `apply-review-<at least 16 random hex characters>` from a random source, never derived
+   from a timestamp or the session ID, and record it in the wisdom file.
 2. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle, if present and
    valid. Use only valid `applyReviewAnalysis` entries.
 3. **Capture the stash baseline:** run `git stash list` and remember the full list of already-existing stash references (e.g. `stash@{0}`, `stash@{1}`, ... with their descriptions). Record the baseline in the wisdom file so that Phase 6 (stash cleanup) can later distinguish new stashes created by this workflow from it. If `git stash list` is empty: note "no baseline stashes".
@@ -447,7 +449,7 @@ Example (across actions) with five findings over multiple actions:
    - verified original outcome/primary association, checkpoint, retained attempt reference,
      source owner and the duty to return evidence without writing a competing checkpoint
    - the commit strategy from Phase 2
-   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
+   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle through the absolute helper path `<skill-root>/scripts/effective-flow-state.mjs`, which it receives together with `RUNTIME_STATE_ROOT` and `runId`, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
    - **With commit strategy "Individually with worktrees":** the full git worktree isolation
      and execution-location rule from `tools/apply-review-commit-mechanics.md`. The sub-agent
      first verifies its component receipt, roots every operation there, commits each finding
@@ -601,7 +603,7 @@ options:
    - with `full`: fix and re-check per "Goal-driven completion control"; limit the internal correction rounds and escalate to the user if the checks still fail afterwards, instead of repeating without limit
    - with `changedScope`: repeat only if the affected check is scope-aware or fast enough; otherwise document the result and ask the user on unclear residual errors
 6. If the commit strategy "Individually" was chosen in Phase 2 and fixes were necessary:
-   - use the git commit mutex from `tools/apply-review-commit-mechanics.md` for the entire final staging/commit section.
+   - hold the git commit mutex from `tools/apply-review-commit-mechanics.md` for the entire final staging/commit section, calling the helper directly at orchestrator level with `purpose: "final-validation"`; on `LOCK_HELD` the orchestrator applies the mutex's waiting and orphan rules itself.
    - run `git status --porcelain` before staging and distinguish final validation fixes from already-present user changes.
    - stage exclusively files changed by the final validation fix loop. Do not use blanket commands like `git add .`, `git add -A` or `git commit -a`.
    - check `git diff --cached --name-only` and `git diff --cached`.

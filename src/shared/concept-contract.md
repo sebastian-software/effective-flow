@@ -27,13 +27,16 @@ concepts then live only in `RUNTIME_STATE_ROOT` and are never staged or committe
 
 ### Concept file convention
 
-- File name: `<concept.dir>/YYYY-MM-DD-<slug>.md`. `YYYY-MM-DD` is the creation date (ISO, e.g.
-  from `date +%F`); `<slug>` is a kebab-case slug derived from the concept title (only `a–z`,
-  `0–9`, hyphen).
+- File name: `<concept.dir>/YYYY-MM-DD-<slug>.md`, allocated by the helper: run
+  `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate` with exactly one JSON
+  object on standard input — `cwd` the verified root `concept.dir` resolves against (the checkout
+  root, or `RUNTIME_STATE_ROOT` in hidden mode), `family` `concept`, `dir` the
+  configured `concept.dir`, `text` the concept title — and write to `data.path` of `allocated`; the
+  helper owns the date, slug and same-day collision suffix. **Fail closed:** a nonzero exit, an
+  envelope that does not parse, or `ok: false` (such as `INVALID_INPUT` for a title that yields an
+  empty slug) stops the run, naming the error code; never compose the name by hand.
 - **No reservation, no stub, no number.** The file is written under its final name when the
-  concept is actually written.
-- **Name collision on the same day:** append a numeric suffix (`YYYY-MM-DD-<slug>-2.md`, `-3`, …).
-  Never overwrite silently.
+  concept is actually written. Never overwrite silently.
 - The concept's H1 is the title without a number: `# <Title>`.
 - Resolve a concept reference from a full path, the date-slug file name, or the title slug, and
   search only `<concept.dir>/`. If more than one file matches, ask; never heuristically pick the

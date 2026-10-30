@@ -494,6 +494,10 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
     Record both values, or their absence and the fallback taken, and any approval line in the wisdom
     file and carry them into Phases 1.5, 2.5 and 3.
 
+11. **Run identity.** Mint `runId` once per run as `iterate-<at least 16 random hex characters>`
+    from a random source, never derived from a timestamp or the session ID, and record it in the
+    wisdom file. A run delegated by {{SKILL:merge-gate}} mints its own.
+
 ### Phase 1: Gather context
 
 - **PR mode:** Detect the host and CLI and check availability (see
@@ -732,6 +736,9 @@ options:
    `Run state: non-interactive` as well, never `relayed`. A gated run forwards no `Run state:`
    line: its items may run as sub-agents nobody can answer, so the documentation-sync gate of each
    item run falls to the contract's chain rule exactly as without this run's state.
+   Each delegation also receives, for the commit mutex below, the absolute helper path
+   `<skill-root>/scripts/effective-flow-state.mjs`, `RUNTIME_STATE_ROOT`, `runId`, and its own
+   `delegation` `<runId>/<n>`, numbering this run's item delegations, an inline item included.
    Each delegation receives its analyzed owned paths and reports its actual
    paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
    modifying that path and return it to the orchestrator. Add the path to the item's actual
@@ -757,26 +764,28 @@ for an item run in one critical section.
 
 Mutex convention:
 
-- Retain one absolute lock handle for the repository at
-  `<RUNTIME_STATE_ROOT>/.effective-flow/iterate-commit.lock`. Every item delegation in this
-  `iterate` run uses that same handle, including when the execution checkout is an isolated
-  worktree.
-- Apply "Runtime-state write safety" from `RUNTIME_STATE_ROOT` separately and immediately before
-  every mutation of the exact lock directory or its `owner` file. Guard the repository-relative
-  target `.effective-flow/iterate-commit.lock` before each acquisition attempt; do not create,
-  remove, or modify the lock when a guard blocks.
-- Acquire the lock atomically with `mkdir <absolute-lock-handle>`. Immediately after successful
-  acquisition, write `<absolute-lock-handle>/owner` with the item identity, delegation identity,
-  a unique acquisition token, and timestamp. The successful acquisition and matching owner
-  record together prove ownership.
-- If the lock exists, read its owner for diagnostics, wait, and retry without touching the index.
-  Never infer permission to remove it from age alone. If it appears orphaned, obtain explicit
-  user confirmation before removal, then rerun the runtime-state guards for the exact owner file
-  and lock directory immediately before deleting either.
-- Release the lock on every success, abort, and error path, but only after rereading the owner
-  file and verifying that its complete identity and acquisition token match the current item.
-  If ownership cannot be verified, do not remove or alter the lock; fail closed and report the
-  mismatch.
+- The mutex is the helper's `iterate-commit` lock, one per repository below `RUNTIME_STATE_ROOT`
+  and shared by every item delegation of every run, also from an isolated worktree. Each step is
+  one call in this here-string shape, never a heredoc, through the absolute helper path handed over
+  in Phase 3, with `cwd` set to `RUNTIME_STATE_ROOT`; the helper applies the runtime-state guard
+  itself:
+
+  ```text
+  node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"iterate-commit","owner":{"workflow":"iterate","runId":"<runId>","item":"<item>","delegation":"<runId>/<n>"}}'
+  ```
+
+  `item` is the caller-supplied identifier when it matches `^[A-Za-z0-9._:/@=+-]{1,128}$`, else
+  the thread ID when that matches, else `item-<n>`. Retain `result.owner.token`. Exit 4 is an
+  outcome handled below; any other nonzero exit or `error` envelope returns `ABORT` for the item
+  without touching the index.
+
+```include
+commit-lock-contract
+```
+
+- **Release** on every success, abort, and error path with `lock release`
+  (`{cwd, lock, token}`). `NOT_HELD` or `NOT_OWNER` is reported as lost ownership, changes
+  nothing, and fails the item closed.
 
 Before acquiring the mutex, finish the item's configured pre-commit checks. Then, while holding
 the lock for the entire sequence:
@@ -799,7 +808,7 @@ the lock for the entire sequence:
 
 If a check fails before the commit, unstage only paths whose staging is provably attributable to
 this item in the current lock acquisition, verify the resulting cached state, release the lock
-only after owner verification, and return `ABORT`. Never unstage or otherwise clean foreign
+through the helper, and return `ABORT`. Never unstage or otherwise clean foreign
 changes. If immediate post-commit confirmation fails, do not amend, reset, rebase, or otherwise
 rewrite history: record the discrepancy, release the verified-owned lock, mark the item failed,
 and stop delivery for reconciliation.

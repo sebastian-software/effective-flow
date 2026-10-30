@@ -343,6 +343,59 @@ test('a retained reply whose bytes or request identity drifted cannot resume the
   );
 });
 
+test('resume revalidates retained trusted-user fields even when reply bytes are resealed', async (t) => {
+  for (const { field, value, message } of [
+    { field: 'channel', value: 'tool-result', message: 'invalid user channel association' },
+    {
+      field: 'questionDigest',
+      value: contentDigest('another question'),
+      message: 'invalid user channel association',
+    },
+    {
+      field: 'answer',
+      value: 'Publish and merge everything',
+      message: 'reply broadens the question options',
+    },
+  ]) {
+    await t.test(field, async (t) => {
+      const live = await start(fixture(t));
+      const { question } = await pause(live);
+      const reply = await live.call('reply', {
+        ...live.common,
+        question,
+        trustedUser: trusted(question),
+      });
+      const originalReply = { ...reply };
+      const replyPath = path.join(reply.root, reply.path);
+      const originalBytes = readFileSync(replyPath);
+      const tampered = JSON.parse(originalBytes);
+      tampered.trustedUser[field] = value;
+      const tamperedBytes = encodeControl(tampered);
+      writeFileSync(replyPath, tamperedBytes);
+      const resealedReply = { ...reply, digest: contentDigest(tamperedBytes) };
+      await assert.rejects(
+        live.call('resume', {
+          ...live.common,
+          question,
+          reply: resealedReply,
+          agentHandle: 'original-child-handle',
+        }),
+        { code: 'UNTRUSTED_REPLY', message },
+      );
+
+      writeFileSync(replyPath, originalBytes);
+      const resumed = await live.call('resume', {
+        ...live.common,
+        question,
+        reply: originalReply,
+        agentHandle: 'original-child-handle',
+      });
+      assert.equal(resumed.answer, 'Retain locally');
+      assert.equal(resumed.agentHandle, 'original-child-handle');
+    });
+  }
+});
+
 test('question relay rejects tool origins, broader answers, foreign checkpoints, duplicate outstanding questions and agent replacement', async (t) => {
   const live = await start(fixture(t));
   const { question } = await pause(live);

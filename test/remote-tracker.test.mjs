@@ -14266,3 +14266,35 @@ test('provider timestamps require complete RFC3339 syntax instead of Date string
       assert.equal(Object.hasOwn(result.data.result, 'createdAt'), false);
     });
 });
+
+// The disclosure patterns are exported so the mechanics helper's hidden-mode branch stripper and
+// `assertUndisclosed` share one pattern source; the detector's verdicts stay exactly as before.
+test('the exported product-name patterns are the ones assertUndisclosed applies', async () => {
+  const { PRODUCT_NAME_PATTERNS, assertUndisclosed } =
+    await import('../src/scripts/remote-tracker-shared-core.mjs');
+  assert.ok(Object.isFrozen(PRODUCT_NAME_PATTERNS));
+  assert.deepEqual(
+    PRODUCT_NAME_PATTERNS.map((pattern) => [pattern.source, pattern.flags]),
+    [
+      ['effective[-_.]?flow', 'i'],
+      ['\\bEffective\\s+Flow\\b', ''],
+    ],
+  );
+  for (const text of [
+    'effectiveflow',
+    'Effective-Flow',
+    'effective_flow',
+    'x/effective.flow',
+    'Effective Flow',
+  ]) {
+    assert.ok(
+      PRODUCT_NAME_PATTERNS.some((pattern) => pattern.test(text)),
+      text,
+    );
+    assert.throws(() => assertUndisclosed(text, 'field'), /hidden mode forbids/);
+  }
+  for (const text of ['an effective flow of data', 'build/login']) {
+    assert.ok(!PRODUCT_NAME_PATTERNS.some((pattern) => pattern.test(text)), text);
+    assert.equal(assertUndisclosed(text, 'field'), text);
+  }
+});

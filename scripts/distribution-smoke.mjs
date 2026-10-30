@@ -39,8 +39,13 @@ const RUNTIME_SCRIPT_FILES = [
   'protected-validation-core.mjs',
   'diff-baseline.mjs',
   'diff-baseline-core.mjs',
+  'effective-flow-state.mjs',
+  'effective-flow-state-core.mjs',
+  'runtime-state-guard.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
+  'effective-flow-mechanics.mjs',
+  'effective-flow-mechanics-core.mjs',
   'issue-buddy.mjs',
   'issue-buddy-core.mjs',
   'model-selection.mjs',
@@ -209,6 +214,66 @@ function assertPlanLintSmoke(target, helper) {
   }
 }
 
+// Runs the read-only mechanics operations through the shipped copy of the helper, which proves the
+// CLI resolves its core, the three imported leaf cores and the process runner beside it inside the
+// target: `name-allocate` takes a collision suffix and `plan-reference-resolve` finds a plan by slug.
+function assertMechanicsSmoke(target, helper) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-mechanics-smoke-')));
+  try {
+    mkdirSync(join(cwd, 'docs', 'plan'), { recursive: true });
+    writeFileSync(
+      join(cwd, 'docs', 'plan', '2026-01-01-smoke-plan.md'),
+      '# Smoke plan\n\n**Plan status:** Not implemented\n',
+    );
+    const invoke = (operation, input) => {
+      const result = spawnSync(process.execPath, [helper, operation], {
+        cwd,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        input: JSON.stringify(input),
+      });
+      const envelope = parseJson(result.stdout.trim(), `${target} mechanics ${operation}`);
+      if (result.status !== 0 || envelope.ok !== true || envelope.operation !== operation) {
+        fail(`${target} mechanics ${operation} failed\n${result.stdout}${result.stderr}`);
+      }
+      return envelope.data;
+    };
+    const first = invoke('name-allocate', {
+      cwd,
+      family: 'review-report-local',
+      dir: '.effective-flow/review',
+    });
+    mkdirSync(join(cwd, '.effective-flow', 'review'), { recursive: true });
+    writeFileSync(join(cwd, '.effective-flow', 'review', first.name), '# Report\n');
+    const second = invoke('name-allocate', {
+      cwd,
+      family: 'review-report-local',
+      dir: '.effective-flow/review',
+    });
+    if (
+      first.outcome !== 'allocated' ||
+      !/^review-report-\d{4}-\d{2}-\d{2}\.md$/.test(first.name) ||
+      second.name !== first.name.replace(/\.md$/, '-1.md')
+    ) {
+      fail(`${target} mechanics name-allocate returned ${JSON.stringify({ first, second })}`);
+    }
+    const resolved = invoke('plan-reference-resolve', {
+      cwd,
+      planDir: 'docs/plan',
+      reference: 'smoke-plan',
+    });
+    if (
+      resolved.outcome !== 'resolved' ||
+      resolved.path !== 'docs/plan/2026-01-01-smoke-plan.md' ||
+      resolved.status !== 'open'
+    ) {
+      fail(`${target} mechanics plan-reference-resolve returned ${JSON.stringify(resolved)}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 // Scans a throwaway plan through the shipped copy of the helper, which proves the CLI resolves its
 // core and the shared process runner beside it inside the target and reports a clean plan as such.
 function assertPlanPublicationScanSmoke(target, helper) {
@@ -270,6 +335,49 @@ function assertConfigResolveSmoke(target, helper) {
       envelope.data.values?.['plan.dir']?.value !== 'docs/plan'
     ) {
       fail(`${target} config-resolve failed\n${result.stdout}${result.stderr}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
+// Runs one `lock acquire` and `lock release` cycle through the shipped state helper against a
+// throwaway Git repository with `.effective-flow/` ignored, which proves the CLI resolves its core,
+// the shared runtime-state guard and the process runner beside it inside the target.
+function assertStateLockSmoke(target, helper) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-state-smoke-')));
+  try {
+    const init = spawnSync('git', ['init', '--quiet', cwd], { encoding: 'utf8' });
+    if (init.status !== 0) fail(`${target} state-lock fixture: git init failed\n${init.stderr}`);
+    writeFileSync(join(cwd, '.gitignore'), '.effective-flow/\n');
+    const call = (operation, input) =>
+      spawnSync(process.execPath, [helper, 'lock', operation], {
+        cwd,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        input: JSON.stringify({ cwd, lock: 'memory', ...input }),
+      });
+    const acquired = call('acquire', { owner: { workflow: 'distribution-smoke' }, waitSeconds: 0 });
+    const acquiredEnvelope = parseJson(acquired.stdout.trim(), `${target} state lock acquire`);
+    const token = acquiredEnvelope.result?.owner?.token;
+    if (
+      acquired.status !== 0 ||
+      acquiredEnvelope.ok !== true ||
+      acquiredEnvelope.operation !== 'lock acquire' ||
+      typeof token !== 'string' ||
+      !existsSync(join(cwd, '.effective-flow', 'memory.lock', 'owner.json'))
+    ) {
+      fail(`${target} state lock acquire failed\n${acquired.stdout}${acquired.stderr}`);
+    }
+    const released = call('release', { token });
+    const releasedEnvelope = parseJson(released.stdout.trim(), `${target} state lock release`);
+    if (
+      released.status !== 0 ||
+      releasedEnvelope.ok !== true ||
+      releasedEnvelope.result?.released !== true ||
+      existsSync(join(cwd, '.effective-flow', 'memory.lock'))
+    ) {
+      fail(`${target} state lock release failed\n${released.stdout}${released.stderr}`);
     }
   } finally {
     rmSync(cwd, { recursive: true, force: true });
@@ -564,9 +672,11 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
       fail(`${target} pilot protocol failed\n${protocolHelper.stdout}${protocolHelper.stderr}`);
     }
     assertPlanLintSmoke(target, join(scripts, 'plan-lint.mjs'));
+    assertMechanicsSmoke(target, join(scripts, 'effective-flow-mechanics.mjs'));
     assertPlanPublicationScanSmoke(target, join(scripts, 'plan-publication.mjs'));
     assertConfigResolveSmoke(target, join(scripts, 'config-resolve.mjs'));
     assertSetupStatusSmoke(target, scripts);
+    assertStateLockSmoke(target, join(scripts, 'effective-flow-state.mjs'));
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>

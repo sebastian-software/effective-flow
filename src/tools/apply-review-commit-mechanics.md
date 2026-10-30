@@ -28,20 +28,29 @@ Goal: parallel sub-agents may edit files at the same time, but must never perfor
 
 Mutex convention:
 
-- Lock handle: absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock`. Every concurrent delegation
-  for the repository uses this one retained main-checkout handle, even when its
-  `EXECUTION_ROOT` is linked or native.
-- If the runtime directory is missing, from `RUNTIME_STATE_ROOT` apply “Runtime-state write
-  safety” to that exact parent directory immediately before its `mkdir`. Immediately before
-  every acquisition attempt, from the same root apply the guard again to the exact
-  repository-relative lock target `.effective-flow/apply-review-commit.lock`. Do not create or
-  remove a lock when the relevant guard blocks.
-- Lock acquisition: atomically via `mkdir <absolute-lock-handle>`.
-- Lock content: after a successful acquisition, write a short `owner` file below that absolute
-  lock handle, with finding ID, component and timestamp.
-- Lock release: delete only the lock you acquired yourself, after a commit success, commit abort or error handling.
-- If the lock already exists: wait and retry. If the lock clearly seems orphaned, ask the user before removing it.
+- Lock: the helper's `apply-review-commit` lock at the retained absolute
+  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle. Every concurrent
+  delegation for the repository uses this one main-checkout lock, even when its `EXECUTION_ROOT`
+  is linked or native. Each step is one call in this here-string shape, never a heredoc, through
+  the absolute helper path handed over by `apply-review`, with `cwd` set to `RUNTIME_STATE_ROOT`;
+  the helper applies the runtime-state guard itself:
+
+  ```text
+  node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"apply-review-commit","owner":{"workflow":"apply-review","runId":"<runId>","purpose":"finding","findingId":"<finding ID>","component":"<component>"}}'
+  ```
+
+  A finding commit passes `purpose: "finding"` with its finding ID and component; the Phase 7
+  final-validation commit passes `purpose: "final-validation"`. Retain `result.owner.token`.
+  Exit 4 is an outcome handled below; any other nonzero exit or `error` envelope ends the finding
+  with `ABORT` without touching the index.
+
+```include
+commit-lock-contract
+```
+
+- Release on every commit success, commit abort, and error path with `lock release`
+  (`{cwd, lock, token}`). `NOT_HELD` or `NOT_OWNER` is reported as lost ownership, changes
+  nothing, and fails the finding closed.
 
 Critical section under the lock:
 

@@ -9,38 +9,45 @@ field. The owning workflow must already have loaded “Runtime-state write safet
 directory migration prerequisite loads this fragment for its own marker and for all later
 writers. Do not add a writer-specific lock or direct JSON rewrite.
 
-Resolve the canonical file, legacy file, lock, owner record, and temporary file from the retained,
-verified `RUNTIME_STATE_ROOT`. Run every guard from that root and use the resulting absolute
-handles below the main checkout. Never inspect, lock, migrate, or mutate a same-named path below
+Resolve the canonical file, legacy file, and temporary file from the retained, verified
+`RUNTIME_STATE_ROOT`. Run every guard from that root and use the resulting absolute handles below
+the main checkout. Never inspect, lock, migrate, or mutate a same-named path below
 `EXECUTION_ROOT` or another linked execution worktree.
 
 ### Acquire and own the lock
 
-1. Generate a unique, unguessable lock token for this session. Apply “Runtime-state write
-   safety” from `RUNTIME_STATE_ROOT` to the exact target `.effective-flow/memory.lock`, then
-   acquire the retained absolute lock exclusively with the atomic command
-   `mkdir <RUNTIME_STATE_ROOT>/.effective-flow/memory.lock`. A successful `mkdir` is the only
-   evidence of acquisition; checking for absence first grants nothing.
-2. As the first operation after acquisition, write
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.lock/owner.json` exclusively with at least the
-   token, workflow/session identifier, and UTC acquisition timestamp; include the host and process
-   ID when available. Guard this concrete absolute target before writing it. If the owner record
-   cannot be written, remove the newly acquired empty lock directory only if it is still the lock
-   from this acquisition, then fail.
-3. If `mkdir` reports that the lock exists, retry with a short bounded delay for no more than 30
-   seconds total. Do not mutate memory or publish an artifact while waiting. On timeout, read the
-   owner record without changing it and report the recorded owner, session, and timestamp (or
-   that the record is missing or invalid) with the lock path.
-4. Never infer that age alone makes a lock disposable. A missing or malformed owner record, an
-   apparently inactive process, or an unusually old timestamp makes it only an apparent orphan.
-   Ask for explicit user confirmation before removing an apparent orphan. After confirmation,
-   re-read the owner record and verify that the observed token or exact missing-record state is
-   unchanged before guarded removal; otherwise leave it for its current owner and retry normally.
-5. Normal release must release only its own lock: re-read `owner.json`, require the exact token
-   from this acquisition, remove that owned record, and remove the lock directory only if empty.
-   A mismatch or foreign entry is reported and left untouched. Use a `finally`/trap-equivalent
-   release on handled failures; an abrupt interruption may leave an apparent orphan for the
-   confirmed recovery path above.
+`memory.lock` goes only through the bundled runtime-state helper, one call per step, in this
+here-string shape and never as a heredoc (`<skill-root>` is the loaded skill's directory, `cwd` the
+verified `RUNTIME_STATE_ROOT`):
+
+```text
+node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"memory","owner":{"workflow":"<workflow>"},"waitSeconds":30}'
+```
+
+The helper applies the runtime-state guard to the lock itself. Exit 4 carries one of the outcome
+codes `LOCK_HELD`, `NOT_OWNER`, `NOT_HELD`, or `BREAK_MISMATCH`, handled below; any other nonzero
+exit or `error` envelope blocks the owning mutation with its code and message.
+
+1. **Acquire** with `lock: "memory"`, `owner: {"workflow": …}` (no `runId`), and
+   `waitSeconds: 30`. Retain `result.owner.token`: it is the only evidence of ownership.
+2. **`LOCK_HELD`** means the bounded wait ran out. Do not mutate memory or publish an artifact;
+   report the `outcome` owner (its fields, or `missing`/`invalid` with byte count and digest),
+   identity, and lock path, and block the owning mutation. A delegated worker never asks the user;
+   it returns these diagnostics to its orchestrator. A gated orchestrator may take step 3; a
+   relayed or non-interactive run fails closed with the diagnostics and offers no break.
+3. **Apparent orphan.** Age alone never makes a lock disposable: only a `missing`, `invalid` or
+   `oversized` owner, or one the user identifies as stale, is an apparent orphan. Only then, and
+   only as the orchestrator, run `lock inspect` (`{cwd, lock}`), obtain explicit user confirmation
+   for that observation, and run `lock break` with the observed token, or otherwise with the
+   observed `identity` plus `ownerDigest` (the owner's `sha256`; `ownerSize`, its `bytes`, when
+   `oversized`; neither when `missing`). `BREAK_MISMATCH` removed nothing: leave the lock to its
+   current owner. After either result, acquire again.
+4. **Ownership check:** immediately before the atomic rename of `memory.json`, run `lock inspect`
+   and require a `valid` owner whose token equals the retained token; otherwise ownership is lost.
+5. **Release** in a `finally`/trap-equivalent path with `lock release` (`{cwd, lock, token}`).
+   `NOT_HELD` or `NOT_OWNER` is reported as lost ownership and changes nothing. An abrupt
+   interruption may leave an apparent orphan for the confirmed path in step 3. Report a
+   `leftoverTombstone`, or a `WRITE_FAILED` naming a tombstone, to the user with that path.
 
 ### Mutate a fresh object and replace it atomically
 
@@ -66,7 +73,8 @@ While holding the lock:
    and flush it when the host supports that operation. Never truncate or stream partial content
    into `memory.json`.
 4. Apply “Runtime-state write safety” from `RUNTIME_STATE_ROOT` to the absolute canonical memory
-   handle immediately before an atomic rename of the owned temporary file over the target.
+   handle and pass the ownership check, both immediately before an atomic rename of the owned
+   temporary file over the target.
    Because the temporary file is in the same directory, readers see either the previous complete
    object or the new complete object. If writing, flushing, or replacement fails—including
    permissions or disk-full errors—the prior `memory.json` remains the source of truth. Report the
