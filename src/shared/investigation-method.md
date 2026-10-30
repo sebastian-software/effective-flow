@@ -22,3 +22,7 @@ Assess the diagnosis with a scorecard before making a follow-up decision:
 - **Clarity:** root cause as well as file and line named concretely.
 - **Verification:** behavior reproducible or described as a concrete reproduction guide.
 - **Context:** assumptions explicitly marked, target <= 10 % guessing.
+
+For eligible longer analysis, the orchestrator supplies the delegation mandate's compact progress
+handoff; the leaf never loads the detailed contract. Keep checkpoints on the separate parent
+channel and preserve this analysis's exact terminal output and read-only authority.

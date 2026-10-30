@@ -1207,6 +1207,10 @@ test(
     const base = resolve(temporary, 'rounds');
     const publicationRoot = resolve(temporary, 'publication');
     const resultsDir = resolve(publicationRoot, 'results');
+    const publicationLock = publicationLockPath(suite, publicationRoot);
+    // Atomic lock displacement needs a sibling path on the same filesystem.
+    const displacedLock = `${publicationLock}.displaced-${randomUUID()}`;
+    let ownsDisplacedLock = false;
     try {
       const prepared = createRound(suite, {
         scenarios: ['guard-blocks-merge'],
@@ -1608,7 +1612,6 @@ test(
         unselectedBefore,
       );
 
-      const publicationLock = publicationLockPath(suite, publicationRoot);
       const beforeWaitingMutation = readFileSync(resolve(resultsDir, '.generation.json'), 'utf8');
       const blockingRecoveryMarker = resolve(temporary, 'blocking-recovery-holds-lock');
       const blockingRecoveryRelease = resolve(gate, 'release-blocking-recovery');
@@ -1665,8 +1668,9 @@ test(
       const predecessorResultPromise = childResult(predecessor);
       parked.push({ child: predecessor, release: releaseSignal, result: predecessorResultPromise });
       await waitForFile(releaseMarker, 30_000);
-      const displacedLock = `${publicationLock}.displaced-${randomUUID()}`;
+      assert.equal(existsSync(displacedLock), false);
       renameSync(publicationLock, displacedLock);
+      ownsDisplacedLock = true;
       const successorToken = randomUUID();
       mkdirSync(publicationLock);
       writeFileSync(
@@ -1679,6 +1683,7 @@ test(
       assert.ok(existsSync(resolve(publicationLock, `${successorToken}.owner.json`)));
       rmSync(publicationLock, { recursive: true, force: true });
       rmSync(displacedLock, { recursive: true, force: true });
+      ownsDisplacedLock = false;
 
       const staleToken = randomUUID();
       mkdirSync(publicationLock);
@@ -1926,6 +1931,7 @@ test(
       // results directory — racing both this kill and the removals below.
       for (const { child } of parked) child.kill('SIGKILL');
       for (const { result } of parked) await result;
+      if (ownsDisplacedLock) rmSync(displacedLock, { recursive: true, force: true });
       rmSync(temporary, { recursive: true, force: true });
       rmSync(gate, { recursive: true, force: true });
     }

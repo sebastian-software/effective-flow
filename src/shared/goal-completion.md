@@ -14,7 +14,7 @@ when: entering or returning from an outcome-directed continuation, prior continu
 
 ```lazy-include
 subagent-progress
-when: the active overview owner considers eligible longer ordinary worker/analysis progress under the delegation mandate; workers never load this contract
+when: an orchestrator considers longer delegated work or receives trusted progress context; leaves never load this contract
 ```
 
 ### Goal controls
@@ -25,7 +25,7 @@ when: the active overview owner considers eligible longer ordinary worker/analys
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `{{FLOW}} apply-plan` hands ownership to its target workflow before that workflow's phases begin; `{{FLOW}} apply-issues` and `{{FLOW}} apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
    - Before work, list every known remaining numbered phase; add findings, issues or parallel subtasks as soon as their set is known; on resume, continue the existing list; keep more specific per-finding, per-issue, per-source and per-reviewer rules authoritative.
-   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input. Fold eligible ordinary worker checkpoints into this same overview once: during an ordinary event wait, integrate then resume waiting; while busy, coalesce until a natural boundary, using the subagent-progress contract.
+   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input. Fold eligible worker and returning-workflow checkpoints into this same overview once: during an ordinary event wait, integrate then resume waiting; while busy, coalesce until a natural boundary, using the subagent-progress contract.
    - Mark skipped, terminally failed and aborted steps as such; keep a step awaiting user input open with its blocker; never treat terminal failure or abort as satisfying the completion condition.
    - If tracking fails irrecoverably, report that failure once, move still-open tracking to chat without claiming a successful tool update, and continue the domain work.
    - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.

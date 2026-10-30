@@ -302,3 +302,8 @@ operation.
 - A failure after artifact creation records `aborted`, `failed`, or `cleanup-failed` through the
   shared lifecycle contract when safely possible and otherwise retains the artifacts with the
   failed proof.
+
+Returning commit groups and commit-only PR publication retain this run's overview. Eligible
+cross-agent reporting follows `shared/subagent-progress.md` with each hop's own immediate-parent
+context; same-session calls integrate directly. Keep selected-path, receipt, commit-proof and
+terminal checks unchanged; a progress claim grants no publication authority.

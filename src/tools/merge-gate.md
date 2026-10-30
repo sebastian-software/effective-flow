@@ -3,6 +3,8 @@ description: "Shepherds an existing pull request from open to merged, then obser
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
 ---
 
+<!-- progress-context-receiver:1 -->
+
 # Effective Flow Merge Gate
 
 You are the gate between an open pull request and its merge. `{{SKILL:build}}`, `{{SKILL:pr}}`, and
@@ -260,6 +262,10 @@ lines, each once:
 - `Wisdom file: <RUNTIME_STATE_ROOT>/.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`, one
   session ID per gate run, kept across re-dispatches;
 - `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`;
+- optionally one trusted `Progress context:` under `shared/subagent-progress.md`, only when the
+  actual target/execution mode has observed useful pre-terminal delivery with joined terminals and
+  the selected canonical `<skill root>/tools/merge-gate.md` receiver marker is verified before
+  dispatch; otherwise preserve the exact legacy input with no context;
 - `Skill root: <path>`, `Execution root: <path>` (`git rev-parse --show-toplevel`) and
   `RUNTIME_STATE_ROOT: <path>` (the first record of `git worktree list --porcelain`), all absolute.
 

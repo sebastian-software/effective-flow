@@ -1175,13 +1175,17 @@ and directive syntax").
   `plan-pr-continuation`, `outcome-continuation`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
-  `subagent-progress` is parent-only: the active overview owner reaches its lazy pointer through
-  the delegation mandate or `goal-completion` for eligible longer ordinary worker/analysis work.
-  Workers receive the compact handoff instruction and never load the detailed contract, even when
-  reporting is enabled. The pointer remains statically reachable for eval load-set discovery;
+  `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its
+  lazy pointer through the delegation mandate or `goal-completion`; strict/nested receivers and
+  task-tracking-only orchestrators use their existing decision points. Leaves receive the compact
+  handoff instruction and never load the detailed contract, even when reporting is enabled. The
+  pointer remains statically reachable for eval load-set discovery;
   static reachability does not establish runtime eligibility or message delivery. The
-  [architecture guide](architecture.md#sparse-ordinary-subagent-progress) records the actual
-  ordinary-wait behavior, measured overhead and accepted tradeoff.
+  [architecture guide](architecture.md#sparse-subagent-progress) records the actual ordinary-wait
+  behavior, measured overhead and accepted tradeoff. The complete source-derived
+  role and spawn-site inventory, including unregistered returning and recovery paths, is recorded
+  in [Subagent progress coverage](subagent-progress-coverage.md); the source register and native
+  inventories remain authoritative omission detectors.
   `setup-profiles` is a single-consumer fragment whose decision point is setup's already-loaded
   argument classification: only an absent argument or the explicit `profile` token loads it.
   The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
@@ -1502,9 +1506,11 @@ native eligibility and measurement owner.
   `gpt-5.6-sol` to `gpt-6.1-sol` (`codex-deep-tier-model`), plus the delegation-mandate delta (the
   tier sentence closing the worker-start bullet, plus the `model-tiers` pointer), the
   lean-orchestrator sentence, the conditional `subagent-progress` pointer and its exact replacement
-  by the parent-only compact-checkpoint instruction, and the executable model-selection sentence
-  on the mandate's workflow boundary. Each selected edit must match exactly once,
-  and its resulting body must equal the working body byte for byte; unrelated drift fails. These
+  by the parent-only compact-checkpoint instruction, then that instruction's exact approved
+  conditional-checkpoint replacement (`delegation-mandate-conditional-checkpoint`) within the
+  worker-start bullet, and the executable model-selection sentence on the mandate's workflow
+  boundary. Each selected edit must match exactly once, and its resulting body must equal the
+  working body byte for byte; unrelated drift fails. These
   optional declared deltas prove containment of allowed changes, not that every worker completed
   a total migration. Once this change ships in a release, move the test's pinned `--base` to that
   release commit and empty

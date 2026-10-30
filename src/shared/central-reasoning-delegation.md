@@ -103,3 +103,7 @@ when: issue mode – the judged artifact is a remote planning comment
 judgment-inline-fallback
 when: the judgment spawn is unavailable, declined, aborted, or escalated past Retry 1, or the judged artifact already holds a `Record (` / `Vermerk (` line or a `not performed` / `nicht durchgeführt` open point
 ```
+
+For eligible longer analysis, the orchestrator supplies the delegation mandate's compact progress
+handoff; the leaf never loads the detailed contract. Keep checkpoints on the separate parent
+channel and preserve this analysis's exact terminal output and read-only authority.

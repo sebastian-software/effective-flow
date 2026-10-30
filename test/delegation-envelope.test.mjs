@@ -461,6 +461,7 @@ test('case 16: a CI-repair instruction with any protocol-shaped line is refused 
     'Next steps:',
     'Run state:',
     'Language context:',
+    'Progress context:',
     'Approved outcomes:',
     'Item:',
     'Thread item:',

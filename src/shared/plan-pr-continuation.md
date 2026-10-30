@@ -307,3 +307,5 @@ Each ignored foreign pull request is reported alongside that line.
 ### Same-build pause is not adoption
 
 A validated interactive build relay pauses within its original build-run identity, including when no plan PR exists. Its active owned worktree may remain dirty with no lock held. Continue that same agent only after the bound trusted reply and fresh ownership/receipt/content validation per `build-run-contract`; do not run the failed/aborted adoption path above or restart implementation. Actual abort/failure still applies its normal terminal transition.
+
+A returning publication/PR continuation retains the existing overview and its upstream context under `shared/subagent-progress.md`. Same-session calls integrate directly; transferred ownership follows goal-completion. Preserve verified roots, source/attempt association and all completion checks.
