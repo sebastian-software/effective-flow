@@ -478,7 +478,15 @@ async function copyFileExclusive(context, source, target, temporary) {
     for (;;) {
       const { bytesRead } = await input.read(buffer, 0, buffer.length, null);
       if (bytesRead === 0) break;
-      await output.write(buffer, 0, bytesRead);
+      // A successful write may be short: finish the chunk before the next read, failing on
+      // zero progress so a truncated temporary is never linked.
+      for (let offset = 0; offset < bytesRead;) {
+        const { bytesWritten } = await output.write(buffer, offset, bytesRead - offset);
+        if (!(bytesWritten > 0)) {
+          throw Object.assign(new Error(`write made no progress: ${temporary}`), { code: 'EIO' });
+        }
+        offset += bytesWritten;
+      }
     }
     await output.sync();
   } catch (error) {

@@ -831,6 +831,52 @@ test('migrate-directory: an injected copy failure is MIGRATION_INCOMPLETE and re
   assert.equal(readMemory(root).runtimeMigration.directory.version, 1);
 });
 
+// An `fs` override whose temporary-file handles write at most `limit(length)` bytes per call,
+// delegating everything else to the real handle.
+function shortWriteFs(limit) {
+  return {
+    open: async (target, ...rest) => {
+      const handle = await openPath(target, ...rest);
+      if (!target.endsWith('.tmp')) return handle;
+      return {
+        write: (buffer, offset, length) => handle.write(buffer, offset, limit(length)),
+        sync: () => handle.sync(),
+        close: () => handle.close(),
+      };
+    },
+  };
+}
+
+// Invariant: a short `FileHandle.write` never publishes a truncated target; the copy writes each
+// chunk fully, so the target equals the source byte for byte across chunk boundaries.
+test('migrate-directory: short writes still copy every byte', async (t) => {
+  const root = checkout(t);
+  const content = 'x'.repeat(64 * 1024 + 37);
+  legacyTree(root, '.firmo', { 'big.txt': content });
+  const result = expectOk(
+    await migrate(root, { fs: shortWriteFs((length) => Math.min(length, 1000)) }),
+  );
+  assert.deepEqual(result.copied, ['.firmo/big.txt']);
+  assert.equal(readFileSync(join(stateDir(root), 'big.txt'), 'utf8'), content);
+  assert.equal(readMemory(root).runtimeMigration.directory.version, 1);
+});
+
+// Invariant: a write that makes no progress fails the copy: MIGRATION_INCOMPLETE, no marker, no
+// target and no temporary left behind.
+test('migrate-directory: a zero-progress write is MIGRATION_INCOMPLETE', async (t) => {
+  const root = checkout(t);
+  legacyTree(root, '.firmo', { 'a.txt': 'a\n' });
+  const outcome = expectOutcome(
+    await migrate(root, { fs: shortWriteFs(() => 0) }),
+    'MIGRATION_INCOMPLETE',
+  );
+  assert.equal(outcome.reason, 'copy-failed');
+  assert.equal(outcome.failed.path, '.firmo/a.txt');
+  assert.equal(existsSync(memoryPath(root)), false);
+  assert.deepEqual(readdirSync(stateDir(root)), []);
+  assertUnlocked(root);
+});
+
 // Invariant: the commit step re-verifies the recorded targets; one missing at that point is
 // MIGRATION_INCOMPLETE without a marker.
 test('migrate-directory: a target missing at re-verification is MIGRATION_INCOMPLETE', async (t) => {
