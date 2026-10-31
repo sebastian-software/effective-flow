@@ -403,15 +403,10 @@ function commandEvidence(stdout, stderr, input, output, lastMessage, environment
   const raw = new TextDecoder('utf-8', { fatal: true }).decode(stdout);
   const diagnostics = new TextDecoder('utf-8', { fatal: true }).decode(stderr);
   requireCondition(
-    !FAILURE.test(raw) &&
-      !FAILURE.test(diagnostics) &&
-      !/\b(?:ERROR|FATAL|PANIC)\b/i.test(diagnostics),
+    !FAILURE.test(diagnostics) && !/\b(?:ERROR|FATAL|PANIC)\b/i.test(diagnostics),
     'native or bootstrap error diagnostics',
   );
-  requireCondition(
-    !HEREDOC_FAILURE.test(raw) && !HEREDOC_FAILURE.test(diagnostics),
-    'here-document temporary-file denial',
-  );
+  requireCondition(!HEREDOC_FAILURE.test(diagnostics), 'here-document temporary-file denial');
   const lines = raw.split('\n');
   if (lines.at(-1) === '') lines.pop();
   let started = false,
@@ -447,6 +442,12 @@ function commandEvidence(stdout, stderr, input, output, lastMessage, environment
       );
       const item = event.item;
       requireCondition(item.type !== 'error' && !Object.hasOwn(item, 'error'), 'error item');
+      // Inspect emitted text, not the command source quoted by command events.
+      const emitted = [item.text, item.aggregated_output]
+        .filter((value) => typeof value === 'string')
+        .join('\n');
+      requireCondition(!FAILURE.test(emitted), 'native or bootstrap error diagnostics');
+      requireCondition(!HEREDOC_FAILURE.test(emitted), 'here-document temporary-file denial');
       if (item.type === 'command_execution') {
         requireCondition(commandsAllowed.has(item.command), 'unexpected actual command');
         if (event.type === 'item.started') {

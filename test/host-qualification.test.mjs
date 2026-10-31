@@ -414,6 +414,30 @@ test('deterministic fixture accepts the observed shell wrapper and benign diagno
   assert.equal(f.verify().mode, 'iterate');
 });
 
+test('A-V2-RESULT-001 accepts quoted command source with an inert native bootstrap path', async (t) => {
+  const f = await fixture(t, 'iterate', {
+    component: 'effective-flow-native-host-a-bootstrap-synthetic',
+  });
+  assert.equal(f.verify().mode, 'iterate');
+});
+
+refusal(
+  'A-V2-RESULT-001 genuine native stderr diagnostics',
+  (f) => f.set('stderr', 'native startup error: synthetic diagnostic\n'),
+  /host qualification refused: native or bootstrap error diagnostics/,
+);
+refusal(
+  'A-V2-RESULT-001 emitted native error text in an agent message',
+  (f) =>
+    f.events((stream) =>
+      stream.splice(4, 0, {
+        type: 'item.completed',
+        item: { type: 'agent_message', text: 'native startup error: synthetic diagnostic' },
+      }),
+    ),
+  /host qualification refused: native or bootstrap error diagnostics/,
+);
+
 for (const [name, edit] of [
   [
     'top-level error event despite completed turn',
