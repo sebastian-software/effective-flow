@@ -45,7 +45,7 @@ when: any wisdom, tracker-marker, or other runtime-state mutation is imminent
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, tracker-marker, or other runtime-state mutation is imminent
+when: any wisdom, memory, tracker-marker, or other runtime-state mutation is imminent
 ```
 
 ```lazy-include

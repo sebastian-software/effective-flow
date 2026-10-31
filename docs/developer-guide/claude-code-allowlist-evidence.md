@@ -15,6 +15,14 @@ harness.
 The spike ends with one conclusion for stage 1: **go** (rely on the rule), **hook fallback** (use a
 PreToolUse hook), or **stop**. The result is **hook fallback**; see "Decision".
 
+Stage 1 did not adopt that fallback: it decided on the rule alone, because the helper rejects any
+extra argv itself (the option recorded under "Decision"). The "Stage 1 measurement" section records
+the check of that decision. Under the original prompts, rounds 1 and 2 **missed** the criterion: no
+run reached a helper housekeeping call, and no review run persisted a reservation. Round 3 told the
+model to take the workflow step and confirmed the rule for the calls it then made: every call in
+the literal shape ran without a prompt. Whether the workflows take those steps unprompted is still
+open, as a separate follow-up package.
+
 ## Setup
 
 | Item                  | Recorded value                                                                                                                          |
@@ -276,3 +284,426 @@ unchanged. The sandbox repository is kept until work package 4.
 
 The 67 headless runs cost 9.40 USD in total, against a ceiling of 150 USD. The baseline accounted
 for 4.77 USD of that. No run hit its 3 USD cap.
+
+## Stage 1 measurement
+
+Measurement step of work package 3 (plan
+`docs/plan/2026-10-29-typed-memory-operations-and-allowlist-setup.md`, "Measurement"), run on
+2026-10-31. It asks whether the six allow rules written by `harness allow-rules` remove every
+permission prompt and auto-mode refusal of the "helper housekeeping" sub-class, and whether every
+review run persists a reservation.
+
+### Setup and install form
+
+| Item                  | Recorded value                                                                                                                                      |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headless CLI          | `2.1.312`, bundled with Agent SDK `0.3.312` (the work package 1 `node_modules`, linked)                                                             |
+| Build under test      | Portable build (`node build.mjs`) of the work package 3 worktree, version `1.70.0` on `aca9f82d` plus the uncommitted work package 2 and 3 changes  |
+| Install form          | Measurement `HOME` `/home/t3/spike-sandbox/home-wp3`; `.claude/skills/effective-flow` is a symlink to the worktree's `dist/portable/effective-flow` |
+| Rule path             | The symlinked install path, `/home/t3/spike-sandbox/home-wp3/.claude/skills/effective-flow/scripts/effective-flow-state.mjs`                        |
+| Model, budget, policy | `claude-sonnet-5-5`, 3 USD per run, host policy `sandbox`, as in the work package 1 baseline configurations                                         |
+| Auto mode             | `CLAUDE_CODE_AUTO_MODE_SERVER=0` in every run, as in work package 1                                                                                 |
+| Evidence root         | `.effective-flow/spikes/allowlist/2026-10-29-02/` in the primary checkout (untracked)                                                               |
+
+The user's installed skill and `~/.claude` stayed untouched. Both isolation forms the plan names
+failed authentication: a separate `HOME`, and `CLAUDE_CONFIG_DIR`, each answered
+`Not logged in · Please run /login`. The measurement then used a dedicated token (see the
+deviations).
+
+The debug log of every run shows the six rules loaded into `localSettings` from the clone's
+`.claude/settings.local.json`.
+
+### Recorded deviations
+
+All changed copies live only under the new evidence root.
+
+- **Authentication:** a dedicated `CLAUDE_CODE_OAUTH_TOKEN`. The host copy reads it at run time from
+  a file outside the evidence root (`cfg.oauthTokenFile`) and injects it into the child environment.
+  No configuration, log or transcript holds the value; a grep for it over the evidence root came
+  back empty, as did one for the sandbox token.
+- **Setting sources:** the cells pass `settingSources: ['user', 'local']` (`cfg.settingSources` in
+  the host copy). No cell passes inline rules.
+- **`reset.sh` copy:** after each fresh clone it appends `.claude/settings.local.json` to the clone's
+  `.git/info/exclude` (never `.gitignore`). It then runs `harness allow-rules` with `CLAUDECODE=1`,
+  first `preview` and then `apply` with the preview's digest, from the measurement `HOME`'s install.
+  It fails unless the file holds exactly the six rules and `git check-ignore` accepts it. Every run
+  directory keeps the preview and apply envelopes and the settings file before and after the run.
+- **Review seed:** three functions with unambiguous defects replace the `average` seed: `median`
+  sorts lexicographically, mutates its input and indexes `length / 2`; `range` loops with `<=`
+  against its doc comment; `percent` multiplies by 10.
+- **Migration seed:** the review seed plus `.firmo/memory.json` (`{"lastFindingNumber": 3}`) and
+  one legacy report, `.firmo/review/2026-01-01-legacy-review.md`, without the migration marker and
+  without `.effective-flow/`. `.firmo/` is also listed in `info/exclude`, so it stays outside the
+  review diff.
+- **`allowedRoots`:** the run directory, the measurement `HOME`, its symlinked skill path and
+  `/tmp`; the DALO path is gone.
+- **Analysis copy:** `analyze_baseline.py` takes the id file as an argument and adds the "helper
+  housekeeping" sub-class: a Bash call naming `effective-flow-state.mjs lock|memory`, `memory.json`,
+  `memory.lock` or a `.effective-flow/<path>.lock`, and every Write or Edit of a `memory.json`. It counts
+  sub-class prompts, sub-class entries of `permission_denials`, and sub-class tool calls in the
+  transcript, and reads the run's persisted `memory.json`. The work package 1 regex classes stay
+  unchanged and are reported alongside.
+- **Runner and setup host:** a new `run.sh` chains reset, prompt, configuration, host and
+  runtime-state snapshot per run. The setup cross-check uses `host-setup.mjs`, a streaming-input
+  copy of the host that sends a scripted follow-up turn after the first result.
+
+### Cells
+
+In default mode the prompt columns count permission requests that reached the host; in auto mode
+they count auto-mode refusals, and the parenthesis is the number of classified calls. "Calls" is
+the number of helper housekeeping calls the model emitted.
+
+| Run                    | Calls | Housekeeping prompts or refusals | Regex housekeeping | Other prompts | Auto-mode refusals | `lastFindingNumber` |
+| ---------------------- | ----: | -------------------------------: | -----------------: | ------------: | -----------------: | ------------------- |
+| `s1-review-default-1`  |     0 |                                0 |                  0 |             1 |                  – | not persisted       |
+| `s1-review-default-2`  |     0 |                                0 |                  0 |             1 |                  – | not persisted       |
+| `s1-review-default-3`  |     0 |                                0 |                  0 |             1 |                  – | not persisted       |
+| `s1-review-auto-1`     |     0 |                                0 |                  – |             – |   0 (0 classified) | not persisted       |
+| `s1-review-auto-2`     |     0 |                                0 |                  – |             – |   0 (0 classified) | not persisted       |
+| `s1-review-auto-3`     |     0 |                                0 |                  – |             – |   0 (0 classified) | not persisted       |
+| `s1-iterate-default-1` |     0 |                                0 |                  0 |            15 |                  – | –                   |
+| `s1-iterate-default-2` |     0 |                                0 |                  0 |            14 |                  – | –                   |
+| `s1-iterate-default-3` |     0 |                                0 |                  1 |             8 |                  – | –                   |
+| `s1-iterate-auto-1`    |     0 |                                0 |                  – |             – |   0 (9 classified) | –                   |
+| `s1-iterate-auto-2`    |     0 |                                0 |                  – |             – |  0 (14 classified) | –                   |
+| `s1-iterate-auto-3`    |     0 |                                0 |                  – |             – |   0 (4 classified) | –                   |
+| `s1-firmo-default-1`   |     0 |                                0 |                  0 |             1 |                  – | not persisted       |
+
+Observations:
+
+- **Every review run is valid.** Each admitted three or four findings on the seeded functions, so
+  none qualifies as invalid and none was repeated. Each run read `tools/review.md`, worked inline
+  "because it is one file", and said it wrote no report and reserved no finding IDs. No run created
+  `.effective-flow/`.
+- **No run made a helper housekeeping call.** The zero prompts and refusals in that sub-class are
+  therefore vacuous: the rule was never exercised.
+- **The one default review prompt** was the `Read` of `tools/review.md` under the measurement
+  `HOME`, which lies outside the working directory.
+- **Iterate's other prompts** were the three `Read`s of `tools/iterate.md`, `remote-tracker.mjs`
+  calls (7 and 8 in runs 1 and 2), one `config-resolve.mjs` call, plus `git` and, in run 3, `gh`
+  calls. No iterate run made a memory call. Each run asked one `AskUserQuestion`, answered
+  with the first option. The regex housekeeping hit in `s1-iterate-default-3` matched the work
+  package 1 pattern, not a helper housekeeping call.
+- **Helper calls were wrapped.** Every helper call the model made (`config-resolve`,
+  `remote-tracker`, `harness allow-rules`) started with a variable assignment such as
+  `SK=<skill root>; R=$PWD` and piped JSON through `echo … | node $SK/…`. Claude Code gave reasons
+  such as "A variable in this command can't be checked before it runs". A
+  `Bash(node <absolute path> <operation> *)` rule cannot match that shape. This is outside the
+  criterion, but it predicts prompts for `memory` and `lock` calls once a run reaches them.
+
+### Persisted reservations
+
+None. No review run, the migration run included, wrote `.effective-flow/memory.json`, a report, or
+a finding ID. The reservation half of the criterion is missed in `s1-review-default-1` to `-3`,
+`s1-review-auto-1` to `-3` and `s1-firmo-default-1`.
+
+### Migration run
+
+`s1-firmo-default-1` did not call `memory migrate-directory`. It reviewed inline like the other
+review runs and created no `.effective-flow/`. `.firmo/memory.json` and the legacy report stayed in
+place unchanged. The run therefore shows no migration, with or without a prompt.
+
+### Setup cross-check
+
+`s1-setup-default-1` ran `/effective-flow setup allowlist` in a fresh clone with the exclude line but
+without the reset step's rules.
+
+- The model resolved the runtime-state root with `config-resolve.mjs` and ran the
+  `harness allow-rules` preview.
+- It asked the confirmation as an `AskUserQuestion` ("Write these 6 allow rules …?"). The host
+  answered it with the first option, "Yes, write them". The model applied with the preview's digest,
+  reported `applied: true`, and gave both warning sentences.
+- The scripted follow-up turn ("Yes, write exactly this change.") found `changed: false` and wrote
+  nothing more.
+- The written `permissions.allow` equals the reset step's direct helper result rule for rule.
+- Each `harness allow-rules` call reached the host as a permission request, as intended for an
+  operation that is never allowlisted.
+
+The cross-check matched. It is not part of the pass condition.
+
+### Verdict (round 1)
+
+**Criterion missed.** The rule alone is not confirmed.
+
+- **Prompt and refusal half:** held in all 13 valid runs, but only vacuously, because no run emitted
+  a helper housekeeping call.
+- **Reservation half:** missed in all 7 review runs, because the model took an inline shortcut that
+  persisted nothing, against the local-target report and reservation steps of `review`.
+- **Consequence:** under the plan, this blocks the implemented status and work package 4 until the
+  user decides. The harness, prompts and rules were not tuned to reach a pass.
+
+### Round 2
+
+After round 1, the user chose to fix the prose and measure again.
+
+#### The fix
+
+The prose now carries a binding call-shape rule for every `effective-flow-state.mjs` call,
+`src/shared/state-helper-call.md`. Every call must be one simple command,
+`node <literal absolute skill root>/scripts/effective-flow-state.mjs <group> <operation> <<< '<json>'`,
+with no variable, pipe or compound command. `memory-state`, `setup-allowlist`, `iterate` and
+`apply-review-commit-mechanics` include it.
+
+A prose analysis classified both round 1 skips as compliance deviations:
+
+- `review` must reserve IDs and write a local report.
+- `iterate` must take `iterate-commit` around each commit, inline items included.
+
+`node build.mjs` rebuilt the portable target that the measurement `HOME` links to. The built
+`tools/review.md` (773 lines) and `tools/iterate.md` (1,644 lines) carry the rule through
+`effective-flow-dir-migration.md` and the `iterate` include.
+
+#### Round 2 deviations
+
+These come on top of the round 1 deviations, which all still apply.
+
+- **Run ids:** `s2-…`, in the same evidence root. Round 1 stays recorded unchanged.
+- **Review seed:** the defects are spread over two files. `src/sum.mjs` gets `range` (`<=` against
+  its doc comment) and `percent` (times 10). A new `src/stats.mjs`, registered with `git add -N` so
+  it is part of the uncommitted diff, gets `median` (lexicographic, mutating sort, index
+  `length / 2`) and `mean` (divides by `length - 1`).
+- **Review prompt:** `/effective-flow review the uncommitted changes`, because the round 1 prompt
+  named `src/sum.mjs` alone and would have kept the second file out of scope. It says nothing about
+  the helper.
+- **Tracker mode:** the sandbox's tracked `docs/adr/effective-flow-project-setup.md` already pins
+  `tracker.mode` to `local` (round 1 included), so no ADR was added.
+- **Unchanged:** the `.firmo/` seed (now on top of the two-file review seed), the iterate seed with
+  2 review threads, the iterate prompt, and the reset step's rules.
+- **Analysis:** a new `analyze_round2.py` lists every `effective-flow-state.mjs` call per run with
+  its operation and lock. For each call it records whether the call matched the literal shape, was
+  prompted, was refused, and succeeded. The round 1 columns come from the same `analyze_baseline.py`
+  copy.
+
+#### Exercise per run
+
+Required calls:
+
+- **review:** `memory migrate-directory` (fresh clone, no marker), then `memory reserve`
+- **migration run:** `memory migrate-directory`, then `memory reserve`
+- **iterate:** `lock acquire` and `lock release` of `iterate-commit` around each commit
+
+"Not exercised" means that the run never made the required call. It is neither a pass nor a fail
+of the rule.
+
+| Run                    | Helper calls | Required calls | Shape | Prompts or refusals | Other prompts | `lastFindingNumber` |
+| ---------------------- | -----------: | -------------- | ----- | ------------------: | ------------: | ------------------- |
+| `s2-review-default-1`  |            0 | not exercised  | –     |                   0 |             1 | not persisted       |
+| `s2-review-default-2`  |            0 | not exercised  | –     |                   0 |             1 | not persisted       |
+| `s2-review-default-3`  |            0 | not exercised  | –     |                   0 |             2 | not persisted       |
+| `s2-review-auto-1`     |            0 | not exercised  | –     |                   0 |             – | not persisted       |
+| `s2-review-auto-2`     |            0 | not exercised  | –     |                   0 |             – | not persisted       |
+| `s2-review-auto-3`     |            0 | not exercised  | –     |                   0 |             – | not persisted       |
+| `s2-iterate-default-1` |            0 | not exercised  | –     |                   0 |             7 | –                   |
+| `s2-iterate-default-2` |            0 | not exercised  | –     |                   0 |             6 | –                   |
+| `s2-iterate-default-3` |            0 | not exercised  | –     |                   0 |             5 | –                   |
+| `s2-iterate-auto-1`    |            0 | not exercised  | –     |   0 (20 classified) |             – | –                   |
+| `s2-iterate-auto-2`    |            0 | not exercised  | –     |    0 (4 classified) |             – | –                   |
+| `s2-iterate-auto-3`    |            0 | not exercised  | –     |   0 (10 classified) |             – | –                   |
+| `s2-firmo-default-1`   |            0 | not exercised  | –     |                   0 |             2 | not persisted       |
+
+Observations:
+
+- **Every review run is valid.** Each admitted four or five findings in both files, so none was
+  repeated. All seven again read `tools/review.md`, reviewed inline and said they wrote no report
+  and reserved no IDs. They justified this by the small diff ("two files and 24 lines"), and
+  `s2-review-auto-1` named "the review tool's triviality exception". No run created
+  `.effective-flow/`, and the migration run left `.firmo/` unchanged.
+- **Every iterate run committed without the lock.** Each made one or two `git commit` calls and no
+  `lock` call. The built `tools/iterate.md` holds the `lock acquire` command for `iterate-commit` at
+  line 1,443; each run read that file two or three times. Only `s2-iterate-auto-1` asked an
+  `AskUserQuestion` (round 1: every run).
+- **Other prompts dropped** from 15, 14 and 8 to 7, 6 and 5 in iterate default mode. Runs 1 to 3
+  used `gh` directly instead of `remote-tracker.mjs`. The auto runs 1 and 3 still called
+  `remote-tracker.mjs` (10 and 8 calls).
+
+#### Round 1 to round 2
+
+| Measure                                         | Round 1 | Round 2 |
+| ----------------------------------------------- | ------: | ------: |
+| Valid runs                                      |      13 |      13 |
+| Helper housekeeping calls                       |       0 |       0 |
+| Helper housekeeping prompts or refusals         |       0 |       0 |
+| Review runs with a persisted reservation (of 7) |       0 |       0 |
+| Migration runs that migrated (of 1)             |       0 |       0 |
+| Iterate runs that took `iterate-commit` (of 6)  |       0 |       0 |
+| Cost of the 13 runs (USD)                       |    3.17 |    2.90 |
+
+#### Verdict (round 2)
+
+**Criterion missed.** The rule alone is not confirmed. No exercised call ran into a prompt or
+refusal, but none was exercised.
+
+- **review:** exercised in 0 of 3 runs per mode, where at least 2 were required.
+- **iterate:** exercised in 0 of 3 runs per mode, where at least 2 were required.
+- **Migration:** exercised in 0 of 1 runs, where 1 was required.
+- **Literal shape:** no call exists to check it against.
+
+The fix changed how a call is written, not whether the workflow reaches it. In both rounds the
+models left out the persistence and lock steps that the prose requires. The prompts, seeds and
+rules were not tuned to reach a pass.
+
+### Round 3 (targeted exercise)
+
+Round 3 tests whether the rule matches under explicit instruction. It is **not** a measure of
+realistic behaviour. The prompts name the workflow step, so whether a workflow takes that step on
+its own is out of scope here. The skipping seen in rounds 1 and 2 stays open as a separate
+follow-up package.
+
+#### Round 3 deviations
+
+These come on top of the round 1 and round 2 deviations.
+
+- **Run ids:** `s3-…`, in the same evidence root. Rounds 1 and 2 stay recorded unchanged.
+- **Unchanged:** the build (no `src/` change since the round 2 build), the measurement `HOME`, the
+  token, the rules, and the round 2 seeds (two-file review seed, `.firmo/` seed, iterate with 2
+  threads).
+- **Prompts:** these name the workflow step, never the helper command or its shape.
+  - review and migration run:
+    `/effective-flow review the uncommitted changes — follow the local-mode report path completely: reserve the finding IDs and write the local review report under .effective-flow/review/`
+  - iterate: `/effective-flow iterate <PR> — follow the commit-integrity mutex exactly: take the iterate-commit lock around each commit`
+- **Analysis:** `analyze_round3.py`, a copy of `analyze_round2.py`. It adds each call's
+  `permissionDecisionMs` from the debug log's `tool_dispatch_start` line, keyed by the tool-use id.
+  A rule match decides in a few milliseconds; the classifier takes about two seconds. In default
+  mode a prompted call also decides quickly, because the host answers it.
+- **Shape test:** a call counts as literal only when it is exactly
+  `node <symlinked skill root>/scripts/effective-flow-state.mjs <group> <operation> <<< '<json>'`
+  on one line, with no `$` or backtick in the JSON. A trailing `; echo "exit=$?"`, a `| grep` or a
+  preceding `S=…;` makes a call non-literal.
+
+#### Exercise per run
+
+Required calls:
+
+- **review:** `memory migrate-directory` (no marker), then `memory reserve`
+- **migration run:** `memory migrate-directory`, then `memory reserve`
+- **iterate:** `lock acquire` and `lock release` of `iterate-commit` around each commit
+
+| Run                    | Exercised | Literal calls (prompted or refused) | Non-literal calls (prompted) | `lastFindingNumber` and report |
+| ---------------------- | --------- | ----------------------------------: | ---------------------------: | ------------------------------ |
+| `s3-review-default-1`  | yes       |                               2 (0) |                        0 (0) | 4, report written              |
+| `s3-review-default-2`  | yes       |                               2 (0) |                        0 (0) | 4, report written              |
+| `s3-review-default-3`  | yes       |                               0 (0) |                        2 (2) | 4, report written              |
+| `s3-review-auto-1`     | yes       |                               0 (0) |                        2 (0) | 5, report written              |
+| `s3-review-auto-2`     | yes       |                               0 (0) |                        3 (0) | 5, report written              |
+| `s3-review-auto-3`     | yes       |                               0 (0) |                        2 (0) | 4, report written              |
+| `s3-iterate-default-1` | yes       |                               3 (0) |                        3 (2) | –                              |
+| `s3-iterate-default-2` | yes       |                               2 (0) |                        4 (3) | –                              |
+| `s3-iterate-default-3` | yes       |                               2 (0) |                        1 (1) | –                              |
+| `s3-iterate-auto-1`    | yes       |                               2 (0) |                        4 (0) | –                              |
+| `s3-iterate-auto-2`    | yes       |                               1 (0) |                        5 (0) | –                              |
+| `s3-iterate-auto-3`    | yes       |                               4 (0) |                        2 (0) | –                              |
+| `s3-firmo-default-1`   | yes       |                               1 (0) |                        1 (1) | 8, report written              |
+
+In auto mode, no call of any shape was refused, and no run had a permission denial.
+
+**Literal calls: 19, none prompted or refused.** Each decided in 1 to 5 ms, the rule-match
+signature, in auto mode too:
+
+| Operation                  | Default mode                                      | Auto mode                 |
+| -------------------------- | ------------------------------------------------- | ------------------------- |
+| `memory migrate-directory` | `s3-review-default-1`, `-2`, `s3-firmo-default-1` | none                      |
+| `memory reserve`           | `s3-review-default-1`, `-2`                       | none                      |
+| `lock acquire`             | none                                              | `s3-iterate-auto-2`, `-3` |
+| `lock inspect`             | `s3-iterate-default-1`, `-2`, `-3`                | `s3-iterate-auto-1`, `-3` |
+| `lock release`             | `s3-iterate-default-1`, `-2`, `-3`                | `s3-iterate-auto-1`, `-3` |
+
+**Non-literal calls: 29, 9 of them prompted.** All are evidence about compliance with the call
+shape, not about the rule.
+
+- **Prompted, default mode:**
+  - `s3-review-default-3`:
+    - `memory reserve` behind `git check-ignore …;` with a trailing `echo $?`
+    - `migrate-directory` and `reserve` through `S=<helper path>; node $S …`
+  - `s3-iterate-default-1`: two `lock acquire` calls, each with a trailing `echo "exit=$?"`. The
+    second followed a `python3` heredoc and `npm test` in the same command.
+  - `s3-iterate-default-2`:
+    - the same two `lock acquire` shapes
+    - one `lock release` followed by `; cd … && git push`
+  - `s3-iterate-default-3`: one `lock acquire` with a trailing `echo "exit=$?"`
+  - `s3-firmo-default-1`: `memory reserve` followed by `; cd …; ls …; git check-ignore …`
+- **Unprompted, default mode:** `lock inspect … | grep -o '"token":…'` in `s3-iterate-default-1`
+  and `-2`. It decided in 3 and 8 ms, so the rule plus the read-only `grep` covered the pipe.
+- **Auto mode:** 16 non-literal calls were approved by the classifier, each after about 1.7 to
+  2.5 s. They were the 7 review-auto calls (variables, `$(pwd -P)`, trailing `echo exit=$?`) and 9
+  iterate-auto `lock` calls inside compound commands or with a trailing `echo`. Two more were
+  `lock inspect … | grep` calls in `s3-iterate-auto-1` and `-3`, which decided in 2 ms.
+- **First reserve fails:** every review-auto run, and `s3-review-default-3`, first called
+  `memory reserve` and got `MIGRATION_REQUIRED`. They then ran `migrate-directory` and `reserve`,
+  as the outcome contract prescribes.
+
+**Persisted state.** All six review runs wrote `.effective-flow/memory.json` with the marker and
+`lastFindingNumber` 4 or 5, matching their admitted findings, plus
+`.effective-flow/review/review-report-2026-10-31.md`. The migration run copied
+`.firmo/memory.json` and the legacy report into `.effective-flow/` and set the marker. It then
+reserved 5 IDs on top of the legacy counter 3, giving `lastFindingNumber` 8; `.firmo/` stayed in
+place. Every iterate run took and released `iterate-commit` around its commits.
+
+The regex counts of `analyze_baseline.py` for the same runs are in `summary-round3-tables.txt`. Its
+broad sub-class also counts a `cat .firmo/memory.json` read in `s3-firmo-default-1`.
+
+#### Verdict (round 3)
+
+**Rule confirmed for exercised calls.** Both conditions hold:
+
+- All 19 `effective-flow-state.mjs` calls in the literal shape ran without a prompt or refusal.
+- Every cell was exercised in 3 of 3 runs per mode, and the migration in 1 of 1. As in round 2,
+  "exercised" means that the required calls happened.
+
+Limits of this verdict:
+
+- **Literal coverage is uneven.** In auto mode the `memory` operations were never called in the
+  literal shape, so `s3-review-auto-1` to `-3` show classifier approvals, not rule matches. In
+  default mode `lock acquire` was never literal. Each of the five required operations was matched
+  by the rule in at least one mode. Counting only literal calls as exercised, the review auto cell
+  reaches 0 of 3, and the verdict would be "missed".
+- **Shape compliance is partial.** 29 of 48 calls broke the call-shape rule, most often with a
+  trailing exit-code `echo` or a compound command. In default mode that cost 9 prompts in 5 of
+  7 runs.
+- **Compliance stays open.** Rounds 1 and 2 show that the workflows skip these steps unless told to.
+  That gap remains open as a separate follow-up package.
+
+### Limit
+
+Server-side auto mode, which is the default, stayed unmeasured. As in work package 1, it gives no
+attribution. Other limits:
+
+- One model.
+- Only the portable install form, linked from a measurement `HOME`.
+- Headless sessions only.
+- Host-observed permission requests, classified by regular expressions.
+
+### Retention
+
+The evidence root `.effective-flow/spikes/allowlist/2026-10-29-02/` in the primary checkout is
+untracked. It holds:
+
+- the changed copies `host.mjs`, `host-setup.mjs`, `reset.sh`, `run.sh` and `analyze_baseline.py`,
+  plus the round 2 and round 3 analyses `analyze_round2.py` and `analyze_round3.py`
+- the prompts, the work package 1 baseline configurations under `baseline-configs/`, and the three
+  authentication probes under `probe/`
+- per run: the configuration, transcript, debug log, permission log, result, allow-rules envelopes,
+  settings snapshots and runtime-state listing, for the round 1 (`s1-…`), round 2 (`s2-…`) and round 3 (`s3-…`) runs
+- `summary-tables.txt` (round 1), `summary-round2-tables.txt` and `summary-round2-exercise.txt`
+  (round 2), `summary-round3-tables.txt` and `summary-round3-exercise.txt` (round 3), and
+  `manifest.sha256.txt` (736 files, regenerated after round 3)
+
+The manifest excludes the linked `node_modules`. No credential, token, `.claude.json` or
+`.credentials.json` is in the root. After all three rounds, the work package 1 root still matched its
+`manifest.sha256.txt`.
+
+| File                  | SHA-256                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `manifest.sha256.txt` | `889c929fc4a945076045d3d162765cbf5892dac11f2388f74d382c982c03caa3` |
+| `host.mjs`            | `77cd76a7a6c335a2565ac992e3c768657419f7cb34cdf6c2b53876af90d1ba0c` |
+| `host-setup.mjs`      | `10ba901e263d636cdc4d1fb8de4febdde69e66538e28521cc7f6f2f1a18563f6` |
+| `reset.sh`            | `67676c8426c06ff212b5120852260c9dd83f86ed0845c7ca44ee1c6b3bdf808b` |
+| `run.sh`              | `4be98a6c5514c349162199365c9bfdbc33c6e4ec67c00cd33e5a46af1081a38a` |
+| `analyze_baseline.py` | `f3785dfc42a0ae7f5b11a94b593266a49e246909d7f3970e99ef7b5bec0a981a` |
+| `analyze_round2.py`   | `357ae9d7b301553129b0969a76f462c00b6ff6d0b39fa3eb282aeb24f84474c4` |
+| `analyze_round3.py`   | `dbda71644a1df13cb138d6bc31d627aee6429d58d7f8fa0794e66f572e3162ee` |
+
+`reset.sh` and `run.sh` are the round 3 versions. They keep the earlier seeds and prompts for `s1-…`
+and `s2-…` ids.
+
+Round 1's 13 runs cost 3.17 USD, round 2's 2.90 USD and round 3's 5.85 USD. The setup cross-check
+cost 0.21 USD and the successful authentication probe 0.07 USD, so the total is 12.20 USD.

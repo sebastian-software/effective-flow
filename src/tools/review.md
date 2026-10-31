@@ -171,7 +171,7 @@ Effective Flow-internal files live under `.effective-flow/` in the project root.
 - Review reports: `.effective-flow/review/`
 - Temporary wisdom files: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-The file `.effective-flow/memory.json` stores persistent state across sessions. Unlike the wisdom file, it is never deleted.
+The file `.effective-flow/memory.json` holds persistent state across sessions. Unlike the wisdom file, it is never deleted.
 
 ```lazy-include
 review-state
@@ -241,25 +241,15 @@ user to `{{SKILL:setup}}`, the sole repair owner.
    safety” from `RUNTIME_STATE_ROOT` to the exact directory path `.effective-flow/` immediately
    before its `mkdir`. A later file or child-directory mutation requires its own guard for that
    exact target.
-3. If canonical memory is absent but `<RUNTIME_STATE_ROOT>/.sf-memory.json` exists, do not run a
-   preliminary migration. The first shared memory transaction must validate that unchanged legacy
-   object, use it as the base, merge that writer's intended mutation, and persist the combined
-   object to `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` in one replacement before removing
-   the legacy file. Inform the user; never inspect or remove worktree-local legacy memory.
-4. Without either memory file, the first reservation starts after `lastFindingNumber: 0`.
-5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
-6. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
+3. A `<RUNTIME_STATE_ROOT>/.sf-memory.json` is adopted by the first `memory` operation, never by
+   a preliminary step; report its legacy result fields. Never inspect or remove worktree-local legacy memory.
+4. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
+5. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
    valid; use only valid, non-stale cache entries. Ignore a same-named cache below
    `EXECUTION_ROOT`.
-7. Finish scope/high-risk triage, confidence and design-decision filtering, local or remote
-   deduplication, and durable-work admission. For the exact ordered list of `admitted` findings
-   that remains, reserve one contiguous range through “Shared
-   memory-state mutation” against the retained absolute memory handle under `RUNTIME_STATE_ROOT`.
-   Format its mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
-8. The reservation must be atomically persisted and its lock released before any report, finding
-   issue, or pull-request comment is published. If reservation fails, publish nothing. If
-   later publication fails or is interrupted, report the reserved range and partial result; the
-   unused IDs remain permanent gaps and are never rolled back or reused.
+6. Finish scope/high-risk triage first. Then reserve the IDs of the ordered list of `admitted`
+   findings through `memory reserve`, mapped as `R-0000001`, `R-0000002`, ..., following “Reserve
+   finding IDs before publication”; it gates every report, finding issue, and pull-request comment.
 
 ```lazy-include
 config-migration
@@ -398,7 +388,7 @@ On a resolved pull request:
    write, so a missing `tracker.externalTool` or an unreachable external connection never aborts
    it. Required is only the forge preflight: detect the host and CLI and probe availability and
    authentication.
-3. Finding IDs come from the existing shared memory-state reservation as usual.
+3. Finding IDs come from `memory reserve` as usual.
 4. Phases 2 and 3 run unchanged.
 5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
    the local-mode report or the finding issues of a publishing target.
@@ -580,10 +570,8 @@ numbering from `.effective-flow/memory.json` applies to admitted findings only.
    `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Run all directory lookups and collision checks
    there. If `.effective-flow/` is missing, guard that exact directory from the runtime root
    immediately before its `mkdir`. If `.effective-flow/review/` is missing, separately guard
-   that exact directory immediately before its `mkdir`. Finish finding filtering and
-   deduplication and admission, reserve the exact nonzero contiguous ID range through the shared memory
-   contract against the retained absolute runtime-root memory handle, and release its lock before
-   publishing the report. Guard the concrete report file again immediately before writing it,
+   that exact directory immediately before its `mkdir`. Reserve the report's IDs as item 6 of
+   “Effective Flow configuration and memory” › “Usage” describes. Guard the concrete report file again immediately before writing it,
    then create the report at `data.path` of `name-allocate`
    (`node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`, exactly one JSON object
    on standard input: `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` `.effective-flow/review`,
@@ -613,7 +601,7 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
    than creating findings without severity and action.
 2. **Dedup first:** On the forge target, use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. On an external target, search existing findings by the canonical classification value and by `Signature` content through the resolved connection; do not query legacy `firmo-`/`Signatur` forms there, since no run has ever written them to that tool. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
 3. **Dedup withheld findings:** Run the local dedup of the loaded "Security disclosure gate" for the `local-only` findings, which remote dedup cannot see. This must finish before the reservation, so a finding already recorded in an earlier report consumes no new ID.
-4. **Reserve IDs:** Reserve exactly one contiguous nonzero `R-XXXXXXX` range through the shared memory contract for the ordered list of all remaining admitted findings of **both** disclosure classes, and release its lock. Findings dropped by dedup or admission are not part of that list. Only after the reservation is atomically persisted may any report or issue be published; if reservation fails, publish nothing.
+4. **Reserve IDs:** Reserve one `R-XXXXXXX` range through `memory reserve` (“Reserve finding IDs before publication”) for the ordered list of all remaining admitted findings of **both** disclosure classes.
 5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use the same report handle, directory guards, and collision mechanics as local mode, and never inspect or create a report below a linked execution worktree.
 6. **Create direct finding issues:** Build each canonical payload through the helper and publish one
    issue per reserved admitted root cause. Publish the `publishable` findings, plus the withheld
@@ -627,7 +615,7 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
 8. **Empty result:** If no new admitted finding remains after dedup, create no tracker issue and
    report that no durable work was created. If every admitted finding stayed local, report only the
    local security report path.
-9. Do not rewrite `memory.json` after publication; the range was already persisted in Step 4.
+9. Reserve nothing after publication; the range was already persisted in Step 4.
 10. Report to the user the resolved target (for `external` including tool identifier and connection),
     every direct finding reference created in this run, the number deduplicated and closed, plus the
     number withheld and local report path. If this run published to a different target than the

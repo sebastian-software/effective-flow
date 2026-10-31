@@ -297,6 +297,7 @@ test('every setup-fixable remediation names exactly the setup form it records', 
     'setup guided': /`effective-flow setup guided`/,
     'setup hidden': /`effective-flow setup hidden`/,
     targeted: /\(a Targeted request\)/,
+    allowlist: /`effective-flow setup allowlist`/,
   };
   assert.deepEqual(Object.keys(named), [...SETUP_FORMS]);
   for (const { remediation, setupFixable, setupForm } of all) {
@@ -1372,4 +1373,171 @@ test('the spawned CLI reads stdin and emits one envelope line', (t) => {
   assert.equal(envelope.data.ignore.state, 'not-applicable');
   // The source tree carries no generated projection, so the owners cannot be checked here.
   assert.equal(envelope.data.domainOwners.state, 'could-not-check');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Allow-rule probe
+
+const { CLAUDECODE: _ignoredClaudeCode, ...ENV_OUTSIDE_CLAUDE } = GIT_ENV;
+const ENV_IN_CLAUDE = { ...ENV_OUTSIDE_CLAUDE, CLAUDECODE: '1' };
+const ALLOWLISTED = [
+  'lock acquire',
+  'lock release',
+  'lock inspect',
+  'memory reserve',
+  'memory set-marker',
+  'memory migrate-directory',
+];
+
+function allowRule(skillRoot, operation) {
+  return `Bash(node ${skillRoot}/scripts/effective-flow-state.mjs ${operation} *)`;
+}
+
+// A skill install outside the repository, reached through a symlinked `skills/effective-flow`.
+function skillInstall(t) {
+  const base = tempDir(t);
+  write(base, 'real/effective-flow/scripts/effective-flow-state.mjs', '// helper\n');
+  mkdirSync(join(base, 'skills'));
+  symlinkSync(join(base, 'real', 'effective-flow'), join(base, 'skills', 'effective-flow'));
+  return { base, skillRoot: join(base, 'skills', 'effective-flow') };
+}
+
+async function allowlistStatus(t, cwd, input, env = ENV_IN_CLAUDE) {
+  const envelope = await executeOperation(
+    'status',
+    { cwd, ...input },
+    { env, fetch: fakeFetch().fetch, projectionPath: projectionFile(t) },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  return envelope.data;
+}
+
+function writeAllowRules(root, rules) {
+  write(
+    root,
+    '.claude/settings.local.json',
+    `${JSON.stringify({ permissions: { allow: rules } })}\n`,
+  );
+}
+
+// Invariant: the closed status input gains exactly one optional key, `skillRoot`, an absolute path.
+test('allowlist: skillRoot is the one optional input key and must be absolute', async (t) => {
+  const { root } = repository(t);
+  for (const skillRoot of ['relative/path', 7, '']) {
+    const envelope = await executeOperation('status', { cwd: root, skillRoot }, { env: GIT_ENV });
+    assert.equal(envelope.error?.code, 'INVALID_INPUT');
+    assert.equal(envelope.error.details.field, 'skillRoot');
+  }
+  const unknown = await executeOperation('status', { cwd: root, harness: 'claude' }, {});
+  assert.equal(unknown.error?.code, 'INVALID_INPUT');
+});
+
+// Invariant: without `skillRoot`, or outside Claude Code, the probe is not-applicable and fixes
+// nothing.
+test('allowlist: not-applicable without skillRoot or outside Claude Code', async (t) => {
+  const { root } = repository(t);
+  const { skillRoot } = skillInstall(t);
+  const none = await allowlistStatus(t, root, {});
+  assert.equal(none.allowlist.state, 'not-applicable');
+  assert.equal(none.allowlist.reason, 'no-skill-root');
+  assert.equal(none.allowlist.setupFixable, false);
+  const outside = await allowlistStatus(t, root, { skillRoot }, ENV_OUTSIDE_CLAUDE);
+  assert.equal(outside.allowlist.state, 'not-applicable');
+  assert.equal(outside.allowlist.reason, 'not-claude-code');
+  assert.ok(!outside.setupForms.includes('allowlist'));
+});
+
+// Invariant: a missing settings file or a missing rule is `absent`, fixed by `setup allowlist`.
+test('allowlist: absent without the settings file or with a rule missing', async (t) => {
+  const { root } = repository(t);
+  const { skillRoot } = skillInstall(t);
+  const empty = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(empty.allowlist.state, 'absent');
+  assert.equal(empty.allowlist.target, join(root, '.claude', 'settings.local.json'));
+  assert.equal(empty.allowlist.missing.length, 6);
+  assert.equal(empty.allowlist.setupFixable, true);
+  assert.equal(empty.allowlist.setupForm, 'allowlist');
+  assert.match(empty.allowlist.remediation, /`effective-flow setup allowlist`/);
+  assert.equal(empty.setupFixable, true);
+  assert.ok(empty.setupForms.includes('allowlist'));
+
+  writeAllowRules(
+    root,
+    ALLOWLISTED.slice(1).map((operation) => allowRule(skillRoot, operation)),
+  );
+  const partial = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(partial.allowlist.state, 'absent');
+  assert.deepEqual(partial.allowlist.missing, [allowRule(skillRoot, 'lock acquire')]);
+});
+
+// Invariant: Claude Code matches the literal command path, so a rule counts as this install's only
+// when it names this `skillRoot` literally; all six rules naming the given root are `current`.
+test('allowlist: current when all six rules name this install', async (t) => {
+  const { root } = repository(t);
+  const { skillRoot } = skillInstall(t);
+  writeAllowRules(root, [
+    'Bash(git status:*)',
+    ...ALLOWLISTED.map((operation) => allowRule(skillRoot, operation)),
+  ]);
+  const data = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(data.allowlist.state, 'current');
+  assert.equal(data.allowlist.present.length, 6);
+  assert.deepEqual(data.allowlist.missing, []);
+  assert.deepEqual(data.allowlist.aliases, []);
+  assert.equal(data.allowlist.setupFixable, false);
+  assert.equal(data.allowlist.setupForm, null);
+});
+
+// Invariant: rules under another path to the same helper never fire for this install: they are
+// listed in `aliases`, count as neither present nor stale, and leave all six rules `missing`.
+test('allowlist: an alias of the same helper is absent and reported in aliases', async (t) => {
+  const { root } = repository(t);
+  const { base, skillRoot } = skillInstall(t);
+  const alias = join(base, 'alias');
+  symlinkSync(join(base, 'real', 'effective-flow'), alias);
+  const aliasRules = ALLOWLISTED.map((operation) => allowRule(alias, operation));
+  writeAllowRules(root, ['Bash(git status:*)', ...aliasRules]);
+  const data = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(data.allowlist.state, 'absent');
+  assert.deepEqual(data.allowlist.present, []);
+  assert.deepEqual(
+    data.allowlist.missing,
+    ALLOWLISTED.map((operation) => allowRule(skillRoot, operation)),
+  );
+  assert.deepEqual(data.allowlist.aliases, aliasRules);
+  assert.deepEqual(data.allowlist.stale, []);
+  assert.equal(data.allowlist.setupForm, 'allowlist');
+});
+
+// Invariant: a helper-shape rule whose helper no longer resolves is `stale` and fixed by
+// `setup allowlist`, even when this install's rules are all present.
+test('allowlist: stale when a rule names a helper that no longer resolves', async (t) => {
+  const { root } = repository(t);
+  const { skillRoot } = skillInstall(t);
+  const dead = allowRule('/nonexistent/moved/effective-flow', 'memory reserve');
+  writeAllowRules(root, [...ALLOWLISTED.map((operation) => allowRule(skillRoot, operation)), dead]);
+  const data = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(data.allowlist.state, 'stale');
+  assert.deepEqual(data.allowlist.stale, [dead]);
+  assert.equal(data.allowlist.setupForm, 'allowlist');
+  assert.match(data.allowlist.remediation, /`effective-flow setup allowlist`/);
+});
+
+// Invariant: what the probe cannot decide is `could-not-check` with its reason, never a guess.
+test('allowlist: could-not-check for an unresolved root, helper or settings file', async (t) => {
+  const { skillRoot } = skillInstall(t);
+  const outsideGit = tempDir(t);
+  const noRoot = await allowlistStatus(t, outsideGit, { skillRoot });
+  assert.equal(noRoot.allowlist.state, 'could-not-check');
+  assert.equal(noRoot.allowlist.reason, 'runtime-root-unresolved');
+
+  const { root } = repository(t);
+  const noHelper = await allowlistStatus(t, root, { skillRoot: join(outsideGit, 'missing') });
+  assert.equal(noHelper.allowlist.reason, 'helper-unresolved');
+
+  write(root, '.claude/settings.local.json', '{"permissions":{"allow":"Bash"}}');
+  const invalid = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(invalid.allowlist.state, 'could-not-check');
+  assert.equal(invalid.allowlist.reason, 'settings-invalid');
+  assert.equal(invalid.allowlist.setupFixable, false);
 });

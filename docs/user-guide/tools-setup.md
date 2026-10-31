@@ -23,7 +23,7 @@ individual settings with explanations (project and surface languages, worktree, 
 tracker details, advanced review/apply-review values, skill discovery, or the `build`/`refactor`
 Fast pilot), and Express when you intentionally want the safe base without an interview. Use
 `status` to check whether the setup is healthy without changing anything. Any mode
-except Targeted and Status may offer the optional session-rename capability check described below.
+except Targeted, Status and Allowlist may offer the optional session-rename capability check described below.
 
 **Typical call:** `/effective-flow setup`
 
@@ -36,11 +36,12 @@ The accepted invocations are:
 /effective-flow setup guided
 /effective-flow setup hidden
 /effective-flow setup status
+/effective-flow setup allowlist
 /effective-flow setup <free text>
 ```
 
 The first two forms enter Profile mode. `hidden` enters Express with the visibility already set to
-hidden. `status` runs the read-only [Status](#status) diagnosis. Surrounding whitespace and letter case do not matter for these keywords. Any other argument
+hidden. `status` runs the read-only [Status](#status) diagnosis. `allowlist` runs only the [allow-rule step](#allow-rules-claude-code). Surrounding whitespace and letter case do not matter for these keywords. Any other argument
 is a free-text request for [Targeted mode](#targeted-changes-and-questions), even one that starts
 with a keyword: `/effective-flow setup guided tracker github` is a targeted request, not Guided, and
 `/effective-flow setup status of the tracker` is a targeted question, not Status.
@@ -199,7 +200,7 @@ route to take and still offers the remaining changes:
 
 `/effective-flow setup status` diagnoses the setup of the current checkout and changes nothing. It
 asks no question, writes no file, changes neither Git state nor `.effective-flow/`, and offers no inline
-fix; a non-interactive run produces the same report. The report has four sections:
+fix; a non-interactive run produces the same report. The report has five sections:
 
 - **Configuration:** where the configuration comes from (the project-setup ADR or the hidden local
   file) and its visibility, or that the project is not set up yet; every problem the configuration
@@ -224,6 +225,9 @@ fix; a non-interactive run produces the same report. The report has four section
   repository, branch, or configuration data; the report names the request. When the lookup fails,
   for example offline or rate-limited, the section says `could not check` and the report is still
   complete.
+- **Allow rules:** in Claude Code, whether the [allow rules](#allow-rules-claude-code) for the
+  runtime-state helper are `absent`, `current` or `stale`, with the missing and stale rules; in
+  another harness, or when the state cannot be read, that it does not apply or could not be checked.
 
 Every problem comes with the setup form that would fix it, such as `/effective-flow setup` or
 `/effective-flow setup hidden`, or with the manual step when setup cannot fix it; a missing domain
@@ -231,13 +235,30 @@ owner comes with its install step, a disabled one with the targeted request that
 Status runs none of them. When at least one problem can be fixed by setup, the report ends with a
 recommendation with one line per setup form the problems need, at most two, in the order
 `/effective-flow setup`, `/effective-flow setup guided`, `/effective-flow setup hidden`, then the
-first targeted request; further requests or forms follow the same way, and plain
+first targeted request, then `/effective-flow setup allowlist`; further requests or forms follow the same way, and plain
 `/effective-flow setup` appears only when that form itself is needed. A deliberate `skills` exclusion or a missing skill never triggers that
 recommendation; without a setup-fixable problem the report suggests no next step.
 
+### Allow rules (Claude Code)
+
+In Claude Code, setup can write one allow rule for each non-destructive operation of the runtime-state
+helper (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
+`memory migrate-directory`), so the helper runs without a permission prompt. Every mode except
+Targeted and Status offers the step after the configuration write, and `/effective-flow setup allowlist` runs it
+alone without an existing configuration. The rules go into the untracked
+`.claude/settings.local.json` of the main checkout and are bound to the absolute path of this
+installation. Setup shows a preview of the change and writes it only after your explicit
+confirmation; if the file is not ignored, it asks whether to add it to `.gitignore` (in hidden
+mode, to `info/exclude`) and adds the line only after your yes. Destructive operations such as `lock break` never get a rule.
+
+Never accept Claude Code's "don't ask again" suggestion for a helper call: it widens the rule to
+`node <helper> *` or `node *`, which also approves `lock break` or any other script. Whether Claude
+Code applies the rules in a session started inside a linked worktree is unverified. In Codex and
+other harnesses the step writes nothing.
+
 ### Visibility question
 
-Every mode except Targeted and Status asks **Visibility** before it touches `.gitignore` or any
+Every mode except Targeted, Status and Allowlist asks **Visibility** before it touches `.gitignore` or any
 configuration: Profile after Chat and Profile, Express and Guided as their first question.
 `/effective-flow setup hidden` skips the question. `Standard` is the tracked ADR, marker, and `.gitignore` setup described on this
 page. `Hidden` switches the run to [hidden mode](#hidden-mode). The question pre-selects `Hidden`
@@ -366,7 +387,7 @@ ignores it. The values set here
 As the last part of the configuration write, setup offers to add a `CLAUDE.md` whose whole content
 is the single line `@AGENTS.md`. Claude Code loads `CLAUDE.md` into every session but reads
 `AGENTS.md` only when something asks it to, so the import is what makes a project's guidance
-reliably present. The offer is a question in every mode except Targeted and Status, Express included, and a
+reliably present. The offer is a question in every mode except Targeted, Status and Allowlist, Express included, and a
 run that cannot
 ask it — unanswered, skipped, or non-interactive — writes nothing and says so. Setup creates the
 file only where none exists, and replaces an existing `CLAUDE.md` only where it holds nothing but a

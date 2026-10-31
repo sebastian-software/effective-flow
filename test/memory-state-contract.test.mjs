@@ -3,7 +3,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { extractBody, findMemoryStateContractViolations, renderBody } from '../build-lib.mjs';
+import {
+  MEMORY_OPERATION_RE,
+  extractBody,
+  findMemoryStateContractViolations,
+  renderBody,
+} from '../build-lib.mjs';
+import { STATE_OPERATIONS } from '../src/scripts/effective-flow-state-core.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -43,160 +49,175 @@ function collectRuntimeSources() {
   return sources;
 }
 
-// The memory lock goes only through the runtime-state helper, called in the here-string shape an
-// allowlist rule can match; a multi-line heredoc cannot be allowlisted.
-const HELPER_HERE_STRING =
-  /node <skill-root>\/scripts\/effective-flow-state\.mjs lock acquire <<< '\{[^\n]*"lock":"memory"/;
+// Every memory operation is called in the here-string shape an allowlist rule can match; a
+// multi-line heredoc cannot be allowlisted.
+const helperCall = (operation) =>
+  new RegExp(
+    `node <skill-root>/scripts/effective-flow-state\\.mjs memory ${operation} <<< '\\{"cwd":"<RUNTIME_STATE_ROOT>","owner":\\{"workflow":"<workflow>"\\}`,
+  );
+const MEMORY_OPERATIONS = ['reserve', 'set-marker', 'migrate-directory'];
 // A heredoc opener (`<<EOF`, `<<-'EOF'`), but not the here-string `<<<`.
 const HEREDOC = /(?<!<)<<(?!<)-?\s*['"]?[A-Za-z_]\w*/;
+const flat = (text) => text.replace(/\s+/g, ' ');
 
 const requiredClauses = [
-  [HELPER_HERE_STRING, 'helper acquisition in the here-string shape'],
-  [/`waitSeconds: 30`/, 'bounded 30-second acquisition wait'],
-  [/\(no `runId`\)/, 'memory owner without a run identity'],
+  [/Never lock, merge, or rewrite it in prose/, 'no prose writer'],
+  [/a new key\s+family needs a new helper operation/, 'no generic write'],
+  [/takes and releases\s+the `memory` lock itself/, 'the operation owns its lock'],
+  [/preserves every other field/, 'unknown-field preservation'],
+  [/never `EXECUTION_ROOT`\s+or\s+another linked worktree/, 'runtime root as cwd'],
+  [/`owner` carries no `runId`/, 'memory owner without a run identity'],
   [
-    /`LOCK_HELD`[\s\S]*report the `outcome` owner[\s\S]*block the owning mutation/,
-    'owner diagnostics and a blocked mutation on LOCK_HELD',
+    /`MIGRATION_REQUIRED`:\*\* call `memory migrate-directory` once, treating its\s+`MIGRATION_NOT_NEEDED` as success \(another session won the race\), then retry the operation once\.\s+Any other non-success result of either call blocks with its code; a delegated worker reports it\s+and never asks the user/,
+    'migrate once (a lost race counts as success), retry once, block otherwise without asking',
   ],
   [
-    /delegated worker never asks the user[\s\S]*relayed or\s+non-interactive run fails closed[\s\S]*offers no break/,
+    /`LOCK_HELD`[\s\S]*delegated worker returns these diagnostics to its orchestrator and never asks the user[\s\S]*relayed or non-interactive run fails closed and offers no break/,
     'workers return diagnostics and non-gated runs never break',
   ],
   [
-    /Age alone never[\s\S]*apparent orphan[\s\S]*`lock inspect`[\s\S]*explicit user confirmation[\s\S]*`lock break`/,
-    'confirmed orphan recovery through inspect, confirmation and break',
+    /Age alone never[\s\S]*apparent\s+orphan[\s\S]*only as a gated orchestrator, run `lock inspect`[\s\S]*explicit user confirmation[\s\S]*`lock break`/,
+    'orchestrator-only confirmed orphan recovery',
   ],
+  [/`NOT_OWNER`:\*\*[^\n]*nothing was written/, 'lost ownership writes nothing'],
   [
-    /immediately before the atomic rename of `memory\.json`, run `lock inspect`[\s\S]*token equals the retained token/,
-    'ownership re-check before the rename',
+    /`result\.legacyAdopted`[\s\S]*`result\.legacyConflict`[\s\S]*`result\.legacyRemoval`/,
+    'legacy adoption reported through the result fields',
   ],
+  [/`LEGACY_CHANGED` is an error that wrote nothing/, 'a pre-rename legacy change writes nothing'],
   [
-    /`finally`[\s\S]*`lock release`[\s\S]*`NOT_HELD` or `NOT_OWNER` is reported as lost ownership/,
-    'token-checked release reporting lost ownership',
+    /unclean release[\s\S]*`lockRelease` of a `result` or an\s+`outcome`[\s\S]*appended to an error message/,
+    'an unclean release is reported from a result, an outcome and an error message',
   ],
-  [
-    /re-read the retained absolute `<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle inside\s+the lock/is,
-    'fresh locked read',
-  ],
-  [/valid JSON[\s\S]*JSON object/i, 'object validation'],
-  [/preserve.*unknown fields/is, 'unknown-field preservation'],
-  [/same-directory unique\s+(?:absolute\s+)?file/i, 'same-directory unique temp file'],
-  [/atomic rename/i, 'atomic replacement'],
-  [/clean up only.*own temporary file/is, 'owned temp cleanup'],
-  [/exact nonzero contiguous range/i, 'exact range reservation'],
-  [/before\s+publishing/i, 'reservation before publication'],
-  [/permanent\s+gaps/i, 'monotonic gaps'],
-  [/invalid.*lastFindingNumber/is, 'invalid counter failure'],
 ];
 
-// Invariant: the memory lock runs only through the helper, with today's wait, orphan and release
-// semantics, and the memory.json protocol around it stays intact.
-test('the canonical memory contract covers locking, merging, atomic replacement, and reservation', () => {
+// Invariant: memory.json changes only through the three typed helper operations, called in the
+// allowlistable here-string shape, with the outcome handling every call site shares.
+test('the memory contract states the three operations and their outcome handling', () => {
+  for (const operation of MEMORY_OPERATIONS) {
+    assert.match(memoryContract, helperCall(operation), `missing the ${operation} call shape`);
+    assert.ok(STATE_OPERATIONS.includes(`memory ${operation}`), `helper lacks memory ${operation}`);
+  }
   for (const [pattern, description] of requiredClauses) {
     assert.match(memoryContract, pattern, `missing ${description}`);
   }
   assert.doesNotMatch(memoryContract, HEREDOC, 'a helper call must not use a heredoc');
-  assert.doesNotMatch(memoryContract, /`mkdir [^`]*memory\.lock`/, 'no prose replay of the lock');
 });
 
-// Invariant: every memory writer goes through the shared locked mutation contract.
-test('all checked-in memory writers route through the shared contract', () => {
+// Invariant: the prose no longer replays the protocol the helper owns — no lock acquisition or
+// release for memory, no temp-file or rename steps, no legacy adoption steps.
+test('the memory contract carries no protocol replay', () => {
+  assert.doesNotMatch(memoryContract, /lock acquire|lock release/, 'no prose memory lock');
+  assert.doesNotMatch(memoryContract, /`mkdir [^`]*memory\.lock`/, 'no prose lock directory');
+  assert.doesNotMatch(memoryContract, /atomic rename|temporary file|\.tmp`/i, 'no write replay');
+  assert.doesNotMatch(memoryContract, /remove `<RUNTIME_STATE_ROOT>\/\.sf-memory\.json`/);
+  assert.doesNotMatch(memoryContract, /identity and digest/, 'no legacy adoption replay');
+});
+
+// Invariant: every memory writer calls a named operation after the contract and the migration
+// prerequisite, and no prose writes memory.json directly.
+test('all checked-in memory writers call a named memory operation', () => {
   assert.deepEqual(findMemoryStateContractViolations(collectRuntimeSources()), []);
 });
 
-// Invariant: the locked, atomic memory protocol survives every harness render.
-test('all consumer targets preserve the memory mutation protocol', () => {
+// Invariant: every memory operation a source names is one the helper implements.
+test('every memory operation named in the sources exists in the helper', () => {
+  const named = new Set();
+  for (const body of collectRuntimeSources().values()) {
+    for (const match of body.matchAll(new RegExp(MEMORY_OPERATION_RE.source, 'g'))) {
+      named.add(match[0]);
+    }
+  }
+  assert.ok(named.size > 0);
+  for (const operation of named) assert.ok(STATE_OPERATIONS.includes(operation), operation);
+});
+
+// Invariant: the operation contract survives every harness render.
+test('all consumer targets preserve the memory operation contract', () => {
   for (const harness of ['claude', 'codex', 'portable']) {
     const rendered = renderBody(`${memoryContract}\n`, harness, {
       ...renderConfig,
       context: `shared/memory-state.md (${harness})`,
     });
-
-    assert.match(rendered, HELPER_HERE_STRING);
+    for (const operation of MEMORY_OPERATIONS) assert.match(rendered, helperCall(operation));
     assert.doesNotMatch(rendered, HEREDOC);
-    assert.match(rendered, /Never inspect, lock, migrate, or mutate a same-named path below/);
-    assert.match(rendered, /exact nonzero contiguous range/i);
-    assert.match(rendered, /atomic rename/i);
-    assert.match(rendered, /permanent\s+gaps/i);
+    assert.match(rendered, /`MIGRATION_REQUIRED`/);
+    assert.match(rendered, /permanent gaps/);
     assert.doesNotMatch(rendered, /\{\{(?:SKILL|AGENT):/);
   }
 });
 
-// Invariant: finding numbers are reserved after filtering and before publication.
+// Invariant: finding numbers are reserved after filtering and before publication, and a failure
+// after the reservation leaves gaps rather than reusing the range.
 test('finding producers reserve only after filtering and before publication', () => {
-  const review = readSource('tools', 'review.md');
-  const unresolved = readSource('shared', 'unresolved-review-report.md');
+  const contract = flat(memoryContract);
+  const filter = contract.indexOf('Finish confidence filtering, design-decision filtering');
+  const reserve = contract.indexOf('call `memory reserve` with the exact count', filter);
+  const publish = contract.indexOf('only after the call succeeded publish', reserve);
+  assert.ok(filter >= 0 && filter < reserve && reserve < publish);
+  assert.match(contract, /If no new finding remains, reserve nothing/);
+  assert.match(contract, /unpublished IDs stay permanent gaps/);
 
-  const reviewTriage = review.indexOf('Finish scope/high-risk triage');
-  const reviewFilter = review.indexOf('confidence and design-decision filtering', reviewTriage);
-  const reviewExactList = review.indexOf(
-    'For the exact ordered list of `admitted` findings',
-    reviewFilter,
+  // Each producer keeps only its site-specific list and defers the ordering to the contract above:
+  // it finishes its own filtering first, then reserves through `memory reserve` by pointing at
+  // "Reserve finding IDs before publication" rather than restating the ordering or gaps rule.
+  const pointer = /“Reserve\s+finding IDs before publication”/;
+  const review = flat(readSource('tools', 'review.md'));
+  const reviewTriage = review.indexOf('Finish scope/high-risk triage first');
+  const reviewList = review.indexOf('ordered list of `admitted` findings', reviewTriage);
+  const reviewReserve = review.indexOf('through `memory reserve`', reviewList);
+  assert.ok(reviewTriage >= 0 && reviewTriage < reviewList && reviewList < reviewReserve);
+  assert.match(review.slice(reviewReserve), pointer);
+  assert.match(
+    review,
+    /\*\*Reserve IDs:\*\* Reserve one `R-XXXXXXX` range through `memory reserve` \(“Reserve finding IDs before publication”\)/,
   );
-  const reviewReserve = review.indexOf('reserve one contiguous range', reviewExactList);
-  const reviewPublish = review.indexOf('before any report, finding', reviewReserve);
-  assert.ok(
-    reviewTriage >= 0 &&
-      reviewTriage < reviewFilter &&
-      reviewFilter < reviewExactList &&
-      reviewExactList < reviewReserve &&
-      reviewReserve < reviewPublish,
-  );
+  assert.doesNotMatch(review, /a failed reservation publishes nothing/);
 
-  const unresolvedFilter = unresolved.indexOf('Finish confidence and design-decision filtering');
-  const unresolvedReserve = unresolved.indexOf('reserve the exact range', unresolvedFilter);
-  const unresolvedPublish = unresolved.indexOf('publish the', unresolvedReserve);
+  const unresolved = flat(readSource('shared', 'unresolved-review-report.md'));
+  const unresolvedAdmission = unresolved.indexOf('run admission once for the unresolved batch');
+  const unresolvedReserve = unresolved.indexOf('call `memory reserve`', unresolvedAdmission);
+  const unresolvedPublish = unresolved.indexOf('publish the report', unresolvedReserve);
   assert.ok(
-    unresolvedFilter >= 0 &&
-      unresolvedFilter < unresolvedReserve &&
+    unresolvedAdmission >= 0 &&
+      unresolvedAdmission < unresolvedReserve &&
       unresolvedReserve < unresolvedPublish,
   );
+  assert.match(unresolved, pointer);
+  assert.doesNotMatch(unresolved, /permanent gaps/);
 });
 
-// Invariant: every migration marker writes through the shared memory mutation contract.
-test('every existing migration marker delegates its owned subtree to the protocol', () => {
+// Invariant: every migration marker is set through its own typed operation, never in prose.
+test('every migration marker is set through a typed memory operation', () => {
   assert.match(
     readSource('shared', 'effective-flow-dir-migration.md'),
-    /memory-state[\s\S]*runtimeMigration\.directory/,
+    /runtimeMigration\.directory[\s\S]*call `memory migrate-directory`/,
   );
   assert.match(
     readSource('shared', 'issue-tracker-forge.md'),
-    /labelMigration\.sf[\s\S]*memory mutation contract/,
+    /labelMigration\.sf[\s\S]*`memory set-marker` and `"marker":"label-migration-sf"`/,
   );
   assert.match(
     readSource('tools', 'setup.md'),
-    /configMigration\.adr[\s\S]*memory mutation contract/,
-  );
-  assert.match(
-    readSource('tools', 'review.md'),
-    /\.sf-memory\.json[\s\S]*shared memory (?:mutation contract|transaction)/,
+    /set `configMigration\.adr` with\s+`memory set-marker`, `"marker":"config-migration-adr"`/,
   );
 });
 
-// Invariant: legacy memory is the base of one replacement, so the finding counter is never lost.
-test('root legacy memory is the base for the prerequisite and the following reservation', () => {
-  const legacySection = memoryContract.slice(
-    memoryContract.indexOf('### Legacy `.sf-memory.json`'),
-  );
-  const base = legacySection.indexOf('validate it as the initial object');
-  const mutation = legacySection.indexOf("Merge the current writer's intended mutation", base);
-  const replacement = legacySection.indexOf('one atomic replacement', mutation);
-  const removal = legacySection.indexOf(
-    'remove `<RUNTIME_STATE_ROOT>/.sf-memory.json`',
-    replacement,
-  );
-
-  assert.ok(base >= 0 && base < mutation && mutation < replacement && replacement < removal);
-  assert.match(
-    legacySection,
-    /runtime-directory prerequisite adds `runtimeMigration\.directory` without losing the legacy\s+counter/,
-  );
-  assert.match(
-    legacySection,
-    /`lastFindingNumber: 41`[\s\S]*`R-0000042`–`R-0000043`[\s\S]*persists `43`/,
-  );
+// Invariant: root legacy memory is adopted inside the first memory operation, never by a
+// preliminary prose step that could publish a marker first and hide the legacy counter.
+test('root legacy memory is adopted by the first memory operation', () => {
   assert.match(
     readSource('tools', 'review.md'),
-    /do not run a\s+preliminary migration[\s\S]*merge that writer's intended mutation[\s\S]*one\s+replacement/,
+    /A `<RUNTIME_STATE_ROOT>\/\.sf-memory\.json` is adopted by the first `memory` operation, never by\s+a preliminary step/,
   );
+  assert.match(memoryContract, /Legacy `\.sf-memory\.json`\*\* is adopted inside the call/);
+});
+
+// Invariant: a host that reserves finding IDs loads the migration prerequisite through a trigger
+// that names memory, so `memory reserve` never meets an unmigrated runtime directory unprepared.
+test('the fix migration trigger names memory', () => {
+  const fix = readSource('tools', 'fix.md');
+  const pointer = fix.match(/```lazy-include\neffective-flow-dir-migration\nwhen: ([^\n]+)\n```/);
+  assert.ok(pointer, 'fix must keep its lazy migration pointer');
+  assert.match(pointer[1], /\bmemory\b/);
 });

@@ -45,7 +45,7 @@ when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, report, backlink, or worktree mutation below `.effective-flow/` is imminent
+when: any wisdom, report, memory, backlink, or worktree mutation below `.effective-flow/` is imminent
 ```
 
 ```lazy-include

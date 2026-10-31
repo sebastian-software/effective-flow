@@ -5700,42 +5700,103 @@ export function findRuntimeDirMigrationViolations(
   );
 }
 
-// --- Shared memory-state mutation coverage guard (#176) ---
+// --- Memory-operation coverage guard (#176) ---
 //
-// Every operational write to the repository-global memory object must pass
-// through the single lock/merge/atomic-replacement contract. Ordered traversal
-// catches a writer that includes the contract only after its first mutation.
+// `memory.json` changes only through the typed `memory` operations of the runtime-state helper.
+// Ordered traversal enforces three rules: a prose instruction that mutates `memory.json` without
+// naming a `memory` operation is a direct write; every line naming a `memory` operation follows the
+// memory-operations contract; and it follows the runtime-directory migration prerequisite, loaded
+// eagerly or through at least one lazy `when:` trigger that names memory, so the host loads it
+// before the call.
+
+export const MEMORY_OPERATION_RE = /\bmemory (?:reserve|set-marker|migrate-directory)\b/;
+export const MEMORY_CONTRACT_HEADING = '## Memory operations';
+const MIGRATION_HEADING_PREFIX = '## Runtime directory `.effective-flow/` and migration';
 
 export function findMemoryStateContractViolations(
   sources,
-  { rootContexts, contractFragment = 'memory-state', delivered = false } = {},
+  {
+    rootContexts,
+    contractFragment = 'memory-state',
+    migrationFragment = 'effective-flow-dir-migration',
+    delivered = false,
+  } = {},
 ) {
   const contractContext = `shared/${contractFragment}.md`;
+  const migrationContext = `shared/${migrationFragment}.md`;
   const violations = [];
+  const report = (context, lineNumber, reason, target, includeChain) =>
+    violations.push({ context, line: lineNumber, reason, target, includeChain: [...includeChain] });
 
   walkRuntimeStateMutations(sources, {
     rootContexts,
-    initialState: () => ({ memoryContractSeen: false }),
-    onLine: ({ line, active }) => {
-      if (delivered && line.trim() === '## Shared memory-state mutation') {
-        active.memoryContractSeen = true;
+    initialState: () => ({
+      memoryContractSeen: false,
+      migrationSeen: false,
+      migrationEager: false,
+      migrationWhens: [],
+    }),
+    onLine: ({ context, line, lineNumber, active, includeChain }) => {
+      const trimmed = line.trim();
+      if (delivered && trimmed === MEMORY_CONTRACT_HEADING) active.memoryContractSeen = true;
+      if (delivered && trimmed.startsWith(MIGRATION_HEADING_PREFIX)) {
+        active.migrationSeen = true;
+        if (active.migrationWhens.length === 0) active.migrationEager = true;
+      }
+      if (context === contractContext || INCLUDE_FENCE_START_RE.test(line)) return;
+      const operation = MEMORY_OPERATION_RE.exec(line)?.[0];
+      if (!operation) return;
+      if (!active.memoryContractSeen) {
+        report(
+          context,
+          lineNumber,
+          'memory operation is not preceded by the memory-operations contract',
+          operation,
+          includeChain,
+        );
+      }
+      if (context === migrationContext) return;
+      if (!active.migrationSeen) {
+        report(
+          context,
+          lineNumber,
+          'memory operation is not preceded by the runtime-directory migration prerequisite',
+          operation,
+          includeChain,
+        );
+      } else if (
+        !active.migrationEager &&
+        !active.migrationWhens.some((when) => /\bmemory\b/i.test(when))
+      ) {
+        report(
+          context,
+          lineNumber,
+          `no migration prerequisite trigger names memory: "${active.migrationWhens.join('"; "')}"`,
+          operation,
+          includeChain,
+        );
       }
     },
-    onInclude: ({ name, active, lazy }) => {
+    onInclude: ({ name, active, lazy, when }) => {
+      if (name === migrationFragment) {
+        if (lazy) active.migrationWhens = [...active.migrationWhens, when];
+        else active.migrationEager = true;
+        if (!delivered) active.migrationSeen = true;
+      }
       if (delivered) return lazy;
       if (name === contractFragment) active.memoryContractSeen = true;
       return name !== contractFragment;
     },
-    onMutation: ({ context, lineNumber, target, active, includeChain }) => {
-      if (context === contractContext || !target.startsWith('.effective-flow/memory.json')) return;
-      if (active.memoryContractSeen) return;
-      violations.push({
+    onMutation: ({ context, line, lineNumber, target, active, includeChain }) => {
+      if (!target.startsWith('.effective-flow/memory.json')) return;
+      if (MEMORY_OPERATION_RE.test(line)) return;
+      report(
         context,
-        line: lineNumber,
-        reason: 'memory mutation is not preceded by the shared memory-state contract',
+        lineNumber,
+        'prose mutates memory.json directly instead of naming a memory operation',
         target,
-        includeChain: [...includeChain],
-      });
+        includeChain,
+      );
     },
   });
 

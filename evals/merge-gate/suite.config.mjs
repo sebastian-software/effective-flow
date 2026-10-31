@@ -61,8 +61,8 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 //
 // The configuration resolver pair is seeded for the same reason: the gate and the `iterate` round it
 // delegates run the shipped `scripts/config-resolve.mjs` at their first configuration read, no load
-// pointer names it, and nothing stubs it. So is the runtime-state helper with the guard module it
-// imports: a first memory write in either run executes it to take `memory.lock`.
+// pointer names it, and nothing stubs it. So is the runtime-state helper with the guard module and
+// the memory, harness and settings cores it imports: a first memory write in either run executes it.
 //
 // The mechanics helper is seeded for the same reason, with the three cores its core imports and the
 // process runner its CLI imports: the deferred `worktree-integration` fragment, with the
@@ -81,6 +81,10 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/config-resolve-core.mjs',
   'scripts/effective-flow-state.mjs',
   'scripts/effective-flow-state-core.mjs',
+  'scripts/effective-flow-state-memory-core.mjs',
+  'scripts/effective-flow-state-harness-core.mjs',
+  'scripts/claude-settings-core.mjs',
+  'scripts/runtime-file-primitives.mjs',
   'scripts/runtime-state-guard.mjs',
   'scripts/effective-flow-mechanics.mjs',
   'scripts/effective-flow-mechanics-core.mjs',

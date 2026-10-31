@@ -134,6 +134,10 @@ const RUNTIME_SCRIPT_FILES = [
   'diff-baseline-core.mjs',
   'effective-flow-state.mjs',
   'effective-flow-state-core.mjs',
+  'effective-flow-state-memory-core.mjs',
+  'effective-flow-state-harness-core.mjs',
+  'claude-settings-core.mjs',
+  'runtime-file-primitives.mjs',
   'runtime-state-guard.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
@@ -1419,7 +1423,8 @@ try {
   if (memoryStateViolations.length > 0) {
     throw new Error(
       'memory-state writer guard (#176): every `.effective-flow/memory.json` mutation must ' +
-        'follow the shared lock/merge/atomic-replacement contract:\n  ' +
+        'call a named `memory` operation after the memory-operations contract and the ' +
+        'runtime-directory migration prerequisite:\n  ' +
         memoryStateViolations
           .map(
             ({ context, line, reason, target, includeChain }) =>
@@ -2439,25 +2444,25 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    iterate: 1651,
-    setup: 1515,
+    iterate: 1668,
+    setup: 1530,
     'apply-review': 1069,
     'apply-issues': 981,
     'merge-gate': 901,
     cleanup: 839,
-    refactor: 969,
+    refactor: 965,
     deliver: 811,
     'plan-issue': 799,
     'issue-buddy': 487,
-    review: 795,
+    review: 787,
     plan: 787,
-    'apply-review-commit-mechanics': 694,
-    maintain: 723,
+    'apply-review-commit-mechanics': 711,
+    maintain: 717,
     docs: 655,
     build: 215,
     apply: 557,
     'apply-plan': 566,
-    investigate: 619,
+    investigate: 536,
     retro: 215,
     fix: 554,
     'plan-review': 521,

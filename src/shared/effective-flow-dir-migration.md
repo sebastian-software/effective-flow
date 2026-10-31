@@ -12,64 +12,35 @@ write. Merely finding `.effective-flow/` does not prove that migration ran. The 
 versioned completion marker is the JSON value `runtimeMigration.directory.version: 1` in
 `.effective-flow/memory.json`.
 
-Resolve every current and legacy runtime path from the retained, verified
-`RUNTIME_STATE_ROOT`. All reads, inventories, copies, collision decisions, and the final memory
-write use absolute handles below that main checkout. Never scan or mutate a legacy/current
-runtime tree below a linked execution worktree.
-
 ```include
 memory-state
 ```
 
-1. **Read without creating anything.** Read the absolute
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle when present. A valid
-   marker makes the prerequisite a no-op. A missing marker starts the migration scan even when
-   `.effective-flow/` already contains a transitional `config.json`, wisdom file, report, cache,
-   worktree, or unrelated memory fields. Do not create a runtime footprint during a read-only
-   run; this prerequisite is activated only because a workflow-specific runtime write is already
-   authorized and imminent. When canonical memory is absent, do not write the marker yet: the
-   locked memory transaction in Step 5 must first adopt a valid absolute
-   `<RUNTIME_STATE_ROOT>/.sf-memory.json` as its base.
-2. **Choose exactly one legacy source.** Use the whole `<RUNTIME_STATE_ROOT>/.firmo/` tree when
-   it exists; otherwise use `<RUNTIME_STATE_ROOT>/.sf-plugin/` when it exists. If both exist, do
-   not combine them. Preserve both legacy
-   directories unchanged. If neither exists, proceed directly to the final marker update as part
-   of the already-authorized first runtime write, without a separate eager migration write.
-3. **Validate before carrying state over.** Inventory the selected source without mutation. All
-   entries required for the merge must be readable. If either present `memory.json` is invalid
-   JSON, is not a JSON object, or cannot be read, a safe memory merge is impossible: report the
-   path and error, leave the completion marker unset, perform none of the workflow-specific
-   runtime writes, and retry on a later run. Do not reinterpret configuration or migrate it to an
-   ADR here; that remains `{{SKILL:setup}}`’s responsibility.
-4. **Merge the directory tree without replacing target state.** Walk the chosen legacy tree
-   recursively, except for the entire `.worktrees/` subtree: legacy worktrees are path-registered
-   and remain only in the legacy directory. For every other relative path, an existing target
-   path wins regardless of type, timestamp, or content. Create only missing target directories
-   and copy only missing files—including `cache.json`, report or investigation trees, and wisdom
-   files—using no-clobber or exclusive-create semantics so a target that appears concurrently
-   still wins. Apply “Runtime-state write safety” separately and immediately before each concrete
-   `mkdir` or copy target. Treat `memory.json` specially under step 5 instead of copying it as a
-   normal file. A copy, read, or guard failure stops the merge, leaves the marker unset, preserves
-   both legacy directories and all target entries already carried over, blocks the
-   workflow-specific runtime write with an actionable error, and allows the next run to retry
-   the remaining missing paths.
-5. **Merge memory recursively under the shared contract, target wins.** Use “Shared memory-state
-   mutation” above; do not introduce a migration-specific lock or direct writer. Inside its lock,
-   select the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle or a
-   valid unchanged `<RUNTIME_STATE_ROOT>/.sf-memory.json` as the base, then merge the selected
-   legacy directory's `memory.json` by recursively adding only keys absent from that freshest
-   base. At every scalar, array, object, or type conflict preserve the base value. After every
-   directory copy has succeeded, add only `runtimeMigration.directory.version: 1` and atomically
-   persist the base, directory merge, and marker in one replacement. Never reduce or replace
-   existing counters, migration markers, status, or unrelated fields.
-6. **Certify only success.** The marker is the final migration mutation and is written only after
-   all safe carry-over work succeeds. A run with no legacy source records it as part of the first
-   authorized runtime write. Once version `1` is present, later prerequisites skip the legacy
-   scan and are idempotent. An interrupted or concurrent run with no marker retries; it never
-   deletes legacy data, overwrites target paths, or treats a partially populated target as proof
-   of completion.
+## Migration prerequisite steps
 
-The `.gitignore` switch to a single `.effective-flow/` entry—including migration of the earlier
-two-line pattern `.effective-flow/*` plus `!.effective-flow/config.json`, as well as a blanket
-`.firmo/` or `.sf-plugin/` ignore line—is handled only by `{{SKILL:setup}}`. Deletion of preserved
-legacy directories remains an explicit, user-confirmed responsibility of `{{SKILL:cleanup}}`.
+1. **Read without creating anything.** Read the absolute
+   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle when present. A valid marker makes the
+   prerequisite a no-op. Do not create a runtime footprint during a read-only run; this
+   prerequisite runs only because a workflow-specific runtime write is already authorized and
+   imminent.
+2. **Migrate through the helper.** Without the marker, call `memory migrate-directory` as shown in
+   “Memory operations”. The helper reads `.firmo/` when it exists, otherwise `.sf-plugin/`, from
+   `RUNTIME_STATE_ROOT` only; copies only missing entries without ever replacing a target, excluding
+   `.worktrees/`; merges the legacy `memory.json` so that existing values win; and writes the marker
+   last. Without a legacy source it writes the marker alone.
+3. **Handle the outcome.**
+   - Success: report `result.source`, `result.copiedCount`, and `result.keptCount`. Report every
+     `result.skipped` entry (a symlink or special file that was never followed or copied) with its
+     path and type, and `result.skippedCount`.
+   - `MIGRATION_NOT_NEEDED`: a concurrent run already wrote the marker; continue.
+   - `LEGACY_MEMORY_INVALID` or `MIGRATION_INCOMPLETE` (`reason`: `copy-failed` or
+     `target-missing`): the marker stays unset and the copied files stay. Report the path and
+     reason, perform none of the workflow-specific runtime writes, and leave the retry to a later
+     run.
+   - Every other result follows “Memory operations”.
+
+Both legacy directories stay unchanged. The `.gitignore` switch to a single `.effective-flow/`
+entry—including migration of the earlier two-line pattern `.effective-flow/*` plus
+`!.effective-flow/config.json`, as well as a blanket `.firmo/` or `.sf-plugin/` ignore line—is
+handled only by `{{SKILL:setup}}`. Deletion of preserved legacy directories remains an explicit,
+user-confirmed responsibility of `{{SKILL:cleanup}}`.

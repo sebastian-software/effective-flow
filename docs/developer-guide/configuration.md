@@ -48,10 +48,12 @@ Before its first authorized runtime write, every writing workflow also runs the 
 legacy-directory prerequisite from
 [`src/shared/effective-flow-dir-migration.md`](../../src/shared/effective-flow-dir-migration.md).
 The marker `runtimeMigration.directory.version: 1` in `memory.json`, not the existence of the
-target directory, proves completion. Without it, Effective Flow chooses `.firmo/` as the whole
-source when present, otherwise `.sf-plugin/`, and copies only entries missing from
+target directory, proves completion. Without it, the helper operation
+`memory migrate-directory` copies, merges and sets the marker in one call: it chooses `.firmo/` as
+the whole source when present, otherwise `.sf-plugin/`, and copies only entries missing from
 `.effective-flow/`. Existing target paths always win; `memory.json` receives a recursive
-missing-key merge after a fresh re-read, and legacy `.worktrees/` is never copied. Any unsafe
+missing-key merge after a fresh re-read, and legacy `.worktrees/` is never copied. Symlinks and
+special files are skipped and reported, and the migration still completes. Any unsafe
 memory input or carry-over failure leaves the marker unset and blocks the workflow-specific
 write so a later run can retry. Legacy directories remain untouched until the user explicitly
 runs `/effective-flow cleanup`.
@@ -73,11 +75,12 @@ runtime directory is also undeletable while a registered current or retained lin
 remains below its `.worktrees/` tree.
 
 All `memory.json` writers share the contract in
-[`src/shared/memory-state.md`](../../src/shared/memory-state.md). They acquire the atomic
-`.effective-flow/memory.lock` directory through the `effective-flow-state` helper (`lock acquire`,
-`lock release`, `lock inspect`, and a user-confirmed `lock break`), which records lock ownership; re-read and validate the complete
-JSON object inside the lock, merge only their owned field or subtree, and replace the file through
-a unique same-directory temporary file and atomic rename. Lock acquisition retries for at most 30
+[`src/shared/memory-state.md`](../../src/shared/memory-state.md). They write only through
+the typed `memory reserve`, `memory set-marker` and `memory migrate-directory` operations of the
+`effective-flow-state` helper, which acquire the atomic `.effective-flow/memory.lock` directory
+themselves (a user-confirmed `lock break` remains the only way to remove an orphan), re-read and
+validate the complete JSON object inside the lock, merge only their owned field or subtree, and
+replace the file through a unique same-directory temporary file and atomic rename. Lock acquisition retries for at most 30
 seconds inside the helper, unchanged in effect; one `LOCK_HELD` timeout reports the recorded owner and blocks the mutation, and a suspected orphan is removed only after explicit
 confirmation. Invalid JSON or counters, permissions, disk exhaustion, and failed replacement all
 fail closed without replacing the prior file or deleting foreign state.
@@ -94,6 +97,30 @@ The canonical convention-file locator is:
 ```md
 **Effective Flow project setup:** docs/adr/effective-flow-project-setup.md
 ```
+
+## Claude Code allow rules
+
+`/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
+Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
+each non-destructive helper operation (`lock acquire`, `lock release`, `lock inspect`,
+`memory reserve`, `memory set-marker`, `memory migrate-directory`) into
+`<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
+reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
+allow-rules` writes the file, after a preview and an explicit confirmation in the conversation,
+and it refuses a settings file that is tracked or not ignored; the step then asks whether to add
+the `.gitignore` line, or the `info/exclude` line in hidden mode, and adds it only after a yes. A widened rule is warned about but
+never removed, and rules of another install are kept. The `setup status` report shows the
+`allowlist` state (`absent`, `current`, `stale`, `not-applicable`, `could-not-check`); only rules
+naming the literal `skillRoot` count as `current`, and a rule for a realpath alias of the same
+install is listed separately. Wider rules, path-prefix wildcards included, are reported as
+warnings.
+
+Destructive helper operations (`lock break`) and `harness allow-rules` itself are never
+allowlisted. Users must not accept Claude Code's "don't ask again" suggestion for a helper call,
+since it widens the rule to `node <helper> *` or `node *`. The rules live below the main checkout;
+whether Claude Code applies them in a session started inside a linked worktree is unverified.
+Codex and the portable build outside Claude Code write nothing. Source:
+[`src/shared/setup-allowlist.md`](../../src/shared/setup-allowlist.md).
 
 ## Worktree lifecycle runtime state
 

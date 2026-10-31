@@ -50,9 +50,8 @@ If `<RUNTIME_STATE_ROOT>/.effective-flow/` is missing, apply the owning workflow
 “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to the exact directory
 `.effective-flow/` immediately before its `mkdir`. If the review directory is missing,
 separately apply it to that exact directory immediately before its `mkdir`. Apply the contract
-again to the concrete absolute report handle immediately before writing the report and to the
-absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required by the loaded
-“Shared memory-state mutation” contract. A blocked target remains unchanged.
+again to the concrete absolute report handle immediately before writing the report. A blocked
+target remains unchanged.
 
 1. Create `<RUNTIME_STATE_ROOT>/.effective-flow/review/` if needed.
 2. Allocate the name with `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`
@@ -70,17 +69,12 @@ absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle as required b
 
 This report uses the same global finding IDs as `{{SKILL:review}}`.
 
-1. Finish confidence and design-decision filtering, same-run root-cause grouping, known-reference
-   and exact-signature deduplication, then run admission once for the unresolved batch and fix the
-   ordered list of `admitted` root causes the report will actually publish.
-2. If the list is empty, publish no finding report and reserve no IDs.
-3. Otherwise use “Shared memory-state mutation” against the absolute
-   `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle to reserve the exact range for that
-   list. Format the returned consecutive numbers with seven digits, e.g. `R-0000021`.
-4. Only after the reservation is atomically persisted and the lock is released, publish the
-   report with that fixed mapping. If reservation fails, publish nothing. If report publication
-   then fails or is interrupted, report the error and leave the reserved IDs as permanent gaps;
-   never roll back or reuse them.
+1. Before the reservation, also finish same-run root-cause grouping and known-reference and
+   exact-signature deduplication, then run admission once for the unresolved batch.
+2. The reserved list is the ordered list of `admitted` root causes the report will publish.
+   Reserve it as “Reserve finding IDs before publication” describes: call `memory reserve`, map the
+   range in order onto its seven-digit IDs, e.g. `R-0000021`, and publish the report with that
+   fixed mapping. An empty list publishes no finding report.
 
 ### Report format
 

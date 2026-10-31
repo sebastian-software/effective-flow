@@ -20,12 +20,14 @@ import uuid
 # CLI execution must leave the source checkout untouched.
 sys.dont_write_bytecode = True
 
-from eval_driver_runtime import execute_wrapper, save, sha, stop_wrappers, verify_cleanup
+from eval_driver_runtime import (execute_wrapper, save, sha, stop_wrappers, verify_cleanup,
+                                 capture_accounting_paths, inspect_consumption, read_bound_json, accounting_exists)
 from eval_host_worker import cancel_launches, open_cancellation
 
 HERE = Path(__file__).resolve().parent
 SOURCE_REPOSITORY = HERE.parents[1]
 SUITES = ('merge-gate', 'iterate', 'next-steps')
+_NO_FIRST_STAGE = object()
 
 
 def runner_pins():
@@ -63,7 +65,24 @@ def writable_future(path, protected=()):
 
 class Driver:
     def __init__(self, config_file, profiles_root, *, operator, operator_sha256, binary,
-                 auth_file, node='node', timeout_seconds=1800, fixture_tools=False):
+                 auth_file, node='node', timeout_seconds=1800, fixture_tools=False,
+                 first_stage=_NO_FIRST_STAGE):
+        self.first_stage = None
+        if first_stage is not _NO_FIRST_STAGE:
+            from eval_first_stage import context_data
+            staged = context_data(first_stage, initial=True)
+            expected = staged['config']
+            if (str(config_file) != staged['corpusData']['config']['path']
+                    or str(profiles_root) != expected['profilesRoot']
+                    or str(operator) != staged['corpusData']['operator']['path']
+                    or operator_sha256 != staged['corpusData']['operator']['sha256']
+                    or str(binary) != expected['toolchain']['binary']['path']
+                    or str(node) != expected['node']
+                    or str(auth_file) != expected['authFile']
+                    or str(HERE.parents[1]) != expected['driverRoot']
+                    or str(Path(sys.executable).resolve()) != expected['python']):
+                raise ValueError('first-stage actual coordinator launch inputs changed')
+            self.first_stage = first_stage
         self.config_file = canonical(config_file)
         self.config = json.loads(self.config_file.read_text())
         self.source = canonical(self.config['frozenRoot'])
@@ -88,6 +107,9 @@ class Driver:
         for path in (self.config_file, self.operator, self.binary, Path(__file__).resolve(),
                      HERE / 'eval_driver_runtime.py', HERE / 'eval_host_worker.py'):
             self.pins[str(path)] = sha(path)
+        if self.first_stage is not None:
+            for ref in (*staged['corpusData']['driverFiles'], first_stage['corpus'], first_stage['grant']):
+                self.pins[ref['path']] = ref['sha256']
         self.check_source()
         self.outroot = self.root / 'cohorts'
         self.outroot.mkdir(mode=0o700, exist_ok=False)
@@ -96,9 +118,12 @@ class Driver:
         self.blocker = self.outroot / 'launch-blocked'
         self.gate = self.outroot / 'launch-gate'
         self.gate.touch(mode=0o600, exist_ok=False)
+        self.base_accounting = capture_accounting_paths(self.outroot, self.root, self.gate)
         self.stop = threading.Event()
         self.lock, self.launch_lock, self.active_lock = (threading.Lock() for _ in range(3))
         self.active = {}
+        self.admissions = {}
+        self.parent_identities = {}
         self.interrupted_signal = None
         self.profiles_root.mkdir(mode=0o700, exist_ok=True)
         info = self.profiles_root.lstat()
@@ -144,6 +169,9 @@ class Driver:
             raise ValueError('frozen source branch changed')
         if git('rev-parse', 'HEAD') != self.config['expectedFrozenHead']:
             raise ValueError('frozen source HEAD changed')
+        if getattr(self, 'first_stage', None) is not None:
+            if git('rev-parse', 'HEAD^{tree}') != self.config['expectedFrozenTree']:
+                raise ValueError('first-stage frozen source tree changed')
         for args in (('diff', '--name-only', 'HEAD'), ('diff', '--cached', '--name-only'),
                      ('ls-files', '--others', '--exclude-standard')):
             if git(*args):
@@ -156,29 +184,34 @@ class Driver:
 
     def block(self):
         import fcntl
-        with self.launch_lock:
-            self.stop.set()
-            cancel_launches(self.cancellation)
-            gate = None
-            try:
-                gate = self.gate.open('rb')
-                fcntl.flock(gate, fcntl.LOCK_EX)
-                # Revoke the existing gate's shared launch permission before
-                # best-effort marker publication can fail or delay cleanup.
-                os.fchmod(gate.fileno(), 0o400)
+        try:
+            with self.launch_lock:
+                self.stop.set()
                 try:
-                    self.blocker.touch(mode=0o600, exist_ok=True)
-                except OSError:
-                    pass
-            except OSError:
-                # These live Popen objects belong to this coordinator. Wrapper
-                # shutdown kills its bridge group without acquiring the gate.
-                with self.active_lock:
-                    processes = list(self.active.values())
-                stop_wrappers(processes)
-            finally:
-                if gate is not None:
-                    gate.close()
+                    cancel_launches(self.cancellation)
+                finally:
+                    gate = None
+                    try:
+                        gate = self.gate.open('rb')
+                        fcntl.flock(gate, fcntl.LOCK_EX)
+                        # Revoke the existing gate's shared launch permission before
+                        # best-effort marker publication can fail or delay cleanup.
+                        os.fchmod(gate.fileno(), 0o400)
+                        try:
+                            self.blocker.touch(mode=0o600, exist_ok=True)
+                        except OSError:
+                            pass
+                    except OSError:
+                        pass
+                    finally:
+                        if gate is not None:
+                            gate.close()
+        finally:
+            # These live Popen objects belong to this coordinator. Wrapper
+            # shutdown kills its bridge group without acquiring the gate.
+            with self.active_lock:
+                processes = list(self.active.values())
+            stop_wrappers(processes)
 
     def event(self, value):
         with self.lock:
@@ -217,9 +250,18 @@ class Driver:
             raise
 
     def _run_slot(self, task):
+        if getattr(self, 'first_stage', None) is not None:
+            from eval_first_stage import validate_stage_task
+            validate_stage_task(self.first_stage, task, self.outroot / task['suite'] /
+                                task['scenario'] / f"slot-{task['slot']}")
+        identity = tuple(task[k] for k in ('suite', 'scenario', 'slot'))
+        admission = {'attempted': False, 'refused': False}
+        self.admissions[identity] = admission
+        directory = self.outroot / task['suite'] / task['scenario'] / f"slot-{task['slot']}"
         if self.stop.is_set() or self.blocker.exists():
             return {**{k: task[k] for k in ('suite', 'scenario', 'slot')},
                     'state': 'not-launched-after-blocker', 'actualModelStarted': False,
+                    **self.accounting_projection(task, directory),
                     'fixtureOnly': self.fixture_tools, 'qualifiedHost': not self.fixture_tools}
         self.check_pins()
         self.check_source()
@@ -227,7 +269,18 @@ class Driver:
         writable_future(self.profiles_root, (self.source, self.root))
         self.validate_task(task)
         directory = self.outroot / task['suite'] / task['scenario'] / f"slot-{task['slot']}"
-        directory.mkdir(parents=True, mode=0o700, exist_ok=False)
+        # Only suite/scenario parents may be shared; their identities are retained.
+        with self.lock:
+            for parent in (directory.parent.parent, directory.parent):
+                if parent not in self.parent_identities:
+                    parent.mkdir(mode=0o700, exist_ok=False)
+                    info = parent.lstat()
+                    self.parent_identities[parent] = (info.st_dev, info.st_ino)
+                info = parent.lstat()
+                if (not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid()
+                        or (info.st_dev, info.st_ino) != self.parent_identities[parent]):
+                    raise ValueError('shared artifact parent identity changed')
+            directory.mkdir(mode=0o700, exist_ok=False)
         save(directory / 'task.json', task)
         job = {'artifactDir': str(directory), 'profilesRoot': str(self.profiles_root),
                'task': task, 'binary': str(self.binary), 'operator': str(self.operator),
@@ -241,26 +294,60 @@ class Driver:
                'cancellationPath': str(self.cancellation_path),
                'timeoutSeconds': self.timeout_seconds + 125, 'modelTimeoutSeconds': self.timeout_seconds,
                'blockerPath': str(self.blocker), 'launchGatePath': str(self.gate)}
+        if getattr(self, 'first_stage', None) is not None:
+            job['firstStage'] = {**self.first_stage, 'ordinal': task['slot']}
+        job['accounting'] = capture_accounting_paths(directory, self.root, self.gate)
+        current = {entry['path']: entry for entry in job['accounting']['directories']}
+        if (job['accounting']['gate'] != self.base_accounting['gate']
+                or any(current[entry['path']] != entry for entry in self.base_accounting['directories'])):
+            raise ValueError('coordinator accounting ancestry or gate changed')
         save(directory / 'worker-job.json', job)
+        job_digest = sha(directory / 'worker-job.json')
+        admission.update(job=job, jobPath=directory / 'worker-job.json', jobDigest=job_digest)
         command = [self.node, str(HERE.parent / 'host-run.mjs'),
                    '--profiles-root', str(self.profiles_root), '--', sys.executable,
                    str(HERE / 'eval_host_worker.py'), '--job', str(directory / 'worker-job.json'),
-                   '--digest', sha(directory / 'worker-job.json')]
+                   '--digest', job_digest]
+        admission['attempted'] = True
         runner_code = execute_wrapper(command, directory, stop=self.stop, launch_lock=self.launch_lock,
                                       active=self.active, active_lock=self.active_lock,
                                       timeout_seconds=self.timeout_seconds + 140)
+        admission['refused'] = runner_code is None
         outcome = self.finish_slot(task, directory, runner_code)
         save(directory / 'operator-result.json', outcome)
         self.event(outcome)
         return outcome
 
+    def accounting_projection(self, task, directory):
+        identity = tuple(task[k] for k in ('suite', 'scenario', 'slot'))
+        admission = getattr(self, 'admissions', {}).get(identity)
+        unknown = {'consumptionState': 'reservation-unknown', 'chargedRoots': 1,
+                   'actualModelStarted': None}
+        if admission is None:
+            return unknown
+        if 'job' not in admission:
+            try:
+                absent = (not accounting_exists(directory / 'launch-consumption.json')
+                          and not accounting_exists(directory / 'process-start.json'))
+            except OSError:
+                return unknown
+            if not admission['attempted'] and absent:
+                return {'consumptionState': 'not-reserved', 'chargedRoots': 0,
+                        'actualModelStarted': False}
+            return unknown
+        return inspect_consumption(admission['job'], admission['jobPath'], admission['jobDigest'],
+                                   fixture_only=self.fixture_tools,
+                                   wrapper_attempted=admission['attempted'],
+                                   wrapper_refused=admission['refused'])
+
     def finish_slot(self, task, directory, runner_code):
         identity = {k: task[k] for k in ('suite', 'scenario', 'slot')}
         worker_path = directory / 'worker-result.json'
-        worker = json.loads(worker_path.read_text()) if worker_path.is_file() else {}
+        accounting = self.accounting_projection(task, directory)
+        worker = read_bound_json(worker_path)[0] if worker_path.is_file() else {}
         outcome = {**identity, **worker, 'raw': str(directory), 'runnerExitCode': runner_code,
                    'fixtureOnly': self.fixture_tools, 'qualifiedHost': not self.fixture_tools,
-                   'actualModelStarted': (directory / 'process-start.json').is_file()}
+                   **accounting}
         reference = directory / 'runner-profile.json'
         cleanup = {'groupGone': False, 'cleanupComplete': False}
         if reference.is_file():
@@ -283,7 +370,8 @@ class Driver:
         watchdog_reason = json.loads(watchdog_file.read_text())['reason'] if watchdog_file.is_file() else None
         timed_out = watchdog_reason == 'timeout'
         completed = (runner_code == 0 and worker.get('exitCode') == 0
-                     and outcome['actualModelStarted'] and cleanup['cleanupComplete']
+                     and outcome['consumptionState'] == 'reserved' and outcome['chargedRoots'] == 1
+                     and outcome['actualModelStarted'] is True and cleanup['cleanupComplete']
                      and watchdog_reason is None and not malformed and objects
                      and any(row.get('type') == 'turn.completed' for row in rows)
                      and not any(row.get('type') == 'turn.failed' for row in rows)
@@ -349,8 +437,12 @@ class Driver:
         self.event({'state': 'starting', 'tasks': len(tasks), 'sourceHead': self.config['expectedFrozenHead'],
                     'concurrency': 6, 'qualificationDigest': self.config['qualificationDigest']})
         results = []
+        for task in tasks:
+            self.admissions[tuple(task[k] for k in ('suite', 'scenario', 'slot'))] = {
+                'attempted': False, 'refused': False}
         with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
-            pending = {pool.submit(self.run_slot, task) for task in tasks}
+            futures = {pool.submit(self.run_slot, task): task for task in tasks}
+            pending = set(futures)
             while pending:
                 if self.interrupted_signal is not None:
                     self.block()
@@ -364,13 +456,27 @@ class Driver:
                         results.append(future.result())
                     except Exception as error:
                         self.block()
-                        result = {'state': 'operator-error', 'error': str(error)}
+                        task = futures[future]
+                        directory = self.outroot / task['suite'] / task['scenario'] / f"slot-{task['slot']}"
+                        result = {**{k: task[k] for k in ('suite', 'scenario', 'slot')},
+                                  'state': 'operator-error', 'error': str(error), 'raw': str(directory),
+                                  **self.accounting_projection(task, directory)}
                         results.append(result)
                         self.event(result)
+        # Reconcile the complete prepared identity set, including failed futures.
+        accounting = [self.accounting_projection(task, self.outroot / task['suite'] /
+                      task['scenario'] / f"slot-{task['slot']}") for task in tasks]
+        accounting_complete = all(x['consumptionState'] != 'reservation-unknown' for x in accounting)
+        if not accounting_complete:
+            self.block()
         summary = {'sourceHead': self.config['expectedFrozenHead'], 'preparedTasks': len(tasks),
-                   'started': len(list(self.outroot.glob('*/*/slot-*/process-start.json'))),
+                   'chargedRoots': sum(x['chargedRoots'] for x in accounting),
+                   'reservedRoots': sum(x['consumptionState'] == 'reserved' for x in accounting),
+                   'reservationUnknownRoots': sum(x['consumptionState'] == 'reservation-unknown' for x in accounting),
+                   'accountingComplete': accounting_complete,
+                   'started': sum(x['actualModelStarted'] is True for x in accounting),
                    'sealed': sum(x.get('state') == 'sealed' for x in results),
-                   'notLaunched': sum(x.get('actualModelStarted') is False for x in results),
+                   'notLaunched': sum(x['consumptionState'] == 'not-reserved' for x in accounting),
                    'operatorErrors': sum(x.get('state') == 'operator-error' for x in results),
                    'fixtureOnly': self.fixture_tools, 'qualifiedHost': not self.fixture_tools,
                    'blocked': self.stop.is_set(), 'signal': self.interrupted_signal, 'results': results}

@@ -1,5 +1,5 @@
 ---
-description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. A hidden mode (`setup hidden` or the Visibility question) instead keeps the whole configuration in a local, untracked `.effective-flow/project-setup.md`, ignored through the Git common directory's `info/exclude`, and writes no tracked file. `setup status` writes nothing and asks nothing: a read-only diagnosis of the configuration, the ignore state, the central domain-owner skills, and the installed version. Any other argument is a free-text Targeted request against an existing configuration: it changes only the named keys behind one confirmed before/after list, or answers read-only questions about the current values. Use this skill for the one-time setup, a targeted change, or a question about the Effective Flow configuration."
+description: "Prepares a target project for using Effective Flow: enters `.effective-flow/` completely and idempotently into `.gitignore` (pure runtime directory) and writes the Effective Flow configuration into a living project setup ADR (Markdown table) that an `**Effective Flow project setup:**` marker in AGENTS.md points to. The default Profile mode asks for the chat language and one of three workflow topologies before applying a transient overlay; explicit Express and Guided modes remain available. Migrates an existing transitional `.effective-flow/config.json`, or otherwise `.firmo/config.json`, once into the ADR, invokes the shared runtime-directory migration for that selected legacy source, and preserves the config source content on disk. Always starts from safe defaults, shows the currently recorded values when a config exists, and maintains an existing configuration non-destructively. A hidden mode (`setup hidden` or the Visibility question) instead keeps the whole configuration in a local, untracked `.effective-flow/project-setup.md`, ignored through the Git common directory's `info/exclude`, and writes no tracked file. `setup status` writes nothing and asks nothing: a read-only diagnosis of the configuration, the ignore state, the central domain-owner skills, the Claude Code allow rules, and the installed version. In Claude Code, setup offers allow rules for the runtime-state helper's non-destructive operations in the untracked `.claude/settings.local.json` after a preview and explicit confirmation; `setup allowlist` runs only that step. Any other argument is a free-text Targeted request against an existing configuration: it changes only the named keys behind one confirmed before/after list, or answers read-only questions about the current values. Use this skill for the one-time setup, a targeted change, or a question about the Effective Flow configuration."
 catalogHint: "Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard."
 ---
 
@@ -17,6 +17,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
   **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
 - after setup, apply a free-text request (**Targeted**) as changes to the named keys only, behind
   one confirmed before/after list, or answer a read-only question about the current configuration
+- in Claude Code, offer allow rules for the runtime-state helper's non-destructive operations in the untracked `.claude/settings.local.json`, behind a preview and an explicit confirmation (also alone as `setup allowlist`)
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice; on a scored choice, name it in the question or explanation only, never as a label marker or by moving its option
 - do not run project validation such as linting, tests, or build checks
@@ -46,7 +47,7 @@ when: the run reaches its completion report
 
 ```lazy-include
 effective-flow-dir-migration
-when: the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker
+when: the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker's memory operation
 ```
 
 ```lazy-include
@@ -166,7 +167,10 @@ keyword mode:
   Visibility question below is not asked;
 - `{{SKILL:setup}} status` selects **Status**: it follows the loaded `setup-status` fragment, whose
   status call replaces the configuration and chat-language reads, and ends after its report, never
-  reaching the Visibility question or Step 1.
+  reaching the Visibility question or Step 1;
+- `{{SKILL:setup}} allowlist` selects **Allowlist**: it needs no existing configuration, goes
+  straight to the "Allowlist step" section, and ends after that step's summary items, never
+  reaching the Visibility question or Steps 1–7.
 
 Any other non-empty argument selects **Targeted**, its original text kept verbatim
 (`{{SKILL:setup}} guided tracker github` is Targeted, not Guided); load and follow the Targeted
@@ -184,7 +188,7 @@ when: the normalized invocation has no argument or its single argument is `profi
 
 ```lazy-include
 setup-targeted-change
-when: the normalized invocation is non-empty and is not exactly one of the six keyword forms
+when: the normalized invocation is non-empty and is not exactly one of the seven keyword forms
 ```
 
 ```lazy-include
@@ -192,7 +196,7 @@ setup-status
 when: the normalized invocation is exactly `status`
 ```
 
-**Visibility.** Every mode except Targeted and Status then resolves the visibility before Step 1, because
+**Visibility.** Every mode except Targeted, Status, and Allowlist then resolves the visibility before Step 1, because
 Step 1 already differs between the two values: Profile after its `Chat` and `Profile` asks, Express
 and Guided as their first question, `{{SKILL:setup}} hidden` not at all; Targeted keeps the
 visibility of the configuration it resolves. Pre-select `Hidden` when the locator's
@@ -208,7 +212,7 @@ are posted on pull requests, delivery branches carry a neutral prefix, and no tr
 Effective Flow. A run that cannot ask keeps the pre-selected value and reports it.
 
 ```ask
-when: the invocation is not `hidden`, the mode is neither Targeted nor Status, and the setup mode's earlier questions are answered
+when: the invocation is not `hidden`, the mode is not Targeted, Status, or Allowlist, and the setup mode's earlier questions are answered
 header: Visibility
 question: Should Effective Flow stay invisible in this repository's tracked files and on the forge?
 options:
@@ -694,9 +698,7 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      not write the marker.
    - Only after target-state validation passes, and only because the locator selected the
      retained transitional `<source-handle>`, invoke the loaded shared runtime-directory
-     migration prerequisite before writing `configMigration.adr`. Apply “Runtime-state write
-     safety” immediately to every exact runtime target as required by that shared contract; do
-     not duplicate its source precedence, inventory, copy, memory-merge, lock, or marker logic.
+     migration prerequisite before writing `configMigration.adr`; do not duplicate its logic.
      A normal fresh setup with no selected transitional JSON source does not invoke this
      prerequisite and creates no `.effective-flow/` runtime footprint.
    - If the shared runtime-directory migration fails or remains incomplete, do not write
@@ -705,17 +707,12 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      convention-marker rollback used for failed untracking: roll back only this run's unchanged
      tracked writes and never overwrite a concurrent change. A later setup or cleanup run may
      resume the markerless runtime migration idempotently.
-   - After the shared runtime-directory migration succeeds, mark completion idempotently in
-     `.effective-flow/memory.json` under
-     `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp) through the
-     loaded shared memory mutation contract: acquire its lock, re-read and validate memory,
-     deep-merge only `configMigration.adr`, preserve every unrelated top-level field, nested field, sibling
-     `configMigration` state, and unknown field, and atomically replace the file. If this marker is
-     already set, do not migrate again. A lock, validation, or replacement failure leaves the
-     prior memory file intact and is reported without claiming migration completion. Never write
-     or update the marker after invalid JSON, failed required untracking, or failed target-state
-     validation; the pre-write marker check above owns idempotency for an already-complete
-     migration.
+   - After the shared runtime-directory migration succeeds, set `configMigration.adr` with
+     `memory set-marker`, `"marker":"config-migration-adr"` and `"version":"config-to-adr-v1"`
+     (“Memory operations”). A blocked or failed call is reported without claiming migration
+     completion. Never set the marker after invalid JSON, failed required untracking, or failed
+     target-state validation; the pre-write marker check above owns idempotency for an
+     already-complete migration.
    - **Record this item's outcome and carry it forward**, the way item 5 carries its `CLAUDE.md`
      observation: `not applicable` where the locator selected no transitional source, `complete`
      only where every step above succeeded and `configMigration.adr` was written, and `incomplete`
@@ -904,6 +901,18 @@ runtime state. Never move local plans or concepts: list every file below `.effec
 `.effective-flow/concept/` by path so the user can decide whether to move them into the tracked
 `plan.dir` and `concept.dir`.
 
+### Allowlist step (Claude Code only)
+
+Runs after the Step 6 write in every mode but Targeted, and as the whole Allowlist mode. This
+installation is the `{{BUILD_TARGET}}` build: `claude` always offers the step, `codex` never, and
+`portable` only when you judge from the running environment that this session runs in Claude Code.
+Otherwise say in one sentence that the step is specific to Claude Code and write nothing.
+
+```lazy-include
+setup-allowlist
+when: the allowlist step is offered: the build is `claude`, or `portable` running in Claude Code
+```
+
 ### Step 7: Session rename capability (optional)
 
 Hosts derive a session title from the first message, so a run is listed under a name that predates
@@ -920,7 +929,7 @@ probe's: with the user's go-ahead it renames the current session once, because a
 see proves nothing.
 
 ```ask
-when: the configuration write completed, the mode is not Targeted, and the run may prepare the harness's session-rename capability
+when: the configuration write completed, the mode is not Targeted or Allowlist, and the run may prepare the harness's session-rename capability
 header: Rename path
 question: Should setup check this harness's established session-rename path and prove it once?
 options:
@@ -942,7 +951,8 @@ when: the Step 7 `Rename path` question was answered `Yes`
 
 ### Step 8: Summary
 
-Report to the user (a Targeted run reports only the summary items of `setup-targeted-change`):
+Report to the user (a Targeted run reports only the summary items of `setup-targeted-change`, an
+Allowlist run only those of `setup-allowlist`):
 
 - the resolved visibility; in hidden mode, instead of the `.gitignore`, ADR, marker, convention, and
   `CLAUDE.md` bullets below: the absolute `info/exclude` path and whether its `.effective-flow/` line
@@ -1000,6 +1010,8 @@ Report to the user (a Targeted run reports only the summary items of `setup-targ
   path was explained rather than installed, whether the verification ran and with which concrete
   result, and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. State that no
   file above the repository root and no configuration key was changed by the step
+- for the allowlist step: the summary items of `setup-allowlist`, or the one sentence that the
+  step is specific to Claude Code
 - for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
   line named, the pointer left by an earlier half-completed conversion replaced by it with the
@@ -1030,7 +1042,8 @@ with nothing staged matches no row and emits nothing.
 ## Rules
 
 - In hidden mode, change only the `.effective-flow/` line in the Git common directory's
-  `info/exclude` and the local `.effective-flow/project-setup.md` (and, on a hidden → standard switch,
+  `info/exclude` (plus the allowlist step's `.claude/settings.local.json` line there, after its
+  explicit confirmation) and the local `.effective-flow/project-setup.md` (and, on a hidden → standard switch,
   delete that file only after its fence). Never write or edit `.gitignore`, a tracked ADR,
   `AGENTS.md`, or `CLAUDE.md` in hidden mode, and never write `visibility | hidden` into a tracked
   file.
@@ -1038,7 +1051,9 @@ with nothing staged matches no row and emits nothing.
   the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
   Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
-  runtime-directory migration; no further setup steps like deployment or Git hooks.
+  runtime-directory migration, plus `.claude/settings.local.json` and its ignore line, each written
+  only by the allowlist step after its own explicit confirmation; no further setup steps like deployment or
+  Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
   configuration key. Both paths call their own host's native title operation directly — the Desktop
   path its current-task title operation, the Claude Code path its session-title operation with the

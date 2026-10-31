@@ -10,13 +10,14 @@ import {
   readdirSync,
   realpathSync,
   rmSync,
+  renameSync,
   rmdirSync,
   symlinkSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
 } from 'node:fs';
-import { rename as renamePath } from 'node:fs/promises';
+import { open as openPath, rename as renamePath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -461,4 +462,276 @@ test('CLI: acquire, held, release and NOT_HELD against a real repository', (t) =
   const again = call('release', { token });
   assert.equal(again.status, 4);
   assert.equal(JSON.parse(again.stdout).outcome.code, 'NOT_HELD');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Memory operations against prose-protocol state (both directions)
+
+const MARKED_MEMORY = Object.freeze({ runtimeMigration: { directory: { version: 1 } } });
+
+function memoryOp(operation, input, extra) {
+  return executeOperation(
+    `memory ${operation}`,
+    { owner: OWNERS.memory, waitSeconds: 0, ...input },
+    deps(extra),
+  );
+}
+
+// Writes memory exactly as the prose protocol does: lock directory plus owner, a temporary sibling,
+// a rename over memory.json, then the lock removed again.
+function proseMemoryWrite(root, object, owner = PROSE_OWNERS.memory) {
+  proseLock(root, 'memory');
+  writeFileSync(join(lockDir(root, 'memory'), LOCKS.memory.ownerFile), owner);
+  const temporary = join(root, '.effective-flow', '.memory.json.prose-session.1.tmp');
+  writeFileSync(temporary, JSON.stringify(object));
+  renameSync(temporary, join(root, '.effective-flow', 'memory.json'));
+  rmSync(lockDir(root, 'memory'), { recursive: true });
+}
+
+// Invariant (mixed-version operation, prose to helper): a helper reservation continues the counter
+// a prose writer persisted, keeps its unknown fields, and is blocked by a lock a prose writer holds.
+test('conformance: a helper reservation on prose-written memory and lock state', async (t) => {
+  const root = repository(t, { stateDir: true });
+  const prose = { ...MARKED_MEMORY, lastFindingNumber: 41, prose: { note: 'unknown' } };
+  proseMemoryWrite(root, prose);
+  const memoryFile = join(root, '.effective-flow', 'memory.json');
+
+  proseLock(root, 'memory');
+  const held = await memoryOp('reserve', { cwd: root, count: 2 });
+  assert.equal(held.outcome?.code, 'LOCK_HELD', JSON.stringify(held));
+  assert.equal(held.outcome.owner.state, 'invalid', 'a prose owner is foreign to the helper');
+  assert.equal(readFileSync(memoryFile, 'utf8'), JSON.stringify(prose));
+  rmSync(lockDir(root, 'memory'), { recursive: true });
+
+  const reserved = await memoryOp('reserve', { cwd: root, count: 2 });
+  assert.equal(reserved.ok, true, JSON.stringify(reserved));
+  assert.deepEqual([reserved.result.firstId, reserved.result.lastId], ['R-0000042', 'R-0000043']);
+  assert.deepEqual(JSON.parse(readFileSync(memoryFile, 'utf8')), {
+    ...prose,
+    lastFindingNumber: 43,
+  });
+});
+
+// Invariant (mixed-version operation, helper to prose): after a helper write a prose reader finds
+// the full object with the same JSON meaning and a trailing newline; while a helper transaction
+// runs, the lock sits at the prose path `memory.lock/owner.json` in the WP2 owner format, so a
+// prose `mkdir` is excluded; afterwards the lock path is free for the prose protocol again.
+test('conformance: prose-protocol state after a helper write', async (t) => {
+  const root = repository(t, { stateDir: true });
+  proseMemoryWrite(root, { ...MARKED_MEMORY, lastFindingNumber: 3, other: [1, { a: null }] });
+  const memoryFile = join(root, '.effective-flow', 'memory.json');
+  let observed;
+  const fs = {
+    open: async (target, ...rest) => {
+      if (target === memoryFile && !observed) {
+        const ownerPath = join(lockDir(root, 'memory'), 'owner.json');
+        observed = JSON.parse(readFileSync(ownerPath, 'utf8'));
+        assert.throws(() => mkdirSync(lockDir(root, 'memory')), { code: 'EEXIST' });
+      }
+      return openPath(target, ...rest);
+    },
+  };
+  const reserved = await memoryOp('reserve', { cwd: root, count: 1 }, { fs });
+  assert.equal(reserved.ok, true, JSON.stringify(reserved));
+  assert.deepEqual(Object.keys(observed).sort(), [
+    'acquiredAt',
+    'host',
+    'pid',
+    'token',
+    'workflow',
+  ]);
+  assert.equal(observed.workflow, OWNERS.memory.workflow);
+  assert.equal(observed.pid, null);
+
+  const text = readFileSync(memoryFile, 'utf8');
+  assert.ok(text.endsWith('\n'));
+  assert.deepEqual(JSON.parse(text), {
+    ...MARKED_MEMORY,
+    lastFindingNumber: 4,
+    other: [1, { a: null }],
+  });
+  assert.equal(existsSync(lockDir(root, 'memory')), false);
+  proseMemoryWrite(root, { ...JSON.parse(text), lastFindingNumber: 5 });
+  assert.equal(JSON.parse(readFileSync(memoryFile, 'utf8')).lastFindingNumber, 5);
+});
+
+// Invariant (legacy-memory class): `.sf-memory.json` needs no ignore entry to be adopted and
+// removed, but a tracked one is never unlinked: the adoption reports `legacyRemoval` and keeps it.
+test('legacy-memory class: untracked is removed without an ignore entry; tracked is kept', async (t) => {
+  const untracked = repository(t);
+  writeFileSync(join(untracked, '.sf-memory.json'), JSON.stringify({ lastFindingNumber: 7 }));
+  assert.equal(
+    spawnSync('git', ['-C', untracked, 'check-ignore', '-q', '.sf-memory.json'], { env: GIT_ENV })
+      .status,
+    1,
+    'the fixture leaves .sf-memory.json unignored',
+  );
+  const migrated = await memoryOp('migrate-directory', { cwd: untracked });
+  assert.equal(migrated.ok, true, JSON.stringify(migrated));
+  assert.equal(existsSync(join(untracked, '.sf-memory.json')), false);
+
+  const tracked = repository(t);
+  writeFileSync(join(tracked, '.sf-memory.json'), JSON.stringify({ lastFindingNumber: 7 }));
+  git(tracked, 'add', '.sf-memory.json');
+  git(tracked, 'commit', '-q', '-m', 'tracked legacy memory');
+  const adopted = await memoryOp('migrate-directory', { cwd: tracked });
+  assert.equal(adopted.ok, true, JSON.stringify(adopted));
+  assert.match(adopted.result.legacyRemoval.error, /tracked/);
+  assert.ok(existsSync(join(tracked, '.sf-memory.json')));
+  assert.equal(
+    JSON.parse(readFileSync(join(tracked, '.effective-flow', 'memory.json'), 'utf8'))
+      .lastFindingNumber,
+    7,
+  );
+});
+
+// Invariant: the batched copy guard runs one `check-ignore --stdin` against real Git, so a legacy
+// tree copies when every target is ignored, and a single target outside the ignore rules stops the
+// copy with MIGRATION_INCOMPLETE before any file is written, naming that file.
+test('migrate-directory: the batched copy guard decides per target in a real repository', async (t) => {
+  const ignored = repository(t);
+  mkdirSync(join(ignored, '.firmo', 'nested'), { recursive: true });
+  writeFileSync(join(ignored, '.firmo', 'a.txt'), 'a\n');
+  writeFileSync(join(ignored, '.firmo', 'nested', 'b.txt'), 'b\n');
+  const migrated = await memoryOp('migrate-directory', { cwd: ignored });
+  assert.equal(migrated.ok, true, JSON.stringify(migrated));
+  assert.deepEqual(migrated.result.copied.sort(), ['.firmo/a.txt', '.firmo/nested/b.txt']);
+  assert.equal(readFileSync(join(ignored, '.effective-flow', 'nested', 'b.txt'), 'utf8'), 'b\n');
+
+  const partial = repository(t, { ignore: '.effective-flow/*\n!.effective-flow/keep.txt\n' });
+  mkdirSync(join(partial, '.firmo'));
+  writeFileSync(join(partial, '.firmo', 'a.txt'), 'a\n');
+  writeFileSync(join(partial, '.firmo', 'keep.txt'), 'keep\n');
+  const refused = await memoryOp('migrate-directory', { cwd: partial });
+  assert.equal(refused.outcome?.code, 'MIGRATION_INCOMPLETE', JSON.stringify(refused));
+  assert.equal(refused.outcome.failed.path, '.firmo/keep.txt');
+  assert.equal(refused.outcome.failed.code, 'RUNTIME_STATE_UNSAFE');
+  assert.deepEqual(refused.outcome.copied, []);
+  assert.equal(existsSync(join(partial, '.effective-flow', 'a.txt')), false);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Harness settings class and `harness allow-rules`
+
+const ISOLATED_GIT_HOME = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-state-home-')));
+process.on('exit', () => rmSync(ISOLATED_GIT_HOME, { recursive: true, force: true }));
+// Claude Code's own marker plus an empty global Git configuration, so `check-ignore` decides from
+// the fixture and the explicitly set global excludes file alone.
+const HARNESS_ENV = {
+  ...GIT_ENV,
+  HOME: ISOLATED_GIT_HOME,
+  XDG_CONFIG_HOME: ISOLATED_GIT_HOME,
+  GIT_CONFIG_GLOBAL: join(ISOLATED_GIT_HOME, 'gitconfig'),
+  CLAUDECODE: '1',
+};
+
+// A skill install outside the repository: `<base>/skills/effective-flow` is a symlink into
+// `<base>/<checkout>/<inner>`, the DALO layout for `inner = effective-flow` and the local-link
+// layout for `inner = dist/claude/effective-flow`. `git` makes the checkout a Git clone.
+function install(t, { checkout = 'clone', inner = 'effective-flow', gitInit = true } = {}) {
+  const base = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-install-')));
+  t.after(() => rmSync(base, { recursive: true, force: true }));
+  const real = join(base, checkout, inner);
+  mkdirSync(join(real, 'scripts'), { recursive: true });
+  writeFileSync(join(real, 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  if (gitInit) git(join(base, checkout), 'init', '-q');
+  mkdirSync(join(base, 'skills'));
+  symlinkSync(real, join(base, 'skills', 'effective-flow'));
+  return {
+    skillRoot: join(base, 'skills', 'effective-flow'),
+    helperPath: join(real, 'scripts', 'effective-flow-state.mjs'),
+  };
+}
+
+function allowRules(root, installed, input = {}, env = HARNESS_ENV) {
+  return executeOperation(
+    'harness allow-rules',
+    { cwd: root, skillRoot: installed.skillRoot, mode: 'preview', ...input },
+    { runner: createProcessRunner(), env, helperPath: installed.helperPath },
+  );
+}
+
+// Invariant (harness-settings class): the settings file must be ignored by `.gitignore`,
+// `info/exclude` or the global `core.excludesFile`, and untracked; otherwise nothing is written.
+test('harness-settings class: ignore sources and tracked refusal in a real repository', async (t) => {
+  const installed = install(t);
+  const unignored = repository(t);
+  assert.equal((await allowRules(unignored, installed)).outcome?.code, 'SETTINGS_NOT_IGNORED');
+
+  const viaGitignore = repository(t, { ignore: '.effective-flow/\n.claude/settings.local.json\n' });
+  assert.equal((await allowRules(viaGitignore, installed)).ok, true);
+
+  const viaExclude = repository(t);
+  writeFileSync(join(viaExclude, '.git', 'info', 'exclude'), '.claude/settings.local.json\n');
+  assert.equal((await allowRules(viaExclude, installed)).ok, true);
+
+  const viaGlobal = repository(t);
+  const excludes = join(ISOLATED_GIT_HOME, 'excludes');
+  writeFileSync(excludes, '.claude/settings.local.json\n');
+  writeFileSync(HARNESS_ENV.GIT_CONFIG_GLOBAL, `[core]\n\texcludesFile = ${excludes}\n`);
+  t.after(() => rmSync(HARNESS_ENV.GIT_CONFIG_GLOBAL, { force: true }));
+  assert.equal((await allowRules(viaGlobal, installed)).ok, true);
+  rmSync(HARNESS_ENV.GIT_CONFIG_GLOBAL, { force: true });
+
+  const tracked = repository(t, { ignore: '.effective-flow/\n.claude/settings.local.json\n' });
+  mkdirSync(join(tracked, '.claude'));
+  writeFileSync(join(tracked, '.claude', 'settings.local.json'), '{}\n');
+  git(tracked, 'add', '-f', '.claude/settings.local.json');
+  const refused = await allowRules(tracked, installed);
+  assert.equal(refused.outcome?.code, 'SETTINGS_TRACKED');
+  assert.equal(readFileSync(join(tracked, '.claude', 'settings.local.json'), 'utf8'), '{}\n');
+});
+
+// Invariant: a preview, then the apply with its digest, writes exactly the six rules through the
+// real Git guard and creates `.claude/` on apply only.
+test('harness allow-rules: preview then apply in a real repository', async (t) => {
+  const installed = install(t);
+  const root = repository(t, { ignore: '.effective-flow/\n.claude/settings.local.json\n' });
+  const preview = await allowRules(root, installed);
+  assert.equal(preview.ok, true, JSON.stringify(preview));
+  assert.equal(existsSync(join(root, '.claude')), false);
+  const applied = await allowRules(root, installed, {
+    mode: 'apply',
+    digest: preview.result.digest,
+  });
+  assert.equal(applied.ok, true, JSON.stringify(applied));
+  const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.local.json'), 'utf8'));
+  assert.deepEqual(settings.permissions.allow, preview.result.rules);
+  assert.equal(settings.permissions.allow.length, 6);
+});
+
+// Invariant: an install inside a worktree of the current repository is refused, while an install
+// in another clone (DALO layout, local-link layout) is accepted.
+test('harness allow-rules: worktree of the current repository versus another clone', async (t) => {
+  const root = repository(t, { ignore: '.effective-flow/\n.claude/settings.local.json\n' });
+  const linked = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-linked-')));
+  rmSync(linked, { recursive: true });
+  git(root, 'worktree', 'add', '-q', linked);
+  t.after(() => rmSync(linked, { recursive: true, force: true }));
+  mkdirSync(join(linked, 'dist', 'scripts'), { recursive: true });
+  writeFileSync(join(linked, 'dist', 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  const inWorktree = {
+    skillRoot: join(linked, 'dist'),
+    helperPath: join(linked, 'dist', 'scripts', 'effective-flow-state.mjs'),
+  };
+  const refused = await allowRules(root, inWorktree);
+  assert.equal(refused.outcome?.code, 'UNSUPPORTED_PATH');
+  assert.equal(refused.outcome.reason, 'inside-repository-worktree');
+  assert.equal(refused.outcome.path, linked);
+
+  mkdirSync(join(root, 'vendor', 'scripts'), { recursive: true });
+  writeFileSync(join(root, 'vendor', 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  const inRoot = await allowRules(root, {
+    skillRoot: join(root, 'vendor'),
+    helperPath: join(root, 'vendor', 'scripts', 'effective-flow-state.mjs'),
+  });
+  assert.equal(inRoot.outcome?.reason, 'inside-runtime-root');
+
+  for (const layout of [
+    { checkout: 'dalo-source', inner: 'effective-flow' },
+    { checkout: 'other-checkout', inner: 'dist/claude/effective-flow' },
+  ]) {
+    const accepted = await allowRules(root, install(t, layout));
+    assert.equal(accepted.ok, true, JSON.stringify(accepted));
+  }
 });

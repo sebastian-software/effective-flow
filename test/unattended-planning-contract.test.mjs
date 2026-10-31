@@ -162,11 +162,15 @@ const QUESTION_INVENTORY = Object.freeze(
     'shared/memory-state.md': [
       [
         'not-a-site: a delegated worker returns lock diagnostics and never asks during planning',
-        'identity, and lock path, and block the owning mutation. A delegated worker never asks the user;',
+        'A delegated worker returns these diagnostics to its orchestrator and never asks the user; a',
+      ],
+      [
+        'not-a-site: a delegated worker reports a failed migrate-once retry and never asks during planning',
+        'and never asks the user.',
       ],
       [
         'not-a-site: orphan removal belongs to explicit cleanup, never plan or file review',
-        'only as the orchestrator, run `lock inspect` (`{cwd, lock}`), obtain explicit user confirmation',
+        'obtain explicit user confirmation for that observation, and run `lock break` with the observed',
       ],
     ],
     'shared/outcome-continuation.md': [

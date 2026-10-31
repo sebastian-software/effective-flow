@@ -62,7 +62,7 @@ when: a remote tracker access is about to write its local migration marker
 
 ```lazy-include
 effective-flow-dir-migration
-when: a remote tracker access is about to perform its first runtime-state mutation
+when: a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker)
 ```
 
 ```lazy-include

@@ -27,7 +27,8 @@ Verified repository context:
   - `setup`
   - the label-migration marker (`src/shared/issue-tracker-forge.md`)
   - the directory-migration marker (`src/shared/effective-flow-dir-migration.md`)
-  - `src/shared/worktree-integration.md`
+
+  `src/shared/worktree-integration.md` names `memory.json` but writes nothing, so it is not a writer.
 
   The protocol defines a small, closed set of operations: reserving a finding range, which changes only the counter; writing a named marker; the directory-migration merge, where absent keys are added and the target wins; and adopting legacy memory inside every transaction, which removes `<RUNTIME_STATE_ROOT>/.sf-memory.json` at the repository root afterwards.
 
@@ -156,15 +157,14 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
 - **Stage 1, guard, locks, and memory:**
   - the shared path guard
   - the lock core, taking over the memory lock and both commit locks, including the guarded orphan break
-  - the typed memory operations for every existing writer and key family
+  - the typed memory operations for every existing writer and key family, including the whole `.effective-flow/` directory migration (amended for work package 3)
   - the `setup` step that writes the absolute-path allowlist rule for the non-destructive prefixes
   - a before-and-after measurement against the success criterion
 - **Stage 2, worktree lifecycle and cleanup:**
   - worktree-run records and their locks
   - the nine eligibility conditions with claim-remove-reconcile
   - worktree removal through non-force git
-  - removal of the closed legacy list
-  - the `.effective-flow/` directory migration
+  - removal of the closed legacy list, including the legacy directories the stage 1 migration preserves
   - cleanup dry run and apply bound to the plan digest
 - **Stage 3a, computation (independent of stages 0 to 2, can start now):**
   - the `effective-flow-mechanics.mjs` skeleton, importing the existing cores
@@ -220,7 +220,7 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
   - **Extending the owning scripts.** This stays close to each owner, but retrofits `plan-lint` and `setup-status`, whose header states that `setup` stays the only writer, with new conventions.
   - **The runtime-state helper.** This needs one rule fewer, but ties stage 3 to a stage 0 stop and blurs the helper's purpose.
 - **Prose side:** the lock, memory, worktree-lifecycle, and mechanics fragments shrink to the call and the handling of each outcome. The always-loaded context saving is limited to the eager hosts:
-  - for stages 1 and 2: `cleanup`, `deliver`, `apply-review-commit-mechanics`, `worktree-integration`, and `effective-flow-dir-migration`
+  - for stages 1 and 2: `cleanup`, `deliver`, `apply-review-commit-mechanics`, `worktree-integration` (worktree lifecycle only, not memory), and `effective-flow-dir-migration`
   - for stage 3: `pr` (base-branch resolution), `refactor` (plan-reference routing), and `setup` (the ADR convention)
 
   `plan-archival`, `plan-numbering`, and `concept-contract` are lazy everywhere, so their saving is per call.
@@ -272,12 +272,13 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
    - **Handoff:** `effective-flow plan "Work package 2 'Guard and lock core' from docs/concept/2026-10-29-runtime-state-cli.md: add the bundled effective-flow-state helper with the shared path guard and lock core, take over memory.lock, iterate-commit.lock and apply-review-commit.lock including the guarded orphan break, keep the on-disk lock protocol exactly, and replace the prose lock replays with helper calls."`
 3. **Typed memory operations and allowlist setup (stage 1)**
    - **Goal:** every `memory.json` writer uses the typed helper operations, and `setup` writes the absolute-path allowlist rule for the non-destructive prefixes.
-   - **Scope:** reserving a finding range, setting a marker, the directory migration, and implicit legacy adoption; the writers in `review`, the review-state fragments, `setup`, `issue-tracker-forge`, `effective-flow-dir-migration`, and `worktree-integration`; a re-check of the success criterion against the baseline.
+   - **Scope:** reserving a finding range, setting a marker, the whole directory migration (no-clobber copy, memory merge, and the `runtimeMigration.directory` marker), and implicit legacy adoption; the writers in `review`, the review-state fragments, `setup`, `issue-tracker-forge`, and `effective-flow-dir-migration`; a re-check of the success criterion against the baseline. `worktree-integration` names `memory.json` but writes nothing, so it is not a memory writer.
+   - **Stage 0 result (amended):** rule only, no PreToolUse hook. The helper rejects any argv beyond its two operation tokens, which closes the extra-argument gap the spike found in a rule's trailing `*`; the stage 1 measurement confirmed the rule for literal calls (all 19 literal-shape calls matched the allow rule without a prompt); realistic compliance with the helper steps and the call shape is open as work package 8.
    - **Done when:** no prose writer of `memory.json` remains, and the stage 1 measurement meets the success criterion for `review` and `iterate`.
    - **Depends on:** 2.
-   - **Handoff:** `effective-flow plan "Work package 3 'Typed memory operations and allowlist setup' from docs/concept/2026-10-29-runtime-state-cli.md: move every memory.json writer to typed helper operations (reserve, set-marker, migrate-directory, implicit legacy adoption), let setup write the absolute-path allow rule for the non-destructive prefixes only, and measure review and iterate against the baseline."`
+   - **Handoff:** `effective-flow plan "Work package 3 'Typed memory operations and allowlist setup' from docs/concept/2026-10-29-runtime-state-cli.md: move every memory.json writer to typed helper operations (reserve, set-marker, migrate-directory including the whole directory migration, implicit legacy adoption), let setup write the absolute-path allow rule for the non-destructive prefixes only, rule only without a hook, and measure review and iterate against the baseline."`
 4. **Worktree lifecycle and cleanup (stage 2)**
-   - **Goal:** worktree-run records, their locks, eligibility and claim-remove-reconcile, worktree removal, legacy removal, and the directory migration go through the helper. Cleanup apply is bound to the dry-run digest.
+   - **Goal:** worktree-run records, their locks, eligibility and claim-remove-reconcile, worktree removal, and legacy removal, including the legacy directories that work package 3's migration preserves, go through the helper. The directory migration itself moved to work package 3. Cleanup apply is bound to the dry-run digest.
    - **Scope:**
      - the prose of `worktree-lifecycle` and `cleanup` reduced to helper calls and outcome handling
      - the Codex escalation notice for `.git` writes
@@ -287,7 +288,7 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
      - the `cleanup` measurement meets the success criterion
      - no prose `rm` remains for runtime state or the legacy list
    - **Depends on:** 2 and 3.
-   - **Handoff:** `effective-flow plan "Work package 4 'Worktree lifecycle and cleanup' from docs/concept/2026-10-29-runtime-state-cli.md: move worktree-run records, their locks, the nine eligibility conditions with claim-remove-reconcile, non-force worktree removal, the closed legacy removal list and the .effective-flow directory migration into the helper, bind cleanup apply to the dry-run plan digest, and re-record the affected behavioural eval suites."`
+   - **Handoff:** `effective-flow plan "Work package 4 'Worktree lifecycle and cleanup' from docs/concept/2026-10-29-runtime-state-cli.md: move worktree-run records, their locks, the nine eligibility conditions with claim-remove-reconcile, non-force worktree removal and the closed legacy removal list, including the legacy directories work package 3's migration preserves, into the helper, bind cleanup apply to the dry-run plan digest, and re-record the affected behavioural eval suites."`
 
 5. **Mechanics computation (stage 3a)**
    - **Goal:** the mechanics helper with base-branch resolution, name allocation, delivery branch naming, ADR numbering, and plan-reference resolution, importing the existing cores.
@@ -310,6 +311,20 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
    - **Done when:** no stash is addressed by index in prose, every drop goes through the helper, and fixtures cover index shifts between detection and drop.
    - **Depends on:** 1 (destructive prefixes validated), 2, and 6.
    - **Handoff:** `effective-flow plan "Work package 7 'Stashes and destructive mechanics' from docs/concept/2026-10-29-runtime-state-cli.md: move the apply-review stash baseline, new-stash detection by hash, R-ID assignment, overlap and containment evidence and every stash drop (class A and discard) into hash-addressed mechanics helper operations under destructive prefixes, and move the deletion of the untracked plan copy in SOURCE_ROOT into a hash-bound destructive operation."`
+8. **Helper-step and call-shape compliance (stage 1 follow-up)**
+   - **Goal:** realistic runs of `review` and `iterate` reach their persistence and lock steps, and write every helper call in the literal shape. The success criterion is re-measured realistically.
+   - **Evidence:** `docs/developer-guide/claude-code-allowlist-evidence.md`, "Stage 1 measurement", rounds 1 to 3.
+     - Rounds 1 and 2, 26 realistic runs: zero `effective-flow-state.mjs` calls. `review` answered inline and skipped the ID reservation and the local report that `review.md` requires. `iterate` committed without `iterate-commit.lock`, which `iterate.md` requires for inline items too. One run cited the delegation triviality exception, which waives only delegation, never a workflow step.
+     - Round 3, targeted: the prompts asked for the step. All 19 calls in the literal shape matched the allow rule without a prompt. 29 of 48 calls broke the literal call-shape rule from `src/shared/state-helper-call.md` (trailing `echo "exit=$?"`, pipes, compound commands, shell variables), and 9 of them prompted in default mode. The same `echo | node $SK` habit shows in the `remote-tracker` and `config-resolve` calls.
+   - **Scope (candidates, not decided):**
+     - make skipping structurally hard, for example a helper operation that commits under the lock, or that reserves and writes the report in one call
+     - state that the triviality exception never waives a workflow step
+     - extend the literal call-shape rule to `remote-tracker` and `config-resolve`
+     - consider a narrow PreToolUse hook only if prose and structure fail
+     - a realistic re-measurement with the stage 1 harness
+   - **Done when:** the realistic measurement exercises each of `review`, `iterate` and the migration in at least 2 of 3 runs per mode, and the helper housekeeping sub-class shows 0 prompts and 0 refusals.
+   - **Depends on:** 3.
+   - **Handoff:** `effective-flow plan "Work package 8 'Helper-step and call-shape compliance' from docs/concept/2026-10-29-runtime-state-cli.md: make review and iterate reach their reservation, report and commit-lock steps in realistic runs, state that the triviality exception never waives a workflow step, extend the literal call-shape rule to remote-tracker and config-resolve, consider structural helper operations before any narrow PreToolUse hook, and re-measure realistically with the stage 1 harness."`
 
 ## Concept review
 
@@ -322,7 +337,7 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
 | Technical feasibility | Builds on the existing script pattern. The Codex `.git` protection is verified, and Codex parity is limited to locks and memory accordingly.       |
 | Data and security     | Three guard layers. Destructive operations are never allowlisted. The rule is bound to an absolute path, and orphan breaks are compare-and-remove. |
 | Risks                 | Stage 0 is the main uncertainty and has a defined fallback. Permanent protocol compatibility is acknowledged.                                      |
-| Roadmap               | Seven ordered work packages with done criteria and handoffs. Stage 3a can start in parallel with the spike.                                        |
+| Roadmap               | Eight ordered work packages with done criteria and handoffs. Stage 3a can start in parallel with the spike.                                        |
 
 Findings:
 
