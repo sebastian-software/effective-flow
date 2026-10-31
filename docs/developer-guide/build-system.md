@@ -436,15 +436,19 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Thirteen subsystems and 34 runtime scripts carry this today: the pairs
+  misread as one. Thirteen subsystems and 38 runtime scripts carry this today: the pairs
   `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`,
   `effective-flow-mechanics.mjs`/`effective-flow-mechanics-core.mjs`,
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
-  `effective-flow-state.mjs`/`effective-flow-state-core.mjs` and
   `setup-status.mjs`/`setup-status-core.mjs`; the
+  runtime-state helper, a six-file family whose entry point `effective-flow-state.mjs` sits over
+  `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
+  `effective-flow-state-harness-core.mjs`, the shared `claude-settings-core.mjs` and
+  `runtime-file-primitives.mjs` (the bounded-read and JSON-object primitives the memory and
+  settings cores share); the
   Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
   `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
@@ -513,8 +517,15 @@ The build aborts with an error message if any of these guards is violated:
   rejects any operational mutation below `.effective-flow/` that can be reached before the
   `effective-flow-dir-migration` prerequisite. It follows nested shared writers, so loading the
   fragment late in a parent tool does not hide an earlier indirect write. The migration fragment
-  is exempt from requiring itself, while the separate runtime-state writer guard still requires
-  its concrete copies and marker write to follow `runtime-state-safety`.
+  is exempt from requiring itself; it carries no prose copy or marker write of its own, since
+  `memory migrate-directory` performs both.
+- **Memory-operation coverage guard (#176):** The pure `findMemoryStateContractViolations`
+  analyzer walks the same ordered traversal on the source and again on the delivered, resolved
+  text. A prose instruction that mutates `.effective-flow/memory.json` without naming a `memory`
+  operation (`memory reserve`, `memory set-marker`, `memory migrate-directory`) is a direct write;
+  every line naming one must follow the `## Memory operations` contract of `memory-state`, and
+  the `effective-flow-dir-migration` prerequisite, loaded eagerly or through a lazy `when:`
+  trigger that names memory, so the host reads both before the call.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
   (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
   twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for
@@ -707,8 +718,8 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 ## Runtime scripts
 
 Thirteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 34 files: eleven two-file subsystems, the remote tracker's seven-file family,
-the pilot measurement three-file family, and the shared `process-runner.mjs` and
+allowlist contains 38 files: ten two-file subsystems, the runtime-state helper's six-file family,
+the remote tracker's seven-file family, the pilot measurement three-file family, and the shared `process-runner.mjs` and
 `runtime-state-guard.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
@@ -927,9 +938,13 @@ point is an I/O boundary over testable core or protocol modules:
   here-string. It replaces the prose that acquired, released and broke three `mkdir` locks below
   `<RUNTIME_STATE_ROOT>/.effective-flow/`. The operation is exactly two argv tokens and any other
   argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
-  argument. `lock acquire`, `lock release` and `lock inspect` are non-destructive or read-only;
-  `lock break` is destructive and never allowlisted, and the orchestrator calls it only after the
-  user confirmed the break in the conversation. The lock is named by a closed enum, `memory`,
+  argument. The operations are `lock acquire|release|inspect|break`, `memory
+reserve|set-marker|migrate-directory` and `harness allow-rules`. The six allowlisted ones, `lock
+acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker` and `memory
+migrate-directory`, are non-destructive or read-only. `lock break` is destructive and
+  `harness allow-rules` writes the settings file that holds the rules; neither is ever
+  allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
+  the conversation. The lock is named by a closed enum, `memory`,
   `iterate-commit` or `apply-review-commit`, mapped to a fixed path; no caller supplies a path.
   The on-disk protocol is unchanged: a `mkdir` lock directory with `owner.json` (`memory`) or
   `owner` (the commit locks) written exclusively inside it, now JSON with a helper-generated
@@ -957,6 +972,34 @@ point is an I/O boundary over testable core or protocol modules:
   injects the shared runner into the core. Unit tests cover the guard and core, and a Git test
   covers the root and ignore predicates.
 
+  The typed memory operations replace every prose write of `memory.json`
+  (`effective-flow-state-memory-core.mjs` over the bounded reads of `runtime-file-primitives.mjs`,
+  contract in `src/shared/memory-state.md`). Each takes
+  the `memory` lock itself and replaces the file atomically. `memory reserve` allocates a finding
+  range of 1 to 10000 IDs for a named owner workflow. `memory set-marker` sets one named marker,
+  `config-migration-adr` (version `config-to-adr-v1`) or `label-migration-sf`. `memory
+migrate-directory` performs the whole `.effective-flow/` directory migration: a no-clobber
+  copy of the legacy sources, the memory merge in which absent keys are added and the target
+  wins, and the `runtimeMigration.directory` marker; unsupported entries are skipped and
+  reported, never followed. Every operation adopts a legacy `<RUNTIME_STATE_ROOT>/.sf-memory.json`
+  inside its transaction. Expected states are outcomes with exit 4: `MIGRATION_REQUIRED` (a
+  writer ran before the directory migration), `MIGRATION_NOT_NEEDED`, `MIGRATION_INCOMPLETE`
+  (`copy-failed` or `target-missing`) and `LEGACY_MEMORY_INVALID`, beside the lock outcomes;
+  `INVALID_STATE` and `LEGACY_CHANGED` are errors with exit 3.
+
+  `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
+  is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
+  the six rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  another install, warnings for widened rules, and a digest; an `apply` must present that digest
+  and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
+  (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
+  rule and a path refused for security (inside the current repository's worktree or the runtime
+  root, a foreign-writable chain, a helper mismatch), and refuses a settings file that is not ignored, is tracked or is not valid JSON
+  (`SETTINGS_NOT_IGNORED`, `SETTINGS_TRACKED`, `SETTINGS_INVALID`). `setup-status` reports the
+  rules as its `allowlist` finding and the `allowlist` setup form; the `setup allowlist` keyword
+  and the step the other setup modes offer are described in
+  [Configuration](configuration.md#claude-code-allow-rules).
+
 - **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
   closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
   verdict, report, and fingerprint operations; it emits one stable JSON envelope and fails closed
@@ -976,11 +1019,13 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 34 identical, usable scripts,
+checks prove that all three installed payloads contain all 38 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, that
 `effective-flow-mechanics` allocates a suffixed report name and resolves a plan by slug in every
-target (`assertMechanicsSmoke`), and that
+target (`assertMechanicsSmoke`), that `effective-flow-state` runs a `lock acquire` and
+`lock release` cycle and a `memory migrate-directory` and `memory reserve` in every target
+(`assertStateLockSmoke`, `assertStateMemorySmoke`), and that
 `config-resolve resolve` resolves a fixture project-setup ADR in every target
 (`assertConfigResolveSmoke` in `scripts/distribution-smoke.mjs`), and that `setup-status status`
 reads its generated projection in every target with the release lookup stubbed offline
@@ -1056,7 +1101,7 @@ and directive syntax").
   The fragment owns the Profile-mode Chat/Profile questions, transient topology overlays, and the
   external-only connection/context/state interview. Express and Guided runs never pay that context
   cost. `setup-targeted-change` sits at the same decision point with the complementary trigger: a
-  non-empty argument that is not exactly one of the six keyword forms. `setup-status` is the third
+  non-empty argument that is not exactly one of the seven keyword forms. `setup-status` is the third
   pointer there, loaded only for the exact `status` argument: the read-only diagnosis renders the
   `setup-status.mjs` envelope, carries no `ask` fence and no write instruction, and ends after its
   report. Keeping the argument router

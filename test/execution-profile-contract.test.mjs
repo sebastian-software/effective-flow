@@ -130,6 +130,7 @@ const EXPECTED_TOOLS = [
 ];
 
 const EXPECTED_RUNTIME_SCRIPTS = [
+  'claude-settings-core.mjs',
   'config-resolve-core.mjs',
   'config-resolve.mjs',
   'delegation-envelope-core.mjs',
@@ -141,6 +142,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'effective-flow-mechanics-core.mjs',
   'effective-flow-mechanics.mjs',
   'effective-flow-state-core.mjs',
+  'effective-flow-state-harness-core.mjs',
+  'effective-flow-state-memory-core.mjs',
   'effective-flow-state.mjs',
   'issue-buddy-core.mjs',
   'issue-buddy.mjs',
@@ -161,6 +164,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'remote-tracker-ledger-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker.mjs',
+  'runtime-file-primitives.mjs',
   'runtime-state-guard.mjs',
   'setup-status-core.mjs',
   'setup-status.mjs',
@@ -908,11 +912,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 34);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 38);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 34 approved runtime scripts',
+    'build.mjs must register exactly the 38 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

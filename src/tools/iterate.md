@@ -737,8 +737,9 @@ options:
    line: its items may run as sub-agents nobody can answer, so the documentation-sync gate of each
    item run falls to the contract's chain rule exactly as without this run's state.
    Each delegation also receives, for the commit mutex below, the absolute helper path
-   `<skill-root>/scripts/effective-flow-state.mjs`, `RUNTIME_STATE_ROOT`, `runId`, and its own
-   `delegation` `<runId>/<n>`, numbering this run's item delegations, an inline item included.
+   `<skill-root>/scripts/effective-flow-state.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own
+   `delegation` `<runId>/<n>`, numbering this run's item delegations, an inline item included, and
+   the runtime-state helper call shape verbatim.
    Each delegation receives its analyzed owned paths and reports its actual
    paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
    modifying that path and return it to the orchestrator. Add the path to the item's actual
@@ -762,13 +763,16 @@ The following mutex applies in both PR and local mode. Parallel delegations may 
 files concurrently, but all operations that mutate or inspect the shared Git index and `HEAD`
 for an item run in one critical section.
 
+```include
+state-helper-call
+```
+
 Mutex convention:
 
 - The mutex is the helper's `iterate-commit` lock, one per repository below `RUNTIME_STATE_ROOT`
   and shared by every item delegation of every run, also from an isolated worktree. Each step is
-  one call in this here-string shape, never a heredoc, through the absolute helper path handed over
-  in Phase 3, with `cwd` set to `RUNTIME_STATE_ROOT`; the helper applies the runtime-state guard
-  itself:
+  one call through the absolute helper path handed over in Phase 3, with `cwd` set to
+  `RUNTIME_STATE_ROOT`, in the runtime-state helper call shape above; the helper applies the runtime-state guard itself:
 
   ```text
   node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"iterate-commit","owner":{"workflow":"iterate","runId":"<runId>","item":"<item>","delegation":"<runId>/<n>"}}'

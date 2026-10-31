@@ -47,62 +47,50 @@ function collectRuntimeSources() {
 
 const contractScenarios = [
   {
-    name: 'partial target with transitional config and missing runtime entries',
+    name: 'a marker read that creates nothing',
     clauses: [
-      /missing marker starts the migration scan even when\s+`\.effective-flow\/` already contains a transitional `config\.json`/,
-      /copy only missing files/,
-      /including `cache\.json`, report or investigation trees, and wisdom\s+files/,
-      /an existing target\s+path wins/,
+      /A valid marker makes the\s+prerequisite a no-op/,
+      /Do not create a runtime footprint during a read-only run/,
     ],
   },
   {
-    name: 'recursive memory conflicts and missing nested keys',
+    name: 'the whole migration as one helper call',
     clauses: [
-      /recursively adding only keys absent from that\s+freshest\s+base/,
-      /At every scalar, array, object, or type conflict preserve the base value/,
-      /Never reduce or\s+replace\s+existing counters, migration markers, status, or unrelated fields/,
-    ],
-  },
-  {
-    name: 'whole-source precedence',
-    clauses: [
-      /Use the whole `<RUNTIME_STATE_ROOT>\/\.firmo\/` tree when\s+it exists; otherwise use `<RUNTIME_STATE_ROOT>\/\.sf-plugin\/`/,
-      /If both exist, do\s+not combine them/,
-    ],
-  },
-  {
-    name: 'no legacy source and rerun idempotency',
-    clauses: [
-      /If neither exists, proceed directly to the final marker update as part\s+of the already-authorized first runtime write/,
-      /Once version `1` is present, later prerequisites skip the legacy\s+scan and are idempotent/,
-    ],
-  },
-  {
-    name: 'blocked or incomplete merge leaves no marker',
-    clauses: [
-      /invalid\s+JSON[\s\S]*leave the completion marker unset/,
-      /A copy, read, or guard failure stops the merge,\s+leaves the marker unset/,
-      /The marker is the final migration mutation and is written only after\s+all safe carry-over work succeeds/,
-    ],
-  },
-  {
-    name: 'legacy worktrees remain excluded',
-    clauses: [
-      /except for the entire `\.worktrees\/` subtree/,
-      /legacy worktrees[^.]{0,40}\s+and remain only in the legacy directory/,
-    ],
-  },
-  {
-    name: 'concurrent target memory uses the shared lock',
-    clauses: [
+      /Without the marker, call `memory migrate-directory` as shown in\s+“Memory operations”/,
       /```include\s+memory-state\s+```/,
-      /Inside its lock,\s+select the retained absolute\s+`<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle or a\s+valid unchanged `<RUNTIME_STATE_ROOT>\/\.sf-memory\.json` as the base/,
-      /do not introduce a migration-specific lock or direct writer/,
+    ],
+  },
+  {
+    name: 'whole-source precedence, no-clobber copy, base-wins merge and marker last',
+    clauses: [
+      /reads `\.firmo\/` when it exists, otherwise `\.sf-plugin\/`, from\s+`RUNTIME_STATE_ROOT` only/,
+      /copies only missing entries without ever replacing a target, excluding\s+`\.worktrees\/`/,
+      /merges the legacy `memory\.json` so that existing values win; and writes the marker\s+last/,
+      /Without a legacy source it writes the marker alone/,
+    ],
+  },
+  {
+    name: 'skipped non-regular entries are reported',
+    clauses: [/Report every\s+`result\.skipped` entry[\s\S]*with its\s+path and type/],
+  },
+  {
+    name: 'blocked or incomplete migration leaves no marker and no workflow write',
+    clauses: [
+      /`MIGRATION_NOT_NEEDED`: a concurrent run already wrote the marker; continue/,
+      /`LEGACY_MEMORY_INVALID` or `MIGRATION_INCOMPLETE`[\s\S]*the marker stays unset and the copied files stay[\s\S]*perform none of the workflow-specific\s+runtime writes/,
+    ],
+  },
+  {
+    name: 'legacy directories stay for cleanup',
+    clauses: [
+      /Both legacy directories stay unchanged/,
+      /Deletion of preserved\s+legacy directories remains an explicit,\s+user-confirmed responsibility/,
     ],
   },
 ];
 
-// Invariant: migration copies only missing state, never replaces target state, and writes its marker last.
+// Invariant: the migration runs as one `memory migrate-directory` call that copies only missing
+// state, writes its marker last, and blocks the workflow's writes when it cannot complete.
 for (const scenario of contractScenarios) {
   test(`runtime-directory migration contract covers ${scenario.name}`, () => {
     for (const clause of scenario.clauses) assert.match(migrationContract, clause);
@@ -250,7 +238,7 @@ test('setup triggers the shared migration only for a locator-selected legacy con
   );
 });
 
-// Invariant: the migration marker and its safety clauses survive every harness render.
+// Invariant: the migration marker and its helper call survive every harness render.
 test('native and portable renders preserve the same migration marker and behavior clauses', () => {
   for (const harness of ['claude', 'codex', 'portable']) {
     const rendered = renderBody(`${migrationContract}\n`, harness, {
@@ -259,13 +247,9 @@ test('native and portable renders preserve the same migration marker and behavio
     });
 
     assert.match(rendered, /runtimeMigration\.directory\.version: 1/);
-    assert.match(rendered, /Use the whole `<RUNTIME_STATE_ROOT>\/\.firmo\/` tree/);
-    assert.match(rendered, /Inside its lock,\s+select the retained absolute/);
-    assert.match(
-      rendered,
-      /Never scan or mutate a legacy\/current\s+runtime tree below a linked execution worktree/,
-    );
-    assert.match(rendered, /except for the entire `\.worktrees\/` subtree/);
+    assert.match(rendered, /call `memory migrate-directory`/);
+    assert.match(rendered, /`MIGRATION_INCOMPLETE`/);
+    assert.match(rendered, /excluding\s+`\.worktrees\/`/);
     assert.doesNotMatch(rendered, /\{\{(?:SKILL|AGENT):/);
   }
 });

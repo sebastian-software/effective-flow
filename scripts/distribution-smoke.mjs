@@ -37,6 +37,10 @@ const RUNTIME_SCRIPT_FILES = [
   'diff-baseline-core.mjs',
   'effective-flow-state.mjs',
   'effective-flow-state-core.mjs',
+  'effective-flow-state-memory-core.mjs',
+  'effective-flow-state-harness-core.mjs',
+  'claude-settings-core.mjs',
+  'runtime-file-primitives.mjs',
   'runtime-state-guard.mjs',
   'delivery-selection.mjs',
   'delivery-selection-core.mjs',
@@ -380,6 +384,60 @@ function assertStateLockSmoke(target, helper) {
   }
 }
 
+// Runs one `memory migrate-directory` and one `memory reserve` through the shipped state helper,
+// which proves the lazily loaded memory core and its imports resolve inside the target, and checks
+// that a `memory` operation with an extra argv token is rejected before stdin is read.
+function assertStateMemorySmoke(target, helper) {
+  const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-memory-smoke-')));
+  try {
+    const init = spawnSync('git', ['init', '--quiet', cwd], { encoding: 'utf8' });
+    if (init.status !== 0) fail(`${target} memory fixture: git init failed\n${init.stderr}`);
+    writeFileSync(join(cwd, '.gitignore'), '.effective-flow/\n');
+    const call = (argv, input) =>
+      spawnSync(process.execPath, [helper, ...argv], {
+        cwd,
+        encoding: 'utf8',
+        env: { ...process.env, CI: '1', NO_COLOR: '1' },
+        input: JSON.stringify({ cwd, owner: { workflow: 'distribution-smoke' }, ...input }),
+      });
+    const migrated = call(['memory', 'migrate-directory'], { waitSeconds: 0 });
+    const migratedEnvelope = parseJson(
+      migrated.stdout.trim(),
+      `${target} memory migrate-directory`,
+    );
+    if (migrated.status !== 0 || migratedEnvelope.result?.marker?.version !== 1) {
+      fail(`${target} memory migrate-directory failed\n${migrated.stdout}${migrated.stderr}`);
+    }
+    const reserved = call(['memory', 'reserve'], { count: 2, waitSeconds: 0 });
+    const reservedEnvelope = parseJson(reserved.stdout.trim(), `${target} memory reserve`);
+    const memory = parseJson(
+      readFileSync(join(cwd, '.effective-flow', 'memory.json'), 'utf8'),
+      `${target} memory.json`,
+    );
+    if (
+      reserved.status !== 0 ||
+      reservedEnvelope.result?.firstId !== 'R-0000001' ||
+      reservedEnvelope.result?.lastId !== 'R-0000002' ||
+      memory.lastFindingNumber !== 2 ||
+      existsSync(join(cwd, '.effective-flow', 'memory.lock'))
+    ) {
+      fail(`${target} memory reserve failed\n${reserved.stdout}${reserved.stderr}`);
+    }
+    const widened = call(['memory', 'reserve', 'extra'], { count: 1 });
+    const widenedEnvelope = parseJson(widened.stdout.trim(), `${target} memory argv rejection`);
+    if (
+      widened.status !== 2 ||
+      widenedEnvelope.operation !== null ||
+      widenedEnvelope.error?.code !== 'INVALID_INPUT' ||
+      !/^usage: /.test(widenedEnvelope.error?.message ?? '')
+    ) {
+      fail(`${target} memory reserve accepted an extra argv token\n${widened.stdout}`);
+    }
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+}
+
 // Runs the shipped status helper against a throwaway non-Git directory with fetch stubbed offline,
 // which proves the CLI resolves its core, the config-resolve core and the generated ownership
 // projection beside it inside the target, and that a failed release lookup fails nothing.
@@ -673,6 +731,7 @@ export function assertBuiltLayout(distRoot = join(ROOT_DIR, 'dist')) {
     assertConfigResolveSmoke(target, join(scripts, 'config-resolve.mjs'));
     assertSetupStatusSmoke(target, scripts);
     assertStateLockSmoke(target, join(scripts, 'effective-flow-state.mjs'));
+    assertStateMemorySmoke(target, join(scripts, 'effective-flow-state.mjs'));
   }
 
   for (const file of walkFiles(join(distRoot, 'portable', 'effective-flow'), (path) =>

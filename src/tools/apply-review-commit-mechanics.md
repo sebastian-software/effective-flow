@@ -26,14 +26,18 @@ If the commit strategy **Individually** was chosen, a global commit mutex applie
 
 Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
 
+```include
+state-helper-call
+```
+
 Mutex convention:
 
 - Lock: the helper's `apply-review-commit` lock at the retained absolute
   `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle. Every concurrent
   delegation for the repository uses this one main-checkout lock, even when its `EXECUTION_ROOT`
-  is linked or native. Each step is one call in this here-string shape, never a heredoc, through
-  the absolute helper path handed over by `apply-review`, with `cwd` set to `RUNTIME_STATE_ROOT`;
-  the helper applies the runtime-state guard itself:
+  is linked or native. Each step is one call through the absolute helper path handed over by
+  `apply-review`, with `cwd` set to `RUNTIME_STATE_ROOT`, in the runtime-state helper call shape above; the helper
+  applies the runtime-state guard itself:
 
   ```text
   node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"apply-review-commit","owner":{"workflow":"apply-review","runId":"<runId>","purpose":"finding","findingId":"<finding ID>","component":"<component>"}}'

@@ -43,8 +43,8 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 //
 // Two runtime script sets are seeded, both executed by a run, named by no load pointer and stubbed
 // by nothing: the configuration resolver, which `iterate` executes at its first configuration read
-// in Phase 0, and the runtime-state helper with the guard module it imports, which a first memory
-// write executes to take `memory.lock`. Its forge
+// in Phase 0, and the runtime-state helper with the guard module and the memory, harness and
+// settings cores it imports, which a first memory write executes. Its forge
 // helper `scripts/remote-tracker.mjs` is replaced by the stub below and hashed as `instrument`, and
 // it runs no delegation-envelope helper, because it receives envelopes rather than building them.
 // The exit channel is a seed of its own, contributed by the overlay at the path the run executes it
@@ -61,6 +61,10 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/config-resolve-core.mjs',
   'scripts/effective-flow-state.mjs',
   'scripts/effective-flow-state-core.mjs',
+  'scripts/effective-flow-state-memory-core.mjs',
+  'scripts/effective-flow-state-harness-core.mjs',
+  'scripts/claude-settings-core.mjs',
+  'scripts/runtime-file-primitives.mjs',
   'scripts/runtime-state-guard.mjs',
   'scripts/effective-flow-mechanics.mjs',
   'scripts/effective-flow-mechanics-core.mjs',

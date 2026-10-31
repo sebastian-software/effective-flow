@@ -1238,11 +1238,11 @@ function includeHostsOf(fragment) {
   return hosts;
 }
 
-// Invariant: setup classifies every invocation before mutation — the six keyword forms select
+// Invariant: setup classifies every invocation before mutation — the seven keyword forms select
 // their modes, and any other non-empty argument is a free-text Targeted request rather than an
 // error; only Profile loads the profile fragment, only Targeted the Targeted fragment, only Status
 // the status fragment, and neither Targeted nor Status is asked the Visibility question.
-test('setup classifies the six keyword invocations and routes any other argument to Targeted before mutation', () => {
+test('setup classifies the seven keyword invocations and routes any other argument to Targeted before mutation', () => {
   const setup = source('src/tools/setup.md');
   const step0 = boundedSlice(setup, '### Step 0: Resolve the setup mode', '### Step 1:');
 
@@ -1273,6 +1273,14 @@ test('setup classifies the six keyword invocations and routes any other argument
       200,
     ),
   );
+  // Allowlist is the seventh keyword form: it runs only the allowlist step, so it needs no
+  // configuration and never reaches the Visibility question or the configuration steps.
+  assert.match(step0, /`\{\{SKILL:setup\}\} allowlist` selects \*\*Allowlist\*\*/);
+  assert.match(prose(step0), near('selects Allowlist', 'needs no existing configuration', 20));
+  assert.match(
+    prose(step0),
+    near('selects Allowlist', 'never reaching the Visibility question or Steps 1–7', 200),
+  );
   assert.match(prose(step0), /Any other non-empty argument selects Targeted/);
   assert.match(prose(step0), near('selects Targeted', 'its original text kept verbatim', 40));
   // A keyword followed by more text is not that keyword: the whole text is the request.
@@ -1301,7 +1309,7 @@ test('setup classifies the six keyword invocations and routes any other argument
   );
   assert.match(
     pointers.get('setup-targeted-change'),
-    /normalized invocation is non-empty and is not exactly one of the six keyword forms/,
+    /normalized invocation is non-empty and is not exactly one of the seven keyword forms/,
   );
   // `setup status <more text>` stays Targeted: only the exact argument loads the status fragment,
   // and the Targeted condition counts `status` among the keyword forms it excludes.
@@ -1322,13 +1330,17 @@ test('setup classifies the six keyword invocations and routes any other argument
   }
 
   // Targeted keeps the visibility of the configuration it resolves; asking would invite a switch
-  // that the Targeted fragment redirects to the full setup. Status asks nothing at all.
-  assert.match(prose(step0), /Every mode except Targeted and Status then resolves the visibility/);
+  // that the Targeted fragment redirects to the full setup. Status asks nothing at all, and
+  // Allowlist runs only the allowlist step, reading the visibility without asking.
+  assert.match(
+    prose(step0),
+    /Every mode except Targeted, Status, and Allowlist then resolves the visibility/,
+  );
   const visibility = askContracts(step0, 'tools/setup.md Step 0').filter(
     (ask) => ask.header === 'Visibility',
   );
   assert.equal(visibility.length, 1, 'Step 0 must carry exactly one Visibility ask');
-  assert.match(visibility[0].when, /the mode is neither Targeted nor Status/);
+  assert.match(visibility[0].when, /the mode is not Targeted, Status, or Allowlist/);
 });
 
 // Invariant: `setup status` is a read-only diagnosis. Its fragment is the whole Status branch, so a
@@ -1357,14 +1369,24 @@ test('setup status renders the read-only status envelope and never asks or mutat
 
   assert.match(
     status,
-    /`node <skill-root>\/scripts\/setup-status\.mjs status`[\s\S]{0,120}`\{"cwd": "<absolute path of the checkout setup was invoked in>"\}`/,
+    /`node <skill-root>\/scripts\/setup-status\.mjs status`[\s\S]{0,120}`\{"cwd": "<absolute path of the checkout setup was invoked in>", "skillRoot":\s+"<skill-root>"\}`/,
   );
+  // The allow-rule probe matches this install by its symlinked path, so the skill root is never
+  // resolved before it is passed.
+  assert.match(prose(status), /never resolved through `realpath`/);
   assert.match(prose(status), /A non-interactive run produces the same report/);
   assert.match(
     prose(status),
     near('`ok: false`', 'the run ends there with no next-steps block', 120),
   );
-  ordered(status, '**Configuration**', '**Ignore state**', '**Domain owners**', '**Version**');
+  ordered(
+    status,
+    '**Configuration**',
+    '**Ignore state**',
+    '**Domain owners**',
+    '**Version**',
+    '**Allow rules**',
+  );
   assert.match(prose(status), /add no remediation of your own/);
   assert.match(prose(status), /while every other section still renders/);
   assert.match(prose(status), /"not installed \(according to this session's skill list\)"/);
@@ -1399,6 +1421,7 @@ test('setup status renders the read-only status envelope and never asks or mutat
     ['setup guided', '`\\{\\{SKILL:setup\\}\\} guided`'],
     ['setup hidden', '`\\{\\{SKILL:setup\\}\\} hidden`'],
     ['targeted', '`\\{\\{SKILL:setup\\}\\} <request>` with the first Targeted request'],
+    ['allowlist', '`\\{\\{SKILL:setup\\}\\} allowlist`'],
   ]) {
     assert.match(prose(status), new RegExp(`\`${form}\` is ${invocation}`));
   }
@@ -1473,12 +1496,21 @@ test('every setup lazy pointer names the decision point that loads it', () => {
       trigger: /`Rename path`[\s\S]*`Yes`/,
       decision: 'the Step 7 Rename path question answered Yes',
     },
+    {
+      fragment: 'setup-allowlist',
+      step: boundedSlice(setup, '### Allowlist step (Claude Code only)', '### Step 7:'),
+      trigger: /(?=[\s\S]*`claude`)(?=[\s\S]*`portable` running in Claude Code)/,
+      decision: 'the build-target decision that offers the allowlist step',
+    },
   ];
   // The Targeted fragment loads the owning fragments itself, so it is the one other host they may
-  // have; the rename probe belongs to Step 7, which a Targeted run never reaches.
+  // have; the rename probe belongs to Step 7, which a Targeted run never reaches. The allowlist
+  // step loads the hidden arm for its second `info/exclude` line, because an Allowlist run never
+  // reaches Step 1.
   const targetedHosts = new Set(['tools/setup.md', 'shared/setup-targeted-change.md']);
   const hostsOf = {
-    'setup-hidden-mode': targetedHosts,
+    'setup-hidden-mode': new Set([...targetedHosts, 'shared/setup-allowlist.md']),
+    'setup-allowlist': new Set(['tools/setup.md']),
     'setup-guided-core-switches': targetedHosts,
     'setup-advanced-settings': targetedHosts,
     'setup-rename-probe': new Set(['tools/setup.md']),
@@ -2262,7 +2294,8 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
     intro,
     near('Step 6 items 5 to 7', '\\(marker, migration, `CLAUDE\\.md` fence\\)', 5),
   );
-  assert.match(intro, near('`CLAUDE\\.md` fence\\)', 'or Step 7', 5));
+  // A Targeted run also skips the allowlist step, which writes outside the configuration.
+  assert.match(intro, near('`CLAUDE\\.md` fence\\)', 'the allowlist step, or Step 7', 5));
   assert.match(intro, /It writes no root file/);
   const renamePath = askContracts(setup, 'tools/setup.md').find(
     (ask) => ask.header === 'Rename path',
@@ -2316,13 +2349,13 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
   // Unrecognized text, a typo of a keyword included, lists the accepted forms and mutates nothing.
   assert.match(
     interpretation,
-    near('When nothing is recognized', 'list the six keyword forms', 80),
+    near('When nothing is recognized', 'list the seven keyword forms', 80),
   );
-  assert.match(interpretation, near('list the six keyword forms', 'stop without mutation', 80));
+  assert.match(interpretation, near('list the seven keyword forms', 'stop without mutation', 80));
   assert.match(interpretation, near('nothing is recognized', 'a typo such as', 10));
   assert.match(
     interpretation,
-    near('list the six keyword forms', '`\\{\\{SKILL:setup\\}\\} <free text>`', 10),
+    near('list the seven keyword forms', '`\\{\\{SKILL:setup\\}\\} <free text>`', 10),
   );
 
   // Redirects: the two keys that stay with the full setup.
@@ -19386,8 +19419,8 @@ test('hidden setup writes the ignore entry into the common-dir info/exclude and 
   );
 });
 
-// Invariant: hidden setup's write authority ends at the info/exclude line and the local
-// project-setup.md; no tracked file is written or edited.
+// Invariant: hidden setup's write authority ends at the info/exclude lines (the allowlist line only
+// after its own confirmation) and the local project-setup.md; no tracked file is written or edited.
 test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a tracked ADR', () => {
   const setup = source('src/tools/setup.md');
   const rules = prose(section(setup, '## Rules', '\n## '));
@@ -19397,7 +19430,7 @@ test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a 
   );
   assert.match(
     rules,
-    /In hidden mode, change only the `\.effective-flow\/` line in the Git common directory's `info\/exclude` and the local `\.effective-flow\/project-setup\.md`/,
+    /In hidden mode, change only the `\.effective-flow\/` line in the Git common directory's `info\/exclude` \(plus the allowlist step's `\.claude\/settings\.local\.json` line there, after its explicit confirmation\) and the local `\.effective-flow\/project-setup\.md`/,
   );
 
   const step6 = prose(boundedSlice(setup, '### Step 6: Merge and write', '### Step 7:'));

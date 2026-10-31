@@ -188,10 +188,37 @@ function captureIo(extra = {}) {
 test('operations, locks and codes are frozen closed sets', () => {
   assert.deepEqual(
     [...STATE_OPERATIONS],
-    ['lock acquire', 'lock release', 'lock inspect', 'lock break'],
+    [
+      'lock acquire',
+      'lock release',
+      'lock inspect',
+      'lock break',
+      'memory reserve',
+      'memory set-marker',
+      'memory migrate-directory',
+      'harness allow-rules',
+    ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
-  assert.deepEqual([...OUTCOME_CODES], ['LOCK_HELD', 'NOT_OWNER', 'NOT_HELD', 'BREAK_MISMATCH']);
+  assert.deepEqual(
+    [...OUTCOME_CODES],
+    [
+      'LOCK_HELD',
+      'NOT_OWNER',
+      'NOT_HELD',
+      'BREAK_MISMATCH',
+      'MIGRATION_REQUIRED',
+      'MIGRATION_NOT_NEEDED',
+      'MIGRATION_INCOMPLETE',
+      'LEGACY_MEMORY_INVALID',
+      'UNSUPPORTED_HARNESS',
+      'UNSUPPORTED_PATH',
+      'SETTINGS_NOT_IGNORED',
+      'SETTINGS_TRACKED',
+      'SETTINGS_INVALID',
+      'PREVIEW_MISMATCH',
+    ],
+  );
   assert.deepEqual(
     [...STATE_ERROR_CODES],
     [
@@ -200,6 +227,8 @@ test('operations, locks and codes are frozen closed sets', () => {
       'UNSAFE_TARGET',
       'RUNTIME_STATE_UNSAFE',
       'WRITE_FAILED',
+      'INVALID_STATE',
+      'LEGACY_CHANGED',
       'GIT_FAILED',
       'INTERNAL_ERROR',
     ],
@@ -231,6 +260,8 @@ test('exit codes: 0 success, 4 outcome, 2 input or root, 3 unsafe or write, 1 ot
   assert.equal(exitFor('UNSAFE_TARGET'), 3);
   assert.equal(exitFor('RUNTIME_STATE_UNSAFE'), 3);
   assert.equal(exitFor('WRITE_FAILED'), 3);
+  assert.equal(exitFor('INVALID_STATE'), 3);
+  assert.equal(exitFor('LEGACY_CHANGED'), 3);
   assert.equal(exitFor('GIT_FAILED'), 1);
   assert.equal(exitFor('INTERNAL_ERROR'), 1);
 });
@@ -279,7 +310,7 @@ test('executeOperation returns an envelope for every malformed call', async () =
 
 // Invariant: an allowlisted two-token prefix can never be widened by an extra argument, and
 // `--help` never blocks on stdin: every other argv is rejected before stdin is read.
-test('CLI: every argv except the four operations is rejected before stdin', async () => {
+test('CLI: every argv except the listed operations is rejected before stdin', async () => {
   for (const argv of [
     [],
     ['lock'],
@@ -290,6 +321,15 @@ test('CLI: every argv except the four operations is rejected before stdin', asyn
     ['--help'],
     ['lock', '--help'],
     ['lock acquire'],
+    ['memory'],
+    ['memory', 'reserve', 'extra'],
+    ['memory', 'reserve', '--', '{}'],
+    ['memory', 'write'],
+    ['memory', 'merge'],
+    ['memory reserve'],
+    ['memory', 'migrate-directory', '--help'],
+    ['harness', 'allow-rules', 'apply'],
+    ['harness', 'lock'],
   ]) {
     const io = captureIo({ stdin: trapStdin(), runner: unreachableRunner() });
     const envelope = await main(argv, io);

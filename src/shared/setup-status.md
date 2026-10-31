@@ -9,8 +9,9 @@ same report.
 ### The status call
 
 Run `node <skill-root>/scripts/setup-status.mjs status` once with exactly one JSON object on
-standard input, `{"cwd": "<absolute path of the checkout setup was invoked in>"}`, and nothing
-else: the script resolves and verifies the runtime root itself. A missing Node, a nonzero exit, an
+standard input, `{"cwd": "<absolute path of the checkout setup was invoked in>", "skillRoot":
+"<skill-root>"}` (`<skill-root>` the loaded skill's directory as reached, never resolved through
+`realpath`), and nothing else: the script resolves and verifies the runtime root itself. A missing Node, a nonzero exit, an
 output other than one parseable envelope line, or `ok: false` is reported with its `error.code`
 and message, and the run ends there with no next-steps block. Status makes no separate
 `config-resolve` call: its chat language is `data.configuration.chatLanguage` when set, otherwise
@@ -18,7 +19,7 @@ the conversation language, otherwise `data.configuration.projectLanguage`, other
 
 ### The report
 
-Render `data` as the four sections below in the resolved chat language. Each finding's
+Render `data` as the five sections below in the resolved chat language. Each finding's
 `remediation` is the envelope's text: render it, keep encoded values, paths, keys and invocation
 tokens verbatim, spell its `effective-flow setup …` invocation as `{{SKILL:setup}} …`, and add no
 remediation of your own.
@@ -52,13 +53,18 @@ remediation of your own.
    with its `reason`), `installed` and `latest`, the remediation for `outdated`, and the request it
    made (`request.method` and `request.url`), or that it made none. `could not check` never fails
    the run.
+5. **Allow rules** (`data.allowlist`): the `state`; for `absent` and `stale`, every `missing[]` and
+   `stale[]` rule and the remediation; every `aliases[]` rule, which names another path to this
+   install's helper and never counts as present, so on its own it never makes the state `current`;
+   for `not-applicable` and `could-not-check`, the `reason` and any `detail`.
 
 End the report with the next-steps block per the shared `next-steps` contract: it recommends
 `{{SKILL:setup}}` only when `data.setupFixable` is true; otherwise the run emits no block. The
 options follow `data.setupForms` in order, one per form and at most two: `setup` is bare
 `{{SKILL:setup}}` (an empty setup argument), `setup guided` is `{{SKILL:setup}} guided`,
-`setup hidden` is `{{SKILL:setup}} hidden`, and `targeted` is `{{SKILL:setup}} <request>` with the
-first Targeted request the remediations name, its line saying that any others follow the same way.
+`setup hidden` is `{{SKILL:setup}} hidden`, `targeted` is `{{SKILL:setup}} <request>` with the
+first Targeted request the remediations name, its line saying that any others follow the same way,
+and `allowlist` is `{{SKILL:setup}} allowlist`.
 With more than two forms, the second line also says that the report's remaining forms follow the
 same way. Bare `{{SKILL:setup}}` is an option only for the `setup` form. An owner missing from the
 session's skill list never makes the report setup-fixable.

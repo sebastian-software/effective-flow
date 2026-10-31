@@ -449,7 +449,7 @@ Example (across actions) with five findings over multiple actions:
    - verified original outcome/primary association, checkpoint, retained attempt reference,
      source owner and the duty to return evidence without writing a competing checkpoint
    - the commit strategy from Phase 2
-   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle through the absolute helper path `<skill-root>/scripts/effective-flow-state.mjs`, which it receives together with `RUNTIME_STATE_ROOT` and `runId`, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
+   - **With commit strategy "Individually":** the full git commit mutex rule from `tools/apply-review-commit-mechanics.md`. The sub-agent must run every finding commit under the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle through the absolute helper path `<skill-root>/scripts/effective-flow-state.mjs`, which it receives together with `RUNTIME_STATE_ROOT`, `runId` and that file's runtime-state helper call shape, may only stage finding-owned files and may never use `git add .`, `git add -A` or `git commit -a`.
    - **With commit strategy "Individually with worktrees":** the full git worktree isolation
      and execution-location rule from `tools/apply-review-commit-mechanics.md`. The sub-agent
      first verifies its component receipt, roots every operation there, commits each finding
@@ -653,4 +653,4 @@ options:
 - Skip already-implemented findings (with ✅) without a message
 - Prescribe the completion protocol to internal sub-agents
 - Write a wisdom summary after each completed phase
-- This skill does not assign new finding IDs. If new findings should be created in the future, `.effective-flow/memory.json` must be read and updated (see `{{SKILL:review}}`)
+- This skill does not assign new finding IDs. New finding IDs come only from `memory reserve` (see `{{SKILL:review}}`)

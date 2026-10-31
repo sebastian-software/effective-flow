@@ -5730,49 +5730,113 @@ test('migration-fragment mutations still require the runtime-state safety guard'
   );
 });
 
-// --- Shared memory-state mutation coverage guard (#176) ---
+// --- Memory-operation coverage guard (#176) ---
 
-test('findMemoryStateContractViolations rejects an absent or late memory contract', () => {
-  const absent = {
-    'tools/absent.md': 'Write `.effective-flow/memory.json` now.\n',
-  };
-  const late = {
-    'tools/late.md': [
-      'Write `.effective-flow/memory.json` now.',
-      '```include',
-      'memory-state',
-      '```',
-    ].join('\n'),
-  };
+const memoryContractFence = ['```include', 'memory-state', '```'];
+const migrationFence = (when) =>
+  when
+    ? ['```lazy-include', 'effective-flow-dir-migration', `when: ${when}`, '```']
+    : ['```include', 'effective-flow-dir-migration', '```'];
+const memoryGuardShared = {
+  'shared/memory-state.md': '## Memory operations\n\nCall `memory reserve`.\n',
+  'shared/effective-flow-dir-migration.md': [
+    ...memoryContractFence,
+    'Without the marker, call `memory migrate-directory`.',
+  ].join('\n'),
+};
+const reasons = (violations) =>
+  violations.map(({ context, line, reason }) => ({ context, line, reason }));
 
-  assert.deepEqual(
-    findMemoryStateContractViolations(absent).map(({ context, line, reason }) => ({
-      context,
-      line,
-      reason,
-    })),
-    [
-      {
-        context: 'tools/absent.md',
-        line: 1,
-        reason: 'memory mutation is not preceded by the shared memory-state contract',
-      },
-    ],
-  );
-  assert.equal(findMemoryStateContractViolations(late).length, 1);
+// Invariant: a prose instruction that mutates memory.json without naming an operation is a
+// direct write, even after the contract is loaded.
+test('findMemoryStateContractViolations rejects a direct memory.json write', () => {
+  const direct = {
+    ...memoryGuardShared,
+    'tools/direct.md': [...migrationFence(), 'Write `.effective-flow/memory.json` now.'].join('\n'),
+  };
+  assert.deepEqual(reasons(findMemoryStateContractViolations(direct)), [
+    {
+      context: 'tools/direct.md',
+      line: 4,
+      reason: 'prose mutates memory.json directly instead of naming a memory operation',
+    },
+  ]);
 });
 
+// Invariant: a memory operation call site follows the contract and the migration prerequisite.
+test('findMemoryStateContractViolations rejects a call site without contract or prerequisite', () => {
+  const bare = { ...memoryGuardShared, 'tools/bare.md': 'Reserve through `memory reserve`.\n' };
+  assert.deepEqual(reasons(findMemoryStateContractViolations(bare)), [
+    {
+      context: 'tools/bare.md',
+      line: 1,
+      reason: 'memory operation is not preceded by the memory-operations contract',
+    },
+    {
+      context: 'tools/bare.md',
+      line: 1,
+      reason: 'memory operation is not preceded by the runtime-directory migration prerequisite',
+    },
+  ]);
+
+  const contractOnly = {
+    ...memoryGuardShared,
+    'tools/contract-only.md': [...memoryContractFence, 'Call `memory set-marker`.'].join('\n'),
+  };
+  assert.deepEqual(reasons(findMemoryStateContractViolations(contractOnly)), [
+    {
+      context: 'tools/contract-only.md',
+      line: 4,
+      reason: 'memory operation is not preceded by the runtime-directory migration prerequisite',
+    },
+  ]);
+
+  const late = {
+    ...memoryGuardShared,
+    'tools/late.md': ['Call `memory reserve`.', ...migrationFence()].join('\n'),
+  };
+  assert.equal(findMemoryStateContractViolations(late).length, 2);
+});
+
+// Invariant: a lazily loaded migration prerequisite reaches a memory call only when one of its
+// triggers names memory; an unrelated trigger would leave the call without the prerequisite.
+test('findMemoryStateContractViolations requires a migration trigger that names memory', () => {
+  const narrow = {
+    ...memoryGuardShared,
+    'tools/narrow.md': [
+      ...migrationFence('a worktree mutation is imminent'),
+      'Reserve through `memory reserve`.',
+    ].join('\n'),
+  };
+  const [violation, ...rest] = findMemoryStateContractViolations(narrow);
+  assert.deepEqual(rest, []);
+  assert.equal(violation.context, 'tools/narrow.md');
+  assert.match(violation.reason, /^no migration prerequisite trigger names memory/);
+
+  const named = {
+    ...memoryGuardShared,
+    'tools/named.md': [
+      ...migrationFence('a worktree mutation is imminent'),
+      ...migrationFence('a memory mutation is imminent'),
+      'Reserve through `memory reserve`.',
+    ].join('\n'),
+  };
+  assert.deepEqual(findMemoryStateContractViolations(named), []);
+});
+
+// Invariant: the guard follows shared owners in order, so a writer that loads the prerequisite
+// only after its call fails with its include chain.
 test('findMemoryStateContractViolations follows a shared owner and preserves ordering', () => {
-  const writer = 'Update `.effective-flow/memory.json` now.\n';
+  const call = 'Reserve through `memory reserve`.';
   const guarded = {
+    ...memoryGuardShared,
     'tools/guarded.md': '```include\nowner\n```\n',
-    'shared/owner.md': ['```include', 'memory-state', '```', writer].join('\n'),
-    'shared/memory-state.md': 'Canonical protocol.\n',
+    'shared/owner.md': [...migrationFence(), call].join('\n'),
   };
   const late = {
+    ...memoryGuardShared,
     'tools/late.md': '```include\nowner\n```\n',
-    'shared/owner.md': [writer, '```include', 'memory-state', '```'].join('\n'),
-    'shared/memory-state.md': 'Canonical protocol.\n',
+    'shared/owner.md': [call, ...migrationFence()].join('\n'),
   };
 
   assert.deepEqual(findMemoryStateContractViolations(guarded), []);
@@ -5781,38 +5845,34 @@ test('findMemoryStateContractViolations follows a shared owner and preserves ord
   assert.deepEqual(violation.includeChain, ['tools/late.md', 'shared/owner.md']);
 });
 
-test('the memory-state contract may describe its own atomic writes', () => {
+// Invariant: the contract may name its own operations without being a call site.
+test('the memory-operations contract may name its own operations', () => {
   assert.deepEqual(
-    findMemoryStateContractViolations(
-      {
-        'shared/memory-state.md': 'Atomically replace `.effective-flow/memory.json`.\n',
-      },
-      { rootContexts: ['shared/memory-state.md'] },
-    ),
+    findMemoryStateContractViolations(memoryGuardShared, {
+      rootContexts: ['shared/memory-state.md'],
+    }),
     [],
   );
 });
 
+// Invariant: in delivered output the guard recognises inlined fragments only by their headings and
+// does not follow an eager include fence the build failed to resolve.
 test('delivered memory coverage does not follow an unresolved eager include fence', () => {
   const unresolvedDelivery = {
-    'tools/eager.md': [
-      '```include',
-      'memory-state',
-      '```',
-      'Write `.effective-flow/memory.json` now.',
-    ].join('\n'),
-    'shared/memory-state.md': '## Shared memory-state mutation\n',
+    ...memoryGuardShared,
+    'tools/eager.md': [...migrationFence(), 'Call `memory reserve`.'].join('\n'),
   };
   const resolvedDelivery = {
     'tools/eager.md': [
-      '## Shared memory-state mutation',
-      'Write `.effective-flow/memory.json` now.',
+      '## Runtime directory `.effective-flow/` and migration from `.firmo/`/`.sf-plugin/`',
+      '## Memory operations',
+      'Call `memory reserve`.',
     ].join('\n'),
   };
 
   assert.equal(
     findMemoryStateContractViolations(unresolvedDelivery, { delivered: true }).length,
-    1,
+    2,
   );
   assert.deepEqual(findMemoryStateContractViolations(resolvedDelivery, { delivered: true }), []);
 });
