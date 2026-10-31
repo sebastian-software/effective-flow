@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.71.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.70.0...effective-flow-v1.71.0) (2026-10-31)
+
+
+### Features
+
+* add runtime-state helper with guard and lock core ([#599](https://github.com/sebastian-software/effective-flow/issues/599)) ([c626151](https://github.com/sebastian-software/effective-flow/commit/c626151e0d68a0f0ee7435d9c0ca2f04429163f9))
+* add typed memory operations and Claude Code allow-rule setup ([#600](https://github.com/sebastian-software/effective-flow/issues/600)) ([893d877](https://github.com/sebastian-software/effective-flow/commit/893d8770abad2ed77de4182cefb88b40bb6395f6))
+* **merge-gate:** declare user-typed bot accounts with mergeGate.botAccounts ([#596](https://github.com/sebastian-software/effective-flow/issues/596)) ([6dfeed9](https://github.com/sebastian-software/effective-flow/commit/6dfeed9f3dc8b9f27bf4b54cbb317739f1e19617))
+* pick the invocation prefix by the client surface in the portable skill ([#594](https://github.com/sebastian-software/effective-flow/issues/594)) ([d19fb22](https://github.com/sebastian-software/effective-flow/commit/d19fb220553bfd97abdd9d788aa3a349bd2c82dc))
+
 ## [1.70.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.69.0...effective-flow-v1.70.0) (2026-10-27)
 
 
