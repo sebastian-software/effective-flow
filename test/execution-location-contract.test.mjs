@@ -151,7 +151,8 @@ test('every local report consumer retains and uses the absolute main-checkout ha
   assert.match(backlinks, /RUNTIME_STATE_ROOT/);
   assert.match(unresolved, /RUNTIME_STATE_ROOT/);
   assert.match(unresolved, /collision checks/);
-  assert.match(unresolved, /memory\.json/);
+  // Memory changes go through the helper, whose `cwd` is the verified runtime root.
+  assert.match(unresolved, /`memory reserve`/);
   assert.match(runtimeSafety, /from `RUNTIME_STATE_ROOT`/);
   assert.match(runtimeSafety, /exact absolute runtime-state handle/);
   assert.match(apply, /<RUNTIME_STATE_ROOT>\/\.effective-flow\/review\//);

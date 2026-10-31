@@ -836,10 +836,12 @@ untracked, git-ignored, symlink-free `.effective-flow/`; `diff-baseline-core.mjs
 module. Mechanics and error codes are described under
 [Runtime scripts](build-system.md#runtime-scripts).
 
-The helper has four operations, each exactly two argv tokens with one JSON object on stdin through
-a here-string. `lock acquire`, `lock release` and `lock inspect` are non-destructive or read-only.
-`lock break` is destructive and is never allowlisted; only the orchestrator calls it, after the
-user confirmed in the conversation. The lock is a closed enum, `memory`, `iterate-commit` or
+The helper has lock, memory and harness operations, each exactly two argv tokens with one JSON object on stdin through
+a here-string. `lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker` and
+`memory migrate-directory` are non-destructive or read-only and are the only operations a rule may
+name. `lock break` is destructive and `harness allow-rules` writes the settings file that holds the
+rules; neither is ever allowlisted. Only the orchestrator calls `lock break`, after the user
+confirmed in the conversation. The lock is a closed enum, `memory`, `iterate-commit` or
 `apply-review-commit`, mapped to a fixed path, and the commit locks require a `runId`. The
 on-disk protocol is unchanged and stays compatible with installed releases: the lock is a
 directory created by `mkdir`, with `owner.json` (`memory`) or `owner` (commit locks) written
@@ -882,6 +884,19 @@ with the ownership check before `git commit`. A worker never asks the user: it r
 `LOCK_HELD` diagnostics to its orchestrator, and a relayed or non-interactive run fails closed
 without offering a break. Any permission rule for the helper must name the full two-token
 operation, such as `lock acquire`, never `lock *`, so `lock break` stays outside it.
+
+The memory contract rides on the same lock. Every `memory.json` write is one of three typed
+operations, `memory reserve` (a finding-ID range), `memory set-marker` (a named migration marker)
+and `memory migrate-directory` (the whole `.effective-flow/` directory migration), each of which
+takes `memory.lock` itself, re-reads and validates the file, merges only its owned field and
+replaces the file atomically; a legacy `.sf-memory.json` is adopted inside the same transaction.
+Prose no longer replays the protocol, and a build guard rejects a direct write
+([guard #176](build-system.md#guards)). `setup` can write the six non-destructive rules
+into the untracked `.claude/settings.local.json` through `harness allow-rules`
+([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
+no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
+extra-argument gap that the
+[allowlist evidence](claude-code-allowlist-evidence.md) found in a rule's trailing `*`.
 
 ## Repo structure at a glance
 

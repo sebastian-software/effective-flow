@@ -101,12 +101,11 @@ test('report producers and mutators route safety through the retained runtime ro
   assert.match(sourceDetection, /absolute report handle/);
   assert.match(backlinks, /Runtime-state write safety[\s\S]*main checkout/);
   assert.match(unresolved, /collision checks[\s\S]*memory reads\/writes/);
-  assert.match(
-    unresolved,
-    /absolute `<RUNTIME_STATE_ROOT>\/\.effective-flow\/memory\.json` handle/,
-  );
+  // Memory writes go through `memory reserve`, which guards its own target from the `cwd` it is
+  // given, the verified RUNTIME_STATE_ROOT ("Memory operations").
+  assert.match(unresolved, /call `memory reserve`/);
   assert.match(review, /collision checks/);
-  assert.match(review, /retained absolute\s+memory handle/);
+  assert.match(review, /through `memory reserve`/);
 });
 
 // Invariant: no source writes runtime state without the runtime-state-safety guard.
@@ -326,8 +325,9 @@ test('setup repairs first, validates the target state, then guards and writes it
     'git check-ignore --no-index -- .effective-flow/memory.json',
     'git ls-files -- .effective-flow/',
     'Only after target-state validation passes',
-    'Apply “Runtime-state write',
-    'mark completion idempotently in',
+    // The marker write goes through the helper, which guards its own target.
+    'set `configMigration.adr` with',
+    '`memory set-marker`, `"marker":"config-migration-adr"`',
   ];
   let previousIndex = -1;
   for (const clause of orderedClauses) {
@@ -394,9 +394,10 @@ test('setup carries the locator-selected transitional source through migration',
     setup,
     /If any check blocks[\s\S]*apply the same safe ADR\/marker rollback[\s\S]*do[\s\S]*not write the marker/,
   );
+  // The marker is one typed helper operation that changes only its own subtree.
   assert.match(
     setup,
-    /deep-merge\s+only `configMigration\.adr`[\s\S]*sibling\s+`configMigration` state/,
+    /set `configMigration\.adr` with\s+`memory set-marker`, `"marker":"config-migration-adr"` and `"version":"config-to-adr-v1"`/,
   );
   assert.match(
     setup,
@@ -425,7 +426,7 @@ test('setup orders runtime migration between repair and config completion', () =
     'Only after target-state validation passes',
     'invoke the loaded shared runtime-directory',
     'before writing `configMigration.adr`',
-    'mark completion idempotently in',
+    'set `configMigration.adr` with',
   ];
 
   let previousIndex = -1;

@@ -41,12 +41,12 @@ test('actual eager and lazy consumers ship the nested memory contract in every t
     const root = generatedRoot(target);
     for (const eagerConsumer of ['investigate']) {
       const generated = readFileSync(join(root, 'tools', `${eagerConsumer}.md`), 'utf8');
-      assert.match(generated, /## Shared memory-state mutation/);
+      assert.match(generated, /## Memory operations/);
       assert.doesNotMatch(generated, /^```include\s*$/m);
     }
 
     const lazyOwner = readFileSync(join(root, 'shared', 'effective-flow-dir-migration.md'), 'utf8');
-    assert.match(lazyOwner, /## Shared memory-state mutation/);
+    assert.match(lazyOwner, /## Memory operations/);
     assert.doesNotMatch(lazyOwner, /^```include\s*$/m);
 
     // cleanup reaches the memory contract through its deferred migration owner, at the Phase 1
@@ -66,22 +66,35 @@ test('actual eager and lazy consumers ship the nested memory contract in every t
   }
 });
 
-// The lock steps call the runtime-state helper in the here-string shape an allowlist rule can match;
-// a multi-line heredoc cannot be allowlisted. A heredoc opener is `<<EOF` or `<<-'EOF'`, never `<<<`.
+// The lock and memory steps call the runtime-state helper in the here-string shape an allowlist rule
+// can match; a multi-line heredoc cannot be allowlisted. A heredoc opener is `<<EOF` or `<<-'EOF'`,
+// never `<<<`.
 const HEREDOC = /(?<!<)<<(?!<)-?\s*['"]?[A-Za-z_]\w*/;
 const helperAcquire = (lock) =>
   new RegExp(
     `node <skill-root>/scripts/effective-flow-state\\.mjs lock acquire <<< '\\{[^\\n]*"lock":"${lock}"`,
   );
 
-// Invariant: every shipped lock step for the three runtime-state locks is a helper call in the
-// here-string shape, with no prose replay of `mkdir` or a heredoc.
-test('built lock prose calls the helper in the here-string shape in every target', () => {
+const helperMemory = (operation) =>
+  new RegExp(
+    `node <skill-root>/scripts/effective-flow-state\\.mjs memory ${operation} <<< '\\{"cwd":"<RUNTIME_STATE_ROOT>"`,
+  );
+
+// Invariant: the shipped memory contract calls the three typed memory operations in the
+// here-string shape and never acquires the memory lock in prose; the two commit locks are helper
+// calls in the same shape. None replays `mkdir` or uses a heredoc.
+test('built lock and memory prose calls the helper in the here-string shape in every target', () => {
   buildOnce();
   for (const target of ['claude', 'codex', 'portable']) {
     const root = generatedRoot(target);
+    const investigate = readFileSync(join(root, 'tools', 'investigate.md'), 'utf8');
+    for (const operation of ['reserve', 'set-marker', 'migrate-directory']) {
+      assert.match(investigate, helperMemory(operation), `${target} lacks memory ${operation}`);
+    }
+    assert.doesNotMatch(investigate, helperAcquire('memory'), `${target} acquires memory in prose`);
+    assert.doesNotMatch(investigate, HEREDOC, `${target} investigate carries a heredoc`);
+    assert.doesNotMatch(investigate, /mkdir [^`\n]*memory\.lock/);
     const sources = [
-      ['investigate', 'memory'],
       ['iterate', 'iterate-commit'],
       ['apply-review-commit-mechanics', 'apply-review-commit'],
     ];
@@ -193,11 +206,11 @@ test('built commit mutexes state the bounded wait, sibling, report-only and re-d
     // A worker never resolves `<skill-root>` itself: the handoff carries path, root and runId.
     assert.match(
       iterate,
-      /the absolute helper path\s+`<skill-root>\/scripts\/effective-flow-state\.mjs`, `RUNTIME_STATE_ROOT`, `runId`, and its own\s+`delegation` `<runId>\/<n>`/,
+      /the absolute helper path\s+`<skill-root>\/scripts\/effective-flow-state\.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own\s+`delegation` `<runId>\/<n>`[\s\S]*?and\s+the runtime-state helper call shape verbatim/,
     );
     assert.match(
       applyReview,
-      /the absolute helper path `<skill-root>\/scripts\/effective-flow-state\.mjs`, which it receives together with `RUNTIME_STATE_ROOT` and `runId`/,
+      /the absolute helper path `<skill-root>\/scripts\/effective-flow-state\.mjs`, which it receives together with `RUNTIME_STATE_ROOT`, `runId` and that file's runtime-state helper call shape/,
     );
   }
 });

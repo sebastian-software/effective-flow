@@ -1,6 +1,6 @@
 # Typed memory operations and allowlist setup
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -274,12 +274,12 @@ The measurement reuses the work package 1 harness: `host.mjs`, `reset.sh`, the p
 
 ## Acceptance criteria
 
-- [ ] `memory reserve`, `memory set-marker` and `memory migrate-directory` exist with the closed key sets of this plan and reject any extra argv before stdin is read. Unit tests cover every outcome and error code this plan names.
-- [ ] The conformance tests pass in both directions:
+- [x] `memory reserve`, `memory set-marker` and `memory migrate-directory` exist with the closed key sets of this plan and reject any extra argv before stdin is read. Unit tests cover every outcome and error code this plan names.
+- [x] The conformance tests pass in both directions:
   - a helper reservation on prose-written state
   - prose-protocol state after a helper write, with identical JSON meaning, preserved unknown fields, and the same lock path and owner format
-- [ ] `src/` contains no prose instruction that writes `memory.json` directly: every former writer site in the affected-file table calls a `memory` operation, and the reworked build guard fails a fixture that writes directly.
-- [ ] `harness allow-rules` writes exactly the six allowlisted operations and never writes a rule for `lock break` or `harness allow-rules`. A test fails when an operation in `STATE_OPERATIONS` is not classified. Tests cover:
+- [x] `src/` contains no prose instruction that writes `memory.json` directly: every former writer site in the affected-file table calls a `memory` operation, and the reworked build guard fails a fixture that writes directly.
+- [x] `harness allow-rules` writes exactly the six allowlisted operations and never writes a rule for `lock break` or `harness allow-rules`. A test fails when an operation in `STATE_OPERATIONS` is not classified. Tests cover:
   - preview-digest binding and idempotence
   - kept rules of other installs, and removal of a dead install's rules
   - the warning for widened rules
@@ -287,13 +287,14 @@ The measurement reuses the work package 1 harness: `host.mjs`, `reset.sh`, the p
   - every `UNSUPPORTED_PATH` check: a `skillRoot` inside a worktree of the current repository is refused, while one in another clone (DALO layout, local-link layout) is accepted; a foreign-writable directory on either chain is refused, while a private-group or sticky root-owned directory is accepted
   - `UNSUPPORTED_HARNESS` without `CLAUDECODE`
   - `PREVIEW_MISMATCH` after a concurrent change to the settings file
-- [ ] `setup` behaves per target:
+- [x] `setup` behaves per target:
   - The native Claude build and the portable build running in Claude Code offer the step with a preview, a conversational confirmation and the "don't ask again" warning.
   - The native Codex build, and the portable build outside Claude Code, write no rule and say so.
   - `setup allowlist` works without an existing configuration and includes the ignore remedy.
   - `setup status` reports the rule state with the five states of this plan.
-- [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass. Every changed `CONTEXT_BUDGET_LINES` entry equals the built count plus at most ten.
-- [ ] The "Stage 1 measurement" section in `docs/developer-guide/claude-code-allowlist-evidence.md` records the 12 valid runs plus the migration run. In every valid run, the "helper housekeeping" sub-class shows 0 prompts and 0 refusals, and every review run shows a persisted reservation. The plan is marked implemented only when this criterion holds.
+- [x] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass. Every changed `CONTEXT_BUDGET_LINES` entry equals the built count plus at most ten.
+- [x] The "Stage 1 measurement" section in `docs/developer-guide/claude-code-allowlist-evidence.md` records the 12 valid runs plus the migration run. In every valid run, the "helper housekeeping" sub-class shows 0 prompts and 0 refusals, and every review run shows a persisted reservation. The plan is marked implemented only when this criterion holds.
+  - **Amended on 2026-10-31 (user decision).** Two realistic rounds (26 runs) never reached a helper call. `review` skipped the reservation and the report, and `iterate` skipped the commit lock, so the criterion went unexercised rather than refuted. The criterion now holds for exercised calls: in a targeted round 3, all 19 calls in the literal shape ran without a prompt or refusal, and every cell was exercised in 3 of 3 runs. The realistic exercise of the steps, and compliance with the call shape (29 of 48 calls were non-literal, 9 of them prompted in default mode), move to work package 8 of the concept.
 
 ## Validation plan
 
@@ -405,6 +406,37 @@ Both rounds combined: the internal review on 2026-10-29 and the deep review on 2
 - **Note, Architecture.** The transaction details were unspecified. Incorporated: full key sets, a 1 MiB bound, the directory-creation rule, and the copy outside the lock.
 - **Note, Testability.** Server-side auto mode stays unmeasured. Incorporated as a stated limit in the evidence section.
 - **Note, Testability.** A review run without findings had no defined result. Incorporated: such a run is invalid and is repeated.
+
+## Implementation notes
+
+- **Module split.** The memory and harness operations live in `effective-flow-state-memory-core.mjs` and `effective-flow-state-harness-core.mjs`. The core loads both through literal dynamic imports. `claude-settings-core.mjs` is the read-only parser and rule-shape matcher shared with `setup-status`, and `runtime-file-primitives.mjs` holds the bounded-read primitives. Together they bring the shipped runtime scripts to 38.
+- **Harness results are outcomes.** The harness results (`UNSUPPORTED_HARNESS`, `UNSUPPORTED_PATH`, `SETTINGS_*`, `PREVIEW_MISMATCH`) are exit-4 outcomes, and `UNSUPPORTED_PATH` carries the rules for manual entry. `LEGACY_MEMORY_INVALID` is an outcome in every operation.
+- **`skillRoot` charset.** `skillRoot` must match `^[A-Za-z0-9._@+/-]+$`. A non-ASCII install path is refused, and no rules are offered for it.
+- **Rule state.** `setup status` reports `current` only when a rule's literal `skillRoot` matches, because Claude Code matches the literal command. Rules under another path to the same helper are listed in `aliases[]`.
+- **Call shape.** Every `effective-flow-state.mjs` call must be the literal shape `node <absolute skill root>/scripts/effective-flow-state.mjs <group> <op> <<< '<json>'`, with no variables, pipes or compound commands. `src/shared/state-helper-call.md` states this once and a contract test pins it. It was added after measurement round 1.
+- **Measurement.** Auth uses a dedicated `CLAUDE_CODE_OAUTH_TOKEN` read from a file outside the evidence root. The evidence root is `.effective-flow/spikes/allowlist/2026-10-29-02/`, with manifest SHA-256 `889c929fc4a945076045d3d162765cbf5892dac11f2388f74d382c982c03caa3`. The measurement cost 12.20 USD in total.
+- **Concept.** It now carries the WP3/WP4 scope amendment and the new work package 8, "Helper-step and call-shape compliance".
+
+## Test results
+
+- `corepack pnpm agent:check`: pass.
+- `corepack pnpm test`: 3271 tests, 3268 pass, 0 fail, 3 skipped (the same three as before).
+- `node build.mjs`: pass. Always-loaded cores are within budget: setup 1521/1524, iterate 1644/1648, review 773/777, investigate 523/527.
+- `corepack pnpm test:distribution`: pass.
+- Stage 1 measurement: rounds 1 and 2 were not exercised (0 helper calls in 26 runs). Round 3 confirmed the rule for exercised calls (19 of 19 literal calls with no prompt). The `setup allowlist` cross-check matched the direct helper call.
+- The `iterate` and `merge-gate` eval evidence is stale, as expected. A re-recorded round is owed before the next release.
+
+## Review findings
+
+**Date:** 2026-10-31
+**Reviewer:** effective-flow-nodejs-reviewer, effective-flow-generic-product-reviewer (plus one combined re-check)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    28 |
+| Open / Not implemented |     0 |
 
 ## Open points
 

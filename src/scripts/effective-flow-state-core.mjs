@@ -1,5 +1,8 @@
 // Runtime-state helper core: the three `mkdir` locks below `<RUNTIME_STATE_ROOT>/.effective-flow/`
-// that workflows used to acquire and release by following prose.
+// that workflows used to acquire and release by following prose, plus the dispatch, codes and
+// envelopes of every helper operation. The `memory` operations live in
+// `effective-flow-state-memory-core.mjs` and `harness allow-rules` in
+// `effective-flow-state-harness-core.mjs`; both import this module and are loaded on first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
 //
@@ -42,7 +45,19 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, mkdir, open, readdir, realpath, rename, rmdir, unlink } from 'node:fs/promises';
+import {
+  link,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readlink,
+  realpath,
+  rename,
+  rmdir,
+  stat,
+  unlink,
+} from 'node:fs/promises';
 import { hostname as osHostname } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
@@ -64,7 +79,26 @@ export const STATE_OPERATIONS = Object.freeze([
   'lock release',
   'lock inspect',
   'lock break',
+  'memory reserve',
+  'memory set-marker',
+  'memory migrate-directory',
+  'harness allow-rules',
 ]);
+
+// Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
+// STATE_OPERATIONS is classified here; a destructive operation (`lock break`) and the rule writer
+// itself are never allowlisted. The allowlisted ones equal ALLOWLISTED_OPERATIONS of the shared
+// settings module, which a unit test pins.
+export const STATE_OPERATION_CLASSES = Object.freeze({
+  'lock acquire': 'allowlisted',
+  'lock release': 'allowlisted',
+  'lock inspect': 'allowlisted',
+  'lock break': 'not-allowlisted',
+  'memory reserve': 'allowlisted',
+  'memory set-marker': 'allowlisted',
+  'memory migrate-directory': 'allowlisted',
+  'harness allow-rules': 'not-allowlisted',
+});
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
 
@@ -82,6 +116,16 @@ export const OUTCOME_CODES = Object.freeze([
   'NOT_OWNER',
   'NOT_HELD',
   'BREAK_MISMATCH',
+  'MIGRATION_REQUIRED',
+  'MIGRATION_NOT_NEEDED',
+  'MIGRATION_INCOMPLETE',
+  'LEGACY_MEMORY_INVALID',
+  'UNSUPPORTED_HARNESS',
+  'UNSUPPORTED_PATH',
+  'SETTINGS_NOT_IGNORED',
+  'SETTINGS_TRACKED',
+  'SETTINGS_INVALID',
+  'PREVIEW_MISMATCH',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
@@ -90,6 +134,8 @@ export const STATE_ERROR_CODES = Object.freeze([
   'UNSAFE_TARGET',
   'RUNTIME_STATE_UNSAFE',
   'WRITE_FAILED',
+  'INVALID_STATE',
+  'LEGACY_CHANGED',
   'GIT_FAILED',
   'INTERNAL_ERROR',
 ]);
@@ -100,6 +146,8 @@ const EXIT_CODES = Object.freeze({
   UNSAFE_TARGET: 3,
   RUNTIME_STATE_UNSAFE: 3,
   WRITE_FAILED: 3,
+  INVALID_STATE: 3,
+  LEGACY_CHANGED: 3,
   GIT_FAILED: 1,
   INTERNAL_ERROR: 1,
 });
@@ -124,7 +172,7 @@ export const UNKNOWN_HOST = 'unknown-host';
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const IDENTITY_NUMBER_PATTERN = /^(?:0|[1-9][0-9]{0,39})$/;
 // Characters that would break a single-quoted here-string or a shell expansion around `cwd`.
-const FORBIDDEN_ROOT_CHARACTERS = /['$`\\\u0000-\u001f\u007f-\u009f]/;
+export const FORBIDDEN_ROOT_CHARACTERS = /['$`\\\u0000-\u001f\u007f-\u009f]/;
 
 export const DEFAULT_WAIT_SECONDS = 30;
 export const MAX_WAIT_SECONDS = 30;
@@ -136,12 +184,24 @@ export const MAX_STDIN_BYTES = 64 * 1024;
 const MAX_OWNER_BYTES = 64 * 1024;
 // An owner above this size is never hashed: it is `oversized`, identified by its size alone.
 export const MAX_HASH_BYTES = 16 * 1024 * 1024;
-const MAX_REPORTED_ENTRIES = 64;
+export const MAX_REPORTED_ENTRIES = 64;
 const READ_CHUNK_BYTES = 64 * 1024;
 
 // The filesystem calls the core makes, injectable as `deps.fs` so tests can force a failure or a
 // race at one exact call.
-const DEFAULT_FS = Object.freeze({ lstat, mkdir, open, readdir, rename, rmdir, unlink });
+const DEFAULT_FS = Object.freeze({
+  link,
+  lstat,
+  mkdir,
+  open,
+  readdir,
+  readlink,
+  realpath,
+  rename,
+  rmdir,
+  stat,
+  unlink,
+});
 
 const OPERATION_KEYS = Object.freeze({
   'lock acquire': Object.freeze(['cwd', 'lock', 'owner', 'waitSeconds']),
@@ -169,12 +229,13 @@ export class StateError extends RuntimeStateError {
   }
 }
 
-function fail(code, message) {
+// Throws a StateError; shared by the memory and harness cores.
+export function fail(code, message) {
   throw new StateError(code, message);
 }
 
-// An expected lock state, returned as `outcome` instead of an error.
-class LockOutcome {
+// An expected state, returned as `outcome` instead of an error.
+export class StateOutcome {
   constructor(code, details) {
     this.code = code;
     this.details = details;
@@ -184,20 +245,20 @@ class LockOutcome {
 // ---------------------------------------------------------------------------------------------
 // Input validation
 
-function requireObject(value, label) {
+export function requireObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
     fail('INVALID_INPUT', `${label} must be a JSON object`);
   }
   return value;
 }
 
-function requireClosedKeys(value, allowed, label) {
+export function requireClosedKeys(value, allowed, label) {
   for (const key of Object.keys(value)) {
     if (!allowed.includes(key)) fail('INVALID_INPUT', `unknown ${label} field: ${key}`);
   }
 }
 
-function requireOwnerString(value, label) {
+export function requireOwnerString(value, label) {
   if (typeof value !== 'string' || !OWNER_STRING_PATTERN.test(value)) {
     fail('INVALID_INPUT', `${label} must match ${OWNER_STRING_PATTERN.source}`);
   }
@@ -226,7 +287,7 @@ function requireRunId(value) {
   return value;
 }
 
-function requireWaitSeconds(value) {
+export function requireWaitSeconds(value) {
   if (value === undefined) return DEFAULT_WAIT_SECONDS;
   if (!Number.isInteger(value) || value < 0 || value > MAX_WAIT_SECONDS) {
     fail('INVALID_INPUT', `waitSeconds must be an integer from 0 to ${MAX_WAIT_SECONDS}`);
@@ -235,7 +296,7 @@ function requireWaitSeconds(value) {
 }
 
 // Validates the caller-supplied owner fields of `lock` and returns them in a fixed key order.
-function requireOwnerInput(lock, value) {
+export function requireOwnerInput(lock, value) {
   const owner = requireObject(value, 'owner');
   requireClosedKeys(owner, OWNER_KEYS[lock], 'owner');
   const fields = { workflow: requireOwnerString(owner.workflow, 'owner.workflow') };
@@ -277,7 +338,7 @@ function requireIdentity(value) {
 // The helper's own `cwd` check, run before any git call: the raw value must already be its
 // canonical path, so a symlinked alias is refused, and it may hold nothing that could break the
 // single-quoted here-string the prose builds around it.
-async function requireRootSyntax(value) {
+export async function requireRootSyntax(value) {
   if (typeof value !== 'string' || value === '') fail('INVALID_INPUT', 'cwd must be a string');
   if (FORBIDDEN_ROOT_CHARACTERS.test(value)) {
     fail(
@@ -302,7 +363,7 @@ async function requireRootSyntax(value) {
 // Verifies the runtime-state root. A refusal of the shared root check (not a directory, not a
 // toplevel, a linked worktree) is INVALID_ROOT here, since `cwd` names no valid root; a git fault
 // keeps GIT_FAILED.
-async function resolveRoot(context, value) {
+export async function resolveRoot(context, value) {
   try {
     return await resolveRuntimeRoot(context, value);
   } catch (error) {
@@ -319,7 +380,7 @@ async function resolveRoot(context, value) {
 // ---------------------------------------------------------------------------------------------
 // Lock inspection
 
-function lockPaths(cwd, lock) {
+export function lockPaths(cwd, lock) {
   const stateDir = path.join(cwd, RUNTIME_STATE_DIR);
   const directory = path.join(stateDir, LOCKS[lock].directory);
   return {
@@ -331,7 +392,7 @@ function lockPaths(cwd, lock) {
   };
 }
 
-function identityOf(info) {
+export function identityOf(info) {
   return { dev: String(info.dev), ino: String(info.ino), mtimeNs: String(info.mtimeNs) };
 }
 
@@ -440,7 +501,7 @@ async function readOwner(fs, lock, ownerPath) {
 
 // The observable state of one lock: whether its directory exists, the directory identity
 // (device, inode, nanosecond mtime), its entries and its owner. Reads only.
-async function observeLock(context, lock) {
+export async function observeLock(context, lock) {
   const paths = lockPaths(context.cwd, lock);
   const base = { lock, path: paths.directory, ownerFile: paths.ownerFile };
   if (!(await assertDirectoryChain(context.cwd, paths.stateDir, { allowMissing: true }))) {
@@ -487,7 +548,7 @@ function publicOwner(owner) {
 }
 
 // Whether the lock directory holds nothing but its one known owner file (or nothing at all).
-function onlyOwnerEntry(observation) {
+export function onlyOwnerEntry(observation) {
   return (
     observation.entryCount <= 1 &&
     observation.entries.every((entry) => entry === observation.ownerFile)
@@ -497,7 +558,7 @@ function onlyOwnerEntry(observation) {
 // ---------------------------------------------------------------------------------------------
 // Operations
 
-function makeContext(deps) {
+export function makeContext(deps) {
   return {
     runner: deps.runner,
     env: gitBaseEnv(deps.env ?? process.env),
@@ -679,6 +740,13 @@ async function acquireLock(input, deps) {
   const waitSeconds = requireWaitSeconds(input.waitSeconds);
   await requireRootSyntax(input.cwd);
   await resolveRoot(context, input.cwd);
+  return acquireOwned(context, lock, fields, waitSeconds, deps);
+}
+
+// Acquires `lock` for the verified root on `context` within `waitSeconds`: the acquired result
+// with its owner record, or a LOCK_HELD outcome with the observed lock. Creates a missing
+// `.effective-flow/` through the guard. A memory transaction reuses it to take the memory lock.
+export async function acquireOwned(context, lock, fields, waitSeconds, deps) {
   const paths = lockPaths(context.cwd, lock);
   await ensureGuardedDirectory(context, paths.stateDir);
 
@@ -699,7 +767,7 @@ async function acquireLock(input, deps) {
     if (remaining <= 0) break;
     await sleep(Math.min(RETRY_DELAY_MS, remaining));
   }
-  return new LockOutcome('LOCK_HELD', {
+  return new StateOutcome('LOCK_HELD', {
     waitSeconds,
     attempts,
     ...(await observeLock(context, lock)),
@@ -797,31 +865,37 @@ async function releaseLock(input, deps) {
   const token = requireToken(input.token);
   await requireRootSyntax(input.cwd);
   await resolveRoot(context, input.cwd);
+  return releaseOwned(context, lock, token, deps);
+}
+
+// Releases `lock` when its owner carries `token`: the released result, or a NOT_HELD or NOT_OWNER
+// outcome that changed nothing. A memory transaction reuses it in its `finally`.
+export async function releaseOwned(context, lock, token, deps) {
   const paths = lockPaths(context.cwd, lock);
   const first = await observeLock(context, lock);
-  if (!first.present) return new LockOutcome('NOT_HELD', first);
+  if (!first.present) return new StateOutcome('NOT_HELD', first);
   // The guards need the lock directory to exist; the decision uses the observation taken after them.
   await guardLockTargets(context, paths);
   const tombstone = await tombstonePath(context, lock, paths, 'release', deps);
   // The final observation, the decision and the removal share one guard hold.
   const decision = await withLockGuard(context, lock, deps, async () => {
     const observed = await observeLock(context, lock);
-    if (!observed.present) return new LockOutcome('NOT_HELD', observed);
+    if (!observed.present) return new StateOutcome('NOT_HELD', observed);
     if (observed.owner.state !== 'valid' || observed.owner.fields.token !== token) {
-      return new LockOutcome('NOT_OWNER', { reason: 'token-mismatch', ...observed });
+      return new StateOutcome('NOT_OWNER', { reason: 'token-mismatch', ...observed });
     }
     if (!onlyOwnerEntry(observed)) {
-      return new LockOutcome('NOT_OWNER', { reason: 'unexpected-entries', ...observed });
+      return new StateOutcome('NOT_OWNER', { reason: 'unexpected-entries', ...observed });
     }
     return removeThroughTombstone(context, lock, paths, observed, tombstone);
   });
-  if (decision instanceof LockOutcome) return decision;
+  if (decision instanceof StateOutcome) return decision;
   const removal = decision;
   if (removal.status === 'gone') {
-    return new LockOutcome('NOT_HELD', await observeLock(context, lock));
+    return new StateOutcome('NOT_HELD', await observeLock(context, lock));
   }
   if (removal.status === 'restored') {
-    return new LockOutcome('NOT_OWNER', {
+    return new StateOutcome('NOT_OWNER', {
       reason: 'changed-before-removal',
       ...(await observeLock(context, lock)),
     });
@@ -897,7 +971,7 @@ async function breakLock(input, deps) {
     await guardLockTargets(context, paths);
     tombstone = await tombstonePath(context, lock, paths, 'break', deps);
   }
-  const mismatch = (reason, state) => new LockOutcome('BREAK_MISMATCH', { reason, ...state });
+  const mismatch = (reason, state) => new StateOutcome('BREAK_MISMATCH', { reason, ...state });
   if (!tombstone) {
     // Nothing was guarded for a lock absent at the first look, so nothing is removed.
     const observed = await observeLock(context, lock);
@@ -907,7 +981,7 @@ async function breakLock(input, deps) {
   const decision = await withLockGuard(context, lock, deps, () =>
     decideBreak(context, lock, paths, tombstone, { token, identity, ownerDigest, ownerSize }),
   );
-  if (decision instanceof LockOutcome) return decision;
+  if (decision instanceof StateOutcome) return decision;
   const removal = decision;
   if (removal.status === 'gone') return mismatch('missing', await observeLock(context, lock));
   if (removal.status === 'restored') {
@@ -922,7 +996,7 @@ async function decideBreak(context, lock, paths, tombstone, expected) {
   const { token, identity, ownerDigest, ownerSize } = expected;
   const byToken = token !== undefined;
   const observed = await observeLock(context, lock);
-  const mismatch = (reason) => new LockOutcome('BREAK_MISMATCH', { reason, ...observed });
+  const mismatch = (reason) => new StateOutcome('BREAK_MISMATCH', { reason, ...observed });
   if (!observed.present) return mismatch('missing');
   if (!onlyOwnerEntry(observed)) return mismatch('unexpected-entries');
   if (byToken) {
@@ -945,11 +1019,22 @@ async function decideBreak(context, lock, paths, tombstone, expected) {
   return removeThroughTombstone(context, lock, paths, observed, tombstone);
 }
 
+// The memory and harness operations live in their own modules, which import this one. They are
+// loaded on first use through literal specifiers, so the import graph stays acyclic, a lock call
+// never loads them, and the build's dependency scan still sees both.
+const loadMemory = () => import('./effective-flow-state-memory-core.mjs');
+const loadHarness = () => import('./effective-flow-state-harness-core.mjs');
+
 const HANDLERS = Object.freeze({
   'lock acquire': acquireLock,
   'lock release': releaseLock,
   'lock inspect': inspectLock,
   'lock break': breakLock,
+  'memory reserve': async (input, deps) => (await loadMemory()).reserveMemory(input, deps),
+  'memory set-marker': async (input, deps) => (await loadMemory()).setMemoryMarker(input, deps),
+  'memory migrate-directory': async (input, deps) =>
+    (await loadMemory()).migrateDirectory(input, deps),
+  'harness allow-rules': async (input, deps) => (await loadHarness()).allowRules(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process
@@ -963,7 +1048,7 @@ export async function executeOperation(operation, input, deps = {}) {
     }
     if (typeof deps.runner !== 'function') fail('INTERNAL_ERROR', 'no process runner was injected');
     const value = await HANDLERS[operation](input, deps);
-    if (value instanceof LockOutcome) {
+    if (value instanceof StateOutcome) {
       return { ok: false, operation, outcome: { code: value.code, ...value.details } };
     }
     return { ok: true, operation, result: value };

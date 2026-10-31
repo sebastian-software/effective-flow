@@ -1,13 +1,13 @@
 ## Targeted setup change
 
 This fragment is loaded only when Step 0 of `{{SKILL:setup}}` classified the invocation as
-**Targeted**: a non-empty argument that is not exactly one of the six keyword forms, kept verbatim.
+**Targeted**: a non-empty argument that is not exactly one of the seven keyword forms, kept verbatim.
 It holds the whole Targeted contract; the setup core keeps only that classification and the
 exception clauses that override its own steps.
 
 A Targeted run poses no Visibility question and never runs Step 1, Step 2 items 1 and 3, Steps 4
 and 5 beyond the owning question of each touched key, Step 6 items 5 to 7 (marker, migration,
-`CLAUDE.md` fence), or Step 7. It writes no root file and never repairs `.gitignore`,
+`CLAUDE.md` fence), the allowlist step, or Step 7. It writes no root file and never repairs `.gitignore`,
 `info/exclude`, the marker, or a `CLAUDE.md` import; those stay with the full setup.
 
 Resolve `language.chat` once at entry under the shared chat-language rule and never rebind it
@@ -52,7 +52,7 @@ Map the free text, in any language, to operations on known schema keys (the conf
 One request may hold several operations. Give each ambiguity one focused question offering only
 valid readings or values ("prReview off" may mean `delivery.prReview` or `mergeGate.*`); never
 guess. A key outside the schema is not written; existing unknown rows are preserved, never created
-or removed. When nothing is recognized, a typo such as `exprss` included, say so, list the six
+or removed. When nothing is recognized, a typo such as `exprss` included, say so, list the seven
 keyword forms and `{{SKILL:setup}} <free text>`, and stop without mutation.
 
 ### Refusals and redirects

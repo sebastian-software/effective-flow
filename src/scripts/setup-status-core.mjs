@@ -4,7 +4,9 @@
 // published release. It writes nothing, asks nothing and repairs nothing; every finding only names
 // the setup invocation form, or the manual step, that would fix it. `setup` stays the only writer.
 //
-// Input (one JSON object): `{ "cwd": "<absolute directory>" }`.
+// Input (one JSON object): `{ "cwd": "<absolute directory>", "skillRoot"?: "<absolute directory>" }`.
+// `skillRoot` is the loaded skill's directory in its symlinked install form; without it the
+// allow-rule probe is `not-applicable`.
 //
 // Envelope: `{ ok: true, operation: "status", data }`, or
 // `{ ok: false, operation, error: { code, message, details, retryable: false } }` only for invalid
@@ -15,8 +17,8 @@
 //   cwd                  the canonical directory the status ran for
 //   setupFixable         true iff any finding below carries `setupFixable: true`
 //   setupForms[]         the distinct `setupForm` values of those findings, in `SETUP_FORMS` order
-//                        (`setup`, `setup guided`, `setup hidden`, `targeted`); one entry names the
-//                        single form that fixes everything setup can fix
+//                        (`setup`, `setup guided`, `setup hidden`, `targeted`, `allowlist`); one
+//                        entry names the single form that fixes everything setup can fix
 //   Every finding that carries `setupFixable` also carries `setupForm`: the setup invocation form
 //   its remediation names when setup-fixable, otherwise null (always null for domain owners and
 //   the version).
@@ -102,6 +104,23 @@
 //     remediation        text for `outdated`, otherwise null
 //     setupFixable       false
 //     setupForm          null
+//   allowlist            the Claude Code allow rules of the runtime-state helper, read from
+//                        `<runtimeStateRoot>/.claude/settings.local.json`:
+//     state              absent | current | stale | not-applicable | could-not-check
+//     reason             null, or not-applicable: no-skill-root | not-claude-code (`CLAUDECODE`
+//                        unset); could-not-check: runtime-root-unresolved | helper-unresolved |
+//                        settings-invalid | settings-unreadable
+//     detail             only for settings-invalid and settings-unreadable: the parser message
+//     skillRoot, target  the probed install root and settings file, or null
+//     expected[]         the six rules of this install
+//     present[]          the rules naming this install's `skillRoot` literally whose helper
+//                        resolves to this install's helper
+//     missing[]          the expected rules of the operations no present rule covers
+//     aliases[]          helper-shape rules naming another path to this install's helper: Claude
+//                        Code matches the literal command path, so they never fire for this
+//                        install and count as neither present nor stale
+//     stale[]            helper-shape rules whose helper no longer resolves to a regular file
+//     remediation, setupFixable, setupForm   `allowlist` for absent and stale, otherwise null
 //
 // The remediation texts are frozen data in this module (`REMEDIATIONS`): they name a setup
 // invocation form or a manual step, never an inline fix. The configuration comes from one
@@ -124,6 +143,15 @@ import {
   gitBaseEnv,
   resolveConfiguration,
 } from './config-resolve-core.mjs';
+import {
+  ALLOWLISTED_OPERATIONS,
+  SETTINGS_RELATIVE_PATH,
+  SettingsError,
+  helperRule,
+  helperRulesIn,
+  readSettingsFile,
+  resolveInstallHelper,
+} from './claude-settings-core.mjs';
 
 export const SETUP_STATUS_OPERATIONS = Object.freeze(['status']);
 export const SETUP_STATUS_ERROR_CODES = Object.freeze(['INVALID_INPUT', 'INTERNAL_ERROR']);
@@ -171,7 +199,13 @@ const GITIGNORE_CONFIG_NEGATION = /^!\s*\/?\.effective-flow\/config\.json$/;
 
 // `setupForm` names the setup invocation form that fixes a setup-fixable finding (one of
 // `SETUP_FORMS`), and is null for a finding setup cannot fix.
-export const SETUP_FORMS = Object.freeze(['setup', 'setup guided', 'setup hidden', 'targeted']);
+export const SETUP_FORMS = Object.freeze([
+  'setup',
+  'setup guided',
+  'setup hidden',
+  'targeted',
+  'allowlist',
+]);
 
 function entry(remediation, setupFixable, setupForm = null) {
   return Object.freeze({ remediation, setupFixable, setupForm: setupFixable ? setupForm : null });
@@ -441,6 +475,19 @@ export const REMEDIATIONS = Object.freeze({
     'Manual step: update the installed Effective Flow skill through the skill manager you installed it with.',
     false,
   ),
+  // The Claude Code allow rules of the helper operations in `.claude/settings.local.json`.
+  allowlist: Object.freeze({
+    absent: entry(
+      'Run `effective-flow setup allowlist` to preview and confirm the allow rules of the runtime-state helper for this install.',
+      true,
+      'allowlist',
+    ),
+    stale: entry(
+      'Run `effective-flow setup allowlist` to preview and confirm the removal of the allow rules whose helper no longer exists, together with the rules of this install.',
+      true,
+      'allowlist',
+    ),
+  }),
 });
 
 function render(template, values) {
@@ -468,12 +515,21 @@ function fail(code, message, details = {}) {
 // ---------------------------------------------------------------------------------------------
 // Input
 
+const INPUT_KEYS = Object.freeze(['cwd', 'skillRoot']);
+
 async function validateInput(input, fs) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     fail('INVALID_INPUT', 'input must be a JSON object');
   }
   for (const key of Object.keys(input)) {
-    if (key !== 'cwd') fail('INVALID_INPUT', `unknown input field: ${key}`, { key });
+    if (!INPUT_KEYS.includes(key)) fail('INVALID_INPUT', `unknown input field: ${key}`, { key });
+  }
+  const { skillRoot } = input;
+  if (
+    skillRoot !== undefined &&
+    (typeof skillRoot !== 'string' || skillRoot.includes('\0') || !path.isAbsolute(skillRoot))
+  ) {
+    fail('INVALID_INPUT', 'skillRoot must be an absolute path string', { field: 'skillRoot' });
   }
   const { cwd } = input;
   if (typeof cwd !== 'string' || cwd === '' || cwd.includes('\0')) {
@@ -1323,6 +1379,76 @@ async function versionSection(projectionOutcome, deps) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Allow rules (read-only)
+
+function allowlistResult(state, extra = {}) {
+  const found = state === 'absent' || state === 'stale' ? REMEDIATIONS.allowlist[state] : null;
+  return {
+    state,
+    reason: null,
+    skillRoot: null,
+    target: null,
+    expected: [],
+    present: [],
+    missing: [],
+    stale: [],
+    aliases: [],
+    ...extra,
+    remediation: found?.remediation ?? null,
+    setupFixable: found?.setupFixable ?? false,
+    setupForm: found?.setupForm ?? null,
+  };
+}
+
+// The state of this install's helper allow rules in `<runtimeStateRoot>/.claude/settings.local.json`.
+// A rule is this install's when it names `skillRoot` literally and its helper resolves to the
+// realpath of `<skillRoot>/scripts/effective-flow-state.mjs`: Claude Code matches the literal
+// command path, so a rule under another alias of the same helper is reported in `aliases` and never
+// counts as present. A helper-shape rule whose helper no longer resolves to a regular file is
+// stale. Precedence: stale, then absent, then current.
+async function allowlistSection(skillRoot, configuration, env, fs) {
+  if (skillRoot === undefined)
+    return allowlistResult('not-applicable', { reason: 'no-skill-root' });
+  if (typeof env.CLAUDECODE !== 'string' || env.CLAUDECODE === '') {
+    return allowlistResult('not-applicable', { reason: 'not-claude-code', skillRoot });
+  }
+  const root = configuration.runtimeStateRoot;
+  if (!root) {
+    return allowlistResult('could-not-check', { reason: 'runtime-root-unresolved', skillRoot });
+  }
+  const target = path.join(root, SETTINGS_RELATIVE_PATH);
+  const expected = ALLOWLISTED_OPERATIONS.map((operation) => helperRule(skillRoot, operation));
+  const base = { skillRoot, target, expected };
+  const ownHelper = await resolveInstallHelper(fs, skillRoot);
+  if (!ownHelper)
+    return allowlistResult('could-not-check', { ...base, reason: 'helper-unresolved' });
+  let read;
+  try {
+    read = await readSettingsFile(fs, target);
+  } catch (error) {
+    if (!(error instanceof SettingsError)) throw error;
+    return allowlistResult('could-not-check', {
+      ...base,
+      reason: error.code === 'SETTINGS_INVALID' ? 'settings-invalid' : 'settings-unreadable',
+      detail: error.message,
+    });
+  }
+  const rules = read.exists ? await helperRulesIn(fs, read.allow) : [];
+  const own = rules.filter((rule) => rule.helper === ownHelper && rule.skillRoot === skillRoot);
+  const covered = new Set(own.map((rule) => rule.operation));
+  const present = own.map((rule) => rule.rule);
+  const aliases = rules
+    .filter((rule) => rule.helper === ownHelper && rule.skillRoot !== skillRoot)
+    .map((rule) => rule.rule);
+  const missing = ALLOWLISTED_OPERATIONS.filter((operation) => !covered.has(operation)).map(
+    (operation) => helperRule(skillRoot, operation),
+  );
+  const stale = rules.filter((rule) => rule.helper === null).map((rule) => rule.rule);
+  const state = stale.length > 0 ? 'stale' : missing.length > 0 ? 'absent' : 'current';
+  return allowlistResult(state, { ...base, present, missing, stale, aliases });
+}
+
+// ---------------------------------------------------------------------------------------------
 // Status
 
 export async function setupStatus(input, deps = {}) {
@@ -1344,6 +1470,7 @@ export async function setupStatus(input, deps = {}) {
   const ignore = await ignoreSection(configuration, context);
   const domainOwners = domainOwnersSection(projectionOutcome, setupData);
   const version = await versionSection(projectionOutcome, deps);
+  const allowlist = await allowlistSection(input.skillRoot, configuration, env, fs);
 
   // Every setup-fixable finding with its form; domain owners and the version never are.
   const fixable = [
@@ -1353,12 +1480,23 @@ export async function setupStatus(input, deps = {}) {
     ...retired,
     ignore,
     ...ignore.notes,
+    allowlist,
   ].filter((item) => item.setupFixable);
   const setupFixable = fixable.length > 0;
   const forms = new Set(fixable.map((item) => item.setupForm));
   const setupForms = SETUP_FORMS.filter((form) => forms.has(form));
 
-  return { cwd, setupFixable, setupForms, configuration, retired, ignore, domainOwners, version };
+  return {
+    cwd,
+    setupFixable,
+    setupForms,
+    configuration,
+    retired,
+    ignore,
+    domainOwners,
+    version,
+    allowlist,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
