@@ -141,7 +141,8 @@ class StageFixture:
             for name in ('scenario-registry.mjs', 'suite.config.mjs'):
                 shutil.copyfile(SOURCE / 'evals' / suite / name, suite_root / name)
             registry_text = (suite_root / 'scenario-registry.mjs').read_text()
-            names = re.findall(r"'([a-z0-9-]+)'", registry_text.split('Object.freeze([', 1)[1])
+            # Original discoverSuite/selectScenarios orders names canonically, not by registry export.
+            names = sorted(re.findall(r"'([a-z0-9-]+)'", registry_text.split('Object.freeze([', 1)[1]))
             assert len(names) == {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}[suite]
             base = self.output / suite
             round_root = base / 'round-model-free'
@@ -459,6 +460,29 @@ class FirstStageAuthentication(unittest.TestCase):
         self.assertEqual(len(self.f.records), 155)
         self.assertFalse((self.f.output / 'cohorts').exists())
         self.assertEqual(before, {str(path): digest(path) for path in self.f.root.rglob('*') if path.is_file()})
+
+    def test_registry_export_order_matches_original_canonical_five_slot_membership(self):
+        registry = self.f.root / 'unordered-registry.mjs'
+        registry.write_text("export const SCENARIOS = Object.freeze(['z-last', 'a-first', 'm-middle']);\n")
+        names = self.f.stage.registry_names(ref(registry))
+        expected = [(name, slot) for name in ('a-first', 'm-middle', 'z-last') for slot in range(1, 6)]
+        actual = [(name, slot) for name in names for slot in range(1, 6)]
+        self.assertEqual(actual, expected)
+        self.assertEqual(len(actual), len(set(actual)))
+
+    def test_registry_canonicalization_preserves_duplicate_and_nonliteral_refusal(self):
+        registry = self.f.root / 'invalid-registry.mjs'
+        for body in ("['z-last', 'a-first', 'z-last']", "['z-last', foreignName]", '[]'):
+            with self.subTest(body=body):
+                registry.write_text('export const SCENARIOS = Object.freeze(' + body + ');\n')
+                with self.assertRaises(ValueError):
+                    self.f.stage.registry_names(ref(registry))
+
+    def test_full_membership_rejects_missing_required_tuple(self):
+        self.f.corpus['suites'][0]['tasks'].pop()
+        self.f.publish_synthetic_pins()
+        with self.assertRaisesRegex(ValueError, 'full authoritative task count required'):
+            self.f.validate()
 
     def test_external_digests_cannot_self_authenticate(self):
         bad = 'sha256:' + '0' * 64

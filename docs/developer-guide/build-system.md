@@ -921,6 +921,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   under `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, uses 8 KiB UTF-8 for the
   dispatch projection and 16 KiB UTF-8 for each control record, and fails closed on unknown fields,
   unsafe paths, content drift, foreign evidence, stale replies, or incomplete terminal gates.
+  Snapshots retain missing tracked files even when their parent directory was deleted or renamed;
+  an existing symlink or non-directory ancestor is still refused. The build-context scaffold uses
+  the same missing-entry boundary for source membership and never reads through a symlink ancestor.
   The build caller remains the authority for user-channel provenance, approval and gate judgments;
   `build-run-core.mjs` proves identity and evidence but never grants consent or replaces the
   phases-2–7 workflow. `build-run-contract.md` is the caller/runner lifecycle contract and
@@ -964,6 +967,18 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   existing runtime-only delivery/cleanup/pilot/completion outcomes; `record-return` proves an actual
   in-place checkout restore. The original agent handle is retained for the one allowed pilot
   finalization and is never persisted as a transferable capability.
+
+  Completion preparation also retains the exact index. The paired `completionBasis`/`currentPlan`
+  references carry the verified plan transformation through protected validation and
+  checkpoint/question/reply/resume, without carrying old gates across product or non-plan index
+  changes. `seal-delivery` can preserve an unarchived plan only with the bound refusal evidence
+  specified by the [build-run contract](../../src/shared/build-run-contract.md#preserve-acceptance-through-the-actual-completion-order).
+  Its caller-observed route uses `retain-evidence`, adds no writer, and requires the terminal
+  conclusion to disclose the refusal; byte identity does not prove a historical error occurred.
+  An untracked original plan in a separately verified source checkout of the same repository can
+  remain unpublished: handoff retains its actual bytes and origin for later verification without
+  live-source access. This does not copy a plan into the execution manifest, grant source cleanup,
+  or relax product, staged-tree, commit or acceptance checks.
 
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
   closed-schema JSON object on standard input: `cwd` (the verified absolute root, which is

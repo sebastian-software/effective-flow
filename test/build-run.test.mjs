@@ -1414,8 +1414,67 @@ test('ordinary completion preserves earlier review evidence through proven plan 
   assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
 });
 
-async function preparedForTransform(t) {
-  const live = await setupDelivery(await start(fixture(t)));
+for (const operation of ['delete', 'rename'])
+  test(`checkpoint snapshots an unstaged ${operation} of a tracked directory as missing content`, async (t) => {
+    const fx = fixture(t);
+    mkdirSync(path.join(fx.root, 'nested/old'), { recursive: true });
+    writeFileSync(path.join(fx.root, 'nested/old/source.txt'), 'tracked nested source\n');
+    git(fx.root, 'add', 'nested');
+    git(fx.root, 'commit', '-m', 'tracked nested source');
+    fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+    const live = await start(fx);
+    const checkpoint = (checkpointId) =>
+      live.call('checkpoint', {
+        ...live.common,
+        agentHandle: 'original-child-handle',
+        checkpointId,
+        completed: [],
+        pending: REQUIRED_GATES,
+        evidence: [],
+      });
+    const beforeRef = await checkpoint('before');
+    const before = JSON.parse(readFileSync(path.join(beforeRef.root, beforeRef.path)));
+    if (operation === 'rename')
+      renameSync(path.join(fx.root, 'nested'), path.join(fx.root, 'renamed'));
+    else rmSync(path.join(fx.root, 'nested'), { recursive: true });
+    const afterRef = await checkpoint('after');
+    const after = JSON.parse(readFileSync(path.join(afterRef.root, afterRef.path)));
+    assert.equal(after.snapshot.index, before.snapshot.index);
+    assert.notEqual(after.snapshot.workingTree, before.snapshot.workingTree);
+    assert.equal(after.snapshot.head, before.snapshot.head);
+    if (operation === 'rename')
+      assert.notEqual(after.snapshot.untracked, before.snapshot.untracked);
+    assert.equal((await checkpoint('stable')).digest.startsWith('sha256:'), true);
+  });
+
+for (const kind of ['symlink', 'file'])
+  test(`snapshot refuses an existing ${kind} ancestor instead of classifying it as deleted`, async (t) => {
+    const fx = fixture(t);
+    mkdirSync(path.join(fx.root, 'nested/old'), { recursive: true });
+    writeFileSync(path.join(fx.root, 'nested/old/source.txt'), 'tracked nested source\n');
+    git(fx.root, 'add', 'nested');
+    git(fx.root, 'commit', '-m', 'tracked nested source');
+    fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+    const live = await start(fx);
+    renameSync(path.join(fx.root, 'nested'), path.join(fx.root, '.effective-flow/original'));
+    if (kind === 'symlink')
+      symlinkSync(path.join(fx.root, '.effective-flow/original'), path.join(fx.root, 'nested'));
+    else writeFileSync(path.join(fx.root, 'nested'), 'not a directory\n');
+    await assert.rejects(
+      live.call('checkpoint', {
+        ...live.common,
+        agentHandle: 'original-child-handle',
+        checkpointId: 'unsafe',
+        completed: [],
+        pending: REQUIRED_GATES,
+        evidence: [],
+      }),
+      error('UNSAFE_PATH'),
+    );
+  });
+
+async function preparedForTransform(t, fx = fixture(t)) {
+  const live = await setupDelivery(await start(fx));
   const evidence = [durable(live)];
   const gates = [];
   for (const gate of ['independent-review', 'final-validation'])
@@ -1447,6 +1506,745 @@ function sealing(live, judgments = []) {
     judgments,
   };
 }
+
+test('pre-handoff question relay accepts a verified completion append and archive without ending product authority', async (t) => {
+  const live = await preparedForTransform(t);
+  const completion = {
+    completionBasis: live.prepared,
+    currentPlan: live.ref(live.root, 'archive/plan.md'),
+  };
+  const gates = JSON.parse(readFileSync(path.join(live.prepared.root, live.prepared.path))).gates;
+  const completed = ['independent-review', 'final-validation'];
+  const cp = await live.call('checkpoint', {
+    ...live.common,
+    checkpointId: 'completion-pause',
+    agentHandle: 'original-child-handle',
+    ...completion,
+    completed,
+    pending: REQUIRED_GATES.filter((gate) => !completed.includes(gate)),
+    evidence: gates,
+  });
+  const question = await live.call('question', {
+    ...live.common,
+    checkpoint: cp,
+    questionId: 'completion-pause',
+    revision: 1,
+    origin: 'completion-recovery',
+    agentHandle: 'original-child-handle',
+    question: 'Continue with the verified completion output?',
+    options: ['Continue', 'Stop'],
+    responseType: 'option',
+    ...completion,
+  });
+  const reply = await live.call('reply', {
+    ...live.common,
+    question,
+    trustedUser: trusted(question, 'Continue'),
+    ...completion,
+  });
+  const resumed = await live.call('resume', {
+    ...live.common,
+    question,
+    reply,
+    agentHandle: 'original-child-handle',
+    ...completion,
+  });
+  assert.equal(resumed.authority, 'product');
+  await assert.rejects(
+    live.call('resume', {
+      ...live.common,
+      question,
+      reply,
+      agentHandle: 'original-child-handle',
+      ...completion,
+    }),
+    error('STALE_REPLY'),
+  );
+  assert.ok((await live.call('seal-delivery', sealing(live))).digest);
+});
+
+test('completion relay rejects rewritten requirements, product drift and a foreign preparation receipt', async (t) => {
+  const live = await preparedForTransform(t);
+  const planPath = path.join(live.root, 'archive/plan.md');
+  const original = readFileSync(planPath);
+  const gates = JSON.parse(readFileSync(path.join(live.prepared.root, live.prepared.path))).gates;
+  const completed = ['independent-review', 'final-validation'];
+  const input = () => ({
+    ...live.common,
+    checkpointId: 'tampered-completion',
+    agentHandle: 'original-child-handle',
+    completionBasis: live.prepared,
+    currentPlan: live.ref(live.root, 'archive/plan.md'),
+    completed,
+    pending: REQUIRED_GATES.filter((gate) => !completed.includes(gate)),
+    evidence: gates,
+  });
+  writeFileSync(planPath, '# Rewritten requirements\n\n**Plan status:** Implemented\n');
+  await assert.rejects(live.call('checkpoint', input()), error('RECHECK_REQUIRED'));
+  writeFileSync(planPath, original);
+  writeFileSync(path.join(live.root, 'source.txt'), 'unauthorized product drift\n');
+  await assert.rejects(live.call('checkpoint', input()), error('CONTENT_DRIFT'));
+  writeFileSync(path.join(live.root, 'source.txt'), 'initial\n');
+  await assert.rejects(
+    live.call('checkpoint', {
+      ...input(),
+      completionBasis: { ...live.prepared, digest: contentDigest('foreign receipt') },
+    }),
+    (failure) => ['DIGEST_MISMATCH', 'FOREIGN_RECORD'].includes(failure.code),
+  );
+});
+
+test('protected admission can remain pending after verified completion archival without waiving its original remote requirement', async (t) => {
+  const fx = fixture(t);
+  fx.input.remoteValidation = {
+    protocol: 'effective-flow.protected-validation/1',
+    requiredGates: ['validation'],
+    policyDigest: contentDigest('original protected policy'),
+  };
+  const live = await preparedForTransform(t, fx);
+  const completion = {
+    completionBasis: live.prepared,
+    currentPlan: live.ref(live.root, 'archive/plan.md'),
+  };
+  const input = { ...live.common, validatorHandle: 'independent-validator', gate: 'validation' };
+  // Without explicit verified completion context the immutable original-plan guard still applies.
+  await assert.rejects(live.call('validation-await-admission', input), error('MISSING_EVIDENCE'));
+  const pending = await live.call('validation-await-admission', { ...input, ...completion });
+  assert.equal(pending.state, 'pending');
+  assert.equal(pending.bootstrapRef, null);
+  assert.equal(
+    readdirSync(path.join(live.root, '.effective-flow/build-runs/fixture-run')).some((name) =>
+      name.startsWith('gate-validation-'),
+    ),
+    false,
+  );
+  assert.deepEqual(
+    JSON.parse(readFileSync(path.join(live.created.request.root, live.created.request.path)))
+      .remoteValidation,
+    fx.input.remoteValidation,
+  );
+});
+
+for (const refusal of ['collision', 'probe-failure', 'write-failure'])
+  test(`completion retains the verified original plan when archival reports ${refusal}`, async (t) => {
+    const fx = fixture(t);
+    // These are pre-existing repository conditions, not unreviewed completion output.
+    if (refusal === 'collision') {
+      mkdirSync(path.join(fx.root, 'archive'));
+      writeFileSync(path.join(fx.root, 'archive/plan.md'), '# A different archived plan\n');
+      git(fx.root, 'add', 'archive/plan.md');
+    } else if (refusal === 'write-failure') {
+      writeFileSync(path.join(fx.root, 'archive'), 'archive parent is a file\n');
+      git(fx.root, 'add', 'archive');
+    }
+    if (refusal !== 'probe-failure') {
+      git(fx.root, 'commit', '-m', 'existing archival obstacle');
+      fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+    }
+    const live = await setupDelivery(await start(fx));
+    const original = readFileSync(path.join(live.root, 'plan.md'));
+    const obstacle =
+      refusal === 'probe-failure'
+        ? null
+        : readFileSync(
+            path.join(live.root, refusal === 'collision' ? 'archive/plan.md' : 'archive'),
+          );
+    const evidence = [
+      durable(
+        live,
+        'archival-refusal.txt',
+        `Archival stopped: ${refusal}; retained plan.md unchanged.\n`,
+      ),
+    ];
+    const gates = [];
+    for (const gate of REQUIRED_GATES.filter(
+      (name) =>
+        !['delivery', 'plan-archival', 'pilot-finalization', 'cleanup', 'completion'].includes(
+          name,
+        ),
+    ))
+      gates.push(await issue(live, gate, evidence));
+    const prepared = await live.call('prepare-completion', {
+      ...live.common,
+      preparationId: 'retained',
+      agentHandle: 'original-child-handle',
+      gates: gates.filter((item) =>
+        /gate-(independent-review|final-validation)-/.test(path.basename(item.path)),
+      ),
+    });
+    // The authoritative runner probe must observe the refusal itself.
+    const originalRunner = live.deps.runner;
+    let failedProbes = 0;
+    if (refusal === 'probe-failure') {
+      live.deps.runner = (call) => {
+        if (
+          call.executable === 'git' &&
+          call.args.includes('ls-files') &&
+          call.args.includes(':(literal)plan.md') &&
+          call.args.includes(':(literal)archive/plan.md')
+        ) {
+          failedProbes += 1;
+          return {
+            status: 128,
+            stdout: '',
+            stderr: 'fixture: archival tracking probe unavailable\n',
+          };
+        }
+        return originalRunner(call);
+      };
+    } else if (refusal === 'write-failure') {
+      assert.throws(() => mkdirSync(path.join(live.root, 'archive'), { recursive: true }), {
+        code: 'EEXIST',
+      });
+    } else {
+      assert.deepEqual(
+        git(live.root, 'ls-files', 'plan.md', 'archive/plan.md').split('\n').sort(),
+        ['archive/plan.md', 'plan.md'],
+      );
+    }
+    const seal = await live.call('seal-delivery', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      sealId: 'retained',
+      basis: prepared,
+      finalPlan: live.ref(live.root, 'plan.md'),
+      expectedTree: git(live.root, 'write-tree'),
+      judgments: [],
+      archivalRefusal: { reason: refusal },
+    });
+    const finalPlan = gitRef(live, 'plan.md');
+    const handoffRef = await live.call('handoff', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      seal,
+      head: finalPlan.commit,
+      finalPlan,
+    });
+    const handoff = JSON.parse(readFileSync(path.join(handoffRef.root, handoffRef.path)));
+    for (const gate of ['plan-archival', 'delivery', 'cleanup', 'pilot-finalization', 'completion'])
+      gates.push(
+        await issue(
+          live,
+          gate,
+          evidence,
+          gate === 'plan-archival'
+            ? { reason: `Archival refused: ${refusal}; original plan retained.` }
+            : {},
+        ),
+      );
+    const terminal = await live.call(
+      'terminal',
+      terminalInput({
+        ...live,
+        gates,
+        finalPlan: handoff.finalPlan,
+        finalCheckout: {
+          repositoryIdentity: live.repositoryIdentity,
+          executionRoot: live.root,
+          branch: live.execution.branch,
+          head: handoff.head,
+          snapshot: handoff.snapshot,
+          worktreeRemoved: false,
+        },
+      }),
+    );
+    assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
+    if (refusal === 'probe-failure')
+      assert.ok(failedProbes > 0, 'the helper must run its own authoritative tracking probe');
+    assert.deepEqual(readFileSync(path.join(live.root, 'plan.md')), original);
+    if (obstacle)
+      assert.deepEqual(
+        readFileSync(path.join(live.root, refusal === 'collision' ? 'archive/plan.md' : 'archive')),
+        obstacle,
+      );
+  });
+
+test('retained-plan completion refuses an invented archival collision and altered original bytes', async (t) => {
+  const live = await setupDelivery(await start(fixture(t)));
+  const evidence = [durable(live)];
+  const gates = [];
+  for (const gate of ['independent-review', 'final-validation'])
+    gates.push(await issue(live, gate, evidence));
+  const prepared = await live.call('prepare-completion', {
+    ...live.common,
+    preparationId: 'refusal-integrity',
+    agentHandle: 'original-child-handle',
+    gates,
+  });
+  const seal = () =>
+    live.call('seal-delivery', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      sealId: 'refusal-integrity',
+      basis: prepared,
+      finalPlan: live.ref(live.root, 'plan.md'),
+      expectedTree: git(live.root, 'write-tree'),
+      judgments: [],
+      archivalRefusal: { reason: 'collision' },
+    });
+  await assert.rejects(seal(), error('MISSING_EVIDENCE'));
+  mkdirSync(path.join(live.root, 'archive'));
+  writeFileSync(path.join(live.root, 'archive/plan.md'), '# Foreign archive target\n');
+  writeFileSync(
+    path.join(live.root, 'plan.md'),
+    '# Changed approved requirements\n\n**Plan status:** Not implemented\n',
+  );
+  await assert.rejects(seal(), error('RECHECK_REQUIRED'));
+  assert.equal(
+    readFileSync(path.join(live.root, 'archive/plan.md'), 'utf8'),
+    '# Foreign archive target\n',
+  );
+});
+
+async function preparedForRetainedPlan(t) {
+  const live = await setupDelivery(await start(fixture(t)));
+  const evidence = [durable(live)];
+  const gates = [];
+  for (const gate of REQUIRED_GATES.filter(
+    (name) =>
+      !['delivery', 'plan-archival', 'pilot-finalization', 'cleanup', 'completion'].includes(name),
+  ))
+    gates.push(await issue(live, gate, evidence));
+  const prepared = await live.call('prepare-completion', {
+    ...live.common,
+    preparationId: 'observed-refusal',
+    agentHandle: 'original-child-handle',
+    gates: gates.filter((item) =>
+      /gate-(independent-review|final-validation)-/.test(path.basename(item.path)),
+    ),
+  });
+  return { ...live, evidence, gates, prepared };
+}
+function observedRefusal(live, failedOperation) {
+  let observed;
+  const original = path.join(live.root, 'plan.md');
+  const archive = path.join(live.root, 'archive');
+  if (failedOperation === 'mkdir') writeFileSync(archive, 'temporary filesystem obstacle\n');
+  try {
+    if (failedOperation === 'mkdir') mkdirSync(archive);
+    else renameSync(original, path.join(archive, 'plan.md'));
+    assert.fail('the fixture must observe an actual failed archival operation');
+  } catch (failure) {
+    assert.equal(failure.code, failedOperation === 'mkdir' ? 'EEXIST' : 'ENOENT');
+    observed = { code: failure.code, exitCode: null, message: failure.message };
+  }
+  // Remove the condition before sealing: this is retained caller observation, not a live probe.
+  if (failedOperation === 'mkdir') rmSync(archive);
+  else mkdirSync(archive);
+  return {
+    protocol: 1,
+    runId: live.input.runId,
+    requestDigest: live.common.requestDigest,
+    provenance: 'caller-observed',
+    agentHandle: 'original-child-handle',
+    completionBasis: live.prepared,
+    execution: live.execution,
+    sourcePlan: live.input.plan,
+    currentPlan: live.ref(live.root, 'plan.md'),
+    paths: { root: live.root, original: 'plan.md', archive: 'archive/plan.md' },
+    failedOperation,
+    observedError: observed,
+    visibleReport: `Archival stopped: ${failedOperation} returned ${observed.code}; plan.md retained unarchived.`,
+  };
+}
+async function retainRefusal(live, value, evidenceId) {
+  return live.call('retain-evidence', {
+    ...live.common,
+    evidenceId,
+    content: JSON.stringify(value),
+  });
+}
+function retainedSeal(live, evidence, extra = {}) {
+  return live.call('seal-delivery', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    sealId: 'observed-refusal',
+    basis: live.prepared,
+    finalPlan: live.ref(live.root, 'plan.md'),
+    expectedTree: git(live.root, 'write-tree'),
+    judgments: [],
+    archivalRefusal: { reason: 'write-failure', evidence },
+    ...extra,
+  });
+}
+
+for (const failedOperation of ['mkdir', 'rename'])
+  test(`caller-observed transient ${failedOperation} refusal permits handback with the verified original plan and visible report`, async (t) => {
+    const live = await preparedForRetainedPlan(t);
+    const original = readFileSync(path.join(live.root, 'plan.md'));
+    const observed = observedRefusal(live, failedOperation);
+    const evidence = await retainRefusal(live, observed, 'observed-refusal');
+    const seal = await retainedSeal(live, evidence);
+    const finalPlan = gitRef(live, 'plan.md');
+    const handoffRef = await live.call('handoff', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      seal,
+      head: finalPlan.commit,
+      finalPlan,
+    });
+    const handoff = JSON.parse(readFileSync(path.join(handoffRef.root, handoffRef.path)));
+    for (const gate of ['plan-archival', 'delivery', 'cleanup', 'pilot-finalization', 'completion'])
+      live.gates.push(
+        await issue(
+          live,
+          gate,
+          [evidence],
+          gate === 'plan-archival' ? { reason: observed.visibleReport } : {},
+        ),
+      );
+    const input = terminalInput({
+      ...live,
+      finalPlan: handoff.finalPlan,
+      finalCheckout: {
+        repositoryIdentity: live.repositoryIdentity,
+        executionRoot: live.root,
+        branch: live.execution.branch,
+        head: handoff.head,
+        snapshot: handoff.snapshot,
+        worktreeRemoved: false,
+      },
+    });
+    await assert.rejects(live.call('terminal', input), error('MISSING_EVIDENCE'));
+    const terminal = await live.call('terminal', {
+      ...input,
+      conclusion: `Feature delivered. ${observed.visibleReport}`,
+    });
+    assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
+    assert.deepEqual(readFileSync(path.join(live.root, 'plan.md')), original);
+    assert.equal(existsSync(path.join(live.root, 'archive/plan.md')), false);
+    assert.equal(
+      JSON.parse(readFileSync(path.join(evidence.root, evidence.path))).provenance,
+      'caller-observed',
+    );
+  });
+
+async function preparedForSourceOnlyPlan(t, refusal, additionalRoots = []) {
+  const fx = fixture(t, true);
+  git(fx.root, 'rm', '--cached', 'plan.md');
+  writeFileSync(path.join(fx.root, '.gitignore'), '.effective-flow/\narchive/plan.md\n');
+  if (refusal === 'write-failure') {
+    writeFileSync(path.join(fx.root, 'archive'), 'existing non-directory archive parent\n');
+    git(fx.root, 'add', 'archive');
+  }
+  git(fx.root, 'add', '.gitignore');
+  git(fx.root, 'commit', '-m', 'keep unpublished plan outside delivery history');
+  const sourceRoot = path.join(fx.root, '.effective-flow/source-checkout');
+  git(fx.root, 'worktree', 'add', '-b', 'unpublished-plan-source', sourceRoot);
+  renameSync(path.join(fx.root, 'plan.md'), path.join(sourceRoot, 'plan.md'));
+  git(fx.root, 'worktree', 'add', '-b', 'feature', fx.targetExecutionRoot);
+  fx.input.execution = {
+    ...fx.input.execution,
+    executionRoot: fx.targetExecutionRoot,
+    branch: 'feature',
+    origin: 'harness-managed',
+    head: git(fx.root, 'rev-parse', 'HEAD'),
+  };
+  fx.input.plan = fx.ref(sourceRoot, 'plan.md');
+  fx.input.allowedRoots.push(sourceRoot, fx.targetExecutionRoot, ...additionalRoots);
+  const started = await start(fx);
+  const authorization = await started.call('authorize-execution', {
+    ...started.common,
+    agentHandle: 'original-child-handle',
+    mode: 'reuse-worktree',
+    executionRoot: fx.targetExecutionRoot,
+    branch: 'feature',
+    baseHead: fx.input.execution.head,
+    authority: {
+      kind: 'source',
+      source: 'instruction',
+      index: null,
+      quote: fx.input.source.instruction,
+    },
+  });
+  const transition = await started.call('transition-execution', {
+    ...started.common,
+    agentHandle: 'original-child-handle',
+    authorization,
+    execution: fx.input.execution,
+    ownership: null,
+  });
+  const live = {
+    ...started,
+    executionRoot: fx.targetExecutionRoot,
+    execution: fx.input.execution,
+    transition,
+    mode: 'reuse-worktree',
+  };
+  assert.equal(existsSync(path.join(live.executionRoot, 'plan.md')), false);
+  assert.equal(git(sourceRoot, 'rev-parse', '--git-common-dir'), live.repositoryIdentity);
+  assert.equal(git(live.executionRoot, 'rev-parse', '--git-common-dir'), live.repositoryIdentity);
+  assert.equal(git(sourceRoot, 'ls-files', '--', ':(literal)plan.md'), '');
+  if (refusal === 'collision') {
+    mkdirSync(path.join(live.executionRoot, 'archive'));
+    writeFileSync(
+      path.join(live.executionRoot, 'archive/plan.md'),
+      '# Unrelated private archive\n',
+    );
+  }
+  writeFileSync(path.join(live.executionRoot, 'source.txt'), 'delivered implementation\n');
+  const evidence = [durable(live)];
+  const gates = [];
+  for (const gate of REQUIRED_GATES.filter(
+    (name) =>
+      !['delivery', 'plan-archival', 'pilot-finalization', 'cleanup', 'completion'].includes(name),
+  ))
+    gates.push(await issue(live, gate, evidence));
+  const prepared = await live.call('prepare-completion', {
+    ...live.common,
+    preparationId: 'source-only-plan',
+    agentHandle: 'original-child-handle',
+    gates: gates.filter((item) =>
+      /gate-(independent-review|final-validation)-/.test(path.basename(item.path)),
+    ),
+  });
+  return { ...live, sourceRoot, evidence, gates, prepared, refusal };
+}
+function sourceOnlySeal(live, extra = {}) {
+  git(live.executionRoot, 'add', 'source.txt');
+  return live.call('seal-delivery', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    sealId: 'source-only-plan',
+    basis: live.prepared,
+    finalPlan: live.ref(live.sourceRoot, 'plan.md'),
+    expectedTree: git(live.executionRoot, 'write-tree'),
+    judgments: [],
+    archivalRefusal: { reason: live.refusal },
+    ...extra,
+  });
+}
+
+for (const refusal of ['collision', 'write-failure'])
+  test(`source-only unpublished plan survives ${refusal} while separate delivery commits only the other deliverables`, async (t) => {
+    const live = await preparedForSourceOnlyPlan(t, refusal);
+    const sourcePlan = path.join(live.sourceRoot, 'plan.md');
+    const original = readFileSync(sourcePlan);
+    const archivePath = path.join(
+      live.executionRoot,
+      refusal === 'collision' ? 'archive/plan.md' : 'archive',
+    );
+    const foreignArchive = readFileSync(archivePath);
+    const seal = await sourceOnlySeal(live);
+    git(
+      live.executionRoot,
+      'commit',
+      '-m',
+      'deliver implementation without publishing the unpublished plan',
+    );
+    const head = git(live.executionRoot, 'rev-parse', 'HEAD');
+    assert.equal(
+      git(
+        live.executionRoot,
+        'ls-tree',
+        '-r',
+        '--name-only',
+        head,
+        '--',
+        'plan.md',
+        'archive/plan.md',
+      ),
+      '',
+    );
+    const handoffRef = await live.call('handoff', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      seal,
+      head,
+      finalPlan: live.ref(live.sourceRoot, 'plan.md'),
+    });
+    const handoff = JSON.parse(readFileSync(path.join(handoffRef.root, handoffRef.path)));
+    assert.equal(handoff.finalPlan.root, live.root);
+    assert.match(handoff.finalPlan.path, /^\.effective-flow\/build-runs\/fixture-run\//);
+    assert.deepEqual(
+      readFileSync(path.join(handoff.finalPlan.root, handoff.finalPlan.path)),
+      original,
+    );
+    assert.deepEqual(
+      readFileSync(sourcePlan),
+      original,
+      'the handoff itself preserves the original source plan',
+    );
+    // A later user edit/removal does not erase the immutable handoff evidence.
+    const laterUserText = '# User revised the unpublished plan after handoff\n';
+    if (refusal === 'collision') writeFileSync(sourcePlan, laterUserText);
+    else rmSync(sourcePlan);
+    for (const gate of ['plan-archival', 'delivery', 'cleanup', 'pilot-finalization', 'completion'])
+      live.gates.push(
+        await issue(
+          live,
+          gate,
+          live.evidence,
+          gate === 'plan-archival'
+            ? { reason: `Archival refused: ${refusal}; unpublished source-only plan retained.` }
+            : {},
+        ),
+      );
+    const terminal = await live.call(
+      'terminal',
+      terminalInput(
+        {
+          ...live,
+          finalPlan: handoff.finalPlan,
+          finalCheckout: {
+            repositoryIdentity: live.repositoryIdentity,
+            executionRoot: live.executionRoot,
+            branch: live.execution.branch,
+            head,
+            snapshot: handoff.snapshot,
+            worktreeRemoved: false,
+          },
+        },
+        {
+          retainedWorktree: {
+            root: live.executionRoot,
+            dirty: false,
+            reason: 'Delivery retained for review.',
+          },
+        },
+      ),
+    );
+    assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
+    if (refusal === 'collision') assert.equal(readFileSync(sourcePlan, 'utf8'), laterUserText);
+    else assert.equal(existsSync(sourcePlan), false);
+    assert.deepEqual(readFileSync(archivePath), foreignArchive);
+    assert.equal(existsSync(path.join(live.executionRoot, 'plan.md')), false);
+    assert.equal(
+      readFileSync(path.join(live.executionRoot, 'source.txt'), 'utf8'),
+      'delivered implementation\n',
+    );
+  });
+
+test('source-only refusal rejects a foreign allowed root and another plan path', async (t) => {
+  const foreign = fixture(t);
+  const live = await preparedForSourceOnlyPlan(t, 'collision', [foreign.root]);
+  await assert.rejects(
+    sourceOnlySeal(live, { finalPlan: live.ref(foreign.root, 'plan.md') }),
+    error('AUTHORITY_MISMATCH'),
+  );
+  writeFileSync(
+    path.join(live.sourceRoot, 'another-plan.md'),
+    readFileSync(path.join(live.sourceRoot, 'plan.md')),
+  );
+  await assert.rejects(
+    sourceOnlySeal(live, { finalPlan: live.ref(live.sourceRoot, 'another-plan.md') }),
+    error('AUTHORITY_MISMATCH'),
+  );
+});
+
+test('source-only refusal rejects source worktree common-identity substitution', async (t) => {
+  const foreign = fixture(t);
+  const live = await preparedForSourceOnlyPlan(t, 'collision', [foreign.root]);
+  const gitFile = path.join(live.sourceRoot, '.git');
+  const original = readFileSync(gitFile);
+  writeFileSync(gitFile, `gitdir: ${foreign.repositoryIdentity}\n`);
+  try {
+    await assert.rejects(sourceOnlySeal(live), error('REPOSITORY_MISMATCH'));
+  } finally {
+    writeFileSync(gitFile, original);
+  }
+});
+
+test('source-only refusal rechecks external plan bytes between seal and committed handoff', async (t) => {
+  const live = await preparedForSourceOnlyPlan(t, 'collision');
+  const originalPlan = live.ref(live.sourceRoot, 'plan.md');
+  const seal = await sourceOnlySeal(live);
+  git(live.executionRoot, 'commit', '-m', 'deliver implementation while retaining source plan');
+  writeFileSync(
+    path.join(live.sourceRoot, 'plan.md'),
+    '# Changed requirements after seal\n\n**Plan status:** Not implemented\n',
+  );
+  await assert.rejects(
+    live.call('handoff', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      seal,
+      head: git(live.executionRoot, 'rev-parse', 'HEAD'),
+      finalPlan: originalPlan,
+    }),
+    error('DIGEST_MISMATCH'),
+  );
+});
+
+test('caller-observed archival refusal rejects foreign, stale, tampered, undisclosed and helper-error evidence', async (t) => {
+  const live = await preparedForRetainedPlan(t);
+  const observed = observedRefusal(live, 'mkdir');
+  const cases = [
+    [
+      'foreign-run',
+      (value) => {
+        value.runId = 'foreign-run';
+      },
+      'FOREIGN_RECORD',
+    ],
+    [
+      'foreign-agent',
+      (value) => {
+        value.agentHandle = 'replacement-child';
+      },
+      'AGENT_MISMATCH',
+    ],
+    [
+      'stale-preparation',
+      (value) => {
+        value.completionBasis.digest = contentDigest('stale receipt');
+      },
+      'FOREIGN_RECORD',
+    ],
+    [
+      'stale-plan',
+      (value) => {
+        value.currentPlan.digest = contentDigest('stale plan bytes');
+      },
+      'FOREIGN_RECORD',
+    ],
+    [
+      'missing-report',
+      (value) => {
+        delete value.visibleReport;
+      },
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'helper-error',
+      (value) => {
+        value.observedError.code = 'CONTENT_DRIFT';
+      },
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'unmeasured-error',
+      (value) => {
+        value.observedError.code = null;
+        value.observedError.exitCode = null;
+      },
+      'INVALID_PAYLOAD',
+    ],
+    [
+      'wrong-operation',
+      (value) => {
+        value.failedOperation = 'tracking-probe';
+      },
+      'INVALID_PAYLOAD',
+    ],
+  ];
+  for (const [name, mutate, expectedCode] of cases) {
+    const value = structuredClone(observed);
+    mutate(value);
+    const evidence = await retainRefusal(live, value, name);
+    await assert.rejects(retainedSeal(live, evidence), error(expectedCode), name);
+  }
+  const tampered = await retainRefusal(live, observed, 'tampered-refusal');
+  writeFileSync(
+    path.join(tampered.root, tampered.path),
+    JSON.stringify({ ...observed, visibleReport: 'Changed after retention.' }),
+  );
+  await assert.rejects(retainedSeal(live, tampered), error('DIGEST_MISMATCH'));
+  await assert.rejects(
+    retainedSeal(live, tampered, { archivalRefusal: true }),
+    error('INVALID_PAYLOAD'),
+  );
+});
 
 test('unproved product changes and original-plan rewrites invalidate gates rather than receiving a blanket completion exception', async (t) => {
   const live = await preparedForTransform(t);

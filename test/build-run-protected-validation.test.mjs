@@ -995,6 +995,7 @@ test(
           },
           0o600,
         );
+        fx.finalBootstrapRef = finalBootstrapRef;
         const finalRequestRef = ok(
           await worker('validation-request', {
             ...requestInput,
@@ -1051,6 +1052,173 @@ test(
           'REMOTE_VALIDATION_PENDING',
         );
         assert.equal(existsSync(path.join(runDir, 'validation-consumed-v005.json')), false);
+      },
+    );
+    await t.test(
+      'protected revalidation accepts proven completion metadata and rejects stale results and tampering',
+      async () => {
+        const input = {
+          ...fx.common,
+          validatorHandle,
+          gate: 'final-validation',
+          bootstrapRef: fx.finalBootstrapRef,
+        };
+        const remotePass = async (validationId, extra = {}) => {
+          const requestRef = ok(
+            await worker('validation-request', { ...input, validationId, ...extra }),
+          );
+          const prepared = await prepareValidation({ requestRef, sourceRoot: fx.root });
+          write(host.mailboxRoot, `submissions/${validationId}.json`, {
+            preparationRef: prepared.preparationRef,
+            repository: fx.policy.repository,
+            snapshotBranch: prepared.preparation.snapshotBranch,
+            snapshotCommit: prepared.preparation.snapshotCommit,
+            submittedAt: '2026-10-22T09:59:00Z',
+          });
+          const result = await observeValidation(
+            { preparationRef: prepared.preparationRef, runId: 42, runAttempt: 1 },
+            { read: backendFixture(fx, prepared.preparation) },
+          );
+          const poll = ok(
+            await worker('validation-result', {
+              ...fx.common,
+              requestRef,
+              validatorHandle,
+              ...extra,
+            }),
+          );
+          assert.equal(poll.state, 'verified');
+          assert.deepEqual(poll.resultRef, result.resultRef);
+          return { requestRef, resultRef: result.resultRef };
+        };
+        // A distinct current snapshot permits a successful request after the failed v005.
+        writeFileSync(path.join(fx.root, 'src/product.mjs'), 'export const product = 3;\n');
+        const before = await remotePass('completion-before');
+        const review = ok(await worker('receipt', { ...fx.receipt, gate: 'independent-review' }));
+        const validation = ok(
+          await worker('receipt', {
+            ...fx.receipt,
+            gate: 'final-validation',
+            validatorHandle,
+            validationRequest: before.requestRef,
+            validationResult: before.resultRef,
+          }),
+        );
+        const completionBasis = ok(
+          await worker('prepare-completion', {
+            ...fx.common,
+            agentHandle: '/root/build',
+            preparationId: 'protected-completion',
+            gates: [review, validation],
+          }),
+        );
+        const oldPlan = readFileSync(path.join(fx.root, 'docs/plan/approved.md'), 'utf8');
+        writeFileSync(
+          path.join(fx.root, 'docs/plan/approved.md'),
+          oldPlan.replace('Not implemented', 'Implemented') +
+            '\n## Build completion\n\nProtected correction verified.\n',
+        );
+        mkdirSync(path.join(fx.root, 'docs/plan/archive'));
+        git(fx.root, 'mv', 'docs/plan/approved.md', 'docs/plan/archive/approved.md');
+        const planPath = path.join(fx.root, 'docs/plan/archive/approved.md');
+        const completion = {
+          completionBasis,
+          currentPlan: ref(fx.root, 'docs/plan/archive/approved.md'),
+        };
+        writeFileSync(path.join(fx.root, 'src/product.mjs'), 'export const product = 3;  \n');
+        const admitted = ok(
+          await worker('validation-await-admission', {
+            ...fx.common,
+            validatorHandle,
+            gate: 'final-validation',
+            ...completion,
+          }),
+        );
+        assert.equal(admitted.state, 'admitted');
+        refused(
+          await worker('validation-result', {
+            ...fx.common,
+            requestRef: before.requestRef,
+            validatorHandle,
+            ...completion,
+          }),
+          'CONTENT_DRIFT',
+        );
+        const after = await remotePass('completion-after', completion);
+        const renewedValidation = ok(
+          await worker('receipt', {
+            ...fx.receipt,
+            gate: 'final-validation',
+            validatorHandle,
+            ...completion,
+            validationRequest: after.requestRef,
+            validationResult: after.resultRef,
+          }),
+        );
+        const renewedReview = ok(
+          await worker('receipt', {
+            ...fx.receipt,
+            gate: 'independent-review',
+            ...completion,
+          }),
+        );
+        const completedPlan = readFileSync(planPath);
+        writeFileSync(planPath, '# Tampered requirements\n\n**Plan status:** Implemented\n');
+        refused(
+          await worker('validation-await-admission', {
+            ...fx.common,
+            validatorHandle,
+            gate: 'final-validation',
+            completionBasis,
+            currentPlan: ref(fx.root, 'docs/plan/archive/approved.md'),
+          }),
+          ['RECHECK_REQUIRED', 'CONTENT_DRIFT'],
+        );
+        writeFileSync(planPath, completedPlan);
+        writeFileSync(path.join(fx.root, 'src/product.mjs'), 'export const product = 999;\n');
+        refused(
+          await worker('validation-result', {
+            ...fx.common,
+            requestRef: after.requestRef,
+            validatorHandle,
+            ...completion,
+          }),
+          'CONTENT_DRIFT',
+        );
+        writeFileSync(path.join(fx.root, 'src/product.mjs'), 'export const product = 3;  \n');
+        git(fx.root, 'add', '-A');
+        const seal = ok(
+          await worker('seal-delivery', {
+            ...fx.common,
+            agentHandle: '/root/build',
+            sealId: 'protected-completion',
+            basis: completionBasis,
+            finalPlan: completion.currentPlan,
+            expectedTree: git(fx.root, 'write-tree'),
+            judgments: [],
+            renewedGates: [renewedReview, renewedValidation],
+          }),
+        );
+        assert.ok(seal.digest);
+        git(fx.root, 'commit', '--quiet', '-m', 'complete protected correction');
+        const head = git(fx.root, 'rev-parse', 'HEAD');
+        const finalPlan = {
+          repositoryIdentity: fx.input.repositoryIdentity,
+          commit: head,
+          blob: git(fx.root, 'rev-parse', `${head}:docs/plan/archive/approved.md`),
+          path: 'docs/plan/archive/approved.md',
+          digest: completion.currentPlan.digest,
+        };
+        const handoff = ok(
+          await worker('handoff', {
+            ...fx.common,
+            agentHandle: '/root/build',
+            seal,
+            head,
+            finalPlan,
+          }),
+        );
+        assert.ok(handoff.digest);
       },
     );
   },

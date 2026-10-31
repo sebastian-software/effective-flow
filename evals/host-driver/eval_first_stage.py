@@ -178,7 +178,7 @@ def registry_names(ref):
         names.append(item.group(2))
         offset = item.end()
     require(names and len(names) == len(set(names)), 'empty or duplicate registry names')
-    return names
+    return sorted(names)
 
 
 def expected_profile(suite):

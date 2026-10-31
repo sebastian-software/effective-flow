@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { lstatSync, readFileSync, readlinkSync, readdirSync } from 'node:fs';
-import { resolve, relative } from 'node:path';
+import { resolve, relative, parse, sep } from 'node:path';
 import { digest } from './transcript.mjs';
 import { requireThat } from './protocol.mjs';
 export function fileMembership(root, exclude = []) {
@@ -59,6 +59,21 @@ export function checkoutBasis(root) {
     untracked: contents(list('ls-files', '--others', '--exclude-standard', '-z')),
   };
 }
+function existingSourceParents(target) {
+  let current = parse(target).root;
+  for (const part of target.slice(current.length).split(sep).filter(Boolean)) {
+    current = resolve(current, part);
+    let stat;
+    try {
+      stat = lstatSync(current);
+    } catch (error) {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    }
+    requireThat(stat.isDirectory() && !stat.isSymbolicLink(), 'unsafe source ancestor');
+  }
+  return true;
+}
 // Tracked and non-ignored source only: do not inspect ignored auth/local environment files.
 export function sourceMembership(root, excluded = []) {
   const names = execFileSync(
@@ -72,9 +87,20 @@ export function sourceMembership(root, excluded = []) {
     entries = {};
   for (const name of [...new Set(names)].sort()) {
     if (excluded.some((prefix) => name === prefix || name.startsWith(prefix + '/'))) continue;
-    const path = resolve(root, name),
-      stat = lstatSync(path);
     requireThat(!name.startsWith('/') && !name.split('/').includes('..'), 'unsafe source name');
+    const path = resolve(root, name);
+    let stat;
+    try {
+      if (!existingSourceParents(resolve(path, '..'))) {
+        entries[name] = ['missing'];
+        continue;
+      }
+      stat = lstatSync(path);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      entries[name] = ['missing'];
+      continue;
+    }
     if (stat.isSymbolicLink()) entries[name] = ['symlink', digest(readlinkSync(path))];
     else {
       requireThat(stat.isFile(), 'unsupported source entry');

@@ -4,6 +4,7 @@ import { createHash, randomBytes } from 'node:crypto';
 import { constants } from 'node:fs';
 import { lstat, mkdir, open, readdir, readlink, realpath, unlink } from 'node:fs/promises';
 import path from 'node:path';
+import { constants as osConstants } from 'node:os';
 import { resolveConfiguration } from './config-resolve-core.mjs';
 import {
   PROTECTED_VALIDATION_PROTOCOL,
@@ -71,6 +72,17 @@ export const QUESTION_ORIGINS = Object.freeze([
   'pr-review-publication',
 ]);
 const COMMON = ['runtimeStateRoot', 'repositoryIdentity', 'runId', 'requestDigest'];
+const COMPLETION_FIELDS = ['completionBasis', 'currentPlan'];
+const COMPLETION_OPERATIONS = [
+  'checkpoint',
+  'question',
+  'reply',
+  'resume',
+  'validation-await-admission',
+  'validation-request',
+  'validation-result',
+  'receipt',
+];
 const LANGUAGES = [
   'source',
   'documentation.user',
@@ -168,12 +180,18 @@ export function encodeControl(value, maximum = MAX_CONTROL_BYTES) {
 function inside(root, target) {
   return target === root || target.startsWith(`${root}${path.sep}`);
 }
-async function safeDirectory(target) {
+async function safeDirectory(target, allowMissing = false) {
   absolute(target);
   let current = path.parse(target).root;
   for (const part of target.slice(current.length).split(path.sep).filter(Boolean)) {
     current = path.join(current, part);
-    const info = await lstat(current);
+    let info;
+    try {
+      info = await lstat(current);
+    } catch (error) {
+      if (allowMissing && error.code === 'ENOENT') return null;
+      throw error;
+    }
     if (!info.isDirectory() || info.isSymbolicLink())
       fail('UNSAFE_PATH', 'directory contains a symlink or non-directory');
   }
@@ -795,6 +813,33 @@ async function policyUnchanged(context) {
 async function planUnchanged(context) {
   await artifact(context.request.plan, context.request.allowedRoots);
 }
+async function completionProof(context, value) {
+  const supplied = COMPLETION_FIELDS.filter((key) => value[key] !== undefined);
+  if (!supplied.length) return null;
+  if (supplied.length !== COMPLETION_FIELDS.length)
+    fail('INVALID_PAYLOAD', 'completion requires both preparation and exact current plan');
+  const prepared = await preparation(context, value.completionBasis);
+  await planCompletion(context, prepared, value.currentPlan, true);
+  return Object.fromEntries(COMPLETION_FIELDS.map((key) => [key, value[key]]));
+}
+async function currentPlan(context, value) {
+  const proof = await completionProof(context, value);
+  if (!proof) await planUnchanged(context);
+  return proof;
+}
+async function recoveredCompletion(context, input) {
+  let bound;
+  if (input.checkpoint) bound = await readRecord(context, input.checkpoint);
+  else if (input.question) {
+    const question = await readRecord(context, input.question);
+    bound = await readRecord(context, question.checkpoint);
+  } else if (input.requestRef) bound = await readRecord(context, input.requestRef);
+  const supplied = await completionProof(context, input);
+  const retained = bound ? await completionProof(context, bound) : null;
+  if (supplied && retained && !same(supplied, retained))
+    fail('FOREIGN_RECORD', 'completion proof differs from retained checkpoint/request');
+  return supplied ?? retained;
+}
 async function active(context) {
   const entries = await readdir(context.run);
   if (entries.includes('terminal.json'))
@@ -829,9 +874,12 @@ async function inspect(context, execution = context.request.execution) {
     for (const name of [...new Set(list.toString('utf8').split('\0').filter(Boolean))].sort()) {
       relative(name);
       const file = path.join(root, name);
-      await safeDirectory(path.dirname(file));
       let info;
       try {
+        if ((await safeDirectory(path.dirname(file), true)) === null) {
+          entries.push([name, 'missing']);
+          continue;
+        }
         info = await lstat(file);
       } catch (error) {
         if (error.code === 'ENOENT') {
@@ -971,7 +1019,7 @@ async function gateReceipt(context, ref) {
   }
   return value;
 }
-async function assertCompleted(context, completed, refs, current) {
+async function assertCompleted(context, completed, refs, current, proof = context.completionProof) {
   const proven = new Set();
   for (const ref of refs) {
     await evidence(ref, context.request, context, context.deps);
@@ -985,7 +1033,10 @@ async function assertCompleted(context, completed, refs, current) {
         [...ACCEPTANCE_GATES, 'delivery', 'completion'].includes(receipt.gate) &&
         !same(receipt.snapshot, current)
       ) {
-        if (!context.handoff || !(await carriedGate(context, ref, context.handoff)))
+        if (
+          !(context.handoff && (await carriedGate(context, ref, context.handoff))) &&
+          !(proof && (await carriedCompletionGate(context, proof, ref, current)))
+        )
           fail('CONTENT_DRIFT', 'completed acceptance gate needs renewed evidence');
       }
       proven.add(receipt.gate);
@@ -1010,20 +1061,24 @@ function partition(completed, pending) {
 }
 async function checkpoint(context, ref, current = true) {
   const value = await readRecord(context, ref);
-  exact(value, [
-    'protocol',
-    'runId',
-    'requestDigest',
-    'checkpointId',
-    'agentHandle',
-    'snapshot',
-    'completed',
-    'pending',
-    'evidence',
-    'authority',
-    'handoff',
-    'execution',
-  ]);
+  exact(
+    value,
+    [
+      'protocol',
+      'runId',
+      'requestDigest',
+      'checkpointId',
+      'agentHandle',
+      'snapshot',
+      'completed',
+      'pending',
+      'evidence',
+      'authority',
+      'handoff',
+      'execution',
+    ],
+    COMPLETION_FIELDS,
+  );
   identifier(value.checkpointId);
   if (!same(value.execution, context.request.execution))
     fail('FOREIGN_RECORD', 'checkpoint execution identity changed');
@@ -1042,7 +1097,7 @@ async function checkpoint(context, ref, current = true) {
     if (context.handoff || value.handoff !== null)
       fail('INVALID_STATE', 'product authority ended at handoff');
     if (current) {
-      await planUnchanged(context);
+      await currentPlan(context, value);
       await policyUnchanged(context);
       if (!same(value.snapshot, await snapshot(context)))
         fail(
@@ -1051,7 +1106,7 @@ async function checkpoint(context, ref, current = true) {
         );
     }
   }
-  await assertCompleted(context, value.completed, value.evidence, value.snapshot);
+  await assertCompleted(context, value.completed, value.evidence, value.snapshot, value);
   return value;
 }
 async function noLifecycleLock(context) {
@@ -1777,6 +1832,20 @@ async function prepareCompletion(context, input) {
   }
   if (seen.size !== ACCEPTANCE_GATES.length)
     fail('INCOMPLETE_GATES', 'both existing review and final-validation gates are required');
+  const index = (
+    await git(
+      context.deps,
+      context.request.execution.executionRoot,
+      ['ls-files', '--stage', '-z'],
+      [0],
+      true,
+    )
+  ).toString('utf8');
+  if (
+    contentDigest(index) !== current.snapshot.index ||
+    !same(current.snapshot, await snapshot(context))
+  )
+    fail('CONTENT_DRIFT', 'completion preparation basis changed');
   const manifest = await data(context, `manifest-${input.preparationId}.txt`, current.manifest);
   const planBytes = await artifact(context.request.plan, context.request.allowedRoots);
   const beforePath = path.join(context.run, `plan-before-${input.preparationId}.md`);
@@ -1790,21 +1859,26 @@ async function prepareCompletion(context, input) {
     manifest,
     plan: reference(context, beforePath, planBytes),
     gates: input.gates,
+    index: await data(context, `index-${input.preparationId}.txt`, index),
   });
 }
 async function preparation(context, ref) {
   const value = await readRecord(context, ref);
-  exact(value, [
-    'protocol',
-    'runId',
-    'requestDigest',
-    'preparationId',
-    'agentHandle',
-    'snapshot',
-    'manifest',
-    'plan',
-    'gates',
-  ]);
+  exact(
+    value,
+    [
+      'protocol',
+      'runId',
+      'requestDigest',
+      'preparationId',
+      'agentHandle',
+      'snapshot',
+      'manifest',
+      'plan',
+      'gates',
+    ],
+    ['index'],
+  );
   await agent(context, value.agentHandle);
   snapshotShape(value.snapshot);
   const gates = new Map();
@@ -1820,7 +1894,42 @@ async function preparation(context, ref) {
     gates.set(receipt.gate, item);
   }
   if (gates.size !== 2) fail('INCOMPLETE_GATES', 'prepared acceptance evidence incomplete');
+  if (value.index && contentDigest(await dataRead(context, value.index)) !== value.snapshot.index)
+    fail('CONTENT_DRIFT', 'prepared index evidence changed');
   return value;
+}
+async function carriedCompletionGate(context, proof, ref, current) {
+  if (!(await completionProof(context, proof))) return false;
+  const prepared = await preparation(context, proof.completionBasis);
+  if (!prepared.gates.some((item) => same(item, ref)) || current.head !== prepared.snapshot.head)
+    return false;
+  const observed = await inspect(context);
+  if (!same(observed.snapshot, current)) return false;
+  const allowed = new Set([context.request.plan.path, proof.currentPlan.path]);
+  const product = (manifest) => manifest.filter((entry) => !allowed.has(entry[0]));
+  if (!same(product(await dataRead(context, prepared.manifest)), product(observed.manifest)))
+    return false;
+  if (current.index === prepared.snapshot.index) return true;
+  if (!prepared.index) return false;
+  const withoutPlan = (index) =>
+    index
+      .split('\0')
+      .filter((entry) => entry && !allowed.has(entry.slice(entry.indexOf('\t') + 1)))
+      .sort();
+  return same(
+    withoutPlan(await dataRead(context, prepared.index)),
+    withoutPlan(
+      (
+        await git(
+          context.deps,
+          context.request.execution.executionRoot,
+          ['ls-files', '--stage', '-z'],
+          [0],
+          true,
+        )
+      ).toString('utf8'),
+    ),
+  );
 }
 function normalizedPlan(bytes) {
   const text = bytes.toString('utf8');
@@ -1829,7 +1938,223 @@ function normalizedPlan(bytes) {
     (_, key) => `**${key}:** <status>`,
   );
 }
-async function planCompletion(context, prepared, finalPlan, allowOpen = false) {
+async function retainedArchivalRefusal(
+  context,
+  ref,
+  reason,
+  basis,
+  prepared,
+  finalPlan,
+  archivedPath,
+) {
+  const value = await readRecord(context, ref);
+  exact(value, [
+    'protocol',
+    'runId',
+    'requestDigest',
+    'provenance',
+    'agentHandle',
+    'completionBasis',
+    'execution',
+    'sourcePlan',
+    'currentPlan',
+    'paths',
+    'failedOperation',
+    'observedError',
+    'visibleReport',
+  ]);
+  const root =
+    context.request.policy.visibility === 'hidden'
+      ? context.root
+      : context.request.execution.executionRoot;
+  exact(value.paths, ['root', 'original', 'archive']);
+  await agent(context, value.agentHandle);
+  if (
+    value.provenance !== 'caller-observed' ||
+    value.agentHandle !== prepared.agentHandle ||
+    !same(value.completionBasis, basis) ||
+    !same(value.execution, context.request.execution) ||
+    !same(value.sourcePlan, context.request.plan) ||
+    !same(value.currentPlan, finalPlan) ||
+    !same(value.paths, { root, original: context.request.plan.path, archive: archivedPath })
+  )
+    fail('FOREIGN_RECORD', 'caller-observed archival refusal is not bound to this completion');
+  one(
+    value.failedOperation,
+    reason === 'probe-failure'
+      ? ['tracking-probe']
+      : reason === 'write-failure'
+        ? ['mkdir', 'rename', 'write', 'stage']
+        : [],
+  );
+  exact(value.observedError, ['code', 'exitCode', 'message']);
+  const { code, exitCode, message } = value.observedError;
+  if (
+    (code !== null && (typeof code !== 'string' || !Object.hasOwn(osConstants.errno, code))) ||
+    (exitCode !== null && (!Number.isInteger(exitCode) || exitCode === 0)) ||
+    (code === null && exitCode === null)
+  )
+    fail('INVALID_PAYLOAD', 'archival refusal requires a concrete native error or failed process');
+  text(message, 'observed archival error');
+  text(value.visibleReport, 'visible archival refusal report');
+  return value;
+}
+async function archivalRefusal(context, requested, archivedPath, basis, prepared, finalPlan) {
+  exact(requested, ['reason'], ['evidence']);
+  one(requested.reason, ['collision', 'probe-failure', 'write-failure']);
+  const root =
+    context.request.policy.visibility === 'hidden'
+      ? context.root
+      : context.request.execution.executionRoot;
+  const source = context.request.plan.path;
+  if (source === archivedPath)
+    fail('INVALID_PAYLOAD', 'an archived basis cannot claim archival refusal');
+  if (requested.evidence !== undefined) {
+    await retainedArchivalRefusal(
+      context,
+      requested.evidence,
+      requested.reason,
+      basis,
+      prepared,
+      finalPlan,
+      archivedPath,
+    );
+    // This is the caller's explicitly attributed observation, not a measured historical error.
+    return {
+      reason: requested.reason,
+      evidence: { kind: 'caller-observed', record: requested.evidence },
+    };
+  }
+  const probe = await context.deps.runner({
+    executable: 'git',
+    cwd: root,
+    stdoutBuffer: true,
+    args: ['-C', root, 'ls-files', '-z', '--', `:(literal)${source}`, `:(literal)${archivedPath}`],
+  });
+  if (probe.error || probe.status !== 0) {
+    if (requested.reason !== 'probe-failure')
+      fail('RECHECK_REQUIRED', 'failed tracking probe establishes no collision/write decision');
+    return {
+      reason: requested.reason,
+      evidence: {
+        kind: 'tracking-probe',
+        status: Number.isInteger(probe.status) ? probe.status : null,
+        errorCode: typeof probe.error?.code === 'string' ? probe.error.code : null,
+        stderrDigest: contentDigest(String(probe.stderr ?? '')),
+      },
+    };
+  }
+  const tracked = Buffer.from(probe.stdout).toString('utf8').split('\0').filter(Boolean);
+  if (tracked.some((name) => ![source, archivedPath].includes(name)))
+    fail('RECHECK_REQUIRED', 'tracking probe returned an unexpected path');
+  let current = path.parse(root).root;
+  const target = path.join(root, archivedPath);
+  let obstacle = null;
+  for (const part of target.slice(current.length).split(path.sep).filter(Boolean)) {
+    current = path.join(current, part);
+    let info;
+    try {
+      info = await lstat(current);
+    } catch (error) {
+      if (error.code === 'ENOENT') break;
+      throw error;
+    }
+    if (current !== target && info.isSymbolicLink())
+      fail('UNSAFE_PATH', 'archive ancestor is a symlink');
+    if (current === target || !info.isDirectory()) {
+      obstacle = {
+        path: path.relative(root, current),
+        type: info.isSymbolicLink()
+          ? 'symlink'
+          : info.isDirectory()
+            ? 'directory'
+            : info.isFile()
+              ? 'file'
+              : 'special',
+      };
+      break;
+    }
+  }
+  if (
+    requested.reason === 'collision' &&
+    ((tracked.includes(source) && tracked.includes(archivedPath)) ||
+      (!tracked.includes(archivedPath) && obstacle?.path === archivedPath))
+  )
+    return { reason: requested.reason, evidence: { kind: 'collision', tracked, obstacle } };
+  if (
+    requested.reason === 'write-failure' &&
+    obstacle &&
+    obstacle.path !== archivedPath &&
+    obstacle.type === 'file'
+  )
+    return {
+      reason: requested.reason,
+      evidence: { kind: 'non-directory-parent', tracked, obstacle },
+    };
+  fail('MISSING_EVIDENCE', 'requested archival refusal has no verified matching cause');
+}
+function refusalShape(value) {
+  exact(value, ['reason', 'evidence']);
+  one(value.reason, ['collision', 'probe-failure', 'write-failure']);
+  const proof = value.evidence;
+  if (proof.kind === 'caller-observed') {
+    exact(proof, ['kind', 'record']);
+    artifactShape(proof.record);
+    one(value.reason, ['probe-failure', 'write-failure']);
+  } else if (value.reason === 'probe-failure') {
+    exact(proof, ['kind', 'status', 'errorCode', 'stderrDigest']);
+    if (
+      proof.kind !== 'tracking-probe' ||
+      !(proof.status === null || Number.isInteger(proof.status)) ||
+      !(proof.errorCode === null || typeof proof.errorCode === 'string') ||
+      (proof.status === 0 && proof.errorCode === null)
+    )
+      fail('INVALID_STATE', 'invalid failed archival probe');
+    digest(proof.stderrDigest);
+  } else {
+    exact(proof, ['kind', 'tracked', 'obstacle']);
+    strings(proof.tracked);
+    one(proof.kind, [value.reason === 'collision' ? 'collision' : 'non-directory-parent']);
+    if (proof.obstacle !== null) {
+      exact(proof.obstacle, ['path', 'type']);
+      relative(proof.obstacle.path);
+      one(proof.obstacle.type, ['symlink', 'directory', 'file', 'special']);
+    }
+  }
+}
+function unpublishedSourceRefusal(context, finalPlan, refusal) {
+  const source = context.request.plan;
+  return (
+    context.request.policy.visibility === 'standard' &&
+    refusal !== undefined &&
+    finalPlan.root !== context.request.execution.executionRoot &&
+    finalPlan.root === source.root &&
+    finalPlan.path === source.path
+  );
+}
+async function unpublishedSourceGuard(context, finalPlan) {
+  const root = await safeDirectory(finalPlan.root);
+  if (
+    (await realpath(await git(context.deps, root, ['rev-parse', '--show-toplevel']))) !== root ||
+    (await realpath(
+      await git(context.deps, root, ['rev-parse', '--path-format=absolute', '--git-common-dir']),
+    )) !== context.identity
+  )
+    fail('REPOSITORY_MISMATCH', 'unpublished plan source checkout identity changed');
+  if (
+    (
+      await git(
+        context.deps,
+        root,
+        ['ls-files', '-z', '--', `:(literal)${finalPlan.path}`],
+        [0],
+        true,
+      )
+    ).length !== 0
+  )
+    fail('AUTHORITY_MISMATCH', 'source-only refusal requires an unpublished original plan');
+}
+async function planCompletion(context, prepared, finalPlan, allowOpen = false, refusal, basis) {
   artifactShape(finalPlan);
   const source = context.request.plan;
   const archivedPath = source.path.split('/').includes('archive')
@@ -1841,7 +2166,13 @@ async function planCompletion(context, prepared, finalPlan, allowOpen = false) {
       : context.request.execution.executionRoot;
   if (
     !(finalPlan.root === owningRoot && finalPlan.path === archivedPath) &&
-    !(allowOpen && finalPlan.root === source.root && finalPlan.path === source.path)
+    !(
+      (allowOpen || refusal !== undefined) &&
+      finalPlan.path === source.path &&
+      (finalPlan.root === owningRoot ||
+        (allowOpen && finalPlan.root === source.root) ||
+        unpublishedSourceRefusal(context, finalPlan, refusal))
+    )
   )
     fail('AUTHORITY_MISMATCH', 'completion plan is not the owning plan/archive path');
   const before = await artifact(prepared.plan, [context.root]);
@@ -1868,11 +2199,27 @@ async function planCompletion(context, prepared, finalPlan, allowOpen = false) {
     );
   if (
     !allowOpen &&
+    refusal === undefined &&
     !/^(?:\*\*Plan status:\*\* Implemented|\*\*Planungsstatus:\*\* Umgesetzt)$/m.test(
       after.toString('utf8'),
     )
   )
     fail('RECHECK_REQUIRED', 'archived plan is not canonically implemented');
+  if (refusal !== undefined) {
+    if (
+      (finalPlan.root !== owningRoot || finalPlan.path !== source.path) &&
+      !unpublishedSourceRefusal(context, finalPlan, refusal)
+    )
+      fail('AUTHORITY_MISMATCH', 'refused archival must retain the owning original plan');
+    if (unpublishedSourceRefusal(context, finalPlan, refusal))
+      await unpublishedSourceGuard(context, finalPlan);
+    return {
+      beforeDigest: contentDigest(before),
+      afterDigest: finalPlan.digest,
+      archivedPath,
+      refusal: await archivalRefusal(context, refusal, archivedPath, basis, prepared, finalPlan),
+    };
+  }
   return { beforeDigest: contentDigest(before), afterDigest: finalPlan.digest, archivedPath };
 }
 async function formattingChecks(context, refs, changes) {
@@ -1988,9 +2335,21 @@ async function sealDelivery(context, input) {
   const oldManifest = await dataRead(context, prepared.manifest);
   if (current.snapshot.head !== prepared.snapshot.head)
     fail('CONTENT_DRIFT', 'unexpected commit before completion seal');
-  await planCompletion(context, prepared, input.finalPlan);
+  const completion = await planCompletion(
+    context,
+    prepared,
+    input.finalPlan,
+    false,
+    input.archivalRefusal,
+    input.basis,
+  );
   const before = new Map(oldManifest.map((entry) => [entry[0], entry]));
   const after = new Map(current.manifest.map((entry) => [entry[0], entry]));
+  if (
+    unpublishedSourceRefusal(context, input.finalPlan, completion.refusal) &&
+    (before.has(context.request.plan.path) || after.has(context.request.plan.path))
+  )
+    fail('AUTHORITY_MISMATCH', 'source-only refusal cannot adopt or publish an execution plan');
   if (context.request.plan.path !== input.finalPlan.path && after.has(context.request.plan.path))
     fail('RECHECK_REQUIRED', 'old execution plan remains after archival');
   const allowedPlan = new Set([context.request.plan.path, input.finalPlan.path]);
@@ -2028,30 +2387,78 @@ async function sealDelivery(context, input) {
     finalPlan: input.finalPlan,
     expectedTree: input.expectedTree,
     judgments: input.judgments,
+    ...(completion.refusal ? { archivalRefusal: completion } : {}),
     acceptedGates,
   });
 }
 async function sealed(context, ref) {
   const value = await readRecord(context, ref);
-  exact(value, [
-    'protocol',
-    'runId',
-    'requestDigest',
-    'sealId',
-    'agentHandle',
-    'basis',
-    'snapshot',
-    'manifest',
-    'finalPlan',
-    'expectedTree',
-    'judgments',
-    'acceptedGates',
-  ]);
+  exact(
+    value,
+    [
+      'protocol',
+      'runId',
+      'requestDigest',
+      'sealId',
+      'agentHandle',
+      'basis',
+      'snapshot',
+      'manifest',
+      'finalPlan',
+      'expectedTree',
+      'judgments',
+      'acceptedGates',
+    ],
+    ['archivalRefusal'],
+  );
   await agent(context, value.agentHandle);
   snapshotShape(value.snapshot);
   const prepared = await preparation(context, value.basis);
+  if (value.archivalRefusal) {
+    const proof = value.archivalRefusal;
+    exact(proof, ['beforeDigest', 'afterDigest', 'archivedPath', 'refusal']);
+    refusalShape(proof.refusal);
+    const source = context.request.plan;
+    const expectedArchive = path.posix.join(
+      path.posix.dirname(source.path),
+      'archive',
+      path.posix.basename(source.path),
+    );
+    const root =
+      context.request.policy.visibility === 'hidden'
+        ? context.root
+        : context.request.execution.executionRoot;
+    if (
+      source.path.split('/').includes('archive') ||
+      proof.archivedPath !== expectedArchive ||
+      proof.beforeDigest !== prepared.plan.digest ||
+      proof.afterDigest !== value.finalPlan.digest ||
+      (value.finalPlan.root !== root &&
+        !unpublishedSourceRefusal(context, value.finalPlan, proof.refusal)) ||
+      value.finalPlan.path !== source.path
+    )
+      fail('FOREIGN_RECORD', 'refused archival provenance changed');
+    if (proof.refusal.evidence.kind === 'caller-observed')
+      await retainedArchivalRefusal(
+        context,
+        proof.refusal.evidence.record,
+        proof.refusal.reason,
+        value.basis,
+        prepared,
+        value.finalPlan,
+        proof.archivedPath,
+      );
+  }
   await artifact(prepared.manifest, [context.root]);
   await artifact(value.manifest, [context.root]);
+  if (
+    unpublishedSourceRefusal(context, value.finalPlan, value.archivalRefusal?.refusal) &&
+    [
+      ...(await dataRead(context, prepared.manifest)),
+      ...(await dataRead(context, value.manifest)),
+    ].some((entry) => entry[0] === context.request.plan.path)
+  )
+    fail('FOREIGN_RECORD', 'source-only refusal includes an execution plan');
   for (const item of value.judgments)
     await evidence(item, context.request, context, context.deps, true);
   await acceptanceAt(
@@ -2081,6 +2488,12 @@ async function makeHandoff(context, input) {
   if (!mode) fail('INVALID_STATE', 'handoff needs verified delivery mode');
   const head = current.snapshot.head;
   let finalPlan = input.finalPlan;
+  const sourceOnly = unpublishedSourceRefusal(
+    context,
+    seal.finalPlan,
+    seal.archivalRefusal?.refusal,
+  );
+  if (sourceOnly) await unpublishedSourceGuard(context, seal.finalPlan);
   if (mode === 'in-place-no-delivery') {
     if (
       !same(current.snapshot, seal.snapshot) ||
@@ -2112,6 +2525,7 @@ async function makeHandoff(context, input) {
       fail('CONTENT_DRIFT', 'committed handoff has unaccounted dirty output');
     if (
       context.request.policy.visibility === 'standard' &&
+      !sourceOnly &&
       (!Object.hasOwn(finalPlan, 'commit') ||
         finalPlan.commit !== head ||
         finalPlan.path !== seal.finalPlan.path ||
@@ -2119,7 +2533,11 @@ async function makeHandoff(context, input) {
     )
       fail('MISSING_EVIDENCE', 'standard delivery requires exact committed archive identity');
   }
-  if (context.request.policy.visibility === 'hidden' || mode === 'in-place-no-delivery') {
+  if (
+    sourceOnly ||
+    context.request.policy.visibility === 'hidden' ||
+    mode === 'in-place-no-delivery'
+  ) {
     if (!same(finalPlan, seal.finalPlan))
       fail('FOREIGN_RECORD', 'private/uncommitted archive changed');
     const bytes = await artifact(finalPlan, context.request.allowedRoots);
@@ -2186,6 +2604,12 @@ async function verifyHandoff(context, value, ignoreLive = false) {
   )
     fail('FOREIGN_RECORD', 'handoff identity changed');
   const seal = await sealed(context, value.seal);
+  if (
+    !same(value.planOrigin, seal.finalPlan) ||
+    value.finalPlan.digest !== seal.finalPlan.digest ||
+    (Object.hasOwn(value.finalPlan, 'commit') && value.finalPlan.path !== seal.finalPlan.path)
+  )
+    fail('FOREIGN_RECORD', 'handoff plan differs from sealed archival outcome');
   const manifest = await dataRead(context, seal.manifest);
   await evidence(value.finalPlan, context.request, context, context.deps, true);
   if (
@@ -2202,7 +2626,19 @@ async function verifyHandoff(context, value, ignoreLive = false) {
   if (Object.hasOwn(value.finalPlan, 'commit')) {
     if (value.finalPlan.commit !== value.head) fail('CONTENT_DRIFT', 'committed plan head changed');
   } else {
-    await artifact(value.planOrigin, context.request.allowedRoots);
+    const sourceOnly = unpublishedSourceRefusal(
+      context,
+      seal.finalPlan,
+      seal.archivalRefusal?.refusal,
+    );
+    if (sourceOnly) {
+      if (
+        value.finalPlan.root !== context.root ||
+        path.join(value.finalPlan.root, value.finalPlan.path) !==
+          path.join(context.run, 'final-plan.md')
+      )
+        fail('FOREIGN_RECORD', 'unpublished source plan was not retained in this run');
+    } else await artifact(value.planOrigin, context.request.allowedRoots);
     if (value.finalPlan.digest !== value.planOrigin.digest)
       fail('CONTENT_DRIFT', 'retained private plan changed');
   }
@@ -2375,6 +2811,13 @@ async function validateTerminalValue(context, value) {
     if (!context.handoff || !same(value.handoff, await handoffReference(context)))
       fail('MISSING_EVIDENCE', 'success requires a sealed product handoff');
     const handoff = await verifyHandoff(context, context.handoff);
+    const seal = await sealed(context, handoff.seal);
+    const refusal = seal.archivalRefusal?.refusal;
+    if (refusal?.evidence.kind === 'caller-observed') {
+      const observation = await readRecord(context, refusal.evidence.record);
+      if (!value.conclusion.includes(observation.visibleReport))
+        fail('MISSING_EVIDENCE', 'completion must disclose the caller-observed archival refusal');
+    }
     if (
       !same(value.finalPlan, handoff.finalPlan) ||
       !same(checkout.snapshot, handoff.snapshot) ||
@@ -2553,6 +2996,7 @@ async function validationRequest(context, input) {
   );
   return record(context, `validation-request-${input.validationId}.json`, {
     ...base(context),
+    ...(context.completionProof ?? {}),
     validationProtocol: PROTECTED_VALIDATION_PROTOCOL,
     validationId: input.validationId,
     execution: context.request.execution,
@@ -2571,25 +3015,29 @@ async function validationRequest(context, input) {
 }
 async function remoteRequest(context, ref, handle) {
   const request = await readRecord(context, ref);
-  exact(request, [
-    'protocol',
-    'runId',
-    'requestDigest',
-    'validationProtocol',
-    'validationId',
-    'execution',
-    'validatorHandle',
-    'gate',
-    'bootstrapRef',
-    'snapshot',
-    'exportManifestRef',
-    'policyDigest',
-    'commands',
-    'nativeCases',
-    'environment',
-    'nonce',
-    'requestedAt',
-  ]);
+  exact(
+    request,
+    [
+      'protocol',
+      'runId',
+      'requestDigest',
+      'validationProtocol',
+      'validationId',
+      'execution',
+      'validatorHandle',
+      'gate',
+      'bootstrapRef',
+      'snapshot',
+      'exportManifestRef',
+      'policyDigest',
+      'commands',
+      'nativeCases',
+      'environment',
+      'nonce',
+      'requestedAt',
+    ],
+    COMPLETION_FIELDS,
+  );
   if (
     request.validationProtocol !== PROTECTED_VALIDATION_PROTOCOL ||
     path.basename(ref.path) !== `validation-request-${identifier(request.validationId)}.json`
@@ -2906,14 +3354,15 @@ async function operate(operation, input, context) {
         context.request.execution,
       );
     }
-    if (operation === 'receipt' && input.completionBasis !== undefined) {
-      if (!ACCEPTANCE_GATES.includes(input.gate) || input.currentPlan === undefined)
-        fail(
-          'INVALID_PAYLOAD',
-          'completion recheck needs an acceptance gate and exact current plan',
-        );
-      const prepared = await preparation(context, input.completionBasis);
-      await planCompletion(context, prepared, input.currentPlan, true);
+    if (COMPLETION_OPERATIONS.includes(operation)) {
+      context.completionProof = await recoveredCompletion(context, input);
+      if (
+        operation === 'receipt' &&
+        context.completionProof &&
+        !ACCEPTANCE_GATES.includes(input.gate)
+      )
+        fail('INVALID_PAYLOAD', 'completion recheck requires an acceptance gate');
+      if (!context.completionProof) await planUnchanged(context);
     } else if (!['seal-delivery', 'handoff', 'retain-evidence'].includes(operation))
       await planUnchanged(context);
   }
@@ -2947,6 +3396,7 @@ async function operate(operation, input, context) {
     return record(context, `checkpoint-${input.checkpointId}.json`, {
       ...base(context),
       ...Object.fromEntries(SCHEMAS.checkpoint.map((key) => [key, input[key]])),
+      ...(context.completionProof ?? {}),
       snapshot: current,
       authority: context.handoff ? 'runtime-only' : 'product',
       execution: context.request.execution,
@@ -3135,19 +3585,20 @@ export async function executeOperation(operation, input, deps = {}) {
     operation === 'receipt'
       ? [
           'agentHandle',
-          'completionBasis',
-          'currentPlan',
+          ...COMPLETION_FIELDS,
           'validationRequest',
           'validationResult',
           'validatorHandle',
         ]
       : operation === 'seal-delivery'
-        ? ['renewedGates']
+        ? ['renewedGates', 'archivalRefusal']
         : operation === 'authorize-execution'
           ? ['returnBranch', 'planContinuation']
           : operation === 'retain-evidence'
             ? ['content', 'source']
-            : [],
+            : COMPLETION_OPERATIONS.includes(operation)
+              ? COMPLETION_FIELDS
+              : [],
   );
   const mutation = ![
     'validate',
