@@ -66,6 +66,7 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'errorDetail',
     'git',
     'gitBaseEnv',
+    'gitCommitEnv',
     'gitText',
     'guardHarnessSettings',
     'guardLegacyMemory',
@@ -80,6 +81,7 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'requireToplevel',
     'resolveDirectory',
     'resolveRuntimeRoot',
+    'runGit',
     'selectLegacySource',
     'walkLegacySource',
   ]);

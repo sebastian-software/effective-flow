@@ -1,0 +1,222 @@
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { COMMIT_TIMEOUT_MS } from '../src/scripts/effective-flow-state-commit-core.mjs';
+
+const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
+const SOURCE_DIR = join(ROOT_DIR, 'src');
+const readSource = (...segments) => readFileSync(join(SOURCE_DIR, ...segments), 'utf8');
+const flat = (text) => text.replace(/\s+/g, ' ');
+
+const iterate = readSource('tools', 'iterate.md');
+const fallback = readSource('shared', 'iterate-commit-fallback.md');
+const commitLock = readSource('shared', 'commit-lock-contract.md');
+const review = readSource('tools', 'review.md');
+const commitCore = readFileSync(
+  join(SOURCE_DIR, 'scripts', 'effective-flow-state-commit-core.mjs'),
+  'utf8',
+);
+
+const section = (text, start, end) => {
+  const from = text.indexOf(start);
+  assert.notEqual(from, -1, `missing section start ${start}`);
+  const to = text.indexOf(end, from);
+  assert.notEqual(to, -1, `missing section end ${end}`);
+  return text.slice(from, to);
+};
+const commitSection = section(iterate, '#### Commit integrity for parallel items', '### Phase 4:');
+const outcomeMap = section(commitSection, '3. **Handle the result**', '```include');
+
+// Invariant: realistic runs committed without `iterate-commit.lock` when the commit was a prose
+// sequence, so `iterate` commits an item only through `commit create`; the prose `git add`/`git
+// commit` sequence and its `lock acquire` live only in the lazy `HOOKS_UNTRUSTED` fallback.
+test('iterate has no item commit path outside commit create except the HOOKS_UNTRUSTED fallback', () => {
+  const gitWrites = iterate
+    .split('\n')
+    .filter((line) => /`git (?:add|commit)\b/.test(line) && !/commit --amend/.test(line));
+  assert.deepEqual(gitWrites, [
+    '**No `git add` or `git commit` for an item runs outside `commit create`, inline items included;',
+  ]);
+  assert.match(
+    flat(commitSection),
+    /\*\*No `git add` or `git commit` for an item runs outside `commit create`, inline items included; the only exception is the `HOOKS_UNTRUSTED` fallback\.\*\*/,
+  );
+  assert.doesNotMatch(iterate, /effective-flow-state\.mjs lock acquire/);
+  assert.match(
+    fallback,
+    /effective-flow-state\.mjs lock acquire <<< '\{[^\n]*"lock":"iterate-commit"/,
+  );
+  assert.match(
+    commitSection,
+    /```lazy-include\niterate-commit-fallback\nwhen: `commit create` returned `HOOKS_UNTRUSTED` for an item\n```/,
+  );
+  assert.match(
+    commitSection,
+    /node <skill-root>\/scripts\/effective-flow-state\.mjs commit create <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","worktree":"<EXECUTION_ROOT>","lock":"iterate-commit",[^\n]*"expect":[^\n]*"hookBase":[^\n]*"sameRepository":[^\n]*"message":/,
+  );
+});
+
+// Invariant: every outcome `commit create` can return is mapped, so no outcome leaves an item
+// half-committed or a lock held without an instruction; the map is closed against the core.
+test('iterate maps every commit create outcome', () => {
+  const coreCodes = new Set(
+    [...commitCore.matchAll(/(?:StateOutcome|unstaged)\('([A-Z_]+)'/g)].map((match) => match[1]),
+  );
+  const codes = [...coreCodes, 'LOCK_HELD', 'INVALID_INPUT'];
+  for (const code of codes) {
+    assert.ok(outcomeMap.includes(`\`${code}\``), `the outcome map names ${code}`);
+  }
+  const text = flat(outcomeMap);
+  assert.match(
+    text,
+    /`HOOKS_UNTRUSTED`: report `outcome\.reason`; a delegation returns it, and the orchestrator commits this item through the prose sequence of the fallback loaded below/,
+  );
+  assert.match(
+    text,
+    /`COMMIT_UNVERIFIED`: mark the item failed with `outcome\.commit`, perform no amend, reset or rebase, and stop delivery for reconciliation/,
+  );
+  assert.match(text, /`SANDBOX_DENIED`: `ABORT` with the diagnostics and no retry/);
+  // An interrupted call whose commit landed is unverified, so it is never a plain abort.
+  assert.match(
+    text,
+    /`INTERRUPTED`: with `outcome\.commit` set, the commit landed unverified: handle it as `COMMIT_UNVERIFIED`\. Without it, report it and `ABORT` the item/,
+  );
+  // `heldLock` appears only when the internal release failed, so the one retry is conditional
+  // and its lost-ownership results end the handling. An `error` envelope can carry it too, so the
+  // retry precedes every `ABORT` of the map.
+  assert.match(
+    text,
+    /Any envelope carrying `heldLock` at `result`, `outcome` or `error` \(the internal release did not succeed, so the lock may still be held\), before any `ABORT` below: retry `lock release` once/,
+  );
+  assert.match(
+    text,
+    /a retry result `NOT_HELD` or `NOT_OWNER` is reported and needs no further action/,
+  );
+  assert.match(text, /`leftoverTombstone`/);
+});
+
+// Invariant: the fallback is loaded once, by its pointer at the decision point right after the
+// outcome map; a second hand-written load sentence would read it twice.
+test('iterate loads the HOOKS_UNTRUSTED fallback only through its lazy-include pointer', () => {
+  assert.doesNotMatch(iterate, /iterate-commit-fallback\.md/);
+  assert.match(outcomeMap, /```lazy-include\niterate-commit-fallback\nwhen: [^\n]*\n```\n\n$/);
+});
+
+// Invariant: the item commit runs in a delegation that never sees this file, so its handoff carries
+// the call line, the outcome map and the ban verbatim; the call outlives a slow hook only with an
+// explicit Bash timeout above the helper's commit bound; Codex escalates before the call.
+test('iterate item handoff carries the commit create call, outcome map and ban', () => {
+  const handoff = flat(
+    section(
+      iterate,
+      'Each delegation also receives, for the item commit below',
+      'Each delegation receives its analyzed owned paths',
+    ),
+  );
+  assert.match(
+    handoff,
+    /the concrete `worktree`, `hookBase` and `sameRepository` values the orchestrator resolved per step 2 of "Commit integrity for parallel items"/,
+  );
+  assert.match(
+    handoff,
+    /verbatim the helper call shape, steps 1–3 of that section \(the inspection with its `expect` derivation, the call with its Bash timeout, Codex escalation and `item` rule, and the outcome map\), and the bolded ban on other commit paths/,
+  );
+  const text = flat(commitSection);
+  // The handed-over steps hold every value the call needs, so a delegation derives nothing alone.
+  assert.match(text, /the OIDs are the call's `expect`/);
+  assert.match(
+    text,
+    /hash a symlink's link text \(`readlink -n <path>` into `git hash-object --stdin`\), never its target, and take a gitlink's checked-out commit/,
+  );
+  assert.match(text, /`item` is the caller-supplied identifier when it matches/);
+  assert.match(
+    text,
+    /`hookBase` is the full SHA of `git merge-base HEAD origin\/<base>` in PR mode, after an explicit `git fetch origin <base>`/,
+  );
+  assert.match(
+    text,
+    /The orchestrator resolves `worktree`, `hookBase` and `sameRepository` and hands them to each item delegation as concrete values/,
+  );
+  const bound = /above the helper's (\d+) ms commit bound, for example (\d+) ms/.exec(text);
+  assert.ok(bound, 'an explicit Bash timeout above the commit bound');
+  assert.equal(Number(bound[1]), COMMIT_TIMEOUT_MS);
+  assert.ok(Number(bound[2]) > COMMIT_TIMEOUT_MS);
+  assert.match(text, /In Codex, request sandbox escalation for this call up front/);
+});
+
+// Invariant: the commit-lock contract stays shared with `apply-review`; for `iterate` its acquire
+// and critical-section wording means the unchanged `commit create` call, and the in-section
+// ownership check binds only the prose sequences.
+test('the commit-lock contract carries the commit create sentence and scopes the prose steps', () => {
+  const text = flat(commitLock);
+  assert.ok(
+    text.includes(
+      'For `iterate`, "re-invoke `lock acquire`" and "the commit critical section" mean the unchanged `commit create` call, whose `LOCK_HELD` carries the same owner and identity details as `lock acquire`.',
+    ),
+  );
+  assert.match(
+    text,
+    /This bullet binds the prose sequences only, `apply-review`'s and `iterate`'s `HOOKS_UNTRUSTED` fallback; `commit create` performs both steps itself/,
+  );
+});
+
+// Invariant: realistic `review` runs answered inline and skipped reservation and report, so the
+// always-loaded core gates every finding presentation on its persistence step, per review path,
+// including the appendix-only and empty paths.
+test('review carries the per-path persistence gate', () => {
+  const gate = flat(section(review, '**Persistence gate.**', '#### Local mode'));
+  assert.match(
+    gate,
+    /No finding appears in chat or is published before its IDs are reserved and its artifact exists/,
+  );
+  for (const pattern of [
+    /\*\*Local mode:\*\* with at least one admitted finding, one `review open-report` call \(local step 2\) reserves the IDs and allocates the report, and the report is written before any finding appears in chat/,
+    /\*\*Publishing target:\*\* `memory reserve` \(step 4\) before any tracker write; the only local artifact is the security report/,
+    /\*\*Pull-request special case:\*\* `memory reserve` before anything is published onto the pull request; the only local artifact is the security report for withheld `local-only` findings/,
+    /A chat-only outcome \(hidden mode, a closed or foreign pull request reported read-only, a declined publication\) has the chat report itself as its artifact, presented after `memory reserve`/,
+    /\*\*Plan-file and concept-file special cases:\*\* no IDs and no report/,
+    /\*\*Standalone-audit appendix only\*\* \(no admitted finding, an eligible appendix entry\): local mode allocates the path alone through `name-allocate`, reserves nothing, and writes the appendix-only report/,
+    /\*\*No admitted finding and no appendix entry:\*\* nothing is reserved or written on any path/,
+  ]) {
+    assert.match(gate, pattern);
+  }
+  assert.match(review, /^```include\nhelper-call-shape\n```$/m);
+  const localStep = flat(
+    section(review, '2. With at least one admitted finding', '3. If the active finding scope'),
+  );
+  assert.match(
+    localStep,
+    /node <skill-root>\/scripts\/effective-flow-state\.mjs review open-report <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","owner":\{"workflow":"review"\},"count":<N>\}'/,
+  );
+  assert.match(
+    localStep,
+    /re-check that `reportPath` is still absent; if it is present, re-allocate the path alone as below and keep the reserved IDs\. After a successful reservation, never call `review open-report` again; only its `MIGRATION_REQUIRED` retry repeats the call before one/,
+  );
+});
+
+// Invariant: realistic runs decided right after reading the top of `review` that a small, inline
+// review ends with chat-only findings, so the persistence duty is stated under `## Goal`, before
+// the workflow body, and explicitly covers inline reviews; the per-path detail stays in the gate.
+test('review states the persistence duty in its Goal and covers inline reviews', () => {
+  const goal = flat(section(review, '## Goal', '```'));
+  assert.match(
+    goal,
+    /\*\*A review that admits at least one finding reserves its IDs and persists them before presenting any finding — in local mode one `review open-report` call plus the report file at `reportPath` — also when the review itself runs inline because the change is small: skipping workers, the validator or the fan-out never skips the reservation or the report\.\*\* Per path: "Persistence gate"\./,
+  );
+  assert.ok(review.indexOf('## Goal') < review.indexOf('**Persistence gate.**'));
+});
+
+// Invariant: the persistence step is visible as its own task and the run cannot report complete
+// while an admitted finding lacks its ID or its local report entry.
+test('review lists the persistence task and extends its completion condition', () => {
+  assert.match(
+    review,
+    / {3}- "Phase 3: Aggregation and design-decision filter"\n {3}- "Reserve IDs and persist the findings"\n {3}- "Phase 4: Report"/,
+  );
+  assert.match(
+    flat(review),
+    /The run is incomplete while an admitted finding has no reserved ID or, in local mode, no report entry\./,
+  );
+});

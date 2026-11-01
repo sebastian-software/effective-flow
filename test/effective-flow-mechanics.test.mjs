@@ -567,9 +567,10 @@ test('skill and workflow enums match the tools that produce branches and reports
 });
 
 // ---------------------------------------------------------------------------------------------
-// Imports (plan: "Acceptance criteria" — the core imports exactly three leaf cores)
+// Imports (plan: "Acceptance criteria" — the core imports exactly three leaf cores, plus the dated
+// name allocation extracted so the runtime-state helper's `review open-report` shares it)
 
-test('the core imports only node built-ins and the three owning leaf cores', () => {
+test('the core imports only node built-ins, the three owning leaf cores and the allocation leaf', () => {
   const source = readFileSync(CORE_PATH, 'utf8');
   // Both `import … from '<spec>'` and a side-effect `import '<spec>'` widen the load graph.
   const specifiers = [
@@ -578,6 +579,7 @@ test('the core imports only node built-ins and the three owning leaf cores', () 
   ].map((match) => match[1]);
   const relative = specifiers.filter((specifier) => specifier.startsWith('.'));
   assert.deepEqual([...new Set(relative)].sort(), [
+    './dated-name-allocation.mjs',
     './delivery-selection-core.mjs',
     './plan-lint-core.mjs',
     './remote-tracker-shared-core.mjs',
@@ -590,6 +592,14 @@ test('the core imports only node built-ins and the three owning leaf cores', () 
   }
   assert.ok(!specifiers.includes('node:child_process'), 'the core spawns nothing');
   assert.doesNotMatch(source, /\bimport\s*\(/, 'no dynamic import widens the load graph');
+  // The extracted allocation leaf imports `node:` built-ins only.
+  const leaf = readFileSync(
+    new URL('../src/scripts/dated-name-allocation.mjs', import.meta.url),
+    'utf8',
+  );
+  for (const match of leaf.matchAll(/^\s*import[^'"]*?from\s+['"]([^'"]+)['"]/gm)) {
+    assert.match(match[1], /^node:/);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

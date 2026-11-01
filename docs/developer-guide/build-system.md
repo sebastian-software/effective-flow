@@ -436,7 +436,7 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Thirteen subsystems and 38 runtime scripts carry this today: the pairs
+  misread as one. Thirteen subsystems and 41 runtime scripts carry this today: the pairs
   `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`,
@@ -444,11 +444,13 @@ The build aborts with an error message if any of these guards is violated:
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
   `setup-status.mjs`/`setup-status-core.mjs`; the
-  runtime-state helper, a six-file family whose entry point `effective-flow-state.mjs` sits over
+  runtime-state helper, an eight-file family whose entry point `effective-flow-state.mjs` sits over
   `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
-  `effective-flow-state-harness-core.mjs`, the shared `claude-settings-core.mjs` and
+  `effective-flow-state-harness-core.mjs`, `effective-flow-state-commit-core.mjs`,
+  `effective-flow-state-review-core.mjs`, the shared `claude-settings-core.mjs` and
   `runtime-file-primitives.mjs` (the bounded-read and JSON-object primitives the memory and
-  settings cores share); the
+  settings cores share), with `dated-name-allocation.mjs`, the dated-name allocation that
+  `effective-flow-mechanics-core.mjs` and the review core both import; the
   Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
   remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
   `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
@@ -718,9 +720,9 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 ## Runtime scripts
 
 Thirteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 38 files: ten two-file subsystems, the runtime-state helper's six-file family,
-the remote tracker's seven-file family, the pilot measurement three-file family, and the shared `process-runner.mjs` and
-`runtime-state-guard.mjs`. Each entry
+allowlist contains 41 files: ten two-file subsystems, the runtime-state helper's eight-file family,
+the remote tracker's seven-file family, the pilot measurement three-file family, and the shared `process-runner.mjs`,
+`runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
 
 - **Config-resolve.** Invoke it as `node <skill-root>/scripts/config-resolve.mjs resolve` with one
@@ -825,9 +827,10 @@ point is an I/O boundary over testable core or protocol modules:
   a mutation is not excluded.
 - **Remote-tracker.** Invoke it as `node <skill-root>/scripts/remote-tracker.mjs <operation>
 [--apply]` with one JSON object on standard input. It emits one stable JSON envelope on
-  standard output and uses nonzero exit codes for structured failures. Mutations are dry runs
-  unless `--apply` is present; reads execute as reads whether or not a caller redundantly supplies
-  that flag. The core module is pure except for an injected process runner;
+  standard output and uses nonzero exit codes for structured failures. The argv is closed: exactly
+  `<operation>`, or `<operation> --apply` for a forge mutation, and anything else, `--apply` on a
+  read included, is a usage error before standard input is read, so an allow rule's trailing `*`
+  admits only the here-string. Mutations are dry runs unless `--apply` is present. The core module is pure except for an injected process runner;
   provider CLIs are always executed as an executable plus argument array, never through a shell.
 - **Pilot-measurement.** Invoke it as `node <skill-root>/scripts/pilot-measurement.mjs <operation>`
   with one closed-schema JSON object on standard input. The entry point emits one stable JSON
@@ -939,9 +942,11 @@ point is an I/O boundary over testable core or protocol modules:
   `<RUNTIME_STATE_ROOT>/.effective-flow/`. The operation is exactly two argv tokens and any other
   argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
   argument. The operations are `lock acquire|release|inspect|break`, `memory
-reserve|set-marker|migrate-directory` and `harness allow-rules`. The six allowlisted ones, `lock
-acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker` and `memory
-migrate-directory`, are non-destructive or read-only. `lock break` is destructive and
+reserve|set-marker|migrate-directory`, `commit create`, `review open-report` and `harness
+allow-rules`. The eight allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+reserve`, `memory set-marker`, `memory migrate-directory`, `commit create` and `review
+open-report`, are non-destructive or read-only (`commit create` writes Git history; see below).
+  `lock break` is destructive and
   `harness allow-rules` writes the settings file that holds the rules; neither is ever
   allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
   the conversation. The lock is named by a closed enum, `memory`,
@@ -987,16 +992,37 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   (`copy-failed` or `target-missing`) and `LEGACY_MEMORY_INVALID`, beside the lock outcomes;
   `INVALID_STATE` and `LEGACY_CHANGED` are errors with exit 3.
 
+  `commit create` (`effective-flow-state-commit-core.mjs`) is the one item commit of `iterate`
+  under the `iterate-commit` lock, the only lock it accepts. Before the lock it validates the
+  request and refuses a path below `.effective-flow/` or `.git/`, then runs the hook trust check:
+  a fork head (`sameRepository: false`), or a hook-relevant configuration that differs between
+  `hookBase` (the full SHA of the merge base) and HEAD or between HEAD and the working tree, is the
+  outcome `HOOKS_UNTRUSTED`, and the item is committed through the prose fallback in
+  `src/shared/iterate-commit-fallback.md`, which prompts. Under the lock it requires an empty
+  index, stages exactly the listed paths, verifies the staged set and each blob against `expect`,
+  runs `git commit` with the repository's hooks (bounded by 300 s), verifies parent, paths and a
+  clean index, unstages only its own paths on failure and releases the lock on every path. An
+  envelope in which the lock may still be held carries `heldLock` for one retried `lock release`.
+  Because the rule admits a commit that runs the repository's hooks without a prompt, the trust
+  check is the boundary; it never pushes, amends, resets or rebases.
+  `review open-report` (`effective-flow-state-review-core.mjs`) is the local-mode persistence step
+  of `review` in one call: it guards `.effective-flow/review/`, allocates the `review-report-local`
+  path through `dated-name-allocation.mjs` and reserves the report's finding IDs through the
+  `memory reserve` transaction, returning that result plus `reportPath`, `reportName` and
+  `reportDate`; it writes no report file, and `MIGRATION_REQUIRED` is reported before any
+  directory is created.
+
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the six rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 53 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
   rule and a path refused for security (inside the current repository's worktree or the runtime
   root, a foreign-writable chain, a helper mismatch), and refuses a settings file that is not ignored, is tracked or is not valid JSON
   (`SETTINGS_NOT_IGNORED`, `SETTINGS_TRACKED`, `SETTINGS_INVALID`). `setup-status` reports the
-  rules as its `allowlist` finding and the `allowlist` setup form; the `setup allowlist` keyword
+  rules as its `allowlist` finding (any partial set, an earlier release's six rules included, is
+  `stale`; `absent` means none present) and the `allowlist` setup form; the `setup allowlist` keyword
   and the step the other setup modes offer are described in
   [Configuration](configuration.md#claude-code-allow-rules).
 

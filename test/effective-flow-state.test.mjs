@@ -197,6 +197,8 @@ test('operations, locks and codes are frozen closed sets', () => {
       'memory set-marker',
       'memory migrate-directory',
       'harness allow-rules',
+      'commit create',
+      'review open-report',
     ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
@@ -217,6 +219,15 @@ test('operations, locks and codes are frozen closed sets', () => {
       'SETTINGS_TRACKED',
       'SETTINGS_INVALID',
       'PREVIEW_MISMATCH',
+      'HOOKS_UNTRUSTED',
+      'INDEX_NOT_CLEAN',
+      'STAGE_FAILED',
+      'STAGED_SET_MISMATCH',
+      'STAGED_CONTENT_CHANGED',
+      'COMMIT_FAILED',
+      'COMMIT_UNVERIFIED',
+      'SANDBOX_DENIED',
+      'INTERRUPTED',
     ],
   );
   assert.deepEqual(

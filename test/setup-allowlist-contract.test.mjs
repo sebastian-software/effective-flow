@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderBody } from '../build-lib.mjs';
-import { ALLOWLISTED_OPERATIONS } from '../src/scripts/claude-settings-core.mjs';
+import { ALLOWLISTED_OPERATIONS, RULE_ENTRIES } from '../src/scripts/claude-settings-core.mjs';
 import { OUTCOME_CODES, STATE_OPERATIONS } from '../src/scripts/effective-flow-state-core.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -49,15 +49,31 @@ test('the allowlist step confirms in the conversation between preview and apply'
   assert.match(text, /Only the helper writes the settings file; never edit it in prose/);
 });
 
-// Invariant: the prose names exactly the helper's allowlisted operations, and the destructive
-// `lock break` and the rule writer itself never get a rule.
-test('the allowlist step names the six allowlisted operations and no rule for lock break', () => {
+// Invariant: the prose names exactly the state helper's allowlisted operations, the three rule
+// families and the rule count the helper writes, states the `commit create` risk and its bounds,
+// and the destructive `lock break` and the rule writer itself never get a rule.
+test('the allowlist step names the rule families, the rule count and no rule for lock break', () => {
   const named = STATE_OPERATIONS.filter((operation) => allowlist.includes(`\`${operation}\``));
   assert.deepEqual(
     named.filter((operation) => ALLOWLISTED_OPERATIONS.includes(operation)),
     [...ALLOWLISTED_OPERATIONS],
   );
-  assert.match(flat(allowlist), /`lock break` and `harness allow-rules` never get a rule/);
+  const text = flat(allowlist);
+  assert.ok(
+    text.includes(`It writes ${RULE_ENTRIES.length} Claude Code allow rules`),
+    'rule count',
+  );
+  assert.ok(text.includes(`the ${RULE_ENTRIES.length} \`result.rules\``), 'preview count');
+  assert.match(text, /one for the `config-resolve` helper's `resolve` operation/);
+  assert.match(
+    text,
+    /one per read-only `remote-tracker\.mjs` operation: the forge reads, the pure local computations and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`/,
+  );
+  assert.match(
+    text,
+    /`commit create` writes Git history and runs the repository's hooks without a prompt; it commits only the listed paths, refuses paths below `\.effective-flow\/` and an untrusted hook configuration, and never pushes, amends, resets or rebases/,
+  );
+  assert.match(text, /`lock break` and `harness allow-rules` never get a rule/);
   assert.ok(!ALLOWLISTED_OPERATIONS.includes('lock break'));
 });
 
@@ -127,13 +143,13 @@ test('the allowlist summary carries the widening warning and the linked-worktree
 });
 
 // Invariant: the skill root is passed in its symlinked install form, the same literal form every
-// later call uses (owned by the `state-helper-call` fragment), because a rule must name the path
+// later call uses (owned by the `helper-call-shape` fragment), because a rule must name the path
 // Claude Code sees; the helper's CLAUDECODE gate is the authoritative harness check.
 test('the allowlist step passes the unresolved skill root and relies on the helper gate', () => {
   const text = flat(allowlist);
-  assert.match(allowlist, /^```include\nstate-helper-call\n```$/m);
+  assert.match(allowlist, /^```include\nhelper-call-shape\n```$/m);
   assert.match(
-    flat(readSource('shared', 'state-helper-call.md')),
+    flat(readSource('shared', 'helper-call-shape.md')),
     /never resolved through `realpath`/,
   );
   assert.match(text, /The `skillRoot` value is that same literal `<skill-root>`/);

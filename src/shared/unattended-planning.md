@@ -57,7 +57,7 @@ Validate without asking, before using issue text:
    `Language context:` returns `ABORT: unparseable language-context switch`; a malformed `Issue:`
    returns `ABORT: unparseable issue switch`; a malformed or non-absolute `Issue text:` returns
    `ABORT: unparseable issue-text switch`.
-4. Load `config-migration` and use its existing `config-resolve.mjs resolve` call with the
+4. Load `config-migration` and make its literal `config-resolve.mjs resolve` call with the
    execution checkout as `cwd` and `tool: "plan"`, read-only. Require its verified
    `data.runtimeStateRoot` as `RUNTIME_STATE_ROOT`, retain `EXECUTION_ROOT` and the verified
    execution-location receipt, and resolve `<plan.dir>` there. A missing or mismatched runtime

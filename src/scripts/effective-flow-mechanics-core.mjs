@@ -8,9 +8,10 @@
 //
 // The owning fragments keep the judgment and the outcome handling; this module computes only what
 // they make mechanical. It imports the code that owns a rule instead of copying it, and only from
-// leaf cores whose own imports are `node:` built-ins: `plan-lint-core` (plan-file contract, plan
+// leaf modules whose own imports are `node:` built-ins: `plan-lint-core` (plan-file contract, plan
 // roots, safe reader), `delivery-selection-core` (fetch hardening), `remote-tracker-shared-core`
-// (disclosure patterns). It spawns nothing: Git runs through the injected runner, which the CLI
+// (disclosure patterns), and `dated-name-allocation` (the error class, the local date, the
+// directory containment and the first-free-name search, shared with the runtime-state helper). It spawns nothing: Git runs through the injected runner, which the CLI
 // takes from `process-runner.mjs`. Every operation is a computation or a read, except that
 // `base-branch-fetch` updates remote-tracking refs through `git fetch`.
 
@@ -40,6 +41,22 @@ import {
   RemoteTrackerError,
   assertUndisclosed,
 } from './remote-tracker-shared-core.mjs';
+import {
+  MAX_SUFFIX,
+  MechanicsError,
+  REVIEW_REPORT_LOCAL_FAMILY,
+  containedDirectory,
+  entryExists,
+  firstFreeName,
+  isInside,
+  lexicalProblem,
+  localDate,
+  lstatOrNull,
+  posixJoin,
+  requireString,
+} from './dated-name-allocation.mjs';
+
+export { MechanicsError, localDate };
 
 export const MECHANICS_OPERATIONS = Object.freeze([
   'base-branch-resolve',
@@ -97,7 +114,7 @@ const FAMILIES = Object.freeze({
     start: 1,
     stem: (v) => `review-report-${v.date}-security`,
   },
-  'review-report-local': { inputs: [], start: 1, stem: (v) => `review-report-${v.date}` },
+  'review-report-local': REVIEW_REPORT_LOCAL_FAMILY,
   investigation: { inputs: ['text'], start: 1, stem: (v) => `investigation-${v.date}-${v.slug}` },
 });
 
@@ -110,19 +127,7 @@ const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
 const SLUG_MAX_LENGTH = 80;
 
-// A suffix search that never ends would mean a directory listing that keeps growing; stop instead.
-const MAX_SUFFIX = 10_000;
-
 const EXIT_CODES = Object.freeze({ INVALID_INPUT: 2, UNSAFE_PATH: 3 });
-
-export class MechanicsError extends Error {
-  constructor(code, message, details = {}) {
-    super(message);
-    this.name = 'MechanicsError';
-    this.code = code;
-    this.details = details;
-  }
-}
 
 function fail(code, message, details = {}) {
   throw new MechanicsError(code, message, details);
@@ -193,18 +198,6 @@ export function slugify(text) {
   return slug;
 }
 
-// The local calendar date in the given time zone (the process zone by default), as `date +%F`.
-export function localDate(instant = new Date(), timeZone = undefined) {
-  const parts = new Intl.DateTimeFormat('en-US', {
-    timeZone,
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  }).formatToParts(instant);
-  const part = (type) => parts.find((entry) => entry.type === type).value;
-  return `${part('year')}-${part('month')}-${part('day')}`;
-}
-
 // ---------------------------------------------------------------------------------------------
 // Input validation
 
@@ -217,15 +210,6 @@ function requireInput(input, allowed) {
     fail('INVALID_INPUT', `unknown input keys: ${unknown.join(', ')}`, { keys: unknown });
   }
   return input;
-}
-
-function requireString(value, field, { allowEmpty = false } = {}) {
-  if (typeof value !== 'string' || (!allowEmpty && value === '')) {
-    fail('INVALID_INPUT', `${field} must be a${allowEmpty ? '' : ' non-empty'} string`, { field });
-  }
-  if (value.includes('\0'))
-    fail('INVALID_INPUT', `${field} must not contain a NUL byte`, { field });
-  return value;
 }
 
 function requireEnum(value, field, allowed) {
@@ -265,89 +249,6 @@ function requireBranchName(value, field) {
     fail('INVALID_INPUT', `${field} must not start with "-"`, { field });
   }
   return value;
-}
-
-function lexicalProblem(value) {
-  if (path.isAbsolute(value) || path.win32.isAbsolute(value)) return 'must be relative to cwd';
-  if (value.replace(/\\/g, '/').split('/').includes('..')) return 'must not contain ".."';
-  return null;
-}
-
-// ---------------------------------------------------------------------------------------------
-// Containment for ADR and runtime-report directories (until a shared path guard exists)
-
-function isInside(root, candidate) {
-  return (
-    candidate === root || candidate.startsWith(root.endsWith(path.sep) ? root : root + path.sep)
-  );
-}
-
-function lstatOrNull(fs, target) {
-  try {
-    return fs.lstatSync(target);
-  } catch (error) {
-    if (error.code === 'ENOENT') return null;
-    if (error.code === 'ENOTDIR' || error.code === 'ELOOP') {
-      fail('UNSAFE_PATH', 'a directory component is not a directory');
-    }
-    throw error;
-  }
-}
-
-// Walks a cwd-relative directory one component at a time with `lstat`. A symlinked component is
-// resolved and must stay a directory inside cwd; a dangling link or a non-directory is
-// `UNSAFE_PATH`. The first absent component makes the directory truly absent (`real: null`).
-// With `reportEscape`, an escape returns `{ escaped: true, resolvedPath }` instead of failing.
-function containedDirectory(fs, cwdReal, relative, field, { reportEscape = false } = {}) {
-  requireString(relative, field);
-  const problem = lexicalProblem(relative);
-  if (problem) fail('UNSAFE_PATH', `${field} ${problem}`, { field });
-  const segments = path.posix
-    .normalize(relative.replace(/\\/g, '/'))
-    .split('/')
-    .filter((segment) => segment !== '' && segment !== '.');
-  let current = cwdReal;
-  for (const segment of segments) {
-    const next = path.join(current, segment);
-    const stat = lstatOrNull(fs, next);
-    if (!stat) return { real: null, escaped: false };
-    if (stat.isSymbolicLink()) {
-      let real;
-      try {
-        real = fs.realpathSync(next);
-      } catch {
-        fail('UNSAFE_PATH', `${field} contains a symbolic link that does not resolve`, { field });
-      }
-      if (!fs.statSync(real).isDirectory()) {
-        fail('UNSAFE_PATH', `${field} contains a component that is not a directory`, { field });
-      }
-      if (!isInside(cwdReal, real)) {
-        if (reportEscape) return { real: null, escaped: true, resolvedPath: real };
-        fail('UNSAFE_PATH', `${field} escapes cwd`, { field });
-      }
-      current = real;
-      continue;
-    }
-    if (!stat.isDirectory()) {
-      fail('UNSAFE_PATH', `${field} contains a component that is not a directory`, { field });
-    }
-    current = next;
-  }
-  return { real: current, escaped: false };
-}
-
-function entryExists(fs, target) {
-  try {
-    fs.lstatSync(target);
-    return true;
-  } catch (error) {
-    if (error.code === 'ENOENT') return false;
-    throw error;
-  }
-}
-
-function posixJoin(...parts) {
-  return path.posix.normalize(parts.map((part) => part.replace(/\\/g, '/')).join('/'));
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -634,28 +535,28 @@ async function nameAllocate(input, deps) {
     if (real) directories.push(real);
   }
 
-  const stem = family.stem(values);
-  for (let suffix = null; suffix === null || suffix < MAX_SUFFIX;) {
-    const name = suffix === null ? `${stem}.md` : `${stem}-${suffix}.md`;
-    if (name.includes('/') || name.includes('\\') || name === '.md') {
-      fail('INVALID_INPUT', 'the composed name is not a single path segment');
-    }
-    if (input.family === 'unattended-plan' && !UNATTENDED_PLAN_NAME.test(name)) {
-      fail('INTERNAL', 'the composed unattended plan name violates its pattern');
-    }
-    if (!directories.some((directory) => entryExists(fs, path.join(directory, name)))) {
-      return {
-        outcome: 'allocated',
-        name,
-        path: posixJoin(dir, name),
-        date: values.date,
-        suffix,
-        ...(archiveIgnored === null ? {} : { archiveIgnored }),
-      };
-    }
-    suffix = suffix === null ? family.start : suffix + 1;
-  }
-  fail('INTERNAL', 'no free name below the suffix bound');
+  const allocated = firstFreeName(fs, {
+    directories,
+    dir,
+    stem: family.stem(values),
+    start: family.start,
+    check:
+      input.family === 'unattended-plan'
+        ? (name) => {
+            if (!UNATTENDED_PLAN_NAME.test(name)) {
+              fail('INTERNAL', 'the composed unattended plan name violates its pattern');
+            }
+          }
+        : undefined,
+  });
+  return {
+    outcome: 'allocated',
+    name: allocated.name,
+    path: allocated.path,
+    date: values.date,
+    suffix: allocated.suffix,
+    ...(archiveIgnored === null ? {} : { archiveIgnored }),
+  };
 }
 
 // ---------------------------------------------------------------------------------------------

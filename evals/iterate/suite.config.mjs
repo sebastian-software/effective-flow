@@ -43,14 +43,14 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 //
 // Two runtime script sets are seeded, both executed by a run, named by no load pointer and stubbed
 // by nothing: the configuration resolver, which `iterate` executes at its first configuration read
-// in Phase 0, and the runtime-state helper with the guard module and the memory, harness and
-// settings cores it imports, which a first memory write executes. Its forge
+// in Phase 0, and the runtime-state helper with the guard module and the memory, harness, commit,
+// review and settings cores it imports, which a first memory write or an item commit executes. Its forge
 // helper `scripts/remote-tracker.mjs` is replaced by the stub below and hashed as `instrument`, and
 // it runs no delegation-envelope helper, because it receives envelopes rather than building them.
 // The exit channel is a seed of its own, contributed by the overlay at the path the run executes it
 // from.
 //
-// The mechanics helper is seeded as well, with the three cores its core imports and the process
+// The mechanics helper is seeded as well, with the four modules its core imports and the process
 // runner its CLI imports: the `worktree-integration` and `base-branch-resolution` fragments in this
 // suite's load closure execute the shipped `scripts/effective-flow-mechanics.mjs`, no load pointer
 // names it, and nothing stubs it.
@@ -63,11 +63,14 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/effective-flow-state-core.mjs',
   'scripts/effective-flow-state-memory-core.mjs',
   'scripts/effective-flow-state-harness-core.mjs',
+  'scripts/effective-flow-state-commit-core.mjs',
+  'scripts/effective-flow-state-review-core.mjs',
   'scripts/claude-settings-core.mjs',
   'scripts/runtime-file-primitives.mjs',
   'scripts/runtime-state-guard.mjs',
   'scripts/effective-flow-mechanics.mjs',
   'scripts/effective-flow-mechanics-core.mjs',
+  'scripts/dated-name-allocation.mjs',
   'scripts/plan-lint-core.mjs',
   'scripts/delivery-selection-core.mjs',
   'scripts/remote-tracker-shared-core.mjs',

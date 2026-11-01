@@ -102,21 +102,26 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive helper operation (`lock acquire`, `lock release`, `lock inspect`,
-`memory reserve`, `memory set-marker`, `memory migrate-directory`) into
+each non-destructive or bounded helper operation, 53 rules in all: eight runtime-state helper operations
+(`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
+`memory migrate-directory`, `commit create`, `review open-report`), `config-resolve.mjs resolve`,
+and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
 allow-rules` writes the file, after a preview and an explicit confirmation in the conversation,
 and it refuses a settings file that is tracked or not ignored; the step then asks whether to add
 the `.gitignore` line, or the `info/exclude` line in hidden mode, and adds it only after a yes. A widened rule is warned about but
 never removed, and rules of another install are kept. The `setup status` report shows the
-`allowlist` state (`absent`, `current`, `stale`, `not-applicable`, `could-not-check`); only rules
+`allowlist` state (`absent`, `current`, `stale`, `not-applicable`, `could-not-check`); any partial
+set, including an earlier release's six rules, is `stale`, `absent` means none present, and only rules
 naming the literal `skillRoot` count as `current`, and a rule for a realpath alias of the same
 install is listed separately. Wider rules, path-prefix wildcards included, are reported as
 warnings.
 
 Destructive helper operations (`lock break`) and `harness allow-rules` itself are never
-allowlisted. Users must not accept Claude Code's "don't ask again" suggestion for a helper call,
+allowlisted. `commit create` writes Git history and runs the repository's hooks without a prompt;
+it commits only the listed paths and answers `HOOKS_UNTRUSTED` for a fork head or a changed hook
+configuration, which falls back to a prompting commit. Users must not accept Claude Code's "don't ask again" suggestion for a helper call,
 since it widens the rule to `node <helper> *` or `node *`. The rules live below the main checkout;
 whether Claude Code applies them in a session started inside a linked worktree is unverified.
 Codex and the portable build outside Claude Code write nothing. Source:

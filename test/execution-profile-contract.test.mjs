@@ -133,6 +133,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'claude-settings-core.mjs',
   'config-resolve-core.mjs',
   'config-resolve.mjs',
+  'dated-name-allocation.mjs',
   'delegation-envelope-core.mjs',
   'delegation-envelope.mjs',
   'delivery-selection-core.mjs',
@@ -141,9 +142,11 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'diff-baseline.mjs',
   'effective-flow-mechanics-core.mjs',
   'effective-flow-mechanics.mjs',
+  'effective-flow-state-commit-core.mjs',
   'effective-flow-state-core.mjs',
   'effective-flow-state-harness-core.mjs',
   'effective-flow-state-memory-core.mjs',
+  'effective-flow-state-review-core.mjs',
   'effective-flow-state.mjs',
   'issue-buddy-core.mjs',
   'issue-buddy.mjs',
@@ -912,7 +915,7 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 38);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 41);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,

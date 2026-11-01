@@ -49,6 +49,52 @@ export const MERGE_REFUSAL_MARKER = 'EFFECTIVE_FLOW_EVAL_STUB_MERGE_REFUSED';
 // whether the recorded call is answered with a refusal or with a canned success.
 const REFUSABLE_OPERATIONS = new Set(['pr-merge']);
 
+// The shipped helper's closed argv, mirrored so a run sees the same refusal it would see from the
+// real file: exactly `<operation>` or `<operation> --apply`, the operation first, and `--apply` only
+// for a forge mutation, refused before stdin is read and before anything is recorded. The stub runs
+// beside no core, so the mutation list is its own copy; `test/remote-tracker-argv.test.mjs` pins it
+// to the core's MUTATION_OPERATIONS.
+export const STUB_MUTATION_OPERATIONS = Object.freeze([
+  'label-create',
+  'issue-create',
+  'issue-sub-issue-create',
+  'issue-update-body',
+  'issue-close',
+  'issue-comment',
+  'issue-comment-update',
+  'issue-labels',
+  'issue-label-add',
+  'issue-label-remove',
+  'sf-label-migrate',
+  'pr-create',
+  'pr-update-body',
+  'pr-update-title',
+  'pr-mark-ready',
+  'pr-comment',
+  'pr-merge',
+  'review-create',
+  'review-thread-reply',
+  'review-thread-resolve',
+]);
+const USAGE = 'usage: remote-tracker.mjs <operation> [--apply]';
+
+// Returns `{ operation, apply }`, or `{ refusal }` with the message the shipped helper gives.
+export function parseStubArgv(argv) {
+  const [operation, flag, ...rest] = argv;
+  if (typeof operation !== 'string' || operation === '' || operation.startsWith('-')) {
+    return { refusal: `the operation must be the first argument; ${USAGE}` };
+  }
+  if (rest.length > 0 || (flag !== undefined && flag !== '--apply')) {
+    return { refusal: `only <operation> or <operation> --apply is accepted; ${USAGE}` };
+  }
+  if (flag === '--apply' && !STUB_MUTATION_OPERATIONS.includes(operation)) {
+    return {
+      refusal: `--apply is accepted only for a mutation, and ${operation} is none; ${USAGE}`,
+    };
+  }
+  return { operation, apply: flag === '--apply' };
+}
+
 // The opt-in that turns a refusal into a served merge, read from the fixture's top level.
 //
 // Refusing was right while refusal was the only outcome any scenario expected. It stopped being
@@ -451,19 +497,18 @@ function envelopeFor(entry, operation, apply) {
 
 export async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io.stdout ?? process.stdout;
-  const operation = argv.find((argument) => !argument.startsWith('-')) ?? null;
-  const apply = argv.includes('--apply');
+  const parsed = parseStubArgv(argv);
+  const first = argv[0];
+  const operation =
+    parsed.operation ?? (typeof first === 'string' && !first.startsWith('-') ? first : null);
+  const apply = parsed.apply === true;
   let envelope;
   let callId = null;
   let lifecycleEvents = false;
   let startRecorded = false;
   try {
-    if (operation === null) {
-      envelope = errorEnvelope(
-        null,
-        'INVALID_PAYLOAD',
-        'usage: remote-tracker.mjs <operation> [--apply]',
-      );
+    if (parsed.refusal !== undefined) {
+      envelope = errorEnvelope(operation, 'INVALID_PAYLOAD', parsed.refusal);
     } else {
       // Read stdin before anything else, so the caller's write always finds a reader and a refused
       // operation cannot turn into an EPIPE on the gate's side.

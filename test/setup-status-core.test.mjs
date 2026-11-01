@@ -38,6 +38,7 @@ import {
   releaseSemver,
 } from '../src/scripts/setup-status-core.mjs';
 import { main } from '../src/scripts/setup-status.mjs';
+import { helperRules } from '../src/scripts/claude-settings-core.mjs';
 import {
   deriveSetupStatusProjection,
   parseSkillOwnershipManifest,
@@ -1380,7 +1381,10 @@ test('the spawned CLI reads stdin and emits one envelope line', (t) => {
 
 const { CLAUDECODE: _ignoredClaudeCode, ...ENV_OUTSIDE_CLAUDE } = GIT_ENV;
 const ENV_IN_CLAUDE = { ...ENV_OUTSIDE_CLAUDE, CLAUDECODE: '1' };
-const ALLOWLISTED = [
+// The six state-helper rules `setup allowlist` wrote before `commit create`, `review
+// open-report`, `config-resolve.mjs resolve` and the read-only `remote-tracker.mjs` operations
+// joined the rule set.
+const SIX_RULE_SET = [
   'lock acquire',
   'lock release',
   'lock inspect',
@@ -1396,7 +1400,9 @@ function allowRule(skillRoot, operation) {
 // A skill install outside the repository, reached through a symlinked `skills/effective-flow`.
 function skillInstall(t) {
   const base = tempDir(t);
-  write(base, 'real/effective-flow/scripts/effective-flow-state.mjs', '// helper\n');
+  for (const name of ['effective-flow-state.mjs', 'config-resolve.mjs', 'remote-tracker.mjs']) {
+    write(base, `real/effective-flow/scripts/${name}`, '// helper\n');
+  }
   mkdirSync(join(base, 'skills'));
   symlinkSync(join(base, 'real', 'effective-flow'), join(base, 'skills', 'effective-flow'));
   return { base, skillRoot: join(base, 'skills', 'effective-flow') };
@@ -1447,41 +1453,66 @@ test('allowlist: not-applicable without skillRoot or outside Claude Code', async
   assert.ok(!outside.setupForms.includes('allowlist'));
 });
 
-// Invariant: a missing settings file or a missing rule is `absent`, fixed by `setup allowlist`.
-test('allowlist: absent without the settings file or with a rule missing', async (t) => {
+// Invariant: a missing settings file, or settings without any rule of this install, is `absent`,
+// fixed by `setup allowlist`.
+test('allowlist: absent without the settings file or without any rule of this install', async (t) => {
   const { root } = repository(t);
   const { skillRoot } = skillInstall(t);
   const empty = await allowlistStatus(t, root, { skillRoot });
   assert.equal(empty.allowlist.state, 'absent');
   assert.equal(empty.allowlist.target, join(root, '.claude', 'settings.local.json'));
-  assert.equal(empty.allowlist.missing.length, 6);
+  assert.deepEqual(empty.allowlist.missing, helperRules(skillRoot));
+  assert.deepEqual(empty.allowlist.expected, helperRules(skillRoot));
   assert.equal(empty.allowlist.setupFixable, true);
   assert.equal(empty.allowlist.setupForm, 'allowlist');
   assert.match(empty.allowlist.remediation, /`effective-flow setup allowlist`/);
   assert.equal(empty.setupFixable, true);
   assert.ok(empty.setupForms.includes('allowlist'));
 
-  writeAllowRules(
-    root,
-    ALLOWLISTED.slice(1).map((operation) => allowRule(skillRoot, operation)),
+  writeAllowRules(root, ['Bash(git status:*)']);
+  const unrelated = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(unrelated.allowlist.state, 'absent');
+});
+
+// Invariant: a project with only part of this install's rules, such as the six rules an earlier
+// `setup allowlist` wrote, is `stale`: the calls of the newer rules would prompt until
+// `setup allowlist` writes the extended set, which `missing` names.
+test('allowlist: stale with only the six earlier rules or any other partial set', async (t) => {
+  const { root } = repository(t);
+  const { skillRoot } = skillInstall(t);
+  const six = SIX_RULE_SET.map((operation) => allowRule(skillRoot, operation));
+  writeAllowRules(root, six);
+  const data = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(data.allowlist.state, 'stale');
+  assert.deepEqual(data.allowlist.present, six);
+  assert.deepEqual(data.allowlist.stale, []);
+  assert.deepEqual(
+    data.allowlist.missing,
+    helperRules(skillRoot).filter((rule) => !six.includes(rule)),
   );
-  const partial = await allowlistStatus(t, root, { skillRoot });
-  assert.equal(partial.allowlist.state, 'absent');
-  assert.deepEqual(partial.allowlist.missing, [allowRule(skillRoot, 'lock acquire')]);
+  assert.ok(data.allowlist.missing.includes(allowRule(skillRoot, 'commit create')));
+  assert.ok(
+    data.allowlist.missing.includes(`Bash(node ${skillRoot}/scripts/config-resolve.mjs resolve *)`),
+  );
+  assert.equal(data.allowlist.setupForm, 'allowlist');
+  assert.equal(data.allowlist.setupFixable, true);
+
+  writeAllowRules(root, helperRules(skillRoot).slice(1));
+  const oneMissing = await allowlistStatus(t, root, { skillRoot });
+  assert.equal(oneMissing.allowlist.state, 'stale');
+  assert.deepEqual(oneMissing.allowlist.missing, [helperRules(skillRoot)[0]]);
 });
 
 // Invariant: Claude Code matches the literal command path, so a rule counts as this install's only
-// when it names this `skillRoot` literally; all six rules naming the given root are `current`.
-test('allowlist: current when all six rules name this install', async (t) => {
+// when it names this `skillRoot` literally; the complete rule set naming the given root is
+// `current`.
+test('allowlist: current when every rule names this install', async (t) => {
   const { root } = repository(t);
   const { skillRoot } = skillInstall(t);
-  writeAllowRules(root, [
-    'Bash(git status:*)',
-    ...ALLOWLISTED.map((operation) => allowRule(skillRoot, operation)),
-  ]);
+  writeAllowRules(root, ['Bash(git status:*)', ...helperRules(skillRoot)]);
   const data = await allowlistStatus(t, root, { skillRoot });
   assert.equal(data.allowlist.state, 'current');
-  assert.equal(data.allowlist.present.length, 6);
+  assert.deepEqual(data.allowlist.present, helperRules(skillRoot));
   assert.deepEqual(data.allowlist.missing, []);
   assert.deepEqual(data.allowlist.aliases, []);
   assert.equal(data.allowlist.setupFixable, false);
@@ -1489,21 +1520,18 @@ test('allowlist: current when all six rules name this install', async (t) => {
 });
 
 // Invariant: rules under another path to the same helper never fire for this install: they are
-// listed in `aliases`, count as neither present nor stale, and leave all six rules `missing`.
+// listed in `aliases`, count as neither present nor stale, and leave every rule `missing`.
 test('allowlist: an alias of the same helper is absent and reported in aliases', async (t) => {
   const { root } = repository(t);
   const { base, skillRoot } = skillInstall(t);
   const alias = join(base, 'alias');
   symlinkSync(join(base, 'real', 'effective-flow'), alias);
-  const aliasRules = ALLOWLISTED.map((operation) => allowRule(alias, operation));
+  const aliasRules = helperRules(alias);
   writeAllowRules(root, ['Bash(git status:*)', ...aliasRules]);
   const data = await allowlistStatus(t, root, { skillRoot });
   assert.equal(data.allowlist.state, 'absent');
   assert.deepEqual(data.allowlist.present, []);
-  assert.deepEqual(
-    data.allowlist.missing,
-    ALLOWLISTED.map((operation) => allowRule(skillRoot, operation)),
-  );
+  assert.deepEqual(data.allowlist.missing, helperRules(skillRoot));
   assert.deepEqual(data.allowlist.aliases, aliasRules);
   assert.deepEqual(data.allowlist.stale, []);
   assert.equal(data.allowlist.setupForm, 'allowlist');
@@ -1515,7 +1543,7 @@ test('allowlist: stale when a rule names a helper that no longer resolves', asyn
   const { root } = repository(t);
   const { skillRoot } = skillInstall(t);
   const dead = allowRule('/nonexistent/moved/effective-flow', 'memory reserve');
-  writeAllowRules(root, [...ALLOWLISTED.map((operation) => allowRule(skillRoot, operation)), dead]);
+  writeAllowRules(root, [...helperRules(skillRoot), dead]);
   const data = await allowlistStatus(t, root, { skillRoot });
   assert.equal(data.allowlist.state, 'stale');
   assert.deepEqual(data.allowlist.stale, [dead]);

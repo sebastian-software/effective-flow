@@ -82,7 +82,8 @@ const helperMemory = (operation) =>
 
 // Invariant: the shipped memory contract calls the three typed memory operations in the
 // here-string shape and never acquires the memory lock in prose; the two commit locks are helper
-// calls in the same shape. None replays `mkdir` or uses a heredoc.
+// calls in the same shape: `iterate` commits through `commit create` and acquires the lock in prose
+// only in its shipped `HOOKS_UNTRUSTED` fallback. None replays `mkdir` or uses a heredoc.
 test('built lock and memory prose calls the helper in the here-string shape in every target', () => {
   buildOnce();
   for (const target of ['claude', 'codex', 'portable']) {
@@ -94,12 +95,19 @@ test('built lock and memory prose calls the helper in the here-string shape in e
     assert.doesNotMatch(investigate, helperAcquire('memory'), `${target} acquires memory in prose`);
     assert.doesNotMatch(investigate, HEREDOC, `${target} investigate carries a heredoc`);
     assert.doesNotMatch(investigate, /mkdir [^`\n]*memory\.lock/);
+    const iterateTool = readFileSync(join(root, 'tools', 'iterate.md'), 'utf8');
+    assert.match(
+      iterateTool,
+      /node <skill-root>\/scripts\/effective-flow-state\.mjs commit create <<< '\{[^\n]*"lock":"iterate-commit"/,
+      `${target} iterate lacks the commit create call`,
+    );
+    assert.doesNotMatch(iterateTool, helperAcquire('iterate-commit'), `${target} iterate core`);
     const sources = [
-      ['iterate', 'iterate-commit'],
-      ['apply-review-commit-mechanics', 'apply-review-commit'],
+      [join('shared', 'iterate-commit-fallback.md'), 'iterate-commit'],
+      [join('tools', 'apply-review-commit-mechanics.md'), 'apply-review-commit'],
     ];
     for (const [tool, lock] of sources) {
-      const generated = readFileSync(join(root, 'tools', `${tool}.md`), 'utf8');
+      const generated = readFileSync(join(root, tool), 'utf8');
       assert.match(generated, helperAcquire(lock), `${target} ${tool} lacks the ${lock} call`);
       assert.doesNotMatch(generated, HEREDOC, `${target} ${tool} carries a heredoc`);
       assert.doesNotMatch(
@@ -206,7 +214,7 @@ test('built commit mutexes state the bounded wait, sibling, report-only and re-d
     // A worker never resolves `<skill-root>` itself: the handoff carries path, root and runId.
     assert.match(
       iterate,
-      /the absolute helper path\s+`<skill-root>\/scripts\/effective-flow-state\.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own\s+`delegation` `<runId>\/<n>`[\s\S]*?and\s+the runtime-state helper call shape verbatim/,
+      /the absolute helper path\s+`<skill-root>\/scripts\/effective-flow-state\.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own\s+`delegation` `<runId>\/<n>`[\s\S]*?and\s+verbatim the helper call shape/,
     );
     assert.match(
       applyReview,

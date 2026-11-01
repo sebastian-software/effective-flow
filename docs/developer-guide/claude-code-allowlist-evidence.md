@@ -439,7 +439,7 @@ After round 1, the user chose to fix the prose and measure again.
 #### The fix
 
 The prose now carries a binding call-shape rule for every `effective-flow-state.mjs` call,
-`src/shared/state-helper-call.md`. Every call must be one simple command,
+`src/shared/state-helper-call.md` (since renamed `helper-call-shape.md`). Every call must be one simple command,
 `node <literal absolute skill root>/scripts/effective-flow-state.mjs <group> <operation> <<< '<json>'`,
 with no variable, pipe or compound command. `memory-state`, `setup-allowlist`, `iterate` and
 `apply-review-commit-mechanics` include it.
@@ -707,3 +707,175 @@ and `s2-…` ids.
 
 Round 1's 13 runs cost 3.17 USD, round 2's 2.90 USD and round 3's 5.85 USD. The setup cross-check
 cost 0.21 USD and the successful authentication probe 0.07 USD, so the total is 12.20 USD.
+
+## Work package 8 measurement
+
+Measurement step of work package 8 (plan
+`docs/plan/2026-10-31-helper-step-and-call-shape-compliance.md`, "Measurement procedure"), run on
+2026-11-01. It asks whether realistic runs of `review`, `iterate` and the migration reach their
+helper steps now that `commit create` and `review open-report` collapse them into one call each, and
+whether the extended rule set keeps "helper housekeeping" free of prompts and refusals.
+
+### Setup
+
+| Item                  | Recorded value                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headless CLI          | `2.1.312`, through the Agent SDK host (`host.mjs`, unchanged from stage 1) and the work package 1 `node_modules`, linked                                       |
+| Build under test      | Portable build (`node build.mjs`) of the work package 8 worktree, version `1.70.0` on `4433db3c` plus the uncommitted work package 8 changes                   |
+| Install form          | Measurement `HOME` `/home/t3/spike-sandbox/home-wp3`; `.claude/skills/effective-flow` is a symlink to the worktree's `dist/portable/effective-flow`            |
+| Model, budget, policy | `claude-sonnet-5-5`, 3 USD per run, host policy `sandbox`, `settingSources: ['user', 'local']`, as in stage 1                                                  |
+| Rule set              | The 53 rules of `harness allow-rules`: 8 `effective-flow-state.mjs` operations, `config-resolve.mjs resolve`, and 44 read-only `remote-tracker.mjs` operations |
+| Evidence root         | `.effective-flow/spikes/allowlist/2026-11-01-01/` in the primary checkout (untracked)                                                                          |
+
+The harness is a copy of the stage 1 root. Authentication, the token handling, `allowedRoots` and
+the `info/exclude` handling are unchanged from the stage 1 deviations. The other changes:
+
+- **Rule assertion:** `reset.sh` runs `harness allow-rules` preview and apply, then fails unless the
+  written `permissions.allow` equals the preview's `result.rules` in count and strings. Every run
+  wrote 53 rules.
+- **Cells:** `review` on the round 2 two-file seed, `iterate` on a seeded sandbox PR with two review
+  threads, and the migration cell (`firmo`) on the review seed plus the `.firmo/` legacy layout. Each
+  ran 3 times in default mode and 3 times in auto mode.
+- **Prompts:** neutral, in the round 2 style, never naming a step or the helper:
+  `/effective-flow review the uncommitted changes` for `review` and the migration cell,
+  `/effective-flow iterate <PR>` for `iterate`.
+- **Analysis:** `analyze_wp8.py`. "Helper housekeeping" covers every `effective-flow-state.mjs` call,
+  `commit create` and `review open-report` included. A separate "helper reads" sub-class covers
+  `config-resolve.mjs` and the `remote-tracker.mjs` reads; `--apply` calls are listed as mutations.
+  Literal-shape scoring applies to all three helpers.
+- **Criterion:** each cell exercised in at least 2 of 3 valid runs per mode, and helper housekeeping
+  with 0 prompts and 0 auto-mode refusals across all valid runs. Exercised means:
+  - `review`: `review open-report` succeeded, the report exists with the reserved IDs, and
+    `lastFindingNumber` is persisted.
+  - `iterate`: at least one item commit, and every item commit came through `commit create`.
+  - migration: `memory migrate-directory` ran and the marker is set.
+
+All 30 runs (18 in round 1, 12 in round 2) were valid; none was repeated.
+
+### Analysis fix
+
+`run.sh` first collected item commits with `git log --all`, which also counted commits on refs no
+item produced. The fix dropped `--all`: `commits.txt` now lists the commits after the seed that
+`HEAD` or a worktree `HEAD` of the clone reaches. Round 1's `commits.txt` files were regenerated
+with the fixed script before `analysis-round1.txt` was written.
+
+### Round 1
+
+18 runs, 4.87 USD. "Read prompts" counts prompted helper reads, which don't decide the criterion.
+
+| Cell      | Mode    | Valid | Exercised | Housekeeping prompts | Housekeeping refusals | Read prompts | Result |
+| --------- | ------- | ----: | --------: | -------------------: | --------------------: | -----------: | ------ |
+| `review`  | default |     3 |       0/3 |                    0 |                     0 |            0 | missed |
+| `review`  | auto    |     3 |       2/3 |                    0 |                     0 |            0 | met    |
+| `iterate` | default |     3 |       3/3 |                    0 |                     0 |            9 | met    |
+| `iterate` | auto    |     3 |       2/3 |                    0 |                     0 |            0 | met    |
+| `firmo`   | default |     3 |       1/3 |                    0 |                     0 |            0 | missed |
+| `firmo`   | auto    |     3 |       2/3 |                    0 |                     0 |            0 | met    |
+
+Observations:
+
+- **Every unexercised run made no helper call at all.** The housekeeping zeros are real for the
+  exercised runs, but the skip seen in stage 1 persists for `review` and the migration cell.
+- **`iterate` reached `commit create` in 5 of 6 runs.** `w8-iterate-auto-3` committed once with a
+  raw `git commit` and made no `commit create` call.
+- **Exercised migration runs** called `review open-report`, got `MIGRATION_REQUIRED`, ran
+  `memory migrate-directory` and repeated the call, as the outcome contract prescribes.
+
+### Fix round
+
+The plan allows one targeted fix round. The cause the runs show is the inline shortcut: every
+unexercised `review` run said it reviewed inline because the change was small. The fix adds a bold
+persistence rule under `## Goal` in `src/tools/review.md`: a review that admits at least one
+finding reserves its IDs and persists them before presenting any finding (in local mode one
+`review open-report` call plus the report file at `reportPath`), also when the review itself runs
+inline because the change is small. The `review` budget rose to 836 lines.
+
+### Round 2
+
+`review` and the migration cell were re-measured (`…-r2-…` ids, 12 runs, about 2.51 USD).
+`iterate` keeps its round 1 runs, because `review.md` is not in its load set and the fix cannot
+change its behaviour.
+
+| Cell      | Mode    | Valid | Exercised | Housekeeping prompts | Housekeeping refusals | Read prompts | Result |
+| --------- | ------- | ----: | --------: | -------------------: | --------------------: | -----------: | ------ |
+| `review`  | default |     3 |       2/3 |                    0 |                     0 |            0 | met    |
+| `review`  | auto    |     3 |       1/3 |                    0 |                     0 |            0 | missed |
+| `iterate` | default |     3 |       3/3 |                    0 |                     0 |            9 | met    |
+| `iterate` | auto    |     3 |       2/3 |                    0 |                     0 |            0 | met    |
+| `firmo`   | default |     3 |       1/3 |                    0 |                     0 |            0 | missed |
+| `firmo`   | auto    |     3 |       1/3 |                    0 |                     0 |            0 | missed |
+
+The fix moved `review` default from 0/3 to 2/3 and `review` auto from 2/3 to 1/3. Across both
+rounds `review` was exercised in 5 of 12 runs and the migration cell in 5 of 12, against 4 of 6
+required per round.
+
+### Housekeeping, call shape and skip reasons
+
+**Helper housekeeping: 0 prompts and 0 refusals in all 30 valid runs** of both rounds. Every
+housekeeping call that happened was approved without a prompt.
+
+Literal-shape compliance, reported but not part of the criterion:
+
+| Helper                 | Round 1 | Round 2 set |
+| ---------------------- | ------: | ----------: |
+| `effective-flow-state` |   24/25 |       24/24 |
+| `config-resolve`       |     5/5 |         5/5 |
+| `remote-tracker`       |   21/53 |       21/53 |
+
+- The one non-literal state call in round 1, in `w8-review-auto-2`, appended `; git status --short`
+  to `review open-report`. It ran in auto mode and was not refused.
+- The `remote-tracker` figure comes from the `iterate` runs alone, which round 2 kept. The 9
+  prompted reads in `iterate` default broke the shape with a `cd <scripts> &&` prefix and a
+  relative path, a compound command or pipe (`--help 2>&1 | head …`, `git push …;` before the
+  call), or an `S=` variable prefix. Some were also dry runs of mutation operations without
+  `--apply` (`review-thread-reply`, `pr-comment`), which no read rule covers. The `--apply` calls
+  are never allowlisted and prompt by design.
+
+The unexercised `review` and migration runs gave the size of the diff as their reason, for example:
+
+- "The diff is small, so I read it myself and did not run the full multi-agent pipeline."
+- "The diff is two files and 24 lines, so I read it inline instead of starting reviewer workers."
+- "They are two files and 24 lines, which is smaller than briefing workers would cost." (round 2,
+  after the fix)
+
+Exercised runs reviewed inline as well, but still called `review open-report` and wrote the report.
+The inline review itself is allowed; skipping the persistence with it is not.
+
+### Verdict
+
+**Criterion blocked.** The plan's one fix round is used up, and the re-measurement still misses it.
+
+- **Met:** helper housekeeping with 0 prompts and 0 refusals in every valid run; `iterate` in 3/3
+  and 2/3 runs; the literal shape for `effective-flow-state` and `config-resolve`.
+- **Missed:** `review` auto (1/3 in round 2) and the migration cell in both modes (1/3 each).
+- **Cause:** the step is still skippable. Collapsing it into one allowlisted call made it cheap and
+  prompt-free when taken, but a run that presents its findings directly in chat never reaches it.
+
+The user decided to deliver blocked. The plan stays not implemented, and the concept records the
+structural follow-up as work package 9. The plan named a narrow PreToolUse hook as the fallback;
+it is not pursued, because a hook addresses prompts, not skipped steps, and housekeeping prompts are
+already 0.
+
+### What the measurement does not cover
+
+- The `review` cell runs in local mode only. The publishing-target and pull-request persistence
+  gates are covered by contract tests alone.
+- The sandbox PR is same-repository and changes no hook configuration, so `HOOKS_UNTRUSTED` and its
+  prose fallback are covered by unit tests alone.
+- The stage 1 limits still apply: one model, the portable install form only, headless sessions, and
+  server-side auto mode unmeasured.
+
+### Retention
+
+The evidence root `.effective-flow/spikes/allowlist/2026-11-01-01/` in the primary checkout is
+untracked. It holds the harness copies, the prompts, the per-run configuration, transcript, debug
+log, permission log, result, allow-rules envelopes, settings snapshots and `commits.txt`, the id
+lists `ids-round1.txt` and `ids-round2.txt`, and `analysis-round1.txt` and `analysis-round2.txt`.
+`manifest.sha256.txt` lists 57 files and excludes the linked `node_modules`.
+
+| File                  | SHA-256                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `manifest.sha256.txt` | `d702b78b185b538657ff69f5ae0d9356ccf9be93462308adcc28e793bbb1659a` |
+
+Round 1's 18 runs cost 4.87 USD and round 2's 12 new runs about 2.51 USD, so the total is about
+7.38 USD, against the plan's estimate of 10 to 15 USD.

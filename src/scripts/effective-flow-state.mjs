@@ -4,6 +4,8 @@
 //   node effective-flow-state.mjs lock <acquire|release|inspect|break> <<< '<json>'
 //   node effective-flow-state.mjs memory <reserve|set-marker|migrate-directory> <<< '<json>'
 //   node effective-flow-state.mjs harness allow-rules <<< '<json>'
+//   node effective-flow-state.mjs commit create <<< '<json>'
+//   node effective-flow-state.mjs review open-report <<< '<json>'
 // The operation is exactly these two argv tokens; any other argv, an extra token included, is
 // rejected before stdin is read, so an allowlisted command prefix cannot be widened by an extra
 // argument and `--help` never blocks on a tty. Stdin carries one JSON object of at most 64 KiB.
@@ -13,7 +15,7 @@
 import { realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
-import { createProcessRunner } from './process-runner.mjs';
+import { createProcessRunner, terminateActiveProcessGroups } from './process-runner.mjs';
 import {
   MAX_STDIN_BYTES,
   STATE_OPERATIONS,
@@ -69,6 +71,20 @@ const OUTCOME_MESSAGES = Object.freeze({
   SETTINGS_INVALID: (outcome) => `${outcome.target} is invalid; nothing was written`,
   PREVIEW_MISMATCH: (outcome) =>
     `the settings changed since the preview (${outcome.reason}); nothing was written`,
+  HOOKS_UNTRUSTED: (outcome) =>
+    `the hooks of this head are not trusted (${outcome.reason}); nothing was staged or committed`,
+  INDEX_NOT_CLEAN: () => 'the index already holds staged changes; nothing was staged or committed',
+  STAGE_FAILED: () => 'staging the listed paths failed; the listed paths were unstaged',
+  STAGED_SET_MISMATCH: () =>
+    'the staged set differs from the listed paths; the listed paths were unstaged',
+  STAGED_CONTENT_CHANGED: () =>
+    'a staged blob differs from its expected object; the listed paths were unstaged',
+  COMMIT_FAILED: () => 'the commit failed; the listed paths were unstaged',
+  COMMIT_UNVERIFIED: (outcome) =>
+    `commit ${outcome.commit} does not match the listed paths or left a staged index; nothing was amended`,
+  SANDBOX_DENIED: () => 'the sandbox denied a write below .git; the listed paths were unstaged',
+  INTERRUPTED: (outcome) =>
+    `stopped by ${outcome.signal}${outcome.commit ? ` after commit ${outcome.commit}` : ' before a commit landed'}`,
 });
 
 function outcomeLine({ outcome, error }) {
@@ -90,6 +106,8 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     envelope = await executeOperation(operation, input, {
       runner: io.runner ?? createProcessRunner(),
       env: process.env,
+      signalTarget: process,
+      terminateChildren: terminateActiveProcessGroups,
       ...io.deps,
     });
   } catch (error) {

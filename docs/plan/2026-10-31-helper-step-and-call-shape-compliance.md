@@ -313,7 +313,7 @@ Not relevant.
 
 ## Acceptance criteria
 
-- [ ] `commit create` is shipped, allowlisted and covered by unit tests against temporary Git repositories. The tests cover:
+- [x] `commit create` is shipped, allowlisted and covered by unit tests against temporary Git repositories. The tests cover:
   - success with modified, added, deleted and renamed paths;
   - `INDEX_NOT_CLEAN`;
   - `STAGE_FAILED`;
@@ -328,23 +328,24 @@ Not relevant.
   - invalid, `.effective-flow/` and foreign-worktree paths rejected before the lock;
   - lock release on every path, and the token returned wherever the lock may still be held;
   - redacted, size-capped stderr.
-- [ ] `review open-report` is shipped, allowlisted and covered by unit tests. The tests cover:
+- [x] `review open-report` is shipped, allowlisted and covered by unit tests. The tests cover:
   - reserve plus a guarded path in one call, in a fresh repository without `.effective-flow/review/`;
   - no reservation when the allocation or the directory guard fails;
   - the report date matches the mechanics CLI's for the same clock and time zone;
   - the inherited `MIGRATION_REQUIRED` and `LOCK_HELD` outcomes.
-- [ ] `remote-tracker.mjs` and the eval stub reject every argv except `<operation>` or `<operation> --apply`, and reject `--apply` on a non-mutation, before stdin is read. Unit tests pin this.
-- [ ] `setup allowlist` writes the extended rule set. A unit test proves that every listed `remote-tracker` operation is neither a mutation nor a local write, and that every `remote-tracker` operation is classified. `setup status` reports a six-rule project as `stale`.
-- [ ] The call-shape contract test enforces the invariant stated under Architecture decisions for all three helpers.
-- [ ] A contract test pins `iterate.md`:
+- [x] `remote-tracker.mjs` and the eval stub reject every argv except `<operation>` or `<operation> --apply`, and reject `--apply` on a non-mutation, before stdin is read. Unit tests pin this.
+- [x] `setup allowlist` writes the extended rule set. A unit test proves that every listed `remote-tracker` operation is neither a mutation nor a local write, and that every `remote-tracker` operation is classified. `setup status` reports a six-rule project as `stale`.
+- [x] The call-shape contract test enforces the invariant stated under Architecture decisions for all three helpers.
+- [x] A contract test pins `iterate.md`:
   - it contains no commit path for an item outside `commit create` except the `HOOKS_UNTRUSTED` fallback;
   - it maps every `commit create` outcome;
   - its item-delegation handoff carries the call line, the outcome map and the ban verbatim;
   - the commit-lock contract carries the `commit create` sentence.
-- [ ] A contract test pins `review.md`: it carries the per-path persistence gate, including the appendix-only path, the task entry and the extended completion condition.
-- [ ] The exception bullet in `delegation-mandate.md` states that it never waives a workflow step, and the fragment stays within its line cap.
-- [ ] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution`. Every touched `CONTEXT_BUDGET_LINES` entry is re-measured.
+- [x] A contract test pins `review.md`: it carries the per-path persistence gate, including the appendix-only path, the task entry and the extended completion condition.
+- [x] The exception bullet in `delegation-mandate.md` states that it never waives a workflow step, and the fragment stays within its line cap.
+- [x] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution`. Every touched `CONTEXT_BUDGET_LINES` entry is re-measured.
 - [ ] The realistic measurement meets the work package 8 criterion, as defined under "Measurement procedure", within at most one fix round. The result is recorded in `docs/developer-guide/claude-code-allowlist-evidence.md`, and the concept records the work package 8 result.
+  - 2026-11-01: blocked — after the one fix round, `review` auto (1/3) and the migration cell (1/3 per mode) still miss the 2-of-3 bar, while helper housekeeping shows 0 prompts and 0 refusals; decision: deliver blocked; follow-up work package 9.
 
 ## Validation plan
 
@@ -432,6 +433,41 @@ Not relevant.
 - **Scope, Note.** Two planned changes were already done: `reserveMemory` is exported, and `config-resolve` already rejects extra argv. Incorporated: the affected rows were dropped or reworded.
 - **Testability, Note.** The publishing-target and pull-request gates, and `HOOKS_UNTRUSTED`, are not measured realistically. Incorporated: stated as a limit of the measurement.
 
+## Implementation notes
+
+- **`hookBase`** is the full SHA of a merge-base, not the PR base SHA the plan named, because `pr-read` returns no base SHA. In PR mode it is `git merge-base HEAD origin/<base>` after an explicit `git fetch origin <base>`; in local mode it is the merge-base with the local diff base. `sameRepository` comes from the Phase 1 PR read, `false` when absent and `true` in local mode.
+- **husky v9:** the directory `.husky/_/`, which husky regenerates on every install, is exempt from the hook-relevant list; every other change under `.husky/` still gives `HOOKS_UNTRUSTED`.
+- **`HOOKS_UNTRUSTED` in delegated items:** an item delegation returns the outcome instead of committing, and the orchestrator runs the prompting fallback from `iterate-commit-fallback`.
+- **Allocation extraction:** the `review-report-local` allocation moved from `effective-flow-mechanics-core.mjs` into `src/scripts/dated-name-allocation.mjs`, with no behaviour change. Both helpers import it, and `RUNTIME_SCRIPT_FILES` lists it.
+- **53 allow rules:** 8 `effective-flow-state.mjs` operations (lock acquire, release and inspect; memory reserve, set-marker and migrate-directory; commit create; review open-report), `config-resolve.mjs resolve`, and 44 read-only `remote-tracker.mjs` operations, `thread-ledger-lookup` included.
+- **Stale semantics:** `setup status` reports `stale` for any partial set, the six work package 3 rules included, and `absent` only when none of the rules is present.
+- **`gitCommitEnv`:** `commit create` runs `git commit` with the environment a plain `git commit` in that worktree would see. Identity, signing, `GIT_CONFIG_*` and locale stay; only the repository-redirecting variables are removed, and `GIT_TERMINAL_PROMPT=0` is set.
+- **Sandbox detection:** after a failed Git step, `SANDBOX_DENIED` is detected by a closed stderr pattern list and by write probes into the worktree's Git directory and the object store (an `EPERM`, `EACCES` or `EROFS` on an exclusive create, removed at once).
+- **`heldLock`:** every envelope where the lock may still be held carries `heldLock` (`lock`, `path`, `token`, `identity`) and `lockRelease`. It may sit at `result`, `outcome` or `error`, and `iterate`'s outcome handling covers all three.
+- **Review `## Goal` rule (fix round):** after measurement round 1, a bold persistence rule under `## Goal` in `src/tools/review.md` states that an inline review of a small change still reserves and persists before presenting any finding. The `review` budget is 836 lines.
+- **Accepted deviation from the plan:** the blocked criterion leads to a structural follow-up (work package 9 in the concept), not to the narrow PreToolUse hook the plan named. A hook addresses prompts, not skipped steps, and housekeeping prompts were already 0.
+
+## Test results
+
+- `corepack pnpm test`: 3335 tests, 3332 pass, 0 fail, 3 skipped.
+- `corepack pnpm agent:check`, `node build.mjs` and `corepack pnpm test:distribution`: green.
+- Behavioural evals: the `iterate`, `merge-gate` and `next-steps` suites are stale against this tree and owe a re-recorded round before the next release.
+- Realistic measurement: criterion blocked, see `docs/developer-guide/claude-code-allowlist-evidence.md`, "Work package 8 measurement" (manifest SHA-256 `d702b78b185b538657ff69f5ae0d9356ccf9be93462308adcc28e793bbb1659a`).
+
+## Review findings
+
+**Date:** 2026-11-01
+**Reviewer:** Node.js reviewer, generic product reviewer, re-review
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    27 |
+| Open / Not implemented |     0 |
+
+F22 and F23 were closed without a change: F22 (the `mechanics name-allocate` call shape) is outside this package's scope, and F23 (the repeated inline ban sentences) is the design the plan chose for `config-migration` and `remote-helper-contract`.
+
 ## Open points
 
-- No open points.
+- **Blocking: the work package 8 criterion is blocked.** Realistic `review` and migration runs still skip the persistence step in too many runs. Re-entry: implement work package 9 ("Structural review persistence") of `docs/concept/2026-10-29-runtime-state-cli.md`, then re-measure with the work package 8 harness. This plan stays open until then.

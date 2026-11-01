@@ -242,6 +242,7 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
 - **Stage 0 may fail.** If auto mode or subagent sessions drop or ignore an absolute-path rule, the success criterion cannot be met through the allowlist alone. The fallback is the PreToolUse hook, which applies to Claude Code only.
 - **Install path changes.** The absolute-path rule must be rewritten when the skill moves, for example from a DALO install to a local link. A stale rule causes prompts but never wrongly approves a command.
 - **Self-attested creation.** Run records start from prose-executed `git worktree add`. The creation-commit and fresh-registration checks narrow this, and git's non-force refusal is the backstop.
+- **`commit create` runs hooks without a prompt.** Allowlisting it lets a commit execute the repository's hooks unprompted. The helper commits only the listed paths and never pushes, amends, resets or rebases, and it refuses a fork head or a hook configuration that differs from the base (`HOOKS_UNTRUSTED`), which falls back to the prompting prose commit. The trust check is the boundary: a hook-relevant file it fails to recognise would run unprompted.
 - **Typed memory is rigid.** Every new memory key family needs a new helper operation and release. This is intended, but it adds friction for future tools.
 - **Stage 3 touches many hosts.** Base-branch resolution, name allocation, and reference resolution are hosted by many tools, so the per-call behaviour of most workflows changes at once, even though few hosts load them eagerly.
 - **Fetch inside the helper.** An allowlisted fetch gives network egress and ref writes without a prompt. The remote name is bounded by `git remote`. In Codex the fetch needs network and `.git` escalation. With a remote configured, a failed fetch must keep stopping and never fall back to the local branch.
@@ -322,9 +323,21 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
      - extend the literal call-shape rule to `remote-tracker` and `config-resolve`
      - consider a narrow PreToolUse hook only if prose and structure fail
      - a realistic re-measurement with the stage 1 harness
+   - **Result (2026-11-01):** blocked. `commit create`, `review open-report`, the triviality clause, the extended call-shape rule and 53 allow rules shipped, but after the one fix round (a persistence rule under `review.md`'s `## Goal`) the realistic measurement still misses the criterion: `review` auto 1/3 and the migration cell 1/3 per mode, against `iterate` 3/3 and 2/3 and `review` default 2/3. Helper housekeeping showed 0 prompts and 0 refusals in all 30 valid runs. The review skip persists: unexercised runs reviewed inline "because the diff is small" and presented findings in chat without ever reaching the helper. Evidence: `docs/developer-guide/claude-code-allowlist-evidence.md`, "Work package 8 measurement". The narrow PreToolUse hook named as the fallback is not pursued: it addresses prompts, not skipped steps, and prompts were already 0. The follow-up is work package 9.
    - **Done when:** the realistic measurement exercises each of `review`, `iterate` and the migration in at least 2 of 3 runs per mode, and the helper housekeeping sub-class shows 0 prompts and 0 refusals.
    - **Depends on:** 3.
    - **Handoff:** `effective-flow plan "Work package 8 'Helper-step and call-shape compliance' from docs/concept/2026-10-29-runtime-state-cli.md: make review and iterate reach their reservation, report and commit-lock steps in realistic runs, state that the triviality exception never waives a workflow step, extend the literal call-shape rule to remote-tracker and config-resolve, consider structural helper operations before any narrow PreToolUse hook, and re-measure realistically with the stage 1 harness."`
+9. **Structural review persistence (stage 1 follow-up)**
+   - **Goal:** realistic `review` runs persist their findings, because findings reach chat only through the report helper. A run that skips the helper then has nothing to present.
+   - **Evidence:** `docs/developer-guide/claude-code-allowlist-evidence.md`, "Work package 8 measurement". Across both rounds `review` was exercised in 5 of 12 runs and the migration cell in 5 of 12; every unexercised run made no helper call and named the small diff as its reason. A one-call operation and a bold prose rule made the step cheap and prompt-free, but not unskippable.
+   - **Scope (candidates, not decided):**
+     - a helper operation that renders the chat summary from the written report, so the presented findings are the helper's output
+     - a review flow whose final presentation step is the helper's output, with no prose path that presents findings first
+     - the same treatment for the migration cell, which runs through `review`
+     - a realistic re-measurement with the work package 8 harness
+   - **Done when:** the work package 8 criterion holds for `review` and the migration cell: each exercised in at least 2 of 3 valid runs per mode, with helper housekeeping at 0 prompts and 0 refusals.
+   - **Depends on:** 8.
+   - **Handoff:** `effective-flow plan "Work package 9 'Structural review persistence' from docs/concept/2026-10-29-runtime-state-cli.md: make realistic review runs persist their findings by letting findings reach chat only through the report helper, for example a helper operation that renders the chat summary from the written report or a review flow whose final presentation step is the helper's output, cover the migration cell, and re-measure realistically with the work package 8 harness until review and the migration meet the work package 8 criterion."`
 
 ## Concept review
 
@@ -337,7 +350,7 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
 | Technical feasibility | Builds on the existing script pattern. The Codex `.git` protection is verified, and Codex parity is limited to locks and memory accordingly.       |
 | Data and security     | Three guard layers. Destructive operations are never allowlisted. The rule is bound to an absolute path, and orphan breaks are compare-and-remove. |
 | Risks                 | Stage 0 is the main uncertainty and has a defined fallback. Permanent protocol compatibility is acknowledged.                                      |
-| Roadmap               | Eight ordered work packages with done criteria and handoffs. Stage 3a can start in parallel with the spike.                                        |
+| Roadmap               | Nine ordered work packages with done criteria and handoffs. Stage 3a can start in parallel with the spike.                                         |
 
 Findings:
 

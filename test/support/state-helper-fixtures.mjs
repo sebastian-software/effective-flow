@@ -3,7 +3,7 @@
 // a deterministic clock, and envelope assertions.
 
 import assert from 'node:assert/strict';
-import { mkdirSync, mkdtempSync, realpathSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -97,4 +97,17 @@ export function expectError(envelope, code) {
   assert.equal(envelope.error?.code, code, JSON.stringify(envelope));
   assert.equal(typeof envelope.error.message, 'string');
   return envelope.error;
+}
+
+// The three helper files an allow rule names, written into one `scripts/` directory of a fake
+// install: `harness allow-rules` requires each to resolve beside the running helper.
+export const RULE_HELPER_FILES = Object.freeze([
+  'effective-flow-state.mjs',
+  'config-resolve.mjs',
+  'remote-tracker.mjs',
+]);
+
+export function writeHelperScripts(scriptsDir) {
+  mkdirSync(scriptsDir, { recursive: true });
+  for (const name of RULE_HELPER_FILES) writeFileSync(join(scriptsDir, name), '// helper\n');
 }

@@ -101,6 +101,35 @@ export function gitBaseEnv(source = process.env) {
   return env;
 }
 
+// The variables that point git at another repository, worktree, index or object store. Only these
+// are stripped from the environment of a commit the helper makes on the caller's behalf.
+const REPOSITORY_REDIRECTING_GIT_ENV = Object.freeze([
+  'GIT_DIR',
+  'GIT_WORK_TREE',
+  'GIT_COMMON_DIR',
+  'GIT_INDEX_FILE',
+  'GIT_OBJECT_DIRECTORY',
+  'GIT_ALTERNATE_OBJECT_DIRECTORIES',
+  'GIT_QUARANTINE_PATH',
+  'GIT_NAMESPACE',
+  'GIT_PREFIX',
+  'GIT_SHALLOW_FILE',
+]);
+
+// The environment of a commit made in the caller's stead: the one a plain `git commit` in that
+// worktree would see, so identity, signing, `GIT_CONFIG_*` configuration and the caller's locale
+// all stay, with only the repository-redirecting variables removed. `GIT_TERMINAL_PROMPT=0` keeps
+// a credential prompt from blocking the bounded call; a commit asks for no credential itself.
+export function gitCommitEnv(source = process.env) {
+  const env = {};
+  for (const [key, value] of Object.entries(source ?? {})) {
+    if (value === undefined || REPOSITORY_REDIRECTING_GIT_ENV.includes(key)) continue;
+    env[key] = value;
+  }
+  env.GIT_TERMINAL_PROMPT = '0';
+  return env;
+}
+
 // The shared `process-runner.mjs` merges a call's `env` over `process.env`, so a stripped variable
 // the helper process inherited would come back. Masking every such key with `undefined` keeps it
 // out of the child for both runners: `spawn` skips an undefined value.
@@ -129,6 +158,27 @@ export function errorDetail(buffer) {
   return lines.find((line) => /^(?:fatal|error):/.test(line)) ?? lines[0] ?? '';
 }
 
+// Runs `git -C <cwd> <args>` once and returns the runner's raw result, whatever its status, for a
+// caller that classifies a failure itself. `timeoutMs` bounds the call and `processGroup` makes the
+// bound, and `terminateActiveProcessGroups`, reach every descendant such as a hook.
+export async function runGit(
+  context,
+  cwd,
+  args,
+  { env = context.env, stdin, timeoutMs, processGroup = false } = {},
+) {
+  return context.runner({
+    executable: 'git',
+    args: ['-C', cwd, ...args],
+    cwd,
+    env: maskInheritedGitEnv(env),
+    stdoutBuffer: true,
+    ...(stdin === undefined ? {} : { stdin }),
+    ...(timeoutMs === undefined ? {} : { timeoutMs }),
+    ...(processGroup ? { processGroup: true } : {}),
+  });
+}
+
 // Runs `git -C <cwd> <args>` and returns the raw result when its status is allowed. Any other
 // outcome is a GIT_FAILED error carrying one stderr line, never the full output; `explain` may
 // turn stderr into a more actionable message. The call requests `stdoutBuffer` and normalises
@@ -140,14 +190,7 @@ export async function git(
   args,
   { env = context.env, allowed = [0], explain, stdin } = {},
 ) {
-  const result = await context.runner({
-    executable: 'git',
-    args: ['-C', cwd, ...args],
-    cwd,
-    env: maskInheritedGitEnv(env),
-    stdoutBuffer: true,
-    ...(stdin === undefined ? {} : { stdin }),
-  });
+  const result = await runGit(context, cwd, args, { env, stdin });
   if (result?.error || !allowed.includes(result?.status)) {
     const detail = result?.error?.message ?? errorDetail(result?.stderr);
     const command = args.find((arg, index) => arg !== '-c' && args[index - 1] !== '-c');

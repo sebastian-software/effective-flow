@@ -1,24 +1,43 @@
 // Claude Code settings: the parser of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json` and the
-// matcher of the helper allow-rule shape. It is shared by the runtime-state helper, which writes
+// matcher of the helper allow-rule shapes. It is shared by the runtime-state helper, which writes
 // the rules (`harness allow-rules`), and by the read-only `setup-status` probe, which reports them;
 // neither of those imports the other. This module reads only and imports no script but the
 // dependency-free `runtime-file-primitives.mjs`.
 //
-// The one rule shape, per allowlisted helper operation (see ALLOWLISTED_OPERATIONS):
+// One rule shape per allowlisted operation of three JSON helpers (see RULE_ENTRIES):
 //
 //   Bash(node <skillRoot>/scripts/effective-flow-state.mjs <group> <operation> *)
+//   Bash(node <skillRoot>/scripts/config-resolve.mjs resolve *)
+//   Bash(node <skillRoot>/scripts/remote-tracker.mjs <operation> *)
 //
 // `<skillRoot>` is the loaded skill's directory in its symlinked install form. The trailing `*`
-// admits the here-string; the helper itself rejects any argv beyond its two operation tokens.
+// admits the here-string; each helper itself rejects any argv beyond its operation tokens, and
+// `remote-tracker.mjs` also rejects `--apply` on an operation that is not a mutation, which is what
+// makes the `*` safe. The `remote-tracker` list is closed and classified here rather than derived
+// from its core, so this module stays free of the tracker's import graph; a unit test pins every
+// listed operation against the core's mutation and local-write classification, and requires every
+// operation of the core to be either listed or excluded.
 
 import path from 'node:path';
 import { isObject, readBoundedFile, sameFileRead } from './runtime-file-primitives.mjs';
 
 export const HELPER_RELATIVE_PATH = 'scripts/effective-flow-state.mjs';
+export const CONFIG_RESOLVE_RELATIVE_PATH = 'scripts/config-resolve.mjs';
+export const REMOTE_TRACKER_RELATIVE_PATH = 'scripts/remote-tracker.mjs';
 export const SETTINGS_RELATIVE_PATH = '.claude/settings.local.json';
 
-// The non-destructive helper operations that get one allow rule each. `lock break` and
-// `harness allow-rules` never get a rule; the helper's operation classification pins that.
+// The three helpers an allow rule may name, by script name.
+export const RULE_SCRIPTS = Object.freeze({
+  'effective-flow-state': HELPER_RELATIVE_PATH,
+  'config-resolve': CONFIG_RESOLVE_RELATIVE_PATH,
+  'remote-tracker': REMOTE_TRACKER_RELATIVE_PATH,
+});
+export const RULE_SCRIPT_NAMES = Object.freeze(Object.keys(RULE_SCRIPTS));
+
+// The non-destructive runtime-state helper operations that get one allow rule each. `lock break`
+// and `harness allow-rules` never get a rule; the helper's operation classification pins that.
+// `commit create` writes Git history and runs the repository's hooks; its own guards bound what an
+// unprompted call can commit (see `effective-flow-state-commit-core.mjs`).
 export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock acquire',
   'lock release',
@@ -26,10 +45,122 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'memory reserve',
   'memory set-marker',
   'memory migrate-directory',
+  'commit create',
+  'review open-report',
 ]);
-// The helper operations that never get a rule: destructive, or the writer of the rules itself. A
-// rule that would also admit one of them is widened.
+// The runtime-state helper operations that never get a rule: destructive, or the writer of the
+// rules itself. A rule that would also admit one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze(['lock break', 'harness allow-rules']);
+
+// `config-resolve.mjs` has one operation, and it reads only.
+export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze(['resolve']);
+
+// The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
+// computations, and `thread-ledger-lookup`, a local read of runtime state. Never a mutation, never
+// a local write.
+export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
+  'repository-resolve',
+  'probe',
+  'viewer-read',
+  'collaborator-permission-read',
+  'repository-visibility-read',
+  'issue-read',
+  'issue-state-wait',
+  'issue-comments-read',
+  'issue-list',
+  'issue-sub-issues-read',
+  'pr-read',
+  'pr-comments-read',
+  'pr-reviews-read',
+  'pr-list',
+  'pr-status-read',
+  'pr-checks-wait',
+  'review-threads-read',
+  'remote-parse',
+  'reference-parse',
+  'signature-parse',
+  'finding-build',
+  'follow-up-admission-build',
+  'follow-up-admission-parse',
+  'follow-up-admission-supersede',
+  'epic-build',
+  'planning-comment-build',
+  'decomposition-records-build',
+  'decomposition-records-parse',
+  'decomposition-key-build',
+  'decomposition-key-parse',
+  'decomposition-container-compare',
+  'decomposition-child-workflow-parse',
+  'apply-comment-build',
+  'pr-comment-build',
+  'pr-review-comment-build',
+  'finding-deduplicate',
+  'label-query-variants',
+  'sf-label-migration-plan',
+  'marker-patch',
+  'checklist-patch',
+  'body-hash',
+  'issue-lifecycle-receipt-build',
+  'issue-lifecycle-receipt-parse',
+  'thread-ledger-lookup',
+]);
+// The `remote-tracker.mjs` operations that never get a rule: every forge mutation, and the local
+// write `thread-ledger-record`. A rule that would also admit one of them, `--apply` included, is
+// widened.
+export const REMOTE_TRACKER_EXCLUDED_OPERATIONS = Object.freeze([
+  'label-create',
+  'issue-create',
+  'issue-sub-issue-create',
+  'issue-update-body',
+  'issue-close',
+  'issue-comment',
+  'issue-comment-update',
+  'issue-labels',
+  'issue-label-add',
+  'issue-label-remove',
+  'sf-label-migrate',
+  'pr-create',
+  'pr-update-body',
+  'pr-update-title',
+  'pr-mark-ready',
+  'pr-comment',
+  'pr-merge',
+  'review-create',
+  'review-thread-reply',
+  'review-thread-resolve',
+  'thread-ledger-record',
+]);
+const REMOTE_TRACKER_LOCAL_WRITES = Object.freeze(['thread-ledger-record']);
+
+// The allowlisted operations per helper.
+export const ALLOWLISTED_BY_SCRIPT = Object.freeze({
+  'effective-flow-state': ALLOWLISTED_OPERATIONS,
+  'config-resolve': CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS,
+  'remote-tracker': REMOTE_TRACKER_READ_OPERATIONS,
+});
+
+// Every rule `harness allow-rules` writes, in write order: `{ script, operation }`.
+export const RULE_ENTRIES = Object.freeze(
+  RULE_SCRIPT_NAMES.flatMap((script) =>
+    ALLOWLISTED_BY_SCRIPT[script].map((operation) => Object.freeze({ script, operation })),
+  ),
+);
+
+// The command lines a rule must never admit, per helper, without their `node <path> ` prefix: the
+// documented here-string and a heredoc for every never-allowlisted state operation and for the
+// local write, and the applied form of every mutation.
+const NEVER_ADMITTED_CALLS = Object.freeze({
+  'effective-flow-state': NEVER_ALLOWLISTED_OPERATIONS.flatMap((operation) => [
+    `${operation} <<< '{}'`,
+    `${operation} <<'EOF'`,
+  ]),
+  'config-resolve': [],
+  'remote-tracker': REMOTE_TRACKER_EXCLUDED_OPERATIONS.flatMap((operation) =>
+    REMOTE_TRACKER_LOCAL_WRITES.includes(operation)
+      ? [`${operation} <<< '{}'`, `${operation} <<'EOF'`]
+      : [`${operation} --apply <<< '{}'`, `${operation} --apply <<'EOF'`],
+  ),
+});
 
 export const MAX_SETTINGS_BYTES = 1024 * 1024;
 
@@ -39,8 +170,21 @@ export const MAX_SETTINGS_BYTES = 1024 * 1024;
 export const SKILL_ROOT_PATTERN = /^[A-Za-z0-9._@+/-]+$/;
 
 const OPERATION_TOKEN = '[a-z][a-z-]*';
-const HELPER_RULE_PATTERN = new RegExp(
-  `^Bash\\(node (/[A-Za-z0-9._@+/-]*)/scripts/effective-flow-state\\.mjs (${OPERATION_TOKEN}) (${OPERATION_TOKEN}) \\*\\)$`,
+const ROOT_GROUP = '(/[A-Za-z0-9._@+/-]*)';
+const RULE_PATTERNS = Object.freeze({
+  'effective-flow-state': new RegExp(
+    `^Bash\\(node ${ROOT_GROUP}/scripts/effective-flow-state\\.mjs (${OPERATION_TOKEN}) (${OPERATION_TOKEN}) \\*\\)$`,
+  ),
+  'config-resolve': new RegExp(
+    `^Bash\\(node ${ROOT_GROUP}/scripts/config-resolve\\.mjs (${OPERATION_TOKEN}) \\*\\)$`,
+  ),
+  'remote-tracker': new RegExp(
+    `^Bash\\(node ${ROOT_GROUP}/scripts/remote-tracker\\.mjs (${OPERATION_TOKEN}) \\*\\)$`,
+  ),
+});
+// A rule naming one of the helper files in any other form than its exact shape is widened.
+const HELPER_FILE_NAMES = Object.freeze(
+  RULE_SCRIPT_NAMES.map((script) => path.posix.basename(RULE_SCRIPTS[script])),
 );
 
 export class SettingsError extends Error {
@@ -51,58 +195,70 @@ export class SettingsError extends Error {
   }
 }
 
-export function helperRule(skillRoot, operation) {
-  return `Bash(node ${skillRoot}/${HELPER_RELATIVE_PATH} ${operation} *)`;
+// One allow rule; `script` defaults to the runtime-state helper.
+export function helperRule(skillRoot, operation, script = 'effective-flow-state') {
+  return `Bash(node ${skillRoot}/${RULE_SCRIPTS[script]} ${operation} *)`;
 }
 
+// Every rule of an install, in RULE_ENTRIES order.
 export function helperRules(skillRoot) {
-  return ALLOWLISTED_OPERATIONS.map((operation) => helperRule(skillRoot, operation));
+  return RULE_ENTRIES.map(({ script, operation }) => helperRule(skillRoot, operation, script));
 }
 
-// Parses a rule of exactly the helper shape: `{ skillRoot, operation }`, or null for any other
-// rule. The operation may be one that is not allowlisted; the caller decides what that means.
+// Parses a rule of exactly one helper shape: `{ skillRoot, script, operation }`, or null for any
+// other rule. The operation may be one that is not allowlisted; the caller decides what that means.
 export function parseHelperRule(rule) {
   if (typeof rule !== 'string') return null;
-  const match = HELPER_RULE_PATTERN.exec(rule);
-  if (!match) return null;
-  const skillRoot = match[1];
-  if (!SKILL_ROOT_PATTERN.test(skillRoot)) return null;
-  if (
-    skillRoot !== '/' &&
-    (skillRoot.endsWith('/') || path.posix.normalize(skillRoot) !== skillRoot)
-  ) {
-    return null;
+  for (const script of RULE_SCRIPT_NAMES) {
+    const match = RULE_PATTERNS[script].exec(rule);
+    if (!match) continue;
+    const skillRoot = match[1];
+    if (!SKILL_ROOT_PATTERN.test(skillRoot)) return null;
+    if (
+      skillRoot !== '/' &&
+      (skillRoot.endsWith('/') || path.posix.normalize(skillRoot) !== skillRoot)
+    ) {
+      return null;
+    }
+    const operation = match[3] === undefined ? match[2] : `${match[2]} ${match[3]}`;
+    return { skillRoot, script, operation };
   }
-  return { skillRoot, operation: `${match[2]} ${match[3]}` };
+  return null;
 }
 
-// Why an allow rule is wider than the helper shape and admits a helper call it should not, or null.
-// The widened rules are warned about and never removed: the user may have chosen them.
+// Why an allow rule is wider than the helper shapes and admits a helper call it should not, or
+// null. The widened rules are warned about and never removed: the user may have chosen them.
 //   any-command        `Bash` or `Bash(*)`
 //   any-node-command   `Bash(node *)`, `Bash(node:*)` or another bare `node` prefix
-//   helper-wildcard    a rule naming the helper that is not of the exact helper shape, or any
-//                      pattern that matches a never-allowlisted call of one of `helperPaths`,
-//                      such as `Bash(node <skillRoot>/scripts/*)` or `Bash(node ~/.claude/skills/*)`
+//   helper-wildcard    a rule naming one of the three helper files that is not of its exact shape,
+//                      or any pattern that matches a never-admitted call (NEVER_ADMITTED_CALLS) of
+//                      a helper beside one of `helperPaths`, such as
+//                      `Bash(node <skillRoot>/scripts/*)` or `Bash(node ~/.claude/skills/*)`
 //   not-allowlisted    an exact helper-shape rule for an operation that is never allowlisted
 //
-// `options.helperPaths` lists the helper file paths a command line may name (the install form and
-// its realpath); `options.home` expands a leading `~/` in the rule as the shell would.
+// `options.helperPaths` lists the runtime-state helper file paths a command line may name (the
+// install form and its realpath); the other two helpers are probed beside each of them.
+// `options.home` expands a leading `~/` in the rule as the shell would.
 export function widenedRuleReason(rule, { helperPaths = [], home } = {}) {
   if (typeof rule !== 'string') return null;
   const compact = rule.replace(/\s+/g, ' ').trim();
   if (compact === 'Bash' || compact === 'Bash(*)' || compact === 'Bash(:*)') return 'any-command';
   if (/^Bash\(node(?:[ :]?\*)?\)$/.test(compact)) return 'any-node-command';
   const parsed = parseHelperRule(rule);
-  if (parsed) return ALLOWLISTED_OPERATIONS.includes(parsed.operation) ? null : 'not-allowlisted';
+  if (parsed) {
+    return ALLOWLISTED_BY_SCRIPT[parsed.script].includes(parsed.operation)
+      ? null
+      : 'not-allowlisted';
+  }
   if (compact.includes('effective-flow-state')) return 'helper-wildcard';
-  if (admitsNeverAllowlisted(compact, helperPaths, home)) return 'helper-wildcard';
+  if (HELPER_FILE_NAMES.some((name) => compact.includes(name))) return 'helper-wildcard';
+  if (admitsNeverAdmitted(compact, helperPaths, home)) return 'helper-wildcard';
   return null;
 }
 
-// Whether a `Bash(...)` rule pattern matches a command line running a never-allowlisted operation
-// through one of `helperPaths`, in the documented here-string form or a heredoc. `*` matches any
-// text; a trailing `:*` is the legacy prefix form.
-function admitsNeverAllowlisted(compact, helperPaths, home) {
+// Whether a `Bash(...)` rule pattern matches a never-admitted command line of a helper beside one
+// of `helperPaths`. `*` matches any text; a trailing `:*` is the legacy prefix form.
+function admitsNeverAdmitted(compact, helperPaths, home) {
   const match = /^Bash\((.*)\)$/.exec(compact);
   if (!match || !match[1].includes('*')) return false;
   let pattern = match[1].endsWith(':*') ? `${match[1].slice(0, -2)}*` : match[1];
@@ -115,11 +271,13 @@ function admitsNeverAllowlisted(compact, helperPaths, home) {
     .join('.*');
   const glob = new RegExp(`^${escaped}$`, 's');
   return helperPaths.some((helperPath) =>
-    NEVER_ALLOWLISTED_OPERATIONS.some((operation) =>
-      [`<<< '{}'`, `<<'EOF'`].some((input) =>
-        glob.test(`node ${helperPath} ${operation} ${input}`),
-      ),
-    ),
+    RULE_SCRIPT_NAMES.some((script) => {
+      const scriptPath = path.posix.join(
+        path.posix.dirname(helperPath),
+        path.posix.basename(RULE_SCRIPTS[script]),
+      );
+      return NEVER_ADMITTED_CALLS[script].some((call) => glob.test(`node ${scriptPath} ${call}`));
+    }),
   );
 }
 
@@ -188,19 +346,19 @@ export function sameSettingsRead(left, right) {
   return sameFileRead(left, right);
 }
 
-// The canonical helper file of an install: the realpath of `<skillRoot>/scripts/effective-flow-
-// state.mjs` when it resolves to a regular file, otherwise null. `fs` provides `realpath` and `stat`.
-export async function resolveInstallHelper(fs, skillRoot) {
+// The canonical file of one helper of an install: the realpath of `<skillRoot>/<RULE_SCRIPTS
+// path>` when it resolves to a regular file, otherwise null. `fs` provides `realpath` and `stat`.
+export async function resolveInstallHelper(fs, skillRoot, script = 'effective-flow-state') {
   try {
-    const resolved = await fs.realpath(path.join(skillRoot, HELPER_RELATIVE_PATH));
+    const resolved = await fs.realpath(path.join(skillRoot, RULE_SCRIPTS[script]));
     return (await fs.stat(resolved)).isFile() ? resolved : null;
   } catch {
     return null;
   }
 }
 
-// Every allow rule of the exact helper shape, in file order, with its index, install root,
-// operation and resolved helper (null when it no longer resolves to a regular file).
+// Every allow rule of an exact helper shape, in file order, with its index, install root, script,
+// operation and resolved helper file (null when it no longer resolves to a regular file).
 export async function helperRulesIn(fs, allow) {
   const found = [];
   for (const [index, rule] of allow.entries()) {
@@ -210,7 +368,7 @@ export async function helperRulesIn(fs, allow) {
       index,
       rule,
       ...parsed,
-      helper: await resolveInstallHelper(fs, parsed.skillRoot),
+      helper: await resolveInstallHelper(fs, parsed.skillRoot, parsed.script),
     });
   }
   return found;

@@ -149,6 +149,11 @@ const SPAWN_MENTION_ALLOWLIST = [
   ],
   [
     'tools/review.md',
+    'A review that admits at least one finding reserves its IDs',
+    'persistence duty; a skipped fan-out starts nothing',
+  ],
+  [
+    'tools/review.md',
     'Each sub-agent returns a list of design decisions',
     'return format of review/design-decision-sources',
   ],

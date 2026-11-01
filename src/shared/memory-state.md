@@ -8,7 +8,7 @@ and replaces the file atomically. The owning workflow has already loaded “Runt
 safety” and the runtime-directory migration prerequisite.
 
 ```include
-state-helper-call
+helper-call-shape
 ```
 
 Call one operation per command. `cwd` is the verified `RUNTIME_STATE_ROOT`, never `EXECUTION_ROOT`
@@ -26,6 +26,8 @@ node <skill-root>/scripts/effective-flow-state.mjs memory migrate-directory <<< 
 - `memory set-marker`: `marker` is `config-migration-adr`, with `"version":"config-to-adr-v1"`, or
   `label-migration-sf`. `result.changed: false` means the marker was already present.
 - `memory migrate-directory` belongs to the runtime-directory migration prerequisite.
+- `review open-report` is `review`'s local-mode reservation: it runs the `memory reserve`
+  transaction with its outcomes below and also returns the guarded report path (see `review`).
 
 ### Outcomes
 

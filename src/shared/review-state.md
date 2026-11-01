@@ -18,7 +18,8 @@
 `configMigration` is an object with area-specific sub-keys (`review`, `applyReview`, `tracker`, `worktree`). Each workflow area writes only its own sub-key.
 
 Review changes this file only by reserving finding IDs through `memory reserve` of the “Memory
-operations” contract, loaded through the runtime-directory prerequisite.
+operations” contract, loaded through the runtime-directory prerequisite, or in local mode through
+`review open-report`, which runs that same transaction.
 
 ### Cache file
 

@@ -104,7 +104,7 @@
 //     remediation        text for `outdated`, otherwise null
 //     setupFixable       false
 //     setupForm          null
-//   allowlist            the Claude Code allow rules of the runtime-state helper, read from
+//   allowlist            the Claude Code allow rules of the three JSON helpers, read from
 //                        `<runtimeStateRoot>/.claude/settings.local.json`:
 //     state              absent | current | stale | not-applicable | could-not-check
 //     reason             null, or not-applicable: no-skill-root | not-claude-code (`CLAUDECODE`
@@ -112,14 +112,16 @@
 //                        settings-invalid | settings-unreadable
 //     detail             only for settings-invalid and settings-unreadable: the parser message
 //     skillRoot, target  the probed install root and settings file, or null
-//     expected[]         the six rules of this install
+//     expected[]         every rule of this install (RULE_ENTRIES of `claude-settings-core.mjs`)
 //     present[]          the rules naming this install's `skillRoot` literally whose helper
 //                        resolves to this install's helper
 //     missing[]          the expected rules of the operations no present rule covers
 //     aliases[]          helper-shape rules naming another path to this install's helper: Claude
 //                        Code matches the literal command path, so they never fire for this
 //                        install and count as neither present nor stale
-//     stale[]            helper-shape rules whose helper no longer resolves to a regular file
+//     stale[]            helper-shape rules whose helper no longer resolves to a regular file;
+//                        the state is also `stale` with this list empty when only part of this
+//                        install's rules is present (`missing` names the rest)
 //     remediation, setupFixable, setupForm   `allowlist` for absent and stale, otherwise null
 //
 // The remediation texts are frozen data in this module (`REMEDIATIONS`): they name a setup
@@ -144,10 +146,12 @@ import {
   resolveConfiguration,
 } from './config-resolve-core.mjs';
 import {
-  ALLOWLISTED_OPERATIONS,
+  RULE_ENTRIES,
+  RULE_SCRIPT_NAMES,
   SETTINGS_RELATIVE_PATH,
   SettingsError,
   helperRule,
+  helperRules,
   helperRulesIn,
   readSettingsFile,
   resolveInstallHelper,
@@ -478,12 +482,12 @@ export const REMEDIATIONS = Object.freeze({
   // The Claude Code allow rules of the helper operations in `.claude/settings.local.json`.
   allowlist: Object.freeze({
     absent: entry(
-      'Run `effective-flow setup allowlist` to preview and confirm the allow rules of the runtime-state helper for this install.',
+      'Run `effective-flow setup allowlist` to preview and confirm the allow rules of the Effective Flow helpers for this install.',
       true,
       'allowlist',
     ),
     stale: entry(
-      'Run `effective-flow setup allowlist` to preview and confirm the removal of the allow rules whose helper no longer exists, together with the rules of this install.',
+      'Run `effective-flow setup allowlist` to preview and confirm the complete rule set of this install, together with the removal of the allow rules whose helper no longer exists.',
       true,
       'allowlist',
     ),
@@ -1402,10 +1406,11 @@ function allowlistResult(state, extra = {}) {
 
 // The state of this install's helper allow rules in `<runtimeStateRoot>/.claude/settings.local.json`.
 // A rule is this install's when it names `skillRoot` literally and its helper resolves to the
-// realpath of `<skillRoot>/scripts/effective-flow-state.mjs`: Claude Code matches the literal
-// command path, so a rule under another alias of the same helper is reported in `aliases` and never
-// counts as present. A helper-shape rule whose helper no longer resolves to a regular file is
-// stale. Precedence: stale, then absent, then current.
+// realpath of the same helper below `<skillRoot>/scripts/`: Claude Code matches the literal command
+// path, so a rule under another alias of the same helper is reported in `aliases` and never counts
+// as present. The install is `stale` when a helper-shape rule's helper no longer resolves to a
+// regular file, or when some but not all of its rules are present, as after an update that added
+// rules; it is `absent` when none is present. Precedence: stale, then absent, then current.
 async function allowlistSection(skillRoot, configuration, env, fs) {
   if (skillRoot === undefined)
     return allowlistResult('not-applicable', { reason: 'no-skill-root' });
@@ -1417,11 +1422,15 @@ async function allowlistSection(skillRoot, configuration, env, fs) {
     return allowlistResult('could-not-check', { reason: 'runtime-root-unresolved', skillRoot });
   }
   const target = path.join(root, SETTINGS_RELATIVE_PATH);
-  const expected = ALLOWLISTED_OPERATIONS.map((operation) => helperRule(skillRoot, operation));
+  const expected = helperRules(skillRoot);
   const base = { skillRoot, target, expected };
-  const ownHelper = await resolveInstallHelper(fs, skillRoot);
-  if (!ownHelper)
-    return allowlistResult('could-not-check', { ...base, reason: 'helper-unresolved' });
+  const ownHelpers = {};
+  for (const script of RULE_SCRIPT_NAMES) {
+    ownHelpers[script] = await resolveInstallHelper(fs, skillRoot, script);
+    if (!ownHelpers[script]) {
+      return allowlistResult('could-not-check', { ...base, reason: 'helper-unresolved' });
+    }
+  }
   let read;
   try {
     read = await readSettingsFile(fs, target);
@@ -1434,17 +1443,20 @@ async function allowlistSection(skillRoot, configuration, env, fs) {
     });
   }
   const rules = read.exists ? await helperRulesIn(fs, read.allow) : [];
-  const own = rules.filter((rule) => rule.helper === ownHelper && rule.skillRoot === skillRoot);
-  const covered = new Set(own.map((rule) => rule.operation));
+  const isOwnHelper = (rule) => rule.helper !== null && rule.helper === ownHelpers[rule.script];
+  const own = rules.filter((rule) => isOwnHelper(rule) && rule.skillRoot === skillRoot);
+  const covered = new Set(own.map((rule) => `${rule.script} ${rule.operation}`));
   const present = own.map((rule) => rule.rule);
   const aliases = rules
-    .filter((rule) => rule.helper === ownHelper && rule.skillRoot !== skillRoot)
+    .filter((rule) => isOwnHelper(rule) && rule.skillRoot !== skillRoot)
     .map((rule) => rule.rule);
-  const missing = ALLOWLISTED_OPERATIONS.filter((operation) => !covered.has(operation)).map(
-    (operation) => helperRule(skillRoot, operation),
-  );
+  const missing = RULE_ENTRIES.filter(
+    ({ script, operation }) => !covered.has(`${script} ${operation}`),
+  ).map(({ script, operation }) => helperRule(skillRoot, operation, script));
   const stale = rules.filter((rule) => rule.helper === null).map((rule) => rule.rule);
-  const state = stale.length > 0 ? 'stale' : missing.length > 0 ? 'absent' : 'current';
+  const incomplete = missing.length > 0 && missing.length < expected.length;
+  const state =
+    stale.length > 0 || incomplete ? 'stale' : missing.length > 0 ? 'absent' : 'current';
   return allowlistResult(state, { ...base, present, missing, stale, aliases });
 }
 
