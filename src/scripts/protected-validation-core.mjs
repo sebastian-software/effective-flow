@@ -181,7 +181,6 @@ const ROOT_FILES = new Set([
   '.mise.toml',
   '.gitignore',
   '.gitattributes',
-  '.npmrc',
   '.oxfmtrc.json',
   '.oxfmtrc.jsonc',
   '.oxlintrc.json',
@@ -207,7 +206,7 @@ export function classify(name, tracked) {
         '.ssh',
       ].includes(part),
     ) ||
-    /(?:^|\/)(?:\.env(?:\..*)?|auth\.json|credentials[^/]*)$/i.test(name) ||
+    /(?:^|\/)(?:\.env(?:\..*)?|\.npmrc|auth\.json|credentials[^/]*)$/i.test(name) ||
     (!tracked && /(?:^|\/)[^/]*(?:transcript|journal)[^/]*\.(?:jsonl?|log|txt)$/i.test(name))
   )
     return 'private-or-generated';

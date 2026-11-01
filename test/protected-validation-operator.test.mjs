@@ -178,6 +178,121 @@ test('operator projection round-trips dirty tracked, deleted, executable and ine
   assert.equal(git(execution, 'archive', '--format=tar', 'HEAD').length > 0, true);
 });
 
+test('npmrc privacy retains raw untracked source evidence without exporting artificial authentication bytes', (t) => {
+  const source = sourceFixture(t);
+  const configs = [
+    ['.npmrc', '//artificial.invalid/:_authToken=artificial-root-npmrc-token\n'],
+    ['src/nested/.npmrc', '//artificial.invalid/:_authToken=artificial-nested-npmrc-token\n'],
+  ];
+  for (const [name, bytes] of configs) {
+    mkdirSync(path.dirname(path.join(source, name)), { recursive: true });
+    writeFileSync(path.join(source, name), bytes);
+  }
+  const before = sourceBasis(source);
+  const indexBefore = readFileSync(path.join(source, '.git/index'));
+  const blobs = configs.map(([, bytes]) =>
+    execFileSync('git', ['hash-object', '--stdin'], {
+      cwd: source,
+      input: bytes,
+      encoding: 'utf8',
+    }).trim(),
+  );
+  for (const [name, bytes] of configs) {
+    assert.deepEqual(
+      before.files.find((entry) => entry[0] === name),
+      [name, '100644', digest(bytes)],
+    );
+    assert.equal(before.trackedPaths.includes(name), false);
+  }
+  for (const blob of blobs) assertObjectUnavailable(source, blob);
+  const manifest = fixtureManifest(source);
+  const transport = temporaryCheckout(t, 'protected-validation-npmrc-', 'transport');
+  const execution = temporaryCheckout(t, 'protected-validation-npmrc-', 'execution');
+  try {
+    const mapping = createTransport({ source, destination: transport, manifest });
+    const materialized = materializeTransport({
+      checkout: transport,
+      destination: execution,
+      expectedCommit: mapping.snapshotCommit,
+    });
+    assert.equal(materialized.executionTree, mapping.executionTree);
+    for (const checkout of [transport, execution]) {
+      for (const blob of blobs) assertObjectUnavailable(checkout, blob);
+      const tree = git(checkout, 'ls-tree', '-r', '--name-only', 'HEAD').split('\n');
+      for (const [name] of configs) {
+        assert.equal(existsSync(path.join(checkout, name)), false);
+        assert.equal(tree.includes(name), false);
+      }
+    }
+    for (const [name] of configs) {
+      assert.equal(
+        manifest.files.some((entry) => entry.path === name),
+        false,
+      );
+      assert.deepEqual(
+        manifest.excluded.find((entry) => entry.path === name),
+        {
+          path: name,
+          reason: 'private-or-generated',
+        },
+      );
+      assert.equal(
+        mapping.materialization.executionFiles.some((entry) => entry.path === name),
+        false,
+      );
+    }
+  } finally {
+    assert.deepEqual(sourceBasis(source), before);
+    assert.deepEqual(readFileSync(path.join(source, '.git/index')), indexBefore);
+    for (const blob of blobs) assertObjectUnavailable(source, blob);
+  }
+});
+
+test('npmrc privacy excludes dirty tracked configuration and refuses its source ancestry', (t) => {
+  const source = sourceFixture(t);
+  const names = ['.npmrc', 'src/nested/.npmrc'];
+  for (const name of names) {
+    commitHistoricalPath(
+      source,
+      name,
+      '//artificial.invalid/:_authToken=artificial-committed-token\n',
+    );
+    writeFileSync(
+      path.join(source, name),
+      '//artificial.invalid/:_authToken=artificial-dirty-token\n',
+    );
+  }
+  const before = sourceBasis(source);
+  const indexBefore = readFileSync(path.join(source, '.git/index'));
+  const manifest = fixtureManifest(source);
+  const transport = temporaryCheckout(t, 'protected-validation-npmrc-tracked-', 'transport');
+  try {
+    for (const name of names) {
+      assert.equal(before.trackedPaths.includes(name), true);
+      assert.equal(
+        manifest.files.some((entry) => entry.path === name),
+        false,
+      );
+      assert.deepEqual(
+        manifest.excluded.find((entry) => entry.path === name),
+        {
+          path: name,
+          reason: 'private-or-generated',
+        },
+      );
+    }
+    assertPrivateHistoryRefusal(
+      () => createTransport({ source, destination: transport, manifest }),
+      '.npmrc',
+    );
+    assert.equal(existsSync(path.join(transport, '.git/refs/heads/snapshot')), false);
+    assert.deepEqual(readdirSync(path.join(transport, '.git/objects/pack')), []);
+  } finally {
+    assert.deepEqual(sourceBasis(source), before);
+    assert.deepEqual(readFileSync(path.join(source, '.git/index')), indexBefore);
+  }
+});
+
 test('materialization runGit forwards the existing Git command arguments and timeout with default-runner parity', (t) => {
   const source = sourceFixture(t);
   const manifest = fixtureManifest(source);
@@ -538,6 +653,12 @@ test('history privacy checks every path when allowed and prohibited paths share 
 });
 
 const historicalRefusals = [
+  ['npmrc authentication', '.npmrc', '//artificial.invalid/:_authToken=artificial-history-token\n'],
+  [
+    'npmrc case variant',
+    'src/nested/.NpMrC',
+    '//artificial.invalid/:_authToken=artificial-history-token\n',
+  ],
   ['nested environment', 'src/nested/.env.production'],
   ['credentials', 'scripts/credentials-local.json'],
   ['credentials directory', 'src/credentials-local/ordinary.txt'],

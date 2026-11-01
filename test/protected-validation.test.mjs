@@ -241,6 +241,24 @@ test('history privacy classification treats historical entries as tracked withou
   );
 });
 
+for (const name of ['.npmrc', '.NPMRC', 'src/nested/.npmrc', 'scripts/nested/.NpMrC']) {
+  for (const tracked of [false, true]) {
+    test(`npmrc privacy excludes ${tracked ? 'tracked' : 'untracked'} ${name} in every source mode`, () => {
+      assert.equal(classify(name, tracked), 'private-or-generated');
+      for (const mode of ['100644', '100755', 'missing', 'symlink']) {
+        const entry = mode === 'missing' ? [name, mode] : [name, mode, digest('artificial npmrc')];
+        const result = projectManifest([entry], {
+          trackedPaths: tracked ? [name] : [],
+          snapshot,
+        });
+        assert.deepEqual(result.files, []);
+        assert.deepEqual(result.deletions, []);
+        assert.deepEqual(result.excluded, [{ path: name, reason: 'private-or-generated' }]);
+      }
+    });
+  }
+}
+
 test('backend evidence is pending until the same attempt is complete and fails on incomplete native proof', () => {
   const pending = validateBackendEvidence(
     { ...backend(), metadata: { ...backend().metadata, status: 'in_progress' } },
