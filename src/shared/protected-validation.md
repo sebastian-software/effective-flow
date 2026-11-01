@@ -93,6 +93,15 @@ proof binds the actual snapshot commit, tree and parent to the source HEAD; the 
 execution HEAD, tree and context through completion. Changed history, source or closure needs fresh
 attempt evidence; an earlier failed or passing run cannot validate the new candidate.
 
+Before packing and again before submission, validate complete recursive NUL-delimited tree-path
+metadata for every reachable commit, including all merge parents, using the shared path classifier
+with historical paths treated as tracked. Reject private or generated, ambiguous, unsafe or forbidden
+transport paths anywhere in that history, even if later deleted; failed, incomplete or timed-out scans
+refuse execution. Formerly tracked `.effective-flow/config.json` remains excluded; its prior use as
+project configuration does not authorize history transport. The bounded scan reads no blob contents or
+commit messages. Passing this guard does not establish that allowed file contents or commit messages
+contain no secrets, or authorize their transport.
+
 Future model-role adherence remains provisional pilot audit evidence, not full acceptance from this
 model-free qualification. Transport state is private runtime evidence and is never activation authority
 or public product configuration. Pilot activation still requires its owning complete acceptance proof

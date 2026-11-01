@@ -15,6 +15,7 @@ import {
   validationDigest,
 } from '../src/scripts/protected-validation-protocol.mjs';
 import {
+  classify,
   projectManifest,
   protectedValidationRoot,
   verifyProtectedBootstrap,
@@ -187,6 +188,56 @@ test('source projection classifies runtime, observer and unrelated plans instead
   assert.throws(
     () => projectManifest([['src/link', '120000', digest('link')]], { snapshot }),
     /symlinks and special source modes/,
+  );
+});
+
+test('history privacy classification treats historical entries as tracked without weakening exclusions', () => {
+  const excluded = [
+    '.env',
+    'src/nested/.env.production',
+    'scripts/credentials-local.json',
+    'src/auth.json',
+    '.effective-flow/private.json',
+    '.effective-flow/config.json',
+    'dist/generated.mjs',
+    'node_modules/artificial/index.mjs',
+    '.codex/session.json',
+    '.agents/session.json',
+    '.aws/config',
+    '.ssh/config',
+  ];
+  const allowed = [
+    'scripts/ordinary.mjs',
+    'docs/plan/2026-10-22-tracked.md',
+    'evals/artificial/results/tracked.json',
+    '.claude/settings.json',
+  ];
+  const names = [...excluded, ...allowed];
+  const result = projectManifest(
+    names.map((name) => [name, '100644', digest('artificial fixture content')]),
+    { trackedPaths: names, snapshot },
+  );
+  assert.deepEqual(new Set(result.files.map((entry) => entry.path)), new Set(allowed));
+  assert.deepEqual(new Set(result.excluded.map((entry) => entry.path)), new Set(excluded));
+  assert.ok(result.excluded.every((entry) => entry.reason === 'private-or-generated'));
+  for (const name of allowed) assert.equal(classify(name, true), null);
+  for (const entry of result.excluded) assert.equal(classify(entry.path, true), entry.reason);
+  assert.equal(classify('docs/plan/2026-10-22-tracked.md', false), 'unrelated-untracked-plan');
+  assert.equal(classify('evals/artificial/results/tracked.json', false), 'retained-evidence');
+  for (const name of ['scripts/unsafe\\name.mjs']) {
+    assert.throws(
+      () =>
+        projectManifest([[name, '100644', digest('unsafe')]], { trackedPaths: [name], snapshot }),
+      /unsafe|invalid validation text/,
+    );
+  }
+  assert.throws(
+    () =>
+      projectManifest([['unclassified-artificial.txt', '100644', digest('ambiguous')]], {
+        trackedPaths: ['unclassified-artificial.txt'],
+        snapshot,
+      }),
+    /approved export classification/,
   );
 });
 

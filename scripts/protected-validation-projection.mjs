@@ -13,6 +13,7 @@ import {
   rmSync,
 } from 'node:fs';
 import { resolve, dirname, sep } from 'node:path';
+import { classify } from '../src/scripts/protected-validation-core.mjs';
 import {
   PROTECTED_VALIDATION_PROTOCOL,
   WORKFLOW_PATH,
@@ -80,39 +81,121 @@ const gitCommand = (cwd, args, timeoutMs = 120000) =>
   execFileSync('git', args, { cwd, encoding: 'utf8', timeoutMs }).trim();
 const git = (cwd, ...args) => gitCommand(cwd, args);
 // Copy objects only: no refs, config, credentials, index or unrelated object-store contents.
-const historyGitCommand = (cwd, args, options = {}) =>
-  execFileSync('git', ['--no-replace-objects', ...args], {
-    cwd,
-    encoding: 'utf8',
-    timeout: 120000,
-    maxBuffer: 64 * 1024 * 1024,
-    env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
-    ...options,
-  });
+const historyGitCommand = (cwd, args, options = {}) => {
+  const { encoding = 'utf8', ...settings } = options;
+  try {
+    const bytes = execFileSync('git', ['--no-replace-objects', ...args], {
+      cwd,
+      timeout: 120000,
+      maxBuffer: 64 * 1024 * 1024,
+      env: { ...process.env, GIT_NO_LAZY_FETCH: '1' },
+      ...settings,
+      encoding: null,
+    });
+    return encoding === null
+      ? bytes
+      : new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
+  } catch {
+    // Git diagnostics and decoder causes may contain private historical metadata.
+    throw new Error('validation history operation failed');
+  }
+};
 export function verifyValidationHistory(root, sourceHead, { timeoutMs = 120000 } = {}) {
-  const historyGit = (cwd, args, options = {}) =>
-    historyGitCommand(cwd, args, { timeoutMs, ...options });
+  ensure(
+    Number.isSafeInteger(timeoutMs) && timeoutMs > 0 && timeoutMs <= 900000,
+    'invalid validation history timeout',
+  );
+  const deadline = performance.now() + timeoutMs;
+  const remaining = () => {
+    const milliseconds = Math.floor(deadline - performance.now());
+    ensure(milliseconds > 0, 'validation history deadline exceeded');
+    return milliseconds;
+  };
+  const historyGit = (args) => {
+    const output = historyGitCommand(root, args, { timeoutMs: remaining() });
+    remaining();
+    return output;
+  };
+  const lines = (text) => {
+    ensure(text.endsWith('\n'), 'malformed validation history metadata');
+    return text.slice(0, -1).split('\n');
+  };
   ensure(/^[a-f0-9]{40}$/.test(sourceHead), 'exact source history commit required');
   ensure(
-    historyGit(root, ['rev-parse', '--is-shallow-repository']).trim() === 'false',
+    historyGit(['rev-parse', '--is-shallow-repository']) === 'false\n',
     'shallow validation history is not permitted',
   );
-  const grafts = historyGit(root, ['rev-parse', '--git-path', 'info/grafts']).trim();
+  const graftRows = lines(historyGit(['rev-parse', '--git-path', 'info/grafts']));
+  ensure(
+    graftRows.length === 1 && graftRows[0].length > 0 && !graftRows[0].includes('\0'),
+    'malformed validation history metadata',
+  );
+  const grafts = graftRows[0];
   ensure(!existsSync(resolve(root, grafts)), 'grafted validation history is not permitted');
   ensure(
-    historyGit(root, ['rev-parse', sourceHead + '^{commit}']).trim() === sourceHead,
+    historyGit(['rev-parse', sourceHead + '^{commit}']) === sourceHead + '\n',
     'source history commit differs',
   );
-  const count = Number(historyGit(root, ['rev-list', '--count', sourceHead]).trim());
+  const countRows = lines(historyGit(['rev-list', '--count', sourceHead]));
+  ensure(
+    countRows.length === 1 && /^[1-9][0-9]*$/.test(countRows[0]),
+    'malformed validation history metadata',
+  );
+  const count = Number(countRows[0]);
   ensure(
     Number.isSafeInteger(count) && count > 0 && count + 1 <= VALIDATION_HISTORY_DEPTH,
     'validation history exceeds fixed checkout depth',
   );
-  const objects = historyGit(root, ['rev-list', '--objects', '--missing=print', sourceHead]);
-  ensure(
-    !objects.split('\n').some((line) => line.startsWith('?')),
-    'incomplete validation history',
-  );
+  const objects = historyGit([
+    'rev-list',
+    '--objects',
+    '--no-object-names',
+    '--missing=print',
+    sourceHead,
+  ]);
+  for (const object of lines(objects)) {
+    remaining();
+    ensure(/^[a-f0-9]{40}$/.test(object), 'incomplete or malformed validation history');
+  }
+  const commits = new Map();
+  for (const row of lines(historyGit(['rev-list', '--parents', sourceHead]))) {
+    remaining();
+    ensure(/^[a-f0-9]{40}(?: [a-f0-9]{40})*$/.test(row), 'malformed validation history ancestry');
+    const [commit, ...parents] = row.split(' ');
+    ensure(!commits.has(commit), 'duplicate validation history commit');
+    commits.set(commit, parents);
+  }
+  ensure(commits.size === count, 'incomplete validation history ancestry');
+  const reachable = new Set(),
+    pending = [sourceHead];
+  while (pending.length) {
+    remaining();
+    const commit = pending.pop();
+    ensure(commits.has(commit), 'incomplete validation history ancestry');
+    if (reachable.has(commit)) continue;
+    reachable.add(commit);
+    for (const parent of commits.get(commit)) pending.push(parent);
+  }
+  ensure(reachable.size === count, 'foreign validation history ancestry');
+  // Object display names omit alternate placements of the same blob. Inspect every
+  // complete tree instead, including directories and every merge-parent ancestry.
+  for (const commit of reachable) {
+    const tree = historyGit(['ls-tree', '-r', '-t', '-z', '--name-only', '--full-tree', commit]);
+    ensure(tree === '' || tree.endsWith('\0'), 'truncated validation history paths');
+    const seen = new Set();
+    for (const name of tree === '' ? [] : tree.slice(0, -1).split('\0')) {
+      remaining();
+      ensure(!seen.has(name), 'duplicate validation history path');
+      seen.add(name);
+      try {
+        safeRelative(name);
+        ensure(classify(name, true) === null, 'excluded validation history path');
+      } catch {
+        throw new Error('private, ambiguous or unsafe validation history path');
+      }
+    }
+  }
+  remaining();
   return count;
 }
 export function importValidationHistory({ source, destination, sourceHead, timeoutMs = 120000 }) {

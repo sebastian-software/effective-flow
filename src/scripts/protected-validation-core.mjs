@@ -191,7 +191,7 @@ const ROOT_FILES = new Set([
   'local-link.sh',
 ]);
 const SOURCE_DIRS = new Set(['src', 'test', 'scripts', 'evals', 'docs', '.github', 'site']);
-function classify(name, tracked) {
+export function classify(name, tracked) {
   validateRelative(name);
   const parts = name.split('/');
   if (
