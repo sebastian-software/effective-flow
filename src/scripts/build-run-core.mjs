@@ -73,6 +73,7 @@ export const QUESTION_ORIGINS = Object.freeze([
 ]);
 const COMMON = ['runtimeStateRoot', 'repositoryIdentity', 'runId', 'requestDigest'];
 const COMPLETION_FIELDS = ['completionBasis', 'currentPlan'];
+const COMPLETION_PROOF_FIELDS = [...COMPLETION_FIELDS, 'retainedFiles'];
 const COMPLETION_OPERATIONS = [
   'checkpoint',
   'question',
@@ -815,12 +816,32 @@ async function planUnchanged(context) {
 }
 async function completionProof(context, value) {
   const supplied = COMPLETION_FIELDS.filter((key) => value[key] !== undefined);
-  if (!supplied.length) return null;
+  if (!supplied.length) {
+    if (value.retainedFiles !== undefined)
+      fail('INVALID_PAYLOAD', 'retained files require an exact completion basis');
+    return null;
+  }
   if (supplied.length !== COMPLETION_FIELDS.length)
     fail('INVALID_PAYLOAD', 'completion requires both preparation and exact current plan');
   const prepared = await preparation(context, value.completionBasis);
   await planCompletion(context, prepared, value.currentPlan, true);
-  return Object.fromEntries(COMPLETION_FIELDS.map((key) => [key, value[key]]));
+  if (value.retainedFiles !== undefined)
+    await retainedFiles(
+      context,
+      value.retainedFiles,
+      value.completionBasis,
+      prepared,
+      value.currentPlan,
+      undefined,
+      true,
+      true,
+    );
+  return Object.fromEntries(
+    COMPLETION_PROOF_FIELDS.filter((key) => value[key] !== undefined).map((key) => [
+      key,
+      value[key],
+    ]),
+  );
 }
 async function currentPlan(context, value) {
   const proof = await completionProof(context, value);
@@ -836,8 +857,12 @@ async function recoveredCompletion(context, input) {
   } else if (input.requestRef) bound = await readRecord(context, input.requestRef);
   const supplied = await completionProof(context, input);
   const retained = bound ? await completionProof(context, bound) : null;
-  if (supplied && retained && !same(supplied, retained))
-    fail('FOREIGN_RECORD', 'completion proof differs from retained checkpoint/request');
+  if (supplied && retained) {
+    const merged = { ...retained, ...supplied };
+    if (!same(merged, retained))
+      fail('FOREIGN_RECORD', 'completion proof differs from retained checkpoint/request');
+    return merged;
+  }
   return supplied ?? retained;
 }
 async function active(context) {
@@ -1077,7 +1102,7 @@ async function checkpoint(context, ref, current = true) {
       'handoff',
       'execution',
     ],
-    COMPLETION_FIELDS,
+    COMPLETION_PROOF_FIELDS,
   );
   identifier(value.checkpointId);
   if (!same(value.execution, context.request.execution))
@@ -1898,6 +1923,66 @@ async function preparation(context, ref) {
     fail('CONTENT_DRIFT', 'prepared index evidence changed');
   return value;
 }
+function executionPlanPaths(context, currentPlan) {
+  return new Set(
+    [context.request.plan, currentPlan]
+      .filter((ref) => ref.root === context.request.execution.executionRoot)
+      .map((ref) => ref.path),
+  );
+}
+async function executionPlanCopyRemoval(context, prepared, currentPlan, observed) {
+  const source = context.request.plan,
+    root = context.request.execution.executionRoot;
+  if (
+    source.root === root ||
+    currentPlan.root !== root ||
+    currentPlan.path !== archivePlanPath(context) ||
+    source.path === currentPlan.path ||
+    observed.manifest.some((entry) => entry[0] === source.path) ||
+    !prepared.index
+  )
+    return null;
+  const original = await artifact(prepared.plan, [context.root]);
+  const before = (await dataRead(context, prepared.manifest)).filter(
+    (entry) => entry[0] === source.path,
+  );
+  if (
+    before.length !== 1 ||
+    !['100644', '100755'].includes(before[0][1]) ||
+    before[0][2] !== contentDigest(original)
+  )
+    return null;
+  const entries = (index) =>
+    index.split('\0').filter((entry) => entry.slice(entry.indexOf('\t') + 1) === source.path);
+  const baseline = entries(await dataRead(context, prepared.index));
+  const entry =
+    baseline.length === 1 &&
+    /^(100644|100755) ([a-f0-9]{40}(?:[a-f0-9]{24})?) 0\t/.exec(baseline[0]);
+  if (!entry || entry[1] !== before[0][1]) return null;
+  const currentIndex = await git(context.deps, root, ['ls-files', '--stage', '-z'], [0], true);
+  if (contentDigest(currentIndex) !== observed.snapshot.index)
+    fail('CONTENT_DRIFT', 'execution plan-copy index changed during verification');
+  if (entries(currentIndex.toString('utf8')).length !== 0) return null;
+  const target = path.join(root, source.path);
+  if ((await safeDirectory(path.dirname(target), true)) !== null) {
+    try {
+      await lstat(target);
+      return null;
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+    }
+  }
+  // This exception identifies only a removed copy in the physically verified execution checkout.
+  const execution = await executionGuard(context.request, context.deps);
+  if (execution.head !== observed.snapshot.head)
+    fail('CONTENT_DRIFT', 'execution plan-copy HEAD changed during verification');
+  if (
+    (await git(context.deps, root, ['cat-file', '-t', entry[2]])) !== 'blob' ||
+    !(await git(context.deps, root, ['cat-file', 'blob', entry[2]], [0], true)).equals(original)
+  )
+    return null;
+  return source.path;
+}
 async function carriedCompletionGate(context, proof, ref, current) {
   if (!(await completionProof(context, proof))) return false;
   const prepared = await preparation(context, proof.completionBasis);
@@ -1905,19 +1990,43 @@ async function carriedCompletionGate(context, proof, ref, current) {
     return false;
   const observed = await inspect(context);
   if (!same(observed.snapshot, current)) return false;
-  const allowed = new Set([context.request.plan.path, proof.currentPlan.path]);
-  const product = (manifest) => manifest.filter((entry) => !allowed.has(entry[0]));
-  if (!same(product(await dataRead(context, prepared.manifest)), product(observed.manifest)))
+  const retained = await retainedFiles(
+    context,
+    proof.retainedFiles,
+    proof.completionBasis,
+    prepared,
+    proof.currentPlan,
+    undefined,
+    true,
+    true,
+  );
+  const allowed = executionPlanPaths(context, proof.currentPlan);
+  const removedCopy = await executionPlanCopyRemoval(
+    context,
+    prepared,
+    proof.currentPlan,
+    observed,
+  );
+  const product = (manifest, before = false) =>
+    productManifest(context, manifest, retained).filter(
+      (entry) => !allowed.has(entry[0]) && !(before && entry[0] === removedCopy),
+    );
+  if (!same(product(await dataRead(context, prepared.manifest), true), product(observed.manifest)))
     return false;
   if (current.index === prepared.snapshot.index) return true;
   if (!prepared.index) return false;
-  const withoutPlan = (index) =>
+  const withoutPlan = (index, before = false) =>
     index
       .split('\0')
-      .filter((entry) => entry && !allowed.has(entry.slice(entry.indexOf('\t') + 1)))
+      .filter(
+        (entry) =>
+          entry &&
+          !allowed.has(entry.slice(entry.indexOf('\t') + 1)) &&
+          !(before && entry.slice(entry.indexOf('\t') + 1) === removedCopy),
+      )
       .sort();
   return same(
-    withoutPlan(await dataRead(context, prepared.index)),
+    withoutPlan(await dataRead(context, prepared.index), true),
     withoutPlan(
       (
         await git(
@@ -1936,6 +2045,131 @@ function normalizedPlan(bytes) {
   return text.replace(
     /^\*\*(Plan status|Planungsstatus):\*\* (Not implemented|Implemented|Nicht umgesetzt|Umgesetzt)$/gm,
     (_, key) => `**${key}:** <status>`,
+  );
+}
+function archivePlanPath(context) {
+  const source = context.request.plan.path;
+  return source.split('/').includes('archive')
+    ? source
+    : path.posix.join(path.posix.dirname(source), 'archive', path.posix.basename(source));
+}
+async function retainedFiles(
+  context,
+  ref,
+  basis,
+  prepared,
+  finalPlan,
+  refusal,
+  live = false,
+  pending = false,
+) {
+  if (ref === undefined) return [];
+  const value = await readRecord(context, ref);
+  exact(value, [
+    'protocol',
+    'runId',
+    'requestDigest',
+    'provenance',
+    'agentHandle',
+    'completionBasis',
+    'execution',
+    'sourcePlan',
+    'currentPlan',
+    'retained',
+  ]);
+  await agent(context, value.agentHandle);
+  if (
+    value.provenance !== 'caller-observed' ||
+    value.agentHandle !== prepared.agentHandle ||
+    !same(value.completionBasis, basis) ||
+    !same(value.execution, context.request.execution) ||
+    !same(value.sourcePlan, context.request.plan) ||
+    !same(value.currentPlan, finalPlan)
+  )
+    fail('FOREIGN_RECORD', 'retained files are not bound to this completion');
+  if (!Array.isArray(value.retained) || !value.retained.length || value.retained.length > 3)
+    fail('INVALID_PAYLOAD', 'retained files require a bounded nonempty role list');
+  const source = context.request.plan,
+    execution = context.request.execution.executionRoot;
+  const archive = archivePlanPath(context),
+    seen = new Set();
+  for (const item of value.retained) {
+    exact(item, ['role', 'fileRef', 'mode', 'visibleReport']);
+    one(item.role, ['archive-collision', 'unarchived-original', 'cleanup-refused']);
+    artifactShape(item.fileRef);
+    if (!Number.isInteger(item.mode) || item.mode < 0 || item.mode > 0o7777)
+      fail('INVALID_PAYLOAD', 'retained file mode is invalid');
+    text(item.visibleReport, 'visible retained-file report');
+    const file = item.fileRef,
+      key = `${file.root}\0${file.path}`;
+    if (seen.has(key)) fail('INVALID_PAYLOAD', 'duplicate retained file');
+    seen.add(key);
+    const original = finalPlan.path === source.path && archive !== source.path;
+    const allowed =
+      item.role === 'archive-collision'
+        ? file.root === execution &&
+          file.path === archive &&
+          original &&
+          (pending || refusal !== undefined)
+        : item.role === 'unarchived-original'
+          ? same(file, finalPlan) &&
+            file.path === source.path &&
+            [source.root, execution].includes(file.root) &&
+            original &&
+            (pending || refusal !== undefined)
+          : file.root === source.root &&
+            file.path === source.path &&
+            finalPlan.root ===
+              (context.request.policy.visibility === 'hidden' ? context.root : execution) &&
+            finalPlan.path === archive &&
+            archive !== source.path &&
+            refusal === undefined;
+    if (!allowed) fail('AUTHORITY_MISMATCH', 'retained role is outside its exact plan path');
+    if (live) await retainedFileLive(context, item);
+  }
+  return value.retained;
+}
+async function retainedFileLive(context, item, recheck = false) {
+  try {
+    await unpublishedSourceGuard(context, item.fileRef);
+    await artifact(item.fileRef, context.request.allowedRoots);
+    const info = await lstat(path.join(item.fileRef.root, item.fileRef.path));
+    if ((info.mode & 0o7777) !== item.mode) fail('CONTENT_DRIFT', 'retained file mode changed');
+  } catch (error) {
+    if (recheck && ['AUTHORITY_MISMATCH', 'DIGEST_MISMATCH'].includes(error.code))
+      fail('CONTENT_DRIFT', 'retained file bytes or untracked state changed');
+    throw error;
+  }
+}
+function productManifest(context, manifest, retained) {
+  const excluded = new Set(
+    retained
+      .filter((item) => item.fileRef.root === context.request.execution.executionRoot)
+      .map((item) => item.fileRef.path),
+  );
+  return manifest.filter((item) => !excluded.has(item[0]));
+}
+async function retainedCheckout(context, retained) {
+  const names = new Set(
+    retained
+      .filter((item) => item.fileRef.root === context.request.execution.executionRoot)
+      .map((item) => item.fileRef.path),
+  );
+  const status = await git(
+    context.deps,
+    context.request.execution.executionRoot,
+    ['status', '--porcelain', '-z', '--untracked-files=all', '--ignore-submodules=none'],
+    [0],
+    true,
+  );
+  for (const entry of status.toString('utf8').split('\0').filter(Boolean))
+    if (!entry.startsWith('?? ') || !names.has(entry.slice(3)))
+      fail('CONTENT_DRIFT', 'checkout has output outside the exact retained files');
+  return status.length !== 0;
+}
+function retainedOriginal(finalPlan, retained) {
+  return retained.some(
+    (item) => item.role === 'unarchived-original' && same(item.fileRef, finalPlan),
   );
 }
 async function retainedArchivalRefusal(
@@ -2343,8 +2577,34 @@ async function sealDelivery(context, input) {
     input.archivalRefusal,
     input.basis,
   );
-  const before = new Map(oldManifest.map((entry) => [entry[0], entry]));
-  const after = new Map(current.manifest.map((entry) => [entry[0], entry]));
+  const retained = await retainedFiles(
+    context,
+    input.retainedFiles,
+    input.basis,
+    prepared,
+    input.finalPlan,
+    completion.refusal,
+    true,
+  );
+  if (
+    completion.refusal &&
+    input.finalPlan.root === context.request.execution.executionRoot &&
+    input.finalPlan.path === context.request.plan.path &&
+    prepared.index &&
+    !(await dataRead(context, prepared.index))
+      .split('\0')
+      .some((entry) => entry.slice(entry.indexOf('\t') + 1) === context.request.plan.path)
+  ) {
+    await unpublishedSourceGuard(context, input.finalPlan);
+    if (!retainedOriginal(input.finalPlan, retained))
+      fail('MISSING_EVIDENCE', 'unpublished original plan requires its exact retention proof');
+  }
+  if (!same(current.snapshot, await snapshot(context)))
+    fail('CONTENT_DRIFT', 'retained-file observations changed during sealing');
+  const oldProduct = productManifest(context, oldManifest, retained);
+  const currentProduct = productManifest(context, current.manifest, retained);
+  const before = new Map(oldProduct.map((entry) => [entry[0], entry]));
+  const after = new Map(currentProduct.map((entry) => [entry[0], entry]));
   if (
     unpublishedSourceRefusal(context, input.finalPlan, completion.refusal) &&
     (before.has(context.request.plan.path) || after.has(context.request.plan.path))
@@ -2352,9 +2612,15 @@ async function sealDelivery(context, input) {
     fail('AUTHORITY_MISMATCH', 'source-only refusal cannot adopt or publish an execution plan');
   if (context.request.plan.path !== input.finalPlan.path && after.has(context.request.plan.path))
     fail('RECHECK_REQUIRED', 'old execution plan remains after archival');
-  const allowedPlan = new Set([context.request.plan.path, input.finalPlan.path]);
+  const allowedPlan = executionPlanPaths(context, input.finalPlan);
+  const removedCopy = await executionPlanCopyRemoval(context, prepared, input.finalPlan, current);
   const changes = [...new Set([...before.keys(), ...after.keys()])]
-    .filter((name) => !allowedPlan.has(name) && !same(before.get(name), after.get(name)))
+    .filter(
+      (name) =>
+        !allowedPlan.has(name) &&
+        !(name === removedCopy && before.has(name) && !after.has(name)) &&
+        !same(before.get(name), after.get(name)),
+    )
     .map((name) => [name, before.get(name), after.get(name)]);
   if (!Array.isArray(input.judgments))
     fail('INVALID_PAYLOAD', 'formatting judgments must be an array');
@@ -2375,8 +2641,19 @@ async function sealDelivery(context, input) {
   if (context.authorization.mode === 'in-place-no-delivery') {
     if (input.expectedTree !== null || current.snapshot.head !== context.authorization.baseHead)
       fail('AUTHORITY_MISMATCH', 'in-place without delivery cannot stage a forced commit');
-  } else await stagedTree(context, input.expectedTree, current.manifest);
+  } else await stagedTree(context, input.expectedTree, currentProduct);
   const manifest = await data(context, `sealed-manifest-${input.sealId}.txt`, current.manifest);
+  const deliverables =
+    input.retainedFiles === undefined
+      ? {}
+      : {
+          retainedFiles: input.retainedFiles,
+          deliverablesManifest: await data(
+            context,
+            `sealed-deliverables-${input.sealId}.txt`,
+            currentProduct,
+          ),
+        };
   return record(context, `sealed-${input.sealId}.json`, {
     ...base(context),
     sealId: input.sealId,
@@ -2388,6 +2665,7 @@ async function sealDelivery(context, input) {
     expectedTree: input.expectedTree,
     judgments: input.judgments,
     ...(completion.refusal ? { archivalRefusal: completion } : {}),
+    ...deliverables,
     acceptedGates,
   });
 }
@@ -2409,7 +2687,7 @@ async function sealed(context, ref) {
       'judgments',
       'acceptedGates',
     ],
-    ['archivalRefusal'],
+    ['archivalRefusal', 'retainedFiles', 'deliverablesManifest'],
   );
   await agent(context, value.agentHandle);
   snapshotShape(value.snapshot);
@@ -2451,6 +2729,23 @@ async function sealed(context, ref) {
   }
   await artifact(prepared.manifest, [context.root]);
   await artifact(value.manifest, [context.root]);
+  const retained = await retainedFiles(
+    context,
+    value.retainedFiles,
+    value.basis,
+    prepared,
+    value.finalPlan,
+    value.archivalRefusal?.refusal,
+  );
+  if (
+    (value.retainedFiles === undefined) !== (value.deliverablesManifest === undefined) ||
+    (value.deliverablesManifest !== undefined &&
+      !same(
+        await dataRead(context, value.deliverablesManifest),
+        productManifest(context, await dataRead(context, value.manifest), retained),
+      ))
+  )
+    fail('FOREIGN_RECORD', 'sealed deliverables projection changed');
   if (
     unpublishedSourceRefusal(context, value.finalPlan, value.archivalRefusal?.refusal) &&
     [
@@ -2472,6 +2767,17 @@ async function sealed(context, ref) {
   );
   return value;
 }
+async function sealRetentions(context, seal) {
+  if (seal.retainedFiles === undefined) return [];
+  return retainedFiles(
+    context,
+    seal.retainedFiles,
+    seal.basis,
+    await preparation(context, seal.basis),
+    seal.finalPlan,
+    seal.archivalRefusal?.refusal,
+  );
+}
 async function handoffReference(context) {
   const file = path.join(context.run, 'handoff.json');
   return reference(context, file, await safeRead(file, MAX_CONTROL_BYTES));
@@ -2482,12 +2788,16 @@ async function makeHandoff(context, input) {
   const seal = await sealed(context, input.seal);
   const current = await inspect(context);
   const manifest = await dataRead(context, seal.manifest);
+  const retained = await sealRetentions(context, seal);
+  for (const item of retained) await retainedFileLive(context, item, true);
   if (!same(manifest, current.manifest))
     fail('CONTENT_DRIFT', 'output changed after the completion seal');
   const mode = context.authorization?.mode;
   if (!mode) fail('INVALID_STATE', 'handoff needs verified delivery mode');
   const head = current.snapshot.head;
   let finalPlan = input.finalPlan;
+  let dirty = false;
+  const retainedPlan = retainedOriginal(seal.finalPlan, retained);
   const sourceOnly = unpublishedSourceRefusal(
     context,
     seal.finalPlan,
@@ -2502,6 +2812,12 @@ async function makeHandoff(context, input) {
       Object.hasOwn(finalPlan, 'commit')
     )
       fail('AUTHORITY_MISMATCH', 'in-place output cannot be silently committed');
+    dirty =
+      (await git(context.deps, context.request.execution.executionRoot, [
+        'status',
+        '--porcelain',
+        '--untracked-files=all',
+      ])) !== '';
   } else {
     oid(input.head);
     if (
@@ -2514,18 +2830,11 @@ async function makeHandoff(context, input) {
       (await git(context.deps, context.root, ['rev-parse', `${head}^`])) !== seal.snapshot.head
     )
       fail('CONTENT_DRIFT', 'handoff commit is not the sealed parent child');
-    if (
-      (await git(context.deps, context.request.execution.executionRoot, [
-        'status',
-        '--porcelain',
-        '--untracked-files=all',
-        '--ignore-submodules=none',
-      ])) !== ''
-    )
-      fail('CONTENT_DRIFT', 'committed handoff has unaccounted dirty output');
+    dirty = await retainedCheckout(context, retained);
     if (
       context.request.policy.visibility === 'standard' &&
       !sourceOnly &&
+      !retainedPlan &&
       (!Object.hasOwn(finalPlan, 'commit') ||
         finalPlan.commit !== head ||
         finalPlan.path !== seal.finalPlan.path ||
@@ -2535,6 +2844,7 @@ async function makeHandoff(context, input) {
   }
   if (
     sourceOnly ||
+    retainedPlan ||
     context.request.policy.visibility === 'hidden' ||
     mode === 'in-place-no-delivery'
   ) {
@@ -2556,13 +2866,7 @@ async function makeHandoff(context, input) {
     finalPlan,
     planOrigin: seal.finalPlan,
     head,
-    dirty:
-      mode === 'in-place-no-delivery' &&
-      (await git(context.deps, context.request.execution.executionRoot, [
-        'status',
-        '--porcelain',
-        '--untracked-files=all',
-      ])) !== '',
+    dirty,
   });
 }
 async function removedExecution(context) {
@@ -2610,7 +2914,8 @@ async function verifyHandoff(context, value, ignoreLive = false) {
     (Object.hasOwn(value.finalPlan, 'commit') && value.finalPlan.path !== seal.finalPlan.path)
   )
     fail('FOREIGN_RECORD', 'handoff plan differs from sealed archival outcome');
-  const manifest = await dataRead(context, seal.manifest);
+  const manifest = await dataRead(context, seal.deliverablesManifest ?? seal.manifest);
+  const retained = await sealRetentions(context, seal);
   await evidence(value.finalPlan, context.request, context, context.deps, true);
   if (
     value.mode !== 'in-place-no-delivery' &&
@@ -2631,7 +2936,7 @@ async function verifyHandoff(context, value, ignoreLive = false) {
       seal.finalPlan,
       seal.archivalRefusal?.refusal,
     );
-    if (sourceOnly) {
+    if (sourceOnly || retainedOriginal(seal.finalPlan, retained)) {
       if (
         value.finalPlan.root !== context.root ||
         path.join(value.finalPlan.root, value.finalPlan.path) !==
@@ -2649,6 +2954,16 @@ async function verifyHandoff(context, value, ignoreLive = false) {
   } catch (error) {
     if (error.code === 'ENOENT') exists = false;
     else throw error;
+  }
+  if (exists) {
+    for (const item of retained)
+      if (item.fileRef.root === value.execution.executionRoot)
+        await retainedFileLive(context, item, true);
+    if (
+      value.mode !== 'in-place-no-delivery' &&
+      value.dirty !== (await retainedCheckout(context, retained))
+    )
+      fail('CONTENT_DRIFT', 'retained checkout dirt changed');
   }
   if (exists && !ignoreLive) {
     if (context.checkoutReturn) {
@@ -2703,15 +3018,8 @@ async function recordReturn(context, input) {
     origin: 'in-place',
   };
   await executionGuard({ ...context.request, execution }, context.deps, head);
-  if (
-    (await git(context.deps, context.root, [
-      'status',
-      '--porcelain',
-      '--untracked-files=all',
-      '--ignore-submodules=none',
-    ])) !== ''
-  )
-    fail('CONTENT_DRIFT', 'restored checkout must be clean');
+  const seal = await sealed(context, context.handoff.seal);
+  await retainedCheckout(context, await sealRetentions(context, seal));
   const delivery = await gateReceipt(context, input.delivery);
   if (
     delivery.gate !== 'delivery' ||
@@ -2818,6 +3126,9 @@ async function validateTerminalValue(context, value) {
       if (!value.conclusion.includes(observation.visibleReport))
         fail('MISSING_EVIDENCE', 'completion must disclose the caller-observed archival refusal');
     }
+    for (const item of await sealRetentions(context, seal))
+      if (!value.conclusion.includes(item.visibleReport))
+        fail('MISSING_EVIDENCE', 'completion must disclose every retained file');
     if (
       !same(value.finalPlan, handoff.finalPlan) ||
       !same(checkout.snapshot, handoff.snapshot) ||
@@ -2832,7 +3143,7 @@ async function validateTerminalValue(context, value) {
       fail('INCOMPLETE_GATES', 'success requires every build gate');
     if (
       handoff.dirty &&
-      (handoff.mode !== 'in-place-no-delivery' ||
+      ((handoff.mode !== 'in-place-no-delivery' && seal.retainedFiles === undefined) ||
         !value.retainedWorktree?.dirty ||
         checkout.worktreeRemoved)
     )
@@ -3036,7 +3347,7 @@ async function remoteRequest(context, ref, handle) {
       'nonce',
       'requestedAt',
     ],
-    COMPLETION_FIELDS,
+    COMPLETION_PROOF_FIELDS,
   );
   if (
     request.validationProtocol !== PROTECTED_VALIDATION_PROTOCOL ||
@@ -3585,19 +3896,19 @@ export async function executeOperation(operation, input, deps = {}) {
     operation === 'receipt'
       ? [
           'agentHandle',
-          ...COMPLETION_FIELDS,
+          ...COMPLETION_PROOF_FIELDS,
           'validationRequest',
           'validationResult',
           'validatorHandle',
         ]
       : operation === 'seal-delivery'
-        ? ['renewedGates', 'archivalRefusal']
+        ? ['renewedGates', 'archivalRefusal', 'retainedFiles']
         : operation === 'authorize-execution'
           ? ['returnBranch', 'planContinuation']
           : operation === 'retain-evidence'
             ? ['content', 'source']
             : COMPLETION_OPERATIONS.includes(operation)
-              ? COMPLETION_FIELDS
+              ? COMPLETION_PROOF_FIELDS
               : [],
   );
   const mutation = ![

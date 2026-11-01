@@ -1067,7 +1067,15 @@ test(
           const requestRef = ok(
             await worker('validation-request', { ...input, validationId, ...extra }),
           );
+          const issued = JSON.parse(readFileSync(path.join(requestRef.root, requestRef.path)));
+          assert.deepEqual(issued.snapshot, sourceBasis(fx.root).snapshot);
+          const exported = JSON.parse(
+            readFileSync(path.join(issued.exportManifestRef.root, issued.exportManifestRef.path)),
+          );
+          assert.deepEqual(exported.sourceSnapshot, issued.snapshot);
+          if (extra.retainedFiles) assert.deepEqual(issued.retainedFiles, extra.retainedFiles);
           const prepared = await prepareValidation({ requestRef, sourceRoot: fx.root });
+          assert.deepEqual(prepared.preparation.localSnapshot, issued.snapshot);
           write(host.mailboxRoot, `submissions/${validationId}.json`, {
             preparationRef: prepared.preparationRef,
             repository: fx.policy.repository,
@@ -1079,6 +1087,11 @@ test(
             { preparationRef: prepared.preparationRef, runId: 42, runAttempt: 1 },
             { read: backendFixture(fx, prepared.preparation) },
           );
+          const recordedResult = JSON.parse(
+            readFileSync(path.join(result.resultRef.root, result.resultRef.path)),
+          );
+          assert.deepEqual(recordedResult.requestRef, requestRef);
+          assert.deepEqual(recordedResult.preparationRef, prepared.preparationRef);
           const poll = ok(
             await worker('validation-result', {
               ...fx.common,
@@ -1125,6 +1138,36 @@ test(
           completionBasis,
           currentPlan: ref(fx.root, 'docs/plan/archive/approved.md'),
         };
+        const retainedOriginalPath = 'docs/plan/approved.md';
+        const retainedOriginal =
+          '# User edited the original during cleanup\n\n**Plan status:** Not implemented\n';
+        writeFileSync(path.join(fx.root, retainedOriginalPath), retainedOriginal);
+        completion.retainedFiles = ok(
+          await worker('retain-evidence', {
+            ...fx.common,
+            evidenceId: 'retained-cleanup-proof',
+            content: canonicalJSON({
+              protocol: 1,
+              runId: fx.input.runId,
+              requestDigest: fx.common.requestDigest,
+              provenance: 'caller-observed',
+              agentHandle: '/root/build',
+              completionBasis,
+              execution: request.execution,
+              sourcePlan: fx.input.plan,
+              currentPlan: completion.currentPlan,
+              retained: [
+                {
+                  role: 'cleanup-refused',
+                  fileRef: ref(fx.root, retainedOriginalPath),
+                  mode: statSync(path.join(fx.root, retainedOriginalPath)).mode & 0o7777,
+                  visibleReport:
+                    'Cleanup refused: edited untracked original plan retained unchanged.',
+                },
+              ],
+            }),
+          }),
+        );
         writeFileSync(path.join(fx.root, 'src/product.mjs'), 'export const product = 3;  \n');
         const admitted = ok(
           await worker('validation-await-admission', {
@@ -1145,6 +1188,50 @@ test(
           'CONTENT_DRIFT',
         );
         const after = await remotePass('completion-after', completion);
+        const retainedRecord = path.join(
+          completion.retainedFiles.root,
+          completion.retainedFiles.path,
+        );
+        const retainedBytes = readFileSync(retainedRecord);
+        writeFileSync(retainedRecord, Buffer.concat([retainedBytes, Buffer.from('\n')]));
+        refused(
+          await worker('validation-await-admission', {
+            ...fx.common,
+            validatorHandle,
+            gate: 'final-validation',
+            ...completion,
+          }),
+          'DIGEST_MISMATCH',
+        );
+        refused(
+          await worker('validation-request', {
+            ...input,
+            validationId: 'tampered-retained-proof',
+            ...completion,
+          }),
+          'DIGEST_MISMATCH',
+        );
+        refused(
+          await worker('validation-result', {
+            ...fx.common,
+            requestRef: after.requestRef,
+            validatorHandle,
+            ...completion,
+          }),
+          'DIGEST_MISMATCH',
+        );
+        refused(
+          await worker('receipt', {
+            ...fx.receipt,
+            gate: 'final-validation',
+            validatorHandle,
+            ...completion,
+            validationRequest: after.requestRef,
+            validationResult: after.resultRef,
+          }),
+          'DIGEST_MISMATCH',
+        );
+        writeFileSync(retainedRecord, retainedBytes);
         const renewedValidation = ok(
           await worker('receipt', {
             ...fx.receipt,
@@ -1186,7 +1273,14 @@ test(
           'CONTENT_DRIFT',
         );
         writeFileSync(path.join(fx.root, 'src/product.mjs'), 'export const product = 3;  \n');
-        git(fx.root, 'add', '-A');
+        git(fx.root, 'add', '-u');
+        git(
+          fx.root,
+          'add',
+          'scripts/new-tool.sh',
+          'docs/plan/unrelated.md',
+          'docs/plan/archive/approved.md',
+        );
         const seal = ok(
           await worker('seal-delivery', {
             ...fx.common,
@@ -1197,6 +1291,7 @@ test(
             expectedTree: git(fx.root, 'write-tree'),
             judgments: [],
             renewedGates: [renewedReview, renewedValidation],
+            retainedFiles: completion.retainedFiles,
           }),
         );
         assert.ok(seal.digest);
@@ -1219,6 +1314,14 @@ test(
           }),
         );
         assert.ok(handoff.digest);
+        assert.equal(
+          readFileSync(path.join(fx.root, retainedOriginalPath), 'utf8'),
+          retainedOriginal,
+        );
+        assert.equal(
+          git(fx.root, 'ls-tree', '-r', '--name-only', head, '--', retainedOriginalPath),
+          '',
+        );
       },
     );
   },

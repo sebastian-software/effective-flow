@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import {
+  chmodSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -9,6 +10,7 @@ import {
   realpathSync,
   rmSync,
   renameSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -1919,10 +1921,13 @@ for (const failedOperation of ['mkdir', 'rename'])
     );
   });
 
-async function preparedForSourceOnlyPlan(t, refusal, additionalRoots = []) {
+async function preparedForSourceOnlyPlan(t, refusal, additionalRoots = [], options = {}) {
   const fx = fixture(t, true);
   git(fx.root, 'rm', '--cached', 'plan.md');
-  writeFileSync(path.join(fx.root, '.gitignore'), '.effective-flow/\narchive/plan.md\n');
+  writeFileSync(
+    path.join(fx.root, '.gitignore'),
+    options.ignoreArchive === false ? '.effective-flow/\n' : '.effective-flow/\narchive/plan.md\n',
+  );
   if (refusal === 'write-failure') {
     writeFileSync(path.join(fx.root, 'archive'), 'existing non-directory archive parent\n');
     git(fx.root, 'add', 'archive');
@@ -1975,7 +1980,7 @@ async function preparedForSourceOnlyPlan(t, refusal, additionalRoots = []) {
   assert.equal(git(sourceRoot, 'rev-parse', '--git-common-dir'), live.repositoryIdentity);
   assert.equal(git(live.executionRoot, 'rev-parse', '--git-common-dir'), live.repositoryIdentity);
   assert.equal(git(sourceRoot, 'ls-files', '--', ':(literal)plan.md'), '');
-  if (refusal === 'collision') {
+  if (refusal === 'collision' && options.collisionTiming !== 'after-preparation') {
     mkdirSync(path.join(live.executionRoot, 'archive'));
     writeFileSync(
       path.join(live.executionRoot, 'archive/plan.md'),
@@ -1998,6 +2003,13 @@ async function preparedForSourceOnlyPlan(t, refusal, additionalRoots = []) {
       /gate-(independent-review|final-validation)-/.test(path.basename(item.path)),
     ),
   });
+  if (refusal === 'collision' && options.collisionTiming === 'after-preparation') {
+    mkdirSync(path.join(live.executionRoot, 'archive'));
+    writeFileSync(
+      path.join(live.executionRoot, 'archive/plan.md'),
+      '# Late unrelated private archive\n',
+    );
+  }
   return { ...live, sourceRoot, evidence, gates, prepared, refusal };
 }
 function sourceOnlySeal(live, extra = {}) {
@@ -2113,6 +2125,654 @@ for (const refusal of ['collision', 'write-failure'])
       readFileSync(path.join(live.executionRoot, 'source.txt'), 'utf8'),
       'delivered implementation\n',
     );
+  });
+
+async function retainPlanFiles(live, currentPlan, files) {
+  const value = {
+    protocol: 1,
+    runId: live.input.runId,
+    requestDigest: live.common.requestDigest,
+    provenance: 'caller-observed',
+    agentHandle: 'original-child-handle',
+    completionBasis: live.prepared,
+    execution: live.execution,
+    sourcePlan: live.input.plan,
+    currentPlan,
+    retained: files.map(({ role, root = live.executionRoot, path: name, visibleReport }) => ({
+      role,
+      fileRef: live.ref(root, name),
+      mode: statSync(path.join(root, name)).mode & 0o7777,
+      visibleReport,
+    })),
+  };
+  return live.call('retain-evidence', {
+    ...live.common,
+    evidenceId: 'retained-plan-files',
+    content: JSON.stringify(value),
+  });
+}
+
+async function finishRetainedFiles(live, seal, finalPlan, conclusion) {
+  git(
+    live.executionRoot,
+    'commit',
+    '-m',
+    'deliver approved output while retaining refused plan files',
+  );
+  const head = git(live.executionRoot, 'rev-parse', 'HEAD');
+  const plan = finalPlan.root ? finalPlan : gitRef(live, finalPlan.path, head);
+  const handoffRef = await live.call('handoff', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    seal,
+    head,
+    finalPlan: plan,
+  });
+  const handoff = JSON.parse(readFileSync(path.join(handoffRef.root, handoffRef.path)));
+  for (const gate of ['plan-archival', 'delivery', 'cleanup', 'pilot-finalization', 'completion'])
+    live.gates.push(
+      await issue(
+        live,
+        gate,
+        live.evidence,
+        gate === 'plan-archival' ? { reason: conclusion } : {},
+      ),
+    );
+  const terminal = await live.call(
+    'terminal',
+    terminalInput(
+      {
+        ...live,
+        finalPlan: handoff.finalPlan,
+        finalCheckout: {
+          repositoryIdentity: live.repositoryIdentity,
+          executionRoot: live.executionRoot,
+          branch: live.execution.branch,
+          head,
+          snapshot: handoff.snapshot,
+          worktreeRemoved: false,
+        },
+      },
+      {
+        retainedWorktree: { root: live.executionRoot, dirty: true, reason: conclusion },
+        conclusion,
+      },
+    ),
+  );
+  assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
+  return { head, handoff, terminal };
+}
+
+for (const collisionTiming of ['before-preparation', 'after-preparation'])
+  test(`nonignored untracked archive collision ${collisionTiming} is retained without entering the delivery tree`, async (t) => {
+    const live = await preparedForSourceOnlyPlan(t, 'collision', [], {
+      ignoreArchive: false,
+      collisionTiming,
+    });
+    const archive = path.join(live.executionRoot, 'archive/plan.md');
+    const originalArchive = readFileSync(archive);
+    const source = readFileSync(path.join(live.sourceRoot, 'plan.md'));
+    assert.equal(git(live.executionRoot, 'ls-files', '--', ':(literal)archive/plan.md'), '');
+    const ignore = spawnSync(
+      'git',
+      ['-C', live.executionRoot, 'check-ignore', '--quiet', '--no-index', 'archive/plan.md'],
+      { env },
+    );
+    assert.equal(ignore.status, 1, 'the collision must be an ordinary nonignored untracked file');
+    const conclusion = 'Archival refused: nonignored untracked archive target retained unchanged.';
+    const retainedFiles = await retainPlanFiles(live, live.ref(live.sourceRoot, 'plan.md'), [
+      { role: 'archive-collision', path: 'archive/plan.md', visibleReport: conclusion },
+    ]);
+    if (collisionTiming === 'after-preparation') {
+      const completion = {
+        completionBasis: live.prepared,
+        currentPlan: live.ref(live.sourceRoot, 'plan.md'),
+        retainedFiles,
+      };
+      const prepared = JSON.parse(readFileSync(path.join(live.prepared.root, live.prepared.path)));
+      const completed = ['independent-review', 'final-validation'];
+      const checkpoint = await live.call('checkpoint', {
+        ...live.common,
+        ...completion,
+        checkpointId: 'late-collision',
+        agentHandle: 'original-child-handle',
+        completed,
+        pending: REQUIRED_GATES.filter((gate) => !completed.includes(gate)),
+        evidence: prepared.gates,
+      });
+      const value = JSON.parse(readFileSync(path.join(checkpoint.root, checkpoint.path)));
+      assert.deepEqual(value.retainedFiles, retainedFiles);
+      assert.notEqual(
+        value.snapshot.untracked,
+        prepared.snapshot.untracked,
+        'the raw snapshot still observes the retained archive',
+      );
+      const question = await live.call('question', {
+        ...live.common,
+        ...completion,
+        checkpoint,
+        questionId: 'late-collision',
+        revision: 1,
+        origin: 'completion-recovery',
+        agentHandle: 'original-child-handle',
+        question: 'Continue delivery while retaining the colliding archive?',
+        options: ['Continue', 'Stop'],
+        responseType: 'option',
+      });
+      const reply = await live.call('reply', {
+        ...live.common,
+        ...completion,
+        question,
+        trustedUser: trusted(question, 'Continue'),
+      });
+      const resumed = await live.call('resume', {
+        ...live.common,
+        ...completion,
+        question,
+        reply,
+        agentHandle: 'original-child-handle',
+      });
+      assert.equal(resumed.authority, 'product');
+    }
+    const seal = await sourceOnlySeal(live, { retainedFiles });
+    const result = await finishRetainedFiles(
+      live,
+      seal,
+      live.ref(live.sourceRoot, 'plan.md'),
+      conclusion,
+    );
+    assert.deepEqual(readFileSync(archive), originalArchive);
+    assert.deepEqual(readFileSync(path.join(live.sourceRoot, 'plan.md')), source);
+    assert.equal(
+      git(
+        live.executionRoot,
+        'ls-tree',
+        '-r',
+        '--name-only',
+        result.head,
+        '--',
+        'plan.md',
+        'archive/plan.md',
+      ),
+      '',
+    );
+    assert.match(
+      git(live.executionRoot, 'status', '--porcelain', '--untracked-files=all'),
+      /\?\? archive\/plan\.md/,
+    );
+  });
+
+async function preparedForLocalUntrackedPlan(t, writeFailure = false) {
+  const fx = fixture(t);
+  git(fx.root, 'rm', '--cached', 'plan.md');
+  if (writeFailure) {
+    writeFileSync(path.join(fx.root, 'archive'), 'existing archive parent is a file\n');
+    git(fx.root, 'add', 'archive');
+  }
+  git(fx.root, 'commit', '-m', 'leave unpublished local plan untracked');
+  fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+  const live = await setupDelivery(await start(fx));
+  writeFileSync(path.join(live.root, 'source.txt'), 'delivered implementation\n');
+  const evidence = [durable(live)];
+  const gates = [];
+  for (const gate of REQUIRED_GATES.filter(
+    (name) =>
+      !['delivery', 'plan-archival', 'pilot-finalization', 'cleanup', 'completion'].includes(name),
+  ))
+    gates.push(await issue(live, gate, evidence));
+  const prepared = await live.call('prepare-completion', {
+    ...live.common,
+    preparationId: 'local-untracked-plan',
+    agentHandle: 'original-child-handle',
+    gates: gates.filter((item) =>
+      /gate-(independent-review|final-validation)-/.test(path.basename(item.path)),
+    ),
+  });
+  return { ...live, evidence, gates, prepared };
+}
+
+test('nonignored local untracked plan remains unpublished after an archive write refusal', async (t) => {
+  const live = await preparedForLocalUntrackedPlan(t, true);
+  const original = readFileSync(path.join(live.root, 'plan.md'));
+  const conclusion =
+    'Archival refused: original nonignored local plan retained untracked and unpublished.';
+  const retainedFiles = await retainPlanFiles(live, live.ref(live.root, 'plan.md'), [
+    { role: 'unarchived-original', path: 'plan.md', visibleReport: conclusion },
+  ]);
+  git(live.root, 'add', 'source.txt');
+  const seal = await live.call('seal-delivery', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    sealId: 'local-untracked-plan',
+    basis: live.prepared,
+    finalPlan: live.ref(live.root, 'plan.md'),
+    expectedTree: git(live.root, 'write-tree'),
+    judgments: [],
+    archivalRefusal: { reason: 'write-failure' },
+    retainedFiles,
+  });
+  const result = await finishRetainedFiles(live, seal, live.ref(live.root, 'plan.md'), conclusion);
+  assert.deepEqual(readFileSync(path.join(live.root, 'plan.md')), original);
+  assert.equal(git(live.root, 'ls-tree', '-r', '--name-only', result.head, '--', 'plan.md'), '');
+  assert.equal(git(live.root, 'ls-files', '--', ':(literal)plan.md'), '');
+});
+
+test('a retained originally untracked local plan cannot be staged for publication after preparation', async (t) => {
+  const live = await preparedForLocalUntrackedPlan(t, true);
+  const retainedFiles = await retainPlanFiles(live, live.ref(live.root, 'plan.md'), [
+    {
+      role: 'unarchived-original',
+      path: 'plan.md',
+      visibleReport: 'Original plan must remain untracked.',
+    },
+  ]);
+  git(live.root, 'add', 'source.txt', 'plan.md');
+  for (const extra of [{}, { retainedFiles }])
+    await assert.rejects(
+      live.call('seal-delivery', {
+        ...live.common,
+        agentHandle: 'original-child-handle',
+        sealId: 'untracked-plan-tracking-drift',
+        basis: live.prepared,
+        finalPlan: live.ref(live.root, 'plan.md'),
+        expectedTree: git(live.root, 'write-tree'),
+        judgments: [],
+        archivalRefusal: { reason: 'write-failure' },
+        ...extra,
+      }),
+      error('AUTHORITY_MISMATCH'),
+    );
+});
+
+test('refused cleanup retains an edited untracked original beside the committed canonical archive', async (t) => {
+  const live = await preparedForLocalUntrackedPlan(t);
+  const original = readFileSync(path.join(live.root, 'plan.md'), 'utf8');
+  mkdirSync(path.join(live.root, 'archive'));
+  writeFileSync(
+    path.join(live.root, 'archive/plan.md'),
+    original.replace('Not implemented', 'Implemented') +
+      '\n## Build completion\n\nCompleted and reviewed.\n',
+  );
+  const userEdit =
+    '# User changed the unpublished original during cleanup\n\n**Plan status:** Not implemented\n';
+  writeFileSync(path.join(live.root, 'plan.md'), userEdit);
+  const conclusion =
+    'Plan archived; cleanup refused because the untracked original changed after its captured digest.';
+  const retainedFiles = await retainPlanFiles(live, live.ref(live.root, 'archive/plan.md'), [
+    { role: 'cleanup-refused', path: 'plan.md', visibleReport: conclusion },
+  ]);
+  git(live.root, 'add', 'source.txt', 'archive/plan.md');
+  const seal = await live.call('seal-delivery', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    sealId: 'refused-cleanup',
+    basis: live.prepared,
+    finalPlan: live.ref(live.root, 'archive/plan.md'),
+    expectedTree: git(live.root, 'write-tree'),
+    judgments: [],
+    retainedFiles,
+  });
+  const result = await finishRetainedFiles(live, seal, { path: 'archive/plan.md' }, conclusion);
+  assert.equal(readFileSync(path.join(live.root, 'plan.md'), 'utf8'), userEdit);
+  assert.equal(git(live.root, 'ls-tree', '-r', '--name-only', result.head, '--', 'plan.md'), '');
+  assert.equal(
+    git(live.root, 'ls-tree', '-r', '--name-only', result.head, '--', 'archive/plan.md'),
+    'archive/plan.md',
+  );
+  assert.equal(git(live.root, 'ls-files', '--', ':(literal)plan.md'), '');
+});
+
+for (const [name, staged] of [
+  ['unrelated.txt', false],
+  ['new-code.mjs', false],
+  ['archive/another-plan.md', false],
+  ['staged-foreign.mjs', true],
+])
+  test(`retaining a known plan collision never excludes unrelated ${staged ? 'staged' : 'untracked'} ${name}`, async (t) => {
+    const live = await preparedForSourceOnlyPlan(t, 'collision', [], { ignoreArchive: false });
+    const retainedFiles = await retainPlanFiles(live, live.ref(live.sourceRoot, 'plan.md'), [
+      {
+        role: 'archive-collision',
+        path: 'archive/plan.md',
+        visibleReport: 'Untracked archive collision retained unchanged.',
+      },
+    ]);
+    writeFileSync(path.join(live.executionRoot, name), 'unreviewed unrelated content\n');
+    if (staged) git(live.executionRoot, 'add', name);
+    await assert.rejects(sourceOnlySeal(live, { retainedFiles }), error('RECHECK_REQUIRED'));
+    assert.equal(git(live.executionRoot, 'ls-files', '--', ':(literal)archive/plan.md'), '');
+  });
+
+test('an archive collision cannot be staged as a foreign deliverable to bypass its retained-file authority', async (t) => {
+  const live = await preparedForSourceOnlyPlan(t, 'collision', [], { ignoreArchive: false });
+  const before = readFileSync(path.join(live.executionRoot, 'archive/plan.md'));
+  git(live.executionRoot, 'add', 'archive/plan.md');
+  await assert.rejects(sourceOnlySeal(live), error('MISSING_EVIDENCE'));
+  assert.deepEqual(readFileSync(path.join(live.executionRoot, 'archive/plan.md')), before);
+});
+
+test('retained archive exclusions bind exact content, executable mode and tracking through handoff and later verification', async (t) => {
+  const live = await preparedForSourceOnlyPlan(t, 'collision', [], { ignoreArchive: false });
+  const archive = path.join(live.executionRoot, 'archive/plan.md');
+  const original = readFileSync(archive);
+  const originalMode = statSync(archive).mode & 0o777;
+  const retainedFiles = await retainPlanFiles(live, live.ref(live.sourceRoot, 'plan.md'), [
+    {
+      role: 'archive-collision',
+      path: 'archive/plan.md',
+      visibleReport: 'Untracked archive collision retained unchanged.',
+    },
+  ]);
+  const seal = await sourceOnlySeal(live, { retainedFiles });
+  git(
+    live.executionRoot,
+    'commit',
+    '-m',
+    'deliver implementation with separately retained collision',
+  );
+  const handoffInput = {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    seal,
+    head: git(live.executionRoot, 'rev-parse', 'HEAD'),
+    finalPlan: live.ref(live.sourceRoot, 'plan.md'),
+  };
+  writeFileSync(archive, '# Changed foreign archive after seal\n');
+  await assert.rejects(live.call('handoff', handoffInput), error('CONTENT_DRIFT'));
+  writeFileSync(archive, original);
+  chmodSync(archive, originalMode | 0o111);
+  await assert.rejects(live.call('handoff', handoffInput), error('CONTENT_DRIFT'));
+  chmodSync(archive, originalMode);
+  git(live.executionRoot, 'add', 'archive/plan.md');
+  await assert.rejects(live.call('handoff', handoffInput), error('CONTENT_DRIFT'));
+  git(live.executionRoot, 'reset', 'HEAD', '--', 'archive/plan.md');
+  const handoff = await live.call('handoff', handoffInput);
+  assert.ok(handoff.digest);
+  writeFileSync(archive, '# Changed foreign archive after handoff\n');
+  await assert.rejects(issue(live, 'plan-archival', live.evidence), error('CONTENT_DRIFT'));
+  writeFileSync(archive, original);
+  const record = path.join(retainedFiles.root, retainedFiles.path);
+  writeFileSync(record, readFileSync(record, 'utf8') + '\n');
+  await assert.rejects(issue(live, 'plan-archival', live.evidence), error('DIGEST_MISMATCH'));
+  assert.equal(
+    git(
+      live.executionRoot,
+      'ls-tree',
+      '-r',
+      '--name-only',
+      handoffInput.head,
+      '--',
+      'archive/plan.md',
+    ),
+    '',
+  );
+});
+
+test('retained-file evidence cannot give an unrelated source file plan-path authority', async (t) => {
+  const live = await preparedForSourceOnlyPlan(t, 'collision', [], { ignoreArchive: false });
+  writeFileSync(path.join(live.executionRoot, 'unrelated.mjs'), 'unreviewed product code\n');
+  const retainedFiles = await retainPlanFiles(live, live.ref(live.sourceRoot, 'plan.md'), [
+    {
+      role: 'archive-collision',
+      path: 'archive/plan.md',
+      visibleReport: 'Untracked archive retained.',
+    },
+    {
+      role: 'archive-collision',
+      path: 'unrelated.mjs',
+      visibleReport: 'This must never authorize unrelated code.',
+    },
+  ]);
+  await assert.rejects(sourceOnlySeal(live, { retainedFiles }), error('AUTHORITY_MISMATCH'));
+});
+
+test('retained local original plan bytes cannot drift between seal and committed handoff', async (t) => {
+  const live = await preparedForLocalUntrackedPlan(t, true);
+  const finalPlan = live.ref(live.root, 'plan.md');
+  const retainedFiles = await retainPlanFiles(live, finalPlan, [
+    {
+      role: 'unarchived-original',
+      path: 'plan.md',
+      visibleReport: 'Original unpublished plan retained.',
+    },
+  ]);
+  git(live.root, 'add', 'source.txt');
+  const seal = await live.call('seal-delivery', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    sealId: 'retained-local-original',
+    basis: live.prepared,
+    finalPlan,
+    expectedTree: git(live.root, 'write-tree'),
+    judgments: [],
+    archivalRefusal: { reason: 'write-failure' },
+    retainedFiles,
+  });
+  git(live.root, 'commit', '-m', 'deliver other product files without publishing the local plan');
+  writeFileSync(path.join(live.root, 'plan.md'), '# Tampered retained original after seal\n');
+  await assert.rejects(
+    live.call('handoff', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      seal,
+      head: git(live.root, 'rev-parse', 'HEAD'),
+      finalPlan,
+    }),
+    error('CONTENT_DRIFT'),
+  );
+});
+
+async function preparedExecutionPlanCopy(t, variant = 'valid') {
+  const live = await setupDelivery(await start(fixture(t, true)));
+  const approved = readFileSync(path.join(live.root, 'plan.md'), 'utf8');
+  const file = path.join(live.executionRoot, 'plan.md');
+  const originalBlob = git(live.executionRoot, 'rev-parse', ':plan.md');
+  assert.notEqual(live.input.plan.root, live.executionRoot);
+  assert.equal(git(live.executionRoot, 'rev-parse', '--git-common-dir'), live.repositoryIdentity);
+  assert.equal(readFileSync(file, 'utf8'), approved);
+  if (variant === 'different-working-bytes') {
+    writeFileSync(file, approved.replace('Approved Feature', 'Different execution requirements'));
+  } else if (variant === 'different-index-blob') {
+    const staged = path.join(live.root, '.effective-flow', 'different-index-plan.txt');
+    writeFileSync(staged, approved.replace('Approved Feature', 'Different staged requirements'));
+    const blob = git(live.root, 'hash-object', '-w', staged);
+    git(live.executionRoot, 'update-index', '--cacheinfo', `100644,${blob},plan.md`);
+    assert.notEqual(git(live.executionRoot, 'rev-parse', ':plan.md'), originalBlob);
+    assert.equal(readFileSync(file, 'utf8'), approved);
+  } else if (variant === 'different-index-mode') {
+    assert.equal(statSync(file).mode & 0o111, 0);
+    git(live.executionRoot, 'update-index', '--chmod=+x', 'plan.md');
+    assert.match(git(live.executionRoot, 'ls-files', '--stage', '--', 'plan.md'), /^100755 /);
+    assert.equal(readFileSync(file, 'utf8'), approved);
+  } else if (variant === 'conflict-index-stages') {
+    git(live.executionRoot, 'update-index', '--force-remove', 'plan.md');
+    const conflict = spawnSync('git', ['-C', live.executionRoot, 'update-index', '--index-info'], {
+      env,
+      encoding: 'utf8',
+      input: [1, 2, 3].map((stage) => `100644 ${originalBlob} ${stage}\tplan.md\n`).join(''),
+    });
+    assert.equal(conflict.status, 0, conflict.stderr);
+    assert.equal(
+      git(live.executionRoot, 'ls-files', '--unmerged', '--', 'plan.md').split('\n').length,
+      3,
+    );
+    assert.equal(readFileSync(file, 'utf8'), approved);
+  }
+  const evidence = [durable(live)];
+  const gates = [];
+  for (const gate of ['independent-review', 'final-validation'])
+    gates.push(await issue(live, gate, evidence));
+  const prepared = await live.call('prepare-completion', {
+    ...live.common,
+    preparationId: 'execution-copy',
+    agentHandle: 'original-child-handle',
+    gates,
+  });
+  return { ...live, evidence, gates, prepared, approved, variant };
+}
+function writeCanonicalExecutionArchive(live, approved) {
+  mkdirSync(path.join(live.executionRoot, 'archive'), { recursive: true });
+  writeFileSync(
+    path.join(live.executionRoot, 'archive/plan.md'),
+    approved.replace('Not implemented', 'Implemented') +
+      '\n## Build completion\n\nCompleted and reviewed.\n',
+  );
+  return live.ref(live.executionRoot, 'archive/plan.md');
+}
+function movePreparedExecutionCopy(live) {
+  if (live.variant === 'conflict-index-stages') {
+    git(live.executionRoot, 'rm', '--cached', '-f', '--', 'plan.md');
+    rmSync(path.join(live.executionRoot, 'plan.md'));
+    writeCanonicalExecutionArchive(live, live.approved);
+  } else {
+    writeFileSync(
+      path.join(live.executionRoot, 'plan.md'),
+      live.approved.replace('Not implemented', 'Implemented') +
+        '\n## Build completion\n\nCompleted and reviewed.\n',
+    );
+    mkdirSync(path.join(live.executionRoot, 'archive'));
+    git(live.executionRoot, 'mv', '--', 'plan.md', 'archive/plan.md');
+  }
+  git(live.executionRoot, 'add', '--', 'archive/plan.md');
+  assert.equal(existsSync(path.join(live.executionRoot, 'plan.md')), false);
+  assert.equal(git(live.executionRoot, 'ls-files', '--stage', '--', 'plan.md'), '');
+  return live.ref(live.executionRoot, 'archive/plan.md');
+}
+function executionCopyCheckpoint(live, currentPlan, checkpointId) {
+  const completed = ['independent-review', 'final-validation'];
+  return live.call('checkpoint', {
+    ...live.common,
+    checkpointId,
+    agentHandle: 'original-child-handle',
+    completionBasis: live.prepared,
+    currentPlan,
+    completed,
+    pending: REQUIRED_GATES.filter((gate) => !completed.includes(gate)),
+    evidence: live.gates,
+  });
+}
+
+test('a proved tracked execution copy can be removed into its canonical archive while carrying both prepared acceptance gates', async (t) => {
+  const live = await preparedExecutionPlanCopy(t);
+  const currentPlan = movePreparedExecutionCopy(live);
+  const checkpoint = await executionCopyCheckpoint(live, currentPlan, 'proved-copy-removal');
+  const value = JSON.parse(readFileSync(path.join(checkpoint.root, checkpoint.path)));
+  assert.deepEqual(value.completed, ['independent-review', 'final-validation']);
+  assert.deepEqual(value.evidence, live.gates);
+  assert.equal(readFileSync(path.join(live.root, 'plan.md'), 'utf8'), live.approved);
+});
+
+for (const variant of [
+  'different-working-bytes',
+  'different-index-blob',
+  'different-index-mode',
+  'conflict-index-stages',
+])
+  test(`an execution copy with ${variant} at preparation never receives archive-removal authority`, async (t) => {
+    const live = await preparedExecutionPlanCopy(t, variant);
+    const finalPlan = movePreparedExecutionCopy(live);
+    await assert.rejects(
+      live.call('seal-delivery', {
+        ...live.common,
+        agentHandle: 'original-child-handle',
+        sealId: 'unproved-copy-removal',
+        basis: live.prepared,
+        finalPlan,
+        expectedTree: git(live.executionRoot, 'write-tree'),
+        judgments: [],
+      }),
+      error('RECHECK_REQUIRED'),
+    );
+    assert.equal(readFileSync(path.join(live.root, 'plan.md'), 'utf8'), live.approved);
+  });
+
+for (const removedFrom of ['working-tree-only', 'index-only'])
+  test(`a proved execution copy removed from ${removedFrom} cannot carry old acceptance gates`, async (t) => {
+    const live = await preparedExecutionPlanCopy(t);
+    const currentPlan = writeCanonicalExecutionArchive(live, live.approved);
+    git(live.executionRoot, 'add', '--', 'archive/plan.md');
+    if (removedFrom === 'working-tree-only') {
+      rmSync(path.join(live.executionRoot, 'plan.md'));
+      assert.match(
+        git(live.executionRoot, 'ls-files', '--stage', '--', 'plan.md'),
+        / 0\tplan\.md$/,
+      );
+    } else {
+      git(live.executionRoot, 'rm', '--cached', '-f', '--', 'plan.md');
+      assert.equal(readFileSync(path.join(live.executionRoot, 'plan.md'), 'utf8'), live.approved);
+    }
+    await assert.rejects(
+      executionCopyCheckpoint(live, currentPlan, 'incomplete-copy-removal'),
+      error('CONTENT_DRIFT'),
+    );
+  });
+
+test('an identical execution plan first staged after preparation cannot acquire copy metadata authority', async (t) => {
+  const live = await preparedForSourceOnlyPlan(t, undefined, [], { ignoreArchive: false });
+  const approved = readFileSync(path.join(live.sourceRoot, 'plan.md'), 'utf8');
+  const currentPlan = writeCanonicalExecutionArchive(live, approved);
+  git(live.executionRoot, 'add', '--', 'archive/plan.md');
+  const prepared = JSON.parse(readFileSync(path.join(live.prepared.root, live.prepared.path)));
+  const checkpointLive = { ...live, gates: prepared.gates };
+  assert.ok(
+    (await executionCopyCheckpoint(checkpointLive, currentPlan, 'before-late-copy')).digest,
+  );
+  writeFileSync(path.join(live.executionRoot, 'plan.md'), approved);
+  git(live.executionRoot, 'add', '--', 'plan.md');
+  await assert.rejects(
+    executionCopyCheckpoint(checkpointLive, currentPlan, 'after-late-copy'),
+    error('CONTENT_DRIFT'),
+  );
+});
+
+for (const aliasTracking of ['untracked', 'staged'])
+  test(`a retained external source plan never exempts ${aliasTracking} content at the same relative execution path from renewed checkpoint checks`, async (t) => {
+    const live = await preparedForSourceOnlyPlan(t, undefined, [], { ignoreArchive: false });
+    const approved = readFileSync(path.join(live.sourceRoot, 'plan.md'), 'utf8');
+    mkdirSync(path.join(live.executionRoot, 'archive'));
+    const archive =
+      approved.replace('Not implemented', 'Implemented') +
+      '\n## Build completion\n\nCompleted and reviewed.\n';
+    writeFileSync(path.join(live.executionRoot, 'archive/plan.md'), archive);
+    const userEdit =
+      '# User edited the external unpublished original\n\n**Plan status:** Not implemented\n';
+    writeFileSync(path.join(live.sourceRoot, 'plan.md'), userEdit);
+    const currentPlan = live.ref(live.executionRoot, 'archive/plan.md');
+    const retainedFiles = await retainPlanFiles(live, currentPlan, [
+      {
+        role: 'cleanup-refused',
+        root: live.sourceRoot,
+        path: 'plan.md',
+        visibleReport: 'Cleanup refused: edited external source plan retained unchanged.',
+      },
+    ]);
+    const prepared = JSON.parse(readFileSync(path.join(live.prepared.root, live.prepared.path)));
+    const completed = ['independent-review', 'final-validation'];
+    const checkpoint = (checkpointId) =>
+      live.call('checkpoint', {
+        ...live.common,
+        checkpointId,
+        agentHandle: 'original-child-handle',
+        completionBasis: live.prepared,
+        currentPlan,
+        retainedFiles,
+        completed,
+        pending: REQUIRED_GATES.filter((gate) => !completed.includes(gate)),
+        evidence: prepared.gates,
+      });
+    const control = await checkpoint(`no-alias-${aliasTracking}`);
+    assert.equal(
+      JSON.parse(readFileSync(path.join(control.root, control.path))).authority,
+      'product',
+    );
+    writeFileSync(
+      path.join(live.executionRoot, 'plan.md'),
+      '# Unreviewed execution-checkout content with the same relative path\n',
+    );
+    if (aliasTracking === 'staged') git(live.executionRoot, 'add', 'plan.md');
+    await assert.rejects(checkpoint(`with-alias-${aliasTracking}`), error('CONTENT_DRIFT'));
+    assert.equal(readFileSync(path.join(live.sourceRoot, 'plan.md'), 'utf8'), userEdit);
+    assert.equal(readFileSync(path.join(live.executionRoot, 'archive/plan.md'), 'utf8'), archive);
   });
 
 test('source-only refusal rejects a foreign allowed root and another plan path', async (t) => {

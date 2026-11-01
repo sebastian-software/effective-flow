@@ -980,6 +980,22 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   live-source access. This does not copy a plan into the execution manifest, grant source cleanup,
   or relax product, staged-tree, commit or acceptance checks.
 
+  Optional `retainedFiles` binds a closed record for the three fixed user-file retention roles in
+  the same lifecycle contract. Full raw snapshots/manifests remain unchanged; the separate
+  `deliverablesManifest` excludes only exact proven non-product execution files from commit
+  requirements. All plan exceptions bind root and path together. The completion pair carries
+  this evidence through user gates and protected validation without relaxing native content
+  bindings; seal/handoff recheck bytes, full mode and untracked status. Visible retained-file and
+  checkout reports are mandatory, and no forced staging, publication or source cleanup is granted.
+
+  Normal archival can privately prove removal of an identical execution plan copy from its
+  prepared regular-file manifest and exact matching stage-0 blob/mode. The original path must now
+  be absent physically and from the full manifest/index; only its old metadata is excluded from
+  gate carry and seal deletion classification. An external relative name alone gives no exemption.
+  The [owning contract](../../src/shared/build-run-contract.md#preserve-acceptance-through-the-actual-completion-order)
+  defines this derived identity proof; it adds no caller flag/schema, current-path ignore set or
+  source-file ownership, and does not project raw native snapshots or relax actual gates.
+
 - **Plan-lint.** Invoke it as `node <skill-root>/scripts/plan-lint.mjs lint` with one
   closed-schema JSON object on standard input: `cwd` (the verified absolute root, which is
   `RUNTIME_STATE_ROOT` for a hidden-mode plan directory), `planDir` relative to it, and optional
