@@ -47,6 +47,12 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'memory migrate-directory',
   'commit create',
   'review open-report',
+  // `review write-report` writes model-supplied report text without a prompt. Its bound: it writes
+  // only below `.effective-flow/` (the report directory and a `.write-report-*.tmp` sibling, both
+  // through the runtime-state guard), under a generated name the caller cannot choose, never over an
+  // existing file, from at most 64 KiB of input, and it consumes finding IDs only through one
+  // successful reservation per call.
+  'review write-report',
 ]);
 // The runtime-state helper operations that never get a rule: destructive, or the writer of the
 // rules itself. A rule that would also admit one of them is widened.

@@ -11,8 +11,8 @@
 //   and then the concrete target as ignored. Every predicate must pass, so the order never changes
 //   the outcome. `guardTargets` applies the same predicates to a batch of targets with one
 //   `ls-files` and one `check-ignore --stdin` call, for a caller that mutates many targets in a row.
-// - `guardedMkdir`, `ensureGuardedDirectory`, `atomicWrite`, `guardedUnlink` and `guardedRmdir`
-//   each run the guard on their exact target before touching the filesystem.
+// - `guardedMkdir`, `ensureGuardedDirectory`, `atomicWrite`, `createNoClobber`, `guardedUnlink`
+//   and `guardedRmdir` each run the guard on their exact target before touching the filesystem.
 // - Two exact-name classes outside `.effective-flow/` (legacy memory and harness settings, see
 //   their section below) and the read-only walk of the legacy runtime directories.
 //
@@ -24,6 +24,7 @@
 import { randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import {
+  link,
   lstat,
   mkdir,
   open,
@@ -482,6 +483,185 @@ async function replaceAtomically(temporary, target, content, beforeRename) {
     fail('WRITE_FAILED', `cannot replace ${target}: ${error?.code ?? error?.message}`);
   }
   return { written: true };
+}
+
+// ---------------------------------------------------------------------------------------------
+// No-clobber create
+
+// A temporary file of `createNoClobber` older than this is left over by an interrupted call and
+// pruned by the next call in the same directory.
+export const NO_CLOBBER_TEMP_MAX_AGE_MS = 60 * 60 * 1000;
+// The prefix names the temporary family, e.g. `.write-report-`: a leading dot, lowercase letters,
+// digits and dashes, ending in a dash. The full temporary name is `<prefix><16 hex>.tmp`, which no
+// report-name family and no `*.md` reader glob matches.
+const NO_CLOBBER_PREFIX_PATTERN = /^\.[a-z0-9-]+-$/;
+const NO_CLOBBER_DEFAULT_FS = Object.freeze({ link, lstat, open, readdir, unlink });
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function sameInode(left, right) {
+  return Boolean(left && right) && left.dev === right.dev && left.ino === right.ino;
+}
+
+async function inodeOf(fs, target) {
+  try {
+    const info = await fs.lstat(target, { bigint: true });
+    return info.isFile() ? { dev: info.dev, ino: info.ino } : null;
+  } catch {
+    return null;
+  }
+}
+
+async function entryExists(fs, target) {
+  try {
+    await fs.lstat(target);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function readBack(fs, target) {
+  const handle = await fs.open(target, fsConstants.O_RDONLY | O_NOFOLLOW);
+  try {
+    return await handle.readFile();
+  } finally {
+    await handle.close().catch(() => {});
+  }
+}
+
+// Writes `bytes` to a new file at `file` (exclusive, never following a symlink, mode 0600), syncs
+// it and returns its inode. Returns null when the name is taken (EEXIST). A failed write removes
+// the file only while it is still the inode this call created; any failure is a WRITE_FAILED.
+async function writeExclusive(fs, file, bytes) {
+  let handle;
+  try {
+    handle = await fs.open(file, WRITE_FLAGS, 0o600);
+  } catch (error) {
+    if (error?.code === 'EEXIST') return null;
+    fail('WRITE_FAILED', `cannot create ${file}: ${error?.code ?? error?.message}`);
+  }
+  let created = null;
+  try {
+    const info = await handle.stat({ bigint: true });
+    created = { dev: info.dev, ino: info.ino };
+    await handle.writeFile(bytes);
+    await handle.sync();
+  } catch (error) {
+    await handle.close().catch(() => {});
+    if (sameInode(await inodeOf(fs, file), created)) await fs.unlink(file).catch(() => {});
+    fail('WRITE_FAILED', `cannot write ${file}: ${error?.code ?? error?.message}`);
+  }
+  await handle.close().catch(() => {});
+  return created;
+}
+
+// The link() failures that mean the filesystem offers no hard link here, not that the target is
+// taken or unsafe: createNoClobber then falls back to an exclusive create of the target itself.
+const LINK_UNSUPPORTED_CODES = Object.freeze(['ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV', 'ENOSYS']);
+
+// Creates `target` with `content` and never replaces an existing entry: the content goes to a
+// fresh temporary sibling `<tempPrefix><random>.tmp` (exclusive, never following a symlink, mode
+// 0600), which is then hard-linked to `target`, so an existing or concurrently created target wins,
+// and the temporary name is unlinked. On this path the target is never visible partially written.
+//
+// When link() fails with one of LINK_UNSUPPORTED_CODES (a filesystem without hard links, such as
+// some network, FUSE or FAT mounts), the temporary file is removed and `target` itself is created
+// exclusively (`O_CREAT | O_EXCL`, never following a symlink, mode 0600) and written. No-clobber
+// holds the same way: a taken name is EEXIST. This fallback has a partial-file window: between the
+// exclusive create and the end of the write, a concurrent reader can see `target` empty or
+// partially written. A failed write removes the target only while it is still the inode this call
+// created.
+//
+// Returns `{ created: true, bytes }`, or `{ created: false, code: 'EEXIST' }` when the target name
+// is taken; nothing is left behind in that case. After the create the target is verified: it must
+// be the very inode this call wrote, and hold exactly `content`. A failed verification removes the
+// target only while it is still that inode, and is a WRITE_FAILED; when a foreign entry holds the
+// name instead, that error carries it as `foreignPath`. Every other failure is a WRITE_FAILED (or
+// the guard's own refusal) with no target created.
+//
+// Temporary files of the same prefix older than NO_CLOBBER_TEMP_MAX_AGE_MS are pruned first. The
+// temporary file, the target and every pruned file pass one batched runtime-state guard; the
+// symlink-free directory chain is re-proven right before the writes. `options.fs` may override the
+// filesystem calls (`link`, `lstat`, `open`, `readdir`, `unlink`) and `options.now` the clock.
+export async function createNoClobber(context, target, content, options = {}) {
+  const { tempPrefix } = options;
+  if (typeof tempPrefix !== 'string' || !NO_CLOBBER_PREFIX_PATTERN.test(tempPrefix)) {
+    fail('INVALID_INPUT', `tempPrefix must match ${NO_CLOBBER_PREFIX_PATTERN.source}`);
+  }
+  const fs = { ...NO_CLOBBER_DEFAULT_FS, ...options.fs };
+  const now = options.now ?? Date.now;
+  const bytes = asBuffer(content);
+  const directory = path.dirname(target);
+  const temporary = path.join(directory, `${tempPrefix}${randomBytes(8).toString('hex')}.tmp`);
+  const stale = await staleTemporaries(fs, directory, tempPrefix, now());
+  await guardTargets(context, [temporary, target, ...stale]);
+  await assertDirectoryChain(context.cwd, directory);
+  for (const leftover of stale) await fs.unlink(leftover).catch(() => {});
+
+  let created = await writeExclusive(fs, temporary, bytes);
+  if (!created) fail('WRITE_FAILED', `cannot create ${temporary}: EEXIST`);
+  try {
+    await fs.link(temporary, target);
+    await fs.unlink(temporary).catch(() => {});
+  } catch (error) {
+    await fs.unlink(temporary).catch(() => {});
+    if (error?.code === 'EEXIST') return { created: false, code: 'EEXIST' };
+    if (!LINK_UNSUPPORTED_CODES.includes(error?.code)) {
+      fail('WRITE_FAILED', `cannot create ${target}: ${error?.code ?? error?.message}`);
+    }
+    created = await writeExclusive(fs, target, bytes);
+    if (!created) return { created: false, code: 'EEXIST' };
+  }
+
+  let problem = null;
+  try {
+    if (!sameInode(await inodeOf(fs, target), created)) {
+      problem = 'it is not the file just written';
+    } else if (!(await readBack(fs, target)).equals(bytes)) {
+      problem = 'its content differs from the content just written';
+    }
+  } catch (error) {
+    problem = `it cannot be read back (${error?.code ?? error?.message})`;
+  }
+  if (problem) {
+    // Removes only the file this call created, never a foreign one that took its name; a foreign
+    // entry left at the name is named as `foreignPath` on the error.
+    const own = sameInode(await inodeOf(fs, target), created);
+    if (own) await fs.unlink(target).catch(() => {});
+    const error = new RuntimeStateError(
+      'WRITE_FAILED',
+      `${target} failed verification after it was created: ${problem}`,
+    );
+    if (!own && (await entryExists(fs, target))) error.foreignPath = target;
+    throw error;
+  }
+  return { created: true, bytes: bytes.length };
+}
+
+// The regular temporary files of `prefix` in `directory` whose mtime is older than the maximum
+// age; a missing or unreadable directory has none.
+async function staleTemporaries(fs, directory, prefix, nowMs) {
+  const pattern = new RegExp(`^${escapeRegExp(prefix)}[0-9a-f]{16}\\.tmp$`);
+  let names;
+  try {
+    names = await fs.readdir(directory);
+  } catch {
+    return [];
+  }
+  const stale = [];
+  for (const name of names.filter((entry) => pattern.test(entry)).sort()) {
+    const candidate = path.join(directory, name);
+    try {
+      const info = await fs.lstat(candidate);
+      if (info.isFile() && nowMs - info.mtimeMs > NO_CLOBBER_TEMP_MAX_AGE_MS) stale.push(candidate);
+    } catch {
+      // Gone already.
+    }
+  }
+  return stale;
 }
 
 // Removes one file; an already missing file is not an error.

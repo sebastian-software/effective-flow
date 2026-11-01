@@ -3,7 +3,8 @@
 // envelopes of every helper operation. The `memory` operations live in
 // `effective-flow-state-memory-core.mjs`, `harness allow-rules` in
 // `effective-flow-state-harness-core.mjs`, `commit create` in `effective-flow-state-commit-core.mjs`
-// and `review open-report` in `effective-flow-state-review-core.mjs`; each imports this module and
+// and `review open-report` and `review write-report` in `effective-flow-state-review-core.mjs`
+// (the report renderer of `write-report` in `review-report-render.mjs`); each imports this module and
 // is loaded on first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
@@ -87,6 +88,7 @@ export const STATE_OPERATIONS = Object.freeze([
   'harness allow-rules',
   'commit create',
   'review open-report',
+  'review write-report',
 ]);
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
@@ -104,6 +106,7 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'harness allow-rules': 'not-allowlisted',
   'commit create': 'allowlisted',
   'review open-report': 'allowlisted',
+  'review write-report': 'allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
@@ -141,10 +144,12 @@ export const OUTCOME_CODES = Object.freeze([
   'COMMIT_UNVERIFIED',
   'SANDBOX_DENIED',
   'INTERRUPTED',
+  'REPORT_WRITE_FAILED',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
   'INVALID_INPUT',
+  'INPUT_TOO_LARGE',
   'INVALID_ROOT',
   'UNSAFE_TARGET',
   'RUNTIME_STATE_UNSAFE',
@@ -155,8 +160,10 @@ export const STATE_ERROR_CODES = Object.freeze([
   'INTERNAL_ERROR',
 ]);
 
+// INPUT_TOO_LARGE shares the exit class of INVALID_INPUT: the caller's input is refused, nothing ran.
 const EXIT_CODES = Object.freeze({
   INVALID_INPUT: 2,
+  INPUT_TOO_LARGE: 2,
   INVALID_ROOT: 2,
   UNSAFE_TARGET: 3,
   RUNTIME_STATE_UNSAFE: 3,
@@ -218,7 +225,7 @@ const DEFAULT_FS = Object.freeze({
   unlink,
 });
 
-// The closed input keys of the lock operations and of the two composed operations; the memory and
+// The closed input keys of the lock operations and of the composed operations; the memory and
 // harness cores keep their own.
 export const OPERATION_KEYS = Object.freeze({
   'lock acquire': Object.freeze(['cwd', 'lock', 'owner', 'waitSeconds']),
@@ -238,6 +245,20 @@ export const OPERATION_KEYS = Object.freeze({
     'waitSeconds',
   ]),
   'review open-report': Object.freeze(['cwd', 'owner', 'count', 'waitSeconds']),
+  'review write-report': Object.freeze([
+    'cwd',
+    'owner',
+    'language',
+    'invocationPrefix',
+    'scope',
+    'projectType',
+    'findings',
+    'skipped',
+    'closedObservations',
+    'notesFiltered',
+    'validationSkipped',
+    'waitSeconds',
+  ]),
 });
 
 // The caller-supplied owner fields per lock. The helper adds `token`, `acquiredAt`, `host` and
@@ -1072,6 +1093,7 @@ const HANDLERS = Object.freeze({
   'harness allow-rules': async (input, deps) => (await loadHarness()).allowRules(input, deps),
   'commit create': async (input, deps) => (await loadCommit()).commitCreate(input, deps),
   'review open-report': async (input, deps) => (await loadReview()).openReport(input, deps),
+  'review write-report': async (input, deps) => (await loadReview()).writeReport(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process

@@ -147,6 +147,7 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
     'memory migrate-directory',
     'commit create',
     'review open-report',
+    'review write-report',
   ]);
   assert.equal(STATE_OPERATION_CLASSES['lock break'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');

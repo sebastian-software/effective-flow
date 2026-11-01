@@ -167,6 +167,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'remote-tracker-ledger-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker.mjs',
+  'review-report-render.mjs',
   'runtime-file-primitives.mjs',
   'runtime-state-guard.mjs',
   'setup-status-core.mjs',
@@ -915,7 +916,7 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 41);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 42);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,

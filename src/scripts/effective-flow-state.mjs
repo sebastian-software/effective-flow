@@ -5,10 +5,11 @@
 //   node effective-flow-state.mjs memory <reserve|set-marker|migrate-directory> <<< '<json>'
 //   node effective-flow-state.mjs harness allow-rules <<< '<json>'
 //   node effective-flow-state.mjs commit create <<< '<json>'
-//   node effective-flow-state.mjs review open-report <<< '<json>'
+//   node effective-flow-state.mjs review <open-report|write-report> <<< '<json>'
 // The operation is exactly these two argv tokens; any other argv, an extra token included, is
 // rejected before stdin is read, so an allowlisted command prefix cannot be widened by an extra
-// argument and `--help` never blocks on a tty. Stdin carries one JSON object of at most 64 KiB.
+// argument and `--help` never blocks on a tty. Stdin carries one JSON object of at most 64 KiB;
+// a larger one is INPUT_TOO_LARGE, for every operation.
 // Writes exactly one JSON envelope line to stdout and `CODE: message` to stderr on failure; the
 // exit code is 0 on success, 4 for an outcome, and 1, 2 or 3 for an error.
 
@@ -34,7 +35,7 @@ async function readStdin(stream = process.stdin) {
     const buffer = Buffer.from(chunk);
     bytes += buffer.length;
     if (bytes > MAX_STDIN_BYTES) {
-      throw new StateError('INVALID_INPUT', `stdin exceeds ${MAX_STDIN_BYTES} bytes`);
+      throw new StateError('INPUT_TOO_LARGE', `stdin exceeds ${MAX_STDIN_BYTES} bytes`);
     }
     chunks.push(buffer);
   }
@@ -83,6 +84,8 @@ const OUTCOME_MESSAGES = Object.freeze({
   COMMIT_UNVERIFIED: (outcome) =>
     `commit ${outcome.commit} does not match the listed paths or left a staged index; nothing was amended`,
   SANDBOX_DENIED: () => 'the sandbox denied a write below .git; the listed paths were unstaged',
+  REPORT_WRITE_FAILED: (outcome) =>
+    `the report could not be written at step ${outcome.step}${outcome.guardCode ? ` (${outcome.guardCode})` : ''}; ${outcome.firstId} to ${outcome.lastId} stay reserved and unused, and no report of this call was left${outcome.foreignPath ? `; ${outcome.foreignPath} holds a file this call did not write` : ''}`,
   INTERRUPTED: (outcome) =>
     `stopped by ${outcome.signal}${outcome.commit ? ` after commit ${outcome.commit}` : ' before a commit landed'}`,
 });

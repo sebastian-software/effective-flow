@@ -95,6 +95,7 @@ test('every source showing a state-helper call has the call-shape fragment loade
   assert.deepEqual(hosts.map(({ name }) => name).sort(), [
     'src/shared/iterate-commit-fallback.md',
     'src/shared/memory-state.md',
+    'src/shared/review-write-report-fallback.md',
     'src/shared/setup-allowlist.md',
     'src/tools/apply-review-commit-mechanics.md',
     'src/tools/iterate.md',

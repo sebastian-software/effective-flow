@@ -436,7 +436,7 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Thirteen subsystems and 41 runtime scripts carry this today: the pairs
+  misread as one. Thirteen subsystems and 42 runtime scripts carry this today: the pairs
   `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`,
@@ -444,10 +444,10 @@ The build aborts with an error message if any of these guards is violated:
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
   `setup-status.mjs`/`setup-status-core.mjs`; the
-  runtime-state helper, an eight-file family whose entry point `effective-flow-state.mjs` sits over
+  runtime-state helper, a nine-file family whose entry point `effective-flow-state.mjs` sits over
   `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
   `effective-flow-state-harness-core.mjs`, `effective-flow-state-commit-core.mjs`,
-  `effective-flow-state-review-core.mjs`, the shared `claude-settings-core.mjs` and
+  `effective-flow-state-review-core.mjs`, its pure report renderer `review-report-render.mjs`, the shared `claude-settings-core.mjs` and
   `runtime-file-primitives.mjs` (the bounded-read and JSON-object primitives the memory and
   settings cores share), with `dated-name-allocation.mjs`, the dated-name allocation that
   `effective-flow-mechanics-core.mjs` and the review core both import; the
@@ -720,7 +720,7 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
 ## Runtime scripts
 
 Thirteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 41 files: ten two-file subsystems, the runtime-state helper's eight-file family,
+allowlist contains 42 files: ten two-file subsystems, the runtime-state helper's nine-file family,
 the remote tracker's seven-file family, the pilot measurement three-file family, and the shared `process-runner.mjs`,
 `runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
@@ -937,15 +937,15 @@ point is an I/O boundary over testable core or protocol modules:
   and `process-runner.mjs`, because their runs execute it and no load pointer names it.
 
 - **Effective-flow-state.** Invoke it as `node <skill-root>/scripts/effective-flow-state.mjs lock
-<operation>` with one JSON object of at most 64 KiB on standard input, passed through a
+<operation>` with one JSON object of at most 64 KiB on standard input (larger input is `INPUT_TOO_LARGE`, for every operation), passed through a
   here-string. It replaces the prose that acquired, released and broke three `mkdir` locks below
   `<RUNTIME_STATE_ROOT>/.effective-flow/`. The operation is exactly two argv tokens and any other
   argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
   argument. The operations are `lock acquire|release|inspect|break`, `memory
-reserve|set-marker|migrate-directory`, `commit create`, `review open-report` and `harness
-allow-rules`. The eight allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
-reserve`, `memory set-marker`, `memory migrate-directory`, `commit create` and `review
-open-report`, are non-destructive or read-only (`commit create` writes Git history; see below).
+reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report` and `harness
+allow-rules`. The nine allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`, `review
+open-report` and `review write-report`, are non-destructive or read-only (`commit create` writes Git history; see below).
   `lock break` is destructive and
   `harness allow-rules` writes the settings file that holds the rules; neither is ever
   allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
@@ -966,7 +966,8 @@ open-report`, are non-destructive or read-only (`commit create` writes Git histo
   `RUNTIME_STATE_UNSAFE` and is never broken by age.
   `waitSeconds` is an integer from 0 to 30 (default 30), and `runId` is required for the commit
   locks. Expected lock states are outcomes with exit 4 (`LOCK_HELD`, `NOT_OWNER`, `NOT_HELD`,
-  `BREAK_MISMATCH`); invalid input (`INVALID_INPUT`, `INVALID_ROOT`) exits 2, an unsafe runtime
+  `BREAK_MISMATCH`), as is `review write-report`'s `REPORT_WRITE_FAILED`; invalid input
+  (`INVALID_INPUT`, `INVALID_ROOT`, `INPUT_TOO_LARGE`) exits 2, an unsafe runtime
   state (`UNSAFE_TARGET`, `RUNTIME_STATE_UNSAFE`, `WRITE_FAILED`) exits 3, and `GIT_FAILED` or
   `INTERNAL_ERROR` exits 1. Every mutation passes `runtime-state-guard.mjs`, which belongs to no
   CLI pair like `process-runner.mjs`: it proves `cwd` is the main checkout's toplevel, keeps the
@@ -1005,16 +1006,25 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   envelope in which the lock may still be held carries `heldLock` for one retried `lock release`.
   Because the rule admits a commit that runs the repository's hooks without a prompt, the trust
   check is the boundary; it never pushes, amends, resets or rebases.
-  `review open-report` (`effective-flow-state-review-core.mjs`) is the local-mode persistence step
-  of `review` in one call: it guards `.effective-flow/review/`, allocates the `review-report-local`
+  `review open-report` (`effective-flow-state-review-core.mjs`) reserves and allocates in one
+  call: it guards `.effective-flow/review/`, allocates the `review-report-local`
   path through `dated-name-allocation.mjs` and reserves the report's finding IDs through the
   `memory reserve` transaction, returning that result plus `reportPath`, `reportName` and
   `reportDate`; it writes no report file, and `MIGRATION_REQUIRED` is reported before any
-  directory is created.
+  directory is created. It is the overflow path, loaded from the lazy
+  `src/shared/review-write-report-fallback.md`.
+  `review write-report` is the primary local persistence step: it validates and sanitises the
+  structured findings, renders the report through the pure `review-report-render.mjs` (`en` and
+  `de` forms of `review-report-format.md`), reserves one ID per finding as `open-report` does,
+  creates the report through `createNoClobber` of `runtime-state-guard.mjs` (never overwrites; a
+  path taken in between is re-allocated a bounded number of times) and returns the chat summary as
+  `result.summary` besides `reportPath`, `ids` and the reserve result. A failure before the
+  reservation reserves nothing; one after it is `REPORT_WRITE_FAILED` with the reserved range and
+  no report file.
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 53 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 54 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a

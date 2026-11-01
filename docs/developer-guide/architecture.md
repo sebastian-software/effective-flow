@@ -891,9 +891,9 @@ and `memory migrate-directory` (the whole `.effective-flow/` directory migration
 takes `memory.lock` itself, re-reads and validates the file, merges only its owned field and
 replaces the file atomically; a legacy `.sf-memory.json` is adopted inside the same transaction.
 Prose no longer replays the protocol, and a build guard rejects a direct write
-([guard #176](build-system.md#guards)). `setup` can write 53 non-destructive or bounded rules, in three
-families (eight runtime-state helper operations including `commit create` and `review
-open-report`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+([guard #176](build-system.md#guards)). `setup` can write 54 non-destructive or bounded rules, in three
+families (nine runtime-state helper operations including `commit create`, `review
+open-report` and `review write-report`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

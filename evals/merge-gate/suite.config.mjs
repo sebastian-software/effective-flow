@@ -86,6 +86,7 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/effective-flow-state-harness-core.mjs',
   'scripts/effective-flow-state-commit-core.mjs',
   'scripts/effective-flow-state-review-core.mjs',
+  'scripts/review-report-render.mjs',
   'scripts/claude-settings-core.mjs',
   'scripts/runtime-file-primitives.mjs',
   'scripts/runtime-state-guard.mjs',

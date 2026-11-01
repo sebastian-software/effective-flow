@@ -246,10 +246,12 @@ First determine the tracker target via the "apply-source detection" (report file
      anchor, and root-cause signature (when present)
 
    When reading an existing local report, also accept the historical German field aliases
-   `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Empfehlung`, `Aktion`,
-   `Prompt-Vorschlag`, and `Entwickler-Anmerkung` / `Entwicklernotiz` / `Entwickler-Notiz`.
-   Legacy values remain readable as well: severity `Kritisch` / `Wichtig` / `Hinweis`,
-   complexity `Leicht` / `Niedrig` / `Mittel` / `Hoch`, and status `Offen` / `Behoben` /
+   `Schweregrad`, `Komplexität`, `Bereich`, `Datei`, `Empfehlung`, `Aktion`, `Prompt-Vorschlag`, and
+   `Entwickler-Anmerkung` / `Entwicklernotiz` / `Entwickler-Notiz`, and the German admission labels
+   `Zulassungsergebnis`, `Zulassungsgrund`, `Zulassungsprüfung`, `Beleg`, `Beleg-Digest`,
+   `Aktuelle Erreichbarkeit`, `Ursachensignatur`, `Umfang und Eindämmung`, `Warum jetzt`, and
+   `Abschlussbedingung`. Legacy values remain readable as well: severity `Kritisch` / `Wichtig` /
+   `Hinweis`, complexity `Leicht` / `Niedrig` / `Mittel` / `Hoch`, and status `Offen` / `Behoben` /
    `Umgesetzt` / `Nicht umgesetzt`. Updates use the report's preserved language; action values,
    finding IDs, paths, and other machine tokens remain stable. A mixed/unclear report is not
    rewritten automatically. Remote issues independently use `language.forge`.

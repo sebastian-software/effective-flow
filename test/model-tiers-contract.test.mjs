@@ -149,7 +149,7 @@ const SPAWN_MENTION_ALLOWLIST = [
   ],
   [
     'tools/review.md',
-    'A review that admits at least one finding reserves its IDs',
+    'In local mode (the `local` target outside the pull-request special case)',
     'persistence duty; a skipped fan-out starts nothing',
   ],
   [

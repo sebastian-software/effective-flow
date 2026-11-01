@@ -77,6 +77,19 @@ test('the allowlist step names the rule families, the rule count and no rule for
   assert.ok(!ALLOWLISTED_OPERATIONS.includes('lock break'));
 });
 
+// Invariant: `review write-report` writes model-supplied content without a prompt, so it is
+// allowlisted and the prose states its bound: a new generated-name report below
+// `.effective-flow/review/`, never an overwrite, input capped at 64 KiB, and IDs consumed only by a
+// successful reservation.
+test('the allowlist step allowlists review write-report and states its bound', () => {
+  assert.ok(ALLOWLISTED_OPERATIONS.includes('review write-report'));
+  assert.ok(STATE_OPERATIONS.includes('review write-report'));
+  assert.match(
+    flat(allowlist),
+    /`review write-report` writes only a new, generated-name report below `\.effective-flow\/review\/` \(through a `\.write-report-\*\.tmp` sibling\) and the ID counter in `\.effective-flow\/memory\.json`, never overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful reservation/,
+  );
+});
+
 // Invariant: every helper outcome `harness allow-rules` can return is handled in the fragment.
 test('the allowlist step handles every harness outcome', () => {
   const harnessOutcomes = OUTCOME_CODES.filter(

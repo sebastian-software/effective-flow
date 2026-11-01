@@ -11,10 +11,12 @@ You are the orchestrator for comprehensive code reviews.
 
 This workflow analyzes code quality and produces a structured report whose findings can serve directly as input for `{{SKILL:fix}}`, `{{SKILL:refactor}}`, `{{SKILL:build}}`, and `{{SKILL:docs}}`.
 
-**A review that admits at least one finding reserves its IDs and persists them before presenting
-any finding — in local mode one `review open-report` call plus the report file at `reportPath` —
-also when the review itself runs inline because the change is small: skipping workers, the
-validator or the fan-out never skips the reservation or the report.** Per path: "Persistence gate".
+**In local mode (the `local` target outside the pull-request special case), review presents no
+finding, finding title or severity count before `review write-report` returns `ok: true` (overflow:
+its fragment), also when the review itself runs inline because the change is small: skipping
+workers, the validator or the fan-out never skips that call. The chat presentation is
+`result.summary` as returned, followed only by framing without finding content (no restated
+finding, title, severity or location) and the next-steps block.** Other paths: "Persistence gate".
 
 ```lazy-include
 language-rules
@@ -35,12 +37,12 @@ delegation-mandate
 
 ```lazy-include
 runtime-state-safety
-when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent
+when: a wisdom, cache, or tracker-marker mutation outside a state-helper call is imminent; the helper guards its own memory, report and migration writes and detects legacy state itself, so run no probe of your own before it
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent
+when: a wisdom, cache, or tracker-marker mutation outside a state-helper call is imminent; the helper guards its own memory, report and migration writes and detects legacy state itself, so run no probe of your own before it
 ```
 
 ```lazy-include
@@ -254,7 +256,7 @@ user to `{{SKILL:setup}}`, the sole repair owner.
    valid; use only valid, non-stale cache entries. Ignore a same-named cache below
    `EXECUTION_ROOT`.
 6. Finish scope/high-risk triage first. Then reserve the IDs of the ordered list of `admitted`
-   findings, through `review open-report` in local mode and `memory reserve` on every other path,
+   findings, through `review write-report` in local mode and `memory reserve` on every other path,
    mapped as `R-0000001`, `R-0000002`, ..., following “Reserve finding IDs before publication”; it
    gates every report, finding issue, and pull-request comment.
 
@@ -576,9 +578,9 @@ helper-call-shape
 **Persistence gate.** No finding appears in chat or is published before its IDs are reserved and
 its artifact exists. Per path:
 
-- **Local mode:** with at least one admitted finding, one `review open-report` call (local step 2)
-  reserves the IDs and allocates the report, and the report is written before any finding appears
-  in chat.
+- **Local mode:** with at least one admitted finding, one `review write-report` call (local step 2)
+  reserves the IDs, writes the report and returns `ok: true` with `result.summary` (overflow: its
+  fragment), the only chat presentation of its findings.
 - **Publishing target:** `memory reserve` (step 4) before any tracker write; the only local
   artifact is the security report.
 - **Pull-request special case:** `memory reserve` before anything is published onto the pull
@@ -595,37 +597,65 @@ its artifact exists. Per path:
 
 1. Reuse the Phase-1 `language.workflow` value for the complete new local report. Existing reports
    retain their clearly recognizable language. Pass the same concrete language to report writers.
-2. With at least one admitted finding, reserve the IDs and allocate the report in one call:
+2. With at least one admitted finding, reserve the IDs, write the report and obtain its summary in
+   one call:
 
    ```text
-   node <skill-root>/scripts/effective-flow-state.mjs review open-report <<< '{"cwd":"<RUNTIME_STATE_ROOT>","owner":{"workflow":"review"},"count":<N>}'
+   node <skill-root>/scripts/effective-flow-state.mjs review write-report <<< '{"cwd":"<RUNTIME_STATE_ROOT>","owner":{"workflow":"review"},"language":"<language>","invocationPrefix":"{{FLOW}}","scope":"<scope>","projectType":"<project type>","findings":[<finding>,…]}'
    ```
 
-   `count` is the exact number of admitted findings, mapped in order onto `result.firstId` to
-   `result.lastId`; its outcomes are those of `memory reserve` in “Memory operations”. The call
-   guards and creates `.effective-flow/review/`, and `result.reportPath` is the guarded absolute
-   report handle. Immediately before writing, re-check that `reportPath` is still absent; if it is
-   present, re-allocate the path alone as below and keep the reserved IDs. After a successful
-   reservation, never call `review open-report` again; only its `MIGRATION_REQUIRED` retry repeats
-   the call before one. **Path-only allocation** (that re-allocation, the appendix-only
-   report, and the publishing target's security report): resolve the handle below
-   `<RUNTIME_STATE_ROOT>/.effective-flow/review/`, running all directory lookups and
-   collision checks there; guard a missing `.effective-flow/` and then a missing `.effective-flow/review/`,
-   each exactly, immediately before its `mkdir`; take `data.path` of `name-allocate`
-   (`node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`, exactly one JSON object
-   on standard input: `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` `.effective-flow/review`,
-   `family` `review-report-local`; a nonzero exit, unparsable envelope or `ok: false` stops the
-   run, naming the error code). Guard the concrete report file again immediately before writing
-   it. Use the report format below. Never inspect or create a report below a linked execution worktree.
+   - Run exactly this one command from any directory: no `cd`, no other command around it. The
+     JSON stays on one line: a multi-line value writes its line breaks as `\n`, a `'` as `'\''`.
+     `language` is step 1's value; `scope` and `projectType` are the header's values.
+   - `findings` lists the admitted findings in order, mapped onto `result.firstId` to
+     `result.lastId`. Each is one object with `title`, `severity` (`Critical`, `Important`, `Note`),
+     `complexity` (`Low`, `Medium`, `High`), `area`, `file` (`path:line`), `problem`,
+     `recommendation`, `action` (`fix`, `refactor`, `build`, `docs`), the Phase-3 admission record
+     as `admissionReason` (`material-harm` or `irreversible-commitment`), `evidence`,
+     `evidenceDigest`, `currentReachability`, `rootCauseSignature`, `scopeAndContainment`, `whyNow`
+     and `completionCondition`, optional `promptSuggestion`, and `security`: the Phase-3 exposure
+     marking, `external` or `internal`, for every `local-only` finding and `none` for a `publishable` one.
+   - Optional: `skipped` (design-decision skips, items `{finding, designDecision, source}`),
+     `closedObservations` (explicit standalone audit only, items `{title, reason}`), `notesFiltered`
+     (step 3) and `validationSkipped` (step 4).
 
-3. If the active finding scope only covers critical and important findings (default):
-   - do not include notes in the main report
-   - briefly mention that notes were filtered out and that a comprehensive review is available on request
-4. If `review.validation: off` was active, mention in the report that technical validation was skipped. Carry the Phase-3 admission and security records into every actionable finding. A report holding at least one `local-only` finding gets the disclosure banner. The publication gate is a no-op here, because local mode publishes nothing. If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.
+   Handle the result; once IDs are reserved, never call `review write-report` again. A stop below
+   (`REPORT_WRITE_FAILED`, a second `INVALID_INPUT`) keeps the wisdom file; a re-run reserves a new range:
+
+   - `ok: true`: the report exists at `result.reportPath`; step 6 presents `result.summary`.
+   - `INVALID_INPUT` (nothing reserved): correct the named key once and retry; a second one stops
+     the run, naming the key.
+   - `MIGRATION_REQUIRED` (nothing written): handle it per “Memory operations”, then retry once.
+   - `INPUT_TOO_LARGE`, or the shell refuses the command with "Argument list too long": take the
+     overflow path loaded below.
+   - `REPORT_WRITE_FAILED`: stop, naming its reserved range as a permanent ID gap and its failing
+     step. A guard code there, like any runtime-state guard refusal, preserves all state and
+     directs the user to `{{SKILL:setup}}`.
+   - Every other outcome follows `memory reserve` in “Memory operations”.
+
+```lazy-include
+review-write-report-fallback
+when: `review write-report` returned `INPUT_TOO_LARGE` or the shell refused it with "Argument list too long"
+```
+
+**Path-only allocation** (the overflow path's re-allocation, the appendix-only report, and the
+publishing target's security report): resolve the handle below
+`<RUNTIME_STATE_ROOT>/.effective-flow/review/`, running all directory lookups and collision checks
+there; guard a missing `.effective-flow/` and then a missing `.effective-flow/review/`, each
+exactly, immediately before its `mkdir`; take `data.path` of `name-allocate`
+(`node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`, exactly one JSON object on
+standard input: `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` `.effective-flow/review`, `family`
+`review-report-local`; a nonzero exit, unparsable envelope or `ok: false` stops the run, naming
+the error code). Guard the concrete report file again immediately before writing it. Use the report
+format below. Never inspect or create a report below a linked execution worktree.
+
+3. If the active finding scope only covers critical and important findings (default), leave notes
+   out of `findings` and send `"notesFiltered":true`, which renders the filtered-notes line.
+4. If `review.validation: off` was active, send `"validationSkipped":true`. The helper renders the disclosure banner for a `local-only` finding. The publication gate is a no-op here, because local mode publishes nothing. If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
-6. Present the most important findings to the user and point to the saved report file.
+6. Present `result.summary` as returned; the overflow path presents as its fragment states.
 7. Delete the wisdom file.
-8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.
+8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat.
 9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.
 
 #### Publishing target (forge or external tool)
@@ -643,7 +673,7 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
 2. **Dedup first:** On the forge target, use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. On an external target, search existing findings by the canonical classification value and by `Signature` content through the resolved connection; do not query legacy `firmo-`/`Signatur` forms there, since no run has ever written them to that tool. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
 3. **Dedup withheld findings:** Run the local dedup of the loaded "Security disclosure gate" for the `local-only` findings, which remote dedup cannot see. This must finish before the reservation, so a finding already recorded in an earlier report consumes no new ID.
 4. **Reserve IDs:** Reserve one `R-XXXXXXX` range through `memory reserve` (“Reserve finding IDs before publication”) for the ordered list of all remaining admitted findings of **both** disclosure classes.
-5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use local mode's path-only allocation, directory guards, and collision mechanics (no `review open-report` call: step 4 already reserved the IDs), and never inspect or create a report below a linked execution worktree.
+5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use local mode's path-only allocation, directory guards, and collision mechanics (no `review write-report` call: step 4 already reserved the IDs), and never inspect or create a report below a linked execution worktree.
 6. **Create direct finding issues:** Build each canonical payload through the helper and publish one
    issue per reserved admitted root cause. Publish the `publishable` findings, plus the withheld
    findings only when the disclosure gate returned an explicit publication confirmation. Canonical
@@ -675,7 +705,7 @@ when explicitly requested, is complete but non-executable.
 
 ```lazy-include
 review-report-format
-when: a review report is written or an existing one is augmented
+when: a report is written by hand (the overflow path, the appendix-only report, the security report) or an existing one is augmented
 ```
 
 ## Known limitations

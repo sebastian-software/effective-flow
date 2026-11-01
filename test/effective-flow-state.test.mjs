@@ -199,6 +199,7 @@ test('operations, locks and codes are frozen closed sets', () => {
       'harness allow-rules',
       'commit create',
       'review open-report',
+      'review write-report',
     ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
@@ -228,12 +229,14 @@ test('operations, locks and codes are frozen closed sets', () => {
       'COMMIT_UNVERIFIED',
       'SANDBOX_DENIED',
       'INTERRUPTED',
+      'REPORT_WRITE_FAILED',
     ],
   );
   assert.deepEqual(
     [...STATE_ERROR_CODES],
     [
       'INVALID_INPUT',
+      'INPUT_TOO_LARGE',
       'INVALID_ROOT',
       'UNSAFE_TARGET',
       'RUNTIME_STATE_UNSAFE',
@@ -267,6 +270,7 @@ test('exit codes: 0 success, 4 outcome, 2 input or root, 3 unsafe or write, 1 ot
     assert.equal(exitCodeFor({ ok: false, outcome: { code } }), 4);
   }
   assert.equal(exitFor('INVALID_INPUT'), 2);
+  assert.equal(exitFor('INPUT_TOO_LARGE'), 2);
   assert.equal(exitFor('INVALID_ROOT'), 2);
   assert.equal(exitFor('UNSAFE_TARGET'), 3);
   assert.equal(exitFor('RUNTIME_STATE_UNSAFE'), 3);
@@ -374,8 +378,10 @@ test('CLI process: --help exits at once while stdin stays open', async () => {
   assert.equal(JSON.parse(stdout).error.code, 'INVALID_INPUT');
 });
 
-// Invariant: stdin is capped at 64 KiB, so a runaway here-string cannot reach the core.
-test('CLI process: stdin above the cap is invalid input', () => {
+// Invariant: stdin is capped at 64 KiB, so a runaway here-string cannot reach the core; the refusal
+// is its own code, INPUT_TOO_LARGE, in the exit class of INVALID_INPUT, so `review` can route an
+// oversized `write-report` to its overflow path.
+test('CLI process: stdin above the cap is INPUT_TOO_LARGE', () => {
   const big = JSON.stringify({ cwd: '/x', lock: 'memory', pad: 'x'.repeat(MAX_STDIN_BYTES) });
   assert.ok(Buffer.byteLength(big) > MAX_STDIN_BYTES);
   const result = spawnSync(process.execPath, [CLI, 'lock', 'inspect'], {
@@ -385,7 +391,7 @@ test('CLI process: stdin above the cap is invalid input', () => {
   assert.equal(result.status, 2);
   const envelope = JSON.parse(result.stdout);
   assert.equal(envelope.operation, 'lock inspect');
-  assert.equal(envelope.error.code, 'INVALID_INPUT');
+  assert.equal(envelope.error.code, 'INPUT_TOO_LARGE');
   assert.match(envelope.error.message, /stdin exceeds 65536 bytes/);
   assert.equal(MAX_STDIN_BYTES, 64 * 1024);
 });

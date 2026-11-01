@@ -879,3 +879,115 @@ lists `ids-round1.txt` and `ids-round2.txt`, and `analysis-round1.txt` and `anal
 
 Round 1's 18 runs cost 4.87 USD and round 2's 12 new runs about 2.51 USD, so the total is about
 7.38 USD, against the plan's estimate of 10 to 15 USD.
+
+## Work package 9 measurement
+
+Measurement step of work package 9 (plan
+`docs/plan/2026-11-01-structural-review-persistence.md`), run on 2026-11-01. It asks whether
+realistic `review` runs and the migration persist their findings now that `review write-report`
+reserves, renders, writes and summarises in one call, and findings reach chat only through its
+`result.summary`.
+
+### Setup
+
+| Item                  | Recorded value                                                                                                                                                 |
+| --------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headless CLI          | `2.1.312`, through the Agent SDK host (`host.mjs`, unchanged) and the work package 1 `node_modules`, linked                                                    |
+| Build under test      | Portable build (`node build.mjs`) of the pull request #601 worktree, version `1.70.0` on `97f773b7` plus the uncommitted work package 9 changes of each round  |
+| Install form          | Measurement `HOME` `/home/t3/spike-sandbox/home-wp3`; `.claude/skills/effective-flow` is a symlink to the worktree's `dist/portable/effective-flow`            |
+| Model, budget, policy | `claude-sonnet-5-5`, 3 USD per run, host policy `sandbox`, `settingSources: ['user', 'local']`                                                                 |
+| Rule set              | The 54 rules of `harness allow-rules`: 9 `effective-flow-state.mjs` operations, `config-resolve.mjs resolve`, and 44 read-only `remote-tracker.mjs` operations |
+| Evidence root         | `.effective-flow/spikes/allowlist/2026-11-01-02/` in the primary checkout (untracked)                                                                          |
+
+The harness is a copy of the work package 8 root with these changes:
+
+- **Cells:** `review` and the migration cell (`firmo`) on the work package 8 seeds, 3 runs each in
+  default and auto mode per round; run ids `w9-<cell>-<mode>-[r<k>-]<n>`.
+- **Analysis:** `analyze_wp9.py`, a copy of `analyze_wp8.py`. `review write-report` counts as a
+  persistence call next to `review open-report` and is admitted by the literal-shape pattern. The
+  helper-housekeeping classification is unchanged: every `effective-flow-state.mjs` call and every
+  command that names a `memory.json` counts.
+- **Validity (WP9 rule):** every run the host completed is valid; only harness failures (timeout,
+  crash, budget stop) are invalid. The seed-text heuristic and the overrides of work package 8 are
+  gone, so a run that skips persistence counts as valid and unexercised. The criterion is therefore
+  the work package 8 criterion under the WP9 validity rule; rounds are not like for like with work
+  package 8's.
+- **Exercised:** `review`: a persistence call succeeded, a report holds every reserved ID and
+  `lastFindingNumber` covers them. Migration: `memory migrate-directory` succeeded, the marker is
+  set, and a successful persistence call followed it.
+- **Reported, not counted:** a run is flagged "presented before persisting" when a top-level
+  assistant text block names an `R-` ID or a seeded defect before the first successful persistence
+  result.
+
+All 36 runs were valid; none was repeated.
+
+### Rounds
+
+| Round | Change before the round                                                                                                 | Cost (USD) |
+| ----- | ----------------------------------------------------------------------------------------------------------------------- | ---------: |
+| 1     | `review write-report` and the presentation rule                                                                         |       3.43 |
+| 2     | Fix round 1: no runtime-state probe before a helper call (narrowed lazy triggers in `review.md`); "no `cd`" at the call |       3.10 |
+| 3     | Fix round 2: the router carries the bare helper-call rule and review's presentation rule                                |       2.99 |
+
+Both fix rounds deviate from the plan's predetermined levers by user decision: round 1 already
+persisted in 12 of 12 runs, so the Phase-1 anchor `review begin` was not built, and both rounds
+targeted the measured prompt causes instead.
+
+| Cell     | Mode    | Round 1 exercised / HH prompts | Round 2 exercised / HH prompts | Round 3 exercised / HH prompts |
+| -------- | ------- | -----------------------------: | -----------------------------: | -----------------------------: |
+| `review` | default |                        3/3 / 3 |                        2/3 / 0 |                        3/3 / 0 |
+| `review` | auto    |                        3/3 / 0 |                        3/3 / 0 |                        3/3 / 0 |
+| `firmo`  | default |                        3/3 / 1 |                        3/3 / 2 |                        3/3 / 1 |
+| `firmo`  | auto    |                        3/3 / 0 |                        3/3 / 0 |                        3/3 / 0 |
+
+Helper-housekeeping refusals were 0 in every run. Literal shape of `effective-flow-state.mjs` calls:
+32/35, 32/36 and 39/39. One run flagged "presented before persisting" (round 2, `review` default
+2), which reviewed inline because "the diff is only two files" and never called the helper; no
+other run presented findings first.
+
+### Prompt causes
+
+- Round 1: one `review` run prefixed all three helper calls with `cd <skill-root> &&`; one migration
+  run probed `.firmo/memory.json` inside a compound `git check-ignore` command before the helper ran.
+- Round 2: one migration run prefixed `write-report` twice with `cd /tmp &&`.
+- Round 3: one migration run, after `MIGRATION_REQUIRED`, looked up the migration in the skill
+  source (`cd <skill-root> && grep -rln migrate-directory .; ls …; cat …/memory.json`) before calling
+  `memory migrate-directory` correctly. The command reads only, but it names `memory.json`, so the
+  unchanged classification counts it as housekeeping.
+
+### Verdict
+
+**Criterion blocked.** Both permitted fix rounds are used, and round 3 misses it by one prompt.
+
+- **Met:** persistence in 35 of 36 runs across the three rounds, and in 12 of 12 in each of rounds
+  1 and 3; `review` in both modes and the migration in auto mode in round 3; the literal shape in
+  39 of 39 calls in round 3; 0 housekeeping refusals.
+- **Missed:** the migration cell in default mode (one housekeeping prompt in each round).
+- **Cause:** after `MIGRATION_REQUIRED` a run may still consult the skill source or the runtime
+  files on its own before the next helper call. The outcome names the next step only in prose.
+
+The user decided to deliver blocked. The plan stays not implemented with one blocking open point.
+
+### What the measurement does not cover
+
+- Local mode only; the publishing-target and pull-request paths keep `memory reserve` and are
+  covered by contract tests alone.
+- The seed holds about four findings, so `INPUT_TOO_LARGE`, the overflow path and auto-mode
+  behaviour on multi-KiB commands are covered by unit tests alone.
+- The stage 1 limits still apply: one model, the portable install form only, headless sessions,
+  server-side auto mode unmeasured, and n=3 per mode, which is within the round-to-round noise
+  work package 8 showed.
+
+### Retention
+
+The evidence root `.effective-flow/spikes/allowlist/2026-11-01-02/` in the primary checkout is
+untracked. It holds the harness copies, the prompt, every run's configuration, transcript, debug
+log, permission log, result, allow-rules envelopes, settings snapshots and report copies, the id
+lists `ids-round1.txt` to `ids-round3.txt`, and `analysis-round1.txt` to `analysis-round3.txt`.
+`manifest.sha256.txt` lists 740 files and excludes the linked `node_modules`.
+
+| File                  | SHA-256                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `manifest.sha256.txt` | `43bce5e51b6f30953905058f0d24f64c16761e9f27980ec51d35f5d550f17e99` |
+
+The three rounds cost 9.52 USD in total.

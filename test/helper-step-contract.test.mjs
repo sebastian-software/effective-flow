@@ -164,7 +164,7 @@ test('the commit-lock contract carries the commit create sentence and scopes the
 
 // Invariant: realistic `review` runs answered inline and skipped reservation and report, so the
 // always-loaded core gates every finding presentation on its persistence step, per review path,
-// including the appendix-only and empty paths.
+// including the appendix-only and empty paths; in local mode that step is one `write-report` call.
 test('review carries the per-path persistence gate', () => {
   const gate = flat(section(review, '**Persistence gate.**', '#### Local mode'));
   assert.match(
@@ -172,7 +172,7 @@ test('review carries the per-path persistence gate', () => {
     /No finding appears in chat or is published before its IDs are reserved and its artifact exists/,
   );
   for (const pattern of [
-    /\*\*Local mode:\*\* with at least one admitted finding, one `review open-report` call \(local step 2\) reserves the IDs and allocates the report, and the report is written before any finding appears in chat/,
+    /\*\*Local mode:\*\* with at least one admitted finding, one `review write-report` call \(local step 2\) reserves the IDs, writes the report and returns `ok: true` with `result\.summary` \(overflow: its fragment\), the only chat presentation of its findings/,
     /\*\*Publishing target:\*\* `memory reserve` \(step 4\) before any tracker write; the only local artifact is the security report/,
     /\*\*Pull-request special case:\*\* `memory reserve` before anything is published onto the pull request; the only local artifact is the security report for withheld `local-only` findings/,
     /A chat-only outcome \(hidden mode, a closed or foreign pull request reported read-only, a declined publication\) has the chat report itself as its artifact, presented after `memory reserve`/,
@@ -183,29 +183,139 @@ test('review carries the per-path persistence gate', () => {
     assert.match(gate, pattern);
   }
   assert.match(review, /^```include\nhelper-call-shape\n```$/m);
-  const localStep = flat(
-    section(review, '2. With at least one admitted finding', '3. If the active finding scope'),
-  );
+});
+
+const localMode = section(review, '#### Local mode', '#### Publishing target');
+const localStep = section(localMode, '2. With at least one admitted finding', '3. If the active');
+
+// Invariant: the helper renders the report from structured input, so local step 2 shows one
+// literal `write-report` call whose invocation prefix is the build placeholder (runtime scripts
+// cannot know the target) and names every required input key, so no run hand-writes the report.
+test('review local step 2 shows the literal write-report call and its input keys', () => {
   assert.match(
     localStep,
-    /node <skill-root>\/scripts\/effective-flow-state\.mjs review open-report <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","owner":\{"workflow":"review"\},"count":<N>\}'/,
+    /^ {3}node <skill-root>\/scripts\/effective-flow-state\.mjs review write-report <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","owner":\{"workflow":"review"\},"language":"<language>","invocationPrefix":"\{\{FLOW\}\}","scope":"<scope>","projectType":"<project type>","findings":\[<finding>,…\]\}'$/m,
+  );
+  const text = flat(localStep);
+  for (const key of [
+    'title',
+    'severity',
+    'complexity',
+    'area',
+    'file',
+    'problem',
+    'recommendation',
+    'action',
+    'admissionReason',
+    'evidence',
+    'evidenceDigest',
+    'currentReachability',
+    'rootCauseSignature',
+    'scopeAndContainment',
+    'whyNow',
+    'completionCondition',
+    'security',
+    'promptSuggestion',
+    'skipped',
+    'closedObservations',
+    'notesFiltered',
+    'validationSkipped',
+  ]) {
+    assert.ok(text.includes(`\`${key}\``), `step 2 names the input key ${key}`);
+  }
+  assert.match(text, /once IDs are reserved, never call `review write-report` again/);
+  assert.ok(
+    !text.includes('`developerNote`'),
+    'review never fills developerNote, so step 2 omits it',
   );
   assert.match(
-    localStep,
-    /re-check that `reportPath` is still absent; if it is present, re-allocate the path alone as below and keep the reserved IDs\. After a successful reservation, never call `review open-report` again; only its `MIGRATION_REQUIRED` retry repeats the call before one/,
+    text,
+    /The JSON stays on one line: a multi-line value writes its line breaks as `\\n`, a `'` as `'\\''`/,
+  );
+  assert.match(
+    text,
+    /`security`: the Phase-3 exposure marking, `external` or `internal`, for every `local-only` finding and `none` for a `publishable` one/,
+  );
+  for (const shape of [
+    '`admissionReason` (`material-harm` or `irreversible-commitment`)',
+    'items `{finding, designDecision, source}`',
+    'items `{title, reason}`',
+  ]) {
+    assert.ok(text.includes(shape), `step 2 names ${shape}`);
+  }
+});
+
+// Invariant: every `write-report` outcome has one bounded instruction, so a run neither loops on
+// retries nor falls back to chat-only findings; the overflow path is the only route to
+// `open-report`.
+test('review local step 2 maps the write-report outcomes', () => {
+  const text = flat(localStep);
+  for (const pattern of [
+    /`INVALID_INPUT` \(nothing reserved\): correct the named key once and retry; a second one stops the run, naming the key/,
+    /`MIGRATION_REQUIRED` \(nothing written\): handle it per “Memory operations”, then retry once/,
+    /A stop below \(`REPORT_WRITE_FAILED`, a second `INVALID_INPUT`\) keeps the wisdom file; a re-run reserves a new range/,
+    /`INPUT_TOO_LARGE`, or the shell refuses the command with "Argument list too long": take the overflow path loaded below/,
+    /`REPORT_WRITE_FAILED`: stop, naming its reserved range as a permanent ID gap and its failing step\. A guard code there, like any runtime-state guard refusal, preserves all state and directs the user to `\{\{SKILL:setup\}\}`/,
+  ]) {
+    assert.match(text, pattern);
+  }
+  assert.match(
+    localMode,
+    /\n```lazy-include\nreview-write-report-fallback\nwhen: `review write-report` returned `INPUT_TOO_LARGE` or the shell refused it with "Argument list too long"\n```\n/,
+  );
+});
+
+// Invariant: `open-report` plus a hand-written report is the overflow path only, so the
+// always-loaded core never offers it; the lazy fragment carries its literal call, its re-check and
+// its own presentation, which shows the path and severity counts only after the file exists.
+test('review reaches open-report only through the lazy overflow fragment', () => {
+  assert.doesNotMatch(review, /open-report/);
+  assert.doesNotMatch(review, /review-write-report-fallback\.md/);
+  const overflow = flat(readSource('shared', 'review-write-report-fallback.md'));
+  assert.ok(
+    overflow.includes(
+      `node <skill-root>/scripts/effective-flow-state.mjs review open-report <<< '{"cwd":"<RUNTIME_STATE_ROOT>","owner":{"workflow":"review"},"count":<N>}'`,
+    ),
+  );
+  assert.match(
+    overflow,
+    /re-check that `reportPath` is still absent; if it is present, re-allocate the path alone through local mode's path-only allocation and keep the reserved IDs/,
+  );
+  assert.match(
+    overflow,
+    /After a successful reservation, never call `review open-report` again; only its `MIGRATION_REQUIRED` retry repeats the call before one/,
+  );
+  assert.match(
+    overflow,
+    /\*\*Presentation:\*\* only after the report file exists, present its path and the severity counts, and no finding, title or location; then the remaining local steps follow/,
+  );
+  assert.match(
+    overflow,
+    /a report holding at least one `local-only` finding carries the disclosure banner\s+directly below the header fields/,
   );
 });
 
 // Invariant: realistic runs decided right after reading the top of `review` that a small, inline
-// review ends with chat-only findings, so the persistence duty is stated under `## Goal`, before
-// the workflow body, and explicitly covers inline reviews; the per-path detail stays in the gate.
-test('review states the persistence duty in its Goal and covers inline reviews', () => {
+// review ends with chat-only findings, so the Goal states before the workflow body that local
+// findings reach chat only as `result.summary`, after `write-report` returns, naming the small-diff
+// inline review; the per-path detail stays in the gate.
+test('review states the summary-only presentation in its Goal and covers inline reviews', () => {
   const goal = flat(section(review, '## Goal', '```'));
   assert.match(
     goal,
-    /\*\*A review that admits at least one finding reserves its IDs and persists them before presenting any finding — in local mode one `review open-report` call plus the report file at `reportPath` — also when the review itself runs inline because the change is small: skipping workers, the validator or the fan-out never skips the reservation or the report\.\*\* Per path: "Persistence gate"\./,
+    /\*\*In local mode \(the `local` target outside the pull-request special case\), review presents no finding, finding title or severity count before `review write-report` returns `ok: true` \(overflow: its fragment\), also when the review itself runs inline because the change is small: skipping workers, the validator or the fan-out never skips that call\. The chat presentation is `result\.summary` as returned, followed only by framing without finding content \(no restated finding, title, severity or location\) and the next-steps block\.\*\* Other paths: "Persistence gate"\./,
   );
   assert.ok(review.indexOf('## Goal') < review.indexOf('**Persistence gate.**'));
+  const text = flat(localMode);
+  assert.match(
+    text,
+    /6\. Present `result\.summary` as returned; the overflow path presents as its fragment states\./,
+  );
+  assert.match(
+    text,
+    /8\. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat\./,
+  );
+  assert.doesNotMatch(text, /Present the most important findings/);
 });
 
 // Invariant: the persistence step is visible as its own task and the run cannot report complete
@@ -218,5 +328,35 @@ test('review lists the persistence task and extends its completion condition', (
   assert.match(
     flat(review),
     /The run is incomplete while an admitted finding has no reserved ID or, in local mode, no report entry\./,
+  );
+});
+
+// Invariant: review runs no runtime-state probe of its own before a state-helper call and calls the
+// helper as one bare command, because both a manual memory.json probe and a `cd … &&` prefix
+// prompted in default mode in the work package 9 measurement (round 1).
+test('review leaves helper-owned guards to the helper and calls it as one bare command', () => {
+  const review = readFileSync(new URL('../src/tools/review.md', import.meta.url), 'utf8');
+  const trigger =
+    'when: a wisdom, cache, or tracker-marker mutation outside a state-helper call is imminent; the helper guards its own memory, report and migration writes and detects legacy state itself, so run no probe of your own before it';
+  for (const fragment of ['runtime-state-safety', 'effective-flow-dir-migration']) {
+    assert.ok(review.includes(`\`\`\`lazy-include\n${fragment}\n${trigger}\n`), fragment);
+  }
+  assert.match(
+    review,
+    /Run exactly this one command from any directory: no `cd`, no other command around it\./,
+  );
+});
+
+// Invariant: the router itself carries the bare-command helper-call rule and review's presentation
+// rule, so both reach a run before any tool file is read (work package 9, fix round 2).
+test('the router states the bare helper-call rule and review presentation rule', () => {
+  const router = readFileSync(new URL('../src/SKILL.md', import.meta.url), 'utf8');
+  assert.match(
+    router,
+    /Every bundled helper call is one bare command, `node <skill-root>\/scripts\/<helper>\.mjs <argv> <<< '<json>'`, run from any directory: no `cd`, `&&`, `;` or pipe around it\./,
+  );
+  assert.match(
+    router,
+    /`review` presents local findings only as the `result\.summary` of its `review write-report` call, also when it reviews a small diff inline\./,
   );
 });

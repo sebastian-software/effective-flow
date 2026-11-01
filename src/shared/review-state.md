@@ -19,7 +19,7 @@
 
 Review changes this file only by reserving finding IDs through `memory reserve` of the “Memory
 operations” contract, loaded through the runtime-directory prerequisite, or in local mode through
-`review open-report`, which runs that same transaction.
+`review write-report` (its overflow path: `review open-report`), which runs that same transaction.
 
 ### Cache file
 

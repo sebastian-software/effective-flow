@@ -54,6 +54,7 @@ const RUNTIME_SCRIPT_FILES = [
   'model-selection.mjs',
   'model-selection-core.mjs',
   'remote-tracker.mjs',
+  'review-report-render.mjs',
   'remote-tracker-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker-decomposition-core.mjs',

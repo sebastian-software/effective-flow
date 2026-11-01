@@ -102,9 +102,9 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive or bounded helper operation, 53 rules in all: eight runtime-state helper operations
+each non-destructive or bounded helper operation, 54 rules in all: nine runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
-`memory migrate-directory`, `commit create`, `review open-report`), `config-resolve.mjs resolve`,
+`memory migrate-directory`, `commit create`, `review open-report`, `review write-report`), `config-resolve.mjs resolve`,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness

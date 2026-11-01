@@ -387,8 +387,8 @@ families include `scripts/remote-tracker.mjs`,
 `scripts/effective-flow-state.mjs`, each
 beside its importable `-core.mjs` sibling (the state helper also ships
 `effective-flow-state-memory-core.mjs`, `effective-flow-state-harness-core.mjs`, which writes the
-allow rules through `harness allow-rules`, `effective-flow-state-commit-core.mjs` and
-`effective-flow-state-review-core.mjs`, behind `commit create` and `review open-report`,
+allow rules through `harness allow-rules`, `effective-flow-state-commit-core.mjs` (behind `commit create`),
+`effective-flow-state-review-core.mjs` (behind `review open-report` and `review write-report`), `review-report-render.mjs`, its pure report renderer,
 `dated-name-allocation.mjs`, the dated-name allocation shared with the mechanics helper, `claude-settings-core.mjs`, the read-only settings
 parser and rule-shape matcher it shares with `setup-status`, and `runtime-file-primitives.mjs`, the
 bounded-read and JSON-object primitives of the memory and settings cores); the shared `scripts/process-runner.mjs` that the CLI

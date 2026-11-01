@@ -241,10 +241,10 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 53 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 54 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
-`review open-report`), one for `config-resolve`, and 44 for the remote tracker's read-only
+`review open-report`, `review write-report`), one for `config-resolve`, and 44 for the remote tracker's read-only
 operations: its forge reads, its pure local computations and `thread-ledger-lookup`. An earlier release's smaller set shows as stale, and the preview lists the missing
 rules. Every mode except
 Targeted and Status offers the step after the configuration write, and `/effective-flow setup allowlist` runs it
