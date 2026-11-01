@@ -1020,7 +1020,12 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   path taken in between is re-allocated a bounded number of times) and returns the chat summary as
   `result.summary` besides `reportPath`, `ids` and the reserve result. A failure before the
   reservation reserves nothing; one after it is `REPORT_WRITE_FAILED` with the reserved range and
-  no report file.
+  no report file. When the `runtimeMigration.directory` marker is missing, the call first runs the
+  `memory migrate-directory` transaction itself and reports it as `migration` on the result or
+  outcome, in one of four shapes: `{performed: false}` when the marker already existed,
+  `{performed: false, raced: true}` when a concurrent run wrote it first, `{performed: true, …}`
+  with the migration result, and `{performed: false, failed: true}`; a failed migration reserves
+  nothing and writes no report.
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns

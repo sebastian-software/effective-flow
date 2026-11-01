@@ -79,14 +79,15 @@ test('the allowlist step names the rule families, the rule count and no rule for
 
 // Invariant: `review write-report` writes model-supplied content without a prompt, so it is
 // allowlisted and the prose states its bound: a new generated-name report below
-// `.effective-flow/review/`, never an overwrite, input capped at 64 KiB, and IDs consumed only by a
-// successful reservation.
+// `.effective-flow/review/`, never an overwrite, input capped at 64 KiB, IDs consumed only by a
+// successful reservation, and the legacy-directory migration it may run, root `.sf-memory.json`
+// adoption and removal included.
 test('the allowlist step allowlists review write-report and states its bound', () => {
   assert.ok(ALLOWLISTED_OPERATIONS.includes('review write-report'));
   assert.ok(STATE_OPERATIONS.includes('review write-report'));
   assert.match(
     flat(allowlist),
-    /`review write-report` writes only a new, generated-name report below `\.effective-flow\/review\/` \(through a `\.write-report-\*\.tmp` sibling\) and the ID counter in `\.effective-flow\/memory\.json`, never overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful reservation/,
+    /For its report, `review write-report` writes only a new, generated-name file below `\.effective-flow\/review\/` \(through a `\.write-report-\*\.tmp` sibling\) and the ID counter in `\.effective-flow\/memory\.json`, never overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful reservation\. Separately, and only without the migration marker, it first runs the legacy-directory migration under that operation's own bound \(no-clobber copy into `\.effective-flow\/`, memory merge, marker, adopting and removing a root `\.sf-memory\.json` through its own guard class\)/,
   );
 });
 

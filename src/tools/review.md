@@ -16,7 +16,10 @@ finding, finding title or severity count before `review write-report` returns `o
 its fragment), also when the review itself runs inline because the change is small: skipping
 workers, the validator or the fan-out never skips that call. The chat presentation is
 `result.summary` as returned, followed only by framing without finding content (no restated
-finding, title, severity or location) and the next-steps block.** Other paths: "Persistence gate".
+finding, title, severity or location) and the next-steps block.** Exceptions: the migration report
+of `shared/effective-flow-dir-migration.md` step 3 may precede it; on `migration.failed: true` only
+"N findings not persisted: `<code>`" with the severity counts plus that report, and no finding
+content, title or location. Other paths: "Persistence gate".
 
 ```lazy-include
 language-rules
@@ -625,7 +628,6 @@ its artifact exists. Per path:
    - `ok: true`: the report exists at `result.reportPath`; step 6 presents `result.summary`.
    - `INVALID_INPUT` (nothing reserved): correct the named key once and retry; a second one stops
      the run, naming the key.
-   - `MIGRATION_REQUIRED` (nothing written): handle it per “Memory operations”, then retry once.
    - `INPUT_TOO_LARGE`, or the shell refuses the command with "Argument list too long": take the
      overflow path loaded below.
    - `REPORT_WRITE_FAILED`: stop, naming its reserved range as a permanent ID gap and its failing
@@ -636,6 +638,11 @@ its artifact exists. Per path:
 ```lazy-include
 review-write-report-fallback
 when: `review write-report` returned `INPUT_TOO_LARGE` or the shell refused it with "Argument list too long"
+```
+
+```lazy-include
+effective-flow-dir-migration
+when: `write-report`'s result carries `migration.performed: true` or `migration.failed: true`
 ```
 
 **Path-only allocation** (the overflow path's re-allocation, the appendix-only report, and the

@@ -955,18 +955,38 @@ other run presented findings first.
   `memory migrate-directory` correctly. The command reads only, but it names `memory.json`, so the
   unchanged classification counts it as housekeeping.
 
+### Round 4 (after the plan revision)
+
+The plan revision lets `review write-report` run the `memory migrate-directory` transaction in the
+same call when the `runtimeMigration.directory` marker is missing and report it as
+`result.migration`; review's local `MIGRATION_REQUIRED` branch is gone. The analyzer additionally
+counts a migration run as exercised when a `write-report` result reports `migration.performed: true`
+with `migration.source` `.firmo`, the marker is set and the persistence call succeeded. The
+helper-housekeeping classification is unchanged. 12 runs, 2.47 USD.
+
+| Cell     | Mode    | Valid | Exercised | Housekeeping prompts | Housekeeping refusals | Result |
+| -------- | ------- | ----: | --------: | -------------------: | --------------------: | ------ |
+| `review` | default |     3 |       3/3 |                    0 |                     0 | met    |
+| `review` | auto    |     3 |       3/3 |                    0 |                     0 | met    |
+| `firmo`  | default |     3 |       3/3 |                    0 |                     0 | met    |
+| `firmo`  | auto    |     3 |       3/3 |                    0 |                     0 | met    |
+
+Every migration run migrated inside its single `write-report` call (IDs continued after the legacy
+counter, `lastFindingNumber` 7); no run called `memory migrate-directory` separately, presented
+findings before persisting, or probed runtime state. All 14 helper calls had the literal shape.
+Runs got shorter: 4 to 8 turns and 0.17 to 0.30 USD each, against 7 to 14 turns before.
+
 ### Verdict
 
-**Criterion blocked.** Both permitted fix rounds are used, and round 3 misses it by one prompt.
+**Criterion met in round 4,** the plan revision's measurement round, without its fix round.
 
-- **Met:** persistence in 35 of 36 runs across the three rounds, and in 12 of 12 in each of rounds
-  1 and 3; `review` in both modes and the migration in auto mode in round 3; the literal shape in
-  39 of 39 calls in round 3; 0 housekeeping refusals.
-- **Missed:** the migration cell in default mode (one housekeeping prompt in each round).
-- **Cause:** after `MIGRATION_REQUIRED` a run may still consult the skill source or the runtime
-  files on its own before the next helper call. The outcome names the next step only in prose.
-
-The user decided to deliver blocked. The plan stays not implemented with one blocking open point.
+- Rounds 1 to 3 (blocked): persistence in 35 of 36 runs, the migration cell in default mode
+  missing the criterion by one housekeeping prompt per round, each caused by the
+  `MIGRATION_REQUIRED` round trip (a probe, a `cd` prefix, a lookup of the next step).
+- Round 4: `review` and the migration in both modes exercised in 3 of 3 runs, with 0
+  housekeeping prompts and 0 refusals. Removing the round trip removed the last prompt cause.
+- The criterion is the work package 8 criterion under the WP9 validity rule; with n=3 per mode,
+  one passing round is within the noise earlier rounds showed.
 
 ### What the measurement does not cover
 
@@ -983,11 +1003,11 @@ The user decided to deliver blocked. The plan stays not implemented with one blo
 The evidence root `.effective-flow/spikes/allowlist/2026-11-01-02/` in the primary checkout is
 untracked. It holds the harness copies, the prompt, every run's configuration, transcript, debug
 log, permission log, result, allow-rules envelopes, settings snapshots and report copies, the id
-lists `ids-round1.txt` to `ids-round3.txt`, and `analysis-round1.txt` to `analysis-round3.txt`.
-`manifest.sha256.txt` lists 740 files and excludes the linked `node_modules`.
+lists `ids-round1.txt` to `ids-round4.txt`, and `analysis-round1.txt` to `analysis-round4.txt`.
+`manifest.sha256.txt` lists 984 files and excludes the linked `node_modules`.
 
 | File                  | SHA-256                                                            |
 | --------------------- | ------------------------------------------------------------------ |
-| `manifest.sha256.txt` | `43bce5e51b6f30953905058f0d24f64c16761e9f27980ec51d35f5d550f17e99` |
+| `manifest.sha256.txt` | `a82b803cad129e4bfe0b21c5c25e2acd2ff22f908942d5120ed431e00e8e84fa` |
 
-The three rounds cost 9.52 USD in total.
+The four rounds cost 11.99 USD in total.

@@ -26,8 +26,8 @@ node <skill-root>/scripts/effective-flow-state.mjs memory migrate-directory <<< 
 - `memory set-marker`: `marker` is `config-migration-adr`, with `"version":"config-to-adr-v1"`, or
   `label-migration-sf`. `result.changed: false` means the marker was already present.
 - `memory migrate-directory` belongs to the runtime-directory migration prerequisite.
-- `review write-report` runs a read-only migration check, then the `memory reserve` transaction
-  with its outcomes below, then the report write (see `review`).
+- `review write-report` runs a missing directory migration itself, then the `memory reserve`
+  transaction with its outcomes below, then the report write (see `review`).
 
 ### Outcomes
 

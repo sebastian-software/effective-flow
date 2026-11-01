@@ -47,11 +47,15 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'memory migrate-directory',
   'commit create',
   'review open-report',
-  // `review write-report` writes model-supplied report text without a prompt. Its bound: it writes
-  // only below `.effective-flow/` (the report directory and a `.write-report-*.tmp` sibling, both
-  // through the runtime-state guard), under a generated name the caller cannot choose, never over an
-  // existing file, from at most 64 KiB of input, and it consumes finding IDs only through one
-  // successful reservation per call.
+  // `review write-report` writes model-supplied report text without a prompt. Its report bound: it
+  // writes the report only below `.effective-flow/review/` (through a `.write-report-*.tmp`
+  // sibling, both through the runtime-state guard), under a generated name the caller cannot
+  // choose, never over an existing file, from at most 64 KiB of input, and it consumes finding IDs
+  // only through one successful reservation per call. Separately, and only without the
+  // `runtimeMigration.directory` marker, it first runs the legacy-directory migration of
+  // `memory migrate-directory`, whose own bound applies: a no-clobber copy into `.effective-flow/`,
+  // the memory merge, the marker, and adopting and removing a root `.sf-memory.json` through its
+  // own guard class.
   'review write-report',
 ]);
 // The runtime-state helper operations that never get a rule: destructive, or the writer of the

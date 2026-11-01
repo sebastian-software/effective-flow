@@ -2450,7 +2450,7 @@ try {
     deliver: 800,
     'plan-issue': 789,
     'issue-buddy': 484,
-    review: 864,
+    review: 868,
     plan: 767,
     'apply-review-commit-mechanics': 720,
     maintain: 711,

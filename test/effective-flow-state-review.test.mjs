@@ -1,8 +1,9 @@
 // Unit tests of the runtime-state helper's `review open-report` and `review write-report` against
 // temporary Git repositories. `open-report` guards and creates `.effective-flow/review/`, allocates
 // the local report path and reserves the report's finding IDs, reserving nothing when an earlier
-// step fails. `write-report` additionally renders and creates the report and returns its summary;
-// after its reservation every failure is REPORT_WRITE_FAILED with the range and no report file.
+// step fails. `write-report` additionally runs a missing directory migration in the same call,
+// renders and creates the report and returns its summary; a failing migration reserves nothing,
+// and after its reservation every failure is REPORT_WRITE_FAILED with the range and no report file.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -21,14 +22,18 @@ import {
   writeFileSync,
 } from 'node:fs';
 import nodeFs from 'node:fs';
-import { link as fsLink } from 'node:fs/promises';
+import { link as fsLink, mkdir as fsMkdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
 import { test } from 'node:test';
 
 import { executeOperation as mechanics } from '../src/scripts/effective-flow-mechanics-core.mjs';
-import { MAX_STDIN_BYTES, executeOperation } from '../src/scripts/effective-flow-state-core.mjs';
+import {
+  LOCKS,
+  MAX_STDIN_BYTES,
+  executeOperation,
+} from '../src/scripts/effective-flow-state-core.mjs';
 import { MAX_REPORT_REALLOCATIONS } from '../src/scripts/effective-flow-state-review-core.mjs';
 import { main } from '../src/scripts/effective-flow-state.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
@@ -304,6 +309,7 @@ test('write-report reserves, renders and writes the report in a fresh repository
   assert.ok(result.summary.includes(LABELS.en.withheld));
   assert.ok(!result.summary.includes('src/auth.js'), 'a local-only location stays out of chat');
   assert.ok(result.summary.includes(result.reportPath));
+  assert.deepEqual(result.migration, { performed: false });
 
   // A German report the same day takes the next name and range, in the complete German form.
   const second = await writeReport(root, {}, { language: 'de', findings: [finding()] });
@@ -314,13 +320,252 @@ test('write-report reserves, renders and writes the report in a fresh repository
   assert.ok(second.result.summary.startsWith(`**${LABELS.de.summaryFindings}:** 1 `));
 });
 
-// Invariant: a layout that still needs `memory migrate-directory` is MIGRATION_REQUIRED before any
-// directory is created, anything reserved or any report written.
-test('write-report returns MIGRATION_REQUIRED before any write', async (t) => {
+function readMemoryFile(root) {
+  return JSON.parse(readFileSync(join(root, '.effective-flow', 'memory.json'), 'utf8'));
+}
+
+function legacyTree(root, files) {
+  for (const [relative, content] of Object.entries(files)) {
+    const target = join(root, '.firmo', ...relative.split('/'));
+    mkdirSync(join(target, '..'), { recursive: true });
+    writeFileSync(target, content);
+  }
+}
+
+// Invariant (in-call migration, fresh repository): without the `runtimeMigration.directory`
+// marker, one `write-report` call runs the migration, sets the marker, reserves and writes the
+// report, and reports `migration.performed: true` with the migration result; no
+// MIGRATION_REQUIRED round trip remains.
+test('write-report migrates a fresh repository in the same call', async (t) => {
   const root = repository(t);
-  const outcome = await writeReport(root);
-  assert.equal(outcome.outcome?.code, 'MIGRATION_REQUIRED', JSON.stringify(outcome));
-  assert.equal(existsSync(join(root, '.effective-flow')), false);
+  const envelope = await writeReport(root);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  const { result } = envelope;
+  assert.equal(result.migration.performed, true);
+  assert.equal(result.migration.source, null);
+  assert.equal(result.migration.copiedCount, 0);
+  assert.equal(result.migration.keptCount, 0);
+  assert.deepEqual(result.migration.skipped, []);
+  assert.deepEqual(readMemoryFile(root).runtimeMigration, { directory: { version: 1 } });
+  assert.deepEqual(result.ids, ['R-0000001', 'R-0000002']);
+  assert.equal(readFileSync(result.reportPath, 'utf8'), expectedReport(root, {}, result.ids));
+
+  // The marker now exists, so the next call performs no migration.
+  const second = await writeReport(root, {}, { findings: [finding()] });
+  assert.equal(second.ok, true, JSON.stringify(second));
+  assert.deepEqual(second.result.migration, { performed: false });
+});
+
+// Invariant (in-call migration, legacy `.firmo/`): the legacy tree is copied and its memory merged
+// before the reservation, so the IDs continue after the legacy counter.
+test('write-report migrates a legacy .firmo layout and continues its counter', async (t) => {
+  const root = repository(t, { ignore: '.effective-flow/\n.firmo/\n' });
+  legacyTree(root, {
+    'memory.json': JSON.stringify({ lastFindingNumber: 41, labelMigration: { sf: { done: 1 } } }),
+    'cache.json': '{}\n',
+  });
+  const envelope = await writeReport(root);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  const { migration, ids } = envelope.result;
+  assert.equal(migration.performed, true);
+  assert.equal(migration.source, '.firmo');
+  assert.deepEqual(migration.copied, ['.firmo/cache.json']);
+  assert.equal(migration.copiedCount, 1);
+  assert.deepEqual(ids, ['R-0000042', 'R-0000043']);
+  const memory = readMemoryFile(root);
+  assert.equal(memory.lastFindingNumber, 43);
+  assert.deepEqual(memory.labelMigration, { sf: { done: 1 } });
+  assert.equal(readFileSync(join(root, '.effective-flow', 'cache.json'), 'utf8'), '{}\n');
+  // The legacy directory stays unchanged: the migration copies and never moves or rewrites.
+  assert.deepEqual(readdirSync(join(root, '.firmo')).sort(), ['cache.json', 'memory.json']);
+  assert.equal(readFileSync(join(root, '.firmo', 'cache.json'), 'utf8'), '{}\n');
+  assert.deepEqual(JSON.parse(readFileSync(join(root, '.firmo', 'memory.json'), 'utf8')), {
+    lastFindingNumber: 41,
+    labelMigration: { sf: { done: 1 } },
+  });
+});
+
+// Invariant (in-call migration, race): when another writer sets the marker between the precheck
+// and the migration transaction, MIGRATION_NOT_NEEDED counts as done: the call continues and
+// reports `migration: {performed: false, raced: true}`.
+test('write-report treats a MIGRATION_NOT_NEEDED race as done', async (t) => {
+  const root = repository(t);
+  const guard = join(root, '.effective-flow', `${LOCKS.memory.directory}.guard`);
+  let raced = false;
+  const fs = {
+    mkdir: async (target, options) => {
+      if (!raced && target === guard) {
+        raced = true;
+        writeFileSync(
+          join(root, '.effective-flow', 'memory.json'),
+          `${JSON.stringify({ runtimeMigration: { directory: { version: 1 } } })}\n`,
+        );
+      }
+      return fsMkdir(target, options);
+    },
+  };
+  const envelope = await writeReport(root, { fs });
+  assert.equal(raced, true);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.deepEqual(envelope.result.migration, { performed: false, raced: true });
+  assert.deepEqual(envelope.result.ids, ['R-0000001', 'R-0000002']);
+  assert.ok(existsSync(envelope.result.reportPath));
+});
+
+// Invariant (in-call migration, race with a lock-release diagnostic): a MIGRATION_NOT_NEEDED whose
+// lock release left a tombstone keeps that `lockRelease` on `migration` next to `raced: true`.
+test('write-report keeps the lockRelease of a raced migration', async (t) => {
+  const root = repository(t);
+  const guard = join(root, '.effective-flow', `${LOCKS.memory.directory}.guard`);
+  let raced = false;
+  let failedRmdir = null;
+  const fs = {
+    mkdir: async (target, options) => {
+      if (!raced && target === guard) {
+        raced = true;
+        writeFileSync(
+          join(root, '.effective-flow', 'memory.json'),
+          `${JSON.stringify({ runtimeMigration: { directory: { version: 1 } } })}\n`,
+        );
+      }
+      return fsMkdir(target, options);
+    },
+    rmdir: async (target) => {
+      if (!failedRmdir && /\.release-[0-9a-f]+$/.test(target)) {
+        failedRmdir = target;
+        throw Object.assign(new Error('injected'), { code: 'EBUSY' });
+      }
+      return nodeFs.promises.rmdir(target);
+    },
+  };
+  const envelope = await writeReport(root, { fs });
+  assert.equal(raced, true);
+  assert.ok(failedRmdir, 'the release tombstone delete was injected');
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.deepEqual(envelope.result.migration, {
+    performed: false,
+    raced: true,
+    lockRelease: { released: true, leftoverTombstone: failedRmdir },
+  });
+  assert.deepEqual(envelope.result.ids, ['R-0000001', 'R-0000002']);
+});
+
+// Invariant (in-call migration, pre-existing target): a target that already exists is kept and
+// counted, not a failure; the call succeeds and writes the report.
+test('write-report keeps a pre-existing migration target and succeeds', async (t) => {
+  const root = repository(t, { ignore: '.effective-flow/\n.firmo/\n' });
+  legacyTree(root, { 'a.txt': 'legacy\n', 'b.txt': 'b\n' });
+  mkdirSync(join(root, '.effective-flow'), { mode: 0o700 });
+  writeFileSync(join(root, '.effective-flow', 'a.txt'), 'current\n');
+  const envelope = await writeReport(root);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  const { migration } = envelope.result;
+  assert.equal(migration.performed, true);
+  assert.ok(migration.keptCount > 0);
+  assert.deepEqual(migration.kept, ['.firmo/a.txt']);
+  assert.equal(readFileSync(join(root, '.effective-flow', 'a.txt'), 'utf8'), 'current\n');
+  assert.ok(existsSync(envelope.result.reportPath));
+});
+
+// Invariant (in-call migration, root `.sf-memory.json`): the root legacy memory is adopted and
+// removed by the migration, so the IDs continue after its counter.
+test('write-report adopts and removes a root .sf-memory.json and continues its counter', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, '.sf-memory.json'), `${JSON.stringify({ lastFindingNumber: 41 })}\n`);
+  const envelope = await writeReport(root);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(envelope.result.migration.performed, true);
+  assert.equal(envelope.result.migration.legacyAdopted, true);
+  assert.equal(existsSync(join(root, '.sf-memory.json')), false);
+  assert.deepEqual(envelope.result.ids, ['R-0000042', 'R-0000043']);
+  assert.equal(lastFindingNumber(root), 43);
+});
+
+// Invariant: a migration performed in the call stays visible on a later outcome of the same call:
+// a reservation LOCK_HELD carries `migration.performed: true` and reserves and writes nothing.
+test('write-report attaches the performed migration to a later reservation LOCK_HELD', async (t) => {
+  const root = repository(t);
+  const plain = createProcessRunner();
+  let held = null;
+  const marked = () =>
+    existsSync(join(root, '.effective-flow', 'memory.json')) &&
+    readMemoryFile(root).runtimeMigration?.directory?.version === 1;
+  // Injected at the first guard check of the report directory once the marker is on disk: after
+  // the migration transaction released its lock and before the reservation takes it.
+  const runner = async (call) => {
+    if (
+      !held &&
+      JSON.stringify([call.args, call.stdin ?? '']).includes('.effective-flow/review') &&
+      marked()
+    ) {
+      held = await executeOperation(
+        'lock acquire',
+        { cwd: root, lock: 'memory', owner: { workflow: 'plan' } },
+        deps(),
+      );
+    }
+    return plain(call);
+  };
+  const outcome = await writeReport(root, { runner }, { waitSeconds: 0 });
+  assert.equal(held?.ok, true, JSON.stringify(held));
+  assert.equal(outcome.outcome?.code, 'LOCK_HELD', JSON.stringify(outcome));
+  assert.equal(outcome.outcome.migration.performed, true);
+  assert.equal(outcome.outcome.migration.source, null);
+  assert.deepEqual(readMemoryFile(root).runtimeMigration, { directory: { version: 1 } });
+  assert.equal(lastFindingNumber(root), undefined);
+  assert.deepEqual(reviewEntries(root), []);
+});
+
+// Invariant (in-call migration failure): every outcome of the migration step is returned with
+// `migration: {performed: false, failed: true}`, nothing reserved, no marker and no report:
+// LEGACY_MEMORY_INVALID from `.firmo/memory.json` inside the migration, from the root
+// `.sf-memory.json` in the precheck, MIGRATION_INCOMPLETE, and a migration-lock LOCK_HELD.
+test('write-report returns a failing migration with failed: true and writes nothing', async (t) => {
+  const assertNothing = (root, outcome, code) => {
+    assert.equal(outcome.outcome?.code, code, JSON.stringify(outcome));
+    assert.deepEqual(outcome.outcome.migration, { performed: false, failed: true });
+    assert.equal(lastFindingNumber(root), undefined);
+    assert.deepEqual(reviewEntries(root), []);
+  };
+
+  const legacyDir = repository(t, { ignore: '.effective-flow/\n.firmo/\n' });
+  legacyTree(legacyDir, { 'memory.json': '{"lastFindingNumber": "x"}', 'cache.json': '{}' });
+  const insideMigration = await writeReport(legacyDir);
+  assertNothing(legacyDir, insideMigration, 'LEGACY_MEMORY_INVALID');
+  assert.equal(insideMigration.outcome.path, join(legacyDir, '.firmo', 'memory.json'));
+  assert.equal(existsSync(join(legacyDir, '.effective-flow', 'memory.json')), false);
+
+  const rootLegacy = repository(t);
+  writeFileSync(join(rootLegacy, '.sf-memory.json'), '[]');
+  const inPrecheck = await writeReport(rootLegacy);
+  assertNothing(rootLegacy, inPrecheck, 'LEGACY_MEMORY_INVALID');
+  assert.equal(inPrecheck.outcome.path, join(rootLegacy, '.sf-memory.json'));
+  assert.ok(existsSync(join(rootLegacy, '.sf-memory.json')));
+
+  const copyFails = repository(t, { ignore: '.effective-flow/\n.firmo/\n' });
+  legacyTree(copyFails, { 'a.txt': 'a\n' });
+  const fs = {
+    link: async (from, to) => {
+      if (to.endsWith('a.txt')) throw Object.assign(new Error('injected EIO'), { code: 'EIO' });
+      return fsLink(from, to);
+    },
+  };
+  const incomplete = await writeReport(copyFails, { fs });
+  assertNothing(copyFails, incomplete, 'MIGRATION_INCOMPLETE');
+  assert.equal(incomplete.outcome.reason, 'copy-failed');
+  assert.equal(existsSync(join(copyFails, '.effective-flow', 'memory.json')), false);
+
+  const locked = repository(t);
+  const held = await executeOperation(
+    'lock acquire',
+    { cwd: locked, lock: 'memory', owner: { workflow: 'plan' } },
+    deps(),
+  );
+  assert.equal(held.ok, true, JSON.stringify(held));
+  const lockHeld = await writeReport(locked, {}, { waitSeconds: 0 });
+  assertNothing(locked, lockHeld, 'LOCK_HELD');
+  assert.equal(lockHeld.outcome.lock, 'memory');
+  assert.equal(existsSync(join(locked, '.effective-flow', 'memory.json')), false);
 });
 
 // Invariant: a held memory lock is the inherited LOCK_HELD outcome; nothing is reserved and no
@@ -445,6 +690,28 @@ test('write-report stops after the bounded re-allocations with REPORT_WRITE_FAIL
   assert.equal(outcome.outcome.firstId, 'R-0000001');
   assert.equal(outcome.outcome.lastId, 'R-0000002');
   assert.equal(outcome.outcome.guardCode, undefined);
+  assert.deepEqual(outcome.outcome.migration, { performed: false });
+  const entries = reviewEntries(root);
+  assert.equal(entries.length, MAX_REPORT_REALLOCATIONS + 1);
+  for (const name of entries) {
+    assert.equal(readFileSync(join(root, '.effective-flow', 'review', name), 'utf8'), 'foreign\n');
+  }
+  assert.equal(lastFindingNumber(root), 2);
+});
+
+// Invariant: in a fresh repository the in-call migration stays visible when the bounded
+// re-allocation is exhausted: REPORT_WRITE_FAILED carries the reserved range and
+// `migration.performed: true`, the marker is set, and no file holds this call's report.
+test('write-report reports the performed migration on REPORT_WRITE_FAILED', async (t) => {
+  const root = repository(t);
+  const outcome = await writeReport(root, { fs: { link: racingLink(Infinity) } });
+  assert.equal(outcome.outcome?.code, 'REPORT_WRITE_FAILED', JSON.stringify(outcome));
+  assert.equal(outcome.outcome.step, 'create');
+  assert.equal(outcome.outcome.firstId, 'R-0000001');
+  assert.equal(outcome.outcome.lastId, 'R-0000002');
+  assert.equal(outcome.outcome.migration.performed, true);
+  assert.equal(outcome.outcome.migration.source, null);
+  assert.deepEqual(readMemoryFile(root).runtimeMigration, { directory: { version: 1 } });
   const entries = reviewEntries(root);
   assert.equal(entries.length, MAX_REPORT_REALLOCATIONS + 1);
   for (const name of entries) {

@@ -13,10 +13,13 @@ install's absolute path, so later runs call the helpers without a permission pro
 
 `commit create` writes Git history and runs the repository's hooks without a prompt; it commits
 only the listed paths, refuses paths below `.effective-flow/` and an untrusted hook configuration,
-and never pushes, amends, resets or rebases. `review write-report` writes only a new,
-generated-name report below `.effective-flow/review/` (through a `.write-report-*.tmp` sibling)
-and the ID counter in `.effective-flow/memory.json`, never overwrites a report, takes at most 64 KiB
-of input, and consumes IDs only with a successful reservation. `lock break` and `harness allow-rules` never get a
+and never pushes, amends, resets or rebases. For its report, `review write-report`
+writes only a new, generated-name file below `.effective-flow/review/` (through a
+`.write-report-*.tmp` sibling) and the ID counter in `.effective-flow/memory.json`, never
+overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful
+reservation. Separately, and only without the migration marker, it first runs the legacy-directory
+migration under that operation's own bound (no-clobber copy into `.effective-flow/`, memory merge,
+marker, adopting and removing a root `.sf-memory.json` through its own guard class). `lock break` and `harness allow-rules` never get a
 rule. Only the helper writes the settings file; never edit it in prose.
 
 ### `setup allowlist`

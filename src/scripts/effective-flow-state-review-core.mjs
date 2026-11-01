@@ -22,17 +22,29 @@
 //
 // The local-mode persistence of `review` as one call: it validates and sanitises the admitted
 // findings (`review-report-render.mjs` owns that content contract), runs the read-only migration
-// precheck, guards and creates the report directory and allocates the path as `open-report` does,
-// reserves exactly one ID per finding, renders the report and creates it through the no-clobber
-// primitive of `runtime-state-guard.mjs`, and returns the chat summary. A path taken between the
-// allocation and the create is re-allocated here, at most MAX_REPORT_REALLOCATIONS times. Every
-// failure before the reservation reserves nothing (INVALID_INPUT naming the key and finding index,
-// MIGRATION_REQUIRED, the guard refusals, the reserve outcomes such as LOCK_HELD); every failure
-// after it is the outcome REPORT_WRITE_FAILED with the reserved range, the failing step and any
-// guard code, and leaves no report file of this call (`foreignPath` names a foreign file that took
-// the report name, which stays). The result is the reserve result plus `reportPath`,
-// `reportName`, `reportDate`, `ids` and `summary`. It only creates new reports: augmenting an
-// existing one stays outside this operation.
+// precheck and, when the `runtimeMigration.directory` marker is missing, exactly the `memory
+// migrate-directory` transaction with the same root, owner and wait (a MIGRATION_NOT_NEEDED race
+// counts as done; the reserve transaction re-checks the marker under its lock), guards and creates the report directory and
+// allocates the path as `open-report` does, reserves exactly one ID per finding, renders the
+// report and creates it through the no-clobber primitive of `runtime-state-guard.mjs`, and returns
+// the chat summary. The migration lock and the reserve lock are taken one after the other, so the
+// worst-case wait is twice `waitSeconds`. A path taken between the allocation and the create is
+// re-allocated here, at most MAX_REPORT_REALLOCATIONS times. Every failure before the reservation
+// reserves nothing (INVALID_INPUT naming the key and finding index, an outcome of the migration
+// step such as LEGACY_MEMORY_INVALID or MIGRATION_INCOMPLETE, the guard refusals, the reserve
+// outcomes such as LOCK_HELD); every failure after it is the outcome REPORT_WRITE_FAILED with the
+// reserved range, the failing step and any guard code, and leaves no report file of this call
+// (`foreignPath` names a foreign file that took the report name, which stays). The result is the
+// reserve result plus `reportPath`, `reportName`, `reportDate`, `ids`, `summary` and `migration`.
+// It only creates new reports: augmenting an existing one stays outside this operation.
+//
+// `migration` is on every result and outcome after the precheck, in one of four shapes:
+// `{performed: false}` (the marker existed), `{performed: false, raced: true}` (another writer
+// migrated first), `{performed: true, ...}` with the migration result (`source`, `copiedCount`,
+// `keptCount`, `skipped` and the rest; also on a later outcome of the same call), and
+// `{performed: false, failed: true}` on every outcome of the migration step itself, the
+// precheck's LEGACY_MEMORY_INVALID included; such an outcome reserves nothing and writes no
+// report. An error the migration throws takes the generic error path.
 
 import nodeFs from 'node:fs';
 import path from 'node:path';
@@ -53,6 +65,7 @@ import {
 import {
   MAX_RESERVE_COUNT,
   formatFindingId,
+  migrateDirectory,
   precheckMigration,
   reserveMemory,
 } from './effective-flow-state-memory-core.mjs';
@@ -138,13 +151,17 @@ async function allocateGuarded(context, deps) {
   return { ...allocation, reportPath };
 }
 
-function reserveInput(input, owner, count) {
+// The input every memory transaction of this module shares: the root, the owner, and the wait.
+function memoryInput(input, owner) {
   return {
     cwd: input.cwd,
     owner: { workflow: owner.workflow },
-    count,
     ...(input.waitSeconds === undefined ? {} : { waitSeconds: input.waitSeconds }),
   };
+}
+
+function reserveInput(input, owner, count) {
+  return { ...memoryInput(input, owner), count };
 }
 
 export async function openReport(input, deps) {
@@ -254,17 +271,40 @@ async function createReport(context, deps, report, ids, first) {
   }
 }
 
+// The `migration` shape of an outcome of the migration step itself.
+const MIGRATION_FAILED = Object.freeze({ performed: false, failed: true });
+
+function withMigration(outcome, migration) {
+  return new StateOutcome(outcome.code, { ...outcome.details, migration });
+}
+
+// The migration step of `write-report`: the read-only precheck and, when the marker is missing,
+// the `memory migrate-directory` transaction itself (reused, not copied). No second precheck
+// follows: it would hold no lock, and the reserve transaction re-reads the memory and re-checks
+// the marker under the lock before any ID or report exists.
+// Returns the `migration` shape, or an outcome that already carries it.
+async function ensureMigrated(context, input, owner, deps) {
+  const pending = await precheckMigration(context);
+  if (pending === null) return { performed: false };
+  if (pending.code !== 'MIGRATION_REQUIRED') return withMigration(pending, MIGRATION_FAILED);
+  const migrated = await migrateDirectory(memoryInput(input, owner), deps);
+  if (!(migrated instanceof StateOutcome)) return { performed: true, ...migrated };
+  if (migrated.code !== 'MIGRATION_NOT_NEEDED') return withMigration(migrated, MIGRATION_FAILED);
+  const { lockRelease } = migrated.details;
+  return { performed: false, raced: true, ...(lockRelease ? { lockRelease } : {}) };
+}
+
 export async function writeReport(input, deps) {
   const { owner, report } = requireWriteRequest(input);
   const context = makeContext(deps);
   await requireRootSyntax(input.cwd);
   await resolveRoot(context, input.cwd);
-  const pending = await precheckMigration(context);
-  if (pending instanceof StateOutcome) return pending;
+  const migration = await ensureMigrated(context, input, owner, deps);
+  if (migration instanceof StateOutcome) return migration;
 
   const allocation = await prepareReportPath(context, deps);
   const reserved = await reserveMemory(reserveInput(input, owner, report.findings.length), deps);
-  if (reserved instanceof StateOutcome) return reserved;
+  if (reserved instanceof StateOutcome) return withMigration(reserved, migration);
 
   const ids = [];
   for (let number = reserved.first; number <= reserved.last; number += 1) {
@@ -285,9 +325,10 @@ export async function writeReport(input, deps) {
       reportDate: written.date,
       ids,
       summary,
+      migration,
     };
   } catch (error) {
-    if (error instanceof StepFailure) return writeFailed(reserved, error);
-    return writeFailed(reserved, new StepFailure('create', error));
+    const failure = error instanceof StepFailure ? error : new StepFailure('create', error);
+    return withMigration(writeFailed(reserved, failure), migration);
   }
 }

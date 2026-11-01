@@ -247,12 +247,17 @@ test('review local step 2 shows the literal write-report call and its input keys
 
 // Invariant: every `write-report` outcome has one bounded instruction, so a run neither loops on
 // retries nor falls back to chat-only findings; the overflow path is the only route to
-// `open-report`.
+// `open-report`. `write-report` runs a missing migration itself, so review keeps no local
+// MIGRATION_REQUIRED branch, while the overflow path's `open-report` keeps its retry.
 test('review local step 2 maps the write-report outcomes', () => {
   const text = flat(localStep);
+  assert.doesNotMatch(review, /MIGRATION_REQUIRED/);
+  assert.match(
+    flat(readSource('shared', 'review-write-report-fallback.md')),
+    /only its `MIGRATION_REQUIRED` retry repeats the call before one/,
+  );
   for (const pattern of [
     /`INVALID_INPUT` \(nothing reserved\): correct the named key once and retry; a second one stops the run, naming the key/,
-    /`MIGRATION_REQUIRED` \(nothing written\): handle it per “Memory operations”, then retry once/,
     /A stop below \(`REPORT_WRITE_FAILED`, a second `INVALID_INPUT`\) keeps the wisdom file; a re-run reserves a new range/,
     /`INPUT_TOO_LARGE`, or the shell refuses the command with "Argument list too long": take the overflow path loaded below/,
     /`REPORT_WRITE_FAILED`: stop, naming its reserved range as a permanent ID gap and its failing step\. A guard code there, like any runtime-state guard refusal, preserves all state and directs the user to `\{\{SKILL:setup\}\}`/,
@@ -262,6 +267,21 @@ test('review local step 2 maps the write-report outcomes', () => {
   assert.match(
     localMode,
     /\n```lazy-include\nreview-write-report-fallback\nwhen: `review write-report` returned `INPUT_TOO_LARGE` or the shell refused it with "Argument list too long"\n```\n/,
+  );
+});
+
+// Invariant: a migration `write-report` ran or failed in its call reaches the owner of its handling
+// and report through a second lazy trigger, and that owner states that its steps 1 and 2 already
+// ran, so review neither misses the migration report nor migrates a second time.
+test('review loads the migration owner when write-report reports its migration', () => {
+  assert.match(
+    localMode,
+    /\n```lazy-include\neffective-flow-dir-migration\nwhen: `write-report`'s result carries `migration\.performed: true` or `migration\.failed: true`\n```\n/,
+  );
+  const migration = flat(readSource('shared', 'effective-flow-dir-migration.md'));
+  assert.match(
+    migration,
+    /3\. \*\*Handle the outcome\.\*\* `review write-report` runs this prerequisite in the same call: when its `result\.migration` has `performed: true` or `failed: true`, steps 1 and 2 already ran and are not repeated; read the success fields \(`source`, `copiedCount`, `keptCount`, `skipped`\) from `result\.migration`\./,
   );
 });
 
@@ -298,12 +318,17 @@ test('review reaches open-report only through the lazy overflow fragment', () =>
 // Invariant: realistic runs decided right after reading the top of `review` that a small, inline
 // review ends with chat-only findings, so the Goal states before the workflow body that local
 // findings reach chat only as `result.summary`, after `write-report` returns, naming the small-diff
-// inline review; the per-path detail stays in the gate.
+// inline review; the per-path detail stays in the gate. Its only exceptions are the in-call
+// migration report and, on a failed migration, a counts-only line without finding content.
 test('review states the summary-only presentation in its Goal and covers inline reviews', () => {
   const goal = flat(section(review, '## Goal', '```'));
   assert.match(
     goal,
-    /\*\*In local mode \(the `local` target outside the pull-request special case\), review presents no finding, finding title or severity count before `review write-report` returns `ok: true` \(overflow: its fragment\), also when the review itself runs inline because the change is small: skipping workers, the validator or the fan-out never skips that call\. The chat presentation is `result\.summary` as returned, followed only by framing without finding content \(no restated finding, title, severity or location\) and the next-steps block\.\*\* Other paths: "Persistence gate"\./,
+    /\*\*In local mode \(the `local` target outside the pull-request special case\), review presents no finding, finding title or severity count before `review write-report` returns `ok: true` \(overflow: its fragment\), also when the review itself runs inline because the change is small: skipping workers, the validator or the fan-out never skips that call\. The chat presentation is `result\.summary` as returned, followed only by framing without finding content \(no restated finding, title, severity or location\) and the next-steps block\.\*\*/,
+  );
+  assert.match(
+    goal,
+    /\*\* Exceptions: the migration report of `shared\/effective-flow-dir-migration\.md` step 3 may precede it; on `migration\.failed: true` only "N findings not persisted: `<code>`" with the severity counts plus that report, and no finding content, title or location\. Other paths: "Persistence gate"\./,
   );
   assert.ok(review.indexOf('## Goal') < review.indexOf('**Persistence gate.**'));
   const text = flat(localMode);
@@ -348,7 +373,8 @@ test('review leaves helper-owned guards to the helper and calls it as one bare c
 });
 
 // Invariant: the router itself carries the bare-command helper-call rule and review's presentation
-// rule, so both reach a run before any tool file is read (work package 9, fix round 2).
+// rule with its two migration exceptions, so both reach a run before any tool file is read (work
+// package 9, fix round 2).
 test('the router states the bare helper-call rule and review presentation rule', () => {
   const router = readFileSync(new URL('../src/SKILL.md', import.meta.url), 'utf8');
   assert.match(
@@ -357,6 +383,6 @@ test('the router states the bare helper-call rule and review presentation rule',
   );
   assert.match(
     router,
-    /`review` presents local findings only as the `result\.summary` of its `review write-report` call, also when it reviews a small diff inline\./,
+    /`review` presents local findings only as the `result\.summary` of its `review write-report` call, also when it reviews a small diff inline\. Two exceptions: the migration report of `shared\/effective-flow-dir-migration\.md` step 3 may precede it, and on `migration\.failed: true` review presents only "N findings not persisted: `<code>`" with the severity counts plus that migration report, and no finding content, title or location\./,
   );
 });

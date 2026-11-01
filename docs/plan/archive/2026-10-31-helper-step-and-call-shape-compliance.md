@@ -1,6 +1,6 @@
 # Helper-step and call-shape compliance
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -344,8 +344,9 @@ Not relevant.
 - [x] A contract test pins `review.md`: it carries the per-path persistence gate, including the appendix-only path, the task entry and the extended completion condition.
 - [x] The exception bullet in `delegation-mandate.md` states that it never waives a workflow step, and the fragment stays within its line cap.
 - [x] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution`. Every touched `CONTEXT_BUDGET_LINES` entry is re-measured.
-- [ ] The realistic measurement meets the work package 8 criterion, as defined under "Measurement procedure", within at most one fix round. The result is recorded in `docs/developer-guide/claude-code-allowlist-evidence.md`, and the concept records the work package 8 result.
+- [x] The realistic measurement meets the work package 8 criterion, as defined under "Measurement procedure", within at most one fix round. The result is recorded in `docs/developer-guide/claude-code-allowlist-evidence.md`, and the concept records the work package 8 result.
   - 2026-11-01: blocked — after the one fix round, `review` auto (1/3) and the migration cell (1/3 per mode) still miss the 2-of-3 bar, while helper housekeeping shows 0 prompts and 0 refusals; decision: deliver blocked; follow-up work package 9.
+  - 2026-11-01: met through work package 9 — after `review write-report` and its in-call migration, round 4 of `docs/developer-guide/claude-code-allowlist-evidence.md`, "Work package 9 measurement", exercised `review` and the migration in 3 of 3 runs per mode with 0 housekeeping prompts and 0 refusals; `iterate` met the criterion in this plan's own measurement.
 
 ## Validation plan
 
@@ -470,4 +471,4 @@ F22 and F23 were closed without a change: F22 (the `mechanics name-allocate` cal
 
 ## Open points
 
-- **Blocking: the work package 8 criterion is blocked.** Realistic `review` and migration runs still skip the persistence step in too many runs. Re-entry: implement work package 9 ("Structural review persistence") of `docs/concept/2026-10-29-runtime-state-cli.md`, then re-measure with the work package 8 harness. This plan stays open until then.
+- No open points.
