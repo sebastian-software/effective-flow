@@ -1513,10 +1513,71 @@ test('checkpoint snapshots an unstaged tracked-directory replacement by a regula
   assert.equal(after.snapshot.index, before.snapshot.index);
   assert.notEqual(after.snapshot.workingTree, before.snapshot.workingTree);
   assert.deepEqual((await checkpoint('stable-replacement')).snapshot, after.snapshot);
+  writeFileSync(path.join(fx.root, 'nested'), 'changed replacement file\n');
+  const changed = await checkpoint('changed-replacement');
+  assert.equal(changed.snapshot.head, before.snapshot.head);
+  assert.equal(changed.snapshot.index, before.snapshot.index);
+  assert.equal(changed.snapshot.workingTree, after.snapshot.workingTree);
+  assert.notEqual(changed.snapshot.untracked, after.snapshot.untracked);
 });
 
-for (const kind of ['symlink'])
-  test(`snapshot refuses an existing ${kind} ancestor instead of classifying it as deleted`, async (t) => {
+test('checkpoint snapshots an unstaged tracked-file replacement by a directory with a new leaf', async (t) => {
+  const fx = fixture(t);
+  mkdirSync(path.join(fx.root, 'src'));
+  writeFileSync(path.join(fx.root, 'src/item'), 'tracked leaf\n');
+  git(fx.root, 'add', 'src/item');
+  git(fx.root, 'commit', '-m', 'tracked source leaf');
+  fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+  const live = await start(fx);
+  const checkpoint = async (checkpointId) => {
+    const ref = await live.call('checkpoint', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      checkpointId,
+      completed: [],
+      pending: REQUIRED_GATES,
+      evidence: [],
+    });
+    return JSON.parse(readFileSync(path.join(ref.root, ref.path)));
+  };
+  const before = await checkpoint('before-file-replacement');
+  rmSync(path.join(fx.root, 'src/item'));
+  mkdirSync(path.join(fx.root, 'src/item'));
+  const child = 'new child content\n';
+  writeFileSync(path.join(fx.root, 'src/item/child'), child);
+  const after = await checkpoint('after-file-replacement');
+  const tracked = git(fx.root, 'ls-files')
+    .split('\n')
+    .sort()
+    .map((name) =>
+      name === 'src/item'
+        ? [name, 'missing']
+        : [
+            name,
+            statSync(path.join(fx.root, name)).mode & 0o111 ? '100755' : '100644',
+            contentDigest(readFileSync(path.join(fx.root, name))),
+          ],
+    );
+  assert.equal(after.snapshot.workingTree, contentDigest(JSON.stringify(tracked)));
+  assert.equal(
+    after.snapshot.untracked,
+    contentDigest(JSON.stringify([['src/item/child', '100644', contentDigest(child)]])),
+  );
+  assert.equal(after.snapshot.head, before.snapshot.head);
+  assert.equal(after.snapshot.index, before.snapshot.index);
+  assert.notEqual(after.snapshot.workingTree, before.snapshot.workingTree);
+  assert.notEqual(after.snapshot.untracked, before.snapshot.untracked);
+  assert.deepEqual((await checkpoint('stable-file-replacement')).snapshot, after.snapshot);
+  writeFileSync(path.join(fx.root, 'src/item/child'), 'changed child content\n');
+  const changed = await checkpoint('changed-new-leaf');
+  assert.equal(changed.snapshot.head, before.snapshot.head);
+  assert.equal(changed.snapshot.index, before.snapshot.index);
+  assert.equal(changed.snapshot.workingTree, after.snapshot.workingTree);
+  assert.notEqual(changed.snapshot.untracked, after.snapshot.untracked);
+});
+
+for (const kind of ['symlink', 'dangling-symlink', 'special-ancestor', 'special-leaf'])
+  test(`snapshot refuses an existing ${kind} obstruction instead of classifying it as deleted`, async (t) => {
     const fx = fixture(t);
     mkdirSync(path.join(fx.root, 'nested/old'), { recursive: true });
     writeFileSync(path.join(fx.root, 'nested/old/source.txt'), 'tracked nested source\n');
@@ -1524,10 +1585,22 @@ for (const kind of ['symlink'])
     git(fx.root, 'commit', '-m', 'tracked nested source');
     fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
     const live = await start(fx);
-    renameSync(path.join(fx.root, 'nested'), path.join(fx.root, '.effective-flow/original'));
-    if (kind === 'symlink')
-      symlinkSync(path.join(fx.root, '.effective-flow/original'), path.join(fx.root, 'nested'));
-    else writeFileSync(path.join(fx.root, 'nested'), 'not a directory\n');
+    if (kind === 'special-leaf') {
+      rmSync(path.join(fx.root, 'nested/old/source.txt'));
+      const result = spawnSync('mkfifo', [path.join(fx.root, 'nested/old/source.txt')]);
+      assert.equal(result.status, 0, result.stderr?.toString());
+    } else {
+      const original = path.join(fx.root, '.effective-flow/original');
+      renameSync(path.join(fx.root, 'nested'), original);
+      if (kind === 'special-ancestor') {
+        const result = spawnSync('mkfifo', [path.join(fx.root, 'nested')]);
+        assert.equal(result.status, 0, result.stderr?.toString());
+      } else
+        symlinkSync(
+          kind === 'dangling-symlink' ? original + '-absent' : original,
+          path.join(fx.root, 'nested'),
+        );
+    }
     await assert.rejects(
       live.call('checkpoint', {
         ...live.common,
@@ -1537,9 +1610,29 @@ for (const kind of ['symlink'])
         pending: REQUIRED_GATES,
         evidence: [],
       }),
-      error('UNSAFE_PATH'),
+      error(kind === 'special-leaf' ? 'RECONCILIATION_REQUIRED' : 'UNSAFE_PATH'),
     );
   });
+
+test('checkpoint refuses a present real indexed gitlink directory', async (t) => {
+  const fx = fixture(t);
+  const live = await start(fx);
+  const head = git(fx.root, 'rev-parse', 'HEAD');
+  mkdirSync(path.join(fx.root, 'module'));
+  git(fx.root, 'update-index', '--add', '--cacheinfo', `160000,${head},module`);
+  assert.ok(git(fx.root, 'ls-files', '--stage').split('\n').includes(`160000 ${head} 0\tmodule`));
+  await assert.rejects(
+    live.call('checkpoint', {
+      ...live.common,
+      agentHandle: 'original-child-handle',
+      checkpointId: 'actual-gitlink',
+      completed: [],
+      pending: REQUIRED_GATES,
+      evidence: [],
+    }),
+    error('RECONCILIATION_REQUIRED'),
+  );
+});
 
 async function preparedForTransform(t, fx = fixture(t)) {
   const live = await setupDelivery(await start(fx));

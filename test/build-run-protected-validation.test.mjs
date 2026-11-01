@@ -9,7 +9,9 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  linkSync,
   readFileSync,
+  readlinkSync,
   readdirSync,
   realpathSync,
   rmSync,
@@ -259,6 +261,535 @@ function start(fx, remote = true) {
   };
   return Object.assign(fx, { created, common, receipt });
 }
+
+function preparedFixtureValidator(fx) {
+  const mailbox = path.join(fx.root, '.effective-flow/protected-validation');
+  mkdirSync(path.join(mailbox, 'private'), { recursive: true });
+  const bare = path.join(fx.namespace, 'origin.git');
+  git(fx.namespace, 'init', '--quiet', '--bare', bare);
+  git(fx.root, 'remote', 'add', 'origin', bare);
+  write(fx.root, '.build-context-fixture', 'model-free projection regression fixture\n');
+  const skill = path.join(fx.namespace, 'bundle/effective-flow');
+  mkdirSync(skill, { recursive: true });
+  write(path.dirname(skill), 'fixture.json', {});
+  const policy = nativePolicy({
+    fixtureRoot: fx.root,
+    skillRoot: skill,
+    protectedRoots: [mailbox],
+    privateRoots: [path.join(mailbox, 'private')],
+    protectedMailbox: mailbox,
+  });
+  const bootstrapId = 'projection-regression';
+  const canaryRef = write(mailbox, `canaries/${bootstrapId}.txt`, 'fixture canary\n', 0o600);
+  // Prepared protocol data is synthetic; the real helper still verifies native chmod/open denial.
+  // This focused fixture does not perform host qualification or invoke a model/provider.
+  const bootstrapRef = write(mailbox, `bootstraps/${bootstrapId}.json`, {
+    protocol: PROTECTED_VALIDATION_PROTOCOL,
+    bootstrapId,
+    physicalMailboxRoot: mailbox,
+    policyDigest: validationDigest(fx.policy),
+    initialInputDigest: validationDigest('model-free projection fixture'),
+    nativePolicyDigest: policy.policyDigest,
+    guardEvidence: {
+      kind: 'native-macos-seatbelt',
+      workerDenied: true,
+      descendantDenied: true,
+      privateReadDenied: true,
+      anchorDigest: canaryRef.digest,
+      canaryRef,
+    },
+    admission: { ...fx.common, validatorHandle, gate: 'validation' },
+    policy: fx.policy,
+  });
+  const home = path.join(fx.namespace, 'native-home');
+  const codexHome = path.join(fx.namespace, 'native-config');
+  mkdirSync(home);
+  mkdirSync(codexHome);
+  return (validationId) => {
+    const result = spawnSync(
+      codex,
+      nativeSandboxArgs(policy, [process.execPath, helper, 'validation-request']),
+      {
+        cwd: fx.root,
+        env: { ...env, HOME: home, CODEX_HOME: codexHome },
+        input: JSON.stringify({
+          ...fx.common,
+          validatorHandle,
+          gate: 'validation',
+          validationId,
+          bootstrapRef,
+        }),
+        encoding: 'utf8',
+        timeout: 20000,
+      },
+    );
+    assert.equal(result.error, undefined, result.stderr);
+    const envelope = JSON.parse(result.stdout);
+    assert.equal(result.status === 0, envelope.ok, result.stdout + result.stderr);
+    return envelope;
+  };
+}
+
+function materializedFixture(fx, prepared, manifest) {
+  const request = JSON.parse(
+    readFileSync(
+      path.join(prepared.preparation.requestRef.root, prepared.preparation.requestRef.path),
+    ),
+  );
+  const transport = path.join(
+    prepared.preparationRef.root,
+    'private/preparations',
+    request.validationId,
+    'transport',
+  );
+  const execution = path.join(fx.namespace, 'execution-' + request.validationId);
+  assert.equal(
+    materializeTransport({
+      checkout: transport,
+      destination: execution,
+      expectedCommit: prepared.preparation.snapshotCommit,
+    }).executionTree,
+    prepared.preparation.executionTree,
+  );
+  assert.equal(
+    prepared.preparation.executionClosureDigest,
+    validationDigest(fx.policy.executionClosure),
+  );
+  assert.deepEqual(
+    git(execution, 'ls-files', '-z').split('\0').filter(Boolean).sort(),
+    manifest.files.map((entry) => entry.path).sort(),
+  );
+  for (const [key, name] of Object.entries(CLOSURE_PATHS)) {
+    assert.deepEqual(
+      manifest.files.find((entry) => entry.path === name),
+      {
+        path: name,
+        mode: '100644',
+        digest: fx.policy.executionClosure[key],
+      },
+    );
+    assert.equal(
+      validationDigest(readFileSync(path.join(execution, name))),
+      fx.policy.executionClosure[key],
+    );
+  }
+  return execution;
+}
+
+test('protected source basis observes a tracked file replaced by an unstaged directory', (t) => {
+  const fx = fixture(t);
+  const before = sourceBasis(fx.root);
+  const index = git(fx.root, 'ls-files', '--stage', '-z');
+  rmSync(path.join(fx.root, 'src/product.mjs'));
+  mkdirSync(path.join(fx.root, 'src/product.mjs'));
+  write(fx.root, 'src/product.mjs/child.mjs', 'export const child = true;\n');
+  const after = sourceBasis(fx.root);
+  assert.equal(after.snapshot.head, before.snapshot.head);
+  assert.equal(after.snapshot.index, before.snapshot.index);
+  assert.equal(git(fx.root, 'ls-files', '--stage', '-z'), index);
+  assert.deepEqual(
+    after.files.find(([name]) => name === 'src/product.mjs'),
+    ['src/product.mjs', 'missing'],
+  );
+  assert.deepEqual(
+    after.files.find(([name]) => name === 'src/product.mjs/child.mjs'),
+    ['src/product.mjs/child.mjs', '100644', validationDigest('export const child = true;\n')],
+  );
+  assert.notEqual(after.snapshot.workingTree, before.snapshot.workingTree);
+  assert.notEqual(after.snapshot.untracked, before.snapshot.untracked);
+  assert.deepEqual(sourceBasis(fx.root), after);
+});
+
+for (const targetState of ['existing', 'dangling'])
+  test(`protected preparation preserves an excluded exact archive symlink with ${targetState} target`, async (t) => {
+    if (process.platform !== 'darwin' || !existsSync(codex))
+      return t.skip('requires local macOS native sandbox for prepared admission fixture');
+    const fx = start(fixture(t));
+    const target = path.join(fx.namespace, 'archive-target');
+    if (targetState === 'existing') {
+      writeFileSync(target, 'private target bytes\n', { mode: 0o600 });
+      chmodSync(target, 0);
+    }
+    const archive = 'docs/plan/archive/approved.md';
+    mkdirSync(path.dirname(path.join(fx.root, archive)), { recursive: true });
+    symlinkSync(target, path.join(fx.root, archive));
+    assert.equal(git(fx.root, 'ls-files', '--', archive), '');
+    assert.equal(
+      spawnSync('git', ['check-ignore', '--quiet', '--no-index', archive], {
+        cwd: fx.root,
+        env,
+      }).status,
+      1,
+      'the exact archive collision must be nonignored and untracked',
+    );
+    const requestValidation = preparedFixtureValidator(fx);
+    const requestRef = ok(requestValidation(`archive-${targetState}`));
+    const request = JSON.parse(readFileSync(path.join(requestRef.root, requestRef.path)));
+    const manifest = JSON.parse(
+      readFileSync(path.join(request.exportManifestRef.root, request.exportManifestRef.path)),
+    );
+    assert.deepEqual(
+      manifest.excluded.find((entry) => entry.path === archive),
+      {
+        path: archive,
+        reason: 'unrelated-untracked-plan',
+      },
+    );
+    assert.equal(
+      manifest.files.some((entry) => entry.path === archive),
+      false,
+    );
+    const raw = sourceBasis(fx.root);
+    assert.deepEqual(
+      raw.files.find(([name]) => name === archive),
+      [archive, 'symlink', validationDigest(target)],
+    );
+    if (targetState === 'existing') {
+      chmodSync(target, 0o600);
+      writeFileSync(target, 'changed target bytes never read by either observer\n');
+      chmodSync(target, 0);
+      assert.deepEqual(
+        sourceBasis(fx.root),
+        raw,
+        'target-only changes do not change opaque link evidence',
+      );
+    }
+    const prepared = await prepareValidation({ requestRef, sourceRoot: fx.root });
+    assert.equal(prepared.state, 'prepared');
+    assert.deepEqual(prepared.preparation.localSnapshot, request.snapshot);
+    assert.deepEqual(sourceBasis(fx.root).snapshot, request.snapshot);
+    assert.equal(
+      existsSync(path.join(materializedFixture(fx, prepared, manifest), archive)),
+      false,
+    );
+    assert.equal(readlinkSync(path.join(fx.root, archive)), target);
+    rmSync(path.join(fx.root, archive));
+    const changedTarget = target + '-changed-link-text';
+    symlinkSync(changedTarget, path.join(fx.root, archive));
+    const changed = sourceBasis(fx.root);
+    assert.deepEqual(
+      changed.files.find(([name]) => name === archive),
+      [archive, 'symlink', validationDigest(changedTarget)],
+    );
+    assert.equal(changed.snapshot.head, raw.snapshot.head);
+    assert.equal(changed.snapshot.index, raw.snapshot.index);
+    assert.equal(changed.snapshot.workingTree, raw.snapshot.workingTree);
+    assert.notEqual(changed.snapshot.untracked, raw.snapshot.untracked);
+    await assert.rejects(
+      prepareValidation({ requestRef, sourceRoot: fx.root }),
+      /^Error: source snapshot differs from admitted request$/,
+    );
+    const changedRef = ok(requestValidation(`archive-${targetState}-changed`));
+    const changedRequest = JSON.parse(readFileSync(path.join(changedRef.root, changedRef.path)));
+    assert.deepEqual(changedRequest.snapshot, changed.snapshot);
+    const changedPrepared = await prepareValidation({
+      requestRef: changedRef,
+      sourceRoot: fx.root,
+    });
+    assert.deepEqual(changedPrepared.preparation.localSnapshot, changed.snapshot);
+  });
+
+for (const direction of ['file-to-directory', 'directory-to-file'])
+  test(`protected request and preparation preserve an unstaged ${direction} replacement`, async (t) => {
+    if (process.platform !== 'darwin' || !existsSync(codex))
+      return t.skip('requires local macOS native sandbox for prepared admission fixture');
+    const fx = fixture(t);
+    const directory = 'src/replaced';
+    if (direction === 'directory-to-file') {
+      write(fx.root, directory + '/old.mjs', 'export const old = true;\n');
+      write(fx.root, directory + '/nested/other.mjs', 'export const other = true;\n');
+      git(fx.root, 'add', directory);
+      git(fx.root, 'commit', '--quiet', '-m', 'track replacement fixture directory');
+      fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+    }
+    start(fx);
+    const requestValidation = preparedFixtureValidator(fx);
+    const before = sourceBasis(fx.root);
+    const index = git(fx.root, 'ls-files', '--stage', '-z');
+    let missing, added;
+    if (direction === 'file-to-directory') {
+      missing = ['src/product.mjs'];
+      added = 'src/product.mjs/child.mjs';
+      rmSync(path.join(fx.root, missing[0]));
+    } else {
+      missing = [directory + '/old.mjs', directory + '/nested/other.mjs'];
+      added = directory;
+      rmSync(path.join(fx.root, directory), { recursive: true });
+    }
+    const bytes = 'export const replacement = true;\n';
+    write(fx.root, added, bytes);
+    const requestRef = ok(requestValidation(direction));
+    const request = JSON.parse(readFileSync(path.join(requestRef.root, requestRef.path)));
+    const manifest = JSON.parse(
+      readFileSync(path.join(request.exportManifestRef.root, request.exportManifestRef.path)),
+    );
+    const after = sourceBasis(fx.root);
+    assert.deepEqual(after.snapshot, request.snapshot);
+    assert.equal(after.snapshot.head, before.snapshot.head);
+    assert.equal(after.snapshot.index, before.snapshot.index);
+    assert.equal(git(fx.root, 'ls-files', '--stage', '-z'), index);
+    for (const name of missing) {
+      assert.deepEqual(
+        after.files.find(([file]) => file === name),
+        [name, 'missing'],
+      );
+      assert.ok(manifest.deletions.includes(name));
+    }
+    assert.deepEqual(
+      after.files.find(([name]) => name === added),
+      [added, '100644', validationDigest(bytes)],
+    );
+    assert.deepEqual(
+      manifest.files.find((entry) => entry.path === added),
+      {
+        path: added,
+        mode: '100644',
+        digest: validationDigest(bytes),
+      },
+    );
+    assert.notEqual(after.snapshot.workingTree, before.snapshot.workingTree);
+    assert.notEqual(after.snapshot.untracked, before.snapshot.untracked);
+    assert.deepEqual(sourceBasis(fx.root), after);
+    writeFileSync(path.join(fx.root, added), 'export const replacement = "changed";\n');
+    assert.notEqual(sourceBasis(fx.root).snapshot.untracked, after.snapshot.untracked);
+    await assert.rejects(
+      prepareValidation({ requestRef, sourceRoot: fx.root }),
+      /^Error: source snapshot differs from admitted request$/,
+    );
+    writeFileSync(path.join(fx.root, added), bytes);
+    const prepared = await prepareValidation({ requestRef, sourceRoot: fx.root });
+    assert.deepEqual(prepared.preparation.localSnapshot, after.snapshot);
+    const execution = materializedFixture(fx, prepared, manifest);
+    assert.equal(readFileSync(path.join(execution, added), 'utf8'), bytes);
+    assert.deepEqual(sourceBasis(fx.root), after);
+    assert.equal(git(fx.root, 'ls-files', '--stage', '-z'), index);
+  });
+
+test('protected preparation excludes an exact archive directory with regular and opaque symlink leaves', async (t) => {
+  if (process.platform !== 'darwin' || !existsSync(codex))
+    return t.skip('requires local macOS native sandbox for prepared admission fixture');
+  const fx = start(fixture(t));
+  const archive = 'docs/plan/archive/approved.md';
+  const regular = archive + '/nested/regular.txt';
+  const existing = archive + '/nested/existing-link';
+  const dangling = archive + '/dangling-link';
+  const target = path.join(fx.namespace, 'unreadable-archive-target');
+  writeFileSync(target, 'private target contents\n', { mode: 0o600 });
+  chmodSync(target, 0);
+  write(fx.root, regular, 'retained regular archive bytes\n');
+  symlinkSync(target, path.join(fx.root, existing));
+  symlinkSync(target + '-missing', path.join(fx.root, dangling));
+  assert.equal(git(fx.root, 'ls-files', '--', archive), '');
+  assert.equal(
+    spawnSync('git', ['check-ignore', '--quiet', '--no-index', archive], { cwd: fx.root, env })
+      .status,
+    1,
+  );
+  const requestRef = ok(preparedFixtureValidator(fx)('archive-directory'));
+  const request = JSON.parse(readFileSync(path.join(requestRef.root, requestRef.path)));
+  const manifest = JSON.parse(
+    readFileSync(path.join(request.exportManifestRef.root, request.exportManifestRef.path)),
+  );
+  const raw = sourceBasis(fx.root);
+  assert.deepEqual(raw.snapshot, request.snapshot);
+  assert.deepEqual(
+    raw.files.filter(([name]) => name.startsWith(archive + '/')),
+    [
+      [dangling, 'symlink', validationDigest(target + '-missing')],
+      [existing, 'symlink', validationDigest(target)],
+      [regular, '100644', validationDigest('retained regular archive bytes\n')],
+    ],
+  );
+  assert.deepEqual(
+    manifest.excluded.filter(({ path: name }) => name.startsWith(archive + '/')),
+    [
+      { path: dangling, reason: 'unrelated-untracked-plan' },
+      { path: existing, reason: 'unrelated-untracked-plan' },
+      { path: regular, reason: 'unrelated-untracked-plan' },
+    ],
+  );
+  assert.equal(
+    manifest.files.some(({ path: name }) => name.startsWith(archive)),
+    false,
+  );
+  const prepared = await prepareValidation({ requestRef, sourceRoot: fx.root });
+  assert.deepEqual(prepared.preparation.localSnapshot, raw.snapshot);
+  assert.equal(existsSync(path.join(materializedFixture(fx, prepared, manifest), archive)), false);
+  assert.deepEqual(sourceBasis(fx.root), raw);
+  assert.equal(readlinkSync(path.join(fx.root, existing)), target);
+  assert.equal(readlinkSync(path.join(fx.root, dangling)), target + '-missing');
+  assert.equal(
+    readFileSync(path.join(fx.root, regular), 'utf8'),
+    'retained regular archive bytes\n',
+  );
+});
+
+for (const identity of ['tracked-symlink', 'untracked-symlink', 'hardlink', 'special-mode'])
+  test(`protected export refuses a product ${identity} at its owning safety boundary`, async (t) => {
+    if (process.platform !== 'darwin' || !existsSync(codex))
+      return t.skip('requires local macOS native sandbox for prepared admission fixture');
+    const fx = start(fixture(t));
+    const requestValidation = preparedFixtureValidator(fx);
+    const product = path.join(fx.root, 'src/product.mjs');
+    if (identity.endsWith('symlink')) {
+      const file =
+        identity === 'tracked-symlink' ? product : path.join(fx.root, 'src/untracked-link');
+      if (identity === 'tracked-symlink') rmSync(file);
+      symlinkSync(path.join(fx.namespace, 'never-read-product-target'), file);
+    } else if (identity === 'hardlink') {
+      linkSync(product, path.join(fx.namespace, 'product-alias'));
+    } else chmodSync(product, 0o4644);
+    const envelope = requestValidation(identity);
+    if (identity.endsWith('symlink')) {
+      refused(envelope, 'UNSAFE_PATH');
+      assert.equal(envelope.error.message, 'symlinks and special source modes are not exportable');
+    } else if (identity === 'hardlink') {
+      refused(envelope, 'UNSAFE_PATH');
+      assert.equal(envelope.error.message, 'artifact must be a singly linked regular file');
+    } else {
+      const requestRef = ok(envelope);
+      const preparationRoot = path.join(
+        fx.root,
+        '.effective-flow/protected-validation/private/preparations/special-mode',
+      );
+      assert.equal(existsSync(preparationRoot), false);
+      await assert.rejects(
+        prepareValidation({ requestRef, sourceRoot: fx.root }),
+        /^Error: unsupported projected file identity$/,
+      );
+      const failedIdentity = statSync(preparationRoot);
+      assert.equal(failedIdentity.isDirectory(), true);
+      assert.deepEqual(readdirSync(preparationRoot), ['transport']);
+      const transportHead = path.join(preparationRoot, 'transport/.git/HEAD');
+      const retainedHead = readFileSync(transportHead);
+      chmodSync(product, 0o644);
+      const request = JSON.parse(readFileSync(path.join(requestRef.root, requestRef.path)));
+      assert.deepEqual(sourceBasis(fx.root).snapshot, request.snapshot);
+      await assert.rejects(
+        prepareValidation({ requestRef, sourceRoot: fx.root }),
+        /^Error: preparation exists; never overwrite or retry$/,
+      );
+      const retainedIdentity = statSync(preparationRoot);
+      assert.equal(retainedIdentity.dev, failedIdentity.dev);
+      assert.equal(retainedIdentity.ino, failedIdentity.ino);
+      assert.deepEqual(readdirSync(preparationRoot), ['transport']);
+      assert.deepEqual(readFileSync(transportHead), retainedHead);
+      assert.equal(
+        existsSync(
+          path.join(fx.root, '.effective-flow/protected-validation/preparations/special-mode.json'),
+        ),
+        false,
+      );
+    }
+  });
+
+test('protected preparation rejects post-request product symlink drift before creating transport', async (t) => {
+  if (process.platform !== 'darwin' || !existsSync(codex))
+    return t.skip('requires local macOS native sandbox for prepared admission fixture');
+  const fx = start(fixture(t));
+  const requestRef = ok(preparedFixtureValidator(fx)('product-link-drift'));
+  const product = path.join(fx.root, 'src/product.mjs');
+  rmSync(product);
+  symlinkSync(path.join(fx.namespace, 'never-read-drift-target'), product);
+  await assert.rejects(
+    prepareValidation({ requestRef, sourceRoot: fx.root }),
+    /^Error: source snapshot differs from admitted request$/,
+  );
+  assert.equal(
+    existsSync(
+      path.join(
+        fx.root,
+        '.effective-flow/protected-validation/private/preparations/product-link-drift',
+      ),
+    ),
+    false,
+  );
+});
+
+test('protected preparation rejects a changed execution closure against its pinned policy', async (t) => {
+  if (process.platform !== 'darwin' || !existsSync(codex))
+    return t.skip('requires local macOS native sandbox for prepared admission fixture');
+  const fx = start(fixture(t));
+  const name = CLOSURE_PATHS.runnerHelperDigest;
+  writeFileSync(
+    path.join(fx.root, name),
+    readFileSync(path.join(fx.root, name), 'utf8') + '\n// Changed closure fixture.\n',
+  );
+  const requestRef = ok(preparedFixtureValidator(fx)('changed-closure'));
+  await assert.rejects(prepareValidation({ requestRef, sourceRoot: fx.root }), {
+    message: 'unapproved execution closure: ' + name,
+  });
+});
+
+test('protected source observation and validation request reject an actual indexed gitlink', (t) => {
+  if (process.platform !== 'darwin' || !existsSync(codex))
+    return t.skip('requires local macOS native sandbox for prepared admission fixture');
+  const fx = start(fixture(t));
+  const requestValidation = preparedFixtureValidator(fx);
+  const name = 'src/submodule';
+  mkdirSync(path.join(fx.root, name));
+  git(fx.root, 'update-index', '--add', '--cacheinfo', `160000,${fx.input.execution.head},${name}`);
+  assert.match(
+    git(fx.root, 'ls-files', '--stage', '--', name),
+    /^160000 [a-f0-9]{40} 0\tsrc\/submodule$/,
+  );
+  assert.throws(() => sourceBasis(fx.root), /^Error: unsupported source submodule$/);
+  const envelope = requestValidation('actual-gitlink');
+  refused(envelope, 'RECONCILIATION_REQUIRED');
+  assert.match(envelope.error.message, /submodule snapshot requires reconciliation/);
+});
+
+for (const obstruction of [
+  'existing-symlink-ancestor',
+  'dangling-symlink-ancestor',
+  'special-ancestor',
+  'special-leaf',
+])
+  test(`protected readers refuse an unsafe ${obstruction} without following a target`, (t) => {
+    if (process.platform !== 'darwin' || !existsSync(codex))
+      return t.skip('requires local macOS native sandbox for prepared admission fixture');
+    const fx = fixture(t);
+    write(fx.root, 'src/unsafe/old.mjs', 'export const old = true;\n');
+    git(fx.root, 'add', 'src/unsafe/old.mjs');
+    git(fx.root, 'commit', '--quiet', '-m', 'track unsafe ancestor fixture');
+    fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+    start(fx);
+    const requestValidation = preparedFixtureValidator(fx);
+    const parent = path.join(fx.root, 'src/unsafe');
+    if (obstruction === 'special-leaf') {
+      rmSync(path.join(parent, 'old.mjs'));
+      execFileSync('/usr/bin/mkfifo', [path.join(parent, 'old.mjs')]);
+    } else {
+      rmSync(parent, { recursive: true });
+      if (obstruction === 'special-ancestor') execFileSync('/usr/bin/mkfifo', [parent]);
+      else {
+        const target = path.join(fx.namespace, 'private-ancestor-target');
+        if (obstruction === 'existing-symlink-ancestor') {
+          mkdirSync(target);
+          writeFileSync(
+            path.join(target, 'old.mjs'),
+            'private target bytes must not be observed\n',
+            { mode: 0o000 },
+          );
+        }
+        symlinkSync(target, parent);
+      }
+    }
+    assert.throws(
+      () => sourceBasis(fx.root),
+      obstruction === 'special-leaf'
+        ? /^Error: unsupported source entry$/
+        : /^Error: unsafe source ancestor$/,
+    );
+    const envelope = requestValidation(obstruction);
+    if (obstruction === 'special-leaf') {
+      refused(envelope, 'RECONCILIATION_REQUIRED');
+      assert.match(envelope.error.message, /snapshot requires reconciliation/);
+    } else {
+      refused(envelope, 'UNSAFE_PATH');
+      assert.equal(envelope.error.message, 'directory contains a symlink or non-directory');
+    }
+  });
 
 test('original remote create blocks plain retained receipts before admission and legacy create remains local', (t) => {
   const fx = start(fixture(t));
@@ -685,25 +1216,19 @@ test(
         }
       },
     );
-    await t.test('preparation refuses symlinks and special mode bits', async () => {
+    await t.test('preparation refuses post-request symlink drift', async () => {
       const product = path.join(fx.root, 'src/product.mjs'),
         bytes = readFileSync(product);
       rmSync(product);
       symlinkSync('/etc/hosts', product);
       try {
-        await assert.rejects(prepareValidation({ requestRef, sourceRoot: fx.root }), /symlink/);
+        await assert.rejects(
+          prepareValidation({ requestRef, sourceRoot: fx.root }),
+          /^Error: source snapshot differs from admitted request$/,
+        );
       } finally {
         rmSync(product);
         writeFileSync(product, bytes);
-      }
-      chmodSync(product, 0o4644);
-      try {
-        await assert.rejects(
-          prepareValidation({ requestRef, sourceRoot: fx.root }),
-          /unsupported projected file identity/,
-        );
-      } finally {
-        chmodSync(product, 0o644);
       }
     });
     const prepared = await prepareValidation({ requestRef, sourceRoot: fx.root });

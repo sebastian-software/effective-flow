@@ -29,6 +29,8 @@ export function checkoutBasis(root) {
       .toString('utf8')
       .split('\0')
       .filter(Boolean);
+  const index = git('ls-files', '--stage', '-z');
+  const indexedModes = sourceIndexModes(index);
   const contents = (names) =>
     digest(
       JSON.stringify(
@@ -46,6 +48,9 @@ export function checkoutBasis(root) {
             if (error.code === 'ENOENT') return [name, 'missing'];
             throw error;
           }
+          requireThat(indexedModes.get(name) !== '160000', 'unsupported Git submodule');
+          if (stat.isDirectory() && ['100644', '100755', '120000'].includes(indexedModes.get(name)))
+            return [name, 'missing'];
           if (stat.isSymbolicLink()) return [name, 'symlink', digest(readlinkSync(path))];
           requireThat(stat.isFile(), 'unsupported Git content');
           return [name, stat.mode & 0o111, digest(readFileSync(path))];
@@ -55,10 +60,19 @@ export function checkoutBasis(root) {
   const head = git('rev-parse', 'HEAD').toString('utf8').trim();
   return {
     head,
-    index: digest(git('ls-files', '--stage', '-z')),
+    index: digest(index),
     workingTree: contents(list('ls-files', '-z')),
     untracked: contents(list('ls-files', '--others', '--exclude-standard', '-z')),
   };
+}
+function sourceIndexModes(index) {
+  const modes = new Map();
+  for (const entry of index.toString('utf8').split('\0').filter(Boolean)) {
+    const match = /^([0-7]{6}) [a-f0-9]{40}(?:[a-f0-9]{24})? ([0-3])\t([\s\S]+)$/.exec(entry);
+    requireThat(match, 'invalid source index');
+    modes.set(match[3], modes.has(match[3]) || match[2] !== '0' ? null : match[1]);
+  }
+  return modes;
 }
 function existingSourceParents(target) {
   let current = parse(target).root;
@@ -79,6 +93,9 @@ function existingSourceParents(target) {
 }
 // Tracked and non-ignored source only: do not inspect ignored auth/local environment files.
 export function sourceMembership(root, excluded = []) {
+  const indexedModes = sourceIndexModes(
+    execFileSync('git', ['ls-files', '--stage', '-z'], { cwd: root }),
+  );
   const names = execFileSync(
       'git',
       ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
@@ -101,6 +118,11 @@ export function sourceMembership(root, excluded = []) {
       stat = lstatSync(path);
     } catch (error) {
       if (error.code !== 'ENOENT') throw error;
+      entries[name] = ['missing'];
+      continue;
+    }
+    requireThat(indexedModes.get(name) !== '160000', 'unsupported source submodule');
+    if (stat.isDirectory() && ['100644', '100755', '120000'].includes(indexedModes.get(name))) {
       entries[name] = ['missing'];
       continue;
     }

@@ -921,10 +921,17 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   under `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, uses 8 KiB UTF-8 for the
   dispatch projection and 16 KiB UTF-8 for each control record, and fails closed on unknown fields,
   unsafe paths, content drift, foreign evidence, stale replies, or incomplete terminal gates.
-  Snapshots retain missing tracked descendants when their parent is absent or a verified regular-file
-  ancestor blocks traversal. Symlink ancestors and other non-directory ancestors remain refused;
-  strict artifact/runtime directory checks are unchanged. The build-context scaffold uses the same
-  missing-entry boundary for checkout basis and source membership without following symlink ancestors.
+  Snapshots cover both unstaged file/directory replacements: verified regular-file ancestors leave
+  old descendants missing; an ordinary stage-0 leaf identified by exact NUL-delimited index records
+  can become a missing old leaf when replaced by a directory, with Git-listed new leaves observed
+  separately. Present `160000` gitlinks and unsafe ancestors remain refused; conflict-stage regular
+  files remain recordable, but ambiguous entries grant no directory-as-missing exception. The
+  build-context basis readers keep their own tuple formats, while the drift observer matches actual
+  helper checkpoint modes. Protected preparation observes the same raw basis with safe ancestors,
+  `lstat` and opaque leaf `readlink` before export classification, including retained archive links.
+  Strict artifact/runtime checks and exported-file checks remain unchanged, as do full raw snapshot,
+  exact manifest and execution-closure comparisons. The [build-run contract](../../src/shared/build-run-contract.md#questions-and-same-agent-continuation)
+  owns these reader boundaries.
   The build caller remains the authority for user-channel provenance, approval and gate judgments;
   `build-run-core.mjs` proves identity and evidence but never grants consent or replaces the
   phases-2–7 workflow. `build-run-contract.md` is the caller/runner lifecycle contract and

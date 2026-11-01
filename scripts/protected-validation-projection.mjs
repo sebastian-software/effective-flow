@@ -5,6 +5,7 @@ import {
   lstatSync,
   realpathSync,
   readFileSync,
+  readlinkSync,
   writeFileSync,
   mkdirSync,
   readdirSync,
@@ -150,16 +151,56 @@ export function sourceBasis(root) {
   const untrackedPaths = git(root, 'ls-files', '-z', '--others', '--exclude-standard')
     .split('\0')
     .filter(Boolean);
+  const staged = execFileSync('git', ['ls-files', '--stage', '-z'], { cwd: root });
+  const indexedModes = new Map();
+  for (const entry of staged.toString('utf8').split('\0').filter(Boolean)) {
+    const match = /^([0-7]{6}) [a-f0-9]{40}(?:[a-f0-9]{24})? ([0-3])\t([\s\S]+)$/.exec(entry);
+    ensure(match, 'invalid source index');
+    indexedModes.set(match[3], indexedModes.has(match[3]) || match[2] !== '0' ? null : match[1]);
+  }
+  const existingParents = (path) => {
+    let current = root;
+    for (const component of path.split('/').slice(0, -1)) {
+      current = resolve(current, component);
+      let stat;
+      try {
+        stat = lstatSync(current);
+      } catch (error) {
+        if (error.code === 'ENOENT') return false;
+        throw error;
+      }
+      ensure(!stat.isSymbolicLink(), 'unsafe source ancestor');
+      if (stat.isFile()) return false;
+      ensure(stat.isDirectory(), 'unsafe source ancestor');
+    }
+    return true;
+  };
   const entries = (names) =>
     [...new Set(names)].sort().map((path) => {
-      safeRelative(path);
-      if (!existsSync(resolve(root, path))) return [path, 'missing'];
-      const file = physicalFile(root, path);
-      return [path, file.mode, validationDigest(file.bytes)];
+      ensure(
+        !path.startsWith('/') &&
+          !path.includes('\\') &&
+          !path.split('/').some((part) => ['', '.', '..'].includes(part)),
+        'unsafe source path',
+      );
+      const file = resolve(root, path);
+      let stat;
+      try {
+        if (!existingParents(path)) return [path, 'missing'];
+        stat = lstatSync(file);
+      } catch (error) {
+        if (error.code === 'ENOENT') return [path, 'missing'];
+        throw error;
+      }
+      ensure(indexedModes.get(path) !== '160000', 'unsupported source submodule');
+      if (stat.isDirectory() && ['100644', '100755', '120000'].includes(indexedModes.get(path)))
+        return [path, 'missing'];
+      if (stat.isSymbolicLink()) return [path, 'symlink', validationDigest(readlinkSync(file))];
+      ensure(stat.isFile(), 'unsupported source entry');
+      return [path, stat.mode & 0o111 ? '100755' : '100644', validationDigest(readFileSync(file))];
     });
   const tracked = entries(trackedPaths),
     untracked = entries(untrackedPaths);
-  const staged = execFileSync('git', ['ls-files', '--stage', '-z'], { cwd: root });
   return {
     snapshot: {
       head: git(root, 'rev-parse', 'HEAD'),

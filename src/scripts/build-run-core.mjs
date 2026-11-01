@@ -886,6 +886,13 @@ async function agentHandle(context) {
 async function inspect(context, execution = context.request.execution) {
   const { root, head } = await executionGuard({ ...context.request, execution }, context.deps);
   const index = await git(context.deps, root, ['ls-files', '--stage', '-z'], [0], true);
+  const indexedModes = new Map();
+  for (const entry of index.toString('utf8').split('\0').filter(Boolean)) {
+    const match = /^([0-7]{6}) [a-f0-9]{40}(?:[a-f0-9]{24})? ([0-3])\t([\s\S]+)$/.exec(entry);
+    if (!match) fail('RECONCILIATION_REQUIRED', 'invalid staged snapshot entry');
+    relative(match[3]);
+    indexedModes.set(match[3], indexedModes.has(match[3]) || match[2] !== '0' ? null : match[1]);
+  }
   const tracked = await git(context.deps, root, ['ls-files', '-z'], [0], true);
   const untracked = await git(
     context.deps,
@@ -913,6 +920,12 @@ async function inspect(context, execution = context.request.execution) {
           continue;
         }
         throw error;
+      }
+      if (indexedModes.get(name) === '160000')
+        fail('RECONCILIATION_REQUIRED', 'tracked submodule snapshot requires reconciliation');
+      if (info.isDirectory() && ['100644', '100755', '120000'].includes(indexedModes.get(name))) {
+        entries.push([name, 'missing']);
+        continue;
       }
       let entry;
       if (info.isSymbolicLink()) entry = [name, 'symlink', contentDigest(await readlink(file))];
