@@ -921,9 +921,10 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   under `<RUNTIME_STATE_ROOT>/.effective-flow/build-runs/<run-id>/`, uses 8 KiB UTF-8 for the
   dispatch projection and 16 KiB UTF-8 for each control record, and fails closed on unknown fields,
   unsafe paths, content drift, foreign evidence, stale replies, or incomplete terminal gates.
-  Snapshots retain missing tracked files even when their parent directory was deleted or renamed;
-  an existing symlink or non-directory ancestor is still refused. The build-context scaffold uses
-  the same missing-entry boundary for source membership and never reads through a symlink ancestor.
+  Snapshots retain missing tracked descendants when their parent is absent or a verified regular-file
+  ancestor blocks traversal. Symlink ancestors and other non-directory ancestors remain refused;
+  strict artifact/runtime directory checks are unchanged. The build-context scaffold uses the same
+  missing-entry boundary for checkout basis and source membership without following symlink ancestors.
   The build caller remains the authority for user-channel provenance, approval and gate judgments;
   `build-run-core.mjs` proves identity and evidence but never grants consent or replaces the
   phases-2–7 workflow. `build-run-contract.md` is the caller/runner lifecycle contract and
@@ -981,12 +982,19 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   or relax product, staged-tree, commit or acceptance checks.
 
   Optional `retainedFiles` binds a closed record for the three fixed user-file retention roles in
-  the same lifecycle contract. Full raw snapshots/manifests remain unchanged; the separate
-  `deliverablesManifest` excludes only exact proven non-product execution files from commit
-  requirements. All plan exceptions bind root and path together. The completion pair carries
-  this evidence through user gates and protected validation without relaxing native content
-  bindings; seal/handoff recheck bytes, full mode and untracked status. Visible retained-file and
-  checkout reports are mandatory, and no forced staging, publication or source cleanup is granted.
+  the same lifecycle contract. Archive obstructions bind only the exact target or its independently
+  verified blocking regular-file ancestor; symlink/directory types apply only at the target, binding
+  opaque link text or a complete bounded directory inventory. Full raw snapshots/manifests remain
+  unchanged; the separate `deliverablesManifest` excludes only exact proven non-product execution
+  file/symlink leaves from commit requirements, never an entire path prefix. All plan exceptions bind
+  root and path together. The completion pair carries this evidence through user gates and protected
+  validation without relaxing native content bindings; live checks reject membership, type, full mode,
+  byte/link-text drift and tracking/staging. Retained owned-checkout cleanup additionally binds the
+  actual canonical lifecycle record and immutable creation identity through helper-generated
+  `retainedOwnership`, rechecked at DONE with accepted cleanup status and released locks. Visible
+  retained-item and checkout reports remain mandatory even for a Git-clean empty or ignored-only
+  directory; no forced staging, publication or source cleanup is granted. The lifecycle contract owns
+  the schemas and bounds.
 
   Normal archival can privately prove removal of an identical execution plan copy from its
   prepared regular-file manifest and exact matching stage-0 blob/mode. The original path must now

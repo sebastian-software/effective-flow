@@ -181,7 +181,7 @@ export function encodeControl(value, maximum = MAX_CONTROL_BYTES) {
 function inside(root, target) {
   return target === root || target.startsWith(`${root}${path.sep}`);
 }
-async function safeDirectory(target, allowMissing = false) {
+async function safeDirectory(target, allowMissing = false, missingFileAncestor = false) {
   absolute(target);
   let current = path.parse(target).root;
   for (const part of target.slice(current.length).split(path.sep).filter(Boolean)) {
@@ -193,8 +193,9 @@ async function safeDirectory(target, allowMissing = false) {
       if (allowMissing && error.code === 'ENOENT') return null;
       throw error;
     }
-    if (!info.isDirectory() || info.isSymbolicLink())
-      fail('UNSAFE_PATH', 'directory contains a symlink or non-directory');
+    if (info.isSymbolicLink()) fail('UNSAFE_PATH', 'directory contains a symlink or non-directory');
+    if (allowMissing && missingFileAncestor && info.isFile()) return null;
+    if (!info.isDirectory()) fail('UNSAFE_PATH', 'directory contains a symlink or non-directory');
   }
   if ((await realpath(target)) !== target)
     fail('UNSAFE_PATH', 'directory is not physically canonical');
@@ -901,7 +902,7 @@ async function inspect(context, execution = context.request.execution) {
       const file = path.join(root, name);
       let info;
       try {
-        if ((await safeDirectory(path.dirname(file), true)) === null) {
+        if ((await safeDirectory(path.dirname(file), true, true)) === null) {
           entries.push([name, 'missing']);
           continue;
         }
@@ -986,7 +987,7 @@ async function dataRead(context, ref) {
 }
 async function gateReceipt(context, ref) {
   const value = await readRecord(context, ref);
-  exact(value, RECEIPT_FIELDS, ['remoteValidation']);
+  exact(value, RECEIPT_FIELDS, ['remoteValidation', 'retainedOwnership']);
   one(value.gate, REQUIRED_GATES);
   one(value.outcome, ['passed', 'not-applicable']);
   text(value.reason);
@@ -1041,6 +1042,13 @@ async function gateReceipt(context, ref) {
     });
     if (verified.state !== 'verified' || !same(verified.resultRef, remote.resultRef))
       fail('INCOMPLETE_GATES', 'retained remote backend evidence no longer verifies');
+  }
+  if (value.retainedOwnership !== undefined) {
+    if (value.gate !== 'cleanup' || !context.handoff)
+      fail('FOREIGN_RECORD', 'retained ownership belongs only to post-handoff cleanup');
+    const retained = await retainedExecution(context, value.retainedOwnership);
+    if (!value.reason.includes(retained.reason))
+      fail('MISSING_EVIDENCE', 'cleanup must disclose its verified retention reason');
   }
   return value;
 }
@@ -1648,7 +1656,7 @@ async function authorizeExecution(context, input) {
     originalSnapshot: await snapshot(context),
   });
 }
-async function lifecycleProof(context, ref, auth, execution, adopting = false) {
+async function lifecycleProof(context, ref, auth, execution, adopting = false, retained = false) {
   artifactShape(ref);
   if (
     ref.root !== context.root ||
@@ -1698,7 +1706,12 @@ async function lifecycleProof(context, ref, auth, execution, adopting = false) {
     value.branchPolicy !== 'retain' ||
     (adopting
       ? !['aborted', 'failed'].includes(value.status) || typeof value.reason !== 'string'
-      : value.status !== 'active' || value.reason !== null) ||
+      : retained
+        ? !['cleanup-ready', 'cleanup-failed'].includes(value.status) ||
+          (value.status === 'cleanup-ready'
+            ? value.reason !== null
+            : typeof value.reason !== 'string')
+        : value.status !== 'active' || value.reason !== null) ||
     path.basename(ref.path) !== `${value.recordId}.json`
   )
     fail('AUTHORITY_MISMATCH', 'lifecycle record is not owned by this logical build');
@@ -1711,7 +1724,7 @@ async function lifecycleProof(context, ref, auth, execution, adopting = false) {
       !Number.isFinite(Date.parse(timestamp))
     )
       fail('INVALID_STATE', 'lifecycle timestamps are not valid RFC-3339 identities');
-  if (adopting) text(value.reason);
+  if (adopting || value.status === 'cleanup-failed') text(value.reason);
   exact(value.receipt, [
     'repositoryIdentity',
     'executionRoot',
@@ -2094,7 +2107,13 @@ async function retainedFiles(
   const archive = archivePlanPath(context),
     seen = new Set();
   for (const item of value.retained) {
-    exact(item, ['role', 'fileRef', 'mode', 'visibleReport']);
+    exact(item, ['role', 'fileRef', 'mode', 'visibleReport'], ['type', 'entries']);
+    if (item.type !== undefined) one(item.type, ['file', 'symlink', 'directory']);
+    if ((item.type === 'directory') !== (item.entries !== undefined))
+      fail('INVALID_PAYLOAD', 'only a retained directory has an inventory');
+    if (item.type && item.type !== 'file' && item.role !== 'archive-collision')
+      fail('AUTHORITY_MISMATCH', 'typed obstructions belong only to the exact archive target');
+    if (item.entries !== undefined) retainedInventoryShape(item.entries);
     one(item.role, ['archive-collision', 'unarchived-original', 'cleanup-refused']);
     artifactShape(item.fileRef);
     if (!Number.isInteger(item.mode) || item.mode < 0 || item.mode > 0o7777)
@@ -2105,10 +2124,31 @@ async function retainedFiles(
     if (seen.has(key)) fail('INVALID_PAYLOAD', 'duplicate retained file');
     seen.add(key);
     const original = finalPlan.path === source.path && archive !== source.path;
+    let exactObstruction = file.path === archive;
+    if (
+      item.role === 'archive-collision' &&
+      file.root === execution &&
+      !exactObstruction &&
+      (!item.type || item.type === 'file') &&
+      original &&
+      (pending || refusal?.reason === 'write-failure')
+    ) {
+      const measured = await archivalRefusal(
+        context,
+        { reason: 'write-failure' },
+        archive,
+        basis,
+        prepared,
+        finalPlan,
+      );
+      exactObstruction =
+        measured.evidence.kind === 'non-directory-parent' &&
+        measured.evidence.obstacle.path === file.path;
+    }
     const allowed =
       item.role === 'archive-collision'
         ? file.root === execution &&
-          file.path === archive &&
+          exactObstruction &&
           original &&
           (pending || refusal !== undefined)
         : item.role === 'unarchived-original'
@@ -2129,32 +2169,128 @@ async function retainedFiles(
   }
   return value.retained;
 }
+function retainedInventoryShape(entries) {
+  if (
+    !Array.isArray(entries) ||
+    entries.length > 1024 ||
+    Buffer.byteLength(JSON.stringify(entries)) > MAX_RETAINED_EVIDENCE_BYTES
+  )
+    fail('TOO_LARGE', 'retained directory inventory exceeds its bound');
+  let previous = null;
+  for (const entry of entries) {
+    exact(entry, ['path', 'type', 'mode', 'digest']);
+    relative(entry.path);
+    one(entry.type, ['file', 'symlink', 'directory']);
+    if (
+      !Number.isInteger(entry.mode) ||
+      entry.mode < 0 ||
+      entry.mode > 0o7777 ||
+      (previous !== null && previous >= entry.path)
+    )
+      fail('INVALID_PAYLOAD', 'retained inventory is not canonical');
+    if (entry.type === 'directory') {
+      if (entry.digest !== null) fail('INVALID_PAYLOAD', 'directory inventory node has no bytes');
+    } else digest(entry.digest);
+    previous = entry.path;
+  }
+}
+async function retainedObservation(item) {
+  const target = path.join(item.fileRef.root, item.fileRef.path);
+  await safeDirectory(path.dirname(target));
+  let total = 0;
+  const entries = [];
+  async function observe(file, name) {
+    const before = await lstat(file);
+    let type, hash;
+    if (before.isSymbolicLink()) {
+      type = 'symlink';
+      const link = await readlink(file);
+      total += Buffer.byteLength(link);
+      hash = contentDigest(link);
+    } else if (before.isFile()) {
+      type = 'file';
+      total += before.size;
+      if (total > MAX_RETAINED_EVIDENCE_BYTES)
+        fail('TOO_LARGE', 'retained obstruction exceeds byte bound');
+      hash = contentDigest(await safeRead(file, MAX_RETAINED_EVIDENCE_BYTES));
+    } else if (before.isDirectory()) {
+      type = 'directory';
+      hash = null;
+      const children = await readdir(file);
+      for (const child of children.sort()) {
+        if (entries.length >= 1024) fail('TOO_LARGE', 'retained obstruction exceeds entry bound');
+        const childName = name ? `${name}/${child}` : child;
+        relative(childName);
+        const slot = entries.length;
+        entries.push(null);
+        entries[slot] = { path: childName, ...(await observe(path.join(file, child), childName)) };
+      }
+    } else fail('UNSAFE_PATH', 'retained obstruction contains a special file');
+    if (total > MAX_RETAINED_EVIDENCE_BYTES)
+      fail('TOO_LARGE', 'retained obstruction exceeds byte bound');
+    const after = await lstat(file);
+    if (
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.mode !== after.mode ||
+      before.size !== after.size ||
+      before.mtimeMs !== after.mtimeMs ||
+      before.ctimeMs !== after.ctimeMs
+    )
+      fail('CONTENT_DRIFT', 'retained obstruction changed during observation');
+    return { type, mode: before.mode & 0o7777, digest: hash };
+  }
+  const root = await observe(target, '');
+  entries.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  retainedInventoryShape(entries);
+  return {
+    ...root,
+    digest: root.type === 'directory' ? contentDigest(JSON.stringify(entries)) : root.digest,
+    entries,
+  };
+}
 async function retainedFileLive(context, item, recheck = false) {
   try {
     await unpublishedSourceGuard(context, item.fileRef);
-    await artifact(item.fileRef, context.request.allowedRoots);
-    const info = await lstat(path.join(item.fileRef.root, item.fileRef.path));
-    if ((info.mode & 0o7777) !== item.mode) fail('CONTENT_DRIFT', 'retained file mode changed');
+    if (!item.type || item.type === 'file') {
+      await artifact(item.fileRef, context.request.allowedRoots);
+      const info = await lstat(path.join(item.fileRef.root, item.fileRef.path));
+      if ((info.mode & 0o7777) !== item.mode) fail('CONTENT_DRIFT', 'retained file mode changed');
+    } else {
+      const observed = await retainedObservation(item);
+      if (
+        observed.type !== item.type ||
+        observed.mode !== item.mode ||
+        observed.digest !== item.fileRef.digest ||
+        (item.type === 'directory' && !same(observed.entries, item.entries))
+      )
+        fail('CONTENT_DRIFT', 'retained obstruction inventory changed');
+    }
   } catch (error) {
     if (recheck && ['AUTHORITY_MISMATCH', 'DIGEST_MISMATCH'].includes(error.code))
       fail('CONTENT_DRIFT', 'retained file bytes or untracked state changed');
     throw error;
   }
 }
-function productManifest(context, manifest, retained) {
-  const excluded = new Set(
+function retainedNames(context, retained) {
+  return new Set(
     retained
       .filter((item) => item.fileRef.root === context.request.execution.executionRoot)
-      .map((item) => item.fileRef.path),
+      .flatMap((item) =>
+        item.type === 'directory'
+          ? item.entries
+              .filter((entry) => entry.type !== 'directory')
+              .map((entry) => `${item.fileRef.path}/${entry.path}`)
+          : [item.fileRef.path],
+      ),
   );
+}
+function productManifest(context, manifest, retained) {
+  const excluded = retainedNames(context, retained);
   return manifest.filter((item) => !excluded.has(item[0]));
 }
 async function retainedCheckout(context, retained) {
-  const names = new Set(
-    retained
-      .filter((item) => item.fileRef.root === context.request.execution.executionRoot)
-      .map((item) => item.fileRef.path),
-  );
+  const names = retainedNames(context, retained);
   const status = await git(
     context.deps,
     context.request.execution.executionRoot,
@@ -2881,6 +3017,73 @@ async function removedExecution(context) {
   if (exists || (await worktrees(context.deps, context.root)).some((item) => item.root === root))
     fail('CONTENT_DRIFT', 'claimed cleanup did not remove the execution worktree');
 }
+// Completion may retain an owned checkout only through its sealed obstruction and actual owner record.
+async function retainedExecution(context, bound) {
+  const transition = context.transition;
+  if (
+    !context.handoff ||
+    context.handoff.mode !== 'owned-worktree' ||
+    context.request.execution.origin !== 'effective-flow-created' ||
+    !transition?.ownership ||
+    !transition.ownershipProof
+  )
+    fail('AUTHORITY_MISMATCH', 'retained cleanup needs captured worktree ownership');
+  async function liveCheckout() {
+    try {
+      await executionGuard(context.request, context.deps, context.handoff.head);
+    } catch (error) {
+      if (['ENOENT', 'REPOSITORY_MISMATCH'].includes(error.code))
+        fail('CONTENT_DRIFT', 'retained cleanup checkout no longer matches its handoff');
+      throw error;
+    }
+  }
+  await liveCheckout();
+  await verifyHandoff(context, context.handoff);
+  const seal = await sealed(context, context.handoff.seal);
+  const retained = await sealRetentions(context, seal);
+  const executionItems = retained.filter(
+    (item) => item.fileRef.root === context.request.execution.executionRoot,
+  );
+  if (!executionItems.length)
+    fail('MISSING_EVIDENCE', 'retained cleanup needs a sealed execution obstruction');
+  const original = await dataRead(context, transition.ownershipProof);
+  const origin = transition.ownership;
+  if (
+    origin.root !== context.root ||
+    origin.path !== `.effective-flow/worktree-runs/${original.recordId}.json`
+  )
+    fail('AUTHORITY_MISMATCH', 'retained cleanup needs the canonical captured lifecycle record');
+  const bytes = await safeRead(path.join(origin.root, origin.path), MAX_CONTROL_BYTES);
+  const ownership = { ...origin, digest: contentDigest(bytes) };
+  const current = await lifecycleProof(
+    context,
+    ownership,
+    context.authorization,
+    context.request.execution,
+    false,
+    true,
+  );
+  const immutable = ({ status, reason, updatedAt, ...identity }) => identity;
+  if (
+    !same(immutable(original), immutable(current)) ||
+    Date.parse(current.updatedAt) < Date.parse(original.updatedAt) ||
+    Date.parse(current.updatedAt) < Date.parse(current.createdAt)
+  )
+    fail('AUTHORITY_MISMATCH', 'retained lifecycle changed its immutable creation identity');
+  const reason = [
+    ...executionItems.map((item) => item.visibleReport),
+    ...(current.reason === null ? [] : [current.reason]),
+  ].join(' ');
+  const proof = { ownership, record: current, reason };
+  if (bound !== undefined && !same(await dataRead(context, bound), proof))
+    fail('CONTENT_DRIFT', 'retained cleanup lifecycle proof changed');
+  // Repeat owner observation after checkout and inventory checks; the receipt binds these exact bytes.
+  await noLifecycleLock(context);
+  if (!(await safeRead(path.join(origin.root, origin.path), MAX_CONTROL_BYTES)).equals(bytes))
+    fail('CONTENT_DRIFT', 'retained lifecycle changed during cleanup verification');
+  await liveCheckout();
+  return proof;
+}
 async function verifyHandoff(context, value, ignoreLive = false) {
   exact(value, [
     'protocol',
@@ -3166,6 +3369,22 @@ async function validateTerminalValue(context, value) {
     const receipt = await gateReceipt(context, ref);
     if (seen.has(receipt.gate)) fail('INCOMPLETE_GATES', 'duplicate gate receipt');
     seen.add(receipt.gate);
+    if (
+      value.status === 'DONE' &&
+      receipt.gate === 'cleanup' &&
+      context.request.execution.origin === 'effective-flow-created' &&
+      !checkout.worktreeRemoved
+    ) {
+      if (receipt.retainedOwnership === undefined)
+        fail(
+          'MISSING_EVIDENCE',
+          'retained owned checkout requires its actual cleanup lifecycle proof',
+        );
+      const proof = await dataRead(context, receipt.retainedOwnership);
+      if (!value.retainedWorktree?.reason.includes(proof.reason))
+        fail('MISSING_EVIDENCE', 'terminal must disclose its verified cleanup retention reason');
+    }
+
     if (
       [...ACCEPTANCE_GATES, ...POST_HANDOFF_GATES].includes(receipt.gate) &&
       !same(receipt.snapshot, checkout.snapshot) &&
@@ -3851,12 +4070,26 @@ async function operate(operation, input, context) {
       fail('MISSING_EVIDENCE', 'gate needs evidence');
     for (const ref of input.evidence)
       await evidence(ref, context.request, context, context.deps, true);
+    let retainedOwnership;
+    let retainedReason;
     if (
       context.handoff &&
       input.gate === 'cleanup' &&
       context.request.execution.origin === 'effective-flow-created'
-    )
-      await removedExecution(context);
+    ) {
+      let exists = true;
+      try {
+        await lstat(context.request.execution.executionRoot);
+      } catch (error) {
+        if (error.code === 'ENOENT') exists = false;
+        else throw error;
+      }
+      if (exists) {
+        const proof = await retainedExecution(context);
+        retainedOwnership = await data(context, 'cleanup-retained-ownership.txt', proof);
+        retainedReason = proof.reason;
+      } else await removedExecution(context);
+    }
     const observed = context.handoff ? null : await inspect(context);
     const basis = context.handoff ? context.handoff.snapshot : observed.snapshot;
     const remoteValidation = await remoteGate(context, input, basis);
@@ -3871,7 +4104,8 @@ async function operate(operation, input, context) {
       ...base(context),
       gate: input.gate,
       outcome: input.outcome,
-      reason: input.reason,
+      reason: retainedReason === undefined ? input.reason : `${input.reason} ${retainedReason}`,
+      ...(retainedOwnership === undefined ? {} : { retainedOwnership }),
       snapshot: basis,
       evidence: input.evidence,
       manifest,

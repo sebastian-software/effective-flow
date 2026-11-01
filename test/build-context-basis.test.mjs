@@ -62,4 +62,26 @@ test('source membership refuses an existing symlink ancestor rather than reading
   renameSync(path.join(root, 'nested'), path.join(outside, 'nested'));
   symlinkSync(path.join(outside, 'nested'), path.join(root, 'nested'));
   assert.throws(() => sourceMembership(root), /symlink|unsafe|directory/i);
+  assert.throws(() => checkoutBasis(root), /symlink|unsafe|directory/i);
 });
+
+for (const collector of ['sourceMembership', 'checkoutBasis'])
+  test(`${collector} records a tracked-directory replacement by a regular file`, (t) => {
+    const root = fixture(t);
+    const before = checkoutBasis(root);
+    rmSync(path.join(root, 'nested'), { recursive: true });
+    writeFileSync(path.join(root, 'nested'), 'replacement file\n');
+    if (collector === 'sourceMembership') {
+      const membership = sourceMembership(root);
+      assert.deepEqual(membership['nested/old/source.mjs'], ['missing']);
+      assert.equal(membership.nested[0], 'file');
+      assert.deepEqual(sourceMembership(root), membership);
+    } else {
+      const after = checkoutBasis(root);
+      assert.equal(after.head, before.head);
+      assert.equal(after.index, before.index);
+      assert.notEqual(after.workingTree, before.workingTree);
+      assert.notEqual(after.untracked, before.untracked);
+      assert.deepEqual(checkoutBasis(root), after);
+    }
+  });

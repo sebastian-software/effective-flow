@@ -40,6 +40,7 @@ export function checkoutBasis(root) {
           const path = resolve(root, name);
           let stat;
           try {
+            if (!existingSourceParents(resolve(path, '..'))) return [name, 'missing'];
             stat = lstatSync(path);
           } catch (error) {
             if (error.code === 'ENOENT') return [name, 'missing'];
@@ -70,7 +71,9 @@ function existingSourceParents(target) {
       if (error.code === 'ENOENT') return false;
       throw error;
     }
-    requireThat(stat.isDirectory() && !stat.isSymbolicLink(), 'unsafe source ancestor');
+    requireThat(!stat.isSymbolicLink(), 'unsafe source ancestor');
+    if (stat.isFile()) return false;
+    requireThat(stat.isDirectory(), 'unsafe source ancestor');
   }
   return true;
 }
