@@ -3,7 +3,7 @@ description: "Implements tooling-only changes: CI/CD, GitHub Actions, build and 
 tier: deep
 claude:
   color: cyan
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: danger-full-access
 ---

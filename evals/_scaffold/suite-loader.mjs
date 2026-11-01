@@ -151,6 +151,11 @@ export function validateSuite(suite, label) {
     .filter(([field, accepts]) => !(field in suite) || !accepts(suite[field]))
     .map(([field]) => field);
   if (!sealedEvidenceAccepted(suite)) problems.push('sealedEvidence');
+  if (
+    suite.verifyAdditionalEvidence !== undefined &&
+    typeof suite.verifyAdditionalEvidence !== 'function'
+  )
+    problems.push('verifyAdditionalEvidence');
   if (problems.length > 0) {
     throw new Error(
       `${label} is not a usable suite configuration: ${problems.join(', ')} missing or malformed`,

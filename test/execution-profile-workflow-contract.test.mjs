@@ -45,7 +45,7 @@ const flat = (text) => text.replace(/\s+/g, ' ');
 const contract = parseExecutionProfileContract(source('src/shared/execution-profiles.md'), {
   context: 'src/shared/execution-profiles.md',
 });
-const build = source('src/tools/build.md');
+const build = source('src/shared/build-delegated-run.md');
 const refactor = source('src/tools/refactor.md');
 const fragment = source('src/shared/pilot-measurement-workflow.md');
 
@@ -1817,7 +1817,7 @@ test('build finalizes a reserved record once and activates only automatically', 
     'Run the worktree-record exit self-check.',
     '8. If Phase 2 reserved a pilot record, finalize it exactly once per the loaded `pilot-measurement-workflow` fragment',
     '9. Summarize what was implemented',
-    '10. Emit the next-step block',
+    '10. Prepare the next-step block',
   );
   for (const operation of ['begin-baseline', 'activate', 'resume']) {
     assert.doesNotMatch(build, new RegExp(`\`${operation}\``), `build must not name ${operation}`);

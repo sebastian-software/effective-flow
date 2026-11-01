@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: read
+  # Re-read the original protected hosted attempt and its logs for bounded admission.
+  actions: read
 
 jobs:
   build:
@@ -60,12 +62,15 @@ jobs:
       # release pull request it is strict: that is the one point where the evidence has to
       # describe the build that actually ships, and a stale, absent or short corpus fails.
       - name: Behavioural eval evidence
+        id: behavioural
         env:
           # Read through the environment rather than expanded into the script with `${{ }}`: a
           # head-ref is attacker-controlled text on a fork pull request, and a direct expansion
           # would splice it into the command line before bash ever parses it.
           EVENT_NAME: ${{ github.event_name }}
           HEAD_REF: ${{ github.head_ref }}
+          BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB }}
+          BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256 }}
         run: |
           # release-please opens its pull request from
           # release-please--branches--develop--components--effective-flow. The prefix is matched
@@ -78,11 +83,12 @@ jobs:
           esac
 
           # One verdict per suite, every suite verified and reported even when an earlier one
-          # failed, so one stale corpus never hides another's verdict; the step fails if any did.
+          # failed, so one stale corpus never hides another's verdict. Only the explicitly pinned
+          # build-context absence may proceed to the separate blocking provisional disposition.
           # test/workflow-contracts.test.mjs pins this list to the suites under evals/, so a new
           # suite cannot be left out of the release gate unnoticed.
           status=0
-          for suite in merge-gate iterate next-steps; do
+          for suite in merge-gate iterate next-steps build-context; do
             verdict="$RUNNER_TEMP/$suite-eval-verify.txt"
             # The exit status is captured rather than inherited: the verdict belongs in the step
             # summary whether the command passed or failed, and piping into `tee` would report
@@ -97,9 +103,40 @@ jobs:
               cat "$verdict"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
-            if [ "$suite_status" -ne 0 ]; then status=$suite_status; fi
+            if [ "$suite_status" -ne 0 ]; then
+              if [ "$suite" = build-context ] && [ "$mode" = strict ] &&
+                 [ -n "$BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB" ] &&
+                 [ -n "$BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256" ]; then
+                # Preserve the failed FULL verdict above. A separate blocking step must verify
+                # the exact externally admitted candidate; neither a variable nor this branch
+                # admits missing evidence by itself. Every other suite remains strict blocking.
+                echo 'provisional_required=true' >> "$GITHUB_OUTPUT"
+              else
+                status=$suite_status
+              fi
+            fi
           done
           exit "$status"
+
+      - name: Build-context provisional PR581 release disposition
+        if: ${{ !cancelled() && steps.behavioural.outputs.provisional_required == 'true' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB }}
+          BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256 }}
+        run: |
+          verdict="$RUNNER_TEMP/build-context-provisional-release.txt"
+          disposition_status=0
+          node evals/build-context/provisional-release.mjs verify > "$verdict" 2>&1 || disposition_status=$?
+          cat "$verdict"
+          {
+            echo '### build-context provisional PR581 release disposition (FULL acceptance remains UNPROVEN)'
+            echo
+            echo '```'
+            cat "$verdict"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$disposition_status"
 
   shellcheck:
     name: Shellcheck

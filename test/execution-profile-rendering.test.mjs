@@ -19,6 +19,7 @@ import {
   extractFrontmatter,
   findProviderModelNames,
   getField,
+  getNestedArray,
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
   resolveAgentTier,
@@ -246,6 +247,32 @@ test('all base workers retain complete native metadata and independent native ar
       `${worker}: tier effort`,
     );
     assert.equal(tomlField(codex, 'model'), tier.codex.model, `${worker}: tier Codex model`);
+    const sourceTools = getNestedArray(extractFrontmatter(source), 'claude', 'tools', {
+      context: worker,
+    });
+    assert.equal(
+      getField(extractFrontmatter(claude), 'tools').replace(/ /g, ''),
+      sourceTools,
+      `${worker}: approved tools derive from base source`,
+    );
+    const tools = sourceTools.replace(/[\[\] ]/g, '').split(',');
+    assert.equal(
+      tools.filter((tool) => tool === 'SendMessage').length,
+      1,
+      `${worker}: exactly one reviewed parent messaging capability`,
+    );
+    assert.equal(
+      tools.some((tool) => /^(Agent|Task)(\(|$)/.test(tool)),
+      false,
+      `${worker}: enforced leaf boundary`,
+    );
+    for (const artifact of [claude, codex])
+      assert.match(
+        artifact,
+        /PROGRESS\/1 <dispatch>: <checkpoint>/,
+        `${worker}: generated compact checkpoint contract`,
+      );
+
     assert.equal(
       tomlField(codex, 'model_reasoning_effort'),
       tier.codex.reasoning_effort,
@@ -356,7 +383,14 @@ test('the adopted selector lines render the exact per-target Fast representation
   for (const [tool, bounds] of Object.entries(ADOPTED_RENDERED_PHASES)) {
     for (const [target, render] of Object.entries(expected)) {
       const where = `${target} ${tool}`;
-      const text = readFileSync(join(distRoot, target, `effective-flow/tools/${tool}.md`), 'utf8');
+      const text = readFileSync(
+        join(
+          distRoot,
+          target,
+          `effective-flow/${tool === 'build' ? 'shared/build-delegated-run.md' : `tools/${tool}.md`}`,
+        ),
+        'utf8',
+      );
       const from = text.indexOf(bounds.start);
       const to = text.indexOf(bounds.end, from + 1);
       assert.ok(from >= 0 && to > from, `${where}: the adopted phase must render`);
@@ -439,11 +473,17 @@ test('the executable baseline proof preserves every Quality native configuration
     'Native agents match 6055c94\n' +
       'Expected delta claude-deep-tier-effort: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
       'Expected delta codex-deep-tier-model: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
+      'Expected delta claude-parent-messaging-1: effective-flow-code-validator\n' +
+      'Expected delta claude-parent-messaging-2: effective-flow-frontend-reviewer, effective-flow-generic-product-reviewer, effective-flow-nodejs-reviewer, effective-flow-rust-reviewer\n' +
+      'Expected delta claude-parent-messaging-3: effective-flow-code-documenter\n' +
+      'Expected delta claude-parent-messaging-4: effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-model-tiers: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-lean-orchestrator: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-subagent-progress: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-compact-checkpoint: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-model-selection: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
+      'Expected delta delegation-mandate-parent-chain-progress: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
+      'Expected delta delegation-mandate-conditional-checkpoint: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-triviality-scope: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
 });
@@ -542,7 +582,7 @@ test('route policy, authorization, eligibility, and generated-name errors fail b
         join(checkout, 'src/shared/goal-completion.md'),
         '\n{{AGENT_PROFILE:nodejs-implementer:fast}}\n',
       ),
-    /Fast-profile references are allowed only in tools\/build\.md and tools\/refactor\.md/,
+    /Fast-profile references are allowed only in the initial implementation phases of shared\/build-delegated-run\.md and tools\/refactor\.md/,
   );
 });
 
@@ -552,7 +592,7 @@ test('profile tokens are accepted only in the initial implementation sections', 
   // so the case tests token acceptance rather than the tool's current headroom.
   assertMutatedBuildSucceeds('build-phase-2-profile-token', (checkout) => {
     replaceOnce(
-      join(checkout, 'src/tools/build.md'),
+      join(checkout, 'src/shared/build-delegated-run.md'),
       '### Phase 2: Implementation\n',
       `### Phase 2: Implementation\n\n${token}\n`,
     );
@@ -582,7 +622,7 @@ test('profile tokens are accepted only in the initial implementation sections', 
     'build-validation-profile-token',
     (checkout) =>
       replaceOnce(
-        join(checkout, 'src/tools/build.md'),
+        join(checkout, 'src/shared/build-delegated-run.md'),
         '### Phase 5: Validation\n',
         `### Phase 5: Validation\n\n${token}\n`,
       ),
@@ -822,6 +862,70 @@ test('spawn-site markers and the model-tiers fragment render per target', () => 
       assert.match(
         tiers,
         /`model: haiku`, `effort: low` \| `model: gpt-5\.6-luna`, `reasoning_effort: low`/,
+      );
+    }
+  }
+});
+
+// Invariant: the developer coverage matrix names every actually generated role/variant,
+// rather than freezing artifact counts or treating static generation as host activation.
+test('documented role variants reconcile with all generated native and portable artifacts', () => {
+  const coverage = readFileSync(
+    join(ROOT_DIR, 'docs/developer-guide/subagent-progress-coverage.md'),
+    'utf8',
+  );
+  const table = coverage
+    .split('<!-- coverage-roles:start -->')[1]
+    .split('<!-- coverage-roles:end -->')[0];
+  const rows = table
+    .split('\n')
+    .filter((line) => /^\|\s*`/.test(line))
+    .map((line) =>
+      line
+        .split('|')
+        .slice(1, -1)
+        .map((cell) => cell.trim()),
+    );
+  for (const [target, column, directory, extension] of [
+    ['claude', 2, 'agents', '.md'],
+    ['codex', 3, 'agents', '.toml'],
+    ['portable', 4, 'effective-flow/workers', '.md'],
+  ]) {
+    const declared = rows
+      .flatMap((row) => {
+        const base = `effective-flow-${row[0].replaceAll('`', '')}`;
+        return [
+          base,
+          ...(row[column].includes('fast') ? [`${base}-fast`] : []),
+          ...(row[column].includes('mechanical/deep')
+            ? [`${base}-tier-mechanical`, `${base}-tier-deep`]
+            : []),
+        ];
+      })
+      .sort();
+    const actual = readdirSync(join(distRoot, target, directory))
+      .filter((file) => file.endsWith(extension))
+      .map((file) => basename(file, extension))
+      .sort();
+    assert.deepEqual(
+      actual,
+      declared,
+      `${target}: coverage and generated role inventories agree exactly`,
+    );
+    for (const name of actual) {
+      const artifact = readFileSync(
+        join(distRoot, target, directory, `${name}${extension}`),
+        'utf8',
+      );
+      assert.match(
+        artifact,
+        /PROGRESS\/1 <dispatch>: <checkpoint>/,
+        `${target}/${name}: compact leaf context`,
+      );
+      assert.doesNotMatch(
+        artifact,
+        /^## Sparse subagent progress$/m,
+        `${target}/${name}: leaf never eagerly loads orchestration owner`,
       );
     }
   }

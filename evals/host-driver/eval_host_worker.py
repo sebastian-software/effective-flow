@@ -20,7 +20,8 @@ import time
 # CLI execution must leave the source checkout untouched.
 sys.dont_write_bytecode = True
 
-from eval_driver_runtime import registered_profile, process_gone, save, sha
+from eval_driver_runtime import (registered_profile, process_gone, save, sha, read_bound_json,
+                                 reserve_launch, validate_launch_gate, recheck_reservation, JOB_LIMIT)
 
 
 def now():
@@ -37,6 +38,18 @@ def assert_pins(job):
         if sha(filename) != digest:
             raise ValueError('pinned input changed: ' + filename)
 
+
+
+def assert_first_stage(job):
+    if 'firstStage' not in job:
+        return
+    helper = str(Path(__file__).resolve().with_name('eval_first_stage.py'))
+    expected = job['pins'].get(helper)
+    if (not isinstance(expected, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', expected)
+            or sha(helper) != expected):
+        raise ValueError('first-stage helper actual bytes are not externally job-pinned')
+    from eval_first_stage import validate_worker_stage
+    validate_worker_stage(job)
 
 def watchdog(profile, root, owner_pid, bridge_pid, coordinator_pid, timeout, model_timeout, read_fd, directory):
     """Only an actual member may stop its own registered group after owner loss."""
@@ -149,8 +162,10 @@ def block_launches(job, cancellation=None):
         # All bridges open the pipe before qualification. Its kernel buffer
         # remains writable when the artifact filesystem cannot publish the gate.
         cancel_launches(cancellation)
-        gate = open(job['launchGatePath'], 'rb')
+        gate_fd = os.open(job['launchGatePath'], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
+        gate = os.fdopen(gate_fd, 'rb')
         fcntl.flock(gate, fcntl.LOCK_EX)
+        validate_launch_gate(job, gate.fileno())
         # The existing gate's owner-write bit is the shared launch permission.
         # Revoking it needs no new artifact, even when marker creation fails.
         os.fchmod(gate.fileno(), 0o400)
@@ -172,9 +187,31 @@ def block_launches(job, cancellation=None):
                 os.close(fd)
 
 
-def execute_job(job, *, fixture=False):
+def admission_cancelled(job, gate_fd, cancellation):
+    return (not (os.fstat(gate_fd).st_mode & 0o200)
+            or os.path.lexists(job['blockerPath'])
+            or bool(select.select([cancellation[0]], [], [], 0)[0]))
+
+
+def save_refusal(job, job_digest, state):
+    directory = Path(job['artifactDir'])
+    task, task_digest = read_bound_json(directory / 'task.json')
+    if task != job['task']:
+        raise ValueError('refusal task changed')
+    save(directory / 'launch-refusal.json', {'kind': 'effective-flow-host-launch-refusal',
+         'jobSha256': job_digest, 'taskSha256': task_digest,
+         'task': {k: task[k] for k in ('suite', 'scenario', 'slot')}, 'state': state})
+
+
+def execute_job(job, *, fixture=False, job_path=None, job_digest=None):
+    if job_path is None or not isinstance(job_digest, str) or not re.fullmatch(r'sha256:[0-9a-f]{64}', job_digest):
+        raise ValueError('execution requires its authenticated job file and external digest')
+    authenticated, _ = read_bound_json(job_path, expected_digest=job_digest, maximum=JOB_LIMIT)
+    if json.dumps(authenticated, sort_keys=True) != json.dumps(job, sort_keys=True):
+        raise ValueError('authenticated job changed')
     cancellation = None
     try:
+        assert_first_stage(job)
         directory, root = Path(job['artifactDir']), Path(job['profilesRoot'])
         home, codehome = Path(os.environ['HOME']), Path(os.environ['CODEX_HOME'])
         profile_path = home.parent
@@ -182,15 +219,15 @@ def execute_job(job, *, fixture=False):
         if type(coordinator_pid) is not int or coordinator_pid <= 1:
             raise ValueError('job requires a coordinator PID')
         record = registered_profile(profile_path, root, own_group=True)
-        if not fixture:
-            cancellation = open_cancellation(job)
+        cancellation = open_cancellation(job)
         if home != profile_path / 'home' or codehome != profile_path / 'codex-home':
             raise ValueError('runner did not supply its recorded homes')
         save(directory / 'runner-profile.json', {'profilePath': str(profile_path),
              'childPgid': record['childPgid'], 'ownerPid': record['ownerPid'], 'bridgePid': os.getpid()})
-        if not fixture:
-            assert_pins(job)
-        fixture_only = fixture or bool(job.get('fixtureTools'))
+        assert_pins(job)
+        if type(job.get('fixtureTools', False)) is not bool:
+            raise ValueError('fixtureTools must be a boolean')
+        fixture_only = fixture or job.get('fixtureTools', False)
         if job.get('authFile'):
             # The strict verifier allows this link only, not HOME/.codex/auth.json.
             (codehome / 'auth.json').symlink_to(job['authFile'])
@@ -222,6 +259,8 @@ def execute_job(job, *, fixture=False):
                       'codexHome': str(codehome), 'stdinPath': job.get('stdinPath'),
                       'env': {'HOME': str(home), 'CODEX_HOME': str(codehome), 'PWD': job['cwd']}}
             save(directory / 'launch.json', launch)
+            qualification = {'qualificationDigest': job['qualificationDigest'],
+                             'profile': job['task']['profile']}
         else:
             launch = launch_record(job, home, codehome)
             save(directory / 'launch.json', launch)
@@ -232,6 +271,7 @@ def execute_job(job, *, fixture=False):
             (directory / 'qualification.stderr.log').write_text(q.stderr)
             if q.returncode:
                 block_launches(job, cancellation)
+                save_refusal(job, job_digest, 'qualification-refused-before-launch')
                 save(directory / 'worker-result.json', {'state': 'qualification-refused-before-launch',
                      'actualModelStarted': False, 'qualificationExit': q.returncode,
                      'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
@@ -241,36 +281,60 @@ def execute_job(job, *, fixture=False):
                     or qualification['profile'] != job['task']['profile']):
                 raise ValueError('qualification does not match pinned task')
             assert_pins(job)
-            save(directory / 'launch-audit.json', {'at': started,
-                 'configDigest': job['pins'][job['configFile']], 'qualification': qualification,
-                 'launch': launch, 'stdinSha256': sha(launch['stdinPath']), 'nonForked': True,
-                 'taskInput': 'rendered-prompt-only', 'operatorSha256': job['pins'][job['operator']],
-                 'driverSha256': job['driverDigest'], 'pins': job['pins'],
-                 'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
+        save(directory / 'launch-audit.json', {'at': started,
+             'configDigest': job['pins'][job['configFile']], 'qualification': qualification,
+             'launch': launch, 'stdinSha256': sha(launch['stdinPath']), 'nonForked': True,
+             'taskInput': 'rendered-prompt-only', 'operatorSha256': job['pins'][job['operator']],
+             'driverSha256': job['driverDigest'], 'pins': job['pins'],
+             'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
         stdin = open(launch['stdinPath'], 'rb') if launch.get('stdinPath') else subprocess.DEVNULL
         try:
             with (directory / 'stdout.jsonl').open('xb') as out, (directory / 'stderr.log').open('xb') as err:
                 # No session/group creation: bridge, watchdog and model inherit the
                 # supervisor group published by the original runner before launch.
-                gate = open(job['launchGatePath'], 'rb') if not fixture else None
+                gate_fd = os.open(job['launchGatePath'], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
                 try:
-                    if gate:
-                        fcntl.flock(gate, fcntl.LOCK_EX)
-                        if (not (os.fstat(gate.fileno()).st_mode & 0o200)
-                                or Path(job['blockerPath']).exists()
-                                or select.select([cancellation[0]], [], [], 0)[0]):
-                            save(directory / 'worker-result.json', {'state': 'not-launched-after-blocker',
-                                 'actualModelStarted': False,
-                                 'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
-                            return 1
+                    fcntl.flock(gate_fd, fcntl.LOCK_EX)
+                    validate_launch_gate(job, gate_fd)
+                    if admission_cancelled(job, gate_fd, cancellation):
+                        save_refusal(job, job_digest, 'not-launched-after-blocker')
+                        save(directory / 'worker-result.json', {'state': 'not-launched-after-blocker',
+                             'actualModelStarted': False,
+                             'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
+                        return 1
+                    assert_pins(job)
+                    assert_first_stage(job)
+                    record = registered_profile(profile_path, root, own_group=True)
+                    consumption_digest = reserve_launch(job, job_path, job_digest, launch, profile_path,
+                                                        record, fixture_only=fixture_only)
+                    # fsync may take long enough for cancellation or pinned-input changes.
+                    assert_pins(job)
+                    assert_first_stage(job)
+                    current = registered_profile(profile_path, root, own_group=True)
+                    if current != record:
+                        raise ValueError('registered runner profile changed during reservation')
+                    recheck_reservation(job, consumption_digest)
+                    validate_launch_gate(job, gate_fd)
+                    if admission_cancelled(job, gate_fd, cancellation):
+                        return 1
+                    if 'firstStage' in job:
+                        # Full corpus checks and durable sync consume the original verifier TTL.
+                        # Its trusted expiry is authority; never recalculate or refresh the TTL.
+                        expires = qualification.get('expiresAt')
+                        if (not isinstance(expires, str) or not re.fullmatch(
+                                r'[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z', expires)):
+                            raise ValueError('first-stage qualification lacks original verifier expiry')
+                        expiry = datetime.datetime.fromisoformat(expires.replace('Z', '+00:00'))
+                        if datetime.datetime.fromisoformat(now()) >= expiry:
+                            raise ValueError('first-stage original qualification expired before launch')
                     os.write(write_fd, b'model\n')
                     process = subprocess.Popen(launch['argv'], stdin=stdin, stdout=out, stderr=err,
                                                cwd=launch['cwd'], env=dict(os.environ, **launch['env']))
                 finally:
-                    if gate:
-                        gate.close()
+                    os.close(gate_fd)
                 save(directory / 'process-start.json', {'pid': process.pid, 'startedAt': started,
-                     'actualModelStarted': True, 'childPgid': os.getpgrp(), 'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
+                     'consumptionSha256': consumption_digest, 'actualModelStarted': True,
+                     'childPgid': os.getpgrp(), 'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
                 code = process.wait()
         finally:
             if stdin != subprocess.DEVNULL:
@@ -302,9 +366,8 @@ def main(argv=None):
     parser.add_argument('--job', type=Path, required=True)
     parser.add_argument('--digest', required=True)
     args = parser.parse_args(argv)
-    if sha(args.job) != args.digest:
-        parser.error('production job requires its exact --digest')
-    return execute_job(json.loads(args.job.read_text()))
+    job, _ = read_bound_json(args.job, expected_digest=args.digest, maximum=JOB_LIMIT)
+    return execute_job(job, job_path=args.job, job_digest=args.digest)
 
 
 if __name__ == '__main__':

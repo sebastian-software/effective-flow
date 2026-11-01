@@ -3,7 +3,7 @@ description: "Runs a specialized backend and CLI review: API design, security, p
 tier: deep
 claude:
   color: red
-  tools: [Read, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Glob, Grep, Skill]
 codex:
   sandbox_mode: read-only
 ---
