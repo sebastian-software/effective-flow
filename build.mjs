@@ -124,6 +124,10 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'build-run.mjs',
+  'build-run-core.mjs',
+  'protected-validation-protocol.mjs',
+  'protected-validation-core.mjs',
   'delegation-envelope.mjs',
   'delegation-envelope-core.mjs',
   'diff-baseline.mjs',
@@ -1130,7 +1134,7 @@ try {
   // selector lines.
   const profilePhaseAuthorizations = new Map([
     [
-      'tools/build.md',
+      'shared/build-delegated-run.md',
       {
         phase: 'Build Phase 2',
         startHeading: '### Phase 2: Implementation',
@@ -1170,7 +1174,7 @@ try {
     const authorization = profilePhaseAuthorizations.get(source.context);
     if (!authorization) {
       throw new Error(
-        `Fast-profile references are allowed only in tools/build.md and tools/refactor.md; found one in ${source.context}`,
+        `Fast-profile references are allowed only in the initial implementation phases of shared/build-delegated-run.md and tools/refactor.md; found one in ${source.context}`,
       );
     }
 
@@ -1340,7 +1344,7 @@ try {
   // shipped once per harness as shared/<name>.md (see the per-harness loop).
   const lazyFragments = new Set();
   const projectRoutingConsumers = new Set([
-    'tools/build.md',
+    'shared/build-delegated-run.md',
     'tools/fix.md',
     'tools/refactor.md',
     'tools/review.md',
@@ -1509,6 +1513,10 @@ try {
   // --- Documentation-sync consumer guard ---
   // Keeping documentation in sync is a fixed phase of every implementation
   // tool. Removing the eager include from any consumer fails the build.
+  sourceIncludes.set(
+    'shared/build-delegated-run.md',
+    collectIncludeNames(readFileSync(join(SHARED_DIR, 'build-delegated-run.md'), 'utf8')),
+  );
   assertDocumentationSyncConsumers(sourceIncludes);
 
   for (const file of agentFiles) {
@@ -2436,34 +2444,34 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    iterate: 1648,
-    setup: 1524,
-    'apply-review': 1053,
-    'apply-issues': 973,
-    'merge-gate': 888,
-    cleanup: 833,
-    refactor: 957,
-    deliver: 800,
-    'plan-issue': 789,
-    'issue-buddy': 484,
-    review: 777,
-    plan: 767,
+    iterate: 1668,
+    setup: 1530,
+    'apply-review': 1069,
+    'apply-issues': 981,
+    'merge-gate': 901,
+    cleanup: 839,
+    refactor: 965,
+    deliver: 811,
+    'plan-issue': 799,
+    'issue-buddy': 487,
+    review: 787,
+    plan: 787,
     'apply-review-commit-mechanics': 711,
-    maintain: 711,
-    docs: 649,
-    build: 658,
-    apply: 549,
-    'apply-plan': 558,
-    investigate: 527,
+    maintain: 717,
+    docs: 655,
+    build: 215,
+    apply: 557,
+    'apply-plan': 566,
+    investigate: 536,
     retro: 215,
-    fix: 544,
-    'plan-review': 505,
-    pr: 496,
-    'concept-review': 403,
+    fix: 554,
+    'plan-review': 521,
+    pr: 498,
+    'concept-review': 409,
     'apply-review-remote': 382,
-    concept: 396,
-    commit: 224,
-    'open-plans': 137,
+    concept: 408,
+    commit: 235,
+    'open-plans': 146,
     'pr-review': 38,
     version: 38,
   };

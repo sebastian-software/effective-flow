@@ -551,7 +551,13 @@ test('skill and workflow enums match the tools that produce branches and reports
     .map((name) => name.slice(0, -3));
   const includes = (tool, fragment) =>
     new RegExp(`\`\`\`(?:lazy-)?include\\n${fragment}\\n`).test(
-      readFileSync(new URL(`src/tools/${tool}.md`, ROOT), 'utf8'),
+      readFileSync(
+        new URL(
+          tool === 'build' ? 'src/shared/build-delegated-run.md' : `src/tools/${tool}.md`,
+          ROOT,
+        ),
+        'utf8',
+      ),
     );
   // An eager or lazy include counts. A branch producer embeds worktree-integration (step 4 names branches) or is `deliver`, which
   // names `<prefix>/deliver/<slug>` itself (deliver.md step 3.2).

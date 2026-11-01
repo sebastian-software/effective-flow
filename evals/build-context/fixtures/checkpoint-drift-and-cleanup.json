@@ -1,0 +1,19 @@
+{
+  "name": "checkpoint-drift-and-cleanup",
+  "description": "Execute the actual approved Feature workflow against local artifacts; fixture summaries cannot prove completion.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "variants": ["head-drift", "tracked-drift", "untracked-drift", "interrupted", "removed-checkout"],
+  "artifacts": {
+    "docs/plan/feature.md": "# Normalize feature labels\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature (`effective-flow build`)\n\n## Requirement\n\nImplement slug(value): trim Unicode whitespace, lowercase ASCII letters, replace each run of whitespace or underscores by one hyphen, and preserve existing hyphens. Reject non-string input with TypeError. Add user documentation and focused tests. \n\n## Acceptance criteria\n\n- All independent test/acceptance.test.mjs checks pass unchanged.\n- README documents the exported behavior, including invalid input.\n- Review and validation run independently at their required tiers.\n- Validate after corrections, archive this plan as Implemented, and finish with a clean committed fixture checkout.\n- No merge; all publication goes only to the local forge stub and requires the existing consent gate.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n",
+    "src/slug.mjs": "export function slug(value) { throw new Error('Not implemented'); }\n",
+    "test/acceptance.test.mjs": "import test from 'node:test';\nimport assert from 'node:assert/strict';\nimport {slug} from '../src/slug.mjs';\ntest('independent label normalization acceptance',()=>{\n assert.equal(slug('  HeLLo__ world  '),'hello-world');\n assert.equal(slug('x--y'),'x--y');\n assert.equal(slug('a\\tb\\nc'),'a-b-c');\n assert.equal(slug('  '),'');\n assert.throws(()=>slug(null),TypeError);\n assert.throws(()=>slug(42),TypeError);\n});\n",
+    "package.json": "{\n  \"type\": \"module\",\n  \"scripts\": {\n    \"test\": \"node --test\",\n    \"agent:check\": \"node --check src/slug.mjs\"\n  }\n}\n"
+  }
+}

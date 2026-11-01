@@ -3,7 +3,7 @@ description: "Thin validation adapter: applies the central effective-delivery sk
 tier: standard
 claude:
   color: magenta
-  tools: [Read, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Bash, Glob, Grep, Skill]
 codex:
   sandbox_mode: workspace-write
 ---

@@ -126,6 +126,10 @@ central-reasoning-delegation
 3. If there is no argument: ask for the product idea in one question.
 4. Everything else is the free-text product idea and enters Phase 1.
 
+Returning concept-review keeps this run's overview; eligible cross-agent relays use their own
+immediate-parent context under `shared/subagent-progress.md`. Same-session calls integrate
+directly; artifact and review completion rules remain unchanged.
+
 ### Phase 1: Context
 
 1. Read `AGENTS.md` and the repository structure when present.

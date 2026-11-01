@@ -5,9 +5,29 @@ host runner. It is a model-hosting driver, not a suite evaluator: the suite oper
 tasks and owns qualification and sealing; the driver starts each already-qualified slot, records
 local process evidence, and stops the cohort on the first unsafe or invalid result.
 
-The current implementation supports the future external qualified-round protocol. It does not
-ship the full host qualification, and it does not depend on an unmerged verifier. A successful
-fixture run is local process evidence only.
+The fixed local round contains 155 slots: 9 merge-gate, 7 iterate, and 15 next-steps scenarios,
+each with five independent runs (45/35/75). It does not establish native-executor acceptance.
+A successful fixture run is local process evidence only.
+
+## Pinned toolchain and fresh qualification
+
+The [host verifier](../_scaffold/host-qualification.mjs) pins Codex CLI `0.163.0` from the official
+[`rust-v0.163.0` release](https://github.com/openai/codex/releases/tag/rust-v0.163.0), including
+both archives and their executable members:
+
+| Release asset                                      | Executable member                           | Verifier SHA-256 keys           |
+| -------------------------------------------------- | ------------------------------------------- | ------------------------------- |
+| `codex-aarch64-apple-darwin.tar.gz`                | `codex-aarch64-apple-darwin`                | `binaryArchive`, `binary`       |
+| `codex-code-mode-host-aarch64-apple-darwin.tar.gz` | `codex-code-mode-host-aarch64-apple-darwin` | `companionArchive`, `companion` |
+
+The four source-owned hashes bind static release provenance only. They do not supply a reviewed
+operator pin, current model evidence, or a qualified native host. Before every launch, follow the
+[coordinator contract](../merge-gate/README.md#2-launch-fresh-sessions-at-the-host-boundary):
+all four actual probe modes (normal merge-gate, negative nesting, iterate, and next-steps) must
+remain younger than 24 hours, with the exact argv, environment, source/root isolation, permissions,
+write denials, and operator integrity preserved. Fixtures and archive hashes cannot replace them.
+Actual `0.163.0` native command-display compatibility remains unproven until fresh runtime evidence
+satisfies the retained strict matcher; an unknown display is refused.
 
 ## Inputs and layout
 
@@ -37,7 +57,7 @@ source, output root, and task attempt roots must remain disjoint. The caller mus
 output root before copying the config and receiving prepared manifests; the driver creates only
 the `outputRoot/cohorts` directory and never reuses an old output root. Prepared manifests belong
 under it as `prepared-merge-gate.json`,
-`prepared-iterate.json`, and `prepared-next-steps.json`, with exactly 40, 35, and 75 tasks. Each
+`prepared-iterate.json`, and `prepared-next-steps.json`, with exactly 45, 35, and 75 tasks. Each
 task must carry the approved suite profile, a fresh attempt root, a rendered prompt and matching
 metadata digest, and the same frozen source identity.
 
@@ -139,3 +159,91 @@ pnpm test
 
 The JavaScript test wrapper skips these POSIX process tests on Windows. No model, network call, or
 credential read is part of this documentation or test check.
+
+
+## Private D2 accounting candidate
+
+Before the model heartbeat or Popen, the bridge exclusively creates an immutable
+`launch-consumption.json` under the existing launch gate. Its exact job digest comes
+from the coordinator's authenticated `--digest` argument. Task, job, launch and
+audit prerequisites, the receipt file, and every canonical directory ancestor
+through `/` must successfully synchronize before admission. Any write, sync,
+identity, or close failure refuses launch; a created receipt is never removed,
+replaced, refunded, or reused. This is an OS fsync boundary, not physical-media or
+sudden-power-loss qualification.
+
+The coordinator reports `chargedRoots`, `reservedRoots`,
+`reservationUnknownRoots`, and `accountingComplete` separately from observed
+`started` and proven zero-charge `notLaunched`. A missing start marker after
+possible admission means `reservation-unknown`, charge one, and
+`actualModelStarted: null`. Readable receipt bytes alone cannot prove the
+file/directory sync and close boundary completed. Only a valid receipt-bound
+start observation permits the `reserved` projection; this conservatively keeps
+successfully persisted but unobserved attempts unknown. Arbitrary worker output
+cannot turn it into false or refund consumption. Unknown accounting or closure
+blocks acceptance. Existing completion, cleanup, watchdog and sealing checks
+remain mandatory. This local candidate supplies no stages, cross-root budget,
+resume, retry, grant, provider execution, or B approval.
+
+## Private first-stage adapter
+
+`eval_first_stage.py` is a separate fixed first-stage entry. Its default is read-only
+static validation: it authenticates an externally pinned full155 corpus certificate
+and a separately externally pinned grant, then reports only the selected five
+`iterate/duplicated-control-line-aborts` slots in order. It creates no Driver,
+process, profile, FIFO or output. Static source and qualification references do
+not attest a current clean Git revision, launch qualification or the original
+24-hour TTL; those remain execute-time checks of the original coordinator and
+operator. No real corpus, grant or execution command is supplied here.
+
+Corpus v1 (`effective-flow-host-first-stage-corpus`) has exactly `schemaVersion`,
+`kind`, `source`, `namespace`, `config`, `operator`, `toolchain`, `qualification`,
+`driverFiles`, and `suites`. The source is `{root, head, tree}`; the namespace is
+`{outputRoot, outputIdentity, profilesRoot, profilesIdentity, cohortsRoot}`, with
+owned directory identities `{dev, ino}` and the original `outputRoot/cohorts`.
+Every file reference is exactly `{path, sha256}`. The toolchain is `{node, python,
+artifacts}`, with the original six config artifact references; qualification is
+`{bundle, policy}`. The nine driver files include this adapter. The three suites
+are ordered `merge-gate`, `iterate`, `next-steps`; each contains `name`, `registry`,
+`suiteConfig`, `prepared`, `roundManifest`, `profile`, `tasks`, `immutableInputs`.
+Every task record is `{task, prompt, runMetadata, state, buildIdentity}` and retains
+the complete original task, original identity maps and all immutable input bytes.
+Registry names come from the pinned names-only SCENARIOS source, never JS import
+or evaluation. All registry members × slots 1–5 must match, including the original
+pending state of the unselected 150. Corpus bytes are limited to 4 MiB, grants to
+16 KiB and corpus reference occurrences to 16,384. Worker jobs remain at 1 MiB.
+
+The closed grant v1 (`effective-flow-host-first-stage-grant`) binds `corpus`,
+`config`, `namespace`, fixed `stageId`, fixed `orderedTasks`,
+`maximumChargedRoots: 5`, `concurrency: 1`, `allowRetry: false`, `allowResume: false`,
+`allowContinuation: false`, and `fullCorpusAcceptance: false`, plus schema/kind.
+It authorizes only `iterate-duplicated-control-line-aborts-slots-1-5-v1` and its
+five canonical original artifact paths. A relocated identical grant before the
+first admission remains bound to that same namespace; it cannot create a second
+cohort admission or budget. Changed corpus paths, roots, inode identities, config,
+stage ID, ordering or membership refuse. The original exclusive cohort creation
+is never repaired, removed or reused, including after failure or interruption.
+
+The optional coordinator `first_stage` context is absent for legacy callers;
+present-null or malformed data refuses. Its authenticated worker `firstStage`
+object contains only `schemaVersion`, `corpus`, `grant`, `ordinal`. The worker
+checks actual pinned helper bytes before loading it and reauthenticates context
+before qualification, under the final gate before D2 reservation, and after its
+fsync before heartbeat/Popen. No receipt refund or retry follows a refusal.
+Original D1 shutdown and D2 durability/accounting remain in force.
+
+Execution submits one future at a time to a single-worker executor. Main-thread
+interrupt polling preserves D1 blocking. Any failed seal, finding, native error,
+uncertain accounting or incomplete cleanup stops further admission. Earlier
+selected slots must retain their genuine original seal and D2 closure; future
+selected and unselected slots must remain pending. Original manifest, state,
+build identity, prompt and metadata stay immutable throughout legitimate sealing.
+The only result is `first-stage-summary.json`: five reconciled outcomes,
+`fullCorpusAccepted: false`, `remainingTasks: 150`,
+`continuationAuthorized: false`. It never executes the remaining 150.
+
+This is an approved-entry/namespace limit, not an OS-wide or malicious-same-UID
+limit, and supplies no hard descendant/request/token/cost cap. Local fixture
+results are not native qualification. The exact historical automatic-review
+rejection wording remains unknown; a later real execution needs a separately
+reviewed concrete request and execution authority.

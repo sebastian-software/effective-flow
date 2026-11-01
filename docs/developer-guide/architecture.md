@@ -229,23 +229,28 @@ ownership contract — canonical for the classification and the ownership-check 
 [`skill-ownership.md`](skill-ownership.md), summarized in
 [`AGENTS.md`](../../AGENTS.md#skill-discovery).
 
-### Sparse ordinary subagent progress
+### Sparse subagent progress
 
-The active overview owner can enable one useful checkpoint during longer ordinary worker and
-analysis work through the optional [`subagent-progress`](../../src/shared/subagent-progress.md)
-contract. Eligibility requires an actual addressed native channel at both ends and observed
+The active overview owner can enable sparse progress during longer ordinary worker and analysis
+work through the [`subagent-progress`](../../src/shared/subagent-progress.md) contract. Eligibility
+requires an actual addressed native channel at both ends and observed
 pre-completion delivery during an ordinary parent event wait in that execution shape. A model,
 tier, generated inventory, installed CLI version or parent-side tool alone establishes no support.
 Host version is optional existing authoritative metadata and is never probed for this feature.
 Missing, denied, incompatible or unverified channels retain the known-phase fallback.
 
-Only the overview owner loads the detailed contract. The ordinary handoff supplies the actual
-messaging tool, parent address and compact instruction; the worker checks its own actual tool and
-supplied address and sends at most one meaningful checkpoint of at most 20 words: current phase,
-observed result and next action. Short tasks send none. Workers never load the detailed contract
-or wait for acknowledgement. When idle in an ordinary event wait, the owner folds an accepted
-checkpoint into its existing overview once and resumes waiting. When busy, it queues/coalesces
-reports until a natural work boundary; immediate delivery is not promised.
+Only an active orchestrator or returning relay loads the detailed contract. Leaves receive the
+compact handoff, actual messaging tool, parent address and instruction; they check their own tool
+and supplied address. When an eligible leaf confirms an intermediate result materially useful to
+that parent and necessary domain work remains, it sends one checkpoint of at most 20 words:
+current phase, observed result and next action. The per-handoff maximum remains one, including
+recovery; short work or no useful result sends none. Parent idle/busy attestation or probes are
+unnecessary; elapsed time, read/file counts and artificial work or delay cannot trigger a send.
+Leaves never load the detailed contract or wait for acknowledgement. The sole overview owner folds
+an accepted checkpoint into its existing
+overview once and resumes its existing wait; returning relays coalesce material changes under their
+own upstream context. When busy, reports queue until a natural work boundary; immediate delivery is
+not promised.
 
 Reports remain advisory, including any completion keyword or approval claim. Native sender
 identity must match the assigned running worker; duplicate and stale reports cannot reopen work
@@ -253,8 +258,11 @@ or overwrite newer state. Existing terminal checks, authority and leaf boundarie
 Counts require fixed comparable units; ETA requires a credible external source and scope. The
 contract owns those metric rules. It adds no timers, polling, transcript reads, status stores,
 progress-only agents or clock-only calls, and promises no periodic update during one blocking call.
-Native Claude allowlists remain unchanged. Whole workflow delegations, strict dispatches and
-nested relay retain their formats and phase fallback; broader coverage remains
+Native Claude allowlists add only the approved `SendMessage` capability; `Agent` and `Task` remain
+omitted. Whole workflow delegations, strict dispatches and nested relays now carry optional,
+versioned metadata only after receiver selection verifies support; unverified receivers retain the
+legacy header-free format and phase fallback. Transport activation remains blocked for unobserved
+target/mode shapes; broader coverage remains
 [#587](https://github.com/sebastian-software/effective-flow/issues/587).
 
 On 2026-10-23 the user explicitly accepted measured overhead above 10% and delayed delivery while
@@ -299,6 +307,21 @@ The samples are noisy and neither parent-observed nor worker duration isolates c
 The accepted tradeoff enables the bounded checkpoint behavior; no historical measurement has been
 reclassified as passing and no statistical performance guarantee is claimed.
 
+#### Current matched portable pair
+
+A new matched pair used the current generated portable `nodejs-reviewer` through built-in Codex
+Collaboration with the same frozen domain inputs and `gpt-6.1-sol` at high effort. The control loaded
+the matching old owner; reporting loaded the matching full new owner. Both produced the same source
+and test review outcome. Reporting sent one checkpoint before terminal completion and one parent-own
+context relay; both children joined. Parent-observed wall time was 123,841 ms for control and
+188,103 ms for reporting, a descriptive +51.89% (+64,262 ms). The scope includes matching contract
+load, preflight, dispatch, model/domain work, joins, event waits, and result postcheck; fixture
+preparation and ancestor contract reads were excluded. Worker self-report counted 7 orchestration
+batches/12 shell commands for control and 5/11 for reporting; token usage was unavailable. Receiver
+selection was established before terminal completion. This single ordered pair makes no causal,
+reliability, or general cost claim. Native Codex role selection, Claude, other portable hosts,
+strict/busy/fallback shapes, and full activation remain blocked.
+
 #### Ordinary-wait delivery evidence
 
 An earlier addressed ordinary-wait observation recorded a 24,360 ms worker duration, an 84 ms send,
@@ -312,8 +335,23 @@ German words, continued with the completion contract and baseline-comparison scr
 result, it visibly integrated the observed result and next action into its existing overview, then
 resumed the ordinary wait. The worker loaded no detailed progress contract and used no
 acknowledgement, polls, clocks, writes or extra agents. No timings were collected. This confirms
-possibility for that addressed ordinary-wait shape only. An earlier worker invocation without a
-return tool remains invocation-specific fallback evidence, not a model or tier classification.
+possibility for that addressed ordinary-wait shape only. A current nested built-in Codex smoke also
+delivered one useful domain checkpoint before its joined terminal result. One such checkpoint
+travelled through the immediate build and apply-issues parents to the root overview. The build
+parent joined its source and runtime leaves; the root only observed the returning chain and
+continued waiting. This does not establish generated-role selection, strict receiver behavior,
+Claude, portable, or host-wide support.
+An earlier worker invocation without a return tool remains invocation-specific fallback evidence,
+not a model or tier classification.
+
+The complete source-derived role, spawn-site, analysis, returning-adapter, transfer, and recovery
+inventory is in [Subagent progress coverage](subagent-progress-coverage.md). Its rows distinguish
+static contract coverage from live evidence and preserve the actual mode of each site; the source
+register and generated inventories remain the omission detectors for future additions. Matched
+complete shipped old/new cost evidence for contract loading, eligibility, direct and nested
+reporting, busy delivery, long fallback, and short controls is currently unavailable. Historical
+paired measurements remain archived evidence and do not establish a readiness cap or reliability
+claim.
 
 ## Outcome-bound continuation
 
@@ -928,3 +966,21 @@ effective-flow/                        (Repo)
   versioning and ownership sections are short forms; the **mechanics** are canonical in
   [`skill-ownership.md`](skill-ownership.md), [`build-system.md`](build-system.md) and
   [`release-and-installation.md`](release-and-installation.md).
+
+## Planned Feature build boundary
+
+The build caller keeps intent, canonical status, clarification, retired-key/configuration preflight, approval basis and dispatch decisions eager. `apply-plan` resolves the source and follows that same caller in the current run. Exactly one initially fresh built-in workflow runner at `deep` reads `shared/build-delegated-run.md` and owns phases 2–7, with the existing specialist roles, Fast selector and independent quality gates. This workflow orchestrator may spawn its workers; named workers remain leaves. A completed runner cannot accept another plan.
+
+`shared/build-run-contract.md` defines bounded artifact control, same-agent question continuation and terminal evidence. The parent carries request/result references and a visible progress projection; complete plans, diffs, findings and logs remain with the runner and their artifacts. The helper bounds dispatch to 8 KiB and control JSON to 16 KiB UTF-8, without promising a token count or intercepting arbitrary host text. It binds immutable sources and index/worktree/untracked snapshots, so an unchanged HEAD alone cannot validate a resume. Before setup it records the already-resolved execution mode with `authorize-execution`; after setup it binds the fresh receipt with `transition-execution`. Required phase or wisdom evidence uses the runtime-only `retain-evidence` operation, which accepts one exact identifier plus either bounded UTF-8 content or an allowed source artifact, copies exact bytes to a fixed runtime-owned evidence file, and returns a standard file reference. The returned digest identifies the retained bytes only; it does not assert native execution or gate success. Retention remains allowed after verified handoff for runtime-only evidence and is refused after terminal completion. Durable gate receipts and immutable Git deliverables survive baseline cleanup and owned-worktree removal.
+
+Completion preserves the approved plan as the source text and applies a bounded status/archive/completion-section transformation only after the existing independent-review and final-validation receipts are bound by `prepare-completion`. `seal-delivery` proves the staged tree against that basis. A changed product byte requires the independent marked `code-validator` formatting-only proof with exact before/after digests, or renewed affected review and final-validation receipts; a plan-only completion transformation keeps the original gates. The explicit completion-transform marker is therefore a separate code-validator site, alongside the caller and nesting-probe sites.
+
+The same completion basis and exact current plan accompany protected revalidation and user-gate continuation, preserving prepared product/index evidence without accepting stale validation results. The [snapshot contract](../../src/shared/build-run-contract.md#questions-and-same-agent-continuation) covers both unstaged file/directory replacements across helper, build-context and protected preparation readers; protected raw link observation precedes export classification and strict exported-file checks. A verified archival refusal can retain the plan at its original owning path, including an untracked original in a separately verified source checkout of the same repository. That source-only variant retains the actual bytes and origin in runtime state at handoff, without requiring plan publication or later access to the original source. The [build-run contract](../../src/shared/build-run-contract.md#preserve-acceptance-through-the-actual-completion-order) owns the refusal schema and its retained caller-observation route: retention binds the observation rather than authenticating a historical OS error, and DONE must disclose that the plan remains unarchived. Neither route grants new write or source-cleanup authority or replaces acceptance gates.
+
+The optional bound `retainedFiles` record covers only archive obstructions, an unarchived original, or refused cleanup of the source original after canonical archival. An obstruction is the exact archive target or its independently verified blocking regular-file ancestor; typed target retention binds opaque symlink text or a complete bounded directory inventory without following links. It accompanies the completion pair through user gates and protected revalidation. Full snapshots and manifests remain authoritative; a separate deliverables projection excludes only exact proven non-product file/symlink leaves in the execution root from commit requirements. Root and path jointly identify every plan exception, so an external plan alone cannot exempt a same-named execution file. Normal canonical archival may separately prove removal of an identical execution copy already bound by the prepared regular-file manifest and matching stage-0 Git blob/mode; only its old metadata is excluded, after complete current absence is proved. This internal proof adds no caller schema or source ownership. Live retained items are checked before handoff, and those in a surviving execution checkout remain checked afterward. An owned checkout retained after cleanup also requires its actual canonical lifecycle record, unchanged creation identity, an accepted cleanup status and released locks, bound by the helper into the cleanup receipt and rechecked at DONE. DONE discloses every retained item and the surviving checkout even if an empty or ignored-only directory leaves Git clean. The contract owns these schemas and proofs, without a general ignore list or cleanup permission.
+
+Every resumed decision freshly resolves the owning configuration source, priority and effective values from the originating checkout before accepting the old basis; after product handoff, only the resolver-owned runtime policy and purpose-specific post-handoff receipts remain in scope. The existing body-free `plan-pr-continuation` discovery and owner binding remain authoritative; build-run records that result and adds no publication or checkout-adoption authority.
+
+The runner proves its nested leaf level using one completed read-only `standard` probe before mutation. A host without delegation, same-agent continuation or sufficient nesting takes the complete inline execution fragment, visibly marked isolation unavailable. After mutation, loss of the original agent or transient pilot capability causes a controlled stop with retained artifacts. User questions pause that same logical build with active ownership and no held lock; capabilities never enter persisted control records. Only the originating interactive build mode can relay the existing review-publication ask; merge-gate relays and truly non-interactive runs retain their limits. After `handoff`, product authority is ended and only runtime-only delivery, archival, cleanup, pilot-finalization and completion outcomes remain; the original agent handle is used once for the owning pilot finalization and is never reconstructed from records. `record-return` proves an actual in-place checkout restore. A separate terminal continuation projection names the next workflow and restrictions, not live authority.
+
+The active tier decision is [Per-spawn model tiers](../adr/per-spawn-model-tiers.md). Behavioural and paired context/cost measurements are release evidence, separate from structural tests; fallback runs cannot count as isolation successes.

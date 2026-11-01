@@ -1758,18 +1758,29 @@ function scenarioFreshness(suite, scenario, identity, resultsDir) {
   if (!existsSync(directory)) {
     return { scenario, state: 'absent', runs: [], drift: [] };
   }
-  const runs = archivedSlots(directory).map((slot) => ({
-    slot,
-    ...freshnessVerdict(suite, scenario, archivedStamp(scenario, directory, slot), identity),
-  }));
+  const runs = archivedSlots(directory).map((slot) => {
+    const verdict = {
+      slot,
+      ...freshnessVerdict(suite, scenario, archivedStamp(scenario, directory, slot), identity),
+    };
+    const problems = suite.verifyArchivedScenario?.({ scenario, slot, directory, identity }) ?? [];
+    if (!Array.isArray(problems))
+      throw new Error('suite archive verifier returned malformed problems');
+    return problems.length ? { ...verdict, state: 'invalid', problems } : verdict;
+  });
   const firstStale = runs.find((run) => run.state === 'stale');
   const drift = firstStale?.drift ?? [];
-  const unusable = runs.some((run) => run.state === 'stale' || run.state === 'missing-stamp');
+  const unusable = runs.some((run) => !['current', 'waived'].includes(run.state));
   let state = 'current';
   if (runs.length === 0) state = 'absent';
   else if (runs.length < REQUIRED_RUNS) state = 'short';
   else if (runs.length > REQUIRED_RUNS) state = 'surplus';
-  else if (unusable) state = 'stale';
+  else if (
+    suite.verifyArchivedScenario &&
+    JSON.stringify(runs.map((run) => run.slot)) !== '[1,2,3,4,5]'
+  )
+    state = 'invalid';
+  else if (unusable) state = runs.some((run) => run.state === 'invalid') ? 'invalid' : 'stale';
   return { scenario, state, runs, drift };
 }
 
@@ -1837,7 +1848,26 @@ export function verifyFreshness(suite, { resultsDir = resultsDirOf(suite) } = {}
         `the archived corpus changed while it was being read, twice over: ${resolve(resultsDir)}`,
       );
     }
-    const { scenarios } = walk;
+    const { scenarios: recordedScenarios } = walk;
+    // A suite may own additional sealed lanes (for example paired measurements). Their verifier
+    // gets the same throwaway candidate build and participates in the existing strict verdict.
+    // Existing suites and their root receipt schemas remain unchanged.
+    const additional = suite.verifyAdditionalEvidence?.({ skillRoot, resultsDir }) ?? [];
+    if (
+      !Array.isArray(additional) ||
+      additional.some(
+        (row) =>
+          typeof row.scenario !== 'string' ||
+          typeof row.state !== 'string' ||
+          !Array.isArray(row.runs),
+      )
+    ) {
+      throw new Error('suite additional evidence verifier returned a malformed verdict');
+    }
+    const scenarios = [
+      ...recordedScenarios,
+      ...additional.map((row) => ({ ...row, drift: row.drift ?? [] })),
+    ];
     return {
       requiredRuns: REQUIRED_RUNS,
       resultsDir: resolve(resultsDir),

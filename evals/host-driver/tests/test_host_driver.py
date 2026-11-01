@@ -155,6 +155,63 @@ class HostDriverTests(unittest.TestCase):
         self.addCleanup(driver.close)
         return driver
 
+    def authenticated_worker_job(self, driver, task, directory, *, coordinator_pid=None):
+        """Bind direct worker fixtures through the same external digest contract."""
+        from eval_driver_runtime import capture_accounting_paths, save
+        job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
+               "task": task, "binary": str(self.binary), "operator": str(self.operator),
+               "operatorSha256": digest(self.operator), "node": NODE,
+               "configFile": str(self.config), "source": str(self.source),
+               "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
+               "coordinatorPid": coordinator_pid or os.getpid(),
+               "cancellationPath": str(driver.cancellation_path),
+               "blockerPath": str(driver.blocker), "launchGatePath": str(driver.gate),
+               "driverDigest": digest(DRIVER_PATH), "fixtureTools": True,
+               "pins": {**driver.pins, task["prompt"]: digest(Path(task["prompt"])),
+                        task["runMetadata"]: digest(Path(task["runMetadata"]))}}
+        job["accounting"] = capture_accounting_paths(directory, driver.root, driver.gate)
+        save(directory / "task.json", task)
+        job_path = directory / "worker-job.json"
+        save(job_path, job)
+        return job, job_path, digest(job_path)
+
+    def authenticated_completion(self, job, job_path, job_digest, directory):
+        """Build real receipt/start bindings for the existing synthetic finish seam."""
+        from eval_driver_runtime import reserve_launch, save
+        spec = importlib.util.spec_from_file_location("completion_worker", DRIVER_PATH.with_name("eval_host_worker.py"))
+        worker = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(worker)
+        profile = self.profiles / ("profile-completion-" + job_digest[7:23])
+        home, codehome = profile / "home", profile / "codex-home"
+        home.mkdir(parents=True)
+        codehome.mkdir()
+        def identity(path):
+            info = path.stat()
+            return {"dev": info.st_dev, "ino": info.st_ino}
+        record = {"schema": 1, "kind": "effective-flow-host-profile",
+                  "id": profile.name[8:], "phase": "armed", "ownerPid": os.getpid(),
+                  "childPgid": os.getpgrp(), "root": identity(self.profiles),
+                  "directory": identity(profile)}
+        save(profile / "host-profile.json", record)
+        launch = worker.launch_record(job, home, codehome)
+        save(directory / "launch.json", launch)
+        save(directory / "launch-audit.json", {
+            "at": "fixture", "configDigest": job["pins"][str(self.config)],
+            "qualification": {"qualificationDigest": job["qualificationDigest"],
+                              "profile": job["task"]["profile"]},
+            "launch": launch, "stdinSha256": digest(Path(launch["stdinPath"])),
+            "nonForked": True, "taskInput": "rendered-prompt-only",
+            "operatorSha256": job["operatorSha256"], "driverSha256": job["driverDigest"],
+            "pins": job["pins"], "fixtureOnly": True, "qualifiedHost": False})
+        consumption = reserve_launch(job, job_path, job_digest, launch, profile, record,
+                                     fixture_only=True)
+        save(directory / "runner-profile.json", {"profilePath": str(profile),
+             "childPgid": record["childPgid"], "ownerPid": record["ownerPid"]})
+        save(directory / "process-start.json", {"pid": os.getpid(),
+             "actualModelStarted": True, "childPgid": record["childPgid"],
+             "consumptionSha256": consumption, "fixtureOnly": True, "qualifiedHost": False})
+        save(directory / "worker-result.json", {"exitCode": 0, "actualModelStarted": True})
+
     def round_driver(self, name: str):
         config = json.loads(self.config.read_text())
         config["outputRoot"] = str(self.work / f"output-{name}")
@@ -184,6 +241,106 @@ class HostDriverTests(unittest.TestCase):
             "runMetadata": str(metadata),
             "operatorSha256": digest(self.operator),
         }
+
+    def prepared_cohorts(self, driver, counts=(45, 35, 75)) -> dict:
+        """Use real input validation; replace only the unavailable model dispatch."""
+        manifests = {}
+        for suite, count in zip(("merge-gate", "iterate", "next-steps"), counts):
+            tasks = []
+            for slot in range(1, count + 1):
+                task = self.task(f"{driver.root.name}-{suite}-{slot}", slot=slot, suite=suite)
+                task["profile"] = driver.config["profiles"][suite]
+                tasks.append(task)
+            manifests[suite] = {
+                "sourceHead": self.head,
+                "base": str(self.project),
+                "tasks": tasks,
+            }
+        self.write_prepared_cohorts(driver, manifests)
+        return manifests
+
+    def write_prepared_cohorts(self, driver, manifests) -> None:
+        for suite, manifest in manifests.items():
+            (driver.root / f"prepared-{suite}.json").write_text(json.dumps(manifest))
+
+    def test_run_all_accepts_155_fixture_slots_without_model_dispatch(self) -> None:
+        driver = self.driver()
+        manifests = self.prepared_cohorts(driver)
+        def fixture_slot(task):
+            return {
+                **{key: task[key] for key in ("suite", "scenario", "slot")},
+                "state": "sealed",
+                "actualModelStarted": False,
+                "fixtureOnly": True,
+                "qualifiedHost": False,
+            }
+        with mock.patch.object(driver, "run_slot", side_effect=fixture_slot) as dispatch:
+            self.assertEqual(driver.run_all(), 0)
+        self.assertEqual(dispatch.call_count, 155)
+        expected = {
+            (task["suite"], task["scenario"], task["slot"])
+            for manifest in manifests.values() for task in manifest["tasks"]
+        }
+        actual = {
+            (call.args[0]["suite"], call.args[0]["scenario"], call.args[0]["slot"])
+            for call in dispatch.call_args_list
+        }
+        self.assertEqual(actual, expected)
+        summary = json.loads((driver.outroot / "summary.json").read_text())
+        self.assertEqual(summary["preparedTasks"], 155)
+        self.assertEqual(summary["sealed"], 155)
+        self.assertEqual(summary["started"], 0)
+        self.assertEqual(summary["chargedRoots"], 0)
+        self.assertEqual(summary["reservedRoots"], 0)
+        self.assertEqual(summary["reservationUnknownRoots"], 0)
+        self.assertEqual(summary["notLaunched"], 155)
+        self.assertTrue(summary["accountingComplete"])
+        self.assertTrue(summary["fixtureOnly"])
+        self.assertFalse(summary["qualifiedHost"])
+        self.assertFalse(self.start_marker.exists())
+
+    def test_run_all_refuses_obsolete_and_incorrectly_sized_cohorts_before_dispatch(self) -> None:
+        for counts in ((40, 35, 75), (44, 35, 75), (46, 35, 75),
+                       (45, 34, 75), (45, 36, 75), (45, 35, 74), (45, 35, 76)):
+            with self.subTest(counts=counts):
+                driver = self.round_driver("-".join(map(str, counts)))
+                self.prepared_cohorts(driver, counts)
+                with mock.patch.object(driver, "run_slot", return_value={
+                    "state": "fixture-only", "actualModelStarted": False,
+                }) as dispatch:
+                    with self.assertRaisesRegex(ValueError, "exactly"):
+                        driver.run_all()
+                    dispatch.assert_not_called()
+                self.assertFalse(self.start_marker.exists())
+
+    def test_run_all_preserves_prepared_input_checks_before_dispatch(self) -> None:
+        for name, expected in (
+            ("source", "prepared source or base changed"),
+            ("base", "prepared source or base changed"),
+            ("suite", "prepared task suite changed"),
+            ("profile", "approved suite profile"),
+            ("duplicate", "duplicate prepared task identity"),
+        ):
+            with self.subTest(case=name):
+                driver = self.round_driver(name)
+                manifests = self.prepared_cohorts(driver)
+                manifest = manifests["merge-gate"]
+                if name == "source":
+                    manifest["sourceHead"] = "0" * 40
+                elif name == "base":
+                    manifest["base"] += "/."
+                elif name == "suite":
+                    manifest["tasks"][0]["suite"] = "iterate"
+                elif name == "profile":
+                    manifest["tasks"][0]["profile"] = {}
+                else:
+                    manifest["tasks"][1] = manifest["tasks"][0]
+                self.write_prepared_cohorts(driver, manifests)
+                with mock.patch.object(driver, "run_slot") as dispatch:
+                    with self.assertRaisesRegex(ValueError, expected):
+                        driver.run_all()
+                    dispatch.assert_not_called()
+                self.assertFalse(self.start_marker.exists())
 
     def test_success_failure_and_evidence(self) -> None:
         driver = self.driver()
@@ -273,14 +430,10 @@ class HostDriverTests(unittest.TestCase):
         )
         for name, error, response, pins in cases:
             with self.subTest(case=name):
-                directory = self.work / f"worker-{name}"
+                driver = self.round_driver("worker-" + name)
+                directory = driver.outroot / f"worker-{name}"
                 directory.mkdir()
-                job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
-                       "task": task, "node": NODE, "operator": str(self.operator),
-                       "configFile": str(self.config), "source": str(self.source),
-                       "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
-                       "coordinatorPid": os.getpid(), "cancellationPath": str(driver.cancellation_path),
-                       "blockerPath": str(driver.blocker), "launchGatePath": str(driver.gate)}
+                job, job_path, job_digest = self.authenticated_worker_job(driver, task, directory)
                 def cleanup(*_args):
                     # The wrapper can remain in cleanup while another slot qualifies.
                     self.assertTrue(driver.blocker.exists(), "worker cleanup started with launch gate open")
@@ -291,11 +444,13 @@ class HostDriverTests(unittest.TestCase):
                         mock.patch.object(worker, "assert_pins", side_effect=pins), \
                         mock.patch.object(worker, "launch_record", return_value={"stdinPath": task["prompt"]}), \
                         mock.patch.object(worker.os, "fork", return_value=42), \
+                        mock.patch.object(worker.os, "kill"), \
+                        mock.patch.object(worker.os, "killpg"), \
                         mock.patch.object(worker.os, "waitpid", side_effect=cleanup), \
                         mock.patch.object(worker.subprocess, "run", **response_args), \
                         mock.patch.object(worker.subprocess, "Popen") as launch:
                     with self.assertRaises(error):
-                        worker.execute_job(job)
+                        worker.execute_job(job, job_path=job_path, job_digest=job_digest)
                     launch.assert_not_called()
                 self.assertTrue(driver.blocker.exists())
                 driver.blocker.unlink()
@@ -317,15 +472,9 @@ class HostDriverTests(unittest.TestCase):
                     name = f"publication-{publisher}-{error_code}"
                     driver = self.round_driver(name)
                     task = self.task(name)
-                    directory = self.work / name
+                    directory = driver.outroot / name
                     directory.mkdir()
-                    job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
-                           "task": task, "node": NODE, "operator": str(self.operator),
-                           "configFile": str(self.config), "source": str(self.source),
-                           "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
-                           "coordinatorPid": os.getpid(), "cancellationPath": str(driver.cancellation_path), "blockerPath": str(driver.blocker),
-                           "launchGatePath": str(driver.gate), "pins": {str(self.config): "fixture", str(self.operator): "fixture"},
-                           "driverDigest": "fixture", "fixtureTools": True}
+                    job, job_path, job_digest = self.authenticated_worker_job(driver, task, directory)
                     good = {"qualificationDigest": "fixture-qualification", "profile": task["profile"]}
                     publication_errors = []
                     attempts = []
@@ -355,13 +504,15 @@ class HostDriverTests(unittest.TestCase):
                             mock.patch.object(worker, "assert_pins"), \
                             mock.patch.object(worker, "launch_record", return_value={"stdinPath": task["prompt"], "argv": ["fixture"], "cwd": str(self.project), "env": {}}), \
                             mock.patch.object(worker.os, "fork", return_value=42), \
+                            mock.patch.object(worker.os, "kill"), \
+                            mock.patch.object(worker.os, "killpg"), \
                             mock.patch.object(worker.os, "write"), \
                             mock.patch.object(worker.os, "waitpid", return_value=(42, 0)) as cleanup, \
                             mock.patch.object(worker.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, json.dumps(good), "")), \
                             mock.patch.object(worker.subprocess, "Popen", return_value=mock.Mock(pid=42, wait=mock.Mock(return_value=0))) as launch, \
                             mock.patch.object(Path, "touch", fail_marker), \
                             mock.patch.object(worker.fcntl, "flock", side_effect=publish_before_waiter_acquires):
-                        result = worker.execute_job(job)
+                        result = worker.execute_job(job, job_path=job_path, job_digest=job_digest)
                     cleanup.assert_called_once_with(42, 0)
                     self.assertLess(time.monotonic() - begin, 5, "blocked waiter cleanup exceeded its bound")
                     self.assertEqual(attempts, [error_code])
@@ -379,7 +530,6 @@ class HostDriverTests(unittest.TestCase):
 
         script = self.work / "publication-worker.py"
         script.write_text(r"""
-import builtins
 import json
 import os
 from pathlib import Path
@@ -387,7 +537,7 @@ import sys
 import time
 sys.path.insert(0, sys.argv[1])
 import eval_host_worker as worker
-job = json.loads(Path(sys.argv[2]).read_text())
+job = worker.read_bound_json(Path(sys.argv[2]), expected_digest=sys.argv[6], maximum=worker.JOB_LIMIT)[0]
 role, failure, error_code = sys.argv[3], sys.argv[4], int(sys.argv[5])
 directory = Path(job['artifactDir'])
 if role == 'waiter':
@@ -401,7 +551,7 @@ if role == 'waiter':
             time.sleep(0.01)
         return native_flock(gate, operation)
     worker.fcntl.flock = wait_for_publication
-    raise SystemExit(worker.execute_job(job))
+    raise SystemExit(worker.execute_job(job, job_path=Path(sys.argv[2]), job_digest=sys.argv[6]))
 else:
     (directory / 'publisher-profile.json').write_text(json.dumps({
         'profilePath': str(Path(os.environ['HOME']).parent)}))
@@ -409,7 +559,12 @@ else:
         (directory / 'publication-attempt').write_text(str(error_code))
         raise OSError(error_code, os.strerror(error_code))
     if failure == 'gate-open':
-        builtins.open = fail
+        native_open = worker.os.open
+        def fail_gate(path, *args, **kwargs):
+            if Path(path) == Path(job['launchGatePath']):
+                return fail(path, *args, **kwargs)
+            return native_open(path, *args, **kwargs)
+        worker.os.open = fail_gate
     elif failure == 'flock':
         worker.fcntl.flock = fail
     else:
@@ -423,24 +578,14 @@ else:
                         name = f"real-{publisher}-{failure}-{error_code}"
                         driver = self.round_driver(name)
                         task = self.task(name)
-                        directory = self.work / name
+                        directory = driver.outroot / name
                         directory.mkdir()
                         coordinator = subprocess.Popen(
                             [sys.executable, "-B", "-c", "import time; time.sleep(30)"],
-                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                         self.assertNotEqual(coordinator.pid, os.getpid())
-                        job = {"artifactDir": str(directory), "profilesRoot": str(self.profiles),
-                               "task": task, "binary": str(self.binary), "operator": str(self.operator),
-                               "operatorSha256": digest(self.operator), "node": NODE,
-                               "configFile": str(self.config), "source": str(self.source),
-                               "qualificationDigest": "fixture-qualification", "timeoutSeconds": 125,
-                               "coordinatorPid": coordinator.pid, "cancellationPath": str(driver.cancellation_path),
-                               "blockerPath": str(driver.blocker),
-                               "launchGatePath": str(driver.gate), "driverDigest": "fixture",
-                               "pins": {str(self.operator): digest(self.operator),
-                                        str(self.config): digest(self.config)}, "fixtureTools": True}
-                        job_path = directory / "job.json"
-                        job_path.write_text(json.dumps(job))
+                        job, job_path, job_digest = self.authenticated_worker_job(
+                            driver, task, directory, coordinator_pid=coordinator.pid)
                         command = [NODE, str(ROOT / "evals/host-run.mjs"),
                                    "--profiles-root", str(self.profiles), "--", sys.executable,
                                    "-B", str(script), str(DRIVER_PATH.parent), str(job_path)]
@@ -448,7 +593,7 @@ else:
                         begin = time.monotonic()
                         with ThreadPoolExecutor(max_workers=1) as pool:
                             future = pool.submit(execute_wrapper,
-                                [*command, "waiter", failure, str(error_code)], directory,
+                                [*command, "waiter", failure, str(error_code), job_digest], directory,
                                 stop=driver.stop, launch_lock=driver.launch_lock,
                                 active=driver.active, active_lock=driver.active_lock,
                                 timeout_seconds=15)
@@ -464,8 +609,8 @@ else:
                                 self.assertTrue((directory / "stderr.log").exists())
                                 if publisher == "worker":
                                     publisher_process = subprocess.Popen(
-                                        [*command, "publisher", failure, str(error_code)],
-                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                                        [*command, "publisher", failure, str(error_code), job_digest],
+                                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
                                     self.assertNotEqual(publisher_process.wait(timeout=8), 0)
                                     self.assertIsNone(coordinator.poll())
                                     self.assertEqual(int((directory / "publication-attempt").read_text()), error_code)
@@ -523,13 +668,9 @@ else:
                 def completed_wrapper(_command, directory, **_kwargs):
                     if name == "wrapper":
                         raise error
-                    for filename, value in (
-                        ("worker-result.json", {"exitCode": 0}),
-                        ("runner-profile.json", {"profilePath": "unused-fixture-profile"}),
-                        ("launch.json", {"cwd": str(self.project)}),
-                        ("process-start.json", {}),
-                    ):
-                        (directory / filename).write_text(json.dumps(value))
+                    job_path = directory / "worker-job.json"
+                    job = json.loads(job_path.read_text())
+                    self.authenticated_completion(job, job_path, digest(job_path), directory)
                     (directory / "stdout.jsonl").write_text('{"type":"turn.completed"}\n')
                     (directory / "last-message.txt").write_text("done\n")
                     return 0
@@ -599,6 +740,7 @@ else:
             process = subprocess.Popen(
                 [sys.executable, "-B", str(script)],
                 env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+                start_new_session=True,
             )
             deadline = time.monotonic() + 8
             while time.monotonic() < deadline and not (
@@ -637,10 +779,9 @@ else:
             if process is not None and process.poll() is None:
                 process.kill()
                 process.wait(timeout=5)
-            # Preserve wrapper ownership even when this regression fails: ask
-            # the live wrapper to clean its group rather than signal a saved PGID.
-            if reference is not None and not process_gone(reference["ownerPid"]):
-                os.kill(reference["ownerPid"], signal.SIGTERM)
+            # Only host-run/watchdog own group shutdown. Retained profile PIDs
+            # authorize no signal; wait read-only and leave a hard failure visible.
+            if reference is not None:
                 deadline = time.monotonic() + 15
                 while time.monotonic() < deadline:
                     if verify_cleanup(reference["profilePath"], self.profiles)["cleanupComplete"]:

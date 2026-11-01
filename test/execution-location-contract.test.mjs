@@ -52,7 +52,10 @@ test('delivery and apply-review paths include the canonical execution-location c
   const deliveryTools = ['build', 'docs', 'fix', 'maintain', 'refactor'];
 
   for (const tool of deliveryTools) {
-    const body = extractBody(readSource('tools', `${tool}.md`));
+    const body =
+      tool === 'build'
+        ? readShared('build-delegated-run')
+        : extractBody(readSource('tools', `${tool}.md`));
     assert.match(
       body,
       /```(?:lazy-)?include\nworktree-integration\n(?:when:[^\n]+\n)?```/,

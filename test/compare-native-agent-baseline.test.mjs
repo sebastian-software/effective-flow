@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
+import { FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
 import {
   EXPECTED_NATIVE_DELTAS,
   compareNativeSidecar,
@@ -27,6 +28,12 @@ const PROGRESS_SENTENCE =
 
 const COMPACT_PROGRESS_SENTENCE =
   ' **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.';
+
+const PARENT_CHAIN_SENTENCE =
+  ' **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent, then sends at most one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words), none for short work; continue without acknowledgement if unavailable/denied. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.';
+
+const CONDITIONAL_PROGRESS_SENTENCE =
+  ' **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent; when it has confirmed a materially useful intermediate result for that parent and necessary domain work remains, it sends one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words). Keep at most one per logical handoff. Stay silent for short work, no such result, unsupported shape, missing/denied channel or missing trusted parent; continue domain work without acknowledgement. Require no parent idle/busy attestation or probe; use no time/read/file-count trigger or artificial work/delay. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.';
 
 const BASE_BODY = `\n## Delegation mandate\n\n${WORKER}\n- Another bullet.\n${LAST}\n\n## Recommended skills\n`;
 const MANDATE_BODY = `\n## Delegation mandate\n\n${WORKER}${TIER_SENTENCE}\n- Another bullet.\n${LAST}\n\n${POINTER}\n\n## Recommended skills\n`;
@@ -126,6 +133,8 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'delegation-mandate-subagent-progress',
       'delegation-mandate-compact-checkpoint',
       'delegation-mandate-model-selection',
+      'delegation-mandate-parent-chain-progress',
+      'delegation-mandate-conditional-checkpoint',
     ],
   );
 });
@@ -223,6 +232,79 @@ test('the compact checkpoint delta composes from older and previous progress bas
       () =>
         compareNativeSidecar(harness, 'effective-flow-rust-reviewer', baseline, permissionDrift),
       /configuration drift outside the expected deltas/,
+    );
+  }
+});
+
+// Invariant: the approved conditional checkpoint replacement is one exact body delta after the
+// historical parent-chain replacement; prerequisite, recipient, bound, fallback and no-probe drift
+// are unrelated edits, as are relocated, duplicated, or permission changes.
+test('the conditional checkpoint delta is exact and composes after the parent-chain delta', () => {
+  const previous = MANDATE_BODY.replace(
+    `${WORKER}${TIER_SENTENCE}`,
+    `${WORKER}${TIER_SENTENCE}${PARENT_CHAIN_SENTENCE}`,
+  );
+  const current = previous.replace(PARENT_CHAIN_SENTENCE, CONDITIONAL_PROGRESS_SENTENCE);
+  for (const [harness, sidecar] of [
+    ['claude', claude],
+    ['codex', codex],
+  ]) {
+    assert.deepEqual(
+      compareNativeSidecar(
+        harness,
+        'effective-flow-rust-reviewer',
+        sidecar({ effort: 'high', body: previous }),
+        sidecar({ effort: 'high', body: current }),
+      ),
+      ['delegation-mandate-conditional-checkpoint'],
+      harness,
+    );
+    for (const body of [
+      current.replace('confirmed a materially useful intermediate result', 'confirmed a result'),
+      current.replace('necessary domain work remains', 'domain work remains'),
+      current.replace(
+        'Keep at most one per logical handoff',
+        'Keep checkpoints per logical handoff',
+      ),
+      current.replace('checkpoint at most 20 words', 'checkpoint at most 200 words'),
+      current.replace('that parent', 'an ancestor'),
+      current.replace('parent idle/busy attestation or probe', 'parent idle probe'),
+      current.replace('time/read/file-count trigger', 'time trigger'),
+      current.replace('Stay silent for short work', 'Send for short work'),
+      current.replace(
+        CONDITIONAL_PROGRESS_SENTENCE,
+        `${CONDITIONAL_PROGRESS_SENTENCE}${CONDITIONAL_PROGRESS_SENTENCE}`,
+      ),
+      current
+        .replace(CONDITIONAL_PROGRESS_SENTENCE, '')
+        .replace('- Another bullet.', `${CONDITIONAL_PROGRESS_SENTENCE}- Another bullet.`),
+      current.replace('artificial work/delay', 'artificial work/delay and delay'),
+    ])
+      assert.throws(
+        () =>
+          compareNativeSidecar(
+            harness,
+            'effective-flow-rust-reviewer',
+            sidecar({ effort: 'high', body: previous }),
+            sidecar({ effort: 'high', body }),
+          ),
+        /body drift outside the expected deltas/,
+        harness,
+      );
+    const permissionDrift = sidecar({ effort: 'high', body: current }).replace(
+      harness === 'claude' ? 'tools: Read, Skill' : 'model_reasoning_effort = "high"',
+      harness === 'claude' ? 'tools: Read, Skill, SendMessage' : 'model_reasoning_effort = "xhigh"',
+    );
+    assert.throws(
+      () =>
+        compareNativeSidecar(
+          harness,
+          'effective-flow-rust-reviewer',
+          sidecar({ effort: 'high', body: previous }),
+          permissionDrift,
+        ),
+      /configuration drift outside the expected deltas/,
+      harness,
     );
   }
 });
@@ -341,7 +423,7 @@ test('the deep-tier configuration deltas cover exactly the deep-tier workers', (
     .sort();
   assert.equal(deep.length, 10);
   const [effort, model] = EXPECTED_NATIVE_DELTAS.configuration;
-  assert.deepEqual(EXPECTED_NATIVE_DELTAS.configuration, [effort, model]);
+  assert.deepEqual(EXPECTED_NATIVE_DELTAS.configuration.slice(0, 2), [effort, model]);
   assert.deepEqual([...effort.workers].sort(), deep);
   assert.deepEqual([...model.workers].sort(), deep);
   assert.deepEqual(
@@ -381,4 +463,88 @@ test('the report names each used delta with its workers', () => {
       'Expected delta claude-deep-tier-effort: effective-flow-b\n' +
       'Expected delta delegation-mandate-model-tiers: effective-flow-a, effective-flow-b\n',
   );
+});
+
+// Invariant: messaging approvals cover exactly current Claude base/Fast roles and change only
+// the leading SendMessage capability; unrelated tool, model, sandbox and prompt drift still fail.
+test('four reviewed messaging deltas grant only SendMessage to the exact source-derived roster', () => {
+  const groups = EXPECTED_NATIVE_DELTAS.configuration.slice(2);
+  assert.deepEqual(
+    groups.map(({ id }) => id),
+    [
+      'claude-parent-messaging-1',
+      'claude-parent-messaging-2',
+      'claude-parent-messaging-3',
+      'claude-parent-messaging-4',
+    ],
+  );
+  const sourceRoles = readdirSync(new URL('../src/agents/', import.meta.url)).filter((name) =>
+    name.endsWith('.md'),
+  );
+  const covered = [];
+  for (const delta of groups) {
+    assert.equal(delta.harness, 'claude');
+    assert.equal(delta.key, 'tools');
+    assert.equal(delta.to, `SendMessage, ${delta.from}`);
+    assert.doesNotMatch(delta.to, /(?:^|, )(?:Agent|Task)(?:\(|,|$)/);
+    for (const worker of delta.workers) {
+      covered.push(worker);
+      const before = claude({ worker, effort: 'high', body: BASE_BODY }).replace(
+        'tools: Read, Skill',
+        `tools: ${delta.from}`,
+      );
+      const after = before.replace(`tools: ${delta.from}`, `tools: ${delta.to}`);
+      assert.deepEqual(compareNativeSidecar('claude', worker, before, after), [delta.id]);
+      for (const tools of [
+        `${delta.to}, Agent`,
+        `${delta.to}, Task`,
+        `${delta.to}, WebFetch`,
+        `${delta.from}, SendMessage`,
+      ])
+        assert.throws(
+          () =>
+            compareNativeSidecar(
+              'claude',
+              worker,
+              before,
+              before.replace(`tools: ${delta.from}`, `tools: ${tools}`),
+            ),
+          /configuration drift/,
+        );
+    }
+  }
+  assert.equal(new Set(covered).size, covered.length, 'no duplicate role can hide a missing role');
+  const bases = sourceRoles.map((file) => `effective-flow-${file.slice(0, -3)}`);
+  const fast = [...FAST_PROFILE_AGENTS].map((role) => `effective-flow-${role}-fast`);
+  assert.deepEqual(covered.sort(), [...bases, ...fast].sort());
+});
+
+test('parent-chain body delta is exact and rejects routing or checkpoint-authority drift', () => {
+  const tracking = readFileSync(new URL('../src/shared/task-tracking.md', import.meta.url), 'utf8');
+  const oldTracking = '- when the task is done in fewer than three simple steps\n';
+  const addition = tracking.slice(tracking.indexOf(oldTracking) + oldTracking.length);
+  const previous =
+    MANDATE_BODY.replace(
+      `${WORKER}${TIER_SENTENCE}`,
+      `${WORKER}${TIER_SENTENCE}${COMPACT_PROGRESS_SENTENCE}`,
+    ) + oldTracking;
+  const current = previous.replace(COMPACT_PROGRESS_SENTENCE, PARENT_CHAIN_SENTENCE) + addition;
+  const compare = (text) =>
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: previous }),
+      codex({ body: text }),
+    );
+  assert.deepEqual(compare(current), ['delegation-mandate-parent-chain-progress']);
+  for (const text of [
+    current.replace('checkpoint at most 20 words', 'checkpoint at most 200 words'),
+    current.replace('no sibling/cross-session/ancestor messages', 'allow ancestor messages'),
+    current.replace(
+      'permission forwarding or message-based approvals',
+      'permission forwarding allowed',
+    ),
+    current.replace('same-session calls integrate', 'same-session calls spawn'),
+  ])
+    assert.throws(() => compare(text), /body drift outside the expected deltas/);
 });

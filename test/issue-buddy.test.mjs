@@ -6,6 +6,7 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createServer, createConnection } from 'node:net';
 import { EventEmitter, once } from 'node:events';
+import { createHash } from 'node:crypto';
 import {
   executeOperation,
   fingerprint,
@@ -40,7 +41,38 @@ const pull = (number = 30, n = 1, overrides = {}) => ({
   base: { ref: 'develop', repo: { id: 1, full_name: 'example/flow' } },
   ...overrides,
 });
-async function fixture(t, values = {}) {
+// Synthetic, fixture-local ownership for logic tests only; no kernel evidence is inferred.
+function controlledFixtureServer() {
+  let occupied = false;
+  return () => {
+    const server = new EventEmitter();
+    let held = false;
+    server.listen = () => {
+      queueMicrotask(() => {
+        if (occupied)
+          server.emit(
+            'error',
+            Object.assign(new Error('synthetic fixture occupied'), { code: 'EADDRINUSE' }),
+          );
+        else {
+          occupied = true;
+          held = true;
+          server.emit('listening');
+        }
+      });
+      return server;
+    };
+    server.close = (callback) => {
+      assert.equal(held, true);
+      held = false;
+      occupied = false;
+      queueMicrotask(callback);
+      return server;
+    };
+    return server;
+  };
+}
+async function fixture(t, values = {}, fixtureOptions = {}) {
   const root = await fs.realpath(await fs.mkdtemp(path.join(tmpdir(), 'issue-buddy-')));
   await fs.mkdir(path.join(root, '.git'));
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -113,9 +145,14 @@ async function fixture(t, values = {}) {
     } else throw new Error(`unexpected forge ${endpoint}`);
     return ok(JSON.stringify(value));
   };
-  const options = { runner, clock: () => NOW };
+  const options = {
+    runner,
+    clock: () => NOW,
+    createServer: fixtureOptions.createServer ?? controlledFixtureServer(),
+  };
   const run = (operation, input = {}, overrides = {}) =>
     executeOperation(operation, { cwd: root, ...input }, { ...options, ...overrides });
+  await fixtureOptions.beforeAcquire?.(root);
   const acquired = await run('pass-lock-acquire');
   assert.equal(acquired.ok, true, JSON.stringify(acquired));
   let passId = acquired.data.passId;
@@ -195,6 +232,43 @@ async function skip(t, name, values, prepare) {
   return { f, c };
 }
 
+// These cases exercise actual kernel ownership; pure logic fixtures use a controlled server.
+async function nativeFixture(t, values = {}) {
+  return fixture(t, values, { createServer });
+}
+
+test('independent logical fixtures collect trust precedence while their native endpoints are occupied', async (t) => {
+  const blockers = new Map();
+  t.after(async () => {
+    for (const blocker of blockers.values()) await new Promise((resolve) => blocker.close(resolve));
+  });
+  const beforeAcquire = async (root) => {
+    const port =
+      49152 +
+      (createHash('sha256').update(path.join(root, '.git')).digest().readUInt32BE(0) % 16384);
+    if (blockers.has(port)) return;
+    const blocker = createServer((socket) => socket.destroy());
+    blocker.listen({ host: '127.0.0.1', port, exclusive: true });
+    await once(blocker, 'listening');
+    blockers.set(port, blocker);
+  };
+  const fixtures = [];
+  for (let i = 0; i < 2; i++) {
+    const f = await fixture(
+      t,
+      { issues: [issue(1, { user: { login: 'stranger' } })], permission: { stranger: 'read' } },
+      { beforeAcquire },
+    );
+    fixtures.push(f);
+    const c = await collected(f);
+    assert.deepEqual(c.skipped, [{ issue: 1, reason: 'untrusted-author' }]);
+    assert.equal((await persistedPass(f)).passId, f.passId);
+    for (const blocker of blockers.values()) assert.equal(blocker.listening, true);
+  }
+  assert.notEqual(fixtures[0].root, fixtures[1].root);
+  assert.notEqual(fixtures[0].passId, fixtures[1].passId);
+});
+
 for (const reason of SKIP_REASONS.slice(0, 7))
   test(`skip ${reason} follows fixed first-match precedence`, async (t) => {
     const states = {
@@ -255,7 +329,7 @@ for (const [reason, verdict, currentMode] of [
   });
 
 test('lock ownership, stale lock diagnostics and explicit release never break another pass', async (t) => {
-  const f = await fixture(t);
+  const f = await nativeFixture(t);
   const old = await f.run('pass-lock-acquire', {}, { clock: () => '2026-10-19T15:00:01.000Z' });
   assert.equal(old.error.code, 'LOCKED');
   assert.equal(old.error.details.stale, true);
@@ -1258,7 +1332,7 @@ test('malformed stored lock acquisition time is reported clearly and never remov
     null,
   ])
     await t.test(String(acquiredAt), async (t) => {
-      const f = await fixture(t);
+      const f = await nativeFixture(t);
       const target = path.join(f.root, '.effective-flow/issue-buddy/pass.lock');
       const lock = JSON.parse(await fs.readFile(target, 'utf8'));
       lock.acquiredAt = acquiredAt;
@@ -1277,7 +1351,7 @@ test('malformed stored lock acquisition time is reported clearly and never remov
 });
 
 async function populatedReport(t) {
-  const f = await fixture(t, {
+  const f = await nativeFixture(t, {
     issues: [
       issue(1),
       issue(2),
@@ -1770,7 +1844,7 @@ async function noOperationLock(f) {
 test('serializes same-pass verdict transitions before publication limits or cache snapshots are read', async (t) => {
   for (const plans of [1, 2])
     await t.test(`plans=${plans}`, async (t) => {
-      const f = await fixture(t, { issues: [issue(1), issue(2)] });
+      const f = await nativeFixture(t, { issues: [issue(1), issue(2)] });
       const c = await collected(f, { limits: { plans } });
       const entered = barrier();
       const proceed = barrier();
@@ -1821,7 +1895,7 @@ test('serializes same-pass verdict transitions before publication limits or cach
 });
 
 test('serializes collection accounting and replay without losing or repeating historical attempts', async (t) => {
-  const f = await fixture(t);
+  const f = await nativeFixture(t);
   const evidence = await evidenceFor(f);
   const entered = barrier();
   const proceed = barrier();
@@ -1867,7 +1941,7 @@ test('serializes collection accounting and replay without losing or repeating hi
 });
 
 test('report publication serializes competing reports, verdicts, collection replays and pass release', async (t) => {
-  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const f = await nativeFixture(t, { issues: [issue(1), issue(2)] });
   const c = await collected(f);
   assert.equal((await f.run('verdict-record', verdictInput(f, c, 1))).ok, true);
   const outcomes = {
@@ -1949,7 +2023,7 @@ test('rejects non-provider timestamp spellings before current authority or histo
 test('historical PR reads reject absent or unknown classification states before accounting or authority', async (t) => {
   for (const state of [undefined, '', 'unknown', 'merged'])
     await t.test(String(state), async (t) => {
-      const f = await fixture(t, { issues: [issue(1), issue(2)] });
+      const f = await nativeFixture(t, { issues: [issue(1), issue(2)] });
       const first = await collected(f);
       const evidence = [
         {
@@ -2076,7 +2150,7 @@ test(
   async (t) => {
     for (const plans of [1, 2])
       await t.test(`plans=${plans}`, async (t) => {
-        const f = await fixture(t, { issues: [issue(1), issue(2)] });
+        const f = await nativeFixture(t, { issues: [issue(1), issue(2)] });
         const c = await collected(f, { limits: { plans } });
         const first = mutationChild(t, f, 'verdict-record', verdictInput(f, c, 1), {
           boundary: { method: 'rename', targetIndex: 1, suffix: '/verdicts.json' },
@@ -2115,7 +2189,7 @@ test(
   async (t) => {
     for (const after of [false, true])
       await t.test(`after publication=${after}`, async (t) => {
-        const f = await fixture(t);
+        const f = await nativeFixture(t);
         await f.run('pass-lock-release', { passId: f.passId });
         await fs.rm(path.join(f.root, '.effective-flow'), { recursive: true });
         const actor = mutationChild(
@@ -2161,7 +2235,7 @@ test(
   'SIGKILL at an actual cache persistence boundary frees TCP while preserving holder release and next acquire',
   { timeout: 30000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await nativeFixture(t);
     const c = await collected(f);
     const actor = mutationChild(t, f, 'verdict-record', verdictInput(f, c, 1), {
       boundary: { method: 'rename', targetIndex: 1, suffix: '/verdicts.json', after: true },
@@ -2186,7 +2260,7 @@ test(
   'operation TCP ownership is released on a thrown persistence error and explicit process exit',
   { timeout: 30000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await nativeFixture(t);
     const c = await collected(f);
     const refused = await f.run('verdict-record', verdictInput(f, c, 1), {
       fs: {
@@ -2209,7 +2283,7 @@ test(
 );
 
 test('denied loopback bind and an unrelated occupied endpoint fail closed before first runtime mkdir', async (t) => {
-  const f = await fixture(t);
+  const f = await nativeFixture(t);
   const captured = [];
   await f.run(
     'pass-lock-release',
@@ -2259,7 +2333,7 @@ test('legacy operation and per-write locks retain all bytes and unrelated tempor
     'reports/unknown.lock',
   ])
     await t.test(relative, async (t) => {
-      const f = await fixture(t);
+      const f = await nativeFixture(t);
       await collected(f);
       const directory = path.join(f.root, '.effective-flow/issue-buddy');
       const target = path.join(directory, relative);
@@ -2284,7 +2358,7 @@ test(
   'mutex listener destroys incoming sockets and remains held until guarded retention finishes',
   { timeout: 30000 },
   async (t) => {
-    const f = await fixture(t);
+    const f = await nativeFixture(t);
     const c = await collected(f);
     const reports = path.join(f.root, '.effective-flow/issue-buddy/reports');
     await fs.mkdir(reports, { recursive: true });
@@ -2359,7 +2433,7 @@ test(
   async (t) => {
     for (const plans of [1, 2])
       await t.test(`plans=${plans}`, async (t) => {
-        const f = await fixture(t, { issues: [issue(1), issue(2)] });
+        const f = await nativeFixture(t, { issues: [issue(1), issue(2)] });
         const c = await collected(f, { limits: { plans } });
         const one = verdictInput(f, c, 1);
         const two = verdictInput(f, c, 2);
@@ -2486,7 +2560,7 @@ test(
     for (const occurrence of [1, 2])
       for (const after of [false, true])
         await t.test(`pass rename ${occurrence}, after=${after}`, async (t) => {
-          const f = await fixture(t);
+          const f = await nativeFixture(t);
           const c = await collected(f);
           const one = verdictInput(f, c, 1, 'failed');
           const actor = mutationChild(t, f, 'verdict-record', one, {

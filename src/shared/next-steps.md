@@ -82,16 +82,16 @@ instead of relying on the receiving tool to notice.
    options for packages that depend on that completion; describing an option as “after delivery”
    does not make it independently applicable now. Otherwise the next applicable unfinished package normally leads,
    mapped to an existing exposed tool with actual arguments, even without a matching table row.
-   Require established readiness and authority before suggesting execution. Missing preparation or
-   a recoverably stale record leads to `{{SKILL:plan}} <known-plan-path>` or
-   `{{SKILL:plan-issue}} <known-issue>`; otherwise name the blocker. A verified completed package
+   Require established readiness and authority before suggesting execution. For ordinary next-package approval/dependency gaps,
+   missing preparation or a recoverably stale record, recommend `{{SKILL:plan}} <known-plan-path>` or `{{SKILL:plan-issue}} <known-issue>`
+   against the already known basis to reconcile verified completion and prepare prerequisites and the approval decision; name blockers without granting approval or execution. A verified completed package
    still marked unfinished in its associated plan record needs this reconciliation even when an
    approval, dependency or workflow blocker prevents a later package; reconciliation does not grant
    authority to execute that blocked package. An implemented/archived plan
    with apparent unfinished work needs `plan` reconciliation, never `apply` of that completed
    basis, unless an independently established active successor supplies the execution basis.
-   Operational work without a matching tool also needs useful preparation or a named blocker;
-   never invent a tool or imply approval. For renovate-config #37, verified Q2a merges with the
+   Operational work without a matching tool must use that useful preparation when available, otherwise
+   name the blocker; never invent a tool or imply approval. For renovate-config #37, verified Q2a merges with the
    canonical Q2a record still in place lead to `{{SKILL:plan-issue}} #37` to record Q2a and prepare
    Q2b, with no Q2b qualification, Q2c evidence or E activation authority implied. Keep every issue
    reference bound to its owning repository/target and preserve external tool identifiers. Obey the
@@ -109,8 +109,8 @@ instead of relying on the receiving tool to notice.
 Before selecting any outward invocation for an existing outcome chain, apply its retained
 continuation decision to both plan-aware selection and fallback. Read-only selection returns a
 proposed checkpoint delta/pending source update; it neither persists state nor guesses missing
-history as zero. A blocked endpoint emits no substitute planning, review or issue-creation option;
-name its specific decision/context blocker. Independent authorized delivery may remain applicable.
+history as zero. An endpoint blocked by its retained outcome-continuation decision or missing/conflicting required continuation context
+emits no substitute planning, review or issue-creation option; name its specific blocker. Independent authorized delivery may remain applicable.
 
 ```lazy-include
 outcome-continuation

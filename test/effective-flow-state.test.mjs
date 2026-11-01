@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  constants as fsConstants,
   existsSync,
   lstatSync,
   mkdirSync,
@@ -1166,7 +1167,7 @@ test('an owner above the hash cap is oversized and broken by identity and size',
 // ---------------------------------------------------------------------------------------------
 // Injected acquisition failures
 
-const WRITE_INTENT = 0o100; // O_CREAT
+const WRITE_INTENT = fsConstants.O_CREAT;
 
 function isOwnerWrite(flags) {
   return typeof flags === 'number' && (flags & WRITE_INTENT) !== 0;

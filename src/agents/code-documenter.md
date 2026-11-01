@@ -3,7 +3,7 @@ description: "Thin in-code documentation adapter: applies the central effective-
 tier: standard
 claude:
   color: cyan
-  tools: [Read, Write, Edit, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Glob, Grep, Skill]
 codex:
   sandbox_mode: workspace-write
 ---

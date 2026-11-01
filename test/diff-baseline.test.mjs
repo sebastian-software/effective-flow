@@ -296,6 +296,25 @@ test('explainSkipped fails on a skipped directory or path and ignores benign war
   assert.equal(explainSkipped(undefined), undefined);
 });
 
+test('explainSkipped ignores only the identified macOS host diagnostics', () => {
+  const hostDiagnostics =
+    "git: warning: confstr() failed with code 5: couldn't get path of DARWIN_USER_TEMP_DIR; using /tmp instead\n" +
+    "git: error: couldn't create cache file '/tmp/xcrun_db-0HSPI2SX' (errno=Operation not permitted)\n";
+  assert.equal(explainSkipped(hostDiagnostics), undefined);
+  assert.match(
+    explainSkipped(`${hostDiagnostics}locked/: Permission denied\n`),
+    /could not read locked\//,
+  );
+  assert.match(
+    explainSkipped(`${hostDiagnostics}git: warning: blocked: Permission denied\n`),
+    /could not read git: warning: blocked \(Permission denied\)/,
+  );
+  assert.match(
+    explainSkipped(`git: warning: blocked: Permission denied\nlocked/: Permission denied\n`),
+    /could not read git: warning: blocked \(Permission denied\)/,
+  );
+});
+
 test('a git failure while resolving cwd is reported as an unsafe target', async (t) => {
   const root = tempDir(t);
   const calls = [];
@@ -383,7 +402,14 @@ test('every target renders the diff-baseline pointer and ships the fragment', (t
   for (const target of ['claude', 'codex', 'portable']) {
     const skill = join(outputRoot, 'dist', target, 'effective-flow');
     for (const tool of ['build', 'fix', 'refactor']) {
-      const body = readFileSync(join(skill, 'tools', `${tool}.md`), 'utf8');
+      const body = readFileSync(
+        join(
+          skill,
+          tool === 'build' ? 'shared' : 'tools',
+          tool === 'build' ? 'build-delegated-run.md' : `${tool}.md`,
+        ),
+        'utf8',
+      );
       assert.equal(body.split(pointer).length - 1, 1, `${target} tools/${tool}.md pointer`);
       assert.doesNotMatch(body, /```lazy-include/, `${target} tools/${tool}.md`);
     }

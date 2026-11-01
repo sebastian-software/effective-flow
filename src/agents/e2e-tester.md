@@ -3,7 +3,7 @@ description: "Thin end-to-end adapter: routes browser journeys to effective-web,
 tier: standard
 claude:
   color: yellow
-  tools: [Read, Write, Edit, Bash, Glob, Grep, Skill]
+  tools: [SendMessage, Read, Write, Edit, Bash, Glob, Grep, Skill]
 codex:
   # danger-full-access deliberately: Playwright browser download (cache outside the workspace) and network access to the local dev server are blocked under workspace-write
   sandbox_mode: danger-full-access

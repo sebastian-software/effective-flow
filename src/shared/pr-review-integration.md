@@ -38,7 +38,7 @@ restated here. Pull requests stay on the forge behind `origin` regardless of `tr
 ### Inputs
 
 The caller supplies a **resolved pull request** (number, head ref, base ref, URL, state), its **run
-state** — gated or non-interactive delegation, which a relayed run passes as non-interactive — and
+state** — gated or non-interactive delegation, which a relayed run passes as non-interactive; the sole exception is a validated interactive build relay — and
 exactly one of these three **input states**:
 
 - **`finding-set`** — the caller's residual findings: what survived its own correction rounds, not
@@ -228,14 +228,15 @@ Governed by the configuration key `delivery.prReview` with the values `ask` (def
   `{{SKILL:review}} <PR>` invocation is never affected.
 - `ask` — resolved by the run state:
   - **gated** — ask exactly once with the question below.
+  - **interactive build relay** — only `build-run-contract` with originating mode `interactive`, a validated outstanding question and trusted same-agent reply. Relay the exact question below; consent publishes once through the existing gates and fresh idempotency reads, refusal publishes nothing. A pause retains the same build-run identity and no lock.
   - **non-interactive delegation** — the state any higher-level orchestrator creates when it
-    delegates a workflow non-interactively; the authoritative list of those orchestrators is the
+    delegates a workflow non-interactively; merge-gate `relayed` stays in this state, and the authoritative list of those orchestrators is the
     one in the documentation-sync contract. Publish nothing and report that the question could not be posed, naming
     `delivery.prReview: always` as the setting that would authorize publication in such a run. This
     follows the loaded gate, where an unanswered, skipped, or non-interactive run publishes nothing.
 
 ```ask
-when: a delivery created or reused a pull request, `delivery.prReview` is `ask` or unset, and the run is gated
+when: a delivery created or reused a pull request, `delivery.prReview` is `ask` or unset, and the run is gated or a validated interactive build relay
 header: PR review
 question: Publish this run's review findings as comments on the pull request?
 options:

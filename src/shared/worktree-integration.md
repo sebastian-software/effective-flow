@@ -504,3 +504,9 @@ source path from a removed execution worktree. Suppressed delegations still emit
    `auto`, to the recorded resolved local base branch, provided the working tree is clean.
    Do not switch a reused harness-managed checkout. If an applicable switch-back fails,
    explicitly report the actual branch as a side effect.
+
+### Build user pause
+
+A validated `build-run-contract` `BLOCKED-USER` is a pause inside the same logical workflow. Keep its owned record `active`, pinned to that build-run ID, including a dirty worktree without a plan PR; release every lock before yielding. Run terminal handback/exit handling only at actual DONE, ABORT or failure. Same-agent continuation revalidates the run association, ownership, execution receipt and index/worktree/untracked snapshot before any write. This exception cannot adopt a failed/aborted or foreign worktree.
+
+Returning commit, PR and review handoffs retain the implementing workflow's overview. Apply `shared/subagent-progress.md` for eligible cross-agent relays with each hop's own context; same-session calls integrate directly. Delivery/cleanup receipts, approval gates and terminal joins remain authoritative.

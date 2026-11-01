@@ -435,3 +435,5 @@ next-step block. Name no follow-up invocation of your own here.
 - When in doubt about the sufficiency check: treat it as `insufficient` and point to `{{SKILL:plan-issue}}` instead of guessing.
 - Never set a `Co-Authored-By` trailer and do not expose internal IDs in commits or comments.
 - Give the user a short status update after each phase.
+
+Each issue implementation, returning PR/delivery and review adapter uses `shared/subagent-progress.md` when considering longer delegated work: new downstream association, own upstream relay context, one retained overview. Same-session calls integrate directly; failed/partial returns and retries remain governed by their terminal protocols.
