@@ -24,6 +24,7 @@ import { test } from 'node:test';
 
 import {
   COMMIT_SIGNALS,
+  FILTER_BUDGET_MS,
   HOOK_CONFIG,
   MAX_STDERR_CHARS,
   SANDBOX_STDERR_PATTERNS,
@@ -896,6 +897,134 @@ test('commit create is INTERRUPTED by a signal during the lock wait', async (t) 
   assert.equal(outcome.commit, null);
   assert.equal(lockPresent(root), true, 'the foreign lock stays');
   assert.deepEqual(staged(root), []);
+});
+
+// A `.gitattributes` routing `*.bin` through the clean filter `slow`, and a definition of `slow`
+// that marks its start in an ignored file and then stalls, as a hung Git LFS filter would. A
+// filter driver without a definition is ignored, so `defineSlowFilter` may follow later.
+function slowFilterAttributes(root) {
+  writeFileSync(join(root, '.gitattributes'), '*.bin filter=slow\n');
+}
+
+function defineSlowFilter(root) {
+  const marker = join(root, 'filter-started.log');
+  git(root, 'config', 'filter.slow.clean', `touch '${marker}'; sleep 30`);
+  return marker;
+}
+
+// Invariant: every call that can run a clean filter, the staging and each working-tree
+// comparison of the trust check, runs in its own process group under a bound, so a signal or the
+// bound reaches the filter; tree-to-tree and index comparisons, which run none, stay unbounded.
+test('commit create bounds the filter-running Git calls in process groups', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const calls = [];
+  const real = createProcessRunner();
+  expectResult(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      runner: (request) => {
+        calls.push(request);
+        return real(request);
+      },
+    }),
+  );
+  const isAdd = (args) => args.includes('add');
+  const isWorkingTreeDiff = (args) =>
+    args.includes('diff') && args.at(-2) === 'HEAD' && args.at(-3) === '-z';
+  const filtering = calls.filter(({ args }) => isAdd(args) || isWorkingTreeDiff(args));
+  assert.equal(filtering.filter(({ args }) => isAdd(args)).length, 1);
+  assert.equal(filtering.filter(({ args }) => isWorkingTreeDiff(args)).length, 3);
+  for (const call of filtering) {
+    assert.equal(call.processGroup, true, call.args.join(' '));
+    assert.ok(call.timeoutMs > 0 && call.timeoutMs <= FILTER_BUDGET_MS, call.args.join(' '));
+  }
+  const cached = calls.find(({ args }) => args.includes('--cached'));
+  assert.equal(cached.processGroup, undefined);
+});
+
+// Invariant: a signal while `git add` waits on a stalled clean filter stops the filter's group,
+// so the call returns INTERRUPTED without a SHA, the listed paths unstaged, the lock released.
+test('commit create is INTERRUPTED during a stalled clean filter in git add', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'data.bin'), 'payload\n');
+  const expected = blob(root, 'data.bin');
+  slowFilterAttributes(root);
+  const marker = defineSlowFilter(root);
+  const target = new EventEmitter();
+  const started = Date.now();
+  const pending = commitCreate(
+    input(root, { paths: ['data.bin'], expect: { 'data.bin': expected } }),
+    signalDeps(target),
+  );
+  await waitForFile(marker);
+  target.emit('SIGTERM');
+  const outcome = expectOutcome(await pending, 'INTERRUPTED');
+  assert.ok(Date.now() - started < 10_000, 'the signal stops the stalled filter');
+  assert.equal(outcome.signal, 'SIGTERM');
+  assert.equal(outcome.commit, null);
+  assert.equal(outcome.lockRelease.released, true);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: a signal while the trust check's working-tree comparison waits on a stalled clean
+// filter under the lock returns INTERRUPTED, not GIT_FAILED, and releases the lock.
+test('commit create is INTERRUPTED during a stalled clean filter in the trust check', async (t) => {
+  const root = repository(t);
+  slowFilterAttributes(root);
+  writeFileSync(join(root, 'data.bin'), 'payload\n');
+  git(root, 'add', '.gitattributes', 'data.bin');
+  git(root, 'commit', '-q', '-m', 'filtered fixture');
+  const before = head(root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  let marker;
+  const target = new EventEmitter();
+  const started = Date.now();
+  const pending = commitCreate(
+    input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+    signalDeps(target, {
+      // Defined only under the lock, so the comparison before the lock runs no filter.
+      onPhase: (phase) => {
+        if (phase !== 'locked') return;
+        marker = defineSlowFilter(root);
+        writeFileSync(join(root, 'data.bin'), 'changed payload\n');
+      },
+    }),
+  );
+  while (marker === undefined) await delay(10);
+  await waitForFile(marker);
+  target.emit('SIGINT');
+  const outcome = expectOutcome(await pending, 'INTERRUPTED');
+  assert.ok(Date.now() - started < 10_000, 'the signal stops the stalled filter');
+  assert.equal(outcome.signal, 'SIGINT');
+  assert.equal(outcome.commit, null);
+  assert.equal(outcome.lockRelease.released, true);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: a `git add` whose clean filter outlasts FILTER_BUDGET_MS fails closed as
+// STAGE_FAILED with `timedOut: true`, nothing staged or committed and the lock released.
+test('commit create reports STAGE_FAILED when a clean filter exceeds its bound', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'data.bin'), 'payload\n');
+  const expected = blob(root, 'data.bin');
+  slowFilterAttributes(root);
+  defineSlowFilter(root);
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { paths: ['data.bin'], expect: { 'data.bin': expected } }), {
+      filterBudgetMs: 1000,
+    }),
+    'STAGE_FAILED',
+  );
+  assert.equal(outcome.timedOut, true);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
 });
 
 // Invariant: a lock wait whose clock already reads +Infinity when the deadline is taken (a signal

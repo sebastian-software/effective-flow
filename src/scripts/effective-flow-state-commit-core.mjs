@@ -17,14 +17,14 @@
 //     differs between `hookBase` and HEAD or between HEAD and the working tree, ignored files
 //     included, is HOOKS_UNTRUSTED. The hooks a trusted call runs are then the repository's own,
 //     the ones a plain `git commit` on the base would run. `core.hooksPath` is read with the
-//     commit's environment; a read failing with a status other than 0 or 1 is GIT_FAILED. This
-//     check is the early exit; it runs again under the lock, after acquisition and immediately
-//     before step 5.
+//     commit's environment; a read failing with a status other than 0 or 1 is GIT_FAILED, as is a
+//     working-tree comparison that fails or exceeds its bound. This check is the early exit; it
+//     runs again under the lock, after acquisition and immediately before step 5.
 //
 // Under the lock, which is taken with the `lock acquire` protocol (LOCK_HELD after `waitSeconds`,
 // with the same owner and identity details):
 //   1. an empty index is required (INDEX_NOT_CLEAN, nothing touched);
-//   2. exactly the listed paths are staged with literal pathspecs (STAGE_FAILED);
+//   2. exactly the listed paths are staged with literal pathspecs (STAGE_FAILED, with `timedOut`);
 //   3. the staged set must equal the listed set (STAGED_SET_MISMATCH);
 //   4. every staged blob must equal its `expect` entry, a null one a staged deletion
 //      (STAGED_CONTENT_CHANGED);
@@ -40,10 +40,15 @@
 // errno and SANDBOX_STDERR_PATTERNS; a failed `git commit` that neither classifies, whose stderr
 // may be translated because the caller's locale is kept, is classified by `gitDirWriteDenied`, an
 // exclusive create and removal of a uniquely named file in the git dir and the object store. The
-// helper never works around a denial. On SIGINT, SIGTERM or SIGHUP
-// it stops a running Git child, waits for it, reads HEAD and returns INTERRUPTED, with the SHA when
-// the commit landed (nothing unstaged) and without it otherwise (the listed paths unstaged). A
-// SIGKILL leaves the lock to the orphan-break path, because the owner carries `pid: null`.
+// helper never works around a denial.
+//
+// The calls that run code the repository configures each run in their own process group under a
+// bound: `git commit`, and the staging and the trust check's working-tree comparison, which may run
+// a clean filter such as Git LFS, together bounded by FILTER_BUDGET_MS. On SIGINT, SIGTERM or
+// SIGHUP the helper stops the running group, waits for it, reads HEAD and returns INTERRUPTED,
+// with the SHA when the commit landed (nothing unstaged) and without it otherwise (the listed
+// paths unstaged). A SIGKILL leaves the lock to the orphan-break path, because the owner carries
+// `pid: null`.
 //
 // Ownership (the lock present with this call's token and, where observed, its identity) is
 // verified immediately before step 2, immediately before step 5 and before every unstage; an
@@ -91,6 +96,7 @@ import {
   RuntimeStateError,
   asBuffer,
   commonDir,
+  errorDetail,
   git,
   gitCommitEnv,
   runGit,
@@ -101,6 +107,10 @@ export const COMMIT_LOCKS = Object.freeze(['iterate-commit']);
 // The bound of the commit subprocess, hooks included. A caller's own tool timeout must exceed it,
 // so the helper reports COMMIT_FAILED before the harness kills it.
 export const COMMIT_TIMEOUT_MS = 300_000;
+// The time all filter-running calls of one `commit create` share, each bounded by what is left. It
+// is a total, not a per-call bound, so this, COMMIT_TIMEOUT_MS and the 30 s lock wait together stay
+// below the 360000 ms tool timeout `iterate` sets.
+export const FILTER_BUDGET_MS = 20_000;
 export const MAX_COMMIT_PATHS = 512;
 export const MAX_MESSAGE_BYTES = 16 * 1024;
 export const MAX_STDERR_CHARS = 4096;
@@ -541,8 +551,22 @@ async function ignoredHookFiles(context, worktree, hooksPath) {
   return found;
 }
 
-// HOOKS_UNTRUSTED details, or null when the head's hooks are the repository's own.
-async function hookTrust(context, request, deps) {
+// Runs a Git call that may run a clean filter in its own process group, bounded by what is left of
+// the call's FILTER_BUDGET_MS, so the bound and a signal stop the filter with it.
+function filterGit(context, deps) {
+  let left = deps.filterBudgetMs ?? FILTER_BUDGET_MS;
+  return async (cwd, args) => {
+    const timeoutMs = Math.max(1, Math.ceil(left));
+    const started = performance.now();
+    const result = await runGit(context, cwd, args, { timeoutMs, processGroup: true });
+    left -= performance.now() - started;
+    return { result, timeoutMs };
+  };
+}
+
+// HOOKS_UNTRUSTED details, or null when the head's hooks are the repository's own. A check cut
+// short by a signal also returns null: every caller consults `signals.signal` before the result.
+async function hookTrust(context, request, deps, signals, filtered) {
   const { worktree, hookBase } = request;
   if (!request.sameRepository) return { reason: 'fork-head' };
   const hooksPath = await insideHooksPath(context, worktree, gitCommitEnv(deps.env ?? process.env));
@@ -570,10 +594,22 @@ async function hookTrust(context, request, deps) {
   if (baseChanges.length > 0) {
     return { reason: 'changed-against-base', hookBase, changed: baseChanges };
   }
-  const tracked = nulList(
-    (await git(context, worktree, ['diff', '--name-only', '--no-renames', '-z', 'HEAD', '--']))
-      .stdout,
-  );
+  const { result: compared, timeoutMs } = await filtered(worktree, [
+    'diff',
+    '--name-only',
+    '--no-renames',
+    '-z',
+    'HEAD',
+    '--',
+  ]);
+  if (signals.signal) return null;
+  if (compared?.error || compared?.status !== 0) {
+    const detail = compared?.timedOut
+      ? `timed out after ${timeoutMs} ms`
+      : (compared?.error?.message ?? errorDetail(compared?.stderr));
+    fail('GIT_FAILED', `git diff failed${detail ? `: ${detail}` : ''}`);
+  }
+  const tracked = nulList(compared.stdout);
   const untracked = nulList(
     (await git(context, worktree, ['ls-files', '--others', '--exclude-standard', '-z'])).stdout,
   );
@@ -724,12 +760,12 @@ async function interruptedOutcome(context, request, held, signal, before) {
 
 // Runs steps 1 to 6. `signals` is consulted after every step; `before` is HEAD before staging.
 // Ownership of `held` is verified before staging, before the commit and before every unstage.
-async function commitUnderLock(context, request, signals, deps, held) {
+async function commitUnderLock(context, request, signals, deps, held, filtered) {
   const { worktree, paths } = request;
   const stop = (before) => interruptedOutcome(context, request, held, signals.signal, before);
   await deps.onPhase?.('locked');
   if (signals.signal) return stop(undefined);
-  const untrusted = await hookTrust(context, request, deps);
+  const untrusted = await hookTrust(context, request, deps, signals, filtered);
   if (signals.signal) return stop(undefined);
   if (untrusted) return new StateOutcome('HOOKS_UNTRUSTED', untrusted);
 
@@ -756,11 +792,19 @@ async function commitUnderLock(context, request, signals, deps, held) {
     });
 
   if (!(await ownsLock(context, held))) return ownershipLost(request, held, 'before-stage');
-  const added = await runGit(context, worktree, ['--literal-pathspecs', 'add', '--', ...paths]);
+  const { result: added } = await filtered(worktree, [
+    '--literal-pathspecs',
+    'add',
+    '--',
+    ...paths,
+  ]);
   if (signals.signal) return stop(before);
   if (added?.status !== 0) {
     if (isSandboxDenial(added)) return denied('stage', added);
-    return unstaged('STAGE_FAILED', reportedStderr(added?.stderr ?? added?.error?.message));
+    return unstaged('STAGE_FAILED', {
+      timedOut: added?.timedOut === true,
+      ...reportedStderr(added?.stderr ?? added?.error?.message),
+    });
   }
   try {
     return await afterStaging(context, request, signals, deps, {
@@ -769,6 +813,7 @@ async function commitUnderLock(context, request, signals, deps, held) {
       stop,
       unstaged,
       denied,
+      filtered,
     });
   } catch (error) {
     return recoverAfterStaging(context, request, held, before, error);
@@ -811,7 +856,7 @@ async function afterStaging(
   request,
   signals,
   deps,
-  { before, held, stop, unstaged, denied },
+  { before, held, stop, unstaged, denied, filtered },
 ) {
   const { worktree, paths } = request;
   const staged = await stagedNames(context, worktree);
@@ -851,7 +896,7 @@ async function afterStaging(
 
   await deps.onPhase?.('beforeCommit');
   if (signals.signal) return stop(before);
-  const untrusted = await hookTrust(context, request, deps);
+  const untrusted = await hookTrust(context, request, deps, signals, filtered);
   if (signals.signal) return stop(before);
   if (untrusted) return unstaged('HOOKS_UNTRUSTED', untrusted);
   if (!(await ownsLock(context, held))) return ownershipLost(request, held, 'before-commit');
@@ -964,6 +1009,7 @@ export async function commitCreate(input, deps) {
   const request = requireRequest(input);
   const context = makeContext(deps);
   const signals = watchSignals(deps);
+  const filtered = filterGit(context, deps);
   try {
     await requireRootSyntax(input.cwd);
     const { common } = await resolveRoot(context, input.cwd);
@@ -973,14 +1019,14 @@ export async function commitCreate(input, deps) {
     if (signals.signal) {
       return new StateOutcome('INTERRUPTED', { signal: signals.signal, commit: null });
     }
-    const untrusted = await hookTrust(context, request, deps);
-    if (untrusted) return new StateOutcome('HOOKS_UNTRUSTED', untrusted);
+    const untrusted = await hookTrust(context, request, deps, signals, filtered);
 
     // A signal during the hook trust check ends the call before the lock is touched; one during
     // the lock wait ends the wait at its next check, because the signal clock jumps to +Infinity.
     const interruptedBeforeLock = () =>
       new StateOutcome('INTERRUPTED', { signal: signals.signal, commit: null });
     if (signals.signal) return interruptedBeforeLock();
+    if (untrusted) return new StateOutcome('HOOKS_UNTRUSTED', untrusted);
     const lockDeps = { ...deps, sleep: signals.sleep, monotonicNow: signals.monotonicNow };
     let acquired;
     try {
@@ -1011,7 +1057,7 @@ export async function commitCreate(input, deps) {
     let value;
     let failure;
     try {
-      value = await commitUnderLock(context, request, signals, deps, held);
+      value = await commitUnderLock(context, request, signals, deps, held, filtered);
     } catch (error) {
       failure = error;
     }
