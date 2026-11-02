@@ -2228,36 +2228,145 @@ test('commit create refuses a hooks directory inside a nested repository', async
   assert.equal(lockPresent(root), false);
 });
 
-// Invariant: both comparisons ignore no submodule, whatever `submodule.<name>.ignore` says, so a
-// submodule below an in-worktree hooks directory whose gitlink changed against the base or whose
-// worktree is dirty is a change in that hooks directory.
-test('commit create compares submodules below a hooks directory despite ignore settings', async (t) => {
+// Invariant: Git compares a submodule only as its gitlink and dirty state and lists none of its
+// files, ignored ones included, so a submodule below an in-worktree hooks directory is
+// HOOKS_UNTRUSTED (`hook-config-in-submodule`, the watched path with the submodule) before the
+// lock with no hook run, whatever `submodule.<name>.ignore` says: whether its gitlink changed
+// against the base, its worktree is dirty, or only an ignored file a hook sources changed.
+test('commit create refuses a submodule below a hooks directory', async (t) => {
   const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
   t.after(() => rmSync(outside, { recursive: true, force: true }));
-  for (const where of ['against-base', 'in-worktree']) {
+  for (const where of ['against-base', 'in-worktree', 'ignored']) {
     const root = repository(t);
     const lib = addSubmodule(t, root, 'tools/lib', join(outside, 'unrelated'));
+    const marker = join(outside, `ran-${where}`);
+    writeFileSync(
+      join(root, 'tools', 'pre-commit'),
+      '#!/bin/sh\n. "$(dirname "$0")/lib/hidden-hook"\n',
+    );
+    chmodSync(join(root, 'tools', 'pre-commit'), 0o755);
+    git(root, 'add', '--', 'tools/pre-commit');
+    git(root, 'commit', '-q', '--no-verify', '-m', 'hooks path');
     git(root, 'config', 'core.hooksPath', 'tools');
     git(root, 'config', 'submodule.tools/lib.ignore', 'all');
+    const exclude = join(git(lib, 'rev-parse', '--absolute-git-dir'), 'info');
+    mkdirSync(exclude, { recursive: true });
+    writeFileSync(join(exclude, 'exclude'), 'hidden-hook\n');
+    writeFileSync(join(lib, 'hidden-hook'), 'true\n');
     const base = head(root);
-    hookScript(join(lib, 'hooks', 'pre-commit'), join(outside, 'ran'));
+    if (where === 'ignored') writeFileSync(join(lib, 'hidden-hook'), `touch '${marker}'\n`);
+    else hookScript(join(lib, 'hooks', 'pre-commit'), marker);
     if (where === 'against-base') {
       git(lib, 'commit', '-q', '-am', 'change the library');
       git(root, 'add', 'tools/lib');
       git(root, 'commit', '-q', '--no-verify', '-m', 'bump the library');
     }
     writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
     const outcome = expectOutcome(
       await commitCreate(
         input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
       ),
       'HOOKS_UNTRUSTED',
     );
-    assert.equal(outcome.reason, `changed-${where}`, where);
-    assert.deepEqual(outcome.changed, [{ path: 'tools/lib', class: 'hooks-path' }], where);
+    assert.equal(outcome.reason, 'hook-config-in-submodule', where);
+    assert.deepEqual(outcome.paths, [{ path: 'tools', submodule: 'tools/lib' }], where);
+    assert.equal(existsSync(marker), false, `no hook ran (${where})`);
+    assert.equal(head(root), before, where);
     assert.equal(lockPresent(root), false, where);
   }
 });
+
+// Invariant: a hook directory of the closed list that is itself a submodule (`.husky`) or holds a
+// submodule or another nested repository, ignored or not, hides its files from both comparisons, so
+// it is HOOKS_UNTRUSTED (`hook-config-in-submodule`, the hook directory with the repository) before
+// the lock with no hook run, though neither comparison sees a change and no hooks path names it.
+test('commit create refuses a hook directory of the closed list that is or holds a submodule', async (t) => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const layouts = {
+    'submodule .husky': [
+      { path: '.husky', submodule: '.husky' },
+      (root) => addSubmodule(t, root, '.husky', join(outside, 'unrelated')),
+    ],
+    'submodule in .githooks': [
+      { path: 'app/.githooks', submodule: 'app/.githooks/lib' },
+      (root) => addSubmodule(t, root, 'app/.githooks/lib', join(outside, 'unrelated')),
+    ],
+    'ignored nested repository in .lefthook': [
+      { path: '.lefthook', submodule: '.lefthook/cache' },
+      (root) => {
+        mkdirSync(join(root, '.lefthook', 'cache'), { recursive: true });
+        git(join(root, '.lefthook', 'cache'), 'init', '-q', '--initial-branch=main');
+        writeFileSync(join(root, '.gitignore'), '.effective-flow/\n*.log\n.lefthook/cache/\n');
+        git(root, 'commit', '-q', '--no-verify', '-am', 'ignore the cache');
+      },
+    ],
+  };
+  for (const [label, [reported, configure]] of Object.entries(layouts)) {
+    const root = repository(t);
+    configure(root);
+    const marker = join(outside, `ran-${label}`);
+    hookScript(join(root, '.git', 'hooks', 'pre-commit'), marker);
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: before, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'hook-config-in-submodule', label);
+    assert.deepEqual(outcome.paths, [reported], label);
+    assert.equal(existsSync(marker), false, `no hook ran (${label})`);
+    assert.equal(head(root), before, label);
+    assert.equal(lockPresent(root), false, label);
+  }
+});
+
+// Invariant: Git lists nothing below an in-worktree hook directory it cannot open (execute-only,
+// mode 0111, from which it still runs hooks), warns and exits 0; that incomplete listing is
+// unverifiable, never an empty directory: HOOKS_UNTRUSTED (`unverifiable-hook-link`, the directory
+// `unreadable` with its errno) before the lock with no hook run, for the hooks directory and for a
+// subdirectory of it.
+test(
+  'commit create fails closed on an unreadable in-worktree hook directory',
+  { skip: process.getuid?.() === 0 },
+  async (t) => {
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
+    t.after(() => rmSync(outside, { recursive: true, force: true }));
+    for (const unreadable of ['tools/hooks', 'tools/hooks/lib']) {
+      const root = repository(t);
+      const marker = join(outside, `ran-${unreadable.replaceAll('/', '-')}`);
+      hookScript(join(root, 'tools', 'hooks', 'pre-commit'), marker);
+      mkdirSync(join(root, 'tools', 'hooks', 'lib'));
+      writeFileSync(join(root, 'tools', 'hooks', 'lib', 'helper'), 'true\n');
+      git(root, 'add', 'tools');
+      git(root, 'commit', '-q', '--no-verify', '-m', 'hooks path');
+      git(root, 'config', 'core.hooksPath', 'tools/hooks');
+      writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+      const before = head(root);
+      const request = input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } });
+      chmodSync(join(root, unreadable), 0o111);
+      let envelope;
+      try {
+        envelope = await commitCreate(request);
+      } finally {
+        chmodSync(join(root, unreadable), 0o755);
+      }
+      const outcome = expectOutcome(envelope, 'HOOKS_UNTRUSTED');
+      assert.equal(outcome.reason, 'unverifiable-hook-link', unreadable);
+      assert.deepEqual(
+        outcome.links,
+        [{ path: unreadable, target: null, reason: 'unreadable', code: 'EACCES' }],
+        unreadable,
+      );
+      assert.equal(existsSync(marker), false, `no hook ran (${unreadable})`);
+      assert.equal(head(root), before, unreadable);
+      assert.equal(lockPresent(root), false, unreadable);
+    }
+  },
+);
 
 // Builds an outside hooks directory whose `pre-commit` links to the in-worktree `scripts/hook`,
 // selects it with `core.hooksPath`, then changes that hook in a commit against the returned base.
