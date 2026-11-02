@@ -1216,6 +1216,87 @@ test('commit create treats ignored hook files as working-tree changes', async (t
   assert.deepEqual(viaHooksPath.changed, [{ path: 'hooks/pre-commit', class: 'hooks-path' }]);
 });
 
+// A repository that ignores two hook-manager files outside every hook directory, a root
+// `lefthook-local.yml` and a nested `.lintstagedrc.js`, and installed dependencies.
+function ignoringHookFiles(t) {
+  const root = repository(t);
+  writeFileSync(
+    join(root, '.gitignore'),
+    '.effective-flow/\n*.log\nlefthook-local.yml\n.lintstagedrc.js\nnode_modules/\n',
+  );
+  git(root, 'commit', '-q', '-am', 'ignore local hook configuration');
+  return root;
+}
+
+// Invariant: an ignored file named like hook-manager configuration (HOOK_CONFIG.files) is an
+// untrusted working-tree change at any depth, outside the hook directories too; an ignored
+// `package.json`, which every installed dependency carries, is not.
+test('commit create treats ignored hook-manager files as working-tree changes', async (t) => {
+  const root = ignoringHookFiles(t);
+  mkdirSync(join(root, 'node_modules', 'dep'), { recursive: true });
+  writeFileSync(
+    join(root, 'node_modules', 'dep', 'package.json'),
+    '{"scripts":{"postinstall":"node install.js"}}\n',
+  );
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  expectResult(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } })),
+  );
+
+  const before = head(root);
+  writeFileSync(
+    join(root, 'lefthook-local.yml'),
+    'pre-commit:\n  commands:\n    x:\n      run: curl evil\n',
+  );
+  mkdirSync(join(root, 'packages', 'app'), { recursive: true });
+  writeFileSync(join(root, 'packages', 'app', '.lintstagedrc.js'), 'export default {};\n');
+  writeFileSync(join(root, 'tracked.txt'), 'changed again\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } })),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(outcome.reason, 'changed-in-worktree');
+  assert.deepEqual(
+    [...outcome.changed].sort((left, right) => left.path.localeCompare(right.path)),
+    [
+      { path: 'lefthook-local.yml', class: 'lefthook' },
+      { path: 'packages/app/.lintstagedrc.js', class: 'lint-staged' },
+    ],
+  );
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: the re-checks under the lock see ignored hook-manager files too, so one planted
+// during the lock wait or after staging is HOOKS_UNTRUSTED with no hook run and nothing committed.
+test('commit create re-checks ignored hook-manager files under the lock', async (t) => {
+  for (const [phase, relative, kind] of [
+    ['locked', '.lintstagedrc.js', 'lint-staged'],
+    ['beforeCommit', 'lefthook-local.yml', 'lefthook'],
+  ]) {
+    const root = ignoringHookFiles(t);
+    const before = head(root);
+    const marker = join(root, '.effective-flow', 'hook-ran');
+    hook(root, 'pre-commit', `touch '${marker}'`);
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const outcome = expectOutcome(
+      await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+        onPhase: async (name) => {
+          if (name === phase) writeFileSync(join(root, relative), 'changed by another item\n');
+        },
+      }),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'changed-in-worktree', phase);
+    assert.deepEqual(outcome.changed, [{ path: relative, class: kind }], phase);
+    assert.equal(existsSync(marker), false, `no hook ran (${phase})`);
+    assert.equal(head(root), before, phase);
+    assert.deepEqual(staged(root), [], phase);
+    assert.equal(lockPresent(root), false, phase);
+  }
+});
+
 // Writes an untracked `.husky/pre-commit` into the worktree, as a hook-configuration change made
 // while `commit create` already waits on or holds the lock.
 function plantHusky(root) {

@@ -14,11 +14,12 @@
 //   - the request shape, `worktree` and every path are validated; a path below `.effective-flow/`
 //     or `.git/`, absolute, unnormalized, with `..`, or resolving outside `worktree` is refused;
 //   - the hook trust check: a fork head, or a hook-relevant configuration (HOOK_CONFIG below) that
-//     differs between `hookBase` and HEAD or between HEAD and the working tree, is HOOKS_UNTRUSTED.
-//     The hooks a trusted call runs are then the repository's own, the ones a plain `git commit` on
-//     the base would run. `core.hooksPath` is read with the commit's environment; a read failing
-//     with a status other than 0 or 1 is GIT_FAILED. This check is the early exit; it runs again
-//     under the lock, after acquisition and immediately before step 5.
+//     differs between `hookBase` and HEAD or between HEAD and the working tree, ignored files
+//     included, is HOOKS_UNTRUSTED. The hooks a trusted call runs are then the repository's own,
+//     the ones a plain `git commit` on the base would run. `core.hooksPath` is read with the
+//     commit's environment; a read failing with a status other than 0 or 1 is GIT_FAILED. This
+//     check is the early exit; it runs again under the lock, after acquisition and immediately
+//     before step 5.
 //
 // Under the lock, which is taken with the `lock acquire` protocol (LOCK_HELD after `waitSeconds`,
 // with the same owner and identity details):
@@ -109,10 +110,12 @@ const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // Hook-relevant configuration, a closed list: a change to any of it makes the head's hooks
 // untrusted. Directories and file names match at any depth, which refuses more rather than less.
 // A hook manager it does not name runs unprompted when its configuration changes; extending the
-// list is a code change with a test. Ignored files below these directories count as working-tree
-// changes too, except the content husky itself generates (HUSKY_GENERATED). A `core.hooksPath`
-// inside the worktree is hook configuration as well; one outside it is the user's own
-// configuration, which no pull request controls, so it is not compared.
+// list is a code change with a test. Ignored files below these directories or with these file
+// names count as working-tree changes too, except the content husky itself generates
+// (HUSKY_GENERATED); an ignored `package.json` does not, since every installed dependency carries
+// one and no Git hook reads it. A `core.hooksPath` inside the worktree is hook configuration as
+// well; one outside it is the user's own configuration, which no pull request controls, so it is
+// not compared.
 export const HOOK_CONFIG = Object.freeze({
   directories: Object.freeze({
     '.husky': 'husky',
@@ -497,12 +500,14 @@ async function changedHookConfig(context, worktree, changed, hooksPath, readBefo
   return found;
 }
 
-// The ignored files below the hook-relevant directories and an in-worktree `core.hooksPath` (only
-// its top level when that is the worktree itself), without husky's generated directory.
+// The ignored files below the hook-relevant directories, with a hook-relevant file name, or below
+// an in-worktree `core.hooksPath` (only its top level when that is the worktree itself), without
+// husky's generated directory.
 async function ignoredHookFiles(context, worktree, hooksPath) {
-  const pathspecs = Object.keys(HOOK_CONFIG.directories).map(
-    (directory) => `:(glob)**/${directory}/**`,
-  );
+  const pathspecs = [
+    ...Object.keys(HOOK_CONFIG.directories).map((directory) => `:(glob)**/${directory}/**`),
+    ...Object.keys(HOOK_CONFIG.files).map((name) => `:(glob)**/${name}`),
+  ];
   if (hooksPath === '.') pathspecs.push(':(glob)*');
   else if (hooksPath) pathspecs.push(`:(literal)${hooksPath}`);
   const listed = nulList(
