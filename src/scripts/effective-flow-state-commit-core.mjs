@@ -125,15 +125,15 @@ const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // list is a code change with a test. Ignored files below these directories or with these file
 // names count as working-tree changes too, except the content husky itself generates
 // (HUSKY_GENERATED); an ignored `package.json` does not, since every installed dependency carries
-// one and no Git hook reads it. A `core.hooksPath` inside the worktree is hook configuration as
-// well, judged at its physical location with every in-worktree symlink on its way; one outside it
-// is the user's own configuration, which no pull request controls, so it is not compared. A
-// symlink among the hook configuration, or a symlinked `package.json` that is not ignored, makes
-// its target and every in-worktree symlink on the way, followed hop by hop, hook configuration of
-// the same class; one that dangles, or leaves the worktree or reaches below `.git`, is
-// unverifiable and untrusted. A symlink in a hooks directory outside the worktree (`.git/hooks` by
-// default) makes an in-worktree target and the in-worktree links on its way hook configuration
-// and is otherwise the user's own.
+// one and no Git hook reads it. The hooks directory Git runs (`core.hooksPath` or `.git/hooks`)
+// is hook configuration as well when its physical location lies inside the worktree, with every
+// in-worktree symlink on its way; one outside it is the user's own configuration, which no pull
+// request controls, so it is not compared. A symlink among the hook configuration, or a symlinked
+// `package.json` that is not ignored, makes its target and every in-worktree symlink on the way,
+// followed hop by hop, hook configuration of the same class; one that dangles, or leaves the
+// worktree or reaches below `.git`, is unverifiable and untrusted. A symlink in a hooks directory
+// outside the worktree makes the in-worktree links on its way, wherever it ends, and an
+// in-worktree target hook configuration and is otherwise the user's own.
 export const HOOK_CONFIG = Object.freeze({
   directories: Object.freeze({
     '.husky': 'husky',
@@ -525,12 +525,18 @@ function comparedLocation(worktree, real) {
 
 // The class of a repository-relative path in a trust check's scope: a watched prefix (an
 // in-worktree hooks path, a symlink on its way, a hook symlink's target; `.` watches everything)
-// first, then the closed list.
+// first, then the closed list. A full-file class outranks `package-json`, whose comparison sees
+// only the hook-relevant keys, so a path two scopes reach is compared by its stricter one.
 function scopeClass(relative, prefixes) {
+  let keyed = null;
   for (const [prefix, kind] of prefixes) {
-    if (prefix === '.' || relative === prefix || relative.startsWith(`${prefix}/`)) return kind;
+    if (prefix === '.' || relative === prefix || relative.startsWith(`${prefix}/`)) {
+      if (kind !== 'package-json') return kind;
+      keyed = kind;
+    }
   }
-  return hookConfigClass(relative);
+  const listed = hookConfigClass(relative);
+  return listed !== null && listed !== 'package-json' ? listed : (keyed ?? listed);
 }
 
 function prefixPathspec(prefix) {
@@ -592,8 +598,9 @@ async function followPath(worktree, start, value, links, budget) {
 
 // The scope of one trust check: `prefixes` maps each watched worktree-relative path to its class,
 // `unverifiable` lists the hook symlinks that dangle or leave the compared locations. The hooks
-// directory is `core.hooksPath`, read with the commit's environment so `GIT_CONFIG_*` counts
-// (status 1 is unset, any other failure GIT_FAILED), or `<common dir>/hooks`.
+// directory is the one Git runs, `git rev-parse --git-path hooks` at the worktree top with the
+// commit's environment so `GIT_CONFIG_*` counts: `core.hooksPath` as Git interpolates it (`~`
+// expanded, whitespace kept) or `<common dir>/hooks`, followed physically like a configured path.
 async function hookScope(context, worktree, env) {
   const prefixes = new Map();
   const unverifiable = [];
@@ -607,36 +614,38 @@ async function hookScope(context, worktree, env) {
     });
     return true;
   };
-  const watch = (links, kind) => {
-    for (const link of links) if (scopeClass(link, prefixes) === null) prefixes.set(link, kind);
+  // Adds `relative` with `kind` unless the scope already compares it as strictly; true if added.
+  const add = (relative, kind) => {
+    const existing = scopeClass(relative, prefixes);
+    if (existing !== null && (existing !== 'package-json' || kind === 'package-json')) return false;
+    prefixes.set(relative, kind);
+    return true;
   };
-  const result = await git(context, worktree, ['config', '--get', 'core.hooksPath'], {
-    env,
-    allowed: [0, 1],
-  });
-  const value = result.status === 1 ? '' : asBuffer(result.stdout).toString('utf8').trim();
+  const watch = (links, kind) => {
+    for (const link of links) add(link, kind);
+  };
+  // Not `--path-format=absolute`, which resolves the symlinks the walk must record.
+  const result = await git(context, worktree, ['rev-parse', '--git-path', 'hooks'], { env });
+  const value = asBuffer(result.stdout).toString('utf8').replace(/\n$/, '');
+  if (value === '') fail('GIT_FAILED', 'git rev-parse returned no hooks path');
   let outside = null;
-  if (value === '') {
-    outside = path.join(await commonDir(context, worktree), 'hooks');
-  } else {
-    const links = [];
-    const start = path.isAbsolute(value) ? path.parse(value).root : worktree;
-    const followed = await followPath(worktree, start, value, links, budget);
-    for (const link of links) prefixes.set(link, 'hooks-path');
-    if (tooMany(followed)) return { prefixes, unverifiable };
-    if (followed.real === null) {
-      if (isWithin(worktree, followed.link)) {
-        unverifiable.push({ path: worktreeRelative(worktree, followed.link), target: null });
-      }
-    } else if (comparedLocation(worktree, followed.real)) {
-      prefixes.set(worktreeRelative(worktree, followed.real), 'hooks-path');
-    } else {
-      outside = followed.real;
+  const hooksLinks = [];
+  const start = path.isAbsolute(value) ? path.parse(value).root : worktree;
+  const hooks = await followPath(worktree, start, value, hooksLinks, budget);
+  for (const link of hooksLinks) prefixes.set(link, 'hooks-path');
+  if (tooMany(hooks)) return { prefixes, unverifiable };
+  if (hooks.real === null) {
+    if (isWithin(worktree, hooks.link)) {
+      unverifiable.push({ path: worktreeRelative(worktree, hooks.link), target: null });
     }
+  } else if (comparedLocation(worktree, hooks.real)) {
+    prefixes.set(worktreeRelative(worktree, hooks.real), 'hooks-path');
+  } else {
+    outside = hooks.real;
   }
-  // A hooks directory outside the comparisons is the user's own, but a symlink in it that reaches
-  // into the worktree runs code a pull request can change, through every in-worktree link on the
-  // way.
+  // A hooks directory outside the comparisons is the user's own, but a symlink in it runs code a
+  // pull request can change through every in-worktree link on its way, wherever it ends, and an
+  // in-worktree target as well.
   if (outside !== null) {
     const entries = await readdir(outside, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
@@ -644,11 +653,10 @@ async function hookScope(context, worktree, env) {
       const links = [];
       const followed = await followPath(worktree, outside, entry.name, links, budget);
       if (tooMany(followed)) return { prefixes, unverifiable };
+      watch(links, 'hooks-path');
       if (followed.real === null || followed.missing) continue;
       if (!comparedLocation(worktree, followed.real)) continue;
-      watch(links, 'hooks-path');
-      const target = worktreeRelative(worktree, followed.real);
-      if (scopeClass(target, prefixes) === null) prefixes.set(target, 'hooks-path');
+      add(worktreeRelative(worktree, followed.real), 'hooks-path');
     }
   }
   // Every symlink among the hook configuration and every symlinked `package.json`, tracked,
@@ -686,8 +694,7 @@ async function hookScope(context, worktree, env) {
       const kind = scopeClass(relative, prefixes) ?? 'hooks-path';
       watch(links, kind);
       const target = worktreeRelative(worktree, real);
-      if (scopeClass(target, prefixes) !== null) continue;
-      prefixes.set(target, kind);
+      if (!add(target, kind)) continue;
       pathspecs.push(prefixPathspec(target));
     }
     listed = pathspecs.length > 0 ? await list(['--cached', '--others'], pathspecs) : [];

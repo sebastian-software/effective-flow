@@ -1952,11 +1952,162 @@ test('commit create refuses hook symlinks it cannot verify', async (t) => {
   }
 });
 
-// Invariant: `git config --get core.hooksPath` accepts only status 0 (value) and 1 (unset); any
+// Invariant: with `core.hooksPath` unset, a `.git/hooks` that is a symlink into the worktree is
+// judged at its physical location, so a changed regular hook file in it, against the base or in
+// the working tree, is HOOKS_UNTRUSTED with no hook run.
+test('commit create resolves a symlinked default hooks directory physically', async (t) => {
+  for (const where of ['against-base', 'in-worktree']) {
+    const root = repository(t);
+    const marker = join(root, '.effective-flow', 'hook-ran');
+    hookScript(join(root, 'custom-hooks', 'pre-commit'), join(root, '.effective-flow', 'x'));
+    git(root, 'add', 'custom-hooks');
+    git(root, 'commit', '-q', '--no-verify', '-m', 'custom hooks');
+    rmSync(join(root, '.git', 'hooks'), { recursive: true, force: true });
+    symlinkSync('../custom-hooks', join(root, '.git', 'hooks'));
+    const base = head(root);
+    hookScript(join(root, 'custom-hooks', 'pre-commit'), marker);
+    if (where === 'against-base') {
+      git(root, 'commit', '-q', '--no-verify', '-am', 'change the hook');
+    }
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, `changed-${where}`, where);
+    assert.deepEqual(outcome.changed, [{ path: 'custom-hooks/pre-commit', class: 'hooks-path' }]);
+    assert.equal(existsSync(marker), false, `no hook ran (${where})`);
+    assert.equal(head(root), before, where);
+    assert.equal(lockPresent(root), false, where);
+  }
+});
+
+// Invariant: `core.hooksPath` is the directory Git interpolates, a leading `~/` expanded against
+// HOME and trailing whitespace kept, so a changed hook in that in-worktree directory is
+// HOOKS_UNTRUSTED with no hook run.
+test('commit create resolves core.hooksPath as Git interpolates it', async (t) => {
+  const cases = [
+    ['~/hooks', 'hooks', (root) => ({ ...GIT_ENV, HOME: root })],
+    ['hooks ', 'hooks ', () => GIT_ENV],
+  ];
+  for (const [value, directory, environment] of cases) {
+    const root = repository(t);
+    const marker = join(root, '.effective-flow', 'hook-ran');
+    hookScript(join(root, directory, 'pre-commit'), join(root, '.effective-flow', 'x'));
+    git(root, 'add', '--', directory);
+    git(root, 'commit', '-q', '--no-verify', '-m', 'hooks');
+    git(root, 'config', 'core.hooksPath', value);
+    const base = head(root);
+    hookScript(join(root, directory, 'pre-commit'), marker);
+    git(root, 'commit', '-q', '--no-verify', '-am', 'change the hook');
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+        { env: environment(root) },
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'changed-against-base', value);
+    assert.deepEqual(
+      outcome.changed,
+      [{ path: `${directory}/pre-commit`, class: 'hooks-path' }],
+      value,
+    );
+    assert.equal(existsSync(marker), false, `no hook ran (${value})`);
+    assert.equal(head(root), before, value);
+    assert.equal(lockPresent(root), false, value);
+  }
+});
+
+// Invariant: a hook symlink in a hooks directory outside the worktree that passes an in-worktree
+// link before ending outside the worktree again makes that link hook configuration, so the hook
+// is HOOKS_UNTRUSTED with no hook run, its link retargeted or not.
+test('commit create watches the in-worktree links of an outside hook ending outside', async (t) => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const hooks = join(outside, 'hooks');
+  mkdirSync(hooks);
+  hookScript(join(outside, 'v1', 'hook'), join(outside, 'unrelated'));
+  hookScript(join(outside, 'v2', 'hook'), join(outside, 'ran'));
+  for (const retarget of [false, true]) {
+    const root = repository(t);
+    mkdirSync(join(root, 'scripts'));
+    symlinkSync(join(outside, 'v1'), join(root, 'scripts', 'current'));
+    git(root, 'add', 'scripts');
+    git(root, 'commit', '-q', '--no-verify', '-m', 'linked scripts');
+    rmSync(join(hooks, 'pre-commit'), { force: true });
+    symlinkSync(join(root, 'scripts', 'current', 'hook'), join(hooks, 'pre-commit'));
+    git(root, 'config', 'core.hooksPath', hooks);
+    const base = head(root);
+    if (retarget) {
+      rmSync(join(root, 'scripts', 'current'));
+      symlinkSync(join(outside, 'v2'), join(root, 'scripts', 'current'));
+      git(root, 'commit', '-q', '--no-verify', '-am', 'retarget the link');
+    }
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    const label = retarget ? 'retargeted' : 'unchanged';
+    assert.equal(outcome.reason, 'unverifiable-hook-link', label);
+    assert.deepEqual(
+      outcome.links,
+      [{ path: 'scripts/current', target: join(outside, retarget ? 'v2' : 'v1') }],
+      label,
+    );
+    assert.equal(existsSync(join(outside, 'ran')), false, `no hook ran (${label})`);
+    assert.equal(head(root), before, label);
+    assert.equal(lockPresent(root), false, label);
+  }
+});
+
+// Invariant: a full-file hook configuration symlinked to a `package.json` makes that target hook
+// configuration of its own class, not one compared by the hook-relevant package keys only, so a
+// changed glob command in it is HOOKS_UNTRUSTED.
+test('commit create compares a package.json reached as full-file hook configuration', async (t) => {
+  for (const where of ['against-base', 'in-worktree']) {
+    const root = repository(t);
+    mkdirSync(join(root, 'config'));
+    writeFileSync(join(root, 'config', 'package.json'), '{"*.js":"node lint.js"}\n');
+    symlinkSync('config/package.json', join(root, '.lintstagedrc.json'));
+    git(root, 'add', '.');
+    git(root, 'commit', '-q', '-m', 'linked lint-staged configuration');
+    const base = head(root);
+    writeFileSync(join(root, 'config', 'package.json'), '{"*.js":"node evil.js"}\n');
+    if (where === 'against-base') git(root, 'commit', '-q', '-am', 'change the glob command');
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, `changed-${where}`, where);
+    assert.deepEqual(
+      outcome.changed,
+      [{ path: 'config/package.json', class: 'lint-staged' }],
+      where,
+    );
+    assert.equal(head(root), before, where);
+    assert.equal(lockPresent(root), false, where);
+  }
+});
+
+// Invariant: the hooks directory read (`git rev-parse --git-path hooks`) accepts only status 0; any
 // other status or a runner error fails closed as GIT_FAILED before the lock is taken.
-test('commit create fails closed when the core.hooksPath read fails', async (t) => {
+test('commit create fails closed when the hooks directory read fails', async (t) => {
   const isHooksPathRead = (args) =>
-    args.includes('config') && args.includes('--get') && args.includes('core.hooksPath');
+    args.includes('rev-parse') && args.includes('--git-path') && args.includes('hooks');
   const failures = {
     'status 128': () => ({
       status: 128,
