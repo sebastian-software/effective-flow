@@ -2,7 +2,7 @@
 
 Point-in-time developer evidence for work package 1 of
 `docs/concept/2026-11-02-focus-session-check.md`. The plan is
-`docs/plan/2026-11-02-focus-host-verification-spike.md`.
+`docs/plan/archive/2026-11-02-focus-host-verification-spike.md`.
 
 ## Question and scope
 
