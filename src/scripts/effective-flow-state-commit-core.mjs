@@ -44,9 +44,18 @@
 // the commit landed (nothing unstaged) and without it otherwise (the listed paths unstaged). A
 // SIGKILL leaves the lock to the orphan-break path, because the owner carries `pid: null`.
 //
-// The lock is released on every path. An envelope whose internal release failed, and only that one,
-// carries `heldLock` with the lock's path, identity and `token`: its presence means the lock may
-// still be held, so the caller retries `lock release` once without a break. INTERRUPTED and
+// Ownership (the lock present with this call's token and, where observed, its identity) is
+// verified immediately before step 2, immediately before step 5 and before every unstage; an
+// observation that fails counts as lost. Lost ownership is NOT_OWNER with `reason:
+// 'ownership-lost'`, `phase` (`before-stage`, `before-commit` or `cleanup`, the latter with the
+// failure it was cleaning up), no commit and the index untouched. A landed commit is never turned
+// into NOT_OWNER: a final release that finds the lock gone or foreign (NOT_HELD, NOT_OWNER) makes a
+// verified commit COMMIT_UNVERIFIED with the SHA and `reason: 'ownership-lost'`.
+//
+// The lock is released on every path this call still owns it. An envelope whose internal release
+// failed for a reason other than lost ownership, and only that one, carries `heldLock` with the
+// lock's path, identity and `token`: its presence means the lock may still be held, so the caller
+// retries `lock release` once without a break. INTERRUPTED and
 // SANDBOX_DENIED, and every failed release, also carry `lockRelease`, the internal release's result.
 // An unexpected error under the lock whose release failed carries both in its `error` object,
 // beside `code` and `message`. Git and hook stderr pass through the
@@ -74,6 +83,7 @@ import {
   requireRootSyntax,
   requireWaitSeconds,
   resolveRoot,
+  sameIdentity,
 } from './effective-flow-state-core.mjs';
 import {
   RUNTIME_STATE_DIR,
@@ -666,19 +676,52 @@ function withUnstage(details, unstage) {
   return unstage ? { ...details, unstage } : details;
 }
 
-async function interruptedOutcome(context, request, signal, before) {
+// Whether this call still owns the lock: present, a valid owner with its token, and (when it was
+// observed after acquisition) the same directory identity. A failed observation counts as lost.
+async function ownsLock(context, held) {
+  try {
+    const observed = await observeLock(context, held.lock);
+    return (
+      observed.present === true &&
+      observed.owner?.state === 'valid' &&
+      observed.owner.fields?.token === held.token &&
+      (held.identity === null || sameIdentity(observed.identity, held.identity))
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Lost ownership: nothing is committed and the index is left as it is.
+function ownershipLost(request, held, phase, extra = {}) {
+  return new StateOutcome('NOT_OWNER', {
+    lock: request.lock,
+    path: held.path,
+    reason: 'ownership-lost',
+    phase,
+    commit: null,
+    unstaged: false,
+    ...extra,
+  });
+}
+
+async function interruptedOutcome(context, request, held, signal, before) {
   const head = before === undefined ? null : await headCommit(context, request.worktree);
   const landed = before !== undefined && head !== null && head !== before;
   if (landed) return new StateOutcome('INTERRUPTED', { signal, commit: head });
+  if (before !== undefined && !(await ownsLock(context, held))) {
+    return ownershipLost(request, held, 'cleanup', { failed: 'INTERRUPTED', signal });
+  }
   const unstage =
     before === undefined ? null : await unstageListed(context, request.worktree, request.paths);
   return new StateOutcome('INTERRUPTED', withUnstage({ signal, commit: null }, unstage));
 }
 
 // Runs steps 1 to 6. `signals` is consulted after every step; `before` is HEAD before staging.
-async function commitUnderLock(context, request, signals, deps) {
+// Ownership of `held` is verified before staging, before the commit and before every unstage.
+async function commitUnderLock(context, request, signals, deps, held) {
   const { worktree, paths } = request;
-  const stop = (before) => interruptedOutcome(context, request, signals.signal, before);
+  const stop = (before) => interruptedOutcome(context, request, held, signals.signal, before);
   await deps.onPhase?.('locked');
   if (signals.signal) return stop(undefined);
   const untrusted = await hookTrust(context, request, deps);
@@ -692,14 +735,22 @@ async function commitUnderLock(context, request, signals, deps) {
   if (before === null) fail('INVALID_INPUT', 'worktree has no HEAD commit');
   if (signals.signal) return stop(undefined);
 
-  const unstaged = async (code, details) =>
-    new StateOutcome(code, withUnstage(details, await unstageListed(context, worktree, paths)));
+  const unstaged = async (code, details) => {
+    if (!(await ownsLock(context, held))) {
+      return ownershipLost(request, held, 'cleanup', { failed: code, failedDetails: details });
+    }
+    return new StateOutcome(
+      code,
+      withUnstage(details, await unstageListed(context, worktree, paths)),
+    );
+  };
   const denied = async (step, result) =>
     unstaged('SANDBOX_DENIED', {
       step,
       ...reportedStderr(result?.stderr ?? result?.error?.message),
     });
 
+  if (!(await ownsLock(context, held))) return ownershipLost(request, held, 'before-stage');
   const added = await runGit(context, worktree, ['--literal-pathspecs', 'add', '--', ...paths]);
   if (signals.signal) return stop(before);
   if (added?.status !== 0) {
@@ -707,24 +758,38 @@ async function commitUnderLock(context, request, signals, deps) {
     return unstaged('STAGE_FAILED', reportedStderr(added?.stderr ?? added?.error?.message));
   }
   try {
-    return await afterStaging(context, request, signals, deps, { before, stop, unstaged, denied });
+    return await afterStaging(context, request, signals, deps, {
+      before,
+      held,
+      stop,
+      unstaged,
+      denied,
+    });
   } catch (error) {
-    return recoverAfterStaging(context, request, before, error);
+    return recoverAfterStaging(context, request, held, before, error);
   }
 }
 
 // An unexpected failure once the listed paths are staged: a commit that landed is reported with
-// its SHA as COMMIT_UNVERIFIED (nothing is amended or reset); otherwise only the listed paths are
-// unstaged and the failure propagates.
-async function recoverAfterStaging(context, request, before, error) {
+// its SHA as COMMIT_UNVERIFIED (nothing is amended or reset); with the lock lost it is NOT_OWNER
+// carrying the error, nothing unstaged; otherwise only the listed paths are unstaged and the
+// failure propagates.
+async function recoverAfterStaging(context, request, held, before, error) {
   const head = await headCommit(context, request.worktree).catch(() => null);
+  const reported = {
+    code: error?.code ?? 'INTERNAL_ERROR',
+    message: error?.message ?? String(error),
+  };
   if (head !== null && head !== before) {
     return new StateOutcome('COMMIT_UNVERIFIED', {
       commit: head,
       expectedParent: before,
       listed: request.paths,
-      error: { code: error?.code ?? 'INTERNAL_ERROR', message: error?.message ?? String(error) },
+      error: reported,
     });
+  }
+  if (!(await ownsLock(context, held))) {
+    return ownershipLost(request, held, 'cleanup', { failed: reported.code, error: reported });
   }
   const unstage = await unstageListed(context, request.worktree, request.paths).catch(
     (failure) => ({ unstaged: false, message: failure?.message ?? 'unstage failed' }),
@@ -736,7 +801,13 @@ async function recoverAfterStaging(context, request, before, error) {
 }
 
 // Steps 3 to 6, with the listed paths staged.
-async function afterStaging(context, request, signals, deps, { before, stop, unstaged, denied }) {
+async function afterStaging(
+  context,
+  request,
+  signals,
+  deps,
+  { before, held, stop, unstaged, denied },
+) {
   const { worktree, paths } = request;
   const staged = await stagedNames(context, worktree);
   if (!sameSet(staged, paths)) {
@@ -744,7 +815,9 @@ async function afterStaging(context, request, signals, deps, { before, stop, uns
       listed: paths,
       staged: staged.slice(0, 64),
     });
-    outcome.details.stillStaged = (await stagedNames(context, worktree)).slice(0, 64);
+    if (outcome.code === 'STAGED_SET_MISMATCH') {
+      outcome.details.stillStaged = (await stagedNames(context, worktree)).slice(0, 64);
+    }
     return outcome;
   }
 
@@ -776,6 +849,7 @@ async function afterStaging(context, request, signals, deps, { before, stop, uns
   const untrusted = await hookTrust(context, request, deps);
   if (signals.signal) return stop(before);
   if (untrusted) return unstaged('HOOKS_UNTRUSTED', untrusted);
+  if (!(await ownsLock(context, held))) return ownershipLost(request, held, 'before-commit');
   const committed = await runGit(context, worktree, ['commit', `--message=${request.message}`], {
     env: gitCommitEnv(deps.env ?? process.env),
     timeoutMs: deps.commitTimeoutMs ?? COMMIT_TIMEOUT_MS,
@@ -932,19 +1006,26 @@ export async function commitCreate(input, deps) {
     let value;
     let failure;
     try {
-      value = await commitUnderLock(context, request, signals, deps);
+      value = await commitUnderLock(context, request, signals, deps, held);
     } catch (error) {
       failure = error;
     }
     const release = await releaseHeld(context, held, deps);
     const releaseFailed = !release.released;
+    // A release that finds the lock gone or owned by another is lost ownership: that lock is not
+    // this call's to offer or retry. Any other failed release may leave the lock held.
+    const lostOwnership =
+      releaseFailed && (release.code === 'NOT_OWNER' || release.code === 'NOT_HELD');
+    const mayBeHeld = releaseFailed && !lostOwnership;
     const tombstone = release.leftoverTombstone
       ? { leftoverTombstone: release.leftoverTombstone }
       : {};
     if (failure) {
       if (releaseFailed && failure instanceof Error) {
-        failure.message = `${failure.message}; lock release failed: ${release.code}; token ${held.token}`;
-        failure.envelopeDetails = { heldLock: held, lockRelease: release };
+        failure.message = `${failure.message}; lock release failed: ${release.code}${mayBeHeld ? `; token ${held.token}` : ''}`;
+        failure.envelopeDetails = mayBeHeld
+          ? { heldLock: held, lockRelease: release }
+          : { lockRelease: release };
       }
       throw failure;
     }
@@ -955,14 +1036,23 @@ export async function commitCreate(input, deps) {
       return new StateOutcome(value.code, {
         ...value.details,
         ...tombstone,
-        ...(releaseFailed ? { heldLock: held } : {}),
+        ...(mayBeHeld ? { heldLock: held } : {}),
         ...(report ? { lockRelease: release } : {}),
+      });
+    }
+    if (lostOwnership) {
+      return new StateOutcome('COMMIT_UNVERIFIED', {
+        commit: value.commit,
+        listed: value.paths,
+        reason: 'ownership-lost',
+        lockRelease: release,
+        ...tombstone,
       });
     }
     return {
       ...value,
       ...tombstone,
-      ...(releaseFailed ? { heldLock: held, lockRelease: release } : {}),
+      ...(mayBeHeld ? { heldLock: held, lockRelease: release } : {}),
     };
   } finally {
     signals.dispose();

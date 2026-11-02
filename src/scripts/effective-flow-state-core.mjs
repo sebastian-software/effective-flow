@@ -454,7 +454,7 @@ export function identityOf(info) {
 // filesystem a directory removed and re-created within one tick, on a reused inode, keeps all three
 // values. The owner token or digest then tells the two apart, and the tombstone verification
 // re-checks both on the renamed node itself, so a match there is the observed lock.
-function sameIdentity(left, right) {
+export function sameIdentity(left, right) {
   if (!left || !right) return false;
   return IDENTITY_KEYS.every((key) => left[key] === right[key]);
 }

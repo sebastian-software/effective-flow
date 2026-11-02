@@ -1168,8 +1168,11 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   the lock it requires an empty index, stages exactly the listed paths, verifies the staged set and
   each blob against `expect`, runs `git commit` with the repository's hooks (bounded by 300 s),
   verifies parent, paths, each committed entry against `expect` and a clean index, unstages only
-  its own paths on failure and releases the lock on every path. An envelope in which the lock may
-  still be held carries `heldLock` for one retried `lock release`.
+  its own paths on failure and releases its own lock, never one it no longer owns. It verifies
+  ownership before staging, before `git commit` and before every unstage; lost ownership is
+  `NOT_OWNER` (`ownership-lost`) with no commit and the index untouched, and a landed commit whose
+  release finds the lock gone or foreign is `COMMIT_UNVERIFIED` with its SHA. An envelope in which
+  the lock may still be held carries `heldLock` for one retried `lock release`.
   Because the rule admits a commit that runs the repository's hooks without a prompt, the trust
   check is the boundary; it never pushes, amends, resets or rebases.
   `review open-report` (`effective-flow-state-review-core.mjs`) reserves and allocates in one

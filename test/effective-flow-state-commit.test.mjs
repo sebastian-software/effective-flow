@@ -1391,3 +1391,150 @@ test('the CLI runs commit create and reports its outcomes', async (t) => {
   });
   assert.equal(extra.status, 2);
 });
+
+// --- Ownership of iterate-commit.lock across the critical section ------------------------------
+
+const OTHER_OWNER = Object.freeze({ ...OWNER, delegation: 'iterate-0123456789abcdef/2' });
+
+// Breaks the held lock by removing its directory and acquires it as another owner; returns its token.
+async function takeOver(root) {
+  rmSync(join(root, ...LOCK_DIR), { recursive: true, force: true });
+  const acquired = await executeOperation(
+    'lock acquire',
+    { cwd: root, lock: 'iterate-commit', owner: OTHER_OWNER },
+    deps(),
+  );
+  assert.equal(acquired.ok, true, JSON.stringify(acquired));
+  return foreignToken(root);
+}
+
+async function foreignToken(root) {
+  const inspected = await executeOperation(
+    'lock inspect',
+    { cwd: root, lock: 'iterate-commit' },
+    deps(),
+  );
+  assert.equal(inspected.ok, true, JSON.stringify(inspected));
+  assert.equal(inspected.result.present, true);
+  return inspected.result.owner.fields.token;
+}
+
+function expectOwnershipLost(outcome, phases, lockReleased = false) {
+  assert.equal(outcome.reason, 'ownership-lost', JSON.stringify(outcome));
+  assert.ok(phases.includes(outcome.phase), `phase ${outcome.phase}`);
+  assert.equal(outcome.commit, null);
+  assert.equal(outcome.lock, 'iterate-commit');
+  assert.equal(outcome.heldLock, undefined, 'the foreign lock is never offered');
+  assert.ok(outcome.lockRelease, 'the failed release is reported');
+  assert.equal(outcome.lockRelease.released, lockReleased);
+  assert.equal(outcome.lockRelease.code, 'NOT_OWNER');
+}
+
+// Invariant: ownership is verified before `git add`; a lock taken over right after acquisition
+// stages nothing, commits nothing and leaves the foreign lock intact.
+test('commit create stops with NOT_OWNER when the lock is taken over before staging', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  let foreign;
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      onPhase: async (phase) => {
+        if (phase === 'locked') foreign = await takeOver(root);
+      },
+    }),
+    'NOT_OWNER',
+  );
+  expectOwnershipLost(outcome, ['before-stage']);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), true);
+  assert.equal(await foreignToken(root), foreign);
+});
+
+// Invariant: ownership is verified before `git commit`; a takeover after staging commits nothing
+// and leaves the index (this call's and the foreign owner's staged paths) and the foreign lock alone.
+test('commit create stops with NOT_OWNER when the lock is taken over before the commit', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  let foreign;
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      onPhase: async (phase) => {
+        if (phase !== 'beforeCommit') return;
+        foreign = await takeOver(root);
+        writeFileSync(join(root, 'other.txt'), 'foreign change\n');
+        git(root, 'add', 'other.txt');
+      },
+    }),
+    'NOT_OWNER',
+  );
+  expectOwnershipLost(outcome, ['before-commit']);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root).sort(), ['other.txt', 'tracked.txt']);
+  assert.equal(lockPresent(root), true);
+  assert.equal(await foreignToken(root), foreign);
+});
+
+// Invariant: cleanup after a failure never unstages under a lock this call no longer owns; the
+// index stays untouched and the foreign lock survives.
+test('commit create does not unstage after losing the lock during a failing commit', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  let foreign;
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      onPhase: async (phase) => {
+        if (phase !== 'beforeCommit') return;
+        foreign = await takeOver(root);
+        plantHusky(root);
+      },
+    }),
+    'NOT_OWNER',
+  );
+  expectOwnershipLost(outcome, ['cleanup', 'before-commit']);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), ['tracked.txt']);
+  assert.equal(lockPresent(root), true);
+  assert.equal(await foreignToken(root), foreign);
+});
+
+// Invariant: a commit that landed but whose final release finds the lock gone is COMMIT_UNVERIFIED
+// with the SHA and ownership-lost, never ok:true and never a heldLock for a lock not held.
+test('commit create reports COMMIT_UNVERIFIED when the lock vanished before the release', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  hook(root, 'post-commit', 'rm -rf "$PWD/.effective-flow/iterate-commit.lock"');
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } })),
+    'COMMIT_UNVERIFIED',
+  );
+  assert.notEqual(head(root), before);
+  assert.equal(outcome.commit, head(root));
+  assert.equal(outcome.reason, 'ownership-lost');
+  assert.equal(outcome.lockRelease.released, false);
+  assert.equal(outcome.lockRelease.code, 'NOT_HELD');
+  assert.equal(outcome.heldLock, undefined);
+});
+
+// Invariant: a commit that landed but whose final release finds a different owner is
+// COMMIT_UNVERIFIED with NOT_OWNER on the release, never ok:true and never a heldLock.
+test('commit create reports COMMIT_UNVERIFIED when another owner holds the lock at release', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  hook(root, 'post-commit', 'printf x > "$PWD/.effective-flow/iterate-commit.lock/owner"');
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } })),
+    'COMMIT_UNVERIFIED',
+  );
+  assert.notEqual(head(root), before);
+  assert.equal(outcome.commit, head(root));
+  assert.equal(outcome.reason, 'ownership-lost');
+  assert.equal(outcome.lockRelease.released, false);
+  assert.equal(outcome.lockRelease.code, 'NOT_OWNER');
+  assert.equal(outcome.heldLock, undefined);
+});
