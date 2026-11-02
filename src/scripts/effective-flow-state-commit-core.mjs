@@ -16,7 +16,10 @@
 //   - the hook trust check: a fork head, or a hook-relevant configuration (HOOK_CONFIG below) that
 //     differs between `hookBase` and HEAD or between HEAD and the working tree, ignored files and
 //     the in-worktree targets of hook symlinks included, is HOOKS_UNTRUSTED, and so is a hook
-//     symlink it cannot verify (`unverifiable-hook-link`). The hooks a trusted call runs are then
+//     symlink it cannot verify or a hook path whose discovery fails other than as missing
+//     (`unverifiable-hook-link`), and a watched hook path inside a submodule or another nested
+//     repository, whose files Git does not compare (`hook-config-in-submodule`); both
+//     comparisons ignore no submodule. The hooks a trusted call runs are then
 //     the repository's own, the ones a plain `git commit` on the base would run. `core.hooksPath`
 //     is read with the commit's environment; a read failing with a status other than 0 or 1 is
 //     GIT_FAILED, as is a working-tree comparison that fails or exceeds its bound. This check is
@@ -71,7 +74,7 @@
 // `leftoverTombstone` from the internal release where present.
 
 import { createHash, randomBytes } from 'node:crypto';
-import { lstat, readFile, readdir, readlink, realpath } from 'node:fs/promises';
+import { lstat, readFile, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -133,7 +136,9 @@ const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // followed hop by hop, hook configuration of the same class; one that dangles, or leaves the
 // worktree or reaches below `.git`, is unverifiable and untrusted. A symlink in a hooks directory
 // outside the worktree makes the in-worktree links on its way, wherever it ends, and an
-// in-worktree target hook configuration and is otherwise the user's own.
+// in-worktree target hook configuration and is otherwise the user's own; such a directory that
+// cannot be listed is unverifiable. Hook configuration inside a submodule or another nested
+// repository is refused, since Git compares none of its files.
 export const HOOK_CONFIG = Object.freeze({
   directories: Object.freeze({
     '.husky': 'husky',
@@ -558,13 +563,29 @@ const STATIC_HOOK_PATHSPECS = Object.freeze([
 // of a symlinked one is what a hook manager reads, so it is package configuration of its own.
 const PACKAGE_JSON_PATHSPEC = ':(glob)**/package.json';
 
+// The errors that mean a path is missing: ENOENT, or ENOTDIR for a component that is no directory.
+const MISSING_ERRNOS = Object.freeze(['ENOENT', 'ENOTDIR']);
+
+// Runs one filesystem read of the trust check: `{value}`, `{value: null}` for a missing path, or
+// `{failed}` with the errno of any other failure, which the check never mistakes for a missing path.
+async function probe(read) {
+  try {
+    return { value: await read() };
+  } catch (error) {
+    if (MISSING_ERRNOS.includes(error?.code)) return { value: null };
+    return { failed: typeof error?.code === 'string' ? error.code : 'UNKNOWN' };
+  }
+}
+
 // Follows `value` physically from `start` as the OS does, `..` included, one symlink hop at a
 // time, and records every symlink it passes at a compared location: a chained link and a symlinked
 // directory on the way to the target alike, so changing any of them is a change in scope. A
 // missing component ends the walk lexically (`missing: true`); inside a link's target it makes
-// that link dangle (`real: null` with that `link`). `budget.hops` counts every symlink followed in
-// one trust check; past MAX_HOOK_LINKS the walk stops with `reason: 'too-many-links'`.
-async function followPath(worktree, start, value, links, budget) {
+// that link dangle (`real: null` with that `link`). Any other `lstat` or `readlink` failure stops
+// the walk at that path with `reason: 'unreadable'` and its `code`. `budget.hops` counts every
+// symlink followed in one trust check; past MAX_HOOK_LINKS the walk stops with `reason:
+// 'too-many-links'`.
+async function followPath(fs, worktree, start, value, links, budget) {
   const segments = value.split('/').filter((segment) => segment !== '' && segment !== '.');
   let current = start;
   for (const [index, segment] of segments.entries()) {
@@ -573,7 +594,8 @@ async function followPath(worktree, start, value, links, budget) {
       continue;
     }
     const candidate = path.join(current, segment);
-    const stat = await lstat(candidate).catch(() => null);
+    const { value: stat, failed } = await probe(() => fs.lstat(candidate));
+    if (failed) return { real: null, link: candidate, reason: 'unreadable', code: failed };
     if (stat === null) {
       return { real: path.join(candidate, ...segments.slice(index + 1)), missing: true };
     }
@@ -585,10 +607,11 @@ async function followPath(worktree, start, value, links, budget) {
     if (budget.hops > MAX_HOOK_LINKS)
       return { real: null, link: candidate, reason: 'too-many-links' };
     if (comparedLocation(worktree, candidate)) links.push(worktreeRelative(worktree, candidate));
-    const target = await readlink(candidate).catch(() => null);
+    const { value: target, failed: unread } = await probe(() => fs.readlink(candidate));
+    if (unread) return { real: null, link: candidate, reason: 'unreadable', code: unread };
     if (target === null) return { real: null, link: candidate };
     const from = path.isAbsolute(target) ? path.parse(target).root : path.dirname(candidate);
-    const followed = await followPath(worktree, from, target, links, budget);
+    const followed = await followPath(fs, worktree, from, target, links, budget);
     if (followed.real === null) return followed;
     if (followed.missing) return { real: null, link: candidate };
     current = followed.real;
@@ -596,24 +619,87 @@ async function followPath(worktree, start, value, links, budget) {
   return { real: current };
 }
 
+// The watched paths at or below a submodule or another nested repository, each with the
+// shallowest one: a gitlink in the index, or a directory in the worktree that holds `.git`. Git
+// compares such a repository only as its gitlink and lists none of its files, so neither the
+// comparisons nor the ignored-file and symlink scans see inside it. Verifying one would take the
+// whole trust check again inside it, recursively, so a watched path there is refused instead and
+// its item takes the prompting fallback. A submodule below a watched path is compared by its
+// gitlink and dirty state (`--ignore-submodules=none`). A failed read is reported to `unreadable`.
+async function nestedRepositories(context, worktree, prefixes, unreadable) {
+  const chains = [...prefixes.keys()]
+    .filter((prefix) => prefix !== '.')
+    .map((prefix) => {
+      const segments = prefix.split('/');
+      return [prefix, segments.map((_, index) => segments.slice(0, index + 1).join('/'))];
+    });
+  const candidates = [...new Set(chains.flatMap(([, chain]) => chain))];
+  if (candidates.length === 0) return [];
+  const gitlinks = new Set(
+    nulList(
+      (
+        await git(context, worktree, [
+          'ls-files',
+          '--stage',
+          '-z',
+          '--',
+          ...candidates.map((candidate) => `:(literal)${candidate}`),
+        ])
+      ).stdout,
+    )
+      .filter((entry) => entry.startsWith('160000 '))
+      .map((entry) => entry.slice(entry.indexOf('\t') + 1)),
+  );
+  const boundaries = new Set();
+  for (const candidate of candidates) {
+    if (gitlinks.has(candidate)) {
+      boundaries.add(candidate);
+      continue;
+    }
+    const directory = path.join(worktree, candidate);
+    const found = await probe(() => context.fs.lstat(directory));
+    if (found.failed) {
+      unreadable(directory, found.failed);
+      continue;
+    }
+    if (!found.value?.isDirectory()) continue;
+    const marker = await probe(() => context.fs.lstat(path.join(directory, '.git')));
+    if (marker.failed) unreadable(path.join(directory, '.git'), marker.failed);
+    else if (marker.value !== null) boundaries.add(candidate);
+  }
+  return chains.flatMap(([prefix, chain]) => {
+    const submodule = chain.find((candidate) => boundaries.has(candidate));
+    return submodule === undefined ? [] : [{ path: prefix, submodule }];
+  });
+}
+
 // The scope of one trust check: `prefixes` maps each watched worktree-relative path to its class,
-// `unverifiable` lists the hook symlinks that dangle or leave the compared locations. The hooks
-// directory is the one Git runs, `git rev-parse --git-path hooks` at the worktree top with the
-// commit's environment so `GIT_CONFIG_*` counts: `core.hooksPath` as Git interpolates it (`~`
-// expanded, whitespace kept) or `<common dir>/hooks`, followed physically like a configured path.
+// `unverifiable` lists the hook symlinks that dangle or leave the compared locations and every
+// hook path whose discovery failed for a reason other than a missing path (`unreadable`), and
+// `nested` the watched paths inside a submodule (`nestedRepositories`). The hooks directory is the
+// one Git runs, `git rev-parse --git-path hooks` at the worktree top with the commit's
+// environment so `GIT_CONFIG_*` counts: `core.hooksPath` as Git interpolates it (`~` expanded,
+// whitespace kept) or `<common dir>/hooks`, followed physically like a configured path.
 async function hookScope(context, worktree, env) {
+  const { fs } = context;
   const prefixes = new Map();
   const unverifiable = [];
   const budget = { hops: 0 };
-  const tooMany = (followed) => {
+  const shown = (absolute) =>
+    isWithin(worktree, absolute) ? worktreeRelative(worktree, absolute) : absolute;
+  const unreadable = (absolute, code) =>
+    unverifiable.push({ path: shown(absolute), target: null, reason: 'unreadable', code });
+  // A walk stopped by the link bound or by a failed read ends the scope as unverifiable.
+  const stopped = (followed) => {
+    if (followed.reason === 'unreadable') {
+      unreadable(followed.link, followed.code);
+      return true;
+    }
     if (followed.reason !== 'too-many-links') return false;
-    unverifiable.push({
-      path: worktreeRelative(worktree, followed.link),
-      target: null,
-      reason: 'too-many-links',
-    });
+    unverifiable.push({ path: shown(followed.link), target: null, reason: 'too-many-links' });
     return true;
   };
+  const partial = () => ({ prefixes, unverifiable, nested: [] });
   // Adds `relative` with `kind` unless the scope already compares it as strictly; true if added.
   const add = (relative, kind) => {
     const existing = scopeClass(relative, prefixes);
@@ -631,9 +717,9 @@ async function hookScope(context, worktree, env) {
   let outside = null;
   const hooksLinks = [];
   const start = path.isAbsolute(value) ? path.parse(value).root : worktree;
-  const hooks = await followPath(worktree, start, value, hooksLinks, budget);
+  const hooks = await followPath(fs, worktree, start, value, hooksLinks, budget);
   for (const link of hooksLinks) prefixes.set(link, 'hooks-path');
-  if (tooMany(hooks)) return { prefixes, unverifiable };
+  if (stopped(hooks)) return partial();
   if (hooks.real === null) {
     if (isWithin(worktree, hooks.link)) {
       unverifiable.push({ path: worktreeRelative(worktree, hooks.link), target: null });
@@ -645,14 +731,19 @@ async function hookScope(context, worktree, env) {
   }
   // A hooks directory outside the comparisons is the user's own, but a symlink in it runs code a
   // pull request can change through every in-worktree link on its way, wherever it ends, and an
-  // in-worktree target as well.
+  // in-worktree target as well. One that cannot be listed (an execute-only directory, from which
+  // Git still runs its hooks) hides those links, so it is unverifiable; a missing one runs none.
   if (outside !== null) {
-    const entries = await readdir(outside, { withFileTypes: true }).catch(() => []);
-    for (const entry of entries) {
+    const listing = await probe(() => fs.readdir(outside, { withFileTypes: true }));
+    if (listing.failed) {
+      unreadable(outside, listing.failed);
+      return partial();
+    }
+    for (const entry of listing.value ?? []) {
       if (!entry.isSymbolicLink()) continue;
       const links = [];
-      const followed = await followPath(worktree, outside, entry.name, links, budget);
-      if (tooMany(followed)) return { prefixes, unverifiable };
+      const followed = await followPath(fs, worktree, outside, entry.name, links, budget);
+      if (stopped(followed)) return partial();
       watch(links, 'hooks-path');
       if (followed.real === null || followed.missing) continue;
       if (!comparedLocation(worktree, followed.real)) continue;
@@ -679,11 +770,15 @@ async function hookScope(context, worktree, env) {
     for (const relative of listed) {
       if (examined.has(relative)) continue;
       examined.add(relative);
-      if (!(await lstat(path.join(worktree, relative)).catch(() => null))?.isSymbolicLink())
+      const listedStat = await probe(() => fs.lstat(path.join(worktree, relative)));
+      if (listedStat.failed) {
+        unreadable(path.join(worktree, relative), listedStat.failed);
         continue;
+      }
+      if (!listedStat.value?.isSymbolicLink()) continue;
       const links = [];
-      const followed = await followPath(worktree, worktree, relative, links, budget);
-      if (tooMany(followed)) return { prefixes, unverifiable };
+      const followed = await followPath(fs, worktree, worktree, relative, links, budget);
+      if (stopped(followed)) return partial();
       const real = followed.missing ? null : followed.real;
       if (real === null || !comparedLocation(worktree, real)) {
         const target =
@@ -699,7 +794,8 @@ async function hookScope(context, worktree, env) {
     }
     listed = pathspecs.length > 0 ? await list(['--cached', '--others'], pathspecs) : [];
   }
-  return { prefixes, unverifiable };
+  const nested = await nestedRepositories(context, worktree, prefixes, unreadable);
+  return { prefixes, unverifiable, nested };
 }
 
 async function changedHookConfig(changed, prefixes, readBefore, readAfter) {
@@ -783,7 +879,7 @@ function filterGit(context, deps) {
 async function hookTrust(context, request, deps, signals, filtered) {
   const { worktree, hookBase } = request;
   if (!request.sameRepository) return { reason: 'fork-head' };
-  const { prefixes, unverifiable } = await hookScope(
+  const { prefixes, unverifiable, nested } = await hookScope(
     context,
     worktree,
     gitCommitEnv(deps.env ?? process.env),
@@ -791,12 +887,14 @@ async function hookTrust(context, request, deps, signals, filtered) {
   if (unverifiable.length > 0) {
     return { reason: 'unverifiable-hook-link', links: unverifiable.slice(0, 64) };
   }
+  if (nested.length > 0) return { reason: 'hook-config-in-submodule', paths: nested.slice(0, 64) };
   const againstBase = nulList(
     (
       await git(context, worktree, [
         'diff',
         '--name-only',
         '--no-renames',
+        '--ignore-submodules=none',
         '-z',
         hookBase,
         'HEAD',
@@ -817,6 +915,7 @@ async function hookTrust(context, request, deps, signals, filtered) {
     'diff',
     '--name-only',
     '--no-renames',
+    '--ignore-submodules=none',
     '-z',
     'HEAD',
     '--',
