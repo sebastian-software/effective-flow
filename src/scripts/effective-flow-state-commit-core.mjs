@@ -14,12 +14,14 @@
 //   - the request shape, `worktree` and every path are validated; a path below `.effective-flow/`
 //     or `.git/`, absolute, unnormalized, with `..`, or resolving outside `worktree` is refused;
 //   - the hook trust check: a fork head, or a hook-relevant configuration (HOOK_CONFIG below) that
-//     differs between `hookBase` and HEAD or between HEAD and the working tree, ignored files
-//     included, is HOOKS_UNTRUSTED. The hooks a trusted call runs are then the repository's own,
-//     the ones a plain `git commit` on the base would run. `core.hooksPath` is read with the
-//     commit's environment; a read failing with a status other than 0 or 1 is GIT_FAILED, as is a
-//     working-tree comparison that fails or exceeds its bound. This check is the early exit; it
-//     runs again under the lock, after acquisition and immediately before step 5.
+//     differs between `hookBase` and HEAD or between HEAD and the working tree, ignored files and
+//     the in-worktree targets of hook symlinks included, is HOOKS_UNTRUSTED, and so is a hook
+//     symlink it cannot verify (`unverifiable-hook-link`). The hooks a trusted call runs are then
+//     the repository's own, the ones a plain `git commit` on the base would run. `core.hooksPath`
+//     is read with the commit's environment; a read failing with a status other than 0 or 1 is
+//     GIT_FAILED, as is a working-tree comparison that fails or exceeds its bound. This check is
+//     the early exit; it runs again under the lock, after acquisition and immediately before
+//     step 5.
 //
 // Under the lock, which is taken with the `lock acquire` protocol (LOCK_HELD after `waitSeconds`,
 // with the same owner and identity details):
@@ -68,8 +70,8 @@
 // tracker's redactor and are capped at MAX_STDERR_CHARS. The result is `{commit, paths}`, plus
 // `leftoverTombstone` from the internal release where present.
 
-import { randomBytes } from 'node:crypto';
-import { lstat, readFile, realpath } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -124,8 +126,12 @@ const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // names count as working-tree changes too, except the content husky itself generates
 // (HUSKY_GENERATED); an ignored `package.json` does not, since every installed dependency carries
 // one and no Git hook reads it. A `core.hooksPath` inside the worktree is hook configuration as
-// well; one outside it is the user's own configuration, which no pull request controls, so it is
-// not compared.
+// well, judged at its physical location with every in-worktree symlink on its way; one outside it
+// is the user's own configuration, which no pull request controls, so it is not compared. A
+// symlink among the hook configuration makes its target hook configuration of the same class; one
+// that dangles, or leaves the worktree or reaches below `.git`, is unverifiable and untrusted. A
+// symlink in a hooks directory outside the worktree (`.git/hooks` by default) makes an
+// in-worktree target hook configuration and is otherwise the user's own.
 export const HOOK_CONFIG = Object.freeze({
   directories: Object.freeze({
     '.husky': 'husky',
@@ -175,9 +181,38 @@ export const HOOK_CONFIG = Object.freeze({
   ]),
 });
 
-// The directory husky (v9) regenerates on every install, marked by its own `.gitignore` of `*`:
-// its ignored wrappers only call the tracked hooks beside it, which the trust check compares.
+// The directory husky (v9) regenerates on every install, marked by its own `.gitignore` of `*`.
+// Its ignored files are trusted only as the regular files husky 9.0.1 to 9.1.7 writes there, by
+// SHA-256 of their content: `h`, copied from the package, runs the tracked hook beside the
+// directory; `husky.sh` is empty or a deprecation notice; every other file is a wrapper sourcing
+// `h`. Any other content, a symlink or a subdirectory is untrusted, so a wrapper replaced during
+// the lock wait never runs unprompted. A husky release that writes new content is refused until
+// its digest is added here, with a test.
 const HUSKY_GENERATED = /(?:^|\/)\.husky\/_\//;
+export const HUSKY_GENERATED_SHA256 = Object.freeze({
+  h: Object.freeze([
+    'd6aaa6f3f7c11008c525e649161df4a93152f1e55d0887fa1d7b8d622735d380',
+    'b02cb91cab7125a9e906be723a1b85297fc435a8307d429ae845546b4ee0ecde',
+    '9db5d129c4eb822a773157d98cd8fb8f1b156b85e3193117fefe527ca6d45e91',
+    '3b2cb21335e544b4ebce658ca47af4a69d2c77026cc4d3f8b2227c34d062b207',
+    '548990e1c11285694096184993d907b258d41235461a7ca2551e3b53ff9d3a38',
+    'c029a943acea5d6e2ddbaa271a1fb22c2da55d56b5c6fb59ca804ac9a4018708',
+    'ae3413a8fe2b39372de48bdc9691f42055f089c0c7529834b2fb07a131585b6a',
+    '70200b200ca709b0622784f93839a5b2872333a917a09afddefd7dc2d8cdc680',
+  ]),
+  'husky.sh': Object.freeze([
+    'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
+    '06066ea99512f392fa7cb8fd21eb0ed18e5f110ef017ddf322eeb732649c2f83',
+    'ce73c58739f81ba56686a0be0d956abcfde81f63662ee5769581a82d6b9bee91',
+    '21122903fca7209a13c991e5be68780636e28f1b8f0ae7ea07ed0065dfe37268',
+  ]),
+  wrapper: Object.freeze([
+    'ac0574d1de5337c5d034f8ea867d42b2e5c41faa68a9ee663a49f1c448c91072',
+    '34fe496008be71d8fdd446b2cce81e4bb0406109c130eafc583fbd9fe33244e2',
+  ]),
+});
+// The bound on the symlinks one trust check follows; more is HOOKS_UNTRUSTED.
+export const MAX_HOOK_LINKS = 256;
 
 // The stderr of a write below `.git` that a sandbox, or a read-only filesystem, denied.
 export const SANDBOX_STDERR_PATTERNS = Object.freeze([
@@ -477,28 +512,152 @@ async function readWorkingFile(worktree, relative) {
   }
 }
 
-// The worktree-relative `core.hooksPath` when it points inside the worktree, otherwise null. It is
-// read with the commit's environment, so `GIT_CONFIG_*` counts; status 1 is unset, any other
-// failure is GIT_FAILED.
-async function insideHooksPath(context, worktree, env) {
+function worktreeRelative(worktree, absolute) {
+  return absolute === worktree ? '.' : path.relative(worktree, absolute).split(path.sep).join('/');
+}
+
+// Whether a physical path lies where the comparisons see it: inside the worktree, not below `.git`.
+function comparedLocation(worktree, real) {
+  return isWithin(worktree, real) && !worktreeRelative(worktree, real).split('/').includes('.git');
+}
+
+// The class of a repository-relative path in a trust check's scope: a watched prefix (an
+// in-worktree hooks path, a symlink on its way, a hook symlink's target; `.` watches everything)
+// first, then the closed list.
+function scopeClass(relative, prefixes) {
+  for (const [prefix, kind] of prefixes) {
+    if (prefix === '.' || relative === prefix || relative.startsWith(`${prefix}/`)) return kind;
+  }
+  return hookConfigClass(relative);
+}
+
+function prefixPathspec(prefix) {
+  return prefix === '.' ? ':(glob)*' : `:(literal)${prefix}`;
+}
+
+function prefixPathspecs(prefixes) {
+  return [...prefixes.keys()].map(prefixPathspec);
+}
+
+const STATIC_HOOK_PATHSPECS = Object.freeze([
+  ...Object.keys(HOOK_CONFIG.directories).flatMap((directory) => [
+    `:(glob)**/${directory}`,
+    `:(glob)**/${directory}/**`,
+  ]),
+  ...Object.keys(HOOK_CONFIG.files).map((name) => `:(glob)**/${name}`),
+]);
+
+// Follows `value` physically from `start` as the OS does, `..` included, and records each symlink
+// on the way that lies inside the worktree. A missing component ends the walk lexically; a
+// dangling symlink returns `real: null` with that `link`.
+async function followPath(worktree, start, value, links) {
+  const segments = value.split('/').filter((segment) => segment !== '' && segment !== '.');
+  let current = start;
+  for (const [index, segment] of segments.entries()) {
+    if (segment === '..') {
+      current = path.dirname(current);
+      continue;
+    }
+    const candidate = path.join(current, segment);
+    const stat = await lstat(candidate).catch(() => null);
+    if (stat === null) return { real: path.join(candidate, ...segments.slice(index + 1)) };
+    if (!stat.isSymbolicLink()) {
+      current = candidate;
+      continue;
+    }
+    if (isWithin(worktree, candidate)) links.push(worktreeRelative(worktree, candidate));
+    try {
+      current = await realpath(candidate);
+    } catch {
+      return { real: null, link: candidate };
+    }
+  }
+  return { real: current };
+}
+
+// The scope of one trust check: `prefixes` maps each watched worktree-relative path to its class,
+// `unverifiable` lists the hook symlinks that dangle or leave the compared locations. The hooks
+// directory is `core.hooksPath`, read with the commit's environment so `GIT_CONFIG_*` counts
+// (status 1 is unset, any other failure GIT_FAILED), or `<common dir>/hooks`.
+async function hookScope(context, worktree, env) {
+  const prefixes = new Map();
+  const unverifiable = [];
   const result = await git(context, worktree, ['config', '--get', 'core.hooksPath'], {
     env,
     allowed: [0, 1],
   });
-  if (result.status === 1) return null;
-  const value = asBuffer(result.stdout).toString('utf8').trim();
-  if (value === '') return null;
-  const absolute = path.resolve(worktree, value);
-  if (absolute === worktree || !isWithin(worktree, absolute)) {
-    return absolute === worktree ? '.' : null;
+  const value = result.status === 1 ? '' : asBuffer(result.stdout).toString('utf8').trim();
+  let outside = null;
+  if (value === '') {
+    outside = path.join(await commonDir(context, worktree), 'hooks');
+  } else {
+    const links = [];
+    const start = path.isAbsolute(value) ? path.parse(value).root : worktree;
+    const followed = await followPath(worktree, start, value, links);
+    for (const link of links) prefixes.set(link, 'hooks-path');
+    if (followed.real === null) {
+      if (isWithin(worktree, followed.link)) {
+        unverifiable.push({ path: worktreeRelative(worktree, followed.link), target: null });
+      }
+    } else if (comparedLocation(worktree, followed.real)) {
+      prefixes.set(worktreeRelative(worktree, followed.real), 'hooks-path');
+    } else {
+      outside = followed.real;
+    }
   }
-  return path.relative(worktree, absolute).split(path.sep).join('/');
+  // A hooks directory outside the comparisons is the user's own, but a symlink in it that reaches
+  // into the worktree runs code a pull request can change.
+  if (outside !== null) {
+    const entries = await readdir(outside, { withFileTypes: true }).catch(() => []);
+    for (const entry of entries) {
+      if (!entry.isSymbolicLink()) continue;
+      const real = await realpath(path.join(outside, entry.name)).catch(() => null);
+      if (real !== null && comparedLocation(worktree, real)) {
+        prefixes.set(worktreeRelative(worktree, real), 'hooks-path');
+      }
+    }
+  }
+  // Every symlink among the hook configuration, tracked, untracked or ignored, adds its target,
+  // whose own symlinks are followed in turn.
+  const examined = new Set();
+  let followedLinks = 0;
+  let pathspecs = [...STATIC_HOOK_PATHSPECS, ...prefixPathspecs(prefixes)];
+  while (pathspecs.length > 0) {
+    const listed = nulList(
+      (await git(context, worktree, ['ls-files', '--cached', '--others', '-z', '--', ...pathspecs]))
+        .stdout,
+    );
+    pathspecs = [];
+    for (const relative of listed) {
+      if (examined.has(relative)) continue;
+      examined.add(relative);
+      const link = path.join(worktree, relative);
+      if (!(await lstat(link).catch(() => null))?.isSymbolicLink()) continue;
+      followedLinks += 1;
+      if (followedLinks > MAX_HOOK_LINKS) {
+        unverifiable.push({ path: relative, target: null, reason: 'too-many-links' });
+        return { prefixes, unverifiable };
+      }
+      const real = await realpath(link).catch(() => null);
+      if (real === null || !comparedLocation(worktree, real)) {
+        const target =
+          real === null || !isWithin(worktree, real) ? real : worktreeRelative(worktree, real);
+        unverifiable.push({ path: relative, target });
+        continue;
+      }
+      const target = worktreeRelative(worktree, real);
+      if (scopeClass(target, prefixes) !== null) continue;
+      prefixes.set(target, scopeClass(relative, prefixes) ?? 'hooks-path');
+      pathspecs.push(prefixPathspec(target));
+    }
+  }
+  return { prefixes, unverifiable };
 }
 
-async function changedHookConfig(context, worktree, changed, hooksPath, readBefore, readAfter) {
+async function changedHookConfig(changed, prefixes, readBefore, readAfter) {
   const found = [];
   for (const relative of changed) {
-    const kind = hooksPath === '.' ? 'hooks-path' : hookConfigClass(relative, { hooksPath });
+    const kind = scopeClass(relative, prefixes);
     if (kind === null) continue;
     if (kind === 'package-json') {
       const keys = changedPackageKeys(await readBefore(relative), await readAfter(relative));
@@ -510,16 +669,23 @@ async function changedHookConfig(context, worktree, changed, hooksPath, readBefo
   return found;
 }
 
-// The ignored files below the hook-relevant directories, with a hook-relevant file name, or below
-// an in-worktree `core.hooksPath` (only its top level when that is the worktree itself), without
-// husky's generated directory.
-async function ignoredHookFiles(context, worktree, hooksPath) {
-  const pathspecs = [
-    ...Object.keys(HOOK_CONFIG.directories).map((directory) => `:(glob)**/${directory}/**`),
-    ...Object.keys(HOOK_CONFIG.files).map((name) => `:(glob)**/${name}`),
-  ];
-  if (hooksPath === '.') pathspecs.push(':(glob)*');
-  else if (hooksPath) pathspecs.push(`:(literal)${hooksPath}`);
+// Whether an ignored file below a marked `.husky/_/` is content husky itself writes there.
+async function huskyGenerated(worktree, relative, directory) {
+  const name = relative.slice(directory.length);
+  if (name.includes('/')) return false;
+  if (name === '.gitignore') return true;
+  const absolute = path.join(worktree, relative);
+  if (!(await lstat(absolute).catch(() => null))?.isFile()) return false;
+  const content = await readFile(absolute).catch(() => null);
+  if (content === null) return false;
+  const role = name === 'h' || name === 'husky.sh' ? name : 'wrapper';
+  return HUSKY_GENERATED_SHA256[role].includes(createHash('sha256').update(content).digest('hex'));
+}
+
+// The ignored files that are hook configuration in the scope (an in-worktree `core.hooksPath` of
+// the worktree itself only at its top level), without husky's genuine generated files.
+async function ignoredHookFiles(context, worktree, prefixes) {
+  const pathspecs = [...STATIC_HOOK_PATHSPECS, ...prefixPathspecs(prefixes)];
   const listed = nulList(
     (
       await git(context, worktree, [
@@ -533,16 +699,16 @@ async function ignoredHookFiles(context, worktree, hooksPath) {
       ])
     ).stdout,
   );
-  const generated = new Map();
+  const marked = new Map();
   const isGenerated = async (relative) => {
     const match = HUSKY_GENERATED.exec(relative);
     if (!match) return false;
     const directory = relative.slice(0, match.index + match[0].length);
-    if (!generated.has(directory)) {
+    if (!marked.has(directory)) {
       const marker = await readWorkingFile(worktree, `${directory}.gitignore`);
-      generated.set(directory, marker !== null && marker.trim() === '*');
+      marked.set(directory, marker !== null && marker.trim() === '*');
     }
-    return generated.get(directory);
+    return marked.get(directory) && huskyGenerated(worktree, relative, directory);
   };
   const found = [];
   for (const relative of listed) {
@@ -569,7 +735,14 @@ function filterGit(context, deps) {
 async function hookTrust(context, request, deps, signals, filtered) {
   const { worktree, hookBase } = request;
   if (!request.sameRepository) return { reason: 'fork-head' };
-  const hooksPath = await insideHooksPath(context, worktree, gitCommitEnv(deps.env ?? process.env));
+  const { prefixes, unverifiable } = await hookScope(
+    context,
+    worktree,
+    gitCommitEnv(deps.env ?? process.env),
+  );
+  if (unverifiable.length > 0) {
+    return { reason: 'unverifiable-hook-link', links: unverifiable.slice(0, 64) };
+  }
   const againstBase = nulList(
     (
       await git(context, worktree, [
@@ -584,10 +757,8 @@ async function hookTrust(context, request, deps, signals, filtered) {
     ).stdout,
   );
   const baseChanges = await changedHookConfig(
-    context,
-    worktree,
     againstBase,
-    hooksPath,
+    prefixes,
     (relative) => readBlob(context, worktree, hookBase, relative),
     (relative) => readBlob(context, worktree, 'HEAD', relative),
   );
@@ -613,12 +784,10 @@ async function hookTrust(context, request, deps, signals, filtered) {
   const untracked = nulList(
     (await git(context, worktree, ['ls-files', '--others', '--exclude-standard', '-z'])).stdout,
   );
-  const ignored = await ignoredHookFiles(context, worktree, hooksPath);
+  const ignored = await ignoredHookFiles(context, worktree, prefixes);
   const treeChanges = await changedHookConfig(
-    context,
-    worktree,
     [...new Set([...tracked, ...untracked, ...ignored])],
-    hooksPath,
+    prefixes,
     (relative) => readBlob(context, worktree, 'HEAD', relative),
     (relative) => readWorkingFile(worktree, relative),
   );

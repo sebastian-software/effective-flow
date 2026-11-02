@@ -4,6 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import {
   chmodSync,
@@ -13,6 +14,7 @@ import {
   mkdtempSync,
   realpathSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   writeFileSync,
 } from 'node:fs';
@@ -26,6 +28,7 @@ import {
   COMMIT_SIGNALS,
   FILTER_BUDGET_MS,
   HOOK_CONFIG,
+  HUSKY_GENERATED_SHA256,
   MAX_STDERR_CHARS,
   SANDBOX_STDERR_PATTERNS,
   changedPackageKeys,
@@ -1117,7 +1120,10 @@ test('commit create carries heldLock on an error envelope when the release fails
   writeFileSync(join(root, 'tracked.txt'), 'changed\n');
   const real = createProcessRunner();
   const runner = async (call) => {
-    if (call.args.includes('--cached')) throw new TypeError('injected runner failure');
+    // The staged-set read under the lock, not the trust check's `ls-files --cached` before it.
+    if (call.args.includes('diff') && call.args.includes('--cached')) {
+      throw new TypeError('injected runner failure');
+    }
     return real(call);
   };
   const envelope = await commitCreate(
@@ -1156,7 +1162,9 @@ test('commit create carries no heldLock on an error envelope after a clean relea
   writeFileSync(join(root, 'tracked.txt'), 'changed\n');
   const real = createProcessRunner();
   const runner = async (call) => {
-    if (call.args.includes('--cached')) throw new TypeError('injected runner failure');
+    if (call.args.includes('diff') && call.args.includes('--cached')) {
+      throw new TypeError('injected runner failure');
+    }
     return real(call);
   };
   const envelope = await commitCreate(
@@ -1299,8 +1307,158 @@ test('commit create returns the SHA when verification fails after the commit', a
   assert.equal(lockPresent(root), false);
 });
 
-// Invariant: an ignored file below a hook-relevant directory is an untrusted working-tree change;
-// husky's own generated, self-ignored `.husky/_/` directory is not.
+// What `husky` 9.1.7 writes into `.husky/_/` on install, byte for byte: `h` is the package's
+// `husky` file, every hook name gets the wrapper, `husky.sh` the deprecation notice.
+const HUSKY_9_1_7 = Object.freeze({
+  h: [
+    '#!/usr/bin/env sh',
+    '[ "$HUSKY" = "2" ] && set -x',
+    'n=$(basename "$0")',
+    's=$(dirname "$(dirname "$0")")/$n',
+    '',
+    '[ ! -f "$s" ] && exit 0',
+    '',
+    'if [ -f "$HOME/.huskyrc" ]; then',
+    '\techo "husky - \'~/.huskyrc\' is DEPRECATED, please move your code to ~/.config/husky/init.sh"',
+    'fi',
+    'i="${XDG_CONFIG_HOME:-$HOME/.config}/husky/init.sh"',
+    '[ -f "$i" ] && . "$i"',
+    '',
+    '[ "${HUSKY-}" = "0" ] && exit 0',
+    '',
+    'export PATH="node_modules/.bin:$PATH"',
+    'sh -e "$s" "$@"',
+    'c=$?',
+    '',
+    '[ $c != 0 ] && echo "husky - $n script failed (code $c)"',
+    '[ $c = 127 ] && echo "husky - command not found in PATH=$PATH"',
+    'exit $c',
+    '',
+  ].join('\n'),
+  wrapper: '#!/usr/bin/env sh\n. "$(dirname "$0")/h"',
+  huskySh:
+    'echo "husky - DEPRECATED\n\nPlease remove the following two lines from $0:\n\n#!/usr/bin/env sh\n. \\"\\$(dirname -- \\"\\$0\\")/_/husky.sh\\"\n\nThey WILL FAIL in v10.0.0\n"',
+  hooks: ['pre-commit', 'pre-merge-commit', 'commit-msg', 'post-commit', 'pre-push'],
+});
+
+function sha256(text) {
+  return createHash('sha256').update(text).digest('hex');
+}
+
+// Installs husky 9.1.7's generated `.husky/_/` as `husky` does, `core.hooksPath` included, with
+// the tracked `.husky/pre-commit` it runs.
+function installHusky(t, root) {
+  mkdirSync(join(root, '.husky', '_'), { recursive: true });
+  writeFileSync(join(root, '.husky', 'pre-commit'), 'exit 0\n');
+  git(root, 'add', '.husky/pre-commit');
+  git(root, 'commit', '-q', '-m', 'husky');
+  git(root, 'config', 'core.hooksPath', '.husky/_');
+  writeFileSync(join(root, '.husky', '_', '.gitignore'), '*');
+  writeFileSync(join(root, '.husky', '_', 'h'), HUSKY_9_1_7.h);
+  for (const name of HUSKY_9_1_7.hooks) {
+    writeFileSync(join(root, '.husky', '_', name), HUSKY_9_1_7.wrapper, { mode: 0o755 });
+  }
+  writeFileSync(join(root, '.husky', '_', 'husky.sh'), HUSKY_9_1_7.huskySh);
+  // `h` sources files below HOME; an empty one keeps the run hermetic.
+  const home = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-home-')));
+  t.after(() => rmSync(home, { recursive: true, force: true }));
+  return { ...GIT_ENV, HOME: home, XDG_CONFIG_HOME: join(home, '.config') };
+}
+
+// Invariant: the fixture is husky's real output, so the trust table admits what husky writes.
+test('the husky fixture matches the trusted generated content', () => {
+  assert.ok(HUSKY_GENERATED_SHA256.h.includes(sha256(HUSKY_9_1_7.h)));
+  assert.ok(HUSKY_GENERATED_SHA256.wrapper.includes(sha256(HUSKY_9_1_7.wrapper)));
+  assert.ok(HUSKY_GENERATED_SHA256['husky.sh'].includes(sha256(HUSKY_9_1_7.huskySh)));
+  assert.ok(HUSKY_GENERATED_SHA256['husky.sh'].includes(sha256('')));
+  assert.ok(HUSKY_GENERATED_SHA256.wrapper.includes(sha256('#!/usr/bin/env sh\n. "${0%/*}/h"')));
+});
+
+// Invariant: a genuine husky install commits with its hooks running; an ignored file in a marked
+// `.husky/_/` whose content husky does not write (a replaced wrapper or `h`, a symlink, an extra
+// file, a subdirectory) is an untrusted working-tree change, even with the `*` marker intact.
+test('commit create trusts husky generated files only by their content', async (t) => {
+  const tampered = {
+    wrapper: (root) => writeFileSync(join(root, '.husky', '_', 'pre-commit'), 'curl evil\n'),
+    h: (root) => writeFileSync(join(root, '.husky', '_', 'h'), `${HUSKY_9_1_7.h}curl evil\n`),
+    symlink: (root) => {
+      rmSync(join(root, '.husky', '_', 'commit-msg'));
+      symlinkSync('h', join(root, '.husky', '_', 'commit-msg'));
+    },
+    extra: (root) => writeFileSync(join(root, '.husky', '_', 'pre-rebase.local'), 'curl evil\n'),
+    nested: (root) => {
+      mkdirSync(join(root, '.husky', '_', 'sub'));
+      writeFileSync(join(root, '.husky', '_', 'sub', 'pre-commit'), HUSKY_9_1_7.wrapper);
+    },
+  };
+  const expected = {
+    wrapper: '.husky/_/pre-commit',
+    h: '.husky/_/h',
+    symlink: '.husky/_/commit-msg',
+    extra: '.husky/_/pre-rebase.local',
+    nested: '.husky/_/sub/pre-commit',
+  };
+  const root = repository(t);
+  const env = installHusky(t, root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  expectResult(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      env,
+    }),
+  );
+  for (const [label, tamper] of Object.entries(tampered)) {
+    const tamperedRoot = repository(t);
+    const tamperedEnv = installHusky(t, tamperedRoot);
+    tamper(tamperedRoot);
+    writeFileSync(join(tamperedRoot, 'tracked.txt'), 'changed\n');
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(tamperedRoot, {
+          hookBase: head(tamperedRoot),
+          expect: { 'tracked.txt': blob(tamperedRoot, 'tracked.txt') },
+        }),
+        { env: tamperedEnv },
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'changed-in-worktree', label);
+    assert.deepEqual(
+      outcome.changed.map((entry) => entry.path),
+      [expected[label]],
+      label,
+    );
+  }
+});
+
+// Invariant: a husky wrapper replaced during the lock wait is HOOKS_UNTRUSTED under the lock, with
+// no hook run and nothing committed, although `.husky/_/.gitignore` still holds `*`.
+test('commit create re-checks husky generated files under the lock', async (t) => {
+  const root = repository(t);
+  const env = installHusky(t, root);
+  const before = head(root);
+  const marker = join(root, '.effective-flow', 'hook-ran');
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      env,
+      onPhase: async (phase) => {
+        if (phase === 'locked') {
+          writeFileSync(join(root, '.husky', '_', 'pre-commit'), `#!/bin/sh\ntouch '${marker}'\n`);
+        }
+      },
+    }),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(outcome.reason, 'changed-in-worktree');
+  assert.deepEqual(outcome.changed, [{ path: '.husky/_/pre-commit', class: 'hooks-path' }]);
+  assert.equal(existsSync(marker), false, 'no hook ran');
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: an ignored file below a hook-relevant directory is an untrusted working-tree change,
+// and so is one below an in-worktree `core.hooksPath`.
 test('commit create treats ignored hook files as working-tree changes', async (t) => {
   const root = repository(t);
   mkdirSync(join(root, '.husky'));
@@ -1308,10 +1466,6 @@ test('commit create treats ignored hook files as working-tree changes', async (t
   writeFileSync(join(root, '.gitignore'), '.effective-flow/\n*.log\n.husky/local-*\n');
   git(root, 'add', '.');
   git(root, 'commit', '-q', '-m', 'husky');
-  mkdirSync(join(root, '.husky', '_'));
-  writeFileSync(join(root, '.husky', '_', '.gitignore'), '*\n');
-  writeFileSync(join(root, '.husky', '_', 'pre-commit'), '. "$(dirname "$0")/h"\n');
-  writeFileSync(join(root, '.husky', '_', 'h'), 'exec "$@"\n');
   writeFileSync(join(root, 'tracked.txt'), 'changed\n');
   expectResult(
     await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } })),
@@ -1505,6 +1659,158 @@ test('commit create judges a core.hooksPath supplied through the environment', a
   assert.equal(existsSync(marker), false, 'no hook ran');
   assert.equal(head(root), before);
   assert.equal(lockPresent(root), false);
+});
+
+// Writes an executable hook script that touches `marker` when it runs.
+function hookScript(target, marker) {
+  mkdirSync(join(target, '..'), { recursive: true });
+  writeFileSync(target, `#!/bin/sh\ntouch '${marker}'\n`);
+  chmodSync(target, 0o755);
+}
+
+// Invariant: a hook file that is a symlink makes its in-worktree target hook configuration of the
+// same class, so a change to the target, committed against the base or made in the working tree,
+// is HOOKS_UNTRUSTED with no hook run; this holds in an in-worktree `core.hooksPath`, in `.husky/`
+// and in the default `.git/hooks`.
+test('commit create compares the in-worktree targets of hook symlinks', async (t) => {
+  const layouts = [
+    [
+      'hooks-path',
+      'hooks/pre-commit',
+      '../scripts/run-hook',
+      (root) => git(root, 'config', 'core.hooksPath', 'hooks'),
+    ],
+    ['husky', '.husky/pre-commit', '../scripts/run-hook', () => {}],
+    ['hooks-path', '.git/hooks/pre-commit', '../../scripts/run-hook', () => {}],
+  ];
+  for (const [kind, link, target, configure] of layouts) {
+    for (const where of ['against-base', 'in-worktree']) {
+      const label = `${link} ${where}`;
+      const root = repository(t);
+      const marker = join(root, '.effective-flow', 'hook-ran');
+      hookScript(join(root, 'scripts', 'run-hook'), join(root, '.effective-flow', 'unrelated'));
+      mkdirSync(join(root, link, '..'), { recursive: true });
+      symlinkSync(target, join(root, link));
+      git(root, 'add', '--', 'scripts/run-hook', ...(link.startsWith('.git/') ? [] : [link]));
+      git(root, 'commit', '-q', '--no-verify', '-m', 'linked hook');
+      configure(root);
+      const base = head(root);
+      hookScript(join(root, 'scripts', 'run-hook'), marker);
+      if (where === 'against-base') {
+        git(root, 'commit', '-q', '--no-verify', '-am', 'change the hook target');
+      }
+      writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+      const before = head(root);
+      const outcome = expectOutcome(
+        await commitCreate(
+          input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+        ),
+        'HOOKS_UNTRUSTED',
+      );
+      assert.equal(outcome.reason, `changed-${where}`, label);
+      assert.deepEqual(outcome.changed, [{ path: 'scripts/run-hook', class: kind }], label);
+      assert.equal(existsSync(marker), false, `no hook ran (${label})`);
+      assert.equal(head(root), before, label);
+      assert.equal(lockPresent(root), false, label);
+    }
+  }
+});
+
+// Invariant: a symlinked `core.hooksPath` directory is judged at its physical location inside the
+// worktree, and the symlink itself is hook configuration, so a change to a hook in the real
+// directory or a retargeted link is HOOKS_UNTRUSTED.
+test('commit create resolves a symlinked core.hooksPath physically', async (t) => {
+  const prepare = () => {
+    const root = repository(t);
+    hookScript(join(root, 'tools', 'real-hooks', 'pre-commit'), join(root, '.effective-flow', 'x'));
+    hookScript(
+      join(root, 'tools', 'other-hooks', 'pre-commit'),
+      join(root, '.effective-flow', 'x'),
+    );
+    symlinkSync('tools/real-hooks', join(root, 'hooks'));
+    git(root, 'add', '.');
+    git(root, 'commit', '-q', '-m', 'linked hooks path');
+    git(root, 'config', 'core.hooksPath', 'hooks');
+    return { root, base: head(root), marker: join(root, '.effective-flow', 'hook-ran') };
+  };
+
+  const viaTarget = prepare();
+  hookScript(join(viaTarget.root, 'tools', 'real-hooks', 'pre-commit'), viaTarget.marker);
+  git(viaTarget.root, 'commit', '-q', '--no-verify', '-am', 'change the real hook');
+  writeFileSync(join(viaTarget.root, 'tracked.txt'), 'changed\n');
+  const changedTarget = expectOutcome(
+    await commitCreate(
+      input(viaTarget.root, {
+        hookBase: viaTarget.base,
+        expect: { 'tracked.txt': blob(viaTarget.root, 'tracked.txt') },
+      }),
+    ),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(changedTarget.reason, 'changed-against-base');
+  assert.deepEqual(changedTarget.changed, [
+    { path: 'tools/real-hooks/pre-commit', class: 'hooks-path' },
+  ]);
+  assert.equal(existsSync(viaTarget.marker), false, 'no hook ran');
+
+  const viaLink = prepare();
+  rmSync(join(viaLink.root, 'hooks'));
+  symlinkSync('tools/other-hooks', join(viaLink.root, 'hooks'));
+  writeFileSync(join(viaLink.root, 'tracked.txt'), 'changed\n');
+  const changedLink = expectOutcome(
+    await commitCreate(
+      input(viaLink.root, {
+        hookBase: viaLink.base,
+        expect: { 'tracked.txt': blob(viaLink.root, 'tracked.txt') },
+      }),
+    ),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(changedLink.reason, 'changed-in-worktree');
+  assert.deepEqual(changedLink.changed, [{ path: 'hooks', class: 'hooks-path' }]);
+
+  // Unchanged, the linked hooks path runs the repository's own hooks.
+  const unchanged = prepare();
+  writeFileSync(join(unchanged.root, 'tracked.txt'), 'changed\n');
+  expectResult(
+    await commitCreate(
+      input(unchanged.root, {
+        hookBase: unchanged.base,
+        expect: { 'tracked.txt': blob(unchanged.root, 'tracked.txt') },
+      }),
+    ),
+  );
+  assert.equal(existsSync(join(unchanged.root, '.effective-flow', 'x')), true, 'the hook ran');
+});
+
+// Invariant: an in-worktree hook symlink, or an in-worktree symlink on the way to `core.hooksPath`,
+// that dangles, leaves the worktree or reaches below `.git` cannot be compared and fails closed
+// as `unverifiable-hook-link` before the lock.
+test('commit create refuses hook symlinks it cannot verify', async (t) => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  hookScript(join(outside, 'pre-commit'), join(outside, 'ran'));
+  const cases = [
+    ['.husky/pre-commit', join(outside, 'pre-commit'), join(outside, 'pre-commit'), () => {}],
+    ['.githooks/pre-commit', '../missing-hook', null, () => {}],
+    ['.husky/pre-push', '../.git/config', '.git/config', () => {}],
+    ['hooks', outside, outside, (root) => git(root, 'config', 'core.hooksPath', 'hooks')],
+  ];
+  for (const [link, target, reported, configure] of cases) {
+    const root = repository(t);
+    mkdirSync(join(root, link, '..'), { recursive: true });
+    symlinkSync(target, join(root, link));
+    configure(root);
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const outcome = expectOutcome(
+      await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } })),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'unverifiable-hook-link', link);
+    assert.deepEqual(outcome.links, [{ path: link, target: reported }], link);
+    assert.equal(existsSync(join(outside, 'ran')), false, `no hook ran (${link})`);
+    assert.equal(lockPresent(root), false, link);
+  }
 });
 
 // Invariant: `git config --get core.hooksPath` accepts only status 0 (value) and 1 (unset); any
