@@ -582,6 +582,39 @@ test('commit create reports COMMIT_UNVERIFIED when a hook changes the committed 
   assert.equal(lockPresent(root), false);
 });
 
+// Invariant: a hook that rewrites a listed file and restages it keeps the committed path set intact
+// but changes its content; the commit is reported with its SHA as COMMIT_UNVERIFIED naming the
+// differing path, and nothing is amended or reset.
+test('commit create reports COMMIT_UNVERIFIED when a hook rewrites a listed file', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const request = input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } });
+  hook(root, 'pre-commit', "printf 'rewritten\\n' > tracked.txt\ngit add tracked.txt");
+  const outcome = expectOutcome(await commitCreate(request), 'COMMIT_UNVERIFIED');
+  assert.equal(outcome.commit, head(root));
+  assert.notEqual(outcome.commit, before);
+  assert.deepEqual(outcome.differing, ['tracked.txt']);
+  assert.equal(git(root, 'rev-parse', 'HEAD^'), before);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: a deletion expectation (`null`) is verified against the commit's tree; a hook that
+// recreates the deleted file with other content is COMMIT_UNVERIFIED naming that path.
+test('commit create reports COMMIT_UNVERIFIED when a hook recreates an expected deletion', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  const request = input(root, { expect: { 'tracked.txt': null } });
+  unlinkSync(join(root, 'tracked.txt'));
+  hook(root, 'pre-commit', "printf 'recreated\\n' > tracked.txt\ngit add tracked.txt");
+  const outcome = expectOutcome(await commitCreate(request), 'COMMIT_UNVERIFIED');
+  assert.equal(outcome.commit, head(root));
+  assert.notEqual(outcome.commit, before);
+  assert.deepEqual(outcome.differing, ['tracked.txt']);
+  assert.equal(git(root, 'rev-parse', 'HEAD^'), before);
+  assert.equal(lockPresent(root), false);
+});
+
 // Invariant: a denied write below `.git` is SANDBOX_DENIED, releases the lock (so it carries
 // `lockRelease` but no `heldLock`) and leaves nothing staged; the classifier covers errno and the closed stderr patterns.
 test(

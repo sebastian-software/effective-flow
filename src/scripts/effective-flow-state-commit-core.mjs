@@ -31,8 +31,9 @@
 //      shell, with the repository's hooks and the environment a plain `git commit` would see
 //      (`gitCommitEnv`: identity, signing, `GIT_CONFIG_*` and locale kept, only the
 //      repository-redirecting variables removed), bounded by COMMIT_TIMEOUT_MS (COMMIT_FAILED);
-//   6. the commit's parent, its changed paths and the clean index are verified (COMMIT_UNVERIFIED,
-//      carrying the SHA; nothing is amended, reset or rebased).
+//   6. the commit's parent, its changed paths, each committed entry against its `expect` entry and
+//      the clean index are verified (COMMIT_UNVERIFIED, carrying the SHA and the differing paths;
+//      nothing is amended, reset or rebased).
 // Every failing step unstages only the listed paths it staged, never the whole index, so foreign
 // staged changes stay staged. A denied write below `.git` (a sandbox) is SANDBOX_DENIED, detected by
 // errno and SANDBOX_STDERR_PATTERNS; a failed `git commit` that neither classifies, whose stderr
@@ -812,8 +813,37 @@ async function verify(context, request, before, head, committed) {
       ])
     ).stdout,
   );
+  // A hook may rewrite and restage a listed file: the committed tree, not the inspected index, is
+  // compared with `expect`.
+  const tree = nulList(
+    (
+      await git(context, worktree, [
+        '--literal-pathspecs',
+        'ls-tree',
+        '-z',
+        '--full-tree',
+        head,
+        '--',
+        ...paths,
+      ])
+    ).stdout,
+  );
+  const entries = new Map();
+  for (const line of tree) {
+    const match = /^\d+ \w+ ([0-9a-f]+)\t(.*)$/s.exec(line);
+    if (match) entries.set(match[2], match[1]);
+  }
+  const differing = paths.filter((entry) => {
+    const expected = request.expect[entry];
+    return expected === null ? entries.has(entry) : entries.get(entry) !== expected;
+  });
   const staged = await stagedNames(context, worktree);
-  if (parentSha !== before || !sameSet(changed, paths) || staged.length > 0) {
+  if (
+    parentSha !== before ||
+    !sameSet(changed, paths) ||
+    staged.length > 0 ||
+    differing.length > 0
+  ) {
     return new StateOutcome('COMMIT_UNVERIFIED', {
       commit: head,
       parent: parentSha,
@@ -821,6 +851,7 @@ async function verify(context, request, before, head, committed) {
       listed: paths,
       committed: changed.slice(0, 64),
       staged: staged.slice(0, 64),
+      differing: differing.slice(0, 64),
       ...(committed?.status === 0 ? {} : { commitStatus: committed?.status ?? null }),
     });
   }
