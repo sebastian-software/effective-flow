@@ -1,6 +1,6 @@
 # ADR for focus's confirmed cross-session messages
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Target path:** docs/adr/focus-cross-session-messages.md
@@ -266,6 +266,20 @@ target lies in the repository's established `docs/adr/` structure, outside the f
   run works from that tracked file, so its status update and archiving land in the same history.
 - Status `Active` is used while the tool does not exist yet (user decision). The before-the-tool
   sentence keeps that honest.
+
+## Test results
+
+- `pnpm agent:check`: passed (all files correctly formatted), and `oxfmt --check docs/adr/` passed on the final state.
+- `pnpm test`: 4018 tests, 3990 passed, 27 skipped, 1 failed. The one failure is the pre-existing, Python-version-dependent `portable host-driver Python tests (test_first_stage.py)`, which also fails locally on `develop` and passes in CI; this change does not touch it.
+- Targeted rerun on the final ADR state: `the session-rename-butler ADR exists and is marked Active`, `active title surfaces contain no retired transport signatures outside precise removal guidance`, and the stale-brand guards in `test/build-lib.test.mjs`, 5 of 5 passed.
+- `git diff --numstat` of the two existing ADRs: `session-rename-butler.md` 1 added, 0 deleted; `input-trust-boundary.md` 6 added, 0 deleted.
+- Every relative link in the new ADR resolves to a tracked file on the branch, and its five heading anchors match evidence-page headings.
+- Tag comparison: every `Evidence:` tag's status and run count was compared with its evidence-page cell or limit.
+
+## Review findings
+
+- Verification round 1 found 4 important and 3 minor issues, all incorporated: an unobserved "user-turn weight" now marked as a design inference; "a literal filter is impossible" scoped to the Claude Code observation and marked as an inference, with the stand-in stated as unenforced; the default-mode wait tagged "not covered by the spike" separately from the Q9 variants; sender attributes cited as "every received reply (4 of 4 in Q9)"; uniform run counts and links on every non-observed tag; the target-blocking observation scoped to the Q8 plan-mode run; and the ADR shortened from 189 to 176 lines.
+- Deliberately not incorporated: the ADR stays at 176 lines, above the planned 100 to 160, because further cuts would drop a rule or an evidence tag.
 
 ## Plan review
 
