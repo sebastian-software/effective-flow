@@ -1716,6 +1716,145 @@ test('commit create compares the in-worktree targets of hook symlinks', async (t
   }
 });
 
+// Invariant: every in-worktree symlink on the way from a hook symlink to its target, a chained link
+// or a symlinked directory, is hook configuration of the hook's class, so retargeting only that
+// intermediate link, against the base or in the working tree, is HOOKS_UNTRUSTED with no hook run;
+// this holds in an in-worktree `core.hooksPath`, in `.husky/` and in the default `.git/hooks`.
+test('commit create compares every symlink on the way to a hook target', async (t) => {
+  const layouts = [
+    [
+      'hooks-path',
+      'hooks/pre-commit',
+      '../scripts',
+      (root) => git(root, 'config', 'core.hooksPath', 'hooks'),
+    ],
+    ['husky', '.husky/pre-commit', '../scripts', () => {}],
+    ['hooks-path', '.git/hooks/pre-commit', '../../scripts', () => {}],
+  ];
+  // [intermediate link, its base target, its changed target, the hook link's target below scripts/]
+  const chains = [
+    ['scripts/selected', 'run-hook', 'other-hook', 'selected'],
+    ['scripts/current', 'v1', 'v2', 'current/hook'],
+  ];
+  for (const [kind, link, prefix, configure] of layouts) {
+    for (const [intermediate, from, to, via] of chains) {
+      for (const where of ['against-base', 'in-worktree']) {
+        const label = `${link} via ${intermediate} ${where}`;
+        const root = repository(t);
+        const marker = join(root, '.effective-flow', 'hook-ran');
+        const unrelated = join(root, '.effective-flow', 'unrelated');
+        hookScript(join(root, 'scripts', 'run-hook'), unrelated);
+        hookScript(join(root, 'scripts', 'other-hook'), marker);
+        hookScript(join(root, 'scripts', 'v1', 'hook'), unrelated);
+        hookScript(join(root, 'scripts', 'v2', 'hook'), marker);
+        symlinkSync(from, join(root, intermediate));
+        mkdirSync(join(root, link, '..'), { recursive: true });
+        symlinkSync(`${prefix}/${via}`, join(root, link));
+        git(root, 'add', '--', 'scripts', ...(link.startsWith('.git/') ? [] : [link]));
+        git(root, 'commit', '-q', '--no-verify', '-m', 'chained hook');
+        configure(root);
+        const base = head(root);
+        rmSync(join(root, intermediate));
+        symlinkSync(to, join(root, intermediate));
+        if (where === 'against-base') {
+          git(root, 'commit', '-q', '--no-verify', '-am', 'retarget the intermediate link');
+        }
+        writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+        const before = head(root);
+        const outcome = expectOutcome(
+          await commitCreate(
+            input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+          ),
+          'HOOKS_UNTRUSTED',
+        );
+        assert.equal(outcome.reason, `changed-${where}`, label);
+        assert.deepEqual(outcome.changed, [{ path: intermediate, class: kind }], label);
+        assert.equal(existsSync(marker), false, `no hook ran (${label})`);
+        assert.equal(head(root), before, label);
+        assert.equal(lockPresent(root), false, label);
+      }
+    }
+  }
+});
+
+// Invariant: the target of a symlinked `package.json`, and every in-worktree link on its way, is
+// package configuration, so a hook-relevant key changed in the target, against the base or in the
+// working tree, is HOOKS_UNTRUSTED, while a change to any other key is not.
+test('commit create judges the target of a symlinked package.json', async (t) => {
+  const prepare = () => {
+    const root = repository(t);
+    mkdirSync(join(root, 'config'));
+    writeFileSync(join(root, 'config', 'package.json5'), '{"name":"fixture"}\n');
+    symlinkSync('package.json5', join(root, 'config', 'current'));
+    symlinkSync('config/current', join(root, 'package.json'));
+    git(root, 'add', '.');
+    git(root, 'commit', '-q', '-m', 'linked package');
+    return { root, base: head(root) };
+  };
+  for (const where of ['against-base', 'in-worktree']) {
+    const { root, base } = prepare();
+    writeFileSync(
+      join(root, 'config', 'package.json5'),
+      '{"name":"fixture","scripts":{"prepare":"x"}}\n',
+    );
+    if (where === 'against-base') git(root, 'commit', '-q', '-am', 'change the target');
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: base, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, `changed-${where}`, where);
+    assert.deepEqual(
+      outcome.changed,
+      [{ path: 'config/package.json5', class: 'package-json', keys: ['scripts.prepare'] }],
+      where,
+    );
+  }
+
+  const retargeted = prepare();
+  writeFileSync(
+    join(retargeted.root, 'config', 'other.json5'),
+    '{"name":"fixture","scripts":{"prepare":"x"}}\n',
+  );
+  rmSync(join(retargeted.root, 'config', 'current'));
+  symlinkSync('other.json5', join(retargeted.root, 'config', 'current'));
+  git(retargeted.root, 'add', '.');
+  git(retargeted.root, 'commit', '-q', '-m', 'retarget the intermediate link');
+  writeFileSync(join(retargeted.root, 'tracked.txt'), 'changed\n');
+  const viaLink = expectOutcome(
+    await commitCreate(
+      input(retargeted.root, {
+        hookBase: retargeted.base,
+        expect: { 'tracked.txt': blob(retargeted.root, 'tracked.txt') },
+      }),
+    ),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(viaLink.reason, 'changed-against-base');
+  assert.ok(
+    viaLink.changed.some((entry) => entry.path === 'config/current'),
+    JSON.stringify(viaLink.changed),
+  );
+
+  const unrelated = prepare();
+  writeFileSync(
+    join(unrelated.root, 'config', 'package.json5'),
+    '{"name":"fixture","version":"2.0.0"}\n',
+  );
+  git(unrelated.root, 'commit', '-q', '-am', 'unrelated key');
+  writeFileSync(join(unrelated.root, 'tracked.txt'), 'changed\n');
+  expectResult(
+    await commitCreate(
+      input(unrelated.root, {
+        hookBase: unrelated.base,
+        expect: { 'tracked.txt': blob(unrelated.root, 'tracked.txt') },
+      }),
+    ),
+  );
+});
+
 // Invariant: a symlinked `core.hooksPath` directory is judged at its physical location inside the
 // worktree, and the symlink itself is hook configuration, so a change to a hook in the real
 // directory or a retargeted link is HOOKS_UNTRUSTED.

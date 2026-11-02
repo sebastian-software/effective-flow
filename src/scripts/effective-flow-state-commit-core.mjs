@@ -71,7 +71,7 @@
 // `leftoverTombstone` from the internal release where present.
 
 import { createHash, randomBytes } from 'node:crypto';
-import { lstat, readFile, readdir, realpath } from 'node:fs/promises';
+import { lstat, readFile, readdir, readlink, realpath } from 'node:fs/promises';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -128,10 +128,12 @@ const OID_PATTERN = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 // one and no Git hook reads it. A `core.hooksPath` inside the worktree is hook configuration as
 // well, judged at its physical location with every in-worktree symlink on its way; one outside it
 // is the user's own configuration, which no pull request controls, so it is not compared. A
-// symlink among the hook configuration makes its target hook configuration of the same class; one
-// that dangles, or leaves the worktree or reaches below `.git`, is unverifiable and untrusted. A
-// symlink in a hooks directory outside the worktree (`.git/hooks` by default) makes an
-// in-worktree target hook configuration and is otherwise the user's own.
+// symlink among the hook configuration, or a symlinked `package.json` that is not ignored, makes
+// its target and every in-worktree symlink on the way, followed hop by hop, hook configuration of
+// the same class; one that dangles, or leaves the worktree or reaches below `.git`, is
+// unverifiable and untrusted. A symlink in a hooks directory outside the worktree (`.git/hooks` by
+// default) makes an in-worktree target and the in-worktree links on its way hook configuration
+// and is otherwise the user's own.
 export const HOOK_CONFIG = Object.freeze({
   directories: Object.freeze({
     '.husky': 'husky',
@@ -546,11 +548,17 @@ const STATIC_HOOK_PATHSPECS = Object.freeze([
   ]),
   ...Object.keys(HOOK_CONFIG.files).map((name) => `:(glob)**/${name}`),
 ]);
+// Every tracked or untracked, not ignored `package.json`, scanned for symlinks only: the target
+// of a symlinked one is what a hook manager reads, so it is package configuration of its own.
+const PACKAGE_JSON_PATHSPEC = ':(glob)**/package.json';
 
-// Follows `value` physically from `start` as the OS does, `..` included, and records each symlink
-// on the way that lies inside the worktree. A missing component ends the walk lexically; a
-// dangling symlink returns `real: null` with that `link`.
-async function followPath(worktree, start, value, links) {
+// Follows `value` physically from `start` as the OS does, `..` included, one symlink hop at a
+// time, and records every symlink it passes at a compared location: a chained link and a symlinked
+// directory on the way to the target alike, so changing any of them is a change in scope. A
+// missing component ends the walk lexically (`missing: true`); inside a link's target it makes
+// that link dangle (`real: null` with that `link`). `budget.hops` counts every symlink followed in
+// one trust check; past MAX_HOOK_LINKS the walk stops with `reason: 'too-many-links'`.
+async function followPath(worktree, start, value, links, budget) {
   const segments = value.split('/').filter((segment) => segment !== '' && segment !== '.');
   let current = start;
   for (const [index, segment] of segments.entries()) {
@@ -560,17 +568,24 @@ async function followPath(worktree, start, value, links) {
     }
     const candidate = path.join(current, segment);
     const stat = await lstat(candidate).catch(() => null);
-    if (stat === null) return { real: path.join(candidate, ...segments.slice(index + 1)) };
+    if (stat === null) {
+      return { real: path.join(candidate, ...segments.slice(index + 1)), missing: true };
+    }
     if (!stat.isSymbolicLink()) {
       current = candidate;
       continue;
     }
-    if (isWithin(worktree, candidate)) links.push(worktreeRelative(worktree, candidate));
-    try {
-      current = await realpath(candidate);
-    } catch {
-      return { real: null, link: candidate };
-    }
+    budget.hops += 1;
+    if (budget.hops > MAX_HOOK_LINKS)
+      return { real: null, link: candidate, reason: 'too-many-links' };
+    if (comparedLocation(worktree, candidate)) links.push(worktreeRelative(worktree, candidate));
+    const target = await readlink(candidate).catch(() => null);
+    if (target === null) return { real: null, link: candidate };
+    const from = path.isAbsolute(target) ? path.parse(target).root : path.dirname(candidate);
+    const followed = await followPath(worktree, from, target, links, budget);
+    if (followed.real === null) return followed;
+    if (followed.missing) return { real: null, link: candidate };
+    current = followed.real;
   }
   return { real: current };
 }
@@ -582,6 +597,19 @@ async function followPath(worktree, start, value, links) {
 async function hookScope(context, worktree, env) {
   const prefixes = new Map();
   const unverifiable = [];
+  const budget = { hops: 0 };
+  const tooMany = (followed) => {
+    if (followed.reason !== 'too-many-links') return false;
+    unverifiable.push({
+      path: worktreeRelative(worktree, followed.link),
+      target: null,
+      reason: 'too-many-links',
+    });
+    return true;
+  };
+  const watch = (links, kind) => {
+    for (const link of links) if (scopeClass(link, prefixes) === null) prefixes.set(link, kind);
+  };
   const result = await git(context, worktree, ['config', '--get', 'core.hooksPath'], {
     env,
     allowed: [0, 1],
@@ -593,8 +621,9 @@ async function hookScope(context, worktree, env) {
   } else {
     const links = [];
     const start = path.isAbsolute(value) ? path.parse(value).root : worktree;
-    const followed = await followPath(worktree, start, value, links);
+    const followed = await followPath(worktree, start, value, links, budget);
     for (const link of links) prefixes.set(link, 'hooks-path');
+    if (tooMany(followed)) return { prefixes, unverifiable };
     if (followed.real === null) {
       if (isWithin(worktree, followed.link)) {
         unverifiable.push({ path: worktreeRelative(worktree, followed.link), target: null });
@@ -606,50 +635,62 @@ async function hookScope(context, worktree, env) {
     }
   }
   // A hooks directory outside the comparisons is the user's own, but a symlink in it that reaches
-  // into the worktree runs code a pull request can change.
+  // into the worktree runs code a pull request can change, through every in-worktree link on the
+  // way.
   if (outside !== null) {
     const entries = await readdir(outside, { withFileTypes: true }).catch(() => []);
     for (const entry of entries) {
       if (!entry.isSymbolicLink()) continue;
-      const real = await realpath(path.join(outside, entry.name)).catch(() => null);
-      if (real !== null && comparedLocation(worktree, real)) {
-        prefixes.set(worktreeRelative(worktree, real), 'hooks-path');
-      }
+      const links = [];
+      const followed = await followPath(worktree, outside, entry.name, links, budget);
+      if (tooMany(followed)) return { prefixes, unverifiable };
+      if (followed.real === null || followed.missing) continue;
+      if (!comparedLocation(worktree, followed.real)) continue;
+      watch(links, 'hooks-path');
+      const target = worktreeRelative(worktree, followed.real);
+      if (scopeClass(target, prefixes) === null) prefixes.set(target, 'hooks-path');
     }
   }
-  // Every symlink among the hook configuration, tracked, untracked or ignored, adds its target,
-  // whose own symlinks are followed in turn.
-  const examined = new Set();
-  let followedLinks = 0;
-  let pathspecs = [...STATIC_HOOK_PATHSPECS, ...prefixPathspecs(prefixes)];
-  while (pathspecs.length > 0) {
-    const listed = nulList(
-      (await git(context, worktree, ['ls-files', '--cached', '--others', '-z', '--', ...pathspecs]))
-        .stdout,
+  // Every symlink among the hook configuration and every symlinked `package.json`, tracked,
+  // untracked or (hook configuration only) ignored, adds each in-worktree link on its way and its
+  // target, whose own symlinks are followed in turn.
+  const list = async (flags, pathspecs) =>
+    nulList(
+      (await git(context, worktree, ['ls-files', ...flags, '-z', '--', ...pathspecs])).stdout,
     );
-    pathspecs = [];
+  const examined = new Set();
+  let listed = [
+    ...(await list(['--cached', '--others', '--exclude-standard'], [PACKAGE_JSON_PATHSPEC])),
+    ...(await list(
+      ['--cached', '--others'],
+      [...STATIC_HOOK_PATHSPECS, ...prefixPathspecs(prefixes)],
+    )),
+  ];
+  while (listed.length > 0) {
+    const pathspecs = [];
     for (const relative of listed) {
       if (examined.has(relative)) continue;
       examined.add(relative);
-      const link = path.join(worktree, relative);
-      if (!(await lstat(link).catch(() => null))?.isSymbolicLink()) continue;
-      followedLinks += 1;
-      if (followedLinks > MAX_HOOK_LINKS) {
-        unverifiable.push({ path: relative, target: null, reason: 'too-many-links' });
-        return { prefixes, unverifiable };
-      }
-      const real = await realpath(link).catch(() => null);
+      if (!(await lstat(path.join(worktree, relative)).catch(() => null))?.isSymbolicLink())
+        continue;
+      const links = [];
+      const followed = await followPath(worktree, worktree, relative, links, budget);
+      if (tooMany(followed)) return { prefixes, unverifiable };
+      const real = followed.missing ? null : followed.real;
       if (real === null || !comparedLocation(worktree, real)) {
         const target =
           real === null || !isWithin(worktree, real) ? real : worktreeRelative(worktree, real);
         unverifiable.push({ path: relative, target });
         continue;
       }
+      const kind = scopeClass(relative, prefixes) ?? 'hooks-path';
+      watch(links, kind);
       const target = worktreeRelative(worktree, real);
       if (scopeClass(target, prefixes) !== null) continue;
-      prefixes.set(target, scopeClass(relative, prefixes) ?? 'hooks-path');
+      prefixes.set(target, kind);
       pathspecs.push(prefixPathspec(target));
     }
+    listed = pathspecs.length > 0 ? await list(['--cached', '--others'], pathspecs) : [];
   }
   return { prefixes, unverifiable };
 }
