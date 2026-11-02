@@ -1183,6 +1183,116 @@ test('commit create treats ignored hook files as working-tree changes', async (t
   assert.deepEqual(viaHooksPath.changed, [{ path: 'hooks/pre-commit', class: 'hooks-path' }]);
 });
 
+// Writes an untracked `.husky/pre-commit` into the worktree, as a hook-configuration change made
+// while `commit create` already waits on or holds the lock.
+function plantHusky(root) {
+  mkdirSync(join(root, '.husky'), { recursive: true });
+  writeFileSync(join(root, '.husky', 'pre-commit'), 'exit 0\n');
+}
+
+// Invariant: hook trust is re-checked right after the lock is acquired, so a hook-configuration
+// change made during the lock wait is HOOKS_UNTRUSTED with nothing staged, committed or locked.
+test('commit create re-checks hook trust after acquiring the lock', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      onPhase: async (phase) => {
+        if (phase === 'locked') plantHusky(root);
+      },
+    }),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(outcome.reason, 'changed-in-worktree');
+  assert.deepEqual(outcome.changed, [{ path: '.husky/pre-commit', class: 'husky' }]);
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: hook trust is re-checked immediately before `git commit`; a change made after staging
+// is HOOKS_UNTRUSTED, unstages the listed paths, runs no hook and releases the lock.
+test('commit create re-checks hook trust immediately before the commit', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  const marker = join(root, '.effective-flow', 'hook-ran');
+  hook(root, 'pre-commit', `touch '${marker}'`);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      onPhase: async (phase) => {
+        if (phase === 'beforeCommit') plantHusky(root);
+      },
+    }),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(outcome.reason, 'changed-in-worktree');
+  assert.deepEqual(outcome.changed, [{ path: '.husky/pre-commit', class: 'husky' }]);
+  assert.equal(existsSync(marker), false, 'no hook ran');
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: a `core.hooksPath` selected through the commit's environment (GIT_CONFIG_COUNT) is
+// read by the trust check, so an in-worktree hooks directory it names is untrusted.
+test('commit create judges a core.hooksPath supplied through the environment', async (t) => {
+  const root = repository(t);
+  const before = head(root);
+  const marker = join(root, '.effective-flow', 'hook-ran');
+  mkdirSync(join(root, 'custom-hooks'));
+  const target = join(root, 'custom-hooks', 'pre-commit');
+  writeFileSync(target, `#!/bin/sh\ntouch '${marker}'\n`);
+  chmodSync(target, 0o755);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }), {
+      env: {
+        ...GIT_ENV,
+        GIT_CONFIG_COUNT: '1',
+        GIT_CONFIG_KEY_0: 'core.hooksPath',
+        GIT_CONFIG_VALUE_0: 'custom-hooks',
+      },
+    }),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(outcome.reason, 'changed-in-worktree');
+  assert.deepEqual(outcome.changed, [{ path: 'custom-hooks/pre-commit', class: 'hooks-path' }]);
+  assert.equal(existsSync(marker), false, 'no hook ran');
+  assert.equal(head(root), before);
+  assert.equal(lockPresent(root), false);
+});
+
+// Invariant: `git config --get core.hooksPath` accepts only status 0 (value) and 1 (unset); any
+// other status or a runner error fails closed as GIT_FAILED before the lock is taken.
+test('commit create fails closed when the core.hooksPath read fails', async (t) => {
+  const isHooksPathRead = (args) =>
+    args.includes('config') && args.includes('--get') && args.includes('core.hooksPath');
+  const failures = {
+    'status 128': () => ({
+      status: 128,
+      stdout: Buffer.alloc(0),
+      stderr: Buffer.from('fatal: injected\n'),
+    }),
+    'runner error': () => ({ error: new Error('spawn failed') }),
+  };
+  for (const [label, failure] of Object.entries(failures)) {
+    const root = repository(t);
+    const before = head(root);
+    const real = createProcessRunner();
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const envelope = await commitCreate(
+      input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      { runner: async (request) => (isHooksPathRead(request.args) ? failure() : real(request)) },
+    );
+    assert.equal(envelope.ok, false, `${label}: ${JSON.stringify(envelope)}`);
+    assert.equal(envelope.error?.code, 'GIT_FAILED', `${label}: ${JSON.stringify(envelope)}`);
+    assert.equal(head(root), before, label);
+    assert.equal(lockPresent(root), false, label);
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // Redaction
 

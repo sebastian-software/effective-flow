@@ -16,7 +16,9 @@
 //   - the hook trust check: a fork head, or a hook-relevant configuration (HOOK_CONFIG below) that
 //     differs between `hookBase` and HEAD or between HEAD and the working tree, is HOOKS_UNTRUSTED.
 //     The hooks a trusted call runs are then the repository's own, the ones a plain `git commit` on
-//     the base would run.
+//     the base would run. `core.hooksPath` is read with the commit's environment; a read failing
+//     with a status other than 0 or 1 is GIT_FAILED. This check is the early exit; it runs again
+//     under the lock, after acquisition and immediately before step 5.
 //
 // Under the lock, which is taken with the `lock acquire` protocol (LOCK_HELD after `waitSeconds`,
 // with the same owner and identity details):
@@ -451,10 +453,15 @@ async function readWorkingFile(worktree, relative) {
   }
 }
 
-// The worktree-relative `core.hooksPath` when it points inside the worktree, otherwise null.
-async function insideHooksPath(context, worktree) {
-  const result = await runGit(context, worktree, ['config', '--get', 'core.hooksPath']);
-  if (result?.status !== 0) return null;
+// The worktree-relative `core.hooksPath` when it points inside the worktree, otherwise null. It is
+// read with the commit's environment, so `GIT_CONFIG_*` counts; status 1 is unset, any other
+// failure is GIT_FAILED.
+async function insideHooksPath(context, worktree, env) {
+  const result = await git(context, worktree, ['config', '--get', 'core.hooksPath'], {
+    env,
+    allowed: [0, 1],
+  });
+  if (result.status === 1) return null;
   const value = asBuffer(result.stdout).toString('utf8').trim();
   if (value === '') return null;
   const absolute = path.resolve(worktree, value);
@@ -519,10 +526,10 @@ async function ignoredHookFiles(context, worktree, hooksPath) {
 }
 
 // HOOKS_UNTRUSTED details, or null when the head's hooks are the repository's own.
-async function hookTrust(context, request) {
+async function hookTrust(context, request, deps) {
   const { worktree, hookBase } = request;
   if (!request.sameRepository) return { reason: 'fork-head' };
-  const hooksPath = await insideHooksPath(context, worktree);
+  const hooksPath = await insideHooksPath(context, worktree, gitCommitEnv(deps.env ?? process.env));
   const againstBase = nulList(
     (
       await git(context, worktree, [
@@ -673,6 +680,9 @@ async function commitUnderLock(context, request, signals, deps) {
   const stop = (before) => interruptedOutcome(context, request, signals.signal, before);
   await deps.onPhase?.('locked');
   if (signals.signal) return stop(undefined);
+  const untrusted = await hookTrust(context, request, deps);
+  if (signals.signal) return stop(undefined);
+  if (untrusted) return new StateOutcome('HOOKS_UNTRUSTED', untrusted);
 
   const foreign = await stagedNames(context, worktree);
   if (foreign.length > 0)
@@ -762,6 +772,9 @@ async function afterStaging(context, request, signals, deps, { before, stop, uns
 
   await deps.onPhase?.('beforeCommit');
   if (signals.signal) return stop(before);
+  const untrusted = await hookTrust(context, request, deps);
+  if (signals.signal) return stop(before);
+  if (untrusted) return unstaged('HOOKS_UNTRUSTED', untrusted);
   const committed = await runGit(context, worktree, ['commit', `--message=${request.message}`], {
     env: gitCommitEnv(deps.env ?? process.env),
     timeoutMs: deps.commitTimeoutMs ?? COMMIT_TIMEOUT_MS,
@@ -850,7 +863,7 @@ export async function commitCreate(input, deps) {
     if (signals.signal) {
       return new StateOutcome('INTERRUPTED', { signal: signals.signal, commit: null });
     }
-    const untrusted = await hookTrust(context, request);
+    const untrusted = await hookTrust(context, request, deps);
     if (untrusted) return new StateOutcome('HOOKS_UNTRUSTED', untrusted);
 
     // A signal during the hook trust check ends the call before the lock is touched; one during
