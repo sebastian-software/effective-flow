@@ -42,18 +42,12 @@ contract is stated once.
    ID; on Claude Code the `[ref]`, stable across a rename but new after a restart, so it binds one
    process lifetime (Evidence: observed, 1 run, [Q11](../developer-guide/focus-host-evidence.md#claude-code-results)). A missing reference or the host's
    name-reuse notice ends admission (Evidence: observed with deviation, 1 run,
-   [Q8](../developer-guide/focus-host-evidence.md#claude-code-results)). Identity and state are re-established right before each send, and a send whose
-   target cannot be verified counts as not sent. On T3 Code `delivery=steered` shows the steer
-   landed (Evidence: observed with deviation, 1 run, [Q4](../developer-guide/focus-host-evidence.md#t3-code-results)). On Claude Code a successful send
-   means only "sent, unconfirmed" (Evidence: observed with deviation, 3 runs, [Q8](../developer-guide/focus-host-evidence.md#claude-code-results)); only an
-   accepted reply (rule 4) confirms the round trip, and a correction has no confirmation, which the
-   report says. Claude Code sends use the `[ref]`-qualified address, never the bare name (Evidence:
-   description only, 0 runs, [Q10](../developer-guide/focus-host-evidence.md#claude-code-results); work package 4 is the check); if that form fails, the
-   lookup-to-send gap is an accepted residual risk. Never a target: the observer's own session
+   [Q8](../developer-guide/focus-host-evidence.md#claude-code-results)). Identity and state are re-established right before each send. If the target, identity, state, or mode cannot be verified before dispatch, no send is invoked and the outcome is **Not attempted**. On T3 Code `delivery=steered` acknowledges acceptance of the steer (Evidence: observed with deviation, 1 run, [Q4](../developer-guide/focus-host-evidence.md#t3-code-results)). On Claude Code a successful send with a message identifier is **Acknowledged**, with recipient receipt still unconfirmed (Evidence: observed with deviation, 3 runs, [Q8](../developer-guide/focus-host-evidence.md#claude-code-results)); only an
+   accepted reply (rule 4) confirms the request's round trip. Correction receipt remains unconfirmed, which the report says. Claude Code sends use the `[ref]`-qualified address, never the bare name (Evidence:
+   description only, 0 runs, [Q10](../developer-guide/focus-host-evidence.md#claude-code-results); work package 4 is the check). If qualified addressing cannot be established before dispatch, focus is report-only; a failed or ambiguous dispatch never permits a bare-name fallback, retry, resend, or duplicate manual send. Never a target: the observer's own session
    (Claude Code: Evidence: observed, 1 run, [Q12](../developer-guide/focus-host-evidence.md#claude-code-results); T3 Code: Evidence: observed, 1 run,
    [Q2](../developer-guide/focus-host-evidence.md#t3-code-results)) or, on T3 Code, its ancestors via the parent chain (same Q2 tag). Codex self and
-   ancestor recognition (Evidence: not covered by the spike, 0 runs,
-   [Limits](../developer-guide/focus-host-evidence.md#limits); work package 4 is the check). The self-report runs only from a top-level
+   ancestor recognition is not covered by the spike (0 runs); work package 4 is the check. The self-report runs only from a top-level
    focus session, because a sub-agent is described as sending under its parent's address (Evidence:
    description only, 0 runs, [Q10](../developer-guide/focus-host-evidence.md#claude-code-results); Q10 not observed by decision, work package 4 is the
    check). Claude Code coverage is local sessions only (Evidence: not covered by the spike, 0 runs,
@@ -61,7 +55,7 @@ contract is stated once.
    handle.
 3. **Two named lookup exceptions to the inventory ban,** scoped to focus's own contract; the
    [inventory ban](../../src/shared/retro-native-sources.md) and `retro`'s admission stay unchanged.
-   On Claude Code, one targeted `ListAgents` lookup before each request and after each reply, using
+   On Claude Code, one targeted `ListAgents` lookup before each send (request or correction) and after each reply, using
    only whether the admitted reference is listed with its state and whether its name occurs once. On
    T3 Code, the observer's own `parentThreadId` chain, read with the smallest activity read and
    keeping only the parent and relationship fields. No target is ever chosen from a listing.
@@ -87,14 +81,14 @@ contract is stated once.
    delegated task because a send there starts a fresh task, and never use the automatic or restart
    modes (Evidence: observed with deviation, 1 run, [Q4](../developer-guide/focus-host-evidence.md#t3-code-results); the last is a design decision).
    Start a new turn on an idle top-level thread (Evidence: not covered by the spike, 0 runs,
-   [Limits](../developer-guide/focus-host-evidence.md#limits); work package 4 is the check). The observer must run at least as broad as
+   [Q4](../developer-guide/focus-host-evidence.md#t3-code-results); no idle top-level thread was launched, and work package 4 is the check). The observer must run at least as broad as
    the target, otherwise focus is report-only and never asks for a broader mode (Evidence: observed,
-   1 run, [Q5](../developer-guide/focus-host-evidence.md#t3-code-results)). Claude Code uses host delivery and counts a held or refused message as not
-   sent; a hold is known from the `SendMessage` description only (Evidence: description only, 0
+   1 run, [Q5](../developer-guide/focus-host-evidence.md#t3-code-results)). Claude Code uses host delivery. A held or deferred message is not proof of non-acceptance: explicit acceptance is **Acknowledged**, explicit non-acceptance is **Rejected**, and an ambiguous result after dispatch is **Outcome unknown**. A hold is known from the `SendMessage` description only (Evidence: description only, 0
    runs, [Q10](../developer-guide/focus-host-evidence.md#claude-code-results); work package 4 is the check), and none was observed on a mode mismatch
    (Evidence: observed with deviation, 1 run, [Q8](../developer-guide/focus-host-evidence.md#claude-code-results)). Codex desktop sends nothing in the
    first version, since a sender exists only as a model self-report (Evidence: observed
    (self-report), 1 run, [Q7](../developer-guide/focus-host-evidence.md#codex-desktop-results)).
+
 7. **Marker.** A fixed prefix names focus and the developer's confirmation and frames the text as a
    suggestion under the target's own approval gates. It is a label, not authentication: on T3 Code
    the receiver sees a plain user message with no host sender marker (Evidence: observed with
@@ -131,6 +125,21 @@ contract is stated once.
     confirmation dialog names (Evidence: observed in the Q8 plan-mode run, 1 run, [Q8](../developer-guide/focus-host-evidence.md#claude-code-results)).
     Third, the residual injection risk of the prompt-level stand-in in rule 5 (Design decision, no
     host claim).
+
+### Send-outcome reporting
+
+The trajectory verdict and send outcome are independent. Both outbound kinds use these states:
+
+| State               | Meaning                                                                                                                                                                                                                                                                    |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Not attempted**   | Dispatch was never invoked, including missing developer confirmation or a failed pre-send identity, state, or mode check. Pre-send inability to verify the target is not a send.                                                                                           |
+| **Rejected**        | The host explicitly establishes that dispatch was not accepted.                                                                                                                                                                                                            |
+| **Acknowledged**    | The host acknowledges acceptance, such as a message identifier or documented steered result. This proves acceptance only, never recipient receipt, reading, or action.                                                                                                     |
+| **Outcome unknown** | Dispatch was invoked, but a missing, failed, or ambiguous acknowledgement cannot establish acceptance or rejection. Retain the trajectory verdict, say the message may have arrived, and do not retry, resend, use an address fallback, or advise a duplicate manual send. |
+
+An accepted self-report reply additionally confirms only that request's round trip; it does not prove
+that a correction was received or acted on. Missing self-report evidence still yields **Cannot judge**.
+(Design decision, no host claim)
 
 ## Alternatives and tradeoffs
 
