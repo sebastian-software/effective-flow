@@ -81,7 +81,7 @@ test('retro model-tier and session partition contracts remain explicit', () => {
     'retro analysis must use the normal standard tier by default',
   );
   const sessionTitle = source('src/shared/session-title.md');
-  assert.match(sessionTitle, /`retro` stay silent/);
+  assert.match(sessionTitle, /`retro`, and `focus` stay silent/);
   const retro = source('src/tools/retro.md');
   assert.doesNotMatch(retro, /```lazy-include\nsession-title\n/);
   assert.doesNotMatch(retro, /```lazy-include\nsession-rename\n/);

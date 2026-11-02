@@ -1,6 +1,6 @@
 # Focus tool and skill ownership
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -135,16 +135,16 @@ Package 5 owns the new session stub and fixed labeling rubric; package 6 owns fo
 
 ## Acceptance criteria
 
-- [ ] Prerequisites are verified on the integration base: tracked concept, completed package-1 evidence, Active package-2 ADR and its related ADR updates. Missing prerequisites stop implementation.
-- [ ] Focus is discoverable under Ensure quality in Claude, Codex and portable builds, with valid catalog/frontmatter, measured budget, exactly one registered analysis spawn site and no generic next-step block.
-- [ ] Exactly one selected session is admitted; self/ancestor/finished-delegated and unqualified-host paths fail closed. Children are covered only through the parent record. Retro remains unchanged.
-- [ ] Goal precedence, one clarification, bounded read coverage, redaction, prompt-injection treatment, observed versus self-report verdict sets and cited single-correction output match the contract above.
-- [ ] Sends are bounded, developer-confirmed and identity/state-checked; no unattended send, mode escalation, interrupt, restart or file/report/session-title write occurs. The verdict remains separate from Not attempted, Rejected, Acknowledged and Outcome unknown. Ambiguous post-dispatch acknowledgements retain the verdict with a possible-delivery warning and no retry or suggested duplicate send; acknowledgement is not reported as confirmed receipt.
-- [ ] Claude replies obey reference/name/nonce/deadline rules; unverifiable narration never produces Progress verified. No test is run to verify a peer's claim.
-- [ ] Exactly one route-when-relevant relationship and consistent guide prose are present; the focus source recommends/uses effective-delivery or discloses its minimal fallback. Existing ownership records and provenance are preserved.
-- [ ] Every advertised host/path has the specified real-host acceptance evidence bound to the actual candidate build and loaded focus artifact, including trusted top-level proof for Claude. Failed or unavailable paths are documented and return missing capability rather than being advertised as working.
-- [ ] Source/build contract checks, required repository validation and documentation checks pass; behavioral eval freshness and deferred focus calibration are reported honestly.
-- [ ] Implementation appends commits to #603's existing branch, updates its final feature title/body, archives this plan and finalizes the draft through the normal apply delivery continuation only when implementation is complete. No force push or second PR.
+- [x] Prerequisites are verified on the integration base: tracked concept, completed package-1 evidence, Active package-2 ADR and its related ADR updates. Missing prerequisites stop implementation.
+- [x] Focus is discoverable under Ensure quality in Claude, Codex and portable builds, with valid catalog/frontmatter, measured budget, exactly one registered analysis spawn site and no generic next-step block.
+- [x] Exactly one selected session is admitted; self/ancestor/finished-delegated and unqualified-host paths fail closed. Children are covered only through the parent record. Retro remains unchanged.
+- [x] Goal precedence, one clarification, bounded read coverage, redaction, prompt-injection treatment, observed versus self-report verdict sets and cited single-correction output match the contract above.
+- [x] Sends are bounded, developer-confirmed and identity/state-checked; no unattended send, mode escalation, interrupt, restart or file/report/session-title write occurs. The verdict remains separate from Not attempted, Rejected, Acknowledged and Outcome unknown. Ambiguous post-dispatch acknowledgements retain the verdict with a possible-delivery warning and no retry or suggested duplicate send; acknowledgement is not reported as confirmed receipt.
+- [x] Claude replies obey reference/name/nonce/deadline rules; unverifiable narration never produces Progress verified. No test is run to verify a peer's claim.
+- [x] Exactly one route-when-relevant relationship and consistent guide prose are present; the focus source recommends/uses effective-delivery or discloses its minimal fallback. Existing ownership records and provenance are preserved.
+- [x] Every advertised host/path has the specified real-host acceptance evidence bound to the actual candidate build and loaded focus artifact, including trusted top-level proof for Claude. Failed or unavailable paths are documented and return missing capability rather than being advertised as working.
+- [x] Source/build contract checks, required repository validation and documentation checks pass; behavioral eval freshness and deferred focus calibration are reported honestly.
+- [x] Implementation appends commits to #603's existing branch, updates its final feature title/body, archives this plan and finalizes the draft through the normal apply delivery continuation only when implementation is complete. No force push or second PR.
 
 ## Validation plan
 
@@ -238,3 +238,30 @@ All four findings are incorporated and the user decision is recorded; no critica
 ## Open points
 
 - No open points.
+
+## Implementation — 2026-11-02
+
+Work packages 3 and 4 were implemented together on the existing branch for PR #603. The integration base includes the published concept (#605), package-1 evidence, and the Active package-2 ADR and related backlinks (#604). `origin/develop` was merged into the published plan branch without rewriting its history.
+
+The quality catalog now exposes Focus in all three targets. One shared contract owns source admission, bounded snapshots, separate observed/self-report verdicts, and independent message outcomes. Exactly one standard read-only analysis site is registered; Focus remains chat-only and suppresses titles, saved reports, tracker writes, and generic next steps. The measured eager core is 377/377 lines. No runtime helper, dependency, or named worker was introduced.
+
+The ownership manifest adds only `effective-delivery` → `focus`, classified `route-when-relevant`; existing provenance and relationships are preserved. The source requires actual use of the relevant owner audit guidance or a disclosed minimal fallback. User and developer entrypoints, ownership documentation, and the candidate-bound host acceptance record are synchronized.
+
+T3 observed/report-only acceptance passed on the built portable candidate after two explicitly recorded unsuccessful attempts and one mechanical post-correction requalification. The final phase-D snapshot used seven native reads, two history pages and a conservative 31,280-character charge, observed D1–D5, and claimed no completion. Self, ancestor and finished delegated targets were refused; exactly one standard analysis leaf completed. All sends remain disabled because the required host qualifications are absent. Native Claude and Codex Desktop paths return their documented missing capability. These are declared limits, not implied support or calibration evidence.
+
+### Validation
+
+The final CI sequence passed in the execution worktree: `corepack pnpm agent:check` (1,184 files), `corepack pnpm test --test-concurrency=1` (4,027 tests: 4,000 passed, zero failed, 27 skipped), `node build.mjs` (all three targets; Focus 377/377), and `corepack pnpm test:distribution` (offline smoke). `git diff --check` also passed. An independent final validator confirmed all six candidate digests and the exact one-relationship ownership delta.
+
+The user authorized a pre-existing host-driver test portability correction in this PR after the original validation stop. Python 3.12's AST dump includes empty list fields; the expected digest uses their omission. The test now requests `show_empty=False` where supported and normalizes only empty list fields on a deep copy otherwise. The frozen source and runtime hashes remain unchanged. The focused test and complete serial suite pass; independent correction review reported zero findings.
+
+Both independent deep technical review rounds reported zero Critical, Important, or Note findings. Independent technical validation detected existing inventories that needed the new Focus entry and a wording false positive in the retired-tool guard. The corrections preserved guard behavior and passed the independent recheck. The full suite additionally exposed missing Focus entries in the shipped-tool inventory and the subagent-progress coverage register; those entries were added without changing the existing guards, and the focused rechecks and final complete suite passed.
+
+Behavioral freshness was checked read-only for merge-gate, iterate, next-steps, and build-context. The existing archives are stale or absent; report-mode verification exits successfully but establishes no fresh behavioral evidence. Required recording remains due before release. The new session stub/rubric, Focus suite, and calibration threshold remain packages 5 and 6.
+
+## Review findings
+
+**Date:** 2026-11-02
+**Reviewer:** Independent technical review and correction recheck using effective-delivery
+
+No findings found. The final Python-portability review also reported zero Critical, Important, or Note findings.

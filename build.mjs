@@ -275,7 +275,7 @@ const TOOL_GROUPS = [
   },
   {
     title: 'Ensure quality',
-    tools: ['review', 'retro'],
+    tools: ['review', 'retro', 'focus'],
   },
   {
     title: 'Deliver changes',
@@ -426,6 +426,7 @@ const WORKFLOW_POINTER_REFERENCES = [
 const NEXT_STEPS_EXEMPT_TOOLS = new Set([
   'version', // informational output; there is no run state to continue from
   'retro', // chat recommendations are the requested result; no saved executable source
+  'focus',
   'pr-review', // deprecated forwarder; the tool it forwards to emits
   'apply-plan', // not user-invocable (src/SKILL.md); its end states live on `apply`
   'apply-review', // not user-invocable; its end states live on `apply`
@@ -2464,6 +2465,7 @@ try {
     'apply-plan': 566,
     investigate: 536,
     retro: 215,
+    focus: 377,
     fix: 554,
     'plan-review': 521,
     pr: 498,
