@@ -1,6 +1,6 @@
 # focus host verification spike: T3 Code, Codex desktop, and Claude Code
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -216,6 +216,18 @@ Deep interactive plan review (2026-11-02):
 - **Error cases, Note:** the fresh task from a send to a finished task and the finish race were unhandled. Incorporated: register entry and cancellation; the race is listed under limits.
 - **Data protection, Note:** thread links named in chat could reach excerpts. Incorporated: link redaction and link patterns in the validation search.
 - **Maintainability, Note:** it was unclear whether Q1 could loosen the concept's refusal rule. Incorporated: results only confirm or tighten; loosening goes to the concept review.
+
+## Test results
+
+- Measurement steps 1 to 6 ran on 2026-11-02 (run 20261102T090649Z); evidence root `.effective-flow/spikes/focus-hosts/20261102T090649Z/`, untracked. 11 of 40 T3 Code throwaway tasks; Codex desktop and Claude Code by operator script. Q1 not observable; Q9 (b) to (d), Q10, and Q8 plan-mode repeats 2 and 3 not run by decision.
+- All 15 digests in `docs/developer-guide/focus-host-evidence.md` verified against the evidence root with `sha256sum -c`.
+- Identifier scan of the evidence page (thread, task, run, and message IDs, links, refs, socket PIDs, home paths): no match.
+- `pnpm agent:check` passed in the delivery worktree.
+- Changed files against the step 1 snapshot: only `docs/developer-guide/focus-host-evidence.md`, `docs/developer-guide/README.md`, and this plan's archive move.
+
+## Review findings
+
+- No review phase in the documentation workflow. The orchestrator's validation corrected five statements the sources did not support (outcome vocabulary, an unverifiable Q3 delivery claim, the model name, and two unconfirmed operator clean-up steps) and one stale digest for `observations.md`.
 
 ## Open points
 

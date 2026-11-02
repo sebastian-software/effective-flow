@@ -56,3 +56,5 @@ is no runtime application – you edit `src/`, never `dist/`.
 - [Claude Code allowlist evidence](claude-code-allowlist-evidence.md) – point-in-time evidence for
   absolute-path allow rules, the hook fallback, and the prompt baseline for `review`, `iterate`, and
   `cleanup`.
+- [focus host evidence](focus-host-evidence.md) – point-in-time evidence for the read, send, and
+  reply behaviour of T3 Code, Codex desktop, and Claude Code, with one conclusion per host.
