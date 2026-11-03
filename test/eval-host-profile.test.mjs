@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
   lstatSync,
@@ -7,6 +8,7 @@ import {
   mkdirSync,
   readFileSync,
   readdirSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -15,12 +17,20 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { once } from 'node:events';
 import { test } from 'node:test';
+import { cleanupProfile } from '../evals/_scaffold/host-profile-cleanup.mjs';
+import {
+  CACHE_PATHS,
+  RECEIPT,
+  RECORD,
+  createProfile,
+  openRoot,
+} from '../evals/_scaffold/host-profile-storage.mjs';
 
 // This child is deliberately ignorant of the host-run record format. It only reports the two
 // homes it was given and creates the cache locations whose lifetime is the public contract.
 const CHILD_SOURCE = String.raw`
 import { spawn } from 'node:child_process';
-import { mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 const [mode, evidence, code = '0'] = process.argv.slice(2);
 const home = process.env.HOME;
@@ -56,6 +66,7 @@ writeFileSync(evidence + '.tmp', JSON.stringify(record));
 renameSync(evidence + '.tmp', evidence);
 if (mode === 'exit') process.exit(Number(code));
 if (mode === 'replace-cache' || mode === 'stubborn-grandchild') process.exit(0);
+if (mode === 'barrier-exit') setInterval(() => { if (existsSync(code)) process.exit(0); }, 20);
 setInterval(() => {}, 1000);
 `;
 
@@ -165,6 +176,204 @@ function assertCachesGone(record) {
   ])
     assert.equal(existsSync(path), false, `cache was retained: ${path}`);
 }
+
+function receiptSnapshot(profile) {
+  const path = join(profile, RECEIPT);
+  const bytes = readFileSync(path);
+  const value = lstatSync(path, { bigint: true });
+  return {
+    bytes,
+    sha256: createHash('sha256').update(bytes).digest('hex'),
+    cleanedAt: JSON.parse(bytes).cleanedAt,
+    dev: value.dev,
+    ino: value.ino,
+    mtimeNs: value.mtimeNs,
+  };
+}
+
+test('completed receipts remain immutable across sequential and concurrent wrapper recovery', async (t) => {
+  const c = makeCase();
+  t.after(() => rmSync(c.root, { recursive: true, force: true }));
+  const first = await runHost(c, 'exit', 0);
+  assert.equal(first.status, 0, first.stderr);
+  const original = evidence(c);
+  const profile = profileDirs(c)[0];
+  const pinned = receiptSnapshot(profile);
+  const sequential = { ...c, evidence: join(c.root, 'sequential.json') };
+  const next = await runHost(sequential, 'exit', 0);
+  assert.equal(next.status, 0, next.stderr);
+  assert.deepEqual(receiptSnapshot(profile), pinned, 'sequential wrapper rewrote old receipt');
+  const gate = join(c.root, 'release-barrier');
+  const concurrent = [1, 2].map((id) => ({ ...c, evidence: join(c.root, `parallel-${id}.json`) }));
+  const wrappers = concurrent.map((item) => runHost(item, 'barrier-exit', gate));
+  // Keep both real wrappers alive until recovery has observed their live profiles.
+  // Release them even on an assertion failure so the fixture cannot leave a process behind.
+  try {
+    await waitFor(
+      () => concurrent.every((item) => existsSync(item.evidence)),
+      'concurrent wrappers did not reach the barrier',
+    );
+    const recoveries = await Promise.all([runRecovery(c), runRecovery(c)]);
+    for (const recovery of recoveries) assert.equal(recovery.status, 0, recovery.stderr);
+    assert.deepEqual(receiptSnapshot(profile), pinned, 'concurrent recovery rewrote old receipt');
+  } finally {
+    writeFileSync(gate, 'release');
+    for (const result of await Promise.all(wrappers)) assert.equal(result.status, 0, result.stderr);
+  }
+  const final = await runRecovery(c);
+  assert.equal(final.status, 0, final.stderr);
+  assert.deepEqual(receiptSnapshot(profile), pinned, 'completed wrappers rewrote old receipt');
+  for (const record of [original, evidence(sequential), ...concurrent.map(evidence)])
+    assertCachesGone(record);
+  assert.equal(profileDirs(c).length, 4);
+});
+
+test('missing, malformed and incomplete receipts never authorize completed cleanup', async (t) => {
+  const c = makeCase();
+  t.after(() => rmSync(c.root, { recursive: true, force: true }));
+  assert.equal((await runHost(c, 'exit', 0)).status, 0);
+  const profile = profileDirs(c)[0];
+  const receiptPath = join(profile, RECEIPT);
+  const valid = JSON.parse(readFileSync(receiptPath));
+  const invalidReceipts = [
+    ['missing', undefined],
+    ['malformed', '{'],
+    ['null', 'null'],
+    ['wrong schema', { ...valid, schema: 2 }],
+    ['wrong profile', { ...valid, profileId: 'foreign' }],
+    ['missing timestamp', { ...valid, cleanedAt: undefined }],
+    ['invalid timestamp', { ...valid, cleanedAt: 'invalid' }],
+    ['incomplete caches', { ...valid, caches: valid.caches.slice(1) }],
+    ['duplicate cache', { ...valid, caches: valid.caches.map(() => valid.caches[0]) }],
+    [
+      'unsafe status',
+      { ...valid, caches: valid.caches.map((cache) => ({ ...cache, status: 'retained-unsafe' })) },
+    ],
+  ];
+  for (const [label, value] of invalidReceipts) {
+    rmSync(receiptPath);
+    if (value !== undefined)
+      writeFileSync(receiptPath, typeof value === 'string' ? value : JSON.stringify(value));
+    const recovery = await runRecovery(c);
+    assert.equal(recovery.status, 0, `${label}: ${recovery.stderr}`);
+    const repaired = JSON.parse(readFileSync(receiptPath));
+    assert.equal(repaired.schema, 1, label);
+    assert.equal(repaired.profileId, valid.profileId, label);
+    assert.ok(Number.isFinite(Date.parse(repaired.cleanedAt)), label);
+    assert.deepEqual(repaired.caches, valid.caches, label);
+  }
+  const external = join(c.root, 'external-receipt');
+  writeFileSync(external, JSON.stringify(valid));
+  rmSync(receiptPath);
+  symlinkSync(external, receiptPath);
+  const recovery = await runRecovery(c);
+  assert.equal(recovery.status, 0, recovery.stderr);
+  assert.equal(lstatSync(receiptPath).isSymbolicLink(), false);
+  assert.equal(readFileSync(external, 'utf8'), JSON.stringify(valid));
+});
+
+test('a successful receipt cannot hide recreated or unsafe caches', async (t) => {
+  const c = makeCase();
+  t.after(() => rmSync(c.root, { recursive: true, force: true }));
+  assert.equal((await runHost(c, 'exit', 0)).status, 0);
+  const profile = profileDirs(c)[0];
+  const cache = join(profile, ...CACHE_PATHS[2]);
+  const pinned = receiptSnapshot(profile);
+  mkdirSync(cache);
+  writeFileSync(join(cache, 'recreated.cache'), 'remove');
+  assert.equal((await runRecovery(c)).status, 0);
+  assertCachesGone(evidence(c));
+  assert.notEqual(receiptSnapshot(profile).ino, pinned.ino);
+  const external = join(c.root, 'external-cache');
+  mkdirSync(external);
+  writeFileSync(join(external, 'sentinel'), 'keep');
+  symlinkSync(external, cache);
+  assert.equal((await runRecovery(c)).status, 0);
+  const receipt = JSON.parse(readFileSync(join(profile, RECEIPT)));
+  assert.equal(receipt.caches[2].status, 'retained-unsafe');
+  assert.equal(readFileSync(join(external, 'sentinel'), 'utf8'), 'keep');
+  assert.equal(lstatSync(cache).isSymbolicLink(), true);
+});
+
+test('successful receipts do not bypass live or unknown process and identity guards', async (t) => {
+  const c = makeCase();
+  t.after(() => rmSync(c.root, { recursive: true, force: true }));
+  const root = openRoot(c.profiles);
+  const profile = createProfile(root);
+  const receiptPath = join(profile.path, RECEIPT);
+  writeFileSync(
+    receiptPath,
+    JSON.stringify({
+      schema: 1,
+      profileId: profile.record.id,
+      cleanedAt: '2020-01-01T00:00:00.000Z',
+      caches: CACHE_PATHS.map((parts) => ({ path: parts.join('/'), status: 'removed' })),
+    }),
+  );
+  const pinned = receiptSnapshot(profile.path);
+  assert.equal(await cleanupProfile(root, profile.path), false, 'live owner');
+  const kill = process.kill;
+  const unknownPid = 2147483647;
+  const mockedKill = t.mock.method(process, 'kill', (pid, signal) => {
+    if (Math.abs(pid) === unknownPid) throw Object.assign(new Error('unknown'), { code: 'EPERM' });
+    return kill.call(process, pid === -process.pid ? process.pid : pid, signal);
+  });
+  try {
+    writeFileSync(
+      join(profile.path, RECORD),
+      JSON.stringify({ ...profile.record, ownerPid: unknownPid }),
+    );
+    assert.equal(await cleanupProfile(root, profile.path), false, 'unknown owner');
+    for (const childPgid of [process.pid, unknownPid]) {
+      writeFileSync(
+        join(profile.path, RECORD),
+        JSON.stringify({ ...profile.record, phase: 'armed', childPgid }),
+      );
+      assert.equal(
+        await cleanupProfile(root, profile.path, { own: true }),
+        false,
+        'live/unknown group',
+      );
+    }
+  } finally {
+    mockedKill.mock.restore();
+  }
+  assert.deepEqual(receiptSnapshot(profile.path), pinned);
+  for (const states of [
+    ['gone', 'live'],
+    ['gone', 'gone', 'unknown'],
+  ]) {
+    let probes = 0;
+    const changingOwner = t.mock.method(process, 'kill', (_pid, _signal) => {
+      const state = states[Math.min(probes++, states.length - 1)];
+      if (state !== 'live')
+        throw Object.assign(new Error(state), { code: state === 'gone' ? 'ESRCH' : 'EPERM' });
+      return true;
+    });
+    try {
+      writeFileSync(
+        join(profile.path, RECORD),
+        JSON.stringify({ ...profile.record, ownerPid: unknownPid }),
+      );
+      assert.equal(
+        await cleanupProfile(root, profile.path),
+        false,
+        `owner became ${states.at(-1)}`,
+      );
+      assert.equal(probes, states.length);
+      assert.deepEqual(receiptSnapshot(profile.path), pinned);
+    } finally {
+      changingOwner.mock.restore();
+    }
+  }
+  writeFileSync(join(profile.path, RECORD), JSON.stringify(profile.record));
+  const moved = `${profile.path}-replaced`;
+  renameSync(profile.path, moved);
+  mkdirSync(profile.path);
+  writeFileSync(join(profile.path, RECORD), JSON.stringify(profile.record));
+  await assert.rejects(cleanupProfile(root, profile.path, { own: true }), /ownership changed/);
+  assert.deepEqual(receiptSnapshot(moved), pinned);
+});
 
 test('normal and nonzero host runs clean only caches and retain evidence/state', async (t) => {
   for (const code of [0, 17]) {
