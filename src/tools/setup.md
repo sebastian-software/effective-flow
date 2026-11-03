@@ -918,8 +918,9 @@ when: the allowlist step is offered: the build is `claude`, or `portable` runnin
 Hosts derive a session title from the first message, so a run is listed under a name that predates
 its subject. Where the running harness has an established rename path, Effective Flow applies the
 better title itself instead of suggesting it; where it has none, every run keeps printing a
-suggestion the user applies by hand. Both harnesses that have such a path — the ChatGPT Desktop Codex
-tab and Claude Code — expose it directly, so neither needs anything installed or configured.
+suggestion the user applies by hand. T3 Code, the ChatGPT Desktop Codex tab, and Claude Code expose
+their paths directly, so none needs anything installed or configured. T3 Code applies regardless of
+whether its provider is Codex or Claude; plain Codex CLI remains suggestion-only.
 
 This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
 blocks, and adds nothing to the Step 6 write. It explains the detected path and proves it once; it
@@ -939,10 +940,11 @@ options:
     description: Skip only this visible capability check; later runs keep following their host's path
 ```
 
-For "No", note that setup skips only this visible check and continue with Step 8. On either harness
-with an established path, later eligible runs still attempt the native operation themselves and fall
-back independently from each call's result, so skipping the probe withholds the proof rather than
-the capability.
+For "No", note that setup skips only this visible check and continue with Step 8. On any identified
+host with an established path, later eligible runs still attempt the native operation themselves and
+fall back independently from each call's result, so skipping the probe withholds the proof rather than
+the capability. T3 Code may replace an existing title, including one chosen manually; do not claim a
+title-ownership check that the host did not report.
 
 ```lazy-include
 setup-rename-probe
@@ -1006,10 +1008,13 @@ Allowlist run only those of `setup-allowlist`):
   from the flag carried in `<adr-convention>`, together with every speaking source and its outcome
   and the tier that then decided — or inconclusive evidence that made the Effective Flow default
   apply. Name file paths and classified outcomes only, never verbatim prose from a declaring source
-- for the capability step of Step 7: the detected harness, which path it followed, that its native
-  path was explained rather than installed, whether the verification ran and with which concrete
-  result, and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. State that no
-  file above the repository root and no configuration key was changed by the step
+- for the capability step of Step 7: the detected host, which path it followed, that its native path
+  was explained rather than installed, whether the verification ran and with which concrete result,
+  and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. For T3 Code, only
+  after an actual invocation state that the operation targeted this calling thread and omitted
+  `threadId` and `environmentId`; if declined or unavailable before invocation, report that no call
+  occurred. Explain that a call could replace an existing title, including one chosen manually.
+  State that no file above the repository root and no configuration key was changed by the step
 - for the allowlist step: the summary items of `setup-allowlist`, or the one sentence that the
   step is specific to Claude Code
 - for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
@@ -1055,10 +1060,12 @@ with nothing staged matches no row and emits nothing.
   only by the allowlist step after its own explicit confirmation; no further setup steps like deployment or
   Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
-  configuration key. Both paths call their own host's native title operation directly — the Desktop
-  path its current-task title operation, the Claude Code path its session-title operation with the
-  sentinel `"self"`. Neither creates a runtime target or invokes a write-safety guard. Either probe
-  renames the current session once, with the user's go-ahead and its own fixed probe title.
+  configuration key. Each identified host calls its own native title operation directly — T3 Code
+  uses `mcp__t3_code.t3_thread_update` with `action: rename` and no `threadId` or `environmentId`, the
+  Desktop path its current-task operation, and Claude Code its session-title operation with the
+  sentinel `"self"`. None creates a runtime target or invokes a write-safety guard. Each probe
+  renames the current session once, with the user's go-ahead and its own fixed probe title; report
+  only the actual host result.
 - Never overwrite existing config values and unknown keys without asking.
 - A Targeted run writes only what `setup-targeted-change` allows.
 - Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge

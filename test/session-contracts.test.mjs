@@ -160,20 +160,14 @@ test('the session-title contract ships per emitting tool and stays out of the ro
   assert.match(contract, /never retitle another session/);
   assert.match(contract, /never probe speculatively/);
   assert.match(contract, near('later automatic title', 'replace one the user set manually', 200));
-  // The Claude Code half of the same rule, whose absence was only half covered: the removed
-  // standing-mandate carve-out is pinned further down, but the sentence that replaced it was
-  // not, so deleting it left the suite green. Consent sits with the host there, and the
-  // consequence is the operational one - the run never reads the session back to find out who
-  // set the current title.
   assert.match(
     contract,
-    near(
-      'Claude Code path the host owns that consent',
-      'neither licenses reading the session back',
-      250,
-    ),
+    near('T3 Code likewise has no verified ownership check', 'replace an existing title', 180),
   );
+  assert.match(contract, /Claude Code path the host owns consent instead/);
+  assert.match(contract, /neither licenses reading the session back/);
   assert.match(contract, /a delegate never repeats a subject its parent already proposed/);
+  assert.match(contract, /internal sub-agents and workers never emit/);
   assert.match(contract, /at most 60 characters/);
 
   // The reference becomes the leading segment, and a run holding none keeps the
@@ -610,12 +604,70 @@ test('session-rename dispatches each established host to its own native section'
   const hosts = firstColumnCells(dispatch);
   assert.deepEqual(
     hosts.filter((host) => !/^[-:]+$/.test(host)),
-    ['Host', 'ChatGPT Desktop, Codex tab', 'Claude Code', 'Codex CLI or any other running host'],
+    [
+      'Host',
+      'T3 Code',
+      'ChatGPT Desktop, Codex tab',
+      'Claude Code',
+      'Codex CLI or any other running host',
+    ],
   );
+  assert.match(tableRow(dispatch, 'T3 Code'), /calling thread directly/);
   assert.match(tableRow(dispatch, 'ChatGPT Desktop, Codex tab'), /calling task directly/);
   assert.match(tableRow(dispatch, 'Claude Code'), /rename this session directly/);
   assert.match(tableRow(dispatch, 'Codex CLI or any other running host'), /read no further/);
   assert.doesNotMatch(dispatch, /^\| Codex\s+\|/m);
+});
+
+// Invariant: T3 dispatch wins before provider or harness, calls the current thread directly,
+// and treats every unconfirmed outcome as an independent visible fallback.
+test('the T3 Code section is host-first, id-free, and non-retrying', () => {
+  const fragment = source('src/shared/session-rename.md');
+  const t3 = section(fragment, '### T3 Code: rename the calling thread directly', '\n### ');
+  const contract = prose(t3);
+
+  assert.match(prose(fragment), /running host first/);
+  assert.match(
+    prose(fragment),
+    /T3 Code therefore wins before the provider or harness is considered/,
+  );
+  assert.match(t3, /running environment explicitly identifies T3 Code/);
+  assert.match(
+    prose(source('src/shared/setup-rename-probe.md')),
+    /regardless of whether the provider is Codex or Claude/,
+  );
+  assert.match(prose(fragment), /not merely from seeing a management tool/);
+  assert.match(contract, /call exactly `mcp__t3_code\.t3_thread_update`/);
+  assert.match(contract, /with `action: rename`/);
+  assert.match(contract, /already-cut literal `title`/);
+  assert.match(contract, /Omit both `threadId` and `environmentId`/);
+  for (const prohibited of [
+    /derive either identifier/,
+    /delegate, parent, fork, environment, listing or search/,
+    /regenerate a title/,
+    /read a thread back/,
+    /inspect title ownership/,
+    /use another transport/,
+  ]) {
+    assert.match(contract, prohibited);
+  }
+
+  assert.match(contract, near("host's actual reported success", 'stay silent', 120));
+  assert.match(
+    contract,
+    near('after that success licenses exactly one further call', 'newly derived title', 180),
+  );
+  assert.match(contract, /and nothing after that/);
+  assert.match(
+    contract,
+    near(
+      'unavailable, denied, errored, ambiguous, or otherwise unconfirmed result',
+      'Suggested session title:',
+      220,
+    ),
+  );
+  assert.match(contract, /Do not block, retry, fall back to another host path/);
+  assert.match(contract, /may replace an existing title, including one chosen manually/);
 });
 
 // Invariant: Desktop renames only the calling task, once, never by id or retry, and fails visibly.
@@ -817,7 +869,61 @@ test('setup probes the Desktop capability directly without reinstalling the reti
   assert.doesNotMatch(desktop, /"hooks"\s*:|\[\[hooks\.Stop\]\]|statusMessage/);
 });
 
+// Invariant: the T3 setup probe is one consented, fixed-title call with no persistence or
+// capability inference beyond the concrete host result.
+test('setup probes T3 Code once without persistence, discovery, or retry', () => {
+  const probe = source('src/shared/setup-rename-probe.md');
+  const t3 = section(
+    probe,
+    '### T3 Code: the current-thread capability needs no installation',
+    '\n### ',
+  );
+  const contract = prose(t3);
+
+  assert.match(contract, /regardless of whether the provider is Codex or Claude/);
+  assert.match(contract, /There is no hook, file, configuration key or one-time setup to install/);
+  assert.match(contract, /deliberately renames the current thread once/);
+  assert.match(contract, /including one chosen manually/);
+  assert.match(contract, /call `mcp__t3_code\.t3_thread_update` once/);
+  assert.match(
+    contract,
+    /with `action: rename` and only the literal title `Effective Flow setup check`/,
+  );
+  assert.match(contract, /omit both `threadId` and `environmentId`/);
+  assert.match(contract, /never list, search or read back a thread/);
+  assert.match(contract, /never retry/);
+  assert.match(
+    contract,
+    near(
+      'unavailable, denied, errored, ambiguous or unconfirmed result',
+      'means only that this probe failed',
+      180,
+    ),
+  );
+  assert.match(
+    contract,
+    near('Later eligible runs still attempt the operation', 'fall back independently', 180),
+  );
+  assert.match(contract, /Never claim more than the host reported/);
+});
+
 // Invariant: declining or failing the setup probe never switches rename off for later runs.
+test('setup reports T3 execution details only after an actual invocation', () => {
+  const setup = prose(source('src/tools/setup.md'));
+  assert.match(
+    setup,
+    near(
+      'For T3 Code, only after an actual invocation',
+      'omitted `threadId` and `environmentId`',
+      200,
+    ),
+  );
+  assert.match(
+    setup,
+    near('if declined or unavailable before invocation', 'report that no call occurred', 150),
+  );
+});
+
 test('setup No and a failed probe never persistently disable later rename attempts', () => {
   const setup = source('src/tools/setup.md');
   const step = section(setup, '### Step 7: Session rename capability (optional)', '\n### Step 8');
@@ -1002,12 +1108,23 @@ test('setup probes the same native call the rename fragment defines', () => {
   );
   const fragment = prose(source('src/shared/session-rename.md'));
 
-  assert.match(setup, /`set_session_title`/);
-  assert.match(setup, near('sentinel `"self"`', 'Effective Flow setup check', 120));
-  for (const shared of [/`set_session_title`/, /`"self"`/, /`Effective Flow setup check`/]) {
+  assert.match(setup, /`mcp__t3_code\.t3_thread_update`/);
+  assert.match(setup, near('`action: rename`', 'Effective Flow setup check', 160));
+  for (const shared of [
+    /`mcp__t3_code\.t3_thread_update`/,
+    /`action: rename`/,
+    /`Effective Flow setup check`/,
+  ]) {
     assert.match(fragment, shared, 'the fragment must define what setup probes');
     assert.match(setup, shared, 'setup must probe what the fragment defines');
   }
+
+  assert.match(
+    setup,
+    near('capability step of Step 7 writes no file', 'adds no configuration key', 180),
+  );
+  assert.match(setup, near('T3 Code uses', 'no `threadId` or `environmentId`', 180));
+  assert.match(setup, near('fixed probe title', 'only the actual host result', 160));
 
   // setup keeps its own copy of the deferred-tool rule because its probe makes the call
   // itself; the two copies exist to stay identical, so the clause is pinned on both sides.

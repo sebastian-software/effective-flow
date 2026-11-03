@@ -300,7 +300,7 @@ const QUESTION_INVENTORY = Object.freeze(
     'shared/session-title.md': [
       [
         'P-TTL',
-        "declines rather than being asked — both simply arrive as the call's reported outcome, and neither",
+        'path the host owns consent instead: it replaces a user-set title only after the app asks, and an unattended',
       ],
     ],
     'shared/worktree-integration.md': [

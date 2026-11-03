@@ -854,7 +854,7 @@ class FirstStageAuthentication(unittest.TestCase):
             for driver in winners:
                 driver.close()
 
-    def test_d1_block_and_d2_runtime_are_exactly_preserved(self):
+    def test_d1_block_source_and_d2_runtime_are_exactly_preserved(self):
         self.assertEqual(digest(HERE / 'eval_driver_runtime.py'),
                          'sha256:51704302d8696ec898a03a52aaf259dcae283eea377d6ebbc55fd596d4e4eb93')
         source = (HERE / 'run-cohorts.py').read_text()
