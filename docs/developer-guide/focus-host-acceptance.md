@@ -160,7 +160,10 @@ addresses, or advises a duplicate manual send.
 
 ## Deferred work
 
-Package 5 owns the session stub and fixed labeling rubric. Package 6 owns Focus fixtures and the
+Package 5 owns the session stub and fixed labeling rubric; its deliverables are the stub
+[`evals/_scaffold/session-stub.mjs`](../../evals/_scaffold/session-stub.mjs), the
+[session shape observations](focus-session-shape-observations.md) it serves, and the
+[labelling rubric](focus-labelling-rubric.md). Package 6 owns Focus fixtures and the
 concept's calibration threshold. Neither package is represented by this page, and this page makes no
 accuracy or calibration claim. Updating this record after candidate-bound host checks does not replace
 those separate packages.

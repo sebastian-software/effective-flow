@@ -22,12 +22,13 @@ bytes and timestamp when that exact completed profile remains clean.
 
 ## Affected files
 
-| Path                                                     | Change                                                                                     |
-| -------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| `evals/_scaffold/host-profile-cleanup.mjs`               | Preserve a validated completed receipt under existing cleanup ownership and safety checks. |
-| `test/eval-host-profile.test.mjs`                        | Exercise receipt immutability and conservative recovery with real local wrappers.          |
-| `evals/host-driver/tests/composed_remaining_support.py`  | Supply harmless native-command fixtures for composed worker coverage.                      |
-| `evals/host-driver/tests/test_remaining_stage_worker.py` | Exercise real six-worker startup, retained closures and the next-batch gate.               |
+| Path                                                       | Change                                                                                     |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| `evals/_scaffold/host-profile-cleanup.mjs`                 | Preserve a validated completed receipt under existing cleanup ownership and safety checks. |
+| `test/eval-host-profile.test.mjs`                          | Exercise receipt immutability and conservative recovery with real local wrappers.          |
+| `evals/host-driver/tests/composed_remaining_support.py`    | Supply harmless native-command fixtures for composed worker coverage.                      |
+| `evals/host-driver/tests/test_remaining_stage_worker.py`   | Exercise the existing per-worker admission and accounting contracts.                       |
+| `evals/host-driver/tests/test_remaining_stage_composed.py` | Exercise real six-worker startup, retained closures and the next-batch gate.               |
 
 ## Implementation details
 
@@ -89,3 +90,28 @@ An earlier full local follow-up run remains failed: an unchanged Git interrupt t
 undetermined. The original focused case and one complete verification of the unchanged
 candidate passed afterward; no source, assertion, deadline or concurrency setting was changed.
 The failed run and diagnosis remain recorded rather than reclassified as passing.
+
+## CI test-layout follow-up
+
+The release check twice reached the existing 150-second child-process limit while running
+the combined worker module. Both failures remain recorded. The logs establish a module
+timeout, but do not establish a particular slow test or a resource-contention cause.
+
+Cumulative source-correction round 6 moves the three composed tests and their helpers to
+the ordinary `test_remaining_stage_composed.py` discovery module. The eight existing worker
+tests remain in their original module. All methods retain their AST after normalizing only
+the copied-interpreter bootstrap import target; the shared fixture helper remains unchanged.
+Discovery confirms the same 82 unique Python tests across seven modules, with the affected
+11 cases split as eight and three. Each module retains the existing 150-second child and
+180-second outer limits; the 120-second copied-interpreter limit and 35-second barriers
+also remain unchanged.
+
+Directed checks passed once for each affected module: three composed cases in 40.212 seconds
+and eight worker cases in 32.700 seconds. Complete repository QA, independent review and
+new-head Linux CI remain required before this source follow-up is merged. At most cumulative
+rounds 6 and 7 are authorized for this three-file layout change; earlier rounds stay counted.
+
+This layout change does not alter product, Driver, instrument, profile or qualification
+inputs. Existing native evidence, including failed outcomes and consumed admissions, remains
+unchanged. This source follow-up grants no model execution, evidence publication, Hosted
+acceptance or release approval.
