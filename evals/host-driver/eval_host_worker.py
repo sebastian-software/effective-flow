@@ -40,8 +40,8 @@ def assert_pins(job):
 
 
 
-def assert_first_stage(job):
-    if 'firstStage' not in job:
+def assert_first_stage(job, cancellation=None):
+    if 'firstStage' not in job and 'remainingStage' not in job:
         return
     helper = str(Path(__file__).resolve().with_name('eval_first_stage.py'))
     expected = job['pins'].get(helper)
@@ -50,6 +50,13 @@ def assert_first_stage(job):
         raise ValueError('first-stage helper actual bytes are not externally job-pinned')
     from eval_first_stage import validate_worker_stage
     validate_worker_stage(job)
+    if 'remainingStage' in job and cancellation is not None:
+        from eval_first_stage import pinned
+        record = pinned(job['remainingStage']['cancellation'], json_value=True)
+        for fd in cancellation:
+            info = os.fstat(fd)
+            if not stat.S_ISFIFO(info.st_mode) or (info.st_dev, info.st_ino) != (record['dev'], record['ino']):
+                raise ValueError('opened remaining cancellation identity changed')
 
 def watchdog(profile, root, owner_pid, bridge_pid, coordinator_pid, timeout, model_timeout, read_fd, directory):
     """Only an actual member may stop its own registered group after owner loss."""
@@ -303,13 +310,13 @@ def execute_job(job, *, fixture=False, job_path=None, job_digest=None):
                              'fixtureOnly': fixture_only, 'qualifiedHost': not fixture_only})
                         return 1
                     assert_pins(job)
-                    assert_first_stage(job)
+                    assert_first_stage(job, cancellation)
                     record = registered_profile(profile_path, root, own_group=True)
                     consumption_digest = reserve_launch(job, job_path, job_digest, launch, profile_path,
                                                         record, fixture_only=fixture_only)
                     # fsync may take long enough for cancellation or pinned-input changes.
                     assert_pins(job)
-                    assert_first_stage(job)
+                    assert_first_stage(job, cancellation)
                     current = registered_profile(profile_path, root, own_group=True)
                     if current != record:
                         raise ValueError('registered runner profile changed during reservation')
@@ -317,7 +324,7 @@ def execute_job(job, *, fixture=False, job_path=None, job_digest=None):
                     validate_launch_gate(job, gate_fd)
                     if admission_cancelled(job, gate_fd, cancellation):
                         return 1
-                    if 'firstStage' in job:
+                    if 'firstStage' in job or 'remainingStage' in job:
                         # Full corpus checks and durable sync consume the original verifier TTL.
                         # Its trusted expiry is authority; never recalculate or refresh the TTL.
                         expires = qualification.get('expiresAt')

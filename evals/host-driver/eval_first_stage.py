@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Authenticate one fixed five-root stage; default to read-only static validation."""
+"""Authenticate fixed first-five or remaining150 mode; default to read-only validation."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import concurrent.futures
 import hashlib
 import importlib.util
+import itertools
 import json
 import math
 import os
@@ -18,11 +19,15 @@ import sys
 
 sys.dont_write_bytecode = True
 
-from eval_driver_runtime import read_bound_json, save, inspect_consumption, RECEIPT_LIMIT
+from eval_driver_runtime import read_bound_json, save, inspect_consumption, RECEIPT_LIMIT, capture_accounting_paths, verify_cleanup
 
 HERE = Path(__file__).resolve().parent
 SUITES = ('merge-gate', 'iterate', 'next-steps')
 STAGE_ID = 'iterate-duplicated-control-line-aborts-slots-1-5-v1'
+REMAINING_STAGE_ID = 'remaining-150-v1'
+# Separate bounded shapes: 150 task references and five retained closure inventories.
+REMAINING_GRANT_LIMIT = 128 * 1024
+CLOSURE_INVENTORY_LIMIT = 512 * 1024
 SCENARIO = 'duplicated-control-line-aborts'
 CORPUS_LIMIT = 4 * 1024 * 1024
 GRANT_LIMIT = 16 * 1024
@@ -324,7 +329,7 @@ def reference_count(value):
             pending.extend(item)
     return count
 
-def authenticate(corpus_ref, grant_ref, *, initial, closed):
+def authenticate(corpus_ref, grant_ref, *, initial, closed, _remaining=None):
     corpus = pinned(corpus_ref, json_value=True, maximum=CORPUS_LIMIT)
     grant = pinned(grant_ref, json_value=True, maximum=GRANT_LIMIT)
     keys(corpus, ('schemaVersion', 'kind', 'source', 'namespace', 'config', 'operator', 'toolchain',
@@ -489,12 +494,17 @@ def authenticate(corpus_ref, grant_ref, *, initial, closed):
             build = pinned(record['buildIdentity'], json_value=True)
             require(build == manifest['identities'][scenario] and build['scenario'] == scenario, 'original build identity changed')
             map_identity(expected_inputs, build, root, paths['skillRoot'])
+            member_id = (name, scenario, slot)
             is_closed = name == 'iterate' and scenario == SCENARIO and slot in closed
+            if _remaining is not None:
+                is_closed = member_id in _remaining['closed']
             evidence = [paths['attemptRoot'] / f for f in ('host-receipt.json', 'seal.json')]
             if name == 'iterate':
                 evidence.append(paths['attemptRoot'] / 'trace/git-state.json')
             runtime_allowed = (not initial and name == 'iterate' and scenario == SCENARIO
                                and slot <= min(5, len(closed) + 1))
+            if _remaining is not None:
+                runtime_allowed = member_id in _remaining['active'] or is_closed
             allowed_attempt_names = {'attempt-1'}
             if runtime_allowed:
                 allowed_attempt_names.add('attempt-1-cli-tmp')
@@ -507,12 +517,16 @@ def authenticate(corpus_ref, grant_ref, *, initial, closed):
                 info = cli_tmp.lstat()
                 require(runtime_allowed and cli_tmp.resolve() == cli_tmp and stat.S_ISDIR(info.st_mode)
                         and info.st_uid == os.getuid(), 'unexpected CLI temporary directory')
-            if is_closed:
+            if is_closed and _remaining is not None:
+                remaining_closed_proof(task, paths, Path(namespace['cohortsRoot']) / name / scenario / f'slot-{slot}',
+                                       corpus_ref, grant_ref, driver_files, _remaining)
+            elif is_closed:
                 closed_proof(task, paths, Path(namespace['cohortsRoot']) / name / scenario / f'slot-{slot}',
                              corpus_ref, grant_ref, driver_files)
             else:
-                require(all(not os.path.lexists(p) for p in evidence), 'nonclosed task already has final evidence')
-                pending_evidence(paths)
+                if _remaining is None or member_id not in _remaining['active']:
+                    require(all(not os.path.lexists(p) for p in evidence), 'nonclosed task already has final evidence')
+                    pending_evidence(paths)
             all_tasks.append(task)
             if name == 'iterate' and scenario == SCENARIO:
                 selected.append(task)
@@ -525,6 +539,287 @@ def authenticate(corpus_ref, grant_ref, *, initial, closed):
     return {'corpusData': corpus, 'grantData': grant, 'config': config, 'selectedTasks': selected,
             'allTasks': all_tasks, 'corpus': corpus_ref, 'grant': grant_ref}
 
+
+
+def task_identity(task):
+    return tuple(task[k] for k in ('suite', 'scenario', 'slot'))
+
+
+def remainder_tasks(all_tasks):
+    """Use the legacy full interleave before removing the five original identities."""
+    arrays = [[t for t in all_tasks if t['suite'] == suite] for suite in SUITES]
+    ordered = [t for row in itertools.zip_longest(*arrays) for t in row if t is not None]
+    original = {('iterate', SCENARIO, slot) for slot in range(1, 6)}
+    return [t for t in ordered if task_identity(t) not in original]
+
+
+def remaining_batches(all_tasks):
+    tasks = remainder_tasks(all_tasks)
+    require(len(tasks) == 150, 'fixed remainder must contain 150 tasks')
+    return [tasks[n:n + 6] for n in range(0, 150, 6)]
+
+
+def remaining_closed_proof(task, paths, artifact, corpus_ref, first_grant_ref, driver_files, state):
+    """Verify retained closures without signalling historical process identities."""
+    original = task_identity(task) in state['originalJobs']
+    if original:
+        job_ref = state['originalJobs'][task_identity(task)]
+        job = pinned(job_ref, json_value=True, maximum=1024 * 1024)
+        require(job_ref['path'] == str(artifact / 'worker-job.json'), 'original job path changed')
+        closed_proof(task, paths, artifact, corpus_ref, first_grant_ref, driver_files)
+    else:
+        job, job_digest = read_bound_json(artifact / 'worker-job.json', maximum=1024 * 1024)
+        stage = job.get('remainingStage')
+        ordinal = state['order'].index(task_identity(task)) + 1
+        require(stage == {**state['context'], 'ordinal': ordinal, 'batch': (ordinal - 1) // 6 + 1}
+                and 'firstStage' not in job and job['task'] == task
+                and job['artifactDir'] == str(artifact), 'closed remainder job changed')
+        require(all(job['pins'].get(path) == value for path, value in driver_files.items()),
+                'closed remainder driver pins changed')
+        projection = inspect_consumption(job, artifact / 'worker-job.json', job_digest,
+                                         fixture_only=job['fixtureTools'], wrapper_attempted=True)
+        require(projection == {'consumptionState': 'reserved', 'chargedRoots': 1, 'actualModelStarted': True},
+                'closed remainder consumption uncertain')
+        result = read_bound_json(artifact / 'operator-result.json')[0]
+        require(all(result.get(k) == task[k] for k in ('suite', 'scenario', 'slot')) and clean_outcome(result),
+                'remainder closure is not clean')
+        seal = read_bound_json(paths['attemptRoot'] / 'seal.json')[0]
+        require(type(seal.get('schemaVersion')) is int and seal['schemaVersion'] == 1
+                and seal.get('scenario') == task['scenario'] and type(seal.get('slot')) is int
+                and seal['slot'] == task['slot'] and type(seal.get('attempt')) is int and seal['attempt'] == 1,
+                'remainder seal identity changed')
+        seal_paths = {**{k: paths[k] for k in PREPARED_KEYS},
+                      'log': paths['attemptRoot'] / 'trace/tracker-calls.jsonl',
+                      'hostReceipt': paths['attemptRoot'] / 'host-receipt.json'}
+        extra = {'iterate': {'reportChannel': 'report-channel.jsonl', 'gitState': 'git-state.json'},
+                 'next-steps': {'reportChannel': 'report-channel.jsonl', 'recommendationState': 'recommendation-state.jsonl'},
+                 'merge-gate': {'iterateLog': 'iterate-calls.jsonl'}}[task['suite']]
+        required_extra = {'iterate': {'gitState', 'reportChannel'}, 'next-steps': {'reportChannel', 'recommendationState'},
+                          'merge-gate': set()}[task['suite']]
+        require(required_extra <= set(seal.get('digests', {})), 'remainder sealed evidence missing')
+        for key, filename in extra.items():
+            if key in seal.get('digests', {}):
+                seal_paths[key] = paths['attemptRoot'] / 'trace' / filename
+        keys(seal.get('digests'), seal_paths, 'remainder seal digests')
+        for key, path in seal_paths.items():
+            require(file_digest(path) == digest(seal['digests'][key]), 'remainder sealed evidence changed')
+        require(seal.get('buildDigest') == read_bound_json(paths['buildIdentity'])[0]['digest'],
+                'remainder seal build changed')
+        receipt = read_bound_json(paths['attemptRoot'] / 'host-receipt.json')[0]
+        require(receipt == {'schemaVersion': 1, 'nonForked': True, 'initialWorkingRoot': task['projectRoot'],
+                           'taskInput': 'rendered-prompt-only', 'completed': True, 'profile': task['profile']},
+                'remainder original host receipt changed')
+    require(type(job.get('fixtureTools')) is bool, 'invalid closure fixture label')
+    result = read_bound_json(artifact / 'operator-result.json')[0]
+    require(result.get('fixtureOnly') is job['fixtureTools']
+            and result.get('qualifiedHost') is (not job['fixtureTools']), 'closure fixture labels changed')
+    runner = read_bound_json(artifact / 'runner-profile.json')[0]
+    cleanup = verify_cleanup(runner['profilePath'], job['profilesRoot'])
+    require(cleanup['groupGone'] is True and cleanup['cleanupComplete'] is True,
+            'retained runner cleanup is incomplete')
+    termination = read_bound_json(artifact / 'process-termination.json')[0]
+    require(termination.get('groupGone') is True and termination.get('cleanupComplete') is True,
+            'retained termination is incomplete')
+    require(not os.path.lexists(artifact / 'watchdog-stop.json'), 'retained watchdog stop exists')
+
+
+def remaining_admission_value(context, grant):
+    return {'schemaVersion': 1, 'kind': 'effective-flow-host-remaining-stage-admission',
+            'stageId': REMAINING_STAGE_ID, 'corpus': context['corpus'], 'grant': context['grant'],
+            'closures': grant['closures'], 'attach': grant['attach']}
+
+
+def durable_remaining_record(path, value):
+    """Exclusive, nonrefundable record; any uncertain write/close leaves it consumed."""
+    raw = (json.dumps(value, sort_keys=True, separators=(',', ':')) + '\n').encode()
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    try:
+        offset = 0
+        while offset < len(raw):
+            count = os.write(fd, raw[offset:])
+            require(count > 0, 'short remaining admission write')
+            offset += count
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    # Synchronize all existing ancestors, then recheck the exact bytes/entry.
+    for parent in (path.parent, *path.parent.parents):
+        handle = os.open(parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            os.fsync(handle)
+        finally:
+            os.close(handle)
+    ref = {'path': str(path), 'sha256': sha_bytes(raw)}
+    require(pinned(ref, json_value=True) == value, 'remaining record changed after sync')
+    return ref
+
+
+def remaining_context_data(context, *, initial=False, batch=0, active=True):
+    expected = {'schemaVersion', 'corpus', 'grant'}
+    if 'admission' in context:
+        expected.add('admission')
+    if 'cancellation' in context:
+        expected.add('cancellation')
+    keys(context, expected, 'remaining context')
+    require(type(context['schemaVersion']) is int and context['schemaVersion'] == 1
+            and type(batch) is int and 0 <= batch <= 26, 'invalid remaining context or batch')
+    require('cancellation' not in context or 'admission' in context, 'cancellation requires admission')
+    grant = pinned(context['grant'], json_value=True, maximum=REMAINING_GRANT_LIMIT)
+    keys(grant, ('schemaVersion', 'kind', 'stageId', 'corpus', 'firstStageGrant', 'firstStageSummary',
+                 'closures', 'config', 'namespace', 'attach', 'orderedTasks', 'maximumChargedRoots',
+                 'maximumCombinedChargedRoots', 'concurrency', 'batches', 'allowRetry', 'allowResume',
+                 'allowContinuation', 'fullCorpusAcceptance', 'publication', 'cancellation'), 'remaining grant')
+    require(type(grant['schemaVersion']) is int and grant['schemaVersion'] == 1
+            and grant['kind'] == 'effective-flow-host-remaining-stage-grant'
+            and grant['stageId'] == REMAINING_STAGE_ID and grant['corpus'] == context['corpus'],
+            'unsupported remaining grant')
+    for key, value in (('maximumChargedRoots', 150), ('maximumCombinedChargedRoots', 155),
+                       ('concurrency', 6), ('batches', 25)):
+        require(type(grant[key]) is int and grant[key] == value, 'remaining fixed budget changed')
+    require(all(grant[k] is False for k in ('allowRetry', 'allowResume', 'allowContinuation',
+                                           'fullCorpusAcceptance', 'publication')), 'remaining authority broadened')
+    corpus = pinned(context['corpus'], json_value=True, maximum=CORPUS_LIMIT)
+    require(grant['namespace'] == corpus['namespace'] and grant['config'] == corpus['config'],
+            'remaining corpus binding changed')
+    namespace = corpus['namespace']
+    validate_namespace(namespace)
+    cohort = canonical(namespace['cohortsRoot'])
+    attach = capture_accounting_paths(cohort, Path(namespace['outputRoot']), cohort / 'launch-gate')
+    require(attach == grant['attach'] and not os.path.lexists(cohort / 'launch-blocked'),
+            'remaining cohort or gate replaced/revoked/blocked')
+    cancel = grant['cancellation']
+    keys(cancel, ('path', 'exclusive', 'closeUnlink'), 'remaining cancellation')
+    require(cancel['path'] == str(Path(namespace['profilesRoot']) / 'remaining-stage-cancellation.fifo')
+            and cancel['exclusive'] is True and cancel['closeUnlink'] is True,
+            'remaining cancellation authority changed')
+    tasks = [r['task'] for suite in corpus['suites'] for r in suite['tasks']]
+    remaining = remainder_tasks(tasks)
+    ordered = [{**{k: t[k] for k in ('suite', 'scenario', 'slot')},
+                'artifactDir': str(cohort / t['suite'] / t['scenario'] / f"slot-{t['slot']}")} for t in remaining]
+    require(len(remaining) == 150 and grant['orderedTasks'] == ordered
+            and all(type(t['slot']) is int for t in grant['orderedTasks']), 'remaining selection/order changed')
+    inventory = pinned(grant['closures'], json_value=True, maximum=CLOSURE_INVENTORY_LIMIT)
+    keys(inventory, ('schemaVersion', 'kind', 'closures'), 'closure inventory')
+    require(type(inventory['schemaVersion']) is int and inventory['schemaVersion'] == 1
+            and inventory['kind'] == 'effective-flow-host-first-stage-closures'
+            and isinstance(inventory['closures'], list) and len(inventory['closures']) == 5,
+            'invalid original closure inventory')
+    original_jobs, projections, fixture_modes = {}, [], []
+    allowed_cohort_files = {'launch-gate', 'host-events.jsonl', 'first-stage-summary.json',
+                            'remaining-stage-admission.json', 'remaining-stage-cancellation.json',
+                            'remaining-stage-events.jsonl', 'remaining-stage-summary.json'}
+    allowed_paths = {str(cohort / name) for name in allowed_cohort_files}
+    for entry, selected in zip(inventory['closures'], selected_tasks(namespace)):
+        keys(entry, ('task', 'job', 'files'), 'closure entry')
+        require(entry['task'] == {k: selected[k] for k in ('suite', 'scenario', 'slot')}
+                and type(entry['task']['slot']) is int, 'original closure membership changed')
+        job = pinned(entry['job'], json_value=True, maximum=1024 * 1024)
+        artifact = Path(selected['artifactDir'])
+        require(entry['job']['path'] == str(artifact / 'worker-job.json')
+                and job['artifactDir'] == str(artifact) and job['accounting']['gate'] == attach['gate']
+                and all(row in job['accounting']['directories'] for row in attach['directories']),
+                'original cohort/gate jobs disagree')
+        require(type(job.get('fixtureTools')) is bool, 'original fixture mode is invalid')
+        fixture_modes.append(job['fixtureTools'])
+        files = references(entry['files'])
+        attempt = canonical(job['task']['attemptRoot'])
+        runner_ref = read_bound_json(artifact / 'runner-profile.json')[0]
+        profile = canonical(runner_ref['profilePath'])
+        require(profile.parent == Path(namespace['profilesRoot']), 'original runner outside profiles')
+        required_files = {str(p) for root in (artifact, attempt) for p in root.rglob('*') if p.is_file()}
+        required_files.update(str(profile / name) for name in ('host-profile.json', 'host-profile-cleanup.json'))
+        require(set(files) == required_files and files.get(entry['job']['path']) == entry['job']['sha256'],
+                'original closure inventory file coverage changed')
+        allowed_paths.update(str(p) for p in (artifact, *artifact.parents) if cohort == p or cohort in p.parents)
+        original_jobs[task_identity(entry['task'])] = entry['job']
+        projection = inspect_consumption(job, Path(entry['job']['path']), entry['job']['sha256'],
+                                         fixture_only=job['fixtureTools'], wrapper_attempted=True)
+        require(projection == {'consumptionState': 'reserved', 'chargedRoots': 1, 'actualModelStarted': True},
+                'original consumption is not proven')
+        projections.append({**entry['task'], **projection})
+    require(len(set(fixture_modes)) == 1, 'original fixture modes disagree')
+    summary = pinned(grant['firstStageSummary'], json_value=True)
+    require(grant['firstStageSummary']['path'] == str(cohort / 'first-stage-summary.json')
+            and summary.get('stageId') == STAGE_ID and summary.get('stageCompleted') is True
+            and summary.get('corpusSha256') == context['corpus']['sha256']
+            and summary.get('grantSha256') == grant['firstStageGrant']['sha256']
+            and summary.get('fixtureOnly') is fixture_modes[0]
+            and summary.get('qualifiedHost') is (not fixture_modes[0]), 'original summary not completed/bound')
+    order = [task_identity(t) for t in remaining]
+    closed_count = 150 if batch == 26 else max(0, batch - 1) * 6
+    state = {'originalJobs': original_jobs, 'order': order, 'context': context,
+             'closed': set(original_jobs) | set(order[:closed_count]),
+             'active': set(order[closed_count:closed_count + 6]) if batch and active else set()}
+    data = authenticate(context['corpus'], grant['firstStageGrant'], initial=False, closed=range(1, 6), _remaining=state)
+    admission_path = cohort / 'remaining-stage-admission.json'
+    if 'admission' in context:
+        require(context['admission']['path'] == str(admission_path)
+                and pinned(context['admission'], json_value=True) == remaining_admission_value(context, grant),
+                'remaining admission changed')
+    else:
+        require(not os.path.lexists(admission_path), 'remaining one-shot admission already consumed')
+    if 'cancellation' in context:
+        ref = context['cancellation']
+        require(ref['path'] == str(cohort / 'remaining-stage-cancellation.json'), 'cancellation record path changed')
+        record = pinned(ref, json_value=True)
+        keys(record, ('schemaVersion', 'admission', 'path', 'dev', 'ino'), 'cancellation record')
+        info = canonical(cancel['path']).lstat()
+        require(type(record['schemaVersion']) is int and record['schemaVersion'] == 1
+                and record['admission'] == context['admission'] and record['path'] == cancel['path']
+                and all(type(record[k]) is int for k in ('dev', 'ino'))
+                and stat.S_ISFIFO(info.st_mode) and info.st_uid == os.getuid()
+                and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o600
+                and (info.st_dev, info.st_ino) == (record['dev'], record['ino']), 'remaining cancellation replaced')
+    else:
+        require(not os.path.lexists(cancel['path']) and not os.path.lexists(cohort / 'remaining-stage-cancellation.json'),
+                'remaining cancellation path already consumed')
+    # Original artifact subtrees and current/closed remainder slots are the only task children.
+    for index, task in enumerate(remaining):
+        directory = cohort / task['suite'] / task['scenario'] / f"slot-{task['slot']}"
+        if index < closed_count or task_identity(task) in state['active']:
+            allowed_paths.update(str(p) for p in (directory, *directory.parents) if cohort == p or cohort in p.parents)
+        else:
+            require(not os.path.lexists(directory), 'future remainder artifact exists')
+    original_roots = [Path(x['job']['path']).parent for x in inventory['closures']]
+    active_roots = [cohort / t['suite'] / t['scenario'] / f"slot-{t['slot']}" for t in remaining[:closed_count + (6 if batch and batch < 26 and active else 0)]]
+    for child in cohort.rglob('*'):
+        if any(root == child or root in child.parents for root in (*original_roots, *active_roots)):
+            continue
+        require(str(child) in allowed_paths, 'unexplained cohort child')
+    if initial:
+        require(set(context) == {'schemaVersion', 'corpus', 'grant'}, 'initial attach cannot resume')
+        require(not os.path.lexists(cohort / 'remaining-stage-events.jsonl')
+                and not os.path.lexists(cohort / 'remaining-stage-summary.json'), 'prior remaining evidence exists')
+    return {**data, 'remainingGrantData': grant, 'selectedTasks': remaining,
+            'originalProjections': projections, 'originalEntries': inventory['closures'],
+            'fixtureOnly': fixture_modes[0], 'attach': attach}
+
+
+def validate_remaining_stage(corpus_path, corpus_sha256, grant_path, grant_sha256):
+    context = {'schemaVersion': 1, 'corpus': {'path': str(corpus_path), 'sha256': corpus_sha256},
+               'grant': {'path': str(grant_path), 'sha256': grant_sha256}}
+    remaining_context_data(context, initial=True)
+    return context
+
+
+def admit_remaining_stage(context):
+    data = remaining_context_data(context, initial=True)
+    path = Path(data['corpusData']['namespace']['cohortsRoot']) / 'remaining-stage-admission.json'
+    ref = durable_remaining_record(path, remaining_admission_value(context, data['remainingGrantData']))
+    admitted = {**context, 'admission': ref}
+    remaining_context_data(admitted)
+    return admitted
+
+
+def validate_remaining_task(context, task, artifact_dir, *, ordinal, batch):
+    require('admission' in context and 'cancellation' in context, 'remaining launch lacks startup bindings')
+    require(type(ordinal) is int and 1 <= ordinal <= 150 and type(batch) is int
+            and batch == (ordinal - 1) // 6 + 1, 'remaining ordinal/batch changed')
+    data = remaining_context_data(context, batch=batch)
+    require(task == data['selectedTasks'][ordinal - 1] and type(task.get('slot')) is int
+            and str(artifact_dir) == data['remainingGrantData']['orderedTasks'][ordinal - 1]['artifactDir'],
+            'task is outside fixed remainder')
+    return data
 
 def validate_first_stage(corpus_path, corpus_sha256, grant_path, grant_sha256, *, initial=True, closed=()):
     context = {'schemaVersion': 1, 'corpus': {'path': str(corpus_path), 'sha256': corpus_sha256},
@@ -552,17 +847,22 @@ def validate_stage_task(context, task, artifact_dir, *, ordinal=None):
 
 
 def validate_worker_stage(job):
-    if 'firstStage' not in job:
+    require(not ('firstStage' in job and 'remainingStage' in job), 'simultaneous stage contexts')
+    if 'firstStage' not in job and 'remainingStage' not in job:
         return
-    stage = job['firstStage']
-    keys(stage, ('schemaVersion', 'corpus', 'grant', 'ordinal'), 'worker firstStage')
-    context = {key: stage[key] for key in ('schemaVersion', 'corpus', 'grant')}
-    for ref in (stage['corpus'], stage['grant']):
+    remaining = 'remainingStage' in job
+    stage = job['remainingStage' if remaining else 'firstStage']
+    fields = ('schemaVersion', 'corpus', 'grant', 'admission', 'cancellation', 'ordinal', 'batch') if remaining else (
+        'schemaVersion', 'corpus', 'grant', 'ordinal')
+    keys(stage, fields, 'worker stage')
+    context = {key: stage[key] for key in fields if key not in ('ordinal', 'batch')}
+    for ref in (stage[key] for key in ('corpus', 'grant', 'admission', 'cancellation') if key in stage):
         reference(ref)
         require(job['pins'].get(ref['path']) == ref['sha256'], 'stage job external pin changed')
     helper = str(HERE / 'eval_first_stage.py')
     require(job['pins'].get(helper) == sha_bytes(read_bytes(helper)), 'stage helper actual bytes are not job-pinned')
-    data = validate_stage_task(context, job['task'], job['artifactDir'], ordinal=stage['ordinal'])
+    data = (validate_remaining_task(context, job['task'], job['artifactDir'], ordinal=stage['ordinal'], batch=stage['batch'])
+            if remaining else validate_stage_task(context, job['task'], job['artifactDir'], ordinal=stage['ordinal']))
     corpus, config = data['corpusData'], data['config']
     require(job['configFile'] == corpus['config']['path'] and job['pins'].get(job['configFile']) == corpus['config']['sha256']
             and job['source'] == corpus['source']['root'] and job['profilesRoot'] == config['profilesRoot']
@@ -570,6 +870,16 @@ def validate_worker_stage(job):
             and job['authFile'] == config['authFile']
             and job['binary'] == config['toolchain']['binary']['path'] and job['operator'] == corpus['operator']['path']
             and job['operatorSha256'] == corpus['operator']['sha256'], 'stage job actual launch binding changed')
+    if remaining:
+        require(type(job.get('fixtureTools')) is bool
+                and all(read_bound_json(Path(x['job']['path']))[0]['fixtureTools'] is job['fixtureTools']
+                        for x in pinned(data['remainingGrantData']['closures'], json_value=True,
+                                        maximum=CLOSURE_INVENTORY_LIMIT)['closures']), 'remaining fixture mode changed')
+        require(job['cancellationPath'] == data['remainingGrantData']['cancellation']['path']
+                and job['launchGatePath'] == data['attach']['gate']['path']
+                and job['accounting']['gate'] == data['attach']['gate']
+                and all(row in job['accounting']['directories'] for row in data['attach']['directories']),
+                'remaining launch cancellation or ancestry changed')
     for ref in corpus['driverFiles']:
         require(job['pins'].get(ref['path']) == ref['sha256'], 'stage driver job pin changed')
 
@@ -647,6 +957,113 @@ def run_first_stage(context, driver):
     return summary
 
 
+
+def run_remaining_stage(context, driver):
+    require(getattr(driver, 'remaining_stage', None) == context
+            and getattr(driver, 'first_stage', None) is None, 'driver lacks exclusive remaining context')
+    data = remaining_context_data(context)
+    tasks = data['selectedTasks']
+    for task in tasks:
+        driver.admissions[task_identity(task)] = {'attempted': False, 'refused': False}
+    results = {}
+    with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
+        for batch_number, batch_tasks in enumerate(remaining_batches(data['allTasks']), 1):
+            if driver.stop.is_set() or driver.interrupted_signal is not None:
+                driver.block()
+                break
+            futures = {}
+            try:
+                remaining_context_data(context, batch=batch_number, active=False)
+                driver.check_pins()
+                driver.check_source()
+                for offset, task in enumerate(batch_tasks):
+                    ordinal = (batch_number - 1) * 6 + offset + 1
+                    directory = driver.outroot / task['suite'] / task['scenario'] / f"slot-{task['slot']}"
+                    validate_remaining_task(context, task, directory, ordinal=ordinal, batch=batch_number)
+                    if driver.stop.is_set() or driver.interrupted_signal is not None:
+                        driver.block()
+                        break
+                    futures[pool.submit(driver.run_slot, task)] = (ordinal, task, directory)
+                pending = set(futures)
+                while pending:
+                    done, pending = concurrent.futures.wait(pending, timeout=0.1,
+                                                           return_when=concurrent.futures.FIRST_COMPLETED)
+                    if driver.stop.is_set() or driver.interrupted_signal is not None:
+                        driver.block()
+                    for future in done:
+                        ordinal, task, directory = futures[future]
+                        try:
+                            result = future.result()
+                            result.update(driver.accounting_projection(task, directory))
+                        except Exception as error:
+                            result = {'state': 'operator-error', 'error': str(error),
+                                      **driver.accounting_projection(task, directory)}
+                        results[ordinal] = result
+                        if not clean_outcome(result):
+                            driver.block()
+                if driver.stop.is_set() or driver.interrupted_signal is not None:
+                    driver.block()
+                    break
+                remaining_context_data(context, batch=batch_number + 1, active=False)
+            except Exception as error:
+                driver.block()
+                for future, (ordinal, task, directory) in futures.items():
+                    try:
+                        future.result()
+                    except Exception:
+                        pass
+                    results.setdefault(ordinal, {'state': 'operator-error', 'error': str(error)})
+                break
+    outcomes = []
+    for ordinal, task in enumerate(tasks, 1):
+        directory = driver.outroot / task['suite'] / task['scenario'] / f"slot-{task['slot']}"
+        outcomes.append({**{k: task[k] for k in ('suite', 'scenario', 'slot')},
+                         **results.get(ordinal, {'state': 'not-submitted'}),
+                         **driver.accounting_projection(task, directory)})
+    # These five projections come exclusively from externally pinned original jobs, never admissions.
+    original = []
+    for entry in data['originalEntries']:
+        projection = {'consumptionState': 'reservation-unknown', 'chargedRoots': 1, 'actualModelStarted': None}
+        try:
+            job = pinned(entry['job'], json_value=True, maximum=1024 * 1024)
+            projection = inspect_consumption(job, Path(entry['job']['path']), entry['job']['sha256'],
+                                             fixture_only=job['fixtureTools'], wrapper_attempted=True)
+        except Exception:
+            driver.block()
+        original.append({**entry['task'], **projection})
+    complete = all(x['consumptionState'] != 'reservation-unknown' for x in (*original, *outcomes))
+    closures = False
+    if not driver.stop.is_set() and driver.interrupted_signal is None and all(clean_outcome(x) for x in outcomes):
+        try:
+            final = remaining_context_data(context, batch=26)
+            original = final['originalProjections']
+            closures = True
+        except Exception:
+            driver.block()
+    if not complete:
+        driver.block()
+    union = [*original, *outcomes]
+    summary = {'schemaVersion': 1, 'kind': 'effective-flow-host-remaining-stage-summary',
+               'stageId': REMAINING_STAGE_ID, 'corpusSha256': context['corpus']['sha256'],
+               'grantSha256': context['grant']['sha256'], 'fullPreparedTasks': 155,
+               'authorizedTasks': 150, 'concurrency': 6, 'batches': 25, 'maximumChargedRoots': 150,
+               'maximumCombinedChargedRoots': 155, 'fullCorpusAccepted': False,
+               'publicationAuthorized': False, 'continuationAuthorized': False,
+               'chargedRoots': sum(x['chargedRoots'] for x in union),
+               'reservedRoots': sum(x['consumptionState'] == 'reserved' for x in union),
+               'reservationUnknownRoots': sum(x['consumptionState'] == 'reservation-unknown' for x in union),
+               'started': sum(x['actualModelStarted'] is True for x in union), 'accountingComplete': complete,
+               'fixtureOnly': driver.fixture_tools, 'qualifiedHost': not driver.fixture_tools,
+               'blocked': driver.stop.is_set(), 'signal': driver.interrupted_signal,
+               'originalResults': original, 'results': outcomes, 'coverageComplete': closures,
+               'stageCompleted': closures and complete and not driver.stop.is_set()
+                                 and driver.interrupted_signal is None}
+    require(len(union) == 155 and len({task_identity(x) for x in union}) == 155
+            and summary['chargedRoots'] <= 155, 'combined accounting identity/budget changed')
+    save(driver.outroot / 'remaining-stage-summary.json', summary)
+    driver.event({k: v for k, v in summary.items() if k not in ('results', 'originalResults')})
+    return summary
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--corpus', type=Path, required=True)
@@ -654,13 +1071,15 @@ def main(argv=None):
     parser.add_argument('--grant', type=Path, required=True)
     parser.add_argument('--grant-sha256', required=True)
     parser.add_argument('--execute', action='store_true')
+    parser.add_argument('--remaining-150', action='store_true')
     parser.add_argument('--auth-file', type=Path)
     args = parser.parse_args(argv)
-    context = validate_first_stage(args.corpus, args.corpus_sha256, args.grant, args.grant_sha256)
-    data = context_data(context, initial=True)
+    validator = validate_remaining_stage if args.remaining_150 else validate_first_stage
+    context = validator(args.corpus, args.corpus_sha256, args.grant, args.grant_sha256)
+    data = remaining_context_data(context, initial=True) if args.remaining_150 else context_data(context, initial=True)
     if not args.execute:
-        print(json.dumps({'mode': 'static-dry-run', 'stageId': STAGE_ID,
-                          'selected': data['grantData']['orderedTasks'], 'fullPreparedTasks': 155,
+        print(json.dumps({'mode': 'static-dry-run', 'stageId': REMAINING_STAGE_ID if args.remaining_150 else STAGE_ID,
+                          'selected': data['remainingGrantData' if args.remaining_150 else 'grantData']['orderedTasks'], 'fullPreparedTasks': 155,
                           'liveSourceChecked': False, 'liveQualificationChecked': False,
                           'fullCorpusAccepted': False, 'continuationAuthorized': False}))
         return 0
@@ -669,12 +1088,16 @@ def main(argv=None):
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     corpus, config = data['corpusData'], data['config']
+    if args.remaining_150:
+        context = admit_remaining_stage(context)
     driver = module.Driver(corpus['config']['path'], config['profilesRoot'], operator=corpus['operator']['path'],
                            operator_sha256=corpus['operator']['sha256'], binary=config['toolchain']['binary']['path'],
-                           auth_file=args.auth_file, node=config['node'], first_stage=context)
+                           auth_file=args.auth_file, node=config['node'],
+                           **({'remaining_stage': context} if args.remaining_150 else {'first_stage': context}))
     previous = {sig: signal.signal(sig, driver.interrupt) for sig in (signal.SIGINT, signal.SIGTERM, signal.SIGHUP)}
     try:
-        summary = run_first_stage(context, driver)
+        summary = (run_remaining_stage(driver.remaining_stage, driver) if args.remaining_150
+                   else run_first_stage(context, driver))
         return 128 + driver.interrupted_signal if driver.interrupted_signal else int(not summary['stageCompleted'])
     finally:
         for sig, handler in previous.items():

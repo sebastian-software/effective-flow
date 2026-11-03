@@ -1,8 +1,8 @@
 """Model-free first-stage contract tests; self-contained after source integration.
 
 Synthetic fixtures are not original/native qualification or execution grants.
-Real corpus authentication and fixed-task policy are exercised with pinned bytes.
-No fixture computes the scaffold's build identity algorithm.
+Corpus authentication and fixed-task policy are exercised with synthetic pinned bytes.
+Acceptance fixtures compute original build identities, seals and three suite verdicts.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import copy
 import io
 import hashlib
 import importlib.util
+import itertools
 import json
 import os
 from pathlib import Path
@@ -23,6 +24,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+from types import SimpleNamespace
 import unittest
 from unittest import mock
 
@@ -32,6 +34,11 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 POLICY = ('workspace-write;approval-never;network-disabled;isolated-home;'
           'attempt-root-writable;ignore-user-config;ignore-rules')
 STAGE_ID = 'iterate-duplicated-control-line-aborts-slots-1-5-v1'
+REMAINING_STAGE_ID = 'remaining-150-v1'
+LOCAL_RUN, LOCAL_POPEN = subprocess.run, subprocess.Popen
+LOCAL_WAITPID, LOCAL_KILL = os.waitpid, os.kill
+TEST_TEMP_ROOT = (Path('/private/tmp') if Path('/private/tmp').is_dir()
+                  else Path(tempfile.gettempdir())).resolve()
 
 
 def forbidden(*args, **kwargs):
@@ -295,15 +302,18 @@ class StageFixture:
         if not gate.exists():
             gate.write_bytes(b'')
             gate.chmod(0o600)
-        fifo = self.output / 'cohorts/cancellation'
+        remaining = 'admission' in context
+        fifo = (self.profiles / 'remaining-stage-cancellation.fifo' if remaining
+                else self.output / 'cohorts/cancellation')
         if not fifo.exists():
             os.mkfifo(fifo, 0o600)
-        profile = self.profiles / ('profile-' + str(task['slot']))
+        profile_id = '-'.join(str(task[key]) for key in ('suite', 'scenario', 'slot'))
+        profile = self.profiles / ('profile-' + profile_id)
         home, codehome = profile / 'home', profile / 'codex-home'
         home.mkdir(parents=True)
         codehome.mkdir()
         write_json(profile / 'host-profile.json', {
-            'schema': 1, 'kind': 'effective-flow-host-profile', 'id': str(task['slot']),
+            'schema': 1, 'kind': 'effective-flow-host-profile', 'id': profile_id,
             'phase': 'armed', 'ownerPid': os.getpid(), 'childPgid': os.getpgrp(),
             'root': identity(self.profiles), 'directory': identity(profile)})
         pins = {item['path']: item['sha256'] for item in self.corpus['driverFiles']}
@@ -321,6 +331,14 @@ class StageFixture:
                'fixtureTools': True, 'pins': pins, 'driverDigest': digest(self.driver / 'run-cohorts.py'),
                'firstStage': {**context, 'ordinal': task['slot']}}
         job['accounting'] = runtime.capture_accounting_paths(artifact, self.output, gate)
+        if remaining:
+            order = self.stage.remainder_tasks([r['task'] for r in self.records])
+            ordinal = order.index(task) + 1
+            job.pop('firstStage')
+            job['remainingStage'] = {**context, 'ordinal': ordinal, 'batch': (ordinal - 1) // 6 + 1}
+            for item in context.values():
+                if isinstance(item, dict) and set(item) == {'path', 'sha256'}:
+                    pins[item['path']] = item['sha256']
         write_json(artifact / 'task.json', task)
         job_path = artifact / 'worker-job.json'
         write_json(job_path, job)
@@ -405,6 +423,315 @@ class StageFixture:
         return result
 
 
+ORIGINAL_SEAL_BRIDGE = r'''
+// Offline computation only. Install process/network denial before importing the original APIs.
+import childProcess from 'node:child_process';
+import net from 'node:net';
+import http from 'node:http';
+import https from 'node:https';
+import { syncBuiltinESMExports } from 'node:module';
+import { readFileSync, writeFileSync, realpathSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
+const deny = () => { throw new Error('offline seal fixture forbids external/process access'); };
+for (const name of ['spawn', 'spawnSync', 'exec', 'execSync', 'execFile', 'execFileSync', 'fork']) childProcess[name] = deny;
+for (const module of [net, http, https]) for (const name of ['connect', 'createConnection', 'request', 'get', 'createServer']) if (name in module) module[name] = deny;
+globalThis.fetch = deny;
+process.kill = deny;
+syncBuiltinESMExports();
+const [source, requestPath] = process.argv.slice(2);
+const load = (file) => import(pathToFileURL(resolve(source, file)));
+const { scenarioBuildIdentity, digestFile } = await load('evals/_scaffold/build-identity.mjs');
+const { sealAttempt } = await load('evals/_scaffold/round-core.mjs');
+const { evaluateEvidence } = await load('evals/_scaffold/evaluate.mjs');
+const { reportRecord } = await load('evals/iterate/_scaffold/report-channel.mjs');
+const { untouchedGitState } = await load('evals/iterate/_scaffold/git-state.mjs');
+const { STATE_SCHEMA } = await load('evals/next-steps/_scaffold/state.mjs');
+const request = JSON.parse(readFileSync(requestPath));
+const json = (path) => JSON.parse(readFileSync(path));
+const save = (path, value) => writeFileSync(path, JSON.stringify(value) + '\n');
+const answers = [];
+for (const row of request.suites) {
+  const original = (await load(`evals/${row.name}/suite.config.mjs`)).default;
+  // Small synthetic subject/instrument; unchanged original scenario evaluator and seal algorithm.
+  const suite = { ...original, loadSetSeeds: ['SKILL.md'], instrumentFiles: [resolve(original.root, 'suite.config.mjs')],
+    overlay: { applies: () => false, extraSeeds: () => [] } };
+  if (row.name === 'iterate') suite.sealedEvidence = { ...original.sealedEvidence,
+    capture: ({ paths }) => JSON.stringify(untouchedGitState(json(paths.fixture))) + '\n' };
+  if (row.name === 'next-steps') suite.sealedEvidence = { ...original.sealedEvidence,
+    capture: () => JSON.stringify({schema: STATE_SCHEMA, before: {}, after: {}, errors: []}) + '\n' };
+  const manifest = json(row.manifest);
+  if (request.operation === 'initialize') {
+    manifest.creatorCheckout = realpathSync(source);
+    for (const task of row.tasks) {
+      const attempt = task.attemptRoot;
+      const build = scenarioBuildIdentity(suite, task.scenario, resolve(attempt, 'skill'));
+      manifest.identities[task.scenario] = build;
+      save(resolve(attempt, 'trace/build-identity.json'), build);
+      const metadataPath = task.runMetadata, metadata = json(metadataPath);
+      metadata.fixtureDigest = digestFile(resolve(attempt, 'fixture.json'));
+      save(metadataPath, metadata);
+      const statePath = resolve(attempt, '../state.json'), state = json(statePath);
+      state.expectedDigests.buildIdentity = digestFile(resolve(attempt, 'trace/build-identity.json'));
+      state.expectedDigests.fixture = digestFile(resolve(attempt, 'fixture.json'));
+      state.expectedDigests.runMetadata = digestFile(metadataPath);
+      save(statePath, state);
+      const slot = manifest.slots.find((x) => x.scenario === task.scenario && x.slot === task.slot);
+      slot.expectedDigests = state.expectedDigests;
+    }
+    save(row.manifest, manifest);
+    continue;
+  }
+  for (const task of row.tasks) {
+    const attempt = task.attemptRoot, trace = resolve(attempt, 'trace');
+    const fixture = json(resolve(attempt, 'fixture.json'));
+    const records = [], at = '2026-10-31T00:00:00.000Z';
+    const call = (operation, apply = false) => {
+      const seq = records.length + 1;
+      if (suite.evaluator.usesLifecycleSchema(task.scenario)) {
+        records.push({seq, operation, apply, cwd: task.projectRoot, at, event: 'start', callId: `fixture-${seq}`});
+        records.push({seq: seq + 1, at, event: 'complete', callId: `fixture-${seq}`});
+      } else records.push({seq, operation, apply, cwd: task.projectRoot, at});
+    };
+    let auxiliary = null;
+    if (row.name === 'iterate') {
+      const oracle = suite.evaluator.FORGE_READING[task.scenario];
+      if (oracle) for (const operation of suite.evaluator.PHASE_ONE_READS) call(operation);
+      const text = suite.evaluator.PHASE_ZERO_REFUSALS[task.scenario] ??
+        (oracle.refusal ? `${oracle.names.join(', ')}\n${oracle.refusal}` : 'DONE');
+      auxiliary = JSON.stringify({seq: 1, ...reportRecord(text)}) + '\n';
+      writeFileSync(resolve(trace, 'report-channel.jsonl'), auxiliary);
+    } else if (row.name === 'next-steps') {
+      const expected = suite.evaluator.EXPECTATIONS[task.scenario];
+      const text = expected.first === null ? `No invocation. ${expected.reportIdentity ?? ''}` :
+        `${(expected.reportTokens ?? []).join(' ')}\nNext steps\n/effective-flow ${expected.first} — ${(expected.optionTokens ?? []).join(' ')} Review the next step.`;
+      auxiliary = JSON.stringify({seq: 1, ...reportRecord(text)}) + '\n';
+      writeFileSync(resolve(trace, 'report-channel.jsonl'), auxiliary);
+    } else {
+      const scenario = task.scenario;
+      const dispatch = ['non-interactive-dispatch-reports', 'nested-spawn-abort-runs-inline'].includes(scenario);
+      if (dispatch) { call('probe'); call('probe'); }
+      if (scenario === 'unreported-checks-at-phase-four') { call('pr-status-read'); call('pr-status-read'); call('pr-status-read'); }
+      for (let n = 0; n < 2; n++) for (const operation of ['review-threads-read', 'pr-comments-read', 'pr-reviews-read']) call(operation);
+      if (scenario === 'unreported-checks-block-merge') call('pr-status-read');
+      if (scenario === 'linked-issue-open-points') call('issue-comments-read');
+      if (['merge-proceeds', 'bot-login-excluded', 'nested-spawn-abort-runs-inline'].includes(scenario)) call('pr-merge', true);
+      if (scenario === 'configured-reviewer-set-aside-blocks') {
+        const review = fixture.operations['pr-reviews-read'].envelope.data.result[0];
+        const { sha256 } = await load('evals/iterate/_scaffold/report-channel.mjs');
+        const items = [{kind: 'thread', identifier: 'fixture-thread', threadId: 'PRRT_kwDOconfiguredReviewer'},
+          {kind: 'review-body', identifier: 'fixture-review', reviewId: String(review.id), author: review.author.login}];
+        auxiliary = JSON.stringify({schema: 'effective-flow/merge-gate-iterate-echo/v1', seq: 1, cwd: task.projectRoot,
+          pullRequest: 42, itemFilter: 'threads=PRRT_kwDOconfiguredReviewer',
+          controls: {summaryComment: 'suppressed', nextSteps: 'suppressed', reviewGuard: 'established'},
+          body: {spans: 1, bytes: Buffer.byteLength(review.body), digest: sha256(review.body)}, items,
+          outcomes: items.map(({identifier}) => ({identifier, outcome: 'deferred'}))}) + '\n';
+        writeFileSync(resolve(trace, 'iterate-calls.jsonl'), auxiliary);
+      }
+    }
+    const logText = records.map((record) => JSON.stringify(record)).join('\n') + (records.length ? '\n' : '');
+    writeFileSync(resolve(trace, 'tracker-calls.jsonl'), logText);
+    const receipt = {schemaVersion: 1, nonForked: true, initialWorkingRoot: task.projectRoot,
+      taskInput: 'rendered-prompt-only', completed: true, profile: task.profile};
+    const seal = sealAttempt(suite, {handle: row.manifest, scenario: task.scenario, slot: task.slot,
+      hostReceipt: receipt, base: row.base});
+    const sealedEvidenceText = suite.sealedEvidence ? readFileSync(resolve(trace, suite.sealedEvidence.fileName), 'utf8') : null;
+    const evidence = {scenario: task.scenario, logText, fixture, projectRoot: task.projectRoot,
+      buildIdentity: json(resolve(trace, 'build-identity.json')), expectedBuildIdentity: manifest.identities[task.scenario],
+      answerableOperations: new Set(Object.keys(fixture.operations ?? {})), auxiliaryText: auxiliary, sealedEvidenceText};
+    const result = evaluateEvidence(suite, evidence);
+    if (result.validityProblems.length || result.findings.length) throw new Error(JSON.stringify({task, result}));
+    const negative = evaluateEvidence(suite, {...evidence, logText: '', auxiliaryText: auxiliary === null ? null : ''});
+    if (!negative.validityProblems.length && !negative.findings.length) throw new Error('original evaluator accepted missing synthetic outcome');
+    answers.push({suite: row.name, scenario: task.scenario, slot: task.slot, seal, validityProblems: result.validityProblems, findings: result.findings});
+  }
+}
+save(request.output, {fixtureOnly: true, qualifiedHost: false, originalComputations: answers});
+'''
+
+
+class OriginalSealFixture(StageFixture):
+    """Original seal/evaluator computations, with synthetic host observations only."""
+    def __init__(self, root):
+        super().__init__(root)
+        shutil.copytree(SOURCE / 'evals/_scaffold', self.source / 'evals/_scaffold', dirs_exist_ok=True)
+        shutil.copytree(SOURCE / 'src/scripts', self.source / 'src/scripts')
+        for suite in SUITES:
+            shutil.copytree(SOURCE / 'evals' / suite / '_scaffold', self.source / 'evals' / suite / '_scaffold')
+            for record in (r for r in self.records if r['task']['suite'] == suite):
+                task = record['task']
+                original = SOURCE / 'evals' / suite / 'fixtures' / (task['scenario'] + '.json')
+                shutil.copyfile(original, self.source / 'evals' / suite / 'fixtures' / original.name)
+                shutil.copyfile(original, Path(task['attemptRoot']) / 'fixture.json')
+        for path in self.output.rglob('SKILL.md'):
+            path.write_text('Synthetic offline subject.\n`effective-flow <tool>` (version 0.0.0 (fixture)).\n')
+        self.bridge = root / 'original-seal-bridge.mjs'
+        self.bridge.write_text(ORIGINAL_SEAL_BRIDGE)
+        self.computations = []
+        self.compute('initialize', [r['task'] for r in self.records])
+        for suite in self.corpus['suites']:
+            for record in suite['tasks']:
+                for key in ('state', 'buildIdentity', 'runMetadata'):
+                    record[key] = ref(record[key]['path'])
+            suite['roundManifest'] = ref(suite['roundManifest']['path'])
+            suite['immutableInputs'] = [ref(item['path']) for item in suite['immutableInputs']]
+        self.publish_synthetic_pins()
+        self.reload_stage()
+
+    def compute(self, operation, tasks):
+        request = self.root / 'seal-request.json'
+        output = self.root / 'seal-response.json'
+        rows = [{'name': suite['name'], 'manifest': suite['roundManifest']['path'],
+                 'base': str(self.output / suite['name']),
+                 'tasks': [task for task in tasks if task['suite'] == suite['name']]}
+                for suite in self.corpus['suites']]
+        write_json(request, {'operation': operation, 'suites': rows, 'output': str(output)})
+        command = [shutil.which('node'), str(self.bridge), str(self.source), str(request)]
+        owned = set()
+        def local_only(args, *rest, **kwargs):
+            if args != command or rest or kwargs.get('cwd') != str(self.root):
+                forbidden()
+            process = LOCAL_POPEN(args, **kwargs)
+            owned.add(process.pid)
+            return process
+        def owned_wait(pid, options):
+            if pid not in owned:
+                forbidden()
+            return LOCAL_WAITPID(pid, options)
+        def owned_kill(pid, sig):
+            if pid not in owned:
+                forbidden()
+            return LOCAL_KILL(pid, sig)
+        environment = {'PATH': os.defpath, 'HOME': str(self.root), 'TMPDIR': str(self.root)}
+        with mock.patch.object(subprocess, 'Popen', local_only), \
+             mock.patch.object(os, 'waitpid', owned_wait), mock.patch.object(os, 'kill', owned_kill):
+            result = LOCAL_RUN(command, cwd=str(self.root), env=environment, text=True,
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+        if result.returncode:
+            raise AssertionError('original seal fixture failed: ' + result.stderr)
+        result = json.loads(output.read_text())
+        assert result['fixtureOnly'] is True and result['qualifiedHost'] is False
+        self.computations.extend(result['originalComputations'])
+        return result['originalComputations']
+
+    def close_task(self, task, worker_result, *, compute=True):
+        if compute:
+            self.compute('seal', [task])
+        artifact = Path(worker_result['job']['artifactDir'])
+        runner = json.loads((artifact / 'runner-profile.json').read_text())
+        profile = Path(runner['profilePath'])
+        record = json.loads((profile / 'host-profile.json').read_text())
+        runtime = __import__('eval_driver_runtime')
+        write_json(profile / 'host-profile-cleanup.json', {
+            'schema': 1, 'profileId': record['id'],
+            'caches': [{'path': name, 'status': 'removed'} for name in runtime.CACHE_PATHS]})
+        write_json(artifact / 'process-termination.json', {'groupGone': True, 'cleanupComplete': True})
+        result = {**{key: task[key] for key in ('suite', 'scenario', 'slot')}, 'state': 'sealed',
+                  'completed': True, 'consumptionState': 'reserved', 'chargedRoots': 1,
+                  'actualModelStarted': True, 'cleanupComplete': True, 'groupGone': True,
+                  'validityProblems': [], 'findings': [], 'nativeErrors': [], 'timedOut': False,
+                  'malformedStream': False, 'watchdogStopReason': None,
+                  'fixtureOnly': True, 'qualifiedHost': False}
+        write_json(artifact / 'operator-result.json', result)
+        return result
+
+    def prerequisites(self):
+        context = self.validate()
+        # These host observations are synthetic. Original worker boundaries are exercised by
+        # the worker regressions; prerequisite authority comes from real D2 and original seals.
+        self.original_jobs = [self.reserve_fixture_task(context, task) for task in self.selected()]
+        self.compute('seal', self.selected())
+        for task, result in zip(self.selected(), self.original_jobs):
+            self.close_task(task, result, compute=False)
+        # D3 normally unlinks its own cancellation pipe; attach must not recreate it.
+        (self.output / 'cohorts/cancellation').unlink()
+        self.original_summary = self.output / 'cohorts/first-stage-summary.json'
+        write_json(self.original_summary, {'stageId': STAGE_ID, 'stageCompleted': True,
+            'corpusSha256': digest(self.corpus_path), 'grantSha256': digest(self.grant_path),
+            'chargedRoots': 999, 'started': -500, 'fixtureOnly': True, 'qualifiedHost': False})
+        closures = []
+        for result in self.original_jobs:
+            job, job_path = result['job'], result['jobPath']
+            artifact, attempt = Path(job['artifactDir']), Path(job['task']['attemptRoot'])
+            runner = json.loads((artifact / 'runner-profile.json').read_text())
+            profile = Path(runner['profilePath'])
+            files = {path for root in (artifact, attempt) for path in root.rglob('*') if path.is_file()}
+            files.update(profile / name for name in ('host-profile.json', 'host-profile-cleanup.json'))
+            closures.append({'task': {key: job['task'][key] for key in ('suite', 'scenario', 'slot')},
+                             'job': ref(job_path), 'files': [ref(path) for path in sorted(files)]})
+        self.closures_path = self.root / 'original-closures.json'
+        write_json(self.closures_path, {'schemaVersion': 1,
+            'kind': 'effective-flow-host-first-stage-closures', 'closures': closures})
+        tasks = independent_remainder([r['task'] for r in self.records])
+        cohort = self.output / 'cohorts'
+        self.remaining_grant = {'schemaVersion': 1, 'kind': 'effective-flow-host-remaining-stage-grant',
+            'stageId': REMAINING_STAGE_ID, 'corpus': ref(self.corpus_path),
+            'firstStageGrant': ref(self.grant_path), 'firstStageSummary': ref(self.original_summary),
+            'closures': ref(self.closures_path), 'config': self.corpus['config'], 'namespace': self.namespace,
+            'attach': __import__('eval_driver_runtime').capture_accounting_paths(cohort, self.output, cohort / 'launch-gate'),
+            'orderedTasks': [{**{key: task[key] for key in ('suite', 'scenario', 'slot')},
+                'artifactDir': str(cohort / task['suite'] / task['scenario'] / ('slot-' + str(task['slot'])))} for task in tasks],
+            'maximumChargedRoots': 150, 'maximumCombinedChargedRoots': 155, 'concurrency': 6, 'batches': 25,
+            'allowRetry': False, 'allowResume': False, 'allowContinuation': False,
+            'fullCorpusAcceptance': False, 'publication': False,
+            'cancellation': {'path': str(self.profiles / 'remaining-stage-cancellation.fifo'),
+                             'exclusive': True, 'closeUnlink': True}}
+        self.remaining_grant_path = self.root / 'remaining-grant.json'
+        self.publish_remaining()
+        return self.validate_remaining()
+
+    def publish_remaining(self):
+        write_json(self.remaining_grant_path, self.remaining_grant)
+
+    def reserve_fixture_task(self, context, task):
+        """Original D2 reservation and synthetic start observation; never launch a process."""
+        job, job_path, home, codehome = self.job(task, context)
+        runtime = __import__('eval_driver_runtime')
+        artifact, profile = Path(job['artifactDir']), home.parent
+        record = runtime.registered_profile(profile, self.profiles)
+        write_json(artifact / 'runner-profile.json', {'profilePath': str(profile), 'childPgid': record['childPgid']})
+        launch = {'argv': ['synthetic-never-executed'], 'cwd': task['projectRoot'],
+                  'stdinPath': task['prompt'], 'home': str(home), 'codexHome': str(codehome)}
+        write_json(artifact / 'launch.json', launch)
+        write_json(artifact / 'launch-audit.json', {'launch': launch,
+            'stdinSha256': job['pins'][task['prompt']], 'nonForked': True,
+            'taskInput': 'rendered-prompt-only', 'configDigest': job['pins'][job['configFile']],
+            'qualification': {'qualificationDigest': job['qualificationDigest'], 'profile': task['profile']},
+            'pins': job['pins'], 'operatorSha256': job['operatorSha256'], 'driverSha256': job['driverDigest'],
+            'fixtureOnly': True, 'qualifiedHost': False})
+        consumed = runtime.reserve_launch(job, job_path, digest(job_path), launch, profile, record, fixture_only=True)
+        write_json(artifact / 'process-start.json', {'pid': 424242, 'childPgid': record['childPgid'],
+            'consumptionSha256': consumed, 'actualModelStarted': True, 'fixtureOnly': True, 'qualifiedHost': False})
+        return {'job': job, 'jobPath': job_path}
+
+    def validate_remaining(self):
+        return self.stage.validate_remaining_stage(self.corpus_path, digest(self.corpus_path),
+            self.remaining_grant_path, digest(self.remaining_grant_path))
+
+    def coordinator(self, context, *, module_hook=None, **kwargs):
+        spec = importlib.util.spec_from_file_location('remaining_fixture_coordinator', self.driver / 'run-cohorts.py')
+        coordinator = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(coordinator)
+        if module_hook:
+            module_hook(coordinator)
+        with mock.patch.dict(sys.modules, {'eval_first_stage': self.stage}), \
+             mock.patch.object(sys, 'executable', str(self.python)), \
+             mock.patch.object(coordinator, 'source_roots', return_value=(self.source,)), \
+             mock.patch.object(coordinator.Driver, 'check_source'):
+            return coordinator.Driver(self.config_path, self.profiles, operator=self.operator,
+                operator_sha256=digest(self.operator), binary=self.config['toolchain']['binary']['path'],
+                auth_file=self.auth, node=str(self.node), fixture_tools=True, remaining_stage=context, **kwargs)
+
+
+def independent_remainder(tasks):
+    arrays = {suite: [task for task in tasks if task['suite'] == suite] for suite in SUITES}
+    # Deliberately independent index-wise oracle rather than the implementation's zip_longest.
+    full = [arrays[suite][index] for index in range(max(map(len, arrays.values())))
+            for suite in SUITES if index < len(arrays[suite])]
+    return [task for task in full if (task['suite'], task['scenario']) !=
+            ('iterate', 'duplicated-control-line-aborts')]
+
+
 class InertStageDriver:
     def __init__(self, fixture, context, fault=None):
         self.f, self.first_stage, self.fault = fixture, context, fault
@@ -461,7 +788,7 @@ class FirstStageAuthentication(unittest.TestCase):
     def setUp(self):
         old_path = list(sys.path)
         self.addCleanup(lambda: sys.path.__setitem__(slice(None), old_path))
-        self.temp = tempfile.TemporaryDirectory(prefix='d3-stage-unit-', dir=str(Path(tempfile.gettempdir()).resolve()))
+        self.temp = tempfile.TemporaryDirectory(prefix='d3-stage-unit-', dir=str(TEST_TEMP_ROOT))
         self.addCleanup(self.temp.cleanup)
         self.fixture = StageFixture(Path(self.temp.name))
         self.f = self.fixture
