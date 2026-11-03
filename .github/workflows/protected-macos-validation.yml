@@ -3,12 +3,14 @@ name: Protected macOS validation
 on:
   push:
     branches: ['effective-flow/validation/*']
+  create:
 
 permissions:
   contents: read
 
 jobs:
   protected-validation:
+    if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/effective-flow/validation/')) || (github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref == format('effective-flow/qualification/published-source-{0}', github.sha)) }}
     name: protected-validation
     runs-on: macos-15
     timeout-minutes: 60

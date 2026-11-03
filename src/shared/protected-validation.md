@@ -1,9 +1,10 @@
 # Protected native macOS validation
 
-This contract is a validation transport for a qualified native macOS GitHub Actions host. It owns
-orchestration and evidence identity only; the ordinary validator and final-validation gates still own
-the correctness judgment. The bridge is available only to native Codex on a supported host. Existing
-Quality and non-remote execution keeps its current behavior. The normal local lane is unchanged.
+This contract covers validation transport and internal published-source qualification on the existing
+native macOS GitHub Actions host. It owns orchestration and evidence identity only; the ordinary
+validator and final-validation gates still own the correctness judgment. The bridge is available only
+to native Codex on a supported host. Existing Quality and non-remote execution keeps its current
+behavior. The normal local lane is unchanged.
 
 ## Admission and immutable request
 
@@ -74,10 +75,10 @@ chain belongs to actual feature validation, not the pre-write qualification step
 
 ## Closure, snapshot and execution
 
-The closure is immutable and projected from the source snapshot. Only the validation workflow is
-active in the pushed transport tree; all other original workflow bytes are inert payloads there. The
-already-started job materializes exactly one separate Git execution repository, restoring every
-original workflow at its original path with its exact bytes and mode. Those restored workflow files
+For local transport, the closure is immutable and projected from the source snapshot. Only the
+validation workflow is active in the pushed transport tree; all other original workflow bytes are
+inert payloads there. The already-started job materializes exactly one separate Git execution
+repository, restoring every original workflow at its original path with its exact bytes and mode. Those restored workflow files
 are ordinary source files used by that job; the execution repository is local to it and is never
 pushed. The actual GitHub attempt, jobs, raw logs, full commands and native steps form the evidence.
 Closure completeness and source freshness are checked before execution; failed, partial or incomplete
@@ -102,6 +103,22 @@ project configuration does not authorize history transport. npm registry configu
 `.npmrc` (case-insensitive) are excluded as whole files. The bounded scan reads no blob contents or
 commit messages. Passing this guard does not establish that allowed file contents or commit messages
 contain no secrets, or authorize their transport.
+
+Internal release qualification has a separate remote-only acquisition kind: the existing ephemeral
+`macos-15` executor acquires an already published immutable final release-PR SHA and tree from the same
+repository. It exports no local source, history, index or private files. This bounded same-audience
+acquisition does not waive the local transport guard above or authorize historical-content publication.
+The trusted maintenance operator inspects before creating an absent reserved qualification ref through
+its existing GitHub identity. API ref creation is a `create` event, not a transport `push`. Complete
+candidate and relevant default-branch/downstream workflow closure must prove isolation before effects
+and acceptance; unknown forms refuse execution. Never move, overwrite or ambiguously retry the ref.
+
+The separate closed proof binds genuine source/ref/event identity, original attempt 1, policy and
+workflow isolation; it fabricates no transport parent or materialization fields. Before and after the
+unchanged full commands and five native cases, verify original complete ancestry within depth 4096,
+HEAD/tree, every tracked member/mode/digest, execution index and frozen closure. Authenticated complete
+job/raw-log evidence remains mandatory; reruns cannot substitute. Export no historical names/content,
+source archives, caches or artifacts. Release sequencing is owned by the release-and-installation guide.
 
 Future model-role adherence remains provisional pilot audit evidence, not full acceptance from this
 model-free qualification. Transport state is private runtime evidence and is never activation authority

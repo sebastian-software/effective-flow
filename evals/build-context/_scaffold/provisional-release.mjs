@@ -11,13 +11,22 @@ import {
   validatePolicy,
   validatePreparation,
   validateMaterializationManifest,
+  PUBLISHED_SOURCE_KIND,
+  PUBLISHED_CLOSURE_PATHS,
+  validatePublishedPolicy,
+  validatePublishedPreparation,
 } from '../../../src/scripts/protected-validation-protocol.mjs';
-import { observeBackend, CLOSURE_PATHS } from '../../../scripts/protected-validation-backend.mjs';
+import {
+  observeBackend,
+  observePublishedBackend,
+  CLOSURE_PATHS,
+} from '../../../scripts/protected-validation-backend.mjs';
 import { MATERIALIZATION_PATH } from '../../../scripts/protected-validation-projection.mjs';
 import { instrumentIdentity } from '../../_scaffold/build-identity.mjs';
 import { CASES, CELL_NAMES } from './protocol.mjs';
 
-export const PROVISIONAL_SCHEMA = 'effective-flow.build-context-provisional-pr581/1';
+const LEGACY_PROVISIONAL_SCHEMA = 'effective-flow.build-context-provisional-pr581/1';
+export const PROVISIONAL_SCHEMA = 'effective-flow.build-context-provisional-pr581/2';
 export const AUTHORIZATION_BLOB_VARIABLE = 'BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB';
 export const AUTHORIZATION_DIGEST_VARIABLE = 'BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256';
 export const POLICY_PATHS = Object.freeze([
@@ -95,7 +104,8 @@ export function validateAuthorization(value, { now = Date.now() } = {}) {
     'host',
   ]);
   ensure(
-    value.schema === PROVISIONAL_SCHEMA && value.featurePullRequest === 581,
+    [LEGACY_PROVISIONAL_SCHEMA, PROVISIONAL_SCHEMA].includes(value.schema) &&
+      value.featurePullRequest === 581,
     'unknown provisional release scope',
   );
   ensure(value.repository === 'sebastian-software/effective-flow', 'foreign repository');
@@ -176,25 +186,45 @@ export function validateAuthorization(value, { now = Date.now() } = {}) {
       'unresolved material policy finding',
     );
   }
-  assertExact(value.host, ['request', 'preparation', 'policy', 'runId', 'runAttempt']);
-  validatePolicy(value.host.policy);
-  validatePreparation(value.host.preparation);
-  ensure(
-    value.host.policy.repository === value.repository &&
-      value.host.runAttempt === 1 &&
-      Number.isSafeInteger(value.host.runId) &&
-      value.host.runId > 0,
-    'original protected host run required',
-  );
-  ensure(
-    value.host.preparation.localSnapshot.head === value.sourceCommit &&
-      value.host.preparation.executionTree === value.sourceTree,
-    'protected host source differs from exact candidate',
-  );
-  ensure(
-    value.host.request?.policyDigest === validationDigest(value.host.policy),
-    'protected host request policy differs',
-  );
+  if (value.schema === PROVISIONAL_SCHEMA) {
+    assertExact(value.host, ['kind', 'preparation', 'policy', 'runId', 'runAttempt']);
+    ensure(value.host.kind === PUBLISHED_SOURCE_KIND, 'unknown host proof kind');
+    validatePublishedPolicy(value.host.policy);
+    const preparation = validatePublishedPreparation(value.host.preparation);
+    ensure(
+      same(preparation.policy, value.host.policy) &&
+        preparation.sourceCommit === value.sourceCommit &&
+        preparation.sourceTree === value.sourceTree &&
+        preparation.repository === value.repository &&
+        preparation.releasePullRequest === value.releasePullRequest &&
+        preparation.releaseHeadRef === value.releaseHeadRef &&
+        preparation.releaseVersion === value.releaseVersion &&
+        value.host.runAttempt === 1 &&
+        Number.isSafeInteger(value.host.runId) &&
+        value.host.runId > 0,
+      'published host binding differs from exact final release',
+    );
+  } else {
+    assertExact(value.host, ['request', 'preparation', 'policy', 'runId', 'runAttempt']);
+    validatePolicy(value.host.policy);
+    validatePreparation(value.host.preparation);
+    ensure(
+      value.host.policy.repository === value.repository &&
+        value.host.runAttempt === 1 &&
+        Number.isSafeInteger(value.host.runId) &&
+        value.host.runId > 0,
+      'original protected host run required',
+    );
+    ensure(
+      value.host.preparation.localSnapshot.head === value.sourceCommit &&
+        value.host.preparation.executionTree === value.sourceTree,
+      'protected host source differs from exact candidate',
+    );
+    ensure(
+      value.host.request?.policyDigest === validationDigest(value.host.policy),
+      'protected host request policy differs',
+    );
+  }
   return value;
 }
 
@@ -300,6 +330,46 @@ export function verifyLiveRelease(value, { read }) {
 // Fetch original authenticated backend responses, never a record's claimed pass boolean.
 export function verifyHostedCandidate(value, { root, read }) {
   const { host } = value;
+  if (value.schema === PROVISIONAL_SCHEMA) {
+    validateAuthorization(value);
+    for (const [key, path] of Object.entries(PUBLISHED_CLOSURE_PATHS))
+      ensure(
+        host.policy.executionClosure[key] === validationDigest(readFileSync(resolve(root, path))),
+        'published execution closure differs',
+      );
+    const observed = observePublishedBackend({
+      preparation: host.preparation,
+      runId: host.runId,
+      runAttempt: host.runAttempt,
+      read,
+    });
+    ensure(observed.state === 'verified', 'original published macOS qualification did not pass');
+    const files = git(root, 'ls-tree', '-rz', '--full-tree', value.sourceCommit)
+      .toString('utf8')
+      .split('\0')
+      .filter(Boolean)
+      .map((entry) => {
+        const match = /^(100644|100755) blob ([a-f0-9]{40})\t(.+)$/.exec(entry);
+        ensure(match, 'unsupported published candidate member');
+        return {
+          path: match[3],
+          mode: match[1],
+          digest: validationDigest(git(root, 'cat-file', 'blob', match[2])),
+        };
+      })
+      .sort((a, b) => a.path.localeCompare(b.path, 'en'));
+    ensure(
+      validationDigest(files) === host.preparation.sourceFilesDigest,
+      'authenticated published source does not cover complete candidate',
+    );
+    return {
+      state: 'verified',
+      kind: PUBLISHED_SOURCE_KIND,
+      runId: host.runId,
+      runAttempt: host.runAttempt,
+      sourceTree: value.sourceTree,
+    };
+  }
   for (const [key, path] of Object.entries(CLOSURE_PATHS))
     ensure(
       host.policy.executionClosure[key] === validationDigest(readFileSync(resolve(root, path))),
