@@ -408,7 +408,18 @@ import rather than treating the leftover file as content of its own. Like the se
 below, this step adds no configuration key.
 
 After the configuration write, setup offers an optional session-rename capability step. In the
-**Codex tab embedded in the ChatGPT Desktop app**, the native current-task capability needs no
+**T3 Code host**, the current-thread capability is selected before the model provider or harness,
+so it applies whether T3 Code is running Codex or Claude. It needs no installation or configuration.
+After the user consents to the visible check, setup calls the host's current-thread operation once
+with the fixed title `Effective Flow setup check`, omitting both the thread and environment
+identifiers. It reports the concrete result, does not discover a different operation, and does not
+retry. A successful call proves the path for that run; an absent, denied, failed, ambiguous, or
+unconfirmed result means only that this probe failed. The probe is not persisted as capability state:
+later T3 Code runs attempt the native operation independently and print one suggested title only
+when that individual call is unavailable or fails. Because T3 Code exposes no verified manual-title
+ownership check, a later run may replace an existing title, including one chosen manually.
+
+In the **Codex tab embedded in the ChatGPT Desktop app**, the native current-task capability needs no
 installation or configuration. After the user consents to the visible check, setup calls it once
 with the fixed title `Effective Flow setup check` and reports the concrete result. It supplies no
 task id, performs no task lookup, and does not retry. A successful call proves the path for that
