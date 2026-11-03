@@ -841,7 +841,7 @@ class FirstStageAuthentication(unittest.TestCase):
             for driver in winners:
                 driver.close()
 
-    def test_d1_block_and_d2_runtime_are_exactly_preserved(self):
+    def test_d1_block_source_and_d2_runtime_are_exactly_preserved(self):
         self.assertEqual(digest(HERE / 'eval_driver_runtime.py'),
                          'sha256:51704302d8696ec898a03a52aaf259dcae283eea377d6ebbc55fd596d4e4eb93')
         source = (HERE / 'run-cohorts.py').read_text()
@@ -850,8 +850,6 @@ class FirstStageAuthentication(unittest.TestCase):
         block = next(node for node in driver.body if isinstance(node, ast.FunctionDef) and node.name == 'block')
         self.assertEqual(hashlib.sha256(ast.get_source_segment(source, block).encode()).hexdigest(),
                          'e54f64bc0b002647a8158d491f215e6ff672dbb06f53050c36282215ea74cf0a')
-        self.assertEqual(hashlib.sha256(ast.dump(block, include_attributes=False).encode()).hexdigest(),
-                         '5e73007bee1cd2412395c024a73417d368e8146f9b61fb226ec76d1caa50d8c4')
 
     def test_original_qualifier_expiry_crossed_during_reserve_stops_before_model(self):
         context = self.f.validate()
