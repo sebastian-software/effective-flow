@@ -99,6 +99,34 @@ test('workflow runner preserves the approved command order and requires every na
 
 const git = (cwd, ...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
+function withHermeticGitIdentity(operation) {
+  const identityOrConfig =
+    /^(?:GIT_(?:AUTHOR|COMMITTER)_|EMAIL$|GIT_CONFIG_(?:COUNT|KEY_\d+|VALUE_\d+|PARAMETERS|GLOBAL|SYSTEM|NOSYSTEM)$)/;
+  const isolated = {
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_SYSTEM: '/dev/null',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_CONFIG_COUNT: '1',
+    GIT_CONFIG_KEY_0: 'user.useConfigOnly',
+    GIT_CONFIG_VALUE_0: 'true',
+  };
+  const keys = new Set([
+    ...Object.keys(process.env).filter((key) => identityOrConfig.test(key)),
+    ...Object.keys(isolated),
+  ]);
+  const original = new Map([...keys].map((key) => [key, process.env[key]]));
+  try {
+    for (const key of keys) delete process.env[key];
+    Object.assign(process.env, isolated);
+    return operation();
+  } finally {
+    for (const [key, value] of original) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
 function immutableFixture(t) {
   const source = mkdtempSync(path.join(tmpdir(), 'protected-validation-workflow-'));
   t.after(() => rmSync(source, { recursive: true, force: true }));
@@ -445,6 +473,8 @@ function publishedInputFixture(t) {
   git(checkout, 'commit', '--quiet', '-m', 'synthetic final source');
   const sourceCommit = git(checkout, 'rev-parse', 'HEAD');
   git(workspace, 'clone', '--quiet', '--no-local', checkout, executionRoot);
+  git(executionRoot, 'config', 'user.name', 'Published inputs test');
+  git(executionRoot, 'config', 'user.email', 'published-inputs@invalid.local');
   git(executionRoot, 'config', 'commit.gpgsign', 'false');
   git(executionRoot, 'config', 'core.hooksPath', '/dev/null');
   const input = { checkout, executionRoot, sourceCommit };
@@ -524,6 +554,7 @@ for (const [label, mutate] of [
   [
     'unchanged-tree HEAD replacement',
     (s) => {
+      assert.equal(git(s.executionRoot, 'config', '--get', 'user.useConfigOnly'), 'true');
       const next = git(
         s.executionRoot,
         'commit-tree',
@@ -534,6 +565,9 @@ for (const [label, mutate] of [
         'foreign same-tree identity',
       );
       git(s.executionRoot, 'update-ref', 'HEAD', next);
+      assert.notEqual(next, s.sourceCommit);
+      assert.equal(git(s.executionRoot, 'rev-parse', 'HEAD^{tree}'), s.expected.sourceTree);
+      assert.equal(git(s.executionRoot, 'rev-parse', 'HEAD^'), s.historicalCommit);
     },
   ],
   [
@@ -603,37 +637,47 @@ for (const [label, mutate] of [
   ],
 ]) {
   test(`published source revalidation refuses ${label}`, (t) => {
-    const state = publishedInputFixture(t);
-    mutate(state);
-    assert.throws(() => verifyPublishedInputs(state));
+    const exercise = () => {
+      const state = publishedInputFixture(t);
+      mutate(state);
+      assert.throws(() => verifyPublishedInputs(state));
+    };
+    if (label === 'unchanged-tree HEAD replacement') withHermeticGitIdentity(exercise);
+    else exercise();
   });
 }
 
 test('published source capture rejects unsafe current members and never exposes historical bytes in diagnostics', (t) => {
-  const state = publishedInputFixture(t);
-  symlinkSync('README.md', path.join(state.executionRoot, 'unsafe-link'));
-  git(state.executionRoot, 'add', 'unsafe-link');
-  const tree = git(state.executionRoot, 'write-tree');
-  const commit = git(
-    state.executionRoot,
-    'commit-tree',
-    tree,
-    '-p',
-    state.sourceCommit,
-    '-m',
-    'synthetic unsafe current mode',
-  );
-  git(state.executionRoot, 'update-ref', 'HEAD', commit);
-  assert.throws(
-    () => capturePublishedInputs({ ...state, sourceCommit: commit }),
-    (error) => {
-      assert.doesNotMatch(
-        error.message,
-        /ARTIFICIAL_HISTORY|unsafe-link|\.env|published-validation-inputs-/,
-      );
-      return true;
-    },
-  );
+  withHermeticGitIdentity(() => {
+    const state = publishedInputFixture(t);
+    assert.equal(git(state.executionRoot, 'config', '--get', 'user.useConfigOnly'), 'true');
+    symlinkSync('README.md', path.join(state.executionRoot, 'unsafe-link'));
+    git(state.executionRoot, 'add', 'unsafe-link');
+    const tree = git(state.executionRoot, 'write-tree');
+    const commit = git(
+      state.executionRoot,
+      'commit-tree',
+      tree,
+      '-p',
+      state.sourceCommit,
+      '-m',
+      'synthetic unsafe current mode',
+    );
+    git(state.executionRoot, 'update-ref', 'HEAD', commit);
+    assert.equal(git(state.executionRoot, 'rev-parse', 'HEAD^{tree}'), tree);
+    assert.equal(git(state.executionRoot, 'rev-parse', 'HEAD^'), state.sourceCommit);
+    assert.match(git(state.executionRoot, 'ls-tree', 'HEAD', 'unsafe-link'), /^120000 blob /);
+    assert.throws(
+      () => capturePublishedInputs({ ...state, sourceCommit: commit }),
+      (error) => {
+        assert.doesNotMatch(
+          error.message,
+          /ARTIFICIAL_HISTORY|unsafe-link|\.env|published-validation-inputs-/,
+        );
+        return true;
+      },
+    );
+  });
 });
 
 test('published acquisition pins the existing public repository and strips credentials before its single fetch', (t) => {

@@ -166,3 +166,13 @@ The independent guarantee review and final source review have no unresolved crit
 ### Remaining parent operations
 
 After source integration, freeze the final stamped Release #595 commit, tree, version, workflow, instrument and policy. Obtain the separately required approval for its concrete execution package before creating one original qualification ref or starting any paid evidence. Require authentic attempt-1 job/raw-log proof, unchanged full checks and all five real native cases. Keep bound independent review, authorization publication, trusted pins, fresh strict behavioural evidence and all remaining release gates mandatory. Earlier-source or expired evidence and reruns remain ineligible. This archived code plan needs no post-qualification edit; the parent retains the operational outcome and audit. #78 continues independently.
+
+### Final CI fixture correction — R3
+
+The first source-PR CI run exposed two synthetic `commit-tree` setup failures: the cloned test repository did not inherit the trusted fixture's Git identity. The final authorized correction sets a synthetic identity only in that temporary clone and permanently exercises both existing guard cases with inherited Git/EMAIL identity removed, system/global configuration disabled and `user.useConfigOnly=true`. The mutation, ancestry and privacy assertions remain intact and are strengthened. Product code is unchanged.
+
+The controlled red run reproduced exactly two failures among 26 cases; the identical hermetic command then passed all 26. Independent review has zero residual critical, important or note findings. The complete R3 source-QA commands passed: format, 4,205 unit tests with zero failures and three declared evidence skips, build and offline distribution. The separate filesystem EILSEQ limitation remains unchanged.
+
+The QA wrapper stopped after the passing unit command because a foreign worktree registration disappeared. Its failed wrapper report is preserved. Independent reconciliation verified that all 1,985 file identities and modes, index, status, HEAD, branch, own execution registration and main runtime root remained unchanged. Only the outstanding build and distribution commands were then completed, without repeating tests. This composed result does not relabel the earlier wrapper report or waive a required input boundary.
+
+All three authorized source correction rounds are now consumed. No fourth round, real Hosted/native qualification or behavioural-model execution is authorized by this source delivery. The remaining parent release operations and their separate grants above remain mandatory.
