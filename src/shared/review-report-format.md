@@ -1,10 +1,32 @@
 ## Report format
 
+`review` renders this format in local mode through the helper operation `review write-report`;
+every other writer (its overflow path, `unresolved-review-report`, the forge finding issue, and
+augmenting an existing report) writes it in prose.
+
 The English form is shown below. For `language.workflow = de`, render the complete report in
 German: `# Code-Review-Bericht`, `Datum`, `Umfang`, `Projekttyp`, `Zusammenfassung`,
 `Schweregrad`, `Anzahl`, `Komplexität`, `Aktion`, `Befunde`, `Titel`, `Bereich`, `Datei`,
 `Problem`, `Empfehlung`, `Prompt-Vorschlag`, `Entwicklernotiz`, `Sicherheit`, and
-`Übersprungene Befunde (Architekturentscheidungen)`, with German displayed severity/complexity values and the German banner sentence from "Security disclosure gate". Keep finding IDs, paths, skill/action values, the `external`/`internal` exposure tokens, and other machine tokens unchanged. A report uses one complete form; readers accept both forms.
+`Übersprungene Befunde (Architekturentscheidungen)` with the columns `Befund`, `Architekturentscheidung`,
+`Quelle`; the admission fields, in template order,
+`Zulassungsergebnis`, `Zulassungsgrund`, `Zulassungsprüfung`, `Beleg`, `Beleg-Digest`,
+`Aktuelle Erreichbarkeit`, `Ursachensignatur`, `Umfang und Eindämmung`, `Warum jetzt`, and
+`Abschlussbedingung`; the appendix heading `Geschlossene Beobachtungen`; the displayed severities
+`Kritisch` / `Wichtig` / `Hinweis` and complexities `Niedrig` / `Mittel` / `Hoch`; and the German
+banner sentence from "Security disclosure gate". Keep finding IDs, paths, skill/action values, the
+`external`/`internal` exposure tokens, the admission values (`admitted`, `material-harm`,
+`irreversible-commitment`, `v1`), and other machine tokens unchanged. A report uses one complete
+form; readers accept both forms.
+
+When applicable, the summary section ends with these lines, each on its own line:
+
+- Notes filtered by the default finding scope:
+  - `en`: `Notes were filtered out by the default finding scope; a comprehensive review including notes is available on request.`
+  - `de`: `Hinweise wurden durch den Standard-Befundumfang herausgefiltert; ein umfassendes Review einschließlich Hinweisen ist auf Anfrage möglich.`
+- `review.validation: off`:
+  - `en`: `Technical validation was skipped: review.validation is off.`
+  - `de`: `Die technische Validierung wurde übersprungen: review.validation ist off.`
 
 ```markdown
 # Code review report

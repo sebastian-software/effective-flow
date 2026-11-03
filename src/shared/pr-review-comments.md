@@ -55,8 +55,9 @@ remote-helper-contract
 
 ### Remote helper
 
-Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
-redaction, error, and working-directory contract from the loaded "Remote helper contract". PR mode
+Call the shipped `scripts/remote-tracker.mjs` helper only through the literal call lines, envelope,
+dry-run, capability, redaction, error, and working-directory contract of the loaded "Remote helper
+contract". PR mode
 requires a successful provider probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit
 provider choice; `CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider
 requests or discover flags in the prompt.

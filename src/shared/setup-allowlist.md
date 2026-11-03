@@ -1,11 +1,26 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes one
-Claude Code allow rule per non-destructive runtime-state helper operation (`lock acquire`,
-`lock release`, `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`)
-into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this install's absolute path, so
-later runs call the helper without a permission prompt. `lock break` and `harness allow-rules` never
-get a rule. Only the helper writes the settings file; never edit it in prose.
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 54
+Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
+install's absolute path, so later runs call the helpers without a permission prompt:
+
+- one per non-destructive or bounded runtime-state helper operation: `lock acquire`, `lock release`,
+  `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`,
+  `commit create`, `review open-report` and `review write-report`;
+- one for the `config-resolve` helper's `resolve` operation;
+- one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
+  and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`.
+
+`commit create` writes Git history and runs the repository's hooks without a prompt; it commits
+only the listed paths, refuses paths below `.effective-flow/` and an untrusted hook configuration,
+and never pushes, amends, resets or rebases. For its report, `review write-report`
+writes only a new, generated-name file below `.effective-flow/review/` (through a
+`.write-report-*.tmp` sibling) and the ID counter in `.effective-flow/memory.json`, never
+overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful
+reservation. Separately, and only without the migration marker, it first runs the legacy-directory
+migration under that operation's own bound (no-clobber copy into `.effective-flow/`, memory merge,
+marker, adopting and removing a root `.sf-memory.json` through its own guard class). `lock break` and `harness allow-rules` never get a
+rule. Only the helper writes the settings file; never edit it in prose.
 
 ### `setup allowlist`
 
@@ -18,7 +33,7 @@ question and runs no other setup step.
 ### Preview, confirmation, apply
 
 ```include
-state-helper-call
+helper-call-shape
 ```
 
 The `skillRoot` value is that same literal `<skill-root>`, so the written rules match later calls.
@@ -31,10 +46,12 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the six `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 54 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
-   covers a path-prefix rule such as `node ~/.claude/skills/*`). A widened rule is never removed;
+   covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded
+   operation or the `--apply` form is widened). An earlier release's smaller set previews its
+   missing rules as `result.added`. A widened rule is never removed;
    the user decides. With `result.changed: false`, report that the rules are current and stop.
 
 2. Ask in the conversation whether to write exactly this change, in every mode and in auto mode
@@ -84,6 +101,7 @@ Report the target, the rules added, removed and kept for another install, every 
 whether the change was written, or the outcome and its reason. Always add two sentences:
 
 - Never accept Claude Code's "don't ask again" suggestion for a helper call: it widens the rule to
-  `node <helper> *` or `node *`, which also approves `lock break` or any script.
+  `node <helper> *` or `node *`, which also approves `lock break`, a tracker mutation, or any
+  script.
 - The rules live below the main checkout; whether Claude Code applies them in a session started
   inside a linked worktree is unverified.

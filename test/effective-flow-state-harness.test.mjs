@@ -22,8 +22,13 @@ import { test } from 'node:test';
 
 import {
   ALLOWLISTED_OPERATIONS,
+  CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS,
   NEVER_ALLOWLISTED_OPERATIONS,
+  REMOTE_TRACKER_EXCLUDED_OPERATIONS,
+  REMOTE_TRACKER_READ_OPERATIONS,
+  RULE_ENTRIES,
   helperRule,
+  helperRules,
   parseHelperRule,
   parseSettings,
   widenedRuleReason,
@@ -33,6 +38,13 @@ import {
   STATE_OPERATION_CLASSES,
   executeOperation,
 } from '../src/scripts/effective-flow-state-core.mjs';
+import { CONFIG_RESOLVE_OPERATIONS } from '../src/scripts/config-resolve-core.mjs';
+import {
+  LOCAL_WRITE_OPERATIONS,
+  MUTATION_OPERATIONS,
+  REMOTE_TRACKER_OPERATIONS,
+  executeOperation as executeTrackerOperation,
+} from '../src/scripts/remote-tracker-core.mjs';
 import {
   UNSUPPORTED_PATH_REASONS,
   WIDENED_RULE_WARNINGS,
@@ -46,7 +58,9 @@ import {
   expectOutcome,
   fakeGit,
   fakeRoot,
+  RULE_HELPER_FILES,
   unreachableRunner,
+  writeHelperScripts,
 } from './support/state-helper-fixtures.mjs';
 
 const CLAUDE_ENV = Object.freeze({ CLAUDECODE: '1' });
@@ -64,7 +78,7 @@ function install(t, name = 'install') {
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const real = join(base, 'real', 'effective-flow');
   mkdirSync(join(real, 'scripts'), { recursive: true });
-  writeFileSync(join(real, 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  writeHelperScripts(join(real, 'scripts'));
   mkdirSync(join(base, 'skills'));
   symlinkSync(real, join(base, 'skills', 'effective-flow'));
   return {
@@ -110,8 +124,8 @@ async function previewAndApply(root, installed, extra = {}) {
 // Operation classification
 
 // Invariant: every helper operation is classified as allowlisted or not, so a new operation fails
-// here until it is classified; the allowlisted set is exactly the six rules `harness allow-rules`
-// writes, and `lock break` and `harness allow-rules` are never among them.
+// here until it is classified; the allowlisted set is exactly the state-helper rules `harness
+// allow-rules` writes, and `lock break` and `harness allow-rules` are never among them.
 test('every STATE_OPERATIONS entry is classified and only non-destructive ones are allowlisted', () => {
   assert.deepEqual(Object.keys(STATE_OPERATION_CLASSES), [...STATE_OPERATIONS]);
   for (const operation of STATE_OPERATIONS) {
@@ -131,6 +145,9 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
     'memory reserve',
     'memory set-marker',
     'memory migrate-directory',
+    'commit create',
+    'review open-report',
+    'review write-report',
   ]);
   assert.equal(STATE_OPERATION_CLASSES['lock break'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');
@@ -155,6 +172,7 @@ test('the rule-shape matcher round-trips the helper rule and rejects every varia
   );
   assert.deepEqual(parseHelperRule(rule), {
     skillRoot: '/home/u/.claude/skills/effective-flow',
+    script: 'effective-flow-state',
     operation: 'memory reserve',
   });
   for (const variant of [
@@ -173,6 +191,7 @@ test('the rule-shape matcher round-trips the helper rule and rejects every varia
   }
   assert.deepEqual(parseHelperRule('Bash(node /x/scripts/effective-flow-state.mjs lock break *)'), {
     skillRoot: '/x',
+    script: 'effective-flow-state',
     operation: 'lock break',
   });
 });
@@ -229,6 +248,97 @@ test('widened rules include every pattern that matches a never-allowlisted helpe
     'Bash(node /home/u/.claude/skills/effective-flow/scripts/build.mjs)',
     'Bash(npm run *)',
     'Bash(node /home/u/.claude/skills/effective-flow/scripts/* memory reserve *)',
+  ]) {
+    assert.equal(widenedRuleReason(rule, options), null, rule);
+  }
+});
+
+// Invariant: the read-only `remote-tracker.mjs` rules are a closed list in which no operation is a
+// forge mutation or a local write, and every operation the tracker core accepts is classified as
+// either listed or excluded, so a new tracker operation fails here until someone classifies it.
+test('every remote-tracker operation is classified and no listed one mutates or writes', async () => {
+  const listed = new Set(REMOTE_TRACKER_READ_OPERATIONS);
+  const excluded = new Set(REMOTE_TRACKER_EXCLUDED_OPERATIONS);
+  assert.equal(listed.size, REMOTE_TRACKER_READ_OPERATIONS.length, 'no duplicate read entry');
+  for (const operation of listed) {
+    assert.ok(!excluded.has(operation), `${operation} is both listed and excluded`);
+    assert.ok(!MUTATION_OPERATIONS.includes(operation), `${operation} is a mutation`);
+    assert.ok(!LOCAL_WRITE_OPERATIONS.includes(operation), `${operation} writes local state`);
+  }
+  assert.deepEqual(
+    [...excluded].sort(),
+    [...new Set([...MUTATION_OPERATIONS, ...LOCAL_WRITE_OPERATIONS])].sort(),
+  );
+  assert.deepEqual(
+    [...listed, ...excluded].sort(),
+    [...new Set(REMOTE_TRACKER_OPERATIONS)].sort(),
+    'every tracker operation is either listed or excluded',
+  );
+  assert.ok(listed.has('thread-ledger-lookup'));
+  assert.ok(excluded.has('thread-ledger-record'));
+  assert.deepEqual([...CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS], [...CONFIG_RESOLVE_OPERATIONS]);
+
+  // REMOTE_TRACKER_OPERATIONS is the core's real dispatch: every `case` of its local dispatcher is
+  // in it, and the core accepts every entry rather than rejecting it as unknown.
+  const source = readFileSync(
+    new URL('../src/scripts/remote-tracker-core.mjs', import.meta.url),
+    'utf8',
+  );
+  const body = /function localOperation\([^)]*\) \{\n([\s\S]*?)\n\}\n/.exec(source)[1];
+  for (const [, operation] of body.matchAll(/case '([a-z-]+)':/g)) {
+    assert.ok(REMOTE_TRACKER_OPERATIONS.includes(operation), operation);
+  }
+  for (const operation of REMOTE_TRACKER_OPERATIONS) {
+    const envelope = await executeTrackerOperation(operation, {}, {});
+    assert.doesNotMatch(envelope.error?.message ?? '', /unknown operation/, operation);
+  }
+});
+
+// Invariant: the config-resolve and remote-tracker shapes round-trip, a rule for an excluded
+// operation is `not-allowlisted`, any other rule naming either helper is `helper-wildcard`, and a
+// prefix pattern that admits `<mutation> --apply` or the ledger write beside the helper is widened.
+test('the read-helper rule shapes round-trip and their widened forms are detected', () => {
+  const root = '/home/u/.claude/skills/effective-flow';
+  assert.equal(
+    helperRule(root, 'resolve', 'config-resolve'),
+    `Bash(node ${root}/scripts/config-resolve.mjs resolve *)`,
+  );
+  assert.deepEqual(parseHelperRule(helperRule(root, 'pr-read', 'remote-tracker')), {
+    skillRoot: root,
+    script: 'remote-tracker',
+    operation: 'pr-read',
+  });
+  assert.deepEqual(helperRules(root).length, RULE_ENTRIES.length);
+  assert.equal(
+    RULE_ENTRIES.length,
+    ALLOWLISTED_OPERATIONS.length + 1 + REMOTE_TRACKER_READ_OPERATIONS.length,
+  );
+  const cases = {
+    [`Bash(node ${root}/scripts/config-resolve.mjs resolve *)`]: null,
+    [`Bash(node ${root}/scripts/remote-tracker.mjs pr-read *)`]: null,
+    [`Bash(node ${root}/scripts/remote-tracker.mjs thread-ledger-lookup *)`]: null,
+    [`Bash(node ${root}/scripts/remote-tracker.mjs pr-merge *)`]: 'not-allowlisted',
+    [`Bash(node ${root}/scripts/remote-tracker.mjs thread-ledger-record *)`]: 'not-allowlisted',
+    [`Bash(node ${root}/scripts/config-resolve.mjs status *)`]: 'not-allowlisted',
+    [`Bash(node ${root}/scripts/remote-tracker.mjs *)`]: 'helper-wildcard',
+    [`Bash(node ${root}/scripts/remote-tracker.mjs pr-read --apply *)`]: 'helper-wildcard',
+    [`Bash(node ${root}/scripts/config-resolve.mjs *)`]: 'helper-wildcard',
+  };
+  for (const [rule, reason] of Object.entries(cases)) {
+    assert.equal(widenedRuleReason(rule), reason, rule);
+  }
+  const options = { helperPaths: [`${root}/scripts/effective-flow-state.mjs`], home: '/home/u' };
+  for (const rule of [
+    `Bash(node ${root}/scripts/r* --apply *)`,
+    `Bash(node ${root}/scripts/* pr-merge --apply *)`,
+    `Bash(node ${root}/scripts/* thread-ledger-record *)`,
+    'Bash(node ~/.claude/skills/*/scripts/re* *)',
+  ]) {
+    assert.equal(widenedRuleReason(rule, options), 'helper-wildcard', rule);
+  }
+  for (const rule of [
+    `Bash(node ${root}/scripts/* pr-read *)`,
+    `Bash(node ${root}/scripts/* resolve *)`,
   ]) {
     assert.equal(widenedRuleReason(rule, options), null, rule);
   }
@@ -339,7 +449,7 @@ test('allow-rules refuses a skill root whose helper is not the running helper', 
     'UNSUPPORTED_PATH',
   );
   assert.equal(mismatch.reason, 'helper-mismatch');
-  assert.equal(mismatch.rules.length, 6, 'the rules are shown for manual entry');
+  assert.equal(mismatch.rules.length, RULE_ENTRIES.length, 'the rules are shown for manual entry');
   rmSync(join(other.real, 'scripts', 'effective-flow-state.mjs'));
   const missing = expectOutcome(
     await allowRules(root, { ...other, helperPath: installed.helperPath }),
@@ -366,8 +476,7 @@ test('allow-rules refuses the runtime root and worktrees of the current reposito
   assert.equal(refused.reason, 'inside-repository-worktree');
   assert.equal(refused.path, inWorktree.base);
 
-  mkdirSync(join(root, 'vendor', 'scripts'), { recursive: true });
-  writeFileSync(join(root, 'vendor', 'scripts', 'effective-flow-state.mjs'), '');
+  writeHelperScripts(join(root, 'vendor', 'scripts'));
   const inRoot = expectOutcome(
     await allowRules(root, {
       skillRoot: join(root, 'vendor'),
@@ -389,7 +498,7 @@ test('allow-rules refuses an install whose helper resolves into the repository',
   const root = fakeRoot(t);
   const inRepo = join(root, 'vendor', 'effective-flow', 'scripts');
   mkdirSync(inRepo, { recursive: true });
-  writeFileSync(join(inRepo, 'effective-flow-state.mjs'), '// helper\n');
+  writeHelperScripts(inRepo);
   const helperInRepo = join(inRepo, 'effective-flow-state.mjs');
 
   const scriptsLink = install(t, 'scripts-link');
@@ -401,11 +510,17 @@ test('allow-rules refuses an install whose helper resolves into the repository',
   );
   assert.equal(viaScripts.reason, 'inside-runtime-root');
   assert.ok(viaScripts.path.startsWith(`${root}/`), viaScripts.path);
-  assert.equal(viaScripts.rules.length, 6, 'the rules are shown for manual entry');
+  assert.equal(
+    viaScripts.rules.length,
+    RULE_ENTRIES.length,
+    'the rules are shown for manual entry',
+  );
 
   const fileLink = install(t, 'file-link');
-  rmSync(join(fileLink.real, 'scripts', 'effective-flow-state.mjs'));
-  symlinkSync(helperInRepo, join(fileLink.real, 'scripts', 'effective-flow-state.mjs'));
+  for (const name of RULE_HELPER_FILES) {
+    rmSync(join(fileLink.real, 'scripts', name));
+    symlinkSync(join(inRepo, name), join(fileLink.real, 'scripts', name));
+  }
   const viaFile = expectOutcome(
     await allowRules(root, { ...fileLink, helperPath: helperInRepo }),
     'UNSUPPORTED_PATH',
@@ -416,7 +531,7 @@ test('allow-rules refuses an install whose helper resolves into the repository',
   const linked = fakeRoot(t, 'effective-flow-linked-worktree-');
   const inWorktree = join(linked, 'scripts');
   mkdirSync(inWorktree);
-  writeFileSync(join(inWorktree, 'effective-flow-state.mjs'), '// helper\n');
+  writeHelperScripts(inWorktree);
   const worktreeLink = install(t, 'worktree-link');
   rmSync(join(worktreeLink.real, 'scripts'), { recursive: true });
   symlinkSync(inWorktree, join(worktreeLink.real, 'scripts'));
@@ -459,12 +574,12 @@ test('allow-rules maps an unresolvable root and a diverging chain to UNSUPPORTED
   assert.equal(unresolvable.reason, 'unresolvable');
   assert.equal(unresolvable.detail, 'EACCES');
 
-  // `realpath` claims the other install's helper is the running one; the walk disagrees.
+  // `realpath` claims the other install's helpers are the running ones; the walk disagrees.
   const other = install(t, 'diverging');
   const lying = {
     realpath: async (target, ...rest) =>
-      target === join(other.skillRoot, 'scripts', 'effective-flow-state.mjs')
-        ? installed.helperPath
+      RULE_HELPER_FILES.some((name) => target === join(other.skillRoot, 'scripts', name))
+        ? join(installed.real, 'scripts', target.split('/').at(-1))
         : realpathPath(target, ...rest),
   };
   const diverging = expectOutcome(
@@ -494,6 +609,45 @@ test('allow-rules maps an EACCES on the helper path to unresolvable', async (t) 
   );
   assert.equal(outcome.reason, 'unresolvable');
   assert.equal(outcome.detail, 'EACCES');
+});
+
+// Invariant: a failure while walking a sibling helper's resolution chain names that sibling, not
+// the state helper, and a failing root `realpath` names the root.
+test('allow-rules names the helper whose resolution chain failed', async (t) => {
+  const root = fakeRoot(t);
+  const installed = install(t);
+  const sibling = RULE_HELPER_FILES.find((name) => name !== 'effective-flow-state.mjs');
+  const siblingPath = join(installed.skillRoot, 'scripts', sibling);
+  // The chain walk reaches the sibling through the install link, at its real location.
+  const failingWalk = {
+    lstat: async (target, ...rest) => {
+      if (target === join(installed.real, 'scripts', sibling)) {
+        throw Object.assign(new Error('injected EACCES'), { code: 'EACCES' });
+      }
+      return lstatPath(target, ...rest);
+    },
+  };
+  const outcome = expectOutcome(
+    await allowRules(root, installed, {}, { fs: failingWalk }),
+    'UNSUPPORTED_PATH',
+  );
+  assert.equal(outcome.reason, 'unresolvable');
+  assert.equal(outcome.detail, 'EACCES');
+  assert.equal(outcome.path, siblingPath);
+
+  const failingRoot = {
+    realpath: async (target, ...rest) => {
+      if (target === installed.skillRoot) {
+        throw Object.assign(new Error('injected EACCES'), { code: 'EACCES' });
+      }
+      return realpathPath(target, ...rest);
+    },
+  };
+  const rootOutcome = expectOutcome(
+    await allowRules(root, installed, {}, { fs: failingRoot }),
+    'UNSUPPORTED_PATH',
+  );
+  assert.equal(rootOutcome.path, installed.skillRoot);
 });
 
 // Invariant: the resolution chain follows a relative `../` link against the link's directory and a
@@ -641,22 +795,39 @@ test('allow-rules accepts a sticky root-owned directory and refuses a sticky use
 // ---------------------------------------------------------------------------------------------
 // Settings merge
 
-// Invariant: the apply writes exactly the six allowlisted rules and never one for `lock break` or
-// `harness allow-rules`; it creates a missing `.claude/` on apply only.
-test('apply writes exactly the six allowlisted rules and creates .claude on apply only', async (t) => {
+// Invariant: the apply writes exactly the allowlisted rules of the three helpers (RULE_ENTRIES) and
+// never one for `lock break`, `harness allow-rules`, a forge mutation or the local ledger write; it
+// creates a missing `.claude/` on apply only.
+test('apply writes exactly the allowlisted rules and creates .claude on apply only', async (t) => {
   const root = fakeRoot(t);
   const installed = install(t);
   const preview = expectOk(await allowRules(root, installed));
   assert.equal(existsSync(join(root, '.claude')), false, 'preview creates nothing');
   assert.equal(preview.settingsExists, false);
+  assert.deepEqual(preview.added, helperRules(installed.skillRoot));
   assert.deepEqual(
-    preview.added,
+    preview.added.slice(0, ALLOWLISTED_OPERATIONS.length),
     ALLOWLISTED_OPERATIONS.map((operation) => helperRule(installed.skillRoot, operation)),
+  );
+  assert.ok(
+    preview.added.includes(
+      `Bash(node ${installed.skillRoot}/scripts/config-resolve.mjs resolve *)`,
+    ),
+  );
+  assert.ok(
+    preview.added.includes(
+      `Bash(node ${installed.skillRoot}/scripts/remote-tracker.mjs pr-read *)`,
+    ),
   );
   expectOk(await allowRules(root, installed, { mode: 'apply', digest: preview.digest }));
   const allow = JSON.parse(readFileSync(settingsPath(root), 'utf8')).permissions.allow;
   assert.deepEqual(allow, preview.added);
   assert.ok(!allow.some((rule) => / lock break | harness allow-rules /.test(rule)));
+  assert.ok(
+    !allow.some((rule) =>
+      /remote-tracker\.mjs (?:pr-merge|thread-ledger-record|issue-create) /.test(rule),
+    ),
+  );
   assert.ok(lstatSync(join(root, '.claude')).isDirectory());
 });
 
@@ -671,7 +842,7 @@ test('apply keeps foreign keys and rules in order and is idempotent', async (t) 
     hooks: { PreToolUse: [] },
   });
   const { preview, applied } = await previewAndApply(root, installed);
-  assert.equal(preview.added.length, 5);
+  assert.equal(preview.added.length, RULE_ENTRIES.length - 1);
   assert.equal(applied.applied, true);
   const settings = JSON.parse(readFileSync(settingsPath(root), 'utf8'));
   assert.deepEqual(Object.keys(settings), ['model', 'permissions', 'hooks']);
@@ -681,7 +852,7 @@ test('apply keeps foreign keys and rules in order and is idempotent', async (t) 
     own,
     'Read(./**)',
   ]);
-  assert.equal(settings.permissions.allow.length, 8);
+  assert.equal(settings.permissions.allow.length, RULE_ENTRIES.length + 2);
 
   const before = readFileSync(settingsPath(root));
   const again = await previewAndApply(root, installed);

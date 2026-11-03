@@ -83,6 +83,19 @@ def canonical_digest(value):
     return 'sha256:' + hashlib.sha256(json.dumps(value, sort_keys=True, separators=(',', ':')).encode()).hexdigest()
 
 
+def stable_ast_dump(node):
+    try:
+        return ast.dump(node, include_attributes=False, show_empty=False)
+    except TypeError:
+        normalized = copy.deepcopy(node)
+        for current in ast.walk(normalized):
+            if hasattr(current, '_fields'):
+                current._fields = tuple(field for field in current._fields
+                                        if not (isinstance(getattr(current, field, None), list)
+                                                and not getattr(current, field)))
+        return ast.dump(normalized, include_attributes=False)
+
+
 class StageFixture:
     """Complete synthetic 155-slot authorization fixture, confined to a fresh root."""
     def __init__(self, root):
@@ -850,6 +863,8 @@ class FirstStageAuthentication(unittest.TestCase):
         block = next(node for node in driver.body if isinstance(node, ast.FunctionDef) and node.name == 'block')
         self.assertEqual(hashlib.sha256(ast.get_source_segment(source, block).encode()).hexdigest(),
                          'e54f64bc0b002647a8158d491f215e6ff672dbb06f53050c36282215ea74cf0a')
+        self.assertEqual(hashlib.sha256(stable_ast_dump(block).encode()).hexdigest(),
+                         '5e73007bee1cd2412395c024a73417d368e8146f9b61fb226ec76d1caa50d8c4')
 
     def test_original_qualifier_expiry_crossed_during_reserve_stops_before_model(self):
         context = self.f.validate()

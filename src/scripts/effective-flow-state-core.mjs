@@ -1,8 +1,11 @@
 // Runtime-state helper core: the three `mkdir` locks below `<RUNTIME_STATE_ROOT>/.effective-flow/`
 // that workflows used to acquire and release by following prose, plus the dispatch, codes and
 // envelopes of every helper operation. The `memory` operations live in
-// `effective-flow-state-memory-core.mjs` and `harness allow-rules` in
-// `effective-flow-state-harness-core.mjs`; both import this module and are loaded on first use.
+// `effective-flow-state-memory-core.mjs`, `harness allow-rules` in
+// `effective-flow-state-harness-core.mjs`, `commit create` in `effective-flow-state-commit-core.mjs`
+// and `review open-report` and `review write-report` in `effective-flow-state-review-core.mjs`
+// (the report renderer of `write-report` in `review-report-render.mjs`); each imports this module and
+// is loaded on first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
 //
@@ -83,6 +86,9 @@ export const STATE_OPERATIONS = Object.freeze([
   'memory set-marker',
   'memory migrate-directory',
   'harness allow-rules',
+  'commit create',
+  'review open-report',
+  'review write-report',
 ]);
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
@@ -98,6 +104,9 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'memory set-marker': 'allowlisted',
   'memory migrate-directory': 'allowlisted',
   'harness allow-rules': 'not-allowlisted',
+  'commit create': 'allowlisted',
+  'review open-report': 'allowlisted',
+  'review write-report': 'allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
@@ -126,10 +135,21 @@ export const OUTCOME_CODES = Object.freeze([
   'SETTINGS_TRACKED',
   'SETTINGS_INVALID',
   'PREVIEW_MISMATCH',
+  'HOOKS_UNTRUSTED',
+  'INDEX_NOT_CLEAN',
+  'STAGE_FAILED',
+  'STAGED_SET_MISMATCH',
+  'STAGED_CONTENT_CHANGED',
+  'COMMIT_FAILED',
+  'COMMIT_UNVERIFIED',
+  'SANDBOX_DENIED',
+  'INTERRUPTED',
+  'REPORT_WRITE_FAILED',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
   'INVALID_INPUT',
+  'INPUT_TOO_LARGE',
   'INVALID_ROOT',
   'UNSAFE_TARGET',
   'RUNTIME_STATE_UNSAFE',
@@ -140,8 +160,10 @@ export const STATE_ERROR_CODES = Object.freeze([
   'INTERNAL_ERROR',
 ]);
 
+// INPUT_TOO_LARGE shares the exit class of INVALID_INPUT: the caller's input is refused, nothing ran.
 const EXIT_CODES = Object.freeze({
   INVALID_INPUT: 2,
+  INPUT_TOO_LARGE: 2,
   INVALID_ROOT: 2,
   UNSAFE_TARGET: 3,
   RUNTIME_STATE_UNSAFE: 3,
@@ -203,11 +225,40 @@ const DEFAULT_FS = Object.freeze({
   unlink,
 });
 
-const OPERATION_KEYS = Object.freeze({
+// The closed input keys of the lock operations and of the composed operations; the memory and
+// harness cores keep their own.
+export const OPERATION_KEYS = Object.freeze({
   'lock acquire': Object.freeze(['cwd', 'lock', 'owner', 'waitSeconds']),
   'lock release': Object.freeze(['cwd', 'lock', 'token']),
   'lock inspect': Object.freeze(['cwd', 'lock']),
   'lock break': Object.freeze(['cwd', 'lock', 'token', 'identity', 'ownerDigest', 'ownerSize']),
+  'commit create': Object.freeze([
+    'cwd',
+    'worktree',
+    'lock',
+    'owner',
+    'paths',
+    'expect',
+    'hookBase',
+    'sameRepository',
+    'message',
+    'waitSeconds',
+  ]),
+  'review open-report': Object.freeze(['cwd', 'owner', 'count', 'waitSeconds']),
+  'review write-report': Object.freeze([
+    'cwd',
+    'owner',
+    'language',
+    'invocationPrefix',
+    'scope',
+    'projectType',
+    'findings',
+    'skipped',
+    'closedObservations',
+    'notesFiltered',
+    'validationSkipped',
+    'waitSeconds',
+  ]),
 });
 
 // The caller-supplied owner fields per lock. The helper adds `token`, `acquiredAt`, `host` and
@@ -403,7 +454,7 @@ export function identityOf(info) {
 // filesystem a directory removed and re-created within one tick, on a reused inode, keeps all three
 // values. The owner token or digest then tells the two apart, and the tombstone verification
 // re-checks both on the renamed node itself, so a match there is the observed lock.
-function sameIdentity(left, right) {
+export function sameIdentity(left, right) {
   if (!left || !right) return false;
   return IDENTITY_KEYS.every((key) => left[key] === right[key]);
 }
@@ -597,8 +648,9 @@ async function withLockGuard(context, lock, deps, fn) {
         fail('WRITE_FAILED', `cannot create ${guard}: ${error?.code ?? error?.message}`);
       }
     }
+    // NaN ends the wait as well, as in `acquireOwned`.
     const remaining = deadline - now();
-    if (remaining <= 0) {
+    if (!(remaining > 0)) {
       fail(
         'RUNTIME_STATE_UNSAFE',
         `${guard} is still held after ${GUARD_WAIT_MS / 1000} seconds: another effective-flow-state call is changing the ${lock} lock, or an interrupted one left the guard; nothing was changed. Remove it by hand only after confirming that no effective-flow-state call is running`,
@@ -763,8 +815,10 @@ export async function acquireOwned(context, lock, fields, waitSeconds, deps) {
       if (owner)
         return { lock, path: paths.directory, ownerFile: paths.ownerFile, owner, attempts };
     }
+    // `!(remaining > 0)` also ends the wait on NaN: a caller's clock that jumps to +Infinity on a
+    // signal yields Infinity - Infinity when the jump came before the deadline was taken.
     const remaining = deadline - now();
-    if (remaining <= 0) break;
+    if (!(remaining > 0)) break;
     await sleep(Math.min(RETRY_DELAY_MS, remaining));
   }
   return new StateOutcome('LOCK_HELD', {
@@ -1019,11 +1073,13 @@ async function decideBreak(context, lock, paths, tombstone, expected) {
   return removeThroughTombstone(context, lock, paths, observed, tombstone);
 }
 
-// The memory and harness operations live in their own modules, which import this one. They are
-// loaded on first use through literal specifiers, so the import graph stays acyclic, a lock call
-// never loads them, and the build's dependency scan still sees both.
+// The memory, harness, commit and review operations live in their own modules, which import this
+// one. They are loaded on first use through literal specifiers, so the import graph stays acyclic,
+// a lock call never loads them, and the build's dependency scan still sees all four.
 const loadMemory = () => import('./effective-flow-state-memory-core.mjs');
 const loadHarness = () => import('./effective-flow-state-harness-core.mjs');
+const loadCommit = () => import('./effective-flow-state-commit-core.mjs');
+const loadReview = () => import('./effective-flow-state-review-core.mjs');
 
 const HANDLERS = Object.freeze({
   'lock acquire': acquireLock,
@@ -1035,10 +1091,15 @@ const HANDLERS = Object.freeze({
   'memory migrate-directory': async (input, deps) =>
     (await loadMemory()).migrateDirectory(input, deps),
   'harness allow-rules': async (input, deps) => (await loadHarness()).allowRules(input, deps),
+  'commit create': async (input, deps) => (await loadCommit()).commitCreate(input, deps),
+  'review open-report': async (input, deps) => (await loadReview()).openReport(input, deps),
+  'review write-report': async (input, deps) => (await loadReview()).writeReport(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process
-// runner; `deps.env` the environment git inherits (stripped by `gitBaseEnv`). Tests may also inject
+// runner; `deps.env` the environment git inherits (stripped by `gitBaseEnv`). `commit create` also
+// reads `deps.signalTarget` (the process whose SIGINT, SIGTERM and SIGHUP it handles) and
+// `deps.terminateChildren` (stops the running Git child's process group). Tests may also inject
 // `sleep`, `monotonicNow`, `now`, `hostname`, `randomToken` and `fs` (a partial override of the
 // filesystem calls in DEFAULT_FS).
 export async function executeOperation(operation, input, deps = {}) {
@@ -1058,13 +1119,16 @@ export async function executeOperation(operation, input, deps = {}) {
 }
 
 // A RuntimeStateError keeps its code when it is one of this helper's codes; anything else is
-// INTERNAL_ERROR.
+// INTERNAL_ERROR. An error's `envelopeDetails` object (set by `commit create` when the lock may
+// still be held) is carried beside `code` and `message`, which it cannot override.
 export function errorEnvelope(operation, error) {
   const known = error instanceof RuntimeStateError && STATE_ERROR_CODES.includes(error.code);
+  const details = error?.envelopeDetails;
   return {
     ok: false,
     operation: operation ?? null,
     error: {
+      ...(details && typeof details === 'object' && !Array.isArray(details) ? details : {}),
       code: known ? error.code : 'INTERNAL_ERROR',
       message: error?.message ?? 'unexpected effective-flow-state failure',
     },

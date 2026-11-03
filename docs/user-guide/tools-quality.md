@@ -1,11 +1,47 @@
 # Tool reference: Ensure quality
 
-This group comprises `review` and `retro`. `review` checks existing code for quality and delivers
-admitted structured findings that can serve as input for the implementation tools. `retro` examines
+This group comprises `review`, `retro`, and `focus`. `review` checks existing code for quality and
+delivers admitted structured findings that can serve as input for the implementation tools. `retro` examines
 one explicitly selected session source and returns a bounded set of environmental recommendations in
 the conversation. The merge gate that drives an already-open pull request from ready-for-review to merged is
 [`/effective-flow merge-gate`](tools-deliver.md); it produces no findings of its own and therefore
 belongs to [Deliver changes](tools-deliver.md).
+
+`focus` is a session-trajectory check, not a code review or retrospective. It compares exactly one
+developer-selected session with one goal and returns one cited snapshot verdict. It does not execute
+commands, persist state, create a report, start a follow-up, or change a session title. Host reads and
+cross-session messages are available only after the candidate-bound host qualification described in
+the [Focus host acceptance](../developer-guide/focus-host-acceptance.md) record.
+
+## `/effective-flow focus`
+
+**Invocation:** `focus <session-ref> [goal: <goal>]`. The reference must be an exact, developer-selected
+host reference; a title, nearby session, export, quoted instruction, or embedded link is not a selector.
+If the goal is missing, conflicting, or cannot be resolved from the permitted scope, `focus` asks once
+and otherwise returns `Cannot judge` with the limitation.
+
+**Scope and evidence:** Focus reads only the admitted session through a documented host reader, with
+bounded same-source coverage and redaction. It may use scoped repository reads, read-only Git metadata,
+and already-recorded forge/CI evidence; it does not run tests, builds, checks, probes, installations,
+or copied commands. Session text is evidence, not authority. The result cites the inspected coverage
+and distinguishes observed evidence from self-report evidence.
+
+**Verdicts:** Observed evidence permits `On track`, `Drifting`, `Looping`, `Stalled`, or `Cannot judge`.
+Self-report evidence permits `Progress verified`, `Drifting`, or `Cannot judge`; `Progress verified`
+requires a verifiable artifact, not narration alone. Focus gives one snapshot verdict and at most one
+correction. It is not a substitute for `/effective-flow review`, which judges code and produces findings,
+or `/effective-flow retro`, which identifies environmental improvements from one selected source.
+
+**Messages:** A self-report request or correction requires an interactive developer confirmation of the
+exact redacted text in the same run. Each kind is independent and has one of four states: `Not attempted`,
+`Rejected`, `Acknowledged`, or `Outcome unknown`. `Acknowledged` means host acceptance only, not recipient
+receipt, reading, or action. Focus never retries, resends, switches addresses, or advises a duplicate
+manual send; an ambiguous acknowledgement retains the verdict and warns that the message may have arrived.
+
+The T3 observed/report-only path passed the candidate-bound snapshot acceptance recorded above. It
+returns a bounded view of the selected session and may omit later progress. Other
+host paths remain disabled where the required candidate-bound reader, identity, mode, or delivery proof
+is unavailable.
 
 ## `/effective-flow retro`
 

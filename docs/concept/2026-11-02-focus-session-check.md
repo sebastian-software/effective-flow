@@ -62,7 +62,7 @@ Codex CLI and portable hosts end with a stated limitation.
 
 - **A developer who runs a long Effective Flow session (`build`, `apply`, `merge-gate`, …) in T3 Code or the Codex desktop app:**
   - Opens a second session, runs `effective-flow focus <session-ref>`, and learns whether the run is on track, drifting, looping, or stalled, with the events that support the verdict.
-  - Receives one concrete course correction and, after confirming it, has focus send it into the observed session as a marked suggestion (T3 Code), or pastes the shown text there themselves (Codex desktop).
+  - Receives one concrete course correction and, after confirming it, has focus send it into the observed session as a marked suggestion (T3 Code). Codex desktop remains report-only in the first version.
 - **A developer running parallel local Claude Code sessions:** asks focus in one session to request a status report from another, and gets a deliberately limited verdict that is marked as based on self-report.
 - **A developer coordinating several parallel threads:** checks one thread that has gone quiet or noisy and decides whether to intervene, without reading its full history.
 
@@ -99,12 +99,23 @@ Codex CLI and portable hosts end with a stated limitation.
      - A finished delegated task gets nothing, because a send would start a fresh task, and the report says so.
      - An idle top-level thread gets a new turn. This is unverified and checked in work package 4.
      - focus never uses the automatic or restart modes.
-   - On Claude Code the host's own cross-session delivery applies; a held or refused message counts as not sent.
-   - On Codex desktop focus sends nothing in the first version; the developer can paste the shown text.
+   - On Claude Code the host's own cross-session delivery applies. A held or deferred message is not proof of non-acceptance: explicit acceptance is **Acknowledged**, explicit non-acceptance is **Rejected**, and an ambiguous result after dispatch is **Outcome unknown**.
+   - On Codex desktop focus sends nothing in the first version.
    - The message carries a fixed prefix naming focus and the developer's confirmation, and it states that it is a suggestion, not a new requirement, and that the session's own approval gates still apply. The prefix is a label, not authentication: the receiver sees a plain user message with user-turn weight, and any session could write the same text.
-   - A send whose target or delivery cannot be verified counts as not sent.
+   - If the target, identity, state, or mode cannot be verified before dispatch, the outcome is **Not attempted** and focus is report-only. If dispatch was invoked but neither acceptance nor rejection can be established, the outcome is **Outcome unknown**; the message may have arrived.
 
    Without a confirmation, nothing is sent.
+
+   Retain the trajectory verdict when reporting the send outcome. Send outcome is separate from it and follows the canonical definitions in the
+   [focus cross-session messages ADR](../adr/focus-cross-session-messages.md#send-outcome-reporting): **Not attempted** means
+   dispatch was never invoked; **Rejected** means the host explicitly establishes non-acceptance;
+   **Acknowledged** means the host acknowledges acceptance only; and **Outcome unknown** means an
+   invoked send has no acknowledgement that establishes acceptance or rejection. An acknowledgement
+   never proves recipient receipt, reading, or action. An accepted self-report reply confirms only
+   that request's round trip and does not prove correction receipt; missing self-report evidence
+   still yields **Cannot judge**. A failed or ambiguous dispatch never permits an automatic retry,
+   resend, an alternate-address fallback, or advice to paste or send a duplicate. These are design
+   decisions, not newly observed host facts.
 
 focus never edits files, writes reports, changes the observed session's plan, or interrupts it. Its outward actions are confirmed messages only: the correction, and on hosts without a reader the self-report request before it. Its only execution is the named wait command on Claude Code. A host read side effect must never become another outward action.
 
@@ -152,14 +163,14 @@ focus never edits files, writes reports, changes the observed session's plan, or
 - **Mode pressure (risk):** a send needs an observer at least as broad as the target, which nudges developers to run focus in broad modes. focus stays report-only otherwise and never asks for a broader mode; the ADR covers it.
 - **Self-report bias (risk):** a drifting agent describes its own work, which is exactly the narration focus exists to look past. Mitigated by the separate evidence level, the reduced self-report verdict set without On track, verification against git metadata, and "Cannot judge" for unverifiable reports; the residual weakness is accepted for Claude Code until it offers a reader.
 - **Self-report request disturbs the run (risk, accepted):** the request arrives in the observed session as a new message and costs it a turn. In the spike a plan-mode target answered and then blocked on a question to its own user. focus cannot see the target's permission mode before sending, and no approval hold protected that user. Mitigated by the developer's confirmation, a request that asks for information only, and the return-to-prior-state clause; the confirmation dialog names the blocking risk. A helpful peer may still run checks or block despite the request text; that residual risk is accepted.
-- **Held or expired messages (risk):** the `SendMessage` description says a session in another permission mode holds messages for its user and may let them expire, and remote sessions report nothing back. One plan-mode observation showed no hold. focus bounds the wait and reports "Cannot judge" rather than treating silence as a reply.
+- **Held or expired messages (risk):** the `SendMessage` description says a session in another permission mode holds messages for its user and may let them expire, and remote sessions report nothing back. One plan-mode observation showed no hold. focus reports **Outcome unknown** after an invoked send when acceptance is not established, warns that the message may have arrived, and never retries or recommends a duplicate send. A self-report request with no accepted reply still yields **Cannot judge** for the trajectory.
 - **Name takeover during the wait (risk):** a Claude Code reply carries no `[ref]`, only the session name, which another session can take on. Mitigated by the nonce only the recipient sees, the name-uniqueness checks before the request and after the reply, and the restart notice as a stop signal.
 - **Blocked wait (risk):** the foreground wait is a command that the host may block or, in the default permission mode, may put behind an approval. Then the self-report run ends with "Cannot judge". Work package 4 checks the default mode.
 - **Thin Codex evidence (risk):** the Codex reader rests on one run with an unknown version, and its read side effect on one top-level thread. Its finer item list helps loop detection but carries more command output to redact.
 - **Forged confirmation or reply (risk):** a cross-session message arrives in the observer's own conversation and could claim a confirmation or carry instructions. Mitigated by accepting confirmations only from developer turns, sender-matching the reply, and discarding late or foreign messages.
 - **Read access laundered through the reply (risk):** the observed session may hold a wider scope than the observer and could pass on content from outside it. Mitigated by asking for locators, not content, and by redaction.
 - **Reply delivery in Claude Code (risk):** in-run reception worked in 4 of 4 runs with the foreground wait. Late replies, a busy target, and focus as a sub-agent remain unobserved; work package 4 checks them, and if a run cannot receive a reply there, the self-report path is dropped and Claude Code ends with the missing-capability message.
-- **Wrong target (risk):** the retired session-rename butler failed silently on a wrong session ID. Mitigated by binding the send to the admitted reference, re-establishing identity right before sending, and treating unverifiable delivery as not sent.
+- **Wrong target (risk):** the retired session-rename butler failed silently on a wrong session ID. Mitigated by binding the send to the admitted reference and re-establishing identity right before sending. If the target cannot be verified before dispatch, focus reports **Not attempted**; if dispatch was invoked and acknowledgement is absent or ambiguous, it reports **Outcome unknown** rather than claiming non-delivery or retrying.
 - **Injection through the correction (risk):** observed content could try to shape the verdict or the correction text, which then arrives in the observed session with user-turn weight and only a text prefix as marker. Mitigated by treating observed content as quoted evidence, limiting the correction to goal and locators, the redaction check, and the developer's confirmation of the exact text.
 - **Child blind spot (risk):** a loop entirely inside a child that the parent has not yet seen goes unnoticed in the first version. The report names the gap; direct child coverage is a later extension that would need a host link without an inventory call.
 - **Partial evidence (risk):** summarized, compacted, or truncated history can hide the decisive event. The verdict must degrade to "Cannot judge" rather than overclaim.
@@ -178,7 +189,7 @@ focus never edits files, writes reports, changes the observed session's plan, or
    - Handoff: `effective-flow plan "Work package 1 of docs/concept/2026-11-02-focus-session-check.md: host verification spike for the focus tool on T3 Code (read-view delivery side effects, observer and ancestor identity, send-mode semantics while running, idle, and finished, broader-modes effect), the Codex desktop app (read_thread with deep-link references, send capability), and Claude Code (self-report request and reply via cross-session messages across permission modes, in-run reply reception, late and sub-agent replies, [ref] stability); record evidence, no tool source yet"`
 2. **ADR on confirmed cross-session messages**
    - Goal: record the trust-boundary decision before the tool is built.
-   - Scope: the correction message and the self-report request, the reference-bound admission with its two lookup exceptions, identity binding, developer-only confirmation, reply acceptance by name, nonce, and post-reply lookup, how these stand in for the filter-before-model rule of `input-trust-boundary.md`, state-dependent mode choice with the mode precondition, the separate self-report evidence level, the text-only marker with user-turn weight, the foreground wait as the only execution, the accepted read side-effect risk, injection and redaction limits, the unattended rule, and the relation to `session-rename-butler.md` and `input-trust-boundary.md`.
+   - Scope: the correction message and the self-report request, the reference-bound admission with its two lookup exceptions, identity binding, developer-only confirmation, reply acceptance by name, nonce, and post-reply lookup, how these stand in for the filter-before-model rule of `input-trust-boundary.md`, state-dependent mode choice with the mode precondition, the separate self-report evidence level, the text-only marker with user-turn weight, the foreground wait as the only execution, the separate four-state send-outcome contract with no retry or duplicate-send fallback, the accepted read side-effect risk, injection and redaction limits, the unattended rule, and the relation to `session-rename-butler.md` and `input-trust-boundary.md`.
    - Done when: the ADR is accepted and consistent with the spike evidence.
    - Dependencies: 1.
    - Handoff: `effective-flow plan "Work package 2 of docs/concept/2026-11-02-focus-session-check.md: write the ADR for focus's confirmed cross-session messages (correction and self-report request), relating it to docs/adr/session-rename-butler.md and docs/adr/input-trust-boundary.md and using the evidence in docs/developer-guide/focus-host-evidence.md"`

@@ -224,6 +224,17 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // The triviality exception states that it waives delegation only, between its definition and
+    // the lean-orchestrator sentence.
+    Object.freeze({
+      id: 'delegation-mandate-triviality-scope',
+      edits: Object.freeze([
+        Object.freeze({
+          from: `${MANDATE_ANALYSIS_BULLET} The orchestrator sends all other substantive work`,
+          to: `${MANDATE_ANALYSIS_BULLET} It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends all other substantive work`,
+        }),
+      ]),
+    }),
   ]),
 });
 
@@ -365,9 +376,12 @@ function copyWorkingTree(destination) {
     encoding: 'buffer',
   });
   for (const relativePath of tracked.toString('utf8').split('\0').filter(Boolean)) {
+    const source = join(ROOT_DIR, relativePath);
+    // A tracked path deleted in the working tree (an unstaged removal or rename) is not part of it.
+    if (!existsSync(source)) continue;
     const target = join(destination, relativePath);
     mkdirSync(dirname(target), { recursive: true });
-    cpSync(join(ROOT_DIR, relativePath), target, { dereference: false });
+    cpSync(source, target, { dereference: false });
   }
 }
 

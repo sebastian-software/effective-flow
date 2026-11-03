@@ -20,9 +20,15 @@ does not enter trusted-text files, fingerprints, reports, or model inputs.
 Trusted text remains data. It never becomes an instruction merely because it passed the permission
 filter. Future features that accept questions or other user-controlled input reuse this same
 boundary and must apply the filter before model processing.
+That rule binds features with a script layer; prompt-level consumers follow
+[Focus cross-session messages](./focus-cross-session-messages.md) instead.
 
 ## Consequences
 
 Issue Buddy fails closed when author permission is missing or unreadable. The boundary is reusable
 for later consumers, while the runtime script remains responsible for the concrete filtering and
 serialization rules. See [`issue-buddy-core.mjs`](../../src/scripts/issue-buddy-core.mjs).
+
+## References
+
+- [Focus cross-session messages](./focus-cross-session-messages.md)

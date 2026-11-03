@@ -25,6 +25,8 @@ import { test } from 'node:test';
 
 import { LOCKS, LOCK_NAMES, executeOperation } from '../src/scripts/effective-flow-state-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
+import { RULE_ENTRIES } from '../src/scripts/claude-settings-core.mjs';
+import { writeHelperScripts } from './support/state-helper-fixtures.mjs';
 
 const CLI = fileURLToPath(new URL('../src/scripts/effective-flow-state.mjs', import.meta.url));
 const GIT_ENV = {
@@ -633,7 +635,7 @@ function install(t, { checkout = 'clone', inner = 'effective-flow', gitInit = tr
   t.after(() => rmSync(base, { recursive: true, force: true }));
   const real = join(base, checkout, inner);
   mkdirSync(join(real, 'scripts'), { recursive: true });
-  writeFileSync(join(real, 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  writeHelperScripts(join(real, 'scripts'));
   if (gitInit) git(join(base, checkout), 'init', '-q');
   mkdirSync(join(base, 'skills'));
   symlinkSync(real, join(base, 'skills', 'effective-flow'));
@@ -682,8 +684,8 @@ test('harness-settings class: ignore sources and tracked refusal in a real repos
   assert.equal(readFileSync(join(tracked, '.claude', 'settings.local.json'), 'utf8'), '{}\n');
 });
 
-// Invariant: a preview, then the apply with its digest, writes exactly the six rules through the
-// real Git guard and creates `.claude/` on apply only.
+// Invariant: a preview, then the apply with its digest, writes exactly the rule set of the three
+// helpers through the real Git guard and creates `.claude/` on apply only.
 test('harness allow-rules: preview then apply in a real repository', async (t) => {
   const installed = install(t);
   const root = repository(t, { ignore: '.effective-flow/\n.claude/settings.local.json\n' });
@@ -697,7 +699,7 @@ test('harness allow-rules: preview then apply in a real repository', async (t) =
   assert.equal(applied.ok, true, JSON.stringify(applied));
   const settings = JSON.parse(readFileSync(join(root, '.claude', 'settings.local.json'), 'utf8'));
   assert.deepEqual(settings.permissions.allow, preview.result.rules);
-  assert.equal(settings.permissions.allow.length, 6);
+  assert.equal(settings.permissions.allow.length, RULE_ENTRIES.length);
 });
 
 // Invariant: an install inside a worktree of the current repository is refused, while an install
@@ -709,7 +711,7 @@ test('harness allow-rules: worktree of the current repository versus another clo
   git(root, 'worktree', 'add', '-q', linked);
   t.after(() => rmSync(linked, { recursive: true, force: true }));
   mkdirSync(join(linked, 'dist', 'scripts'), { recursive: true });
-  writeFileSync(join(linked, 'dist', 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  writeHelperScripts(join(linked, 'dist', 'scripts'));
   const inWorktree = {
     skillRoot: join(linked, 'dist'),
     helperPath: join(linked, 'dist', 'scripts', 'effective-flow-state.mjs'),
@@ -720,7 +722,7 @@ test('harness allow-rules: worktree of the current repository versus another clo
   assert.equal(refused.outcome.path, linked);
 
   mkdirSync(join(root, 'vendor', 'scripts'), { recursive: true });
-  writeFileSync(join(root, 'vendor', 'scripts', 'effective-flow-state.mjs'), '// helper\n');
+  writeHelperScripts(join(root, 'vendor', 'scripts'));
   const inRoot = await allowRules(root, {
     skillRoot: join(root, 'vendor'),
     helperPath: join(root, 'vendor', 'scripts', 'effective-flow-state.mjs'),

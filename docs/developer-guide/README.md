@@ -26,9 +26,12 @@ is no runtime application – you edit `src/`, never `dist/`.
    actual Effective Flow relationships.
 7. [Session retrospectives](session-retrospectives.md) – source admission, ownership, evidence
    boundaries, and the manual behavioral coverage required for the read-only `retro` tool.
-8. [Release and installation](release-and-installation.md) – versioning via release-please,
+8. [Focus host acceptance](focus-host-acceptance.md) – candidate-bound host qualification,
+   current unavailable paths, and the distinction between primitive observations and end-to-end
+   acceptance for `focus`.
+9. [Release and installation](release-and-installation.md) – versioning via release-please,
    publishing, and installation of the built skill.
-9. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
+10. [Terminology](terminology.md) – binding German/English glossary for the complete bilingual
    artifact contracts; the configured project and surface languages select new output while
    existing artifact languages remain valid.
 
@@ -58,3 +61,5 @@ is no runtime application – you edit `src/`, never `dist/`.
   `cleanup`.
 - [focus host evidence](focus-host-evidence.md) – point-in-time evidence for the read, send, and
   reply behaviour of T3 Code, Codex desktop, and Claude Code, with one conclusion per host.
+- [Focus host acceptance](focus-host-acceptance.md) – the current candidate-bound acceptance matrix;
+  it is intentionally separate from the immutable primitive spike evidence above.

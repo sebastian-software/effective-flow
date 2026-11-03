@@ -929,12 +929,18 @@ and `memory migrate-directory` (the whole `.effective-flow/` directory migration
 takes `memory.lock` itself, re-reads and validates the file, merges only its owned field and
 replaces the file atomically; a legacy `.sf-memory.json` is adopted inside the same transaction.
 Prose no longer replays the protocol, and a build guard rejects a direct write
-([guard #176](build-system.md#guards)). `setup` can write the six non-destructive rules
-into the untracked `.claude/settings.local.json` through `harness allow-rules`
+([guard #176](build-system.md#guards)). `setup` can write 54 non-destructive or bounded rules, in three
+families (nine runtime-state helper operations including `commit create`, `review
+open-report` and `review write-report`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the
-[allowlist evidence](claude-code-allowlist-evidence.md) found in a rule's trailing `*`.
+[allowlist evidence](claude-code-allowlist-evidence.md) found in a rule's trailing `*`, and
+`remote-tracker.mjs` accepts only `<operation>` or `<operation> --apply` for a mutation. The rules
+match one literal call shape, written by prose from `src/shared/helper-call-shape.md`. `commit
+create` is the one allowlisted operation that writes Git history and runs the repository's hooks
+unprompted; it commits only the listed paths and answers `HOOKS_UNTRUSTED` for a fork head or a
+changed hook configuration, which sends that item to the prompting prose fallback.
 
 ## Repo structure at a glance
 

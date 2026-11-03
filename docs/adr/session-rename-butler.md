@@ -99,3 +99,4 @@ other than its own.
 - `src/shared/session-title.md`
 - `docs/plan/archive/2026-09-08-native-claude-code-session-rename.md` — the implementation plan
 - `docs/plan/archive/2026-08-09-session-rename-butler.md` — the retired mechanism
+- `docs/adr/focus-cross-session-messages.md` — the bounded exception to "Nothing crosses a session boundary any more"

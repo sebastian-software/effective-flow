@@ -117,6 +117,11 @@ const SPAWN_MENTION_ALLOWLIST = [
   ],
   // Handoff, return format or result handling of a spawn marked elsewhere in the same source.
   [
+    'tools/focus.md',
+    'Return the admitted identity, goal anchor, evidence level, host/version and candidate qualification',
+    'snapshot output attribution; starts no analysis beyond focus/session-analysis',
+  ],
+  [
     'tools/apply-issues.md',
     'Each analysis sub-agent receives',
     'handoff of apply-issues/issue-analysis',
@@ -146,6 +151,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'tools/apply-review.md',
     'The Phase 4 delegation sub-agent per overlap component',
     'classifies the Phase 4 spawn marked at apply-review/component-delegation',
+  ],
+  [
+    'tools/review.md',
+    'In local mode (the `local` target outside the pull-request special case)',
+    'persistence duty; a skipped fan-out starts nothing',
   ],
   [
     'tools/review.md',

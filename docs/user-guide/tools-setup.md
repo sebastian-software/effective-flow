@@ -241,15 +241,23 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write one allow rule for each non-destructive operation of the runtime-state
-helper (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
-`memory migrate-directory`), so the helper runs without a permission prompt. Every mode except
+In Claude Code, setup can write 54 allow rules, so the helpers run without a permission prompt: one
+for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
+`lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
+`review open-report`, `review write-report`), one for `config-resolve`, and 44 for the remote tracker's read-only
+operations: its forge reads, its pure local computations and `thread-ledger-lookup`. An earlier release's smaller set shows as stale, and the preview lists the missing
+rules. Every mode except
 Targeted and Status offers the step after the configuration write, and `/effective-flow setup allowlist` runs it
 alone without an existing configuration. The rules go into the untracked
 `.claude/settings.local.json` of the main checkout and are bound to the absolute path of this
 installation. Setup shows a preview of the change and writes it only after your explicit
 confirmation; if the file is not ignored, it asks whether to add it to `.gitignore` (in hidden
 mode, to `info/exclude`) and adds the line only after your yes. Destructive operations such as `lock break` never get a rule.
+
+The `commit create` rule lets `iterate` commit an item, running the repository's own hooks, without a
+prompt. It commits only the item's listed paths. When the head is a fork or the hook configuration
+changed against the base, the helper refuses (`HOOKS_UNTRUSTED`) and `iterate` commits that item
+through a normal command that prompts you.
 
 Never accept Claude Code's "don't ask again" suggestion for a helper call: it widens the rule to
 `node <helper> *` or `node *`, which also approves `lock break` or any other script. Whether Claude

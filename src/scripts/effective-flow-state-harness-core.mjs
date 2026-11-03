@@ -1,5 +1,7 @@
-// Runtime-state helper: `harness allow-rules`, the writer of the Claude Code allow rules for the
-// allowlisted helper operations into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`.
+// Runtime-state helper: `harness allow-rules`, the writer of the Claude Code allow rules into
+// `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`: one rule per allowlisted operation of the
+// runtime-state helper, `config-resolve.mjs resolve`, and one per read-only `remote-tracker.mjs`
+// operation (RULE_ENTRIES of `claude-settings-core.mjs`), previewed and written under one digest.
 //
 //   harness allow-rules  {cwd, skillRoot, mode: "preview" | "apply", digest (apply only)}
 //
@@ -37,6 +39,8 @@ import {
 } from './runtime-state-guard.mjs';
 import {
   HELPER_RELATIVE_PATH,
+  RULE_SCRIPTS,
+  RULE_SCRIPT_NAMES,
   SKILL_ROOT_PATTERN,
   SettingsError,
   helperRules,
@@ -72,9 +76,9 @@ export const WIDENED_RULE_WARNINGS = Object.freeze({
   'any-node-command':
     'This rule auto-approves every node command, so any script runs without a prompt.',
   'helper-wildcard':
-    'This rule names the helper with a wider pattern than one operation, so it also auto-approves `lock break` and `harness allow-rules`.',
+    'This rule names a helper with a wider pattern than one operation, so it also auto-approves `lock break`, `harness allow-rules`, `remote-tracker.mjs thread-ledger-record` or a `remote-tracker.mjs` mutation with `--apply`.',
   'not-allowlisted':
-    'This rule auto-approves a helper operation that is never allowlisted, because it is destructive or writes the allow rules.',
+    'This rule auto-approves a helper operation that is never allowlisted, because it is destructive, writes the allow rules, mutates the forge or writes local state.',
 });
 
 const HARNESS_KEYS = Object.freeze(['cwd', 'skillRoot', 'mode', 'digest']);
@@ -219,8 +223,10 @@ function refused(reason, details = {}) {
   return { reason, ...details };
 }
 
-// Returns `{ helperPaths }` when `skillRoot` may be named by a rule (the helper in its install form
-// and its realpath), otherwise `{ refusal: { reason, path?, detail? } }`.
+// Returns `{ helperPaths }` when `skillRoot` may be named by a rule (the runtime-state helper in
+// its install form and its realpath), otherwise `{ refusal: { reason, path?, detail? } }`. Each of
+// the three helpers the rules name (RULE_SCRIPTS) must resolve to the file of the same name beside
+// the running helper, and every path on each of their resolution chains passes the same checks.
 async function checkSkillRoot(context, skillRoot, deps) {
   const { fs } = context;
   const refuse = (reason, details) => ({ refusal: refused(reason, details) });
@@ -230,36 +236,66 @@ async function checkSkillRoot(context, skillRoot, deps) {
     return refuse('not-normalized');
   }
   const helperPath = path.join(skillRoot, HELPER_RELATIVE_PATH);
-  let theirs;
-  let own;
+  let ownHelper;
   try {
-    own = await fs.realpath(deps.helperPath ?? OWN_HELPER);
-    theirs = await fs.realpath(helperPath);
-  } catch (error) {
-    // Only a missing helper is a mismatch; any other failure (EACCES, ELOOP, …) leaves it unknown.
-    const missing = error?.code === 'ENOENT' || error?.code === 'ENOTDIR';
-    return refuse(missing ? 'helper-mismatch' : 'unresolvable', {
-      path: helperPath,
-      detail: error?.code ?? error?.message,
-    });
-  }
-  if (theirs !== own) return refuse('helper-mismatch', { path: helperPath });
-  let resolvedRoot;
-  let chain;
-  try {
-    resolvedRoot = await fs.realpath(skillRoot);
-    chain = await resolutionChain(fs, helperPath);
+    ownHelper = await fs.realpath(deps.helperPath ?? OWN_HELPER);
   } catch (error) {
     return refuse('unresolvable', { path: helperPath, detail: error?.code ?? error?.message });
   }
-  // The chain walk must land where `realpath` did; anything else means the tree moved under us.
-  if (chain.resolved !== own) return refuse('helper-mismatch', { path: chain.resolved });
+  // The state helper first, so its refusal keeps precedence over a sibling's.
+  const helpers = [];
+  for (const script of RULE_SCRIPT_NAMES) {
+    const installed = path.join(skillRoot, RULE_SCRIPTS[script]);
+    const own =
+      script === 'effective-flow-state'
+        ? ownHelper
+        : path.join(path.dirname(ownHelper), path.basename(RULE_SCRIPTS[script]));
+    let theirs;
+    let ownReal;
+    try {
+      ownReal = await fs.realpath(own);
+      theirs = await fs.realpath(installed);
+    } catch (error) {
+      // Only a missing helper is a mismatch; any other failure (EACCES, ELOOP, …) leaves it unknown.
+      const missing = error?.code === 'ENOENT' || error?.code === 'ENOTDIR';
+      return refuse(missing ? 'helper-mismatch' : 'unresolvable', {
+        path: installed,
+        detail: error?.code ?? error?.message,
+      });
+    }
+    if (theirs !== ownReal) return refuse('helper-mismatch', { path: installed });
+    helpers.push({ installed, theirs, own: ownReal });
+  }
+  let resolvedRoot;
+  const directories = new Set();
+  const resolvedFiles = [];
+  // The path being resolved, so a refusal names the root or the helper that failed.
+  let resolving = skillRoot;
+  try {
+    resolvedRoot = await fs.realpath(skillRoot);
+    for (const helper of helpers) {
+      resolving = helper.installed;
+      const chain = await resolutionChain(fs, helper.installed);
+      // The chain walk must land where `realpath` did; anything else means the tree moved under us.
+      if (chain.resolved !== helper.own) return refuse('helper-mismatch', { path: chain.resolved });
+      for (const directory of chain.directories) directories.add(directory);
+      resolvedFiles.push(chain.resolved);
+    }
+  } catch (error) {
+    return refuse('unresolvable', { path: resolving, detail: error?.code ?? error?.message });
+  }
 
-  // Every path the install form, the resolved helper or any link on the way passes through: none
+  // Every path the install form, the resolved helpers or any link on the way passes through: none
   // may lie in the runtime-state root or in a worktree of this repository, which the repository's
   // own content (a checkout, a merge, an agent's write) could replace.
   const candidates = [
-    ...new Set([skillRoot, resolvedRoot, theirs, chain.resolved, ...chain.directories]),
+    ...new Set([
+      skillRoot,
+      resolvedRoot,
+      ...helpers.map((helper) => helper.theirs),
+      ...resolvedFiles,
+      ...directories,
+    ]),
   ];
   const inside = (parent) => candidates.find((candidate) => isWithin(parent, candidate));
   const inRoot = inside(context.cwd);
@@ -271,7 +307,7 @@ async function checkSkillRoot(context, skillRoot, deps) {
   }
 
   const accounts = deps.accounts ?? systemAccounts();
-  for (const node of [...chain.directories, chain.resolved]) {
+  for (const node of [...directories, ...new Set(resolvedFiles)]) {
     let info;
     try {
       info = await fs.lstat(node);
@@ -281,7 +317,7 @@ async function checkSkillRoot(context, skillRoot, deps) {
     const writer = await foreignWriter(info, accounts);
     if (writer) return refuse('foreign-writable', { path: node, detail: writer });
   }
-  return { helperPaths: [...new Set([helperPath, theirs])] };
+  return { helperPaths: [...new Set([helperPath, helpers[0].theirs])] };
 }
 
 // ---------------------------------------------------------------------------------------------

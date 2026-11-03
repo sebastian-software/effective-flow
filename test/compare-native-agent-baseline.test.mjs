@@ -23,6 +23,9 @@ const ANALYSIS =
 const LEAN_SENTENCE =
   " The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.";
 
+const TRIVIALITY_SCOPE_SENTENCE =
+  ' It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit.';
+
 const PROGRESS_SENTENCE =
   ' **Load on demand:** Read `shared/subagent-progress.md` only as the overview owner considering genuinely long or multi-phase work with a candidate native parent channel, or as a worker explicitly enabled by its handoff with the actual parent address and messaging capability; known fallback workers skip it.';
 
@@ -135,6 +138,7 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'delegation-mandate-model-selection',
       'delegation-mandate-parent-chain-progress',
       'delegation-mandate-conditional-checkpoint',
+      'delegation-mandate-triviality-scope',
     ],
   );
 });
@@ -547,4 +551,33 @@ test('parent-chain body delta is exact and rejects routing or checkpoint-authori
     current.replace('same-session calls integrate', 'same-session calls spawn'),
   ])
     assert.throws(() => compare(text), /body drift outside the expected deltas/);
+});
+
+// Invariant: the triviality-scope clause is permitted only between the exception's definition and
+// the lean-orchestrator sentence it precedes; it composes onto a lean baseline and fails anywhere
+// else.
+test('the triviality-scope delta composes before the lean sentence and rejects relocation', () => {
+  const lean = MANDATE_BODY.replace(WORKER, `${ANALYSIS}${LEAN_SENTENCE}\n${WORKER}`);
+  const scoped = lean.replace(ANALYSIS, `${ANALYSIS}${TRIVIALITY_SCOPE_SENTENCE}`);
+  assert.deepEqual(
+    compareNativeSidecar(
+      'codex',
+      'effective-flow-rust-reviewer',
+      codex({ body: lean }),
+      codex({ body: scoped }),
+    ),
+    ['delegation-mandate-triviality-scope'],
+  );
+  assert.throws(
+    () =>
+      compareNativeSidecar(
+        'codex',
+        'effective-flow-rust-reviewer',
+        codex({ body: lean }),
+        codex({
+          body: lean.replace('- Another bullet.', `- Another bullet.${TRIVIALITY_SCOPE_SENTENCE}`),
+        }),
+      ),
+    /body drift outside the expected deltas/,
+  );
 });

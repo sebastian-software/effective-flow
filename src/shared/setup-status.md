@@ -53,7 +53,8 @@ remediation of your own.
    with its `reason`), `installed` and `latest`, the remediation for `outdated`, and the request it
    made (`request.method` and `request.url`), or that it made none. `could not check` never fails
    the run.
-5. **Allow rules** (`data.allowlist`): the `state`; for `absent` and `stale`, every `missing[]` and
+5. **Allow rules** (`data.allowlist`): the `state` (`stale` for any partial set, an earlier
+   release's smaller set included); for `absent` and `stale`, every `missing[]` and
    `stale[]` rule and the remediation; every `aliases[]` rule, which names another path to this
    install's helper and never counts as present, so on its own it never makes the state `current`;
    for `not-applicable` and `could-not-check`, the `reason` and any `detail`.
