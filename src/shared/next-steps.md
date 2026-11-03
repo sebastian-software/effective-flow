@@ -14,6 +14,9 @@ tool the rest of the run and never comes back, omits the line; that tool then em
 itself. Return the verified source association, complete planning basis already read and observed
 outcome as ordinary context to the final emitter; introduce no control line or envelope field.
 
+`retro` and `focus` deliberately emit no block: their chat-only recommendations or snapshot verdict
+are already the requested result, with no saved executable source or automatic follow-up.
+
 The distinction is mechanical and is never inferred from context — and it does not correct itself. A
 returning delegation that omits the line emits from inside the run, so the user reads a mid-run
 recommendation: a `pr` or `merge-gate` step this run has not reached, or one naming a branch the

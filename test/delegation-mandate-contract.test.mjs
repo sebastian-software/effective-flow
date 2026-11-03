@@ -44,6 +44,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'concept-review',
   'concept',
   'retro',
+  'focus',
   'pr',
 ]);
 

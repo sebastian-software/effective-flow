@@ -361,6 +361,7 @@ test('the session-title contract ships per emitting tool and stays out of the ro
     'pr',
     'merge-gate',
     'retro',
+    'focus',
   ]) {
     assert.match(
       fragment,

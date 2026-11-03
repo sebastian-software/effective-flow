@@ -111,6 +111,7 @@ const EXPECTED_TOOLS = [
   'deliver',
   'docs',
   'fix',
+  'focus',
   'investigate',
   'issue-buddy',
   'iterate',
