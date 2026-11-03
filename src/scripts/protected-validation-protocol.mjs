@@ -729,3 +729,196 @@ export function validateRemoteRequirement(value) {
     reject('INVALID_VALIDATION', 'invalid required remote gates');
   return value;
 }
+
+// Published acquisition is a separate closed lane; transport schemas above stay version 1.
+export const PUBLISHED_SOURCE_PROTOCOL = 'effective-flow.published-source-qualification/1';
+export const PUBLISHED_SOURCE_KIND = 'github-published-source';
+export const PUBLISHED_REPOSITORY = 'sebastian-software/effective-flow';
+export const PUBLISHED_REF_PREFIX = 'effective-flow/qualification/published-source-';
+export const PUBLISHED_CLOSURE_PATHS = Object.freeze({
+  ...CLOSURE_PATHS,
+  admissionDigest: 'evals/build-context/_scaffold/provisional-release.mjs',
+});
+export const PUBLISHED_JOB_GUARD =
+  "${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/effective-flow/validation/')) || (github.event_name == 'create' && github.event.ref_type == 'branch' && github.event.ref == format('effective-flow/qualification/published-source-{0}', github.sha)) }}";
+export function publishedRef(commit) {
+  validateOid(commit);
+  if (commit.length !== 40) reject('INVALID_VALIDATION', 'published SHA-1 required');
+  return PUBLISHED_REF_PREFIX + commit;
+}
+function published(value) {
+  if (
+    value.protocol !== PUBLISHED_SOURCE_PROTOCOL ||
+    value.kind !== PUBLISHED_SOURCE_KIND ||
+    value.repository !== PUBLISHED_REPOSITORY
+  )
+    reject('INVALID_VALIDATION', 'unknown published-source scope');
+}
+export function validatePublishedPolicy(value) {
+  assertExact(value, [
+    'protocol',
+    'kind',
+    'repository',
+    'workflowPath',
+    'executionClosure',
+    'commands',
+    'nativeCases',
+    'environment',
+  ]);
+  published(value);
+  equalRequired(value.workflowPath, WORKFLOW_PATH, 'workflow');
+  equalRequired(value.commands, VALIDATION_COMMANDS, 'commands');
+  equalRequired(value.nativeCases, REQUIRED_NATIVE_CASES, 'native cases');
+  equalRequired(value.environment, VALIDATION_ENVIRONMENT, 'environment');
+  assertExact(value.executionClosure, [
+    ...Object.keys(PUBLISHED_CLOSURE_PATHS),
+    'acquisitionAlgorithm',
+    'actions',
+  ]);
+  for (const key of Object.keys(PUBLISHED_CLOSURE_PATHS))
+    validateDigest(value.executionClosure[key]);
+  equalRequired(value.executionClosure.acquisitionAlgorithm, 'published-git-v1', 'acquisition');
+  assertExact(value.executionClosure.actions, ['checkout', 'pnpm', 'node']);
+  equalRequired(
+    value.executionClosure.actions,
+    {
+      checkout: '3d3c42e5aac5ba805825da76410c181273ba90b1',
+      pnpm: 'ea17c68df8912ef543352723c149a84f56e3d413',
+      node: '820762786026740c76f36085b0efc47a31fe5020',
+    },
+    'action pins',
+  );
+  return value;
+}
+export function validatePublishedPreparation(value) {
+  assertExact(value, [
+    'protocol',
+    'kind',
+    'repository',
+    'releasePullRequest',
+    'releaseHeadRef',
+    'releaseVersion',
+    'sourceCommit',
+    'sourceTree',
+    'qualificationRef',
+    'policy',
+    'isolation',
+    'sourceFilesDigest',
+    'ancestryDigest',
+    'inspectedAt',
+  ]);
+  published(value);
+  if (
+    !Number.isSafeInteger(value.releasePullRequest) ||
+    value.releasePullRequest < 1 ||
+    value.releasePullRequest === 581 ||
+    !/^release-please--[A-Za-z0-9_-]+$/.test(value.releaseHeadRef) ||
+    !/^\d+\.\d+\.\d+$/.test(value.releaseVersion)
+  )
+    reject('INVALID_VALIDATION', 'exact final release required');
+  validateOid(value.sourceTree);
+  equalRequired(value.qualificationRef, publishedRef(value.sourceCommit), 'qualification ref');
+  validatePublishedPolicy(value.policy);
+  for (const key of ['sourceFilesDigest', 'ancestryDigest']) validateDigest(value[key]);
+  if (!Number.isFinite(Date.parse(value.inspectedAt)))
+    reject('INVALID_VALIDATION', 'inspection time required');
+  assertExact(value.isolation, ['candidate', 'defaultBranch']);
+  for (const key of ['candidate', 'defaultBranch']) {
+    const observation = value.isolation[key];
+    assertExact(observation, ['commit', 'workflows']);
+    validateOid(observation.commit);
+    uniquePaths(observation.workflows);
+    for (const member of observation.workflows) {
+      assertExact(member, ['path', 'digest']);
+      if (!/^\.github\/workflows\/[A-Za-z0-9_-]+\.yml$/.test(member.path))
+        reject('INVALID_VALIDATION', 'unknown workflow membership');
+      validateDigest(member.digest);
+    }
+  }
+  equalRequired(value.isolation.candidate.commit, value.sourceCommit, 'candidate workflow commit');
+  return value;
+}
+export function validatePublishedResult(value) {
+  assertExact(value, [
+    'protocol',
+    'kind',
+    'repository',
+    'preparation',
+    'runId',
+    'runAttempt',
+    'event',
+    'evidenceDigest',
+    'rawLogsDigest',
+    'outcome',
+  ]);
+  published(value);
+  validatePublishedPreparation(value.preparation);
+  if (
+    !Number.isSafeInteger(value.runId) ||
+    value.runId < 1 ||
+    value.runAttempt !== 1 ||
+    value.event !== 'create' ||
+    value.outcome !== 'verified'
+  )
+    reject('INVALID_VALIDATION', 'original successful create attempt required');
+  validateDigest(value.evidenceDigest);
+  validateDigest(value.rawLogsDigest);
+  return value;
+}
+// Closed recognizer for this repository's five workflow headers, not a YAML interpreter.
+// Every other form, extra event, alias, document, duplicate key or unknown member refuses.
+export function validateWorkflowIsolation(workflows, { candidate = true } = {}) {
+  if (!Array.isArray(workflows) || workflows.length > 5)
+    reject('INVALID_VALIDATION', 'incomplete workflow observation');
+  uniquePaths(workflows);
+  const headers = {
+    '.github/workflows/ci.yml': '  push:\n    branches: [develop]\n  pull_request:',
+    '.github/workflows/readme.yml': '  pull_request:\n  push:\n    branches: [develop]',
+    '.github/workflows/release.yml': '  push:\n    branches: [develop]\n  workflow_dispatch:',
+    '.github/workflows/close-develop-issues.yml':
+      '  pull_request_target:\n    types: [closed]\n    branches: [develop]',
+    [WORKFLOW_PATH]: "  push:\n    branches: ['effective-flow/validation/*']\n  create:",
+  };
+  for (const entry of workflows) {
+    assertExact(entry, ['path', 'bytes']);
+    const text = Buffer.isBuffer(entry.bytes) ? entry.bytes.toString('utf8') : entry.bytes;
+    if (
+      typeof text !== 'string' ||
+      text.includes('\r') ||
+      /\t|^(?:---|\.\.\.)\s*$|^[^ #\n][^\n]*[&*!]/m.test(text)
+    )
+      reject('INVALID_VALIDATION', 'ambiguous workflow syntax');
+    const top = text.split('\n').filter((line) => /^[^ #\n]/.test(line));
+    const keys = top.map((line) => line.match(/^([A-Za-z_-]+):(?: |$)/)?.[1]);
+    if (
+      keys.some(
+        (key) =>
+          !['name', 'on', 'permissions', 'jobs', 'concurrency', 'env', 'defaults'].includes(key),
+      ) ||
+      new Set(keys).size !== keys.length
+    )
+      reject('INVALID_VALIDATION', 'ambiguous workflow top level');
+    const block = text.match(/^on:\n((?:[ \t][^\n]*\n|\n)*)/m)?.[1]?.trimEnd();
+    if (!Object.hasOwn(headers, entry.path) || block !== headers[entry.path])
+      reject('INVALID_VALIDATION', 'unproved workflow trigger isolation');
+    if (entry.path === WORKFLOW_PATH) {
+      // This entire executor is fixed, including its job guard and only executable step.
+      const pins = {
+        checkout: '3d3c42e5aac5ba805825da76410c181273ba90b1',
+        pnpm: 'ea17c68df8912ef543352723c149a84f56e3d413',
+        node: '820762786026740c76f36085b0efc47a31fe5020',
+      };
+      const expected = `name: Protected macOS validation\n\non:\n${headers[WORKFLOW_PATH]}\n\npermissions:\n  contents: read\n\njobs:\n  protected-validation:\n    if: ${PUBLISHED_JOB_GUARD}\n    name: protected-validation\n    runs-on: macos-15\n    timeout-minutes: 60\n    permissions:\n      contents: read\n    steps:\n      - name: Checkout immutable validation transport\n        uses: actions/checkout@${pins.checkout} # v7\n        with:\n          ref: \u0024{{ github.sha }}\n          fetch-depth: 4096\n          persist-credentials: false\n      - name: Set up pinned pnpm\n        uses: pnpm/action-setup@${pins.pnpm} # v6.1.0\n        with:\n          run_install: false\n      - name: Set up pinned Node\n        uses: actions/setup-node@${pins.node} # v7\n        with:\n          node-version: 24\n      - name: Materialize and validate protected source\n        shell: bash\n        run: node scripts/protected-macos-validation.mjs run\n`;
+      if (text !== expected)
+        reject('INVALID_VALIDATION', 'qualification workflow differs from closed executor');
+    }
+  }
+  if (
+    candidate &&
+    (!workflows.some((entry) => entry.path === WORKFLOW_PATH) || workflows.length !== 5)
+  )
+    reject('INVALID_VALIDATION', 'candidate workflow membership incomplete');
+  return workflows
+    .map(({ path, bytes }) => ({ path, digest: validationDigest(bytes) }))
+    .sort((a, b) => a.path.localeCompare(b.path, 'en'));
+}

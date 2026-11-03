@@ -17,12 +17,19 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import {
+  PUBLISHED_SOURCE_PROTOCOL,
+  PUBLISHED_SOURCE_KIND,
+  PUBLISHED_CLOSURE_PATHS,
   PROTECTED_VALIDATION_PROTOCOL,
   REQUIRED_NATIVE_CASES,
   VALIDATION_COMMANDS,
   VALIDATION_ENVIRONMENT,
   VALIDATION_HISTORY_DEPTH,
   validateBootstrap,
+  validatePublishedPolicy,
+  validatePublishedPreparation,
+  validatePublishedResult,
+  validateWorkflowIsolation,
   validationDigest,
 } from '../src/scripts/protected-validation-protocol.mjs';
 import {
@@ -35,8 +42,17 @@ import {
 } from '../scripts/protected-validation-projection.mjs';
 import { boundedExecFileSync } from '../scripts/protected-validation-runner.mjs';
 import { projectManifest } from '../src/scripts/protected-validation-core.mjs';
-import { parseExecutionLogs, unzipLogs } from '../scripts/protected-validation-backend.mjs';
-import { submitValidation } from '../scripts/protected-validation-operator.mjs';
+import {
+  parseExecutionLogs,
+  unzipLogs,
+  unzipPublishedArchive,
+} from '../scripts/protected-validation-backend.mjs';
+import {
+  submitValidation,
+  inspectPublishedSource,
+  createPublishedSourceRef,
+  observePublishedSource,
+} from '../scripts/protected-validation-operator.mjs';
 
 const digest = (value) => validationDigest(value);
 const oid = 'a'.repeat(40);
@@ -1416,3 +1432,927 @@ test('transport rejects source ancestry that would exceed the fixed Actions chec
     /history|depth|bound|4096/,
   );
 });
+
+function asNormalOperator(operation) {
+  const saved = Object.fromEntries(
+    ['GITHUB_ACTIONS', 'GITHUB_TOKEN'].map((key) => [key, process.env[key]]),
+  );
+  try {
+    delete process.env.GITHUB_ACTIONS;
+    delete process.env.GITHUB_TOKEN;
+    return operation();
+  } finally {
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+}
+
+function publishedSchemaFixture() {
+  const workflows = readdirSync(path.resolve('.github/workflows')).map((name) => ({
+    path: `.github/workflows/${name}`,
+    bytes: readFileSync(path.resolve('.github/workflows', name)),
+  }));
+  const workflowBindings = workflows
+    .map(({ path, bytes }) => ({ path, digest: digest(bytes) }))
+    .sort((a, b) => a.path.localeCompare(b.path, 'en'));
+  const policy = {
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    repository: 'sebastian-software/effective-flow',
+    workflowPath: '.github/workflows/protected-macos-validation.yml',
+    commands: [...VALIDATION_COMMANDS],
+    nativeCases: [...REQUIRED_NATIVE_CASES],
+    environment: structuredClone(VALIDATION_ENVIRONMENT),
+    executionClosure: {
+      ...Object.fromEntries(Object.keys(PUBLISHED_CLOSURE_PATHS).map((key) => [key, digest(key)])),
+      acquisitionAlgorithm: 'published-git-v1',
+      actions: {
+        checkout: '3d3c42e5aac5ba805825da76410c181273ba90b1',
+        pnpm: 'ea17c68df8912ef543352723c149a84f56e3d413',
+        node: '820762786026740c76f36085b0efc47a31fe5020',
+      },
+    },
+  };
+  const preparation = {
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    repository: policy.repository,
+    releasePullRequest: 595,
+    releaseHeadRef: 'release-please--branches--develop--components--effective-flow',
+    releaseVersion: '1.70.0',
+    sourceCommit: oid,
+    sourceTree: 'b'.repeat(40),
+    qualificationRef: 'effective-flow/qualification/published-source-' + oid,
+    policy,
+    isolation: {
+      candidate: { commit: oid, workflows: workflowBindings },
+      defaultBranch: { commit: 'c'.repeat(40), workflows: workflowBindings },
+    },
+    sourceFilesDigest: digest('all exact source members'),
+    ancestryDigest: digest('all original ancestry'),
+    inspectedAt: '2026-11-03T10:00:00.000Z',
+  };
+  const result = {
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    repository: policy.repository,
+    preparation,
+    runId: 42,
+    runAttempt: 1,
+    event: 'create',
+    evidenceDigest: digest('authenticated evidence'),
+    rawLogsDigest: digest('complete raw ZIP'),
+    outcome: 'verified',
+  };
+  return { policy, preparation, result, workflows };
+}
+
+test('published-source schemas retain genuine source identity and reject transport-shaped replay', () => {
+  const value = publishedSchemaFixture();
+  assert.equal(validatePublishedPolicy(value.policy), value.policy);
+  assert.equal(validatePublishedPreparation(value.preparation), value.preparation);
+  assert.equal(validatePublishedResult(value.result), value.result);
+  for (const mixed of [
+    { ...value.preparation, localSnapshot: preparation.localSnapshot },
+    { ...value.preparation, materializationManifestRef: preparation.materializationManifestRef },
+    { ...value.preparation, snapshotCommit: oid },
+    { ...value.preparation, materialized: true },
+    { ...value.preparation, protocol: PROTECTED_VALIDATION_PROTOCOL },
+    { ...preparation, protocol: PUBLISHED_SOURCE_PROTOCOL, kind: PUBLISHED_SOURCE_KIND },
+  ])
+    assert.throws(() => validatePublishedPreparation(mixed));
+  for (const mixed of [
+    { ...value.result, kind: 'transport' },
+    { ...value.result, protocol: PUBLISHED_SOURCE_PROTOCOL.replace('/1', '/99') },
+    { ...value.result, event: 'push' },
+    { ...value.result, runAttempt: 2 },
+    { ...value.result, complete: true },
+    { ...value.result, materialized: true },
+  ])
+    assert.throws(() => validatePublishedResult(mixed));
+});
+
+for (const [label, mutate] of [
+  [
+    'foreign repository',
+    (v) => {
+      v.repository = 'foreign/repository';
+    },
+  ],
+  [
+    'non-release ref',
+    (v) => {
+      v.releaseHeadRef = 'develop';
+    },
+  ],
+  [
+    'qualification ref for another SHA',
+    (v) => {
+      v.qualificationRef += '0';
+    },
+  ],
+  [
+    'old push namespace',
+    (v) => {
+      v.qualificationRef = 'effective-flow/validation/' + oid;
+    },
+  ],
+  [
+    'unbound candidate workflows',
+    (v) => {
+      v.isolation.candidate.commit = 'd'.repeat(40);
+    },
+  ],
+  [
+    'duplicate workflow membership',
+    (v) => {
+      v.isolation.candidate.workflows.push(v.isolation.candidate.workflows[0]);
+    },
+  ],
+  [
+    'invented workflow path',
+    (v) => {
+      v.isolation.candidate.workflows[0].path = '.github/workflows/unknown.yaml';
+    },
+  ],
+  [
+    'caller pass flag',
+    (v) => {
+      v.isolation.complete = true;
+    },
+  ],
+  [
+    'weakened command list',
+    (v) => {
+      v.policy.commands.shift();
+    },
+  ],
+  [
+    'missing literal native case',
+    (v) => {
+      v.policy.nativeCases.pop();
+    },
+  ],
+  [
+    'mutable action pin',
+    (v) => {
+      v.policy.executionClosure.actions.checkout = 'v7';
+    },
+  ],
+  [
+    'synthetic transport algorithm',
+    (v) => {
+      v.policy.executionClosure.acquisitionAlgorithm = 'git-tree-v1';
+    },
+  ],
+]) {
+  test(`published-source closed preparation refuses ${label}`, () => {
+    const { preparation } = publishedSchemaFixture();
+    mutate(preparation);
+    assert.throws(() => validatePublishedPreparation(preparation));
+  });
+}
+
+test('workflow isolation accepts complete repository membership and the inert delivery-branch subset', () => {
+  const { workflows } = publishedSchemaFixture();
+  assert.equal(validateWorkflowIsolation(workflows).length, 5);
+  assert.doesNotThrow(() =>
+    validateWorkflowIsolation(
+      workflows.filter((entry) => entry.path.endsWith('/ci.yml')),
+      { candidate: false },
+    ),
+  );
+  assert.throws(() => validateWorkflowIsolation(workflows.slice(1)));
+});
+
+for (const event of ['create', 'push', 'workflow_run', 'check_suite', 'check_run', 'status']) {
+  for (const candidate of [true, false]) {
+    test(`workflow isolation refuses additional ${event} triggers on ${candidate ? 'candidate' : 'default branch'} before effects`, () => {
+      const { workflows } = publishedSchemaFixture();
+      const changed = workflows.map((entry) => ({ ...entry, bytes: entry.bytes.toString('utf8') }));
+      const ci = changed.find((entry) => entry.path.endsWith('/ci.yml'));
+      ci.bytes = ci.bytes.replace('on:\n', `on:\n  ${event}:\n`);
+      assert.throws(() => validateWorkflowIsolation(changed, { candidate }));
+    });
+  }
+}
+
+for (const [label, mutate] of [
+  [
+    'unknown workflow',
+    (entries) => {
+      entries[0].path = '.github/workflows/unreviewed.yml';
+    },
+  ],
+  [
+    'dynamic event expression',
+    (entries) => {
+      entries[0].bytes = 'on: ${{ inputs.events }}\njobs: {}\n';
+    },
+  ],
+  [
+    'duplicate event key',
+    (entries) => {
+      entries[0].bytes += '\non:\n  create:\n';
+    },
+  ],
+  [
+    'YAML document injection',
+    (entries) => {
+      entries[0].bytes += '\n---\non:\n  create:\n';
+    },
+  ],
+  [
+    'job guard removed',
+    (entries) => {
+      const e = entries.find((e) => e.path.endsWith('/protected-macos-validation.yml'));
+      e.bytes = e.bytes.replace(/^    if:.*\n/m, '');
+    },
+  ],
+  [
+    'write permission',
+    (entries) => {
+      const e = entries.find((e) => e.path.endsWith('/protected-macos-validation.yml'));
+      e.bytes = e.bytes.replace('contents: read', 'contents: write');
+    },
+  ],
+]) {
+  test(`workflow isolation rejects ${label}`, () => {
+    const { workflows } = publishedSchemaFixture();
+    const changed = workflows.map((entry) => ({ ...entry, bytes: entry.bytes.toString('utf8') }));
+    mutate(changed);
+    assert.throws(() => validateWorkflowIsolation(changed));
+  });
+}
+
+// Only the unavailable GitHub boundary is replaced. All identities below are real local Git
+// objects in an artificial repository; no checkout, source bytes or objects are sent anywhere.
+function publishedRemoteFixture(t, { candidateWorkflow, defaultWorkflow } = {}) {
+  const root = temporaryCheckout(t, 'published-source-remote-', 'source');
+  mkdirSync(root, { recursive: true });
+  for (const relative of new Set([
+    ...Object.values(PUBLISHED_CLOSURE_PATHS),
+    ...readdirSync(path.resolve('.github/workflows')).map((name) => `.github/workflows/${name}`),
+  ])) {
+    mkdirSync(path.dirname(path.join(root, relative)), { recursive: true });
+    writeFileSync(path.join(root, relative), readFileSync(path.resolve(relative)));
+  }
+  writeFileSync(path.join(root, '.release-please-manifest.json'), '{".":"1.70.0"}\n');
+  writeFileSync(path.join(root, 'README.md'), 'Synthetic published source.\n');
+  const ci = path.join(root, '.github/workflows/ci.yml');
+  if (candidateWorkflow) writeFileSync(ci, candidateWorkflow(readFileSync(ci, 'utf8')));
+  git(root, 'init', '--quiet');
+  git(root, 'config', 'user.name', 'Published source test');
+  git(root, 'config', 'user.email', 'published-source@invalid.local');
+  git(root, 'config', 'commit.gpgsign', 'false');
+  git(root, 'config', 'core.hooksPath', '/dev/null');
+  git(root, 'add', '.');
+  git(root, 'commit', '--quiet', '-m', 'synthetic final release');
+  git(root, 'commit', '--quiet', '--allow-empty', '-m', 'synthetic final stamped release');
+  const sourceCommit = git(root, 'rev-parse', 'HEAD');
+  let defaultCommit = sourceCommit;
+  if (defaultWorkflow) {
+    writeFileSync(ci, defaultWorkflow(readFileSync(ci, 'utf8')));
+    git(root, 'add', '.');
+    git(root, 'commit', '--quiet', '-m', 'synthetic default branch');
+    defaultCommit = git(root, 'rev-parse', 'HEAD');
+    git(root, 'checkout', '--quiet', '--detach', sourceCommit);
+  }
+  const repository = 'sebastian-software/effective-flow';
+  const input = {
+    repository,
+    releasePullRequest: 595,
+    releaseHeadRef: 'release-please--branches--develop--components--effective-flow',
+    releaseVersion: '1.70.0',
+    sourceCommit,
+    sourceTree: git(root, 'rev-parse', sourceCommit + '^{tree}'),
+  };
+  const state = {
+    root,
+    input,
+    reads: [],
+    writes: [],
+    overrides: new Map(),
+    repository: {
+      full_name: repository,
+      private: false,
+      default_branch: 'main',
+      permissions: { push: true },
+    },
+    pr: {
+      number: 595,
+      state: 'open',
+      merged: false,
+      base: { ref: 'develop', repo: { full_name: repository } },
+      head: { ref: input.releaseHeadRef, sha: sourceCommit, repo: { full_name: repository } },
+    },
+    createdRef: null,
+  };
+  state.read = (endpoint) => {
+    state.reads.push(endpoint);
+    if (state.overrides.has(endpoint)) {
+      const value = state.overrides.get(endpoint);
+      if (value instanceof Error) throw value;
+      return Buffer.isBuffer(value) ? value : Buffer.from(JSON.stringify(value));
+    }
+    const base = `repos/${repository}`;
+    const json = (value) => Buffer.from(JSON.stringify(value));
+    if (endpoint === 'user') return json({ id: 7, login: 'synthetic-operator', type: 'User' });
+    if (endpoint === base) return json(state.repository);
+    if (
+      endpoint ===
+      `${base}/git/matching-refs/heads/effective-flow/qualification/published-source-${sourceCommit}`
+    )
+      return json(state.createdRef ? [state.createdRef] : []);
+    if (endpoint === `${base}/pulls/595`) return json(state.pr);
+    if (endpoint === `${base}/git/ref/heads/main`)
+      return json({ ref: 'refs/heads/main', object: { type: 'commit', sha: defaultCommit } });
+    if (
+      endpoint ===
+      `${base}/git/ref/heads/effective-flow/qualification/published-source-${sourceCommit}`
+    ) {
+      if (state.createdRef) return json(state.createdRef);
+      const error = new Error('HTTP 404: Not Found');
+      error.status = 404;
+      throw error;
+    }
+    let match = endpoint.match(
+      new RegExp(`^${base}/commits\\?sha=([a-f0-9]{40})&per_page=100&page=(\\d+)$`),
+    );
+    if (match) {
+      const commits = git(root, 'rev-list', match[1]).split('\n').filter(Boolean);
+      const start = (Number(match[2]) - 1) * 100;
+      return json(
+        commits.slice(start, start + 100).map((sha) => ({
+          sha,
+          commit: { tree: { sha: git(root, 'rev-parse', sha + '^{tree}') } },
+          parents: git(root, 'rev-list', '--parents', '-n', '1', sha)
+            .split(' ')
+            .slice(1)
+            .map((sha) => ({ sha })),
+        })),
+      );
+    }
+    match = endpoint.match(new RegExp(`^${base}/zipball/([a-f0-9]{40})$`));
+    if (match)
+      return execFileSync(
+        'git',
+        [
+          'archive',
+          '--format=zip',
+          '--prefix=sebastian-software-effective-flow-' + match[1].slice(0, 7) + '/',
+          match[1],
+        ],
+        { cwd: root, maxBuffer: 16 * 1024 * 1024 },
+      );
+    match = endpoint.match(new RegExp(`^${base}/git/trees/([a-f0-9]{40})\\?recursive=1$`));
+    if (match)
+      return json({
+        sha: git(root, 'rev-parse', match[1] + '^{tree}'),
+        truncated: false,
+        tree: git(root, 'ls-tree', '-r', '-t', match[1])
+          .split('\n')
+          .map((line) => {
+            const [, mode, type, sha, path] = /^(\d+) (\S+) ([a-f0-9]{40})\t(.+)$/.exec(line);
+            return { mode, type, sha, path };
+          }),
+      });
+    throw new Error('Unexpected synthetic read: ' + endpoint);
+  };
+  state.write = (endpoint, body) => {
+    state.writes.push({ endpoint, body });
+    assert.equal(endpoint, `repos/${repository}/git/refs`);
+    assert.deepEqual(body, {
+      ref: `refs/heads/effective-flow/qualification/published-source-${sourceCommit}`,
+      sha: sourceCommit,
+    });
+    state.createdRef = { ref: body.ref, object: { type: 'commit', sha: body.sha } };
+    return Buffer.from(JSON.stringify(state.createdRef));
+  };
+  return state;
+}
+
+test('published inspection and create-only submission read published objects and issue exactly one ref POST', (t) => {
+  const state = publishedRemoteFixture(t);
+  const index = readFileSync(path.join(state.root, '.git/index'));
+  const head = git(state.root, 'rev-parse', 'HEAD');
+  const { preparation } = inspectPublishedSource(state.input, state);
+  assert.equal(preparation.sourceCommit, head);
+  assert.equal(preparation.sourceTree, state.input.sourceTree);
+  assert.equal(preparation.kind, 'github-published-source');
+  assert.equal(state.writes.length, 0);
+  asNormalOperator(() => createPublishedSourceRef({ preparation }, state));
+  assert.equal(state.writes.length, 1);
+  assert.deepEqual(readFileSync(path.join(state.root, '.git/index')), index);
+  assert.equal(git(state.root, 'rev-parse', 'HEAD'), head);
+  assert.ok(
+    state.reads.every(
+      (endpoint) =>
+        endpoint === 'user' || endpoint.startsWith('repos/sebastian-software/effective-flow'),
+    ),
+  );
+  assert.ok(state.writes.every(({ endpoint }) => endpoint.endsWith('/git/refs')));
+  assert.equal(existsSync(path.join(state.root, '.protected-validation')), false);
+  assert.throws(() => asNormalOperator(() => createPublishedSourceRef({ preparation }, state)));
+  assert.equal(state.writes.length, 1, 'an existing ref must never be overwritten or recreated');
+});
+
+for (const [label, mutate] of [
+  [
+    'foreign input repository',
+    (s) => {
+      s.input.repository = 'foreign/repository';
+    },
+  ],
+  [
+    'wrong live source SHA',
+    (s) => {
+      s.pr.head.sha = 'e'.repeat(40);
+    },
+  ],
+  [
+    'closed release',
+    (s) => {
+      s.pr.state = 'closed';
+    },
+  ],
+  [
+    'foreign head repository',
+    (s) => {
+      s.pr.head.repo.full_name = 'foreign/repository';
+    },
+  ],
+  [
+    'wrong source tree',
+    (s) => {
+      s.input.sourceTree = 'e'.repeat(40);
+    },
+  ],
+  [
+    'wrong final version stamp',
+    (s) => {
+      s.input.releaseVersion = '9.9.9';
+    },
+  ],
+  [
+    'private remote repository',
+    (s) => {
+      s.repository.private = true;
+    },
+  ],
+  [
+    'unknown default branch',
+    (s) => {
+      s.repository.default_branch = 'unknown';
+    },
+  ],
+  [
+    'incomplete recursive source tree',
+    (s) => {
+      const key = `repos/${s.input.repository}/git/trees/${s.input.sourceCommit}?recursive=1`;
+      const tree = JSON.parse(s.read(key));
+      tree.truncated = true;
+      s.overrides.set(key, tree);
+    },
+  ],
+  [
+    'missing published commit',
+    (s) => {
+      s.overrides.set(
+        `repos/${s.input.repository}/commits?sha=${s.input.sourceCommit}&per_page=100&page=1`,
+        new Error('HTTP 404: Not Found'),
+      );
+    },
+  ],
+]) {
+  test(`published inspection refuses ${label} without a write`, (t) => {
+    const state = publishedRemoteFixture(t);
+    mutate(state);
+    assert.throws(() => inspectPublishedSource(state.input, state));
+    assert.equal(state.writes.length, 0);
+  });
+}
+
+for (const branch of ['candidateWorkflow', 'defaultWorkflow']) {
+  test(`published create preflight refuses additional downstream triggers in ${branch}`, (t) => {
+    const state = publishedRemoteFixture(t, {
+      [branch]: (text) =>
+        text.replace(
+          'on:\n',
+          'on:\n  workflow_run:\n    workflows: ["Protected macOS validation"]\n    types: [completed]\n',
+        ),
+    });
+    assert.throws(() => inspectPublishedSource(state.input, state));
+    assert.equal(state.writes.length, 0);
+  });
+}
+
+test('published ref creation rechecks mutable release identity and stops after an ambiguous write', (t) => {
+  const state = publishedRemoteFixture(t);
+  const { preparation } = inspectPublishedSource(state.input, state);
+  state.pr.head.sha = 'f'.repeat(40);
+  assert.throws(() => asNormalOperator(() => createPublishedSourceRef({ preparation }, state)));
+  assert.equal(state.writes.length, 0);
+  state.pr.head.sha = state.input.sourceCommit;
+  const create = state.write;
+  state.write = (...args) => {
+    create(...args);
+    const error = new Error('synthetic network timeout');
+    error.code = 'ETIMEDOUT';
+    throw error;
+  };
+  assert.equal(
+    asNormalOperator(() => createPublishedSourceRef({ preparation }, state)).state,
+    'unknown',
+  );
+  assert.equal(state.writes.length, 1, 'ambiguous creation must not retry, delete or update');
+  assert.equal(state.createdRef.object.sha, preparation.sourceCommit);
+});
+
+for (const extra of [
+  { sourceRoot: '/artificial/private-working-tree' },
+  { localSnapshot: preparation.localSnapshot },
+  { sourceUrl: 'https://foreign.invalid/repository.git' },
+  { published: true },
+  { isolationVerified: true },
+]) {
+  test(`published inspection rejects caller-supplied ${Object.keys(extra)[0]} before touching local or remote data`, (t) => {
+    const state = publishedRemoteFixture(t);
+    assert.throws(() =>
+      inspectPublishedSource(
+        { ...state.input, ...extra },
+        { read: () => assert.fail('closed input must reject before backend access') },
+      ),
+    );
+    assert.equal(state.writes.length, 0);
+  });
+}
+
+test('published operator requires a normal authenticated operator and explicit ref authority before POST', (t) => {
+  const state = publishedRemoteFixture(t);
+  const { preparation } = inspectPublishedSource(state.input, state);
+  state.overrides.set('user', { id: 7, login: 'synthetic-bot', type: 'Bot' });
+  assert.throws(() => asNormalOperator(() => createPublishedSourceRef({ preparation }, state)));
+  assert.equal(state.writes.length, 0);
+  state.overrides.delete('user');
+  state.repository.permissions.push = false;
+  assert.throws(() => asNormalOperator(() => createPublishedSourceRef({ preparation }, state)));
+  assert.equal(state.writes.length, 0);
+});
+
+test('published inspection verifies blob identity rather than accepting caller SHA labels or echoed content', (t) => {
+  const state = publishedRemoteFixture(t);
+  writeFileSync(path.join(state.root, 'README.md'), 'ARTIFICIAL_TAMPERED_REMOTE_BYTES');
+  git(state.root, 'add', 'README.md');
+  git(state.root, 'commit', '--quiet', '-m', 'synthetic altered archive');
+  const bytes = execFileSync(
+    'git',
+    [
+      'archive',
+      '--format=zip',
+      '--prefix=sebastian-software-effective-flow-' + state.input.sourceCommit.slice(0, 7) + '/',
+      'HEAD',
+    ],
+    { cwd: state.root },
+  );
+  // Keep Git's genuine archive structure/CRC and the expected commit comment while
+  // substituting another real blob, so rejection must reach the content/OID boundary.
+  const end = bytes.length - 22 - 40;
+  assert.equal(bytes.readUInt32LE(end), 0x06054b50);
+  assert.equal(bytes.readUInt16LE(end + 20), 40);
+  Buffer.from(state.input.sourceCommit).copy(bytes, end + 22);
+  state.overrides.set(`repos/${state.input.repository}/zipball/${state.input.sourceCommit}`, bytes);
+  assert.throws(
+    () => inspectPublishedSource(state.input, state),
+    (error) => {
+      assert.match(error.message, /authenticated Git blob/);
+      assert.doesNotMatch(error.message, /ARTIFICIAL_TAMPERED|README|published-source-remote-/);
+      return true;
+    },
+  );
+  assert.equal(state.writes.length, 0);
+});
+
+for (const forbiddenEnvironment of [
+  { GITHUB_ACTIONS: 'true' },
+  { GITHUB_TOKEN: 'artificial-workflow-token' },
+]) {
+  test(`published ref creation refuses workflow authentication ${Object.keys(forbiddenEnvironment)[0]} before any API access`, () => {
+    const { preparation } = publishedSchemaFixture();
+    asNormalOperator(() => {
+      Object.assign(process.env, forbiddenEnvironment);
+      assert.throws(
+        () =>
+          createPublishedSourceRef(
+            { preparation },
+            {
+              read: () => assert.fail('workflow identity must not reach API'),
+              write: () => assert.fail('workflow identity must not create a ref'),
+            },
+          ),
+        /normal operator identity/,
+      );
+    });
+  });
+}
+
+for (const [label, mutate] of [
+  [
+    'missing declared member',
+    (tree) => {
+      tree.tree = tree.tree.filter((entry) => entry.path !== 'README.md');
+    },
+  ],
+  [
+    'extra declared member',
+    (tree) => {
+      tree.tree.push({ path: 'src/ghost.mjs', mode: '100644', type: 'blob', sha: 'a'.repeat(40) });
+    },
+  ],
+  [
+    'mode differs from original archive',
+    (tree) => {
+      tree.tree.find((entry) => entry.path === 'README.md').mode = '100755';
+    },
+  ],
+  [
+    'duplicate source path',
+    (tree) => {
+      tree.tree.push(tree.tree.find((entry) => entry.path === 'README.md'));
+    },
+  ],
+  [
+    'unsupported symlink mode',
+    (tree) => {
+      tree.tree.find((entry) => entry.path === 'README.md').mode = '120000';
+    },
+  ],
+]) {
+  test(`published source inspection rejects ${label} across real ZIP/tree membership`, (t) => {
+    const state = publishedRemoteFixture(t);
+    const key = `repos/${state.input.repository}/git/trees/${state.input.sourceCommit}?recursive=1`;
+    const tree = JSON.parse(state.read(key));
+    mutate(tree);
+    state.overrides.set(key, tree);
+    assert.throws(() => inspectPublishedSource(state.input, state));
+    assert.equal(state.writes.length, 0);
+  });
+}
+
+test('published source inspection refuses truncated original archive and incomplete original-parent pagination', (t) => {
+  const state = publishedRemoteFixture(t);
+  const archiveKey = `repos/${state.input.repository}/zipball/${state.input.sourceCommit}`;
+  const archive = state.read(archiveKey);
+  state.overrides.set(archiveKey, archive.subarray(0, archive.length - 10));
+  assert.throws(() => inspectPublishedSource(state.input, state));
+  state.overrides.delete(archiveKey);
+  const commitsKey = `repos/${state.input.repository}/commits?sha=${state.input.sourceCommit}&per_page=100&page=1`;
+  const commits = JSON.parse(state.read(commitsKey));
+  assert.equal(commits.length, 2);
+  state.overrides.set(commitsKey, commits.slice(0, 1));
+  assert.throws(() => inspectPublishedSource(state.input, state), /parent closure/);
+  assert.equal(state.writes.length, 0);
+});
+
+test('published operator succeeds with local Git and export tools denied and only a ref-creation HTTP effect available', (t) => {
+  const state = publishedRemoteFixture(t);
+  const responses = new Map();
+  const originalRead = state.read;
+  const read = (endpoint) => {
+    const bytes = originalRead(endpoint);
+    responses.set(endpoint, bytes.toString('base64'));
+    return bytes;
+  };
+  const { preparation } = inspectPublishedSource(state.input, { read });
+  asNormalOperator(() => createPublishedSourceRef({ preparation }, { read, write: state.write }));
+  const bin = path.join(state.root, 'denied-bin'),
+    log = path.join(state.root, 'denied-tools.log');
+  mkdirSync(bin);
+  for (const name of ['git', 'gh', 'tar', 'zip']) {
+    const executable = path.join(bin, name);
+    writeFileSync(executable, `#!/bin/sh\necho ${name} >> ${JSON.stringify(log)}\nexit 97\n`);
+    chmodSync(executable, 0o755);
+  }
+  const script = path.join(state.root, 'remote-only.mjs');
+  const operator = path.resolve('scripts/protected-validation-operator.mjs');
+  writeFileSync(
+    script,
+    `import assert from 'node:assert/strict';\nimport { inspectPublishedSource, createPublishedSourceRef } from ${JSON.stringify(operator)};\nconst responses = new Map(${JSON.stringify([...responses])});\nconst read = (endpoint) => { assert.ok(responses.has(endpoint), 'unexpected HTTP read'); return Buffer.from(responses.get(endpoint), 'base64'); };\nconst { preparation } = inspectPublishedSource(${JSON.stringify(state.input)}, { read });\nlet writes = 0;\nconst result = createPublishedSourceRef({ preparation }, { read, write(endpoint, body) { assert.equal(endpoint, 'repos/sebastian-software/effective-flow/git/refs'); assert.deepEqual(body, { ref: 'refs/heads/' + preparation.qualificationRef, sha: preparation.sourceCommit }); writes++; return Buffer.from(JSON.stringify({ref: body.ref, object: {type: 'commit', sha: body.sha}})); } });\nassert.equal(result.state, 'created');\nassert.equal(writes, 1);\n`,
+  );
+  const environment = { ...process.env, PATH: `${bin}:/usr/bin:/bin` };
+  delete environment.GITHUB_ACTIONS;
+  delete environment.GITHUB_TOKEN;
+  const observed = spawnSync(process.execPath, [script], {
+    cwd: state.root,
+    env: environment,
+    encoding: 'utf8',
+    timeout: 10000,
+  });
+  assert.equal(observed.error, undefined);
+  assert.equal(observed.status, 0, observed.stderr);
+  assert.equal(
+    existsSync(log),
+    false,
+    'remote-only operations must never invoke local Git, upload, pack or archive tools',
+  );
+  assert.equal(existsSync(path.join(state.root, '.protected-validation')), false);
+});
+
+// A standard stored ZIP with optional signed data descriptors. Content and mode values come
+// from real artificial Git objects, so ZIP structure is the only fabricated outer boundary.
+function publishedStoredArchive(state, descriptor) {
+  const tree = JSON.parse(
+    state.read(`repos/${state.input.repository}/git/trees/${state.input.sourceCommit}?recursive=1`),
+  );
+  const locals = [],
+    centrals = [],
+    records = [];
+  let offset = 0;
+  const crc32 = (bytes) => {
+    let crc = 0xffffffff;
+    for (const byte of bytes) {
+      crc ^= byte;
+      for (let bit = 0; bit < 8; bit++) crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+    return (crc ^ 0xffffffff) >>> 0;
+  };
+  for (const entry of tree.tree.filter((entry) => entry.type === 'blob')) {
+    const name = Buffer.from(
+      'sebastian-software-effective-flow-' +
+        state.input.sourceCommit.slice(0, 7) +
+        '/' +
+        entry.path,
+    );
+    const body = execFileSync('git', ['cat-file', 'blob', entry.sha], { cwd: state.root });
+    const crc = crc32(body),
+      local = Buffer.alloc(30),
+      central = Buffer.alloc(46);
+    local.writeUInt32LE(0x04034b50);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(descriptor ? 8 : 0, 6);
+    if (!descriptor) {
+      local.writeUInt32LE(crc, 14);
+      local.writeUInt32LE(body.length, 18);
+      local.writeUInt32LE(body.length, 22);
+    }
+    local.writeUInt16LE(name.length, 26);
+    central.writeUInt32LE(0x02014b50);
+    central.writeUInt16LE(0x0314, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(descriptor ? 8 : 0, 8);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(body.length, 20);
+    central.writeUInt32LE(body.length, 24);
+    central.writeUInt16LE(name.length, 28);
+    central.writeUInt32LE((parseInt(entry.mode, 8) << 16) >>> 0, 38);
+    central.writeUInt32LE(offset, 42);
+    const trailer = Buffer.alloc(descriptor ? 16 : 0);
+    if (descriptor) {
+      trailer.writeUInt32LE(0x08074b50);
+      trailer.writeUInt32LE(crc, 4);
+      trailer.writeUInt32LE(body.length, 8);
+      trailer.writeUInt32LE(body.length, 12);
+    }
+    records.push({
+      local: offset,
+      descriptor: descriptor ? offset + 30 + name.length + body.length : null,
+    });
+    locals.push(local, name, body, trailer);
+    centrals.push(central, name);
+    offset += 30 + name.length + body.length + trailer.length;
+  }
+  const centralBytes = Buffer.concat(centrals),
+    end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50);
+  end.writeUInt16LE(records.length, 8);
+  end.writeUInt16LE(records.length, 10);
+  end.writeUInt32LE(centralBytes.length, 12);
+  end.writeUInt32LE(offset, 16);
+  return {
+    bytes: Buffer.concat([...locals, centralBytes, end]),
+    records,
+    tree,
+    sourceCommit: state.input.sourceCommit,
+  };
+}
+
+for (const descriptor of [false, true]) {
+  test(`published ZIP accepts complete real Git members with ${descriptor ? 'signed data descriptors' : 'matching local and central sizes/CRC'}`, (t) => {
+    const state = publishedRemoteFixture(t);
+    const archive = publishedStoredArchive(state, descriptor);
+    const members = unzipPublishedArchive(archive);
+    assert.equal(members.size, archive.tree.tree.filter((entry) => entry.type === 'blob').length);
+    assert.deepEqual(members.get('README.md'), Buffer.from('Synthetic published source.\n'));
+    assert.equal(digest(members.get('.release-please-manifest.json')), digest('{".":"1.70.0"}\n'));
+  });
+}
+
+for (const [label, descriptor, mutate] of [
+  ['forged local CRC', false, (bytes, record) => bytes.writeUInt32LE(0, record.local + 14)],
+  [
+    'forged local compressed size',
+    false,
+    (bytes, record) => bytes.writeUInt32LE(0, record.local + 18),
+  ],
+  [
+    'forged local expanded size',
+    false,
+    (bytes, record) => bytes.writeUInt32LE(0, record.local + 22),
+  ],
+  [
+    'forged descriptor signature',
+    true,
+    (bytes, record) => bytes.writeUInt32LE(0, record.descriptor),
+  ],
+  ['forged descriptor CRC', true, (bytes, record) => bytes.writeUInt32LE(0, record.descriptor + 4)],
+  [
+    'forged descriptor compressed size',
+    true,
+    (bytes, record) => bytes.writeUInt32LE(0, record.descriptor + 8),
+  ],
+  [
+    'forged descriptor expanded size',
+    true,
+    (bytes, record) => bytes.writeUInt32LE(0, record.descriptor + 12),
+  ],
+]) {
+  test(`published ZIP refuses ${label} even when authenticated Git blob bytes remain unchanged`, (t) => {
+    const state = publishedRemoteFixture(t);
+    const archive = publishedStoredArchive(state, descriptor);
+    mutate(archive.bytes, archive.records[0]);
+    assert.throws(() => unzipPublishedArchive(archive));
+  });
+}
+
+function realGitModeArchive(t) {
+  const state = publishedRemoteFixture(t);
+  writeFileSync(path.join(state.root, 'scripts/published-executable.sh'), '#!/bin/sh\nexit 0\n');
+  chmodSync(path.join(state.root, 'scripts/published-executable.sh'), 0o755);
+  git(state.root, 'add', 'scripts/published-executable.sh');
+  git(state.root, 'commit', '--quiet', '-m', 'synthetic executable source member');
+  const sourceCommit = git(state.root, 'rev-parse', 'HEAD');
+  const tree = JSON.parse(
+    state.read(`repos/${state.input.repository}/git/trees/${sourceCommit}?recursive=1`),
+  );
+  const bytes = execFileSync(
+    'git',
+    [
+      'archive',
+      '--format=zip',
+      '--prefix=sebastian-software-effective-flow-' + sourceCommit.slice(0, 7) + '/',
+      sourceCommit,
+    ],
+    { cwd: state.root },
+  );
+  const end = bytes.length - 22 - 40;
+  assert.equal(bytes.readUInt32LE(end), 0x06054b50);
+  const records = new Map();
+  let cursor = bytes.readUInt32LE(end + 16);
+  for (let index = 0; index < bytes.readUInt16LE(end + 10); index++) {
+    assert.equal(bytes.readUInt32LE(cursor), 0x02014b50);
+    const length = bytes.readUInt16LE(cursor + 28);
+    const name = bytes.subarray(cursor + 46, cursor + 46 + length).toString('utf8');
+    records.set(name.slice(name.indexOf('/') + 1), cursor);
+    cursor += 46 + length + bytes.readUInt16LE(cursor + 30) + bytes.readUInt16LE(cursor + 32);
+  }
+  return { bytes, tree, sourceCommit, records };
+}
+
+test('published ZIP accepts real Git metadata for both ordinary and executable source members using authenticated Git modes', (t) => {
+  const archive = realGitModeArchive(t);
+  const members = unzipPublishedArchive(archive);
+  assert.equal(archive.tree.tree.find((entry) => entry.path === 'README.md').mode, '100644');
+  assert.equal(
+    archive.tree.tree.find((entry) => entry.path === 'scripts/published-executable.sh').mode,
+    '100755',
+  );
+  assert.deepEqual(members.get('README.md'), Buffer.from('Synthetic published source.\n'));
+  assert.deepEqual(
+    members.get('scripts/published-executable.sh'),
+    Buffer.from('#!/bin/sh\nexit 0\n'),
+  );
+});
+
+for (const [label, path, creator, attributes] of [
+  ['missing executable identity in DOS metadata', 'scripts/published-executable.sh', 0, 0],
+  [
+    'missing executable bit in Unix metadata',
+    'scripts/published-executable.sh',
+    0x0314,
+    (0o100644 << 16) >>> 0,
+  ],
+  ['unsafe ZIP symlink type', 'README.md', 0x0314, (0o120777 << 16) >>> 0],
+  ['unsafe ZIP setuid bit', 'README.md', 0x0314, (0o104644 << 16) >>> 0],
+  ['unknown DOS file attributes', 'README.md', 0, 0x02],
+]) {
+  test(`published ZIP metadata compatibility still rejects ${label}`, (t) => {
+    const archive = realGitModeArchive(t);
+    const offset = archive.records.get(path);
+    assert.ok(Number.isSafeInteger(offset));
+    archive.bytes.writeUInt16LE(creator, offset + 4);
+    archive.bytes.writeUInt32LE(attributes, offset + 38);
+    assert.throws(() => unzipPublishedArchive(archive));
+  });
+}

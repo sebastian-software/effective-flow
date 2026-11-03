@@ -23,7 +23,16 @@ import {
   validationDigest,
   canonicalJSON,
   validateMaterializationManifest,
+  PUBLISHED_SOURCE_PROTOCOL,
+  PUBLISHED_SOURCE_KIND,
+  PUBLISHED_REPOSITORY,
+  PUBLISHED_CLOSURE_PATHS,
+  VALIDATION_HISTORY_DEPTH,
+  publishedRef,
+  validateFileEntry,
+  validateWorkflowIsolation,
 } from '../src/scripts/protected-validation-protocol.mjs';
+import { classify } from '../src/scripts/protected-validation-core.mjs';
 import {
   materializeTransport,
   MATERIALIZATION_PATH,
@@ -321,12 +330,25 @@ export function runHostedValidation() {
     Number(process.versions.node.split('.')[0]) === VALIDATION_ENVIRONMENT.nodeMajor,
     'pinned Node major required',
   );
-  ensure(
-    /^effective-flow\/validation\/[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(
-      process.env.GITHUB_REF_NAME ?? '',
-    ),
-    'bounded snapshot branch required',
-  );
+  const direct = process.env.GITHUB_EVENT_NAME === 'create';
+  if (direct) {
+    const event = JSON.parse(readFileSync(process.env.GITHUB_EVENT_PATH, 'utf8'));
+    ensure(
+      process.env.GITHUB_REPOSITORY === PUBLISHED_REPOSITORY &&
+        event.ref_type === 'branch' &&
+        event.ref === publishedRef(process.env.GITHUB_SHA) &&
+        process.env.GITHUB_REF_NAME === event.ref &&
+        process.env.GITHUB_REF === 'refs/heads/' + event.ref &&
+        process.env.GITHUB_RUN_ATTEMPT === '1',
+      'exact published branch creation required',
+    );
+  } else
+    ensure(
+      /^effective-flow\/validation\/[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/.test(
+        process.env.GITHUB_REF_NAME ?? '',
+      ),
+      'bounded snapshot branch required',
+    );
   const checkout = realpathSync(process.cwd()),
     temp = resolve(
       process.env.RUNNER_TEMP,
@@ -338,14 +360,19 @@ export function runHostedValidation() {
   mkdirSync(home);
   mkdirSync(resolve(home, '.codex'));
   const environment = productEnvironment(process.env, home);
-  const materialized = materializeTransport({
-    checkout,
-    destination: resolve(temp, 'execution'),
-    expectedCommit: process.env.GITHUB_SHA,
-  });
   const cwd = resolve(temp, 'execution');
-  const expectedInputs = captureValidationInputs({ checkout, executionRoot: cwd, materialized });
-  emit({ type: 'materialization', ...materialized });
+  const materialized = direct
+    ? acquirePublishedSource({
+        destination: cwd,
+        sourceCommit: process.env.GITHUB_SHA,
+        environment,
+      })
+    : materializeTransport({ checkout, destination: cwd, expectedCommit: process.env.GITHUB_SHA });
+  const expectedInputs = direct
+    ? capturePublishedInputs({ checkout, executionRoot: cwd, sourceCommit: process.env.GITHUB_SHA })
+    : captureValidationInputs({ checkout, executionRoot: cwd, materialized });
+  if (direct) emit(publishedObservation('source-acquisition', expectedInputs));
+  else emit({ type: 'materialization', ...materialized });
   const codex = bootstrapCodex(temp, environment);
   emit({
     type: 'environment',
@@ -396,16 +423,20 @@ export function runHostedValidation() {
       );
     }
   }
-  verifyValidationInputs({ checkout, executionRoot: cwd, expected: expectedInputs });
+  if (direct) verifyPublishedInputs({ checkout, executionRoot: cwd, expected: expectedInputs });
+  else verifyValidationInputs({ checkout, executionRoot: cwd, expected: expectedInputs });
   ensure(
-    checked('git', ['write-tree'], { cwd, env: environment }) === materialized.executionTree,
+    checked('git', ['write-tree'], { cwd, env: environment }) ===
+      (direct ? materialized.sourceTree : materialized.executionTree),
     'execution index/source changed during validation',
   );
-  emit({
-    type: 'completed',
-    protocol: PROTECTED_VALIDATION_PROTOCOL,
-    executionTree: materialized.executionTree,
-  });
+  if (direct) emit(publishedObservation('completed', expectedInputs));
+  else
+    emit({
+      type: 'completed',
+      protocol: PROTECTED_VALIDATION_PROTOCOL,
+      executionTree: materialized.executionTree,
+    });
 }
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   try {
@@ -415,7 +446,273 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     );
     runHostedValidation();
   } catch (error) {
-    process.stderr.write('Protected macOS validation refused: ' + error.message + '\n');
+    process.stderr.write(
+      'Protected macOS validation refused: ' +
+        (process.env.GITHUB_EVENT_NAME === 'create'
+          ? 'published source qualification failed'
+          : error.message) +
+        '\n',
+    );
     process.exitCode = 1;
   }
+}
+
+function publishedGit(root, args, environment, options = {}) {
+  try {
+    return execFileSync('git', ['--no-replace-objects', ...args], {
+      cwd: root,
+      encoding: 'utf8',
+      timeout: 120000,
+      maxBuffer: 64 * 1024 * 1024,
+      operation: 'published-source-git',
+      env: { ...productEnvironment(environment ?? process.env, root), GIT_NO_LAZY_FETCH: '1' },
+      ...options,
+    });
+  } catch {
+    throw new Error('published source Git verification failed');
+  }
+}
+export function acquirePublishedSource({ destination, sourceCommit, environment }) {
+  publishedRef(sourceCommit);
+  ensure(!existsSync(destination), 'exclusive published execution repository required');
+  mkdirSync(destination);
+  publishedGit(destination, ['init', '--quiet'], environment);
+  for (const [key, value] of [
+    ['core.hooksPath', '/dev/null'],
+    ['core.autocrlf', 'false'],
+    ['core.filemode', 'true'],
+    ['commit.gpgsign', 'false'],
+  ])
+    publishedGit(destination, ['config', '--local', key, value], environment);
+  // Only this already-published GitHub repository supplies objects. No local object copying.
+  publishedGit(
+    destination,
+    [
+      '-c',
+      'credential.helper=',
+      'fetch',
+      '--quiet',
+      '--no-tags',
+      '--no-recurse-submodules',
+      '--depth=' + VALIDATION_HISTORY_DEPTH,
+      `https://github.com/${PUBLISHED_REPOSITORY}.git`,
+      sourceCommit,
+    ],
+    environment,
+  );
+  publishedGit(destination, ['checkout', '--quiet', '--detach', sourceCommit], environment);
+  const sourceTree = publishedGit(destination, ['rev-parse', 'HEAD^{tree}'], environment).trim();
+  ensure(/^[a-f0-9]{40}$/.test(sourceTree), 'published source tree missing');
+  return { sourceCommit, sourceTree };
+}
+function publishedSourceSnapshot(executionRoot, sourceCommit) {
+  const git = (...args) => publishedGit(executionRoot, args);
+  const metadata = resolve(executionRoot, '.git');
+  ensure(
+    lstatSync(metadata).isDirectory() && !lstatSync(metadata).isSymbolicLink(),
+    'physical standalone published repository required',
+  );
+  for (const name of [
+    'shallow',
+    'info/grafts',
+    'objects/info/alternates',
+    'objects/info/http-alternates',
+  ])
+    ensure(!existsSync(resolve(metadata, name)), 'incomplete or redirected published ancestry');
+  ensure(
+    git('rev-parse', '--is-shallow-repository').trim() === 'false' &&
+      git('for-each-ref', '--format=%(refname)', 'refs/replace').trim() === '',
+    'shallow or replaced published ancestry',
+  );
+  ensure(
+    !/(?:promisor|partialclone|extraheader|credential|insteadof|^include)/im.test(
+      git('config', '--local', '--list'),
+    ),
+    'unsafe published Git configuration',
+  );
+  ensure(git('rev-parse', 'HEAD').trim() === sourceCommit, 'published source HEAD drift');
+  const ancestry = git('log', '--format=%H%x09%T%x09%P', 'HEAD')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => {
+      const [commit, tree, parentText, ...extra] = line.split('\t');
+      ensure(
+        extra.length === 0 && /^[a-f0-9]{40}$/.test(commit) && /^[a-f0-9]{40}$/.test(tree),
+        'invalid original ancestry',
+      );
+      const parents = parentText ? parentText.split(' ') : [];
+      ensure(
+        parents.length <= 16 && parents.every((parent) => /^[a-f0-9]{40}$/.test(parent)),
+        'invalid original parent identity',
+      );
+      return { commit, tree, parents };
+    })
+    .sort((a, b) => a.commit.localeCompare(b.commit, 'en'));
+  ensure(
+    ancestry.length > 0 &&
+      ancestry.length <= VALIDATION_HISTORY_DEPTH &&
+      new Set(ancestry.map((entry) => entry.commit)).size === ancestry.length,
+    'original ancestry exceeds bound',
+  );
+  const reachable = new Set(ancestry.map((entry) => entry.commit));
+  ensure(
+    ancestry.every((entry) => entry.parents.every((parent) => reachable.has(parent))),
+    'original ancestry incomplete',
+  );
+  ensure(
+    !git('rev-list', '--objects', '--no-object-names', '--missing=print', 'HEAD').includes('?'),
+    'published objects missing',
+  );
+  git('fsck', '--full', '--no-reflogs', '--no-dangling');
+  const members = git('ls-tree', '-rz', '--full-tree', 'HEAD')
+    .split('\0')
+    .filter(Boolean)
+    .map((line) => {
+      const match = /^(100644|100755) blob ([a-f0-9]{40})\t([^\0]+)$/.exec(line);
+      ensure(match, 'unsafe published file membership');
+      return { path: match[3], mode: match[1], oid: match[2] };
+    });
+  ensure(members.length > 0 && members.length <= 20000, 'published membership exceeds bound');
+  const blobs = publishedGit(executionRoot, ['cat-file', '--batch'], process.env, {
+    encoding: null,
+    input: members.map((entry) => entry.oid).join('\n') + '\n',
+  });
+  let cursor = 0;
+  const files = members
+    .map((member) => {
+      const end = blobs.indexOf(10, cursor);
+      ensure(end > cursor, 'incomplete current source objects');
+      const header = blobs.subarray(cursor, end).toString('ascii').split(' '),
+        size = Number(header[2]);
+      ensure(
+        header.length === 3 &&
+          header[0] === member.oid &&
+          header[1] === 'blob' &&
+          Number.isSafeInteger(size) &&
+          size >= 0 &&
+          size <= 16 * 1024 * 1024 &&
+          end + 1 + size < blobs.length &&
+          blobs[end + 1 + size] === 10,
+        'invalid current source object',
+      );
+      const entry = {
+        path: member.path,
+        mode: member.mode,
+        digest: validationDigest(blobs.subarray(end + 1, end + 1 + size)),
+      };
+      cursor = end + size + 2;
+      try {
+        validateFileEntry(entry);
+        ensure(classify(entry.path, true) === null, 'unsafe current source');
+        verifyExecutionFile(executionRoot, entry);
+      } catch {
+        throw new Error('published current source identity or safety differs');
+      }
+      return Object.freeze(entry);
+    })
+    .sort((a, b) => a.path.localeCompare(b.path, 'en'));
+  ensure(cursor === blobs.length, 'extra current source object data');
+  ensure(
+    git('ls-files', '--others', '--exclude-standard', '-z') === '',
+    'additional untracked published source member',
+  );
+  const indexTree = git('write-tree').trim(),
+    sourceTree = git('rev-parse', 'HEAD^{tree}').trim();
+  const staged = git('ls-files', '--stage', '-z')
+    .split('\0')
+    .filter(Boolean)
+    .map((line) => {
+      const match = /^(100644|100755) ([a-f0-9]{40}) 0\t([^\0]+)$/.exec(line);
+      ensure(match, 'unsafe published index membership');
+      return { mode: match[1], path: match[3] };
+    })
+    .sort((a, b) => a.path.localeCompare(b.path, 'en'));
+  ensure(
+    indexTree === sourceTree &&
+      canonicalJSON(staged) === canonicalJSON(files.map(({ mode, path }) => ({ mode, path }))),
+    'published index/source membership drift',
+  );
+  return {
+    sourceCommit,
+    sourceTree,
+    files: Object.freeze(files),
+    sourceFilesDigest: validationDigest(files),
+    ancestryDigest: validationDigest(ancestry),
+    indexDigest: validationDigest([git('ls-files', '--stage', '-z'), git('ls-files', '-v', '-z')]),
+  };
+}
+function publishedClosure(checkout) {
+  const closure = Object.fromEntries(
+    Object.entries(PUBLISHED_CLOSURE_PATHS).map(([key, path]) => [
+      key,
+      validationDigest(readFileSync(resolve(checkout, path))),
+    ]),
+  );
+  return Object.freeze({
+    ...closure,
+    acquisitionAlgorithm: 'published-git-v1',
+    actions: Object.freeze({
+      checkout: '3d3c42e5aac5ba805825da76410c181273ba90b1',
+      pnpm: 'ea17c68df8912ef543352723c149a84f56e3d413',
+      node: '820762786026740c76f36085b0efc47a31fe5020',
+    }),
+  });
+}
+export function capturePublishedInputs({ checkout, executionRoot, sourceCommit }) {
+  try {
+    publishedRef(sourceCommit);
+    const snapshot = publishedSourceSnapshot(executionRoot, sourceCommit),
+      closure = publishedClosure(checkout);
+    for (const [key, path] of Object.entries(PUBLISHED_CLOSURE_PATHS)) {
+      const entry = snapshot.files.find((entry) => entry.path === path);
+      ensure(
+        entry?.mode === '100644' && entry.digest === closure[key],
+        'published trusted closure differs',
+      );
+      verifyExecutionFile(checkout, entry);
+    }
+    const workflows = snapshot.files
+      .filter((entry) => entry.path.startsWith('.github/workflows/'))
+      .map((entry) => ({
+        path: entry.path,
+        bytes: readFileSync(resolve(executionRoot, entry.path)),
+      }));
+    const candidateWorkflows = validateWorkflowIsolation(workflows);
+    return Object.freeze({
+      ...snapshot,
+      closure,
+      candidateWorkflowsDigest: validationDigest(candidateWorkflows),
+    });
+  } catch {
+    throw new Error('published source/index/ancestry/closure verification failed');
+  }
+}
+export function verifyPublishedInputs({ checkout, executionRoot, expected }) {
+  const actual = capturePublishedInputs({
+    checkout,
+    executionRoot,
+    sourceCommit: expected.sourceCommit,
+  });
+  ensure(
+    canonicalJSON(actual) === canonicalJSON(expected),
+    'published source/index/history/closure changed during validation',
+  );
+}
+function publishedObservation(type, inputs) {
+  return {
+    type,
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    ...Object.fromEntries(
+      [
+        'sourceCommit',
+        'sourceTree',
+        'sourceFilesDigest',
+        'ancestryDigest',
+        'indexDigest',
+        'candidateWorkflowsDigest',
+      ].map((key) => [key, inputs[key]]),
+    ),
+  };
 }

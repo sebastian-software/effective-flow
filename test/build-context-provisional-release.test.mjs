@@ -6,6 +6,9 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import {
   PROTECTED_VALIDATION_PROTOCOL,
+  PUBLISHED_SOURCE_PROTOCOL,
+  PUBLISHED_SOURCE_KIND,
+  PUBLISHED_CLOSURE_PATHS,
   REQUIRED_NATIVE_CASES,
   VALIDATION_COMMANDS,
   VALIDATION_ENVIRONMENT,
@@ -80,7 +83,7 @@ function authorization(overrides = {}) {
   const report =
     'The independent policy review checked release scope, source and instrument binding, protected host proof, backend re-observation, materialization coverage, and strict failure behavior; material findings are closed.';
   return {
-    schema: PROVISIONAL_SCHEMA,
+    schema: 'effective-flow.build-context-provisional-pr581/1',
     repository: policy.repository,
     featurePullRequest: 581,
     releasePullRequest: 999,
@@ -422,4 +425,261 @@ test('candidate admission binds the real source Git tree and rejects a same-tree
       ),
     /authorized commit tree differs/,
   );
+});
+
+function publishedAuthorization() {
+  const value = authorization({ schema: PROVISIONAL_SCHEMA, releasePullRequest: 595 });
+  const policy = {
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    repository: value.repository,
+    workflowPath: '.github/workflows/protected-macos-validation.yml',
+    commands: [...VALIDATION_COMMANDS],
+    nativeCases: [...REQUIRED_NATIVE_CASES],
+    environment: structuredClone(VALIDATION_ENVIRONMENT),
+    executionClosure: {
+      ...Object.fromEntries(Object.keys(PUBLISHED_CLOSURE_PATHS).map((key) => [key, digest(key)])),
+      acquisitionAlgorithm: 'published-git-v1',
+      actions: {
+        checkout: '3d3c42e5aac5ba805825da76410c181273ba90b1',
+        pnpm: 'ea17c68df8912ef543352723c149a84f56e3d413',
+        node: '820762786026740c76f36085b0efc47a31fe5020',
+      },
+    },
+  };
+  const preparation = {
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    repository: value.repository,
+    releasePullRequest: value.releasePullRequest,
+    releaseHeadRef: value.releaseHeadRef,
+    releaseVersion: value.releaseVersion,
+    sourceCommit: value.sourceCommit,
+    sourceTree: value.sourceTree,
+    qualificationRef: 'effective-flow/qualification/published-source-' + value.sourceCommit,
+    policy,
+    isolation: {
+      candidate: { commit: value.sourceCommit, workflows: [] },
+      defaultBranch: { commit: 'c'.repeat(40), workflows: [] },
+    },
+    sourceFilesDigest: digest('complete source membership'),
+    ancestryDigest: digest('original ancestry'),
+    inspectedAt: '2026-10-22T09:00:00Z',
+  };
+  value.host = { kind: PUBLISHED_SOURCE_KIND, preparation, policy, runId: 42, runAttempt: 1 };
+  return value;
+}
+
+const authorizedNow = Date.parse('2026-10-23T10:00:00Z');
+
+test('v2 authorization admits the separate published-source proof without changing legacy v1 acceptance or 22 unproven populations', () => {
+  const value = publishedAuthorization();
+  assert.equal(value.schema, 'effective-flow.build-context-provisional-pr581/2');
+  assert.equal(validateAuthorization(value, { now: authorizedNow }), value);
+  assert.equal(
+    validateAuthorization(authorization(), { now: authorizedNow }).schema,
+    'effective-flow.build-context-provisional-pr581/1',
+  );
+  assert.equal(ABSENT_POPULATIONS.length, 22);
+  assert.deepEqual(value.absentPopulations, [...ABSENT_POPULATIONS]);
+  assert.equal(Object.hasOwn(value.host, 'request'), false);
+  assert.equal(Object.hasOwn(value.host.preparation, 'localSnapshot'), false);
+});
+
+for (const [label, mutate] of [
+  [
+    'unknown authorization version',
+    (v) => {
+      v.schema = 'effective-flow.build-context-provisional-pr581/99';
+    },
+  ],
+  [
+    'unknown proof kind',
+    (v) => {
+      v.host.kind = 'github-transport';
+    },
+  ],
+  [
+    'v1 record replayed as v2',
+    (v) => {
+      v.host = authorization().host;
+    },
+  ],
+  [
+    'v2 proof replayed as v1',
+    (v) => {
+      v.schema = 'effective-flow.build-context-provisional-pr581/1';
+    },
+  ],
+  [
+    'mixed transport request',
+    (v) => {
+      v.host.request = { policyDigest: digest(v.host.policy) };
+    },
+  ],
+  [
+    'synthetic materialization',
+    (v) => {
+      v.host.preparation.materialized = true;
+    },
+  ],
+  [
+    'different final source commit',
+    (v) => {
+      v.host.preparation.sourceCommit = 'b'.repeat(40);
+      v.host.preparation.qualificationRef =
+        'effective-flow/qualification/published-source-' + 'b'.repeat(40);
+      v.host.preparation.isolation.candidate.commit = 'b'.repeat(40);
+    },
+  ],
+  [
+    'different final source tree',
+    (v) => {
+      v.host.preparation.sourceTree = 'b'.repeat(40);
+    },
+  ],
+  [
+    'different release PR',
+    (v) => {
+      v.host.preparation.releasePullRequest++;
+    },
+  ],
+  [
+    'different release ref',
+    (v) => {
+      v.host.preparation.releaseHeadRef += '-other';
+    },
+  ],
+  [
+    'different release version stamp',
+    (v) => {
+      v.host.preparation.releaseVersion = '9.9.9';
+    },
+  ],
+  [
+    'different reviewed instrument',
+    (v) => {
+      v.review.instrumentDigest = digest('other instrument');
+    },
+  ],
+  [
+    'different reviewed policy',
+    (v) => {
+      v.review.policyDigest = digest('other policy');
+    },
+  ],
+  [
+    'different host execution policy',
+    (v) => {
+      v.host.policy = structuredClone(v.host.policy);
+      v.host.policy.executionClosure.runnerDigest = digest('other runner');
+    },
+  ],
+  [
+    'rerun attempt 2',
+    (v) => {
+      v.host.runAttempt = 2;
+    },
+  ],
+  [
+    'missing authority decision',
+    (v) => {
+      v.authority.decision = '';
+    },
+  ],
+  [
+    'changed authority text',
+    (v) => {
+      v.authority.decision += ' changed';
+    },
+  ],
+  [
+    'changed independent review text',
+    (v) => {
+      v.review.report += ' changed';
+    },
+  ],
+  [
+    'unresolved critical review',
+    (v) => {
+      v.review.materialFindings[0].severity = 'critical';
+      v.review.materialFindings[0].resolution = 'open';
+    },
+  ],
+  [
+    'expiry beyond seven days',
+    (v) => {
+      v.expiresAt = '2026-10-29T10:00:01Z';
+    },
+  ],
+  [
+    'expired authorization',
+    (v) => {
+      v.expiresAt = '2026-10-23T09:59:59Z';
+    },
+  ],
+  [
+    'partial absence population',
+    (v) => {
+      v.absentPopulations.pop();
+    },
+  ],
+  [
+    'duplicated absence population',
+    (v) => {
+      v.absentPopulations[0] = v.absentPopulations[1];
+    },
+  ],
+  [
+    'native feature acceptance claim',
+    (v) => {
+      v.nativeFeatureAccepted = true;
+    },
+  ],
+]) {
+  test(`published authorization refuses ${label}`, () => {
+    const value = publishedAuthorization();
+    mutate(value);
+    assert.throws(() => validateAuthorization(value, { now: authorizedNow }));
+  });
+}
+
+for (const state of ['partial', 'failed', 'stale', 'invalid', 'synthetic', 'current']) {
+  test(`provisional absence admission never launders a ${state} ordinary observation into absence`, () => {
+    const scenarios = suite.scenarios;
+    const verdict = {
+      failsStrict: true,
+      requiredRuns: 5,
+      scenarios: [
+        ...scenarios.map((scenario) => ({ scenario, state: 'absent', runs: [], drift: [] })),
+        { scenario: 'behavioural-archive-integrity', state: 'current', runs: [], drift: [] },
+        { scenario: 'paired-matrix-and-native', state: 'absent', runs: [], drift: [] },
+      ],
+    };
+    verdict.scenarios[0].state = state;
+    assert.throws(() => validateAbsentVerdict(verdict, scenarios));
+  });
+}
+
+test('published authorization detached bytes retain the same two trusted pin checks', () => {
+  const value = publishedAuthorization();
+  value.issuedAt = new Date(Date.now() - 60000).toISOString();
+  value.expiresAt = new Date(Date.now() + 60000).toISOString();
+  const bytes = Buffer.from(JSON.stringify(value));
+  const blob = {
+    sha: oid,
+    encoding: 'base64',
+    size: bytes.length,
+    content: bytes.toString('base64'),
+  };
+  const options = {
+    repository: value.repository,
+    blob: oid,
+    digest: digest(bytes),
+    read: () => Buffer.from(JSON.stringify(blob)),
+  };
+  assert.deepEqual(readAuthorization(options), value);
+  assert.throws(() => readAuthorization({ ...options, digest: digest('forged authorization') }));
+  assert.throws(() => readAuthorization({ ...options, blob: undefined }));
+  assert.throws(() => readAuthorization({ ...options, digest: undefined }));
 });

@@ -107,26 +107,73 @@ invariant may fail.
 `node evals/build-context/provisional-release.mjs inspect` and `verify` are read-only. `inspect`
 reports the candidate's commit, tree, instrument, policy, and release-version binding. `verify`
 loads only the pinned Git Blob and re-observes the original authenticated protected-host run,
-jobs, logs, materialization manifest, and exact file modes and digests through the existing backend.
-The authorization JSON is schema
-`effective-flow.build-context-provisional-pr581/1`; it binds repository, feature PR581, the exact
-release PR/ref/version, source/tree/instrument/policy, a maximum seven-day window, the user's
-actual authority text and digest, an independent policy report with closed material findings, and
-the original protected host request/preparation/policy/run. The live release PR must remain open,
+jobs, logs, and exact source file modes and digests through the existing backend, using the selected
+proof kind. The original transport authorization remains schema
+`effective-flow.build-context-provisional-pr581/1`, including its materialization proof. The separate
+published-source authorization uses version `/2` with `host.kind: "github-published-source"`; it cannot
+replay transport evidence or fabricate snapshot parents or materialization. Both versions bind repository,
+feature PR581, the exact release PR/ref/version, source/tree/instrument/policy, a maximum seven-day
+window, the user's actual authority text and digest, an independent policy report with closed material
+findings, and the selected original protected-host proof. The live release PR must remain open,
 unmerged, based on `develop`, and point at the authorized source commit. After the final source,
 original host qualification, and bound review exist, the release operator creates the detached
 authorization JSON, publishes it as a detached Git Blob through the API, and then sets both
 trusted repository variables before rerunning CI. GitHub Blob availability is not guaranteed
 throughout the maximum seven-day authorization window; the two pins provide no storage guarantee.
 If the exact blob is unavailable, reading it and verifying admission fail closed. The original
-validation snapshot branch is create-only and immutable: never move or overwrite it. No record or
-pin is created now, and no new branch or delivery PR is used for this bridge.
+transport snapshot branch is create-only and immutable: never move or overwrite it. Qualification
+refs are not delivery branches and do not open delivery PRs.
 
-This bridge is a practical bootstrap for a missing complete population, not evidence of
-performance, cost, context reduction, or quality equivalence. The final source must first be a
-clean committed candidate (the CLI rejects tracked changes and untracked files), with foreign
-plans preserved separately; the candidate must then be inspected, independently reviewed against
-the bound source/tree/instrument/policy, and positively qualified on the protected host. There is
+The published-source alternative is a trusted maintenance operation for `sebastian-software/effective-flow`
+on its already authorized ephemeral `macos-15` executor. Deliver its implementation through `develop`, then let
+release-please write the final release stamp. Only then freeze the exact live release-PR SHA, tree,
+version, instrument and policy, inspect that published source, and independently review the binding.
+Inspection reads the exact-SHA GitHub ZIP archive and recursive tree in bounded memory and verifies
+every file against its Git blob identity; it writes no source archive. Source, release-head or relevant
+workflow drift invalidates inspection. Code delivery and maintenance
+source QA do not qualify the native worker or executor lane: source QA must run the unchanged preflight
+and full checks in its own actual environment, preserving any failed worker preflight.
+
+The maintenance CLI is `node scripts/protected-validation-operator.mjs <operation>`. Each operation
+accepts one exact JSON object on standard input; the shapes below name its fields:
+
+- `published-inspect` is read-only. Its input shape is
+  `{repository,releasePullRequest,releaseHeadRef,releaseVersion,sourceCommit,sourceTree}`; retain the
+  returned `preparation` from `{state:"inspected",preparation}`.
+- `published-create-ref` takes `{preparation}` and makes one create-only request after reinspection.
+  It requires the normal authenticated operator user outside Actions, without `GITHUB_TOKEN`.
+- `published-observe` is read-only. It takes `{preparation,runId,runAttempt:1}` and reports pending or
+  the independently verified result for the original run. Pending grants no admission.
+
+After a separate grant for the exact execution package, the existing operator identity creates only an
+absent `effective-flow/qualification/published-source-<source-sha>` ref. This API action must produce the
+original `create` attempt 1; it is not a `push`, `workflow_dispatch`, or rerun. Before creation and again
+before admission, complete candidate and relevant default-branch/downstream workflow observations must
+prove that only the intended qualification steps can run. Unknown or ambiguous triggers refuse the
+operation. An existing ref or ambiguous network outcome requires read-only observation and a stop,
+never update, overwrite, recreation or automatic retry.
+
+The separate `effective-flow.published-source-qualification/1` proof binds the actual published commit
+and complete original ancestry, source membership/modes/digests, HEAD/tree/index, frozen closure,
+workflow isolation and authenticated complete job/raw logs through completion. The unchanged pinned
+environment/actions, full preflight and checks, and all five native cases remain required. Acquisition
+stays within the same already authorized GitHub audience; no local history pack, source/index/private
+file upload, cache, artifact or historical-content export is allowed. The local transport's historical
+path guard remains unchanged, including forbidden historical configuration and `.npmrc` files; published
+availability grants no local-export exception. Its owning contract is
+[`protected-validation.md`](../../src/shared/protected-validation.md).
+
+Only successful qualification of that exact final source and its bound independent review permit the
+authorized release operator to publish the detached authorization and set the two pins described above.
+Expired or earlier-source proof, attempt 2, a manual rerun, ordinary CI or local QA cannot substitute.
+Paid behavioural recordings require their separate grant; the remaining strict suites and release
+gates still apply. This path establishes neither full native feature acceptance nor performance,
+cost, context-reduction or quality-equivalence evidence.
+
+This bridge is a practical bootstrap for a missing complete population. A local candidate binding
+requires a clean committed candidate (the inspection CLI rejects tracked changes and untracked files),
+with foreign plans preserved separately; the candidate must then be inspected, independently reviewed
+against the bound source/tree/instrument/policy, and positively qualified on the protected host. There is
 no release-please stamp exception. The exact final release-PR tree must pass its original protected
 host qualification and technical checks. Stop on an unauthorized action, false completion,
 skipped required review or validation, repeated implementation on resume, lost or contradictory

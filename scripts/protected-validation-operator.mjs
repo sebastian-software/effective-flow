@@ -17,6 +17,12 @@ import {
   validateExportManifest,
   validatePreparation,
   validateResult,
+  PUBLISHED_SOURCE_PROTOCOL,
+  PUBLISHED_SOURCE_KIND,
+  PUBLISHED_REPOSITORY,
+  publishedRef,
+  validatePublishedPreparation,
+  validatePublishedResult,
 } from '../src/scripts/protected-validation-protocol.mjs';
 import {
   protectedValidationRoot,
@@ -31,7 +37,14 @@ import {
   verifyExecutionFile,
   validationCommitParent,
 } from './protected-validation-projection.mjs';
-import { CLOSURE_PATHS, ghRead, observeBackend } from './protected-validation-backend.mjs';
+import {
+  CLOSURE_PATHS,
+  ghRead,
+  observeBackend,
+  readPublishedSource,
+  verifyPublishedBinding,
+  observePublishedBackend,
+} from './protected-validation-backend.mjs';
 const ensure = (condition, message) => {
   if (!condition) throw new Error(message);
 };
@@ -339,7 +352,10 @@ export async function observeValidation(
 }
 if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
   try {
-    ensure(process.argv.length === 3, 'one prepare, submit or observe operation required');
+    ensure(
+      process.argv.length === 3,
+      'exactly one operator operation required: prepare, submit, observe, published-inspect, published-create-ref or published-observe',
+    );
     const bytes = readFileSync(0);
     ensure(bytes.length <= 64 * 1024, 'operator input too large');
     const input = parseValidationJSON(bytes);
@@ -353,10 +369,167 @@ if (process.argv[1] && resolve(process.argv[1]) === import.meta.filename) {
     } else if (process.argv[2] === 'observe') {
       assertExact(input, ['preparationRef', 'runId', 'runAttempt']);
       output = await observeValidation(input);
+    } else if (process.argv[2] === 'published-inspect') {
+      output = inspectPublishedSource(input);
+    } else if (process.argv[2] === 'published-create-ref') {
+      output = createPublishedSourceRef(input);
+    } else if (process.argv[2] === 'published-observe') {
+      output = observePublishedSource(input);
     } else throw new Error('unknown operator operation');
     process.stdout.write(JSON.stringify(output) + '\n');
   } catch (error) {
-    process.stdout.write(JSON.stringify({ state: 'refused', diagnostic: error.message }) + '\n');
+    process.stdout.write(
+      JSON.stringify({
+        state: 'refused',
+        diagnostic: process.argv[2]?.startsWith('published-')
+          ? 'Published-source operation refused'
+          : error.message,
+      }) + '\n',
+    );
     process.exitCode = 1;
   }
+}
+
+function publishedRead(endpoint) {
+  if (endpoint === 'user')
+    return execFileSync('gh', ['api', '--method', 'GET', 'user'], {
+      timeout: 120000,
+      maxBuffer: 1024 * 1024,
+    });
+  ensure(endpoint.startsWith(`repos/${PUBLISHED_REPOSITORY}`), 'fixed published backend required');
+  return ghRead(endpoint);
+}
+function publishedJSON(bytes) {
+  ensure(
+    Buffer.isBuffer(bytes) && bytes.length <= 16 * 1024 * 1024,
+    'bounded published response required',
+  );
+  return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes));
+}
+export function ghCreatePublishedRef(endpoint, body) {
+  ensure(
+    endpoint === `repos/${PUBLISHED_REPOSITORY}/git/refs`,
+    'fixed create-only endpoint required',
+  );
+  assertExact(body, ['ref', 'sha']);
+  ensure(body.ref === 'refs/heads/' + publishedRef(body.sha), 'fixed qualification ref required');
+  // Use the normal operator's gh credential, never a workflow's suppressing token.
+  ensure(
+    process.env.GITHUB_ACTIONS !== 'true' && !process.env.GITHUB_TOKEN,
+    'normal operator identity required',
+  );
+  return execFileSync('gh', ['api', '--method', 'POST', endpoint, '--input', '-'], {
+    input: JSON.stringify(body),
+    timeout: 120000,
+    maxBuffer: 1024 * 1024,
+  });
+}
+export function inspectPublishedSource(
+  input,
+  { read = publishedRead, now = () => new Date().toISOString() } = {},
+) {
+  assertExact(input, [
+    'repository',
+    'releasePullRequest',
+    'releaseHeadRef',
+    'releaseVersion',
+    'sourceCommit',
+    'sourceTree',
+  ]);
+  const actual = readPublishedSource({ ...input, read });
+  const preparation = validatePublishedPreparation({
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    ...input,
+    qualificationRef: publishedRef(input.sourceCommit),
+    ...actual,
+    inspectedAt: now(),
+  });
+  return { state: 'inspected', preparation };
+}
+export function createPublishedSourceRef(
+  input,
+  { read = publishedRead, write = ghCreatePublishedRef } = {},
+) {
+  assertExact(input, ['preparation']);
+  const preparation = validatePublishedPreparation(input.preparation);
+  ensure(
+    process.env.GITHUB_ACTIONS !== 'true' && !process.env.GITHUB_TOKEN,
+    'normal operator identity required',
+  );
+  const identity = publishedJSON(read('user'));
+  ensure(
+    identity.type === 'User' &&
+      Number.isSafeInteger(identity.id) &&
+      identity.id > 0 &&
+      /^[A-Za-z0-9-]+$/.test(identity.login),
+    'normal authenticated operator required',
+  );
+  const repository = publishedJSON(read(`repos/${PUBLISHED_REPOSITORY}`));
+  ensure(repository.permissions?.push === true, 'operator ref-creation authority missing');
+  verifyPublishedBinding(preparation, { read });
+  const root = `repos/${PUBLISHED_REPOSITORY}`;
+  const existing = publishedJSON(
+    read(`${root}/git/matching-refs/heads/${preparation.qualificationRef}`),
+  );
+  ensure(
+    Array.isArray(existing) && existing.length === 0,
+    'qualification ref already exists; never overwrite or retry',
+  );
+  let response;
+  try {
+    response = publishedJSON(
+      write(`${root}/git/refs`, {
+        ref: 'refs/heads/' + preparation.qualificationRef,
+        sha: preparation.sourceCommit,
+      }),
+    );
+  } catch {
+    // One write only. The observed outcome is informational, never permission to recreate.
+    let observation = 'unavailable';
+    try {
+      const refs = publishedJSON(
+        read(`${root}/git/matching-refs/heads/${preparation.qualificationRef}`),
+      );
+      observation =
+        Array.isArray(refs) && refs.length === 0 ? 'absent-at-observation' : 'present-or-ambiguous';
+    } catch {
+      /* Preserve uncertainty without exposing provider output or credentials. */
+    }
+    return {
+      state: 'unknown',
+      diagnostic: 'Ref creation completion unknown; preserve this outcome and do not retry',
+      observation,
+      preparation,
+    };
+  }
+  ensure(
+    response.ref === `refs/heads/${preparation.qualificationRef}` &&
+      response.object?.type === 'commit' &&
+      response.object.sha === preparation.sourceCommit,
+    'created ref response differs; preserve outcome and stop',
+  );
+  return {
+    state: 'created',
+    event: 'create',
+    preparation,
+    operator: { id: identity.id, login: identity.login },
+    diagnostic: 'One create-only request completed; observe original attempt 1 without rerun',
+  };
+}
+export function observePublishedSource(input, { read = publishedRead } = {}) {
+  assertExact(input, ['preparation', 'runId', 'runAttempt']);
+  const observed = observePublishedBackend({ ...input, read });
+  if (observed.state !== 'verified') return { state: observed.state };
+  const result = validatePublishedResult({
+    protocol: PUBLISHED_SOURCE_PROTOCOL,
+    kind: PUBLISHED_SOURCE_KIND,
+    repository: PUBLISHED_REPOSITORY,
+    ...input,
+    event: 'create',
+    evidenceDigest: validationDigest(observed.evidence),
+    rawLogsDigest: validationDigest(observed.rawLogs),
+    outcome: 'verified',
+  });
+  return { state: 'verified', result };
 }
