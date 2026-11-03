@@ -1,6 +1,6 @@
 # Focus session stub and labelling rubric
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -171,7 +171,7 @@ rubric; no existing suite's recorded evidence is staled
    - **Claude Code self-report.** Recorded as a projection of prose, with one source per field:
      - the `ListAgents` header naming the observer and its `[ref]` of six hex digits;
      - per row, the name, the `[ref]` and the observed mode value `interactive`
-       (`focus-host-evidence.md:52-53`);
+       (`focus-host-evidence.md:53-54`);
      - the `SendMessage` message id and its "in the target inbox, not yet read" status;
      - the restart and name-reuse notice on the send result (`focus-host-evidence.md:104`);
      - the reply attributes `from`, `from-name` and `from-mode` (`focus-host-evidence.md:107-117`).
@@ -355,8 +355,62 @@ returns `unrecorded`.
   - the hashing of the stub, the shapes module and the rubric version;
   - declaring `trace/session-calls.jsonl` as `auxiliaryEvidence` (`suite-loader.mjs:47-54`);
   - that `await-reply` replaces the contract's foreground wait (`sleep 1`, at most 30 calls, a 30 s
-    deadline; `focus-session-contract.md:136-140`), so that bound is not exercised through the stub.
+    deadline; `focus-session-contract.md:136-140`), so that bound is not exercised through the stub;
+  - that package 6 fixtures must stay within the recorded behaviours: `runLimit` 1 and completed target
+    threads. A suite that needs `runLimit` above 1 or a running target first needs a new dated
+    observation;
+  - that `evals/_scaffold/remote-tracker.mjs` `acquireLock` retries on every `mkdir` error, so a
+    non-`EEXIST` failure spins until its deadline. The session stub fixed its own copy; the hashed
+    tracker stub stays unchanged in this package.
 - The observations cover one host build. A later host change needs a new dated addendum, not an edit.
+
+## Implementation notes
+
+- The 8 observation calls ran on 2026-11-03 against a throwaway top-level thread (T3 Code server
+  0.1.6). One result differed from the plan: a `textOffset` past the end returns empty text with
+  `textTruncated: false` and `nextTextOffset: null`, not an error. The stub serves that recorded
+  result. The reads also recorded the `reasoning` item type and the optional `senderThreadId` key.
+- The pointer line in `focus-host-evidence.md` sits at the end of the file, so the spike record keeps
+  its line numbering and every line citation into it stays valid.
+- The stub has 38 behaviour entries. It refuses every entry with `recorded: false`, as well as any
+  maximum-bound violation, a `runCount` other than 1, a non-completed target, an empty view, and an
+  explicit `textOffset` 0.
+- The rubric's worked example keeps On track for the inspected trajectory. It states its limits:
+  completion is not judged, and off-goal work in the command and reasoning items that the messages view
+  excludes is neither ruled out nor judged.
+
+## Test results
+
+**Date:** 2026-11-03
+
+- `node --test test/session-stub.test.mjs`: 66 pass, 0 fail.
+- `pnpm agent:check`: pass.
+- `node build.mjs`: pass, within all context budgets.
+- `pnpm test:distribution`: pass.
+- `pnpm test`: 4408 tests, 4379 pass, 27 skipped, 2 fail. Both failures are environmental and occur
+  only under full-suite load:
+  - `test/merge-gate-eval-round.test.mjs` passes alone (43 of 43);
+  - `test/host-driver.test.mjs` passes when run directly (36 tests, 118 s, close to its 150 s limit).
+
+  This change touches neither test.
+
+- Diff criterion against the merge base: the change touches no instrument file of the four existing
+  suites, nothing under `src/`, no build or release file, and no `.mjs` file in the fixture directory.
+
+## Review findings
+
+**Date:** 2026-11-03
+**Reviewer:** effective-flow-nodejs-reviewer (review and one re-check)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    21 |
+| Open / Not implemented |     0 |
+
+One finding outside the slice is listed among the package 6 handoffs: the tracker stub's lock spins on a
+non-`EEXIST` error. It does no material harm, and the file is hashed by every suite.
 
 ## Plan review
 
