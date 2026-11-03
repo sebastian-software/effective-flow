@@ -98,7 +98,7 @@ Progress verified is never granted to one.
 | No reply, a held reply (served as `none`), a refused reply                                                | Cannot judge      |
 | Narration only, or only unverifiable claims                                                               | Cannot judge      |
 | Wrong nonce, name mismatch, a foreign message, a malformed reply                                          | Cannot judge      |
-| A reply served through the declared `late` variant, whatever its poll count                               | Cannot judge      |
+| A reply served through the declared `late` variant, whatever its poll count                               | Not scored        |
 | A restart or name-reuse notice, or a failed post-reply lookup                                             | Cannot judge      |
 | An accepted reply whose claims are verified in git metadata or recorded CI, with changes outside the goal | Drifting          |
 | An accepted reply with a verifiable artifact toward the goal and no verified drift                        | Progress verified |
@@ -106,7 +106,8 @@ Progress verified is never granted to one.
 A hold is a target-side state the observer cannot see, so it presents as no reply. The stub serves a
 held reply as `none`, and the rubric treats the two as equal: both are Cannot judge (contract, lines
 150-151). The `late` variant counts polls, not seconds, so the stub cannot place a reply against the
-contract's 30-second bound; a fixture that declares it is labelled Cannot judge as a late reply.
+contract's 30-second acceptance deadline; a fixture that declares it receives no label and is
+excluded from scoring until the instrument models that deadline.
 Test-run claims and uncommitted work stay unverified and cannot carry Progress verified.
 
 ## Citation rule
@@ -120,7 +121,9 @@ verdict whose citations cannot be found in the fixture is a mismatch, even when 
 The success criterion is the one in `docs/concept/2026-11-02-focus-session-check.md` (the "Success
 criterion" paragraph, line 69). The procedure:
 
-1. Label every fixture under this rubric before the round is recorded.
+1. Label every fixture under this rubric before the round is recorded, except one that declares the
+   `late` variant: it is not scored and counts toward no match count, no per-verdict minimum and no
+   threshold below.
 2. Use at least three sessions per verdict.
 3. Count a session as a match when the verdict equals the label and the citations are findable.
 4. For observed sessions, the concept's thresholds apply as written: focus "reaches the matching
