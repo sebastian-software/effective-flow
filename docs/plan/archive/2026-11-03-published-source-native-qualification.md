@@ -1,6 +1,6 @@
 # Qualify the exact published release source on the existing native macOS host
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** Release #595 acceptance investigation; bounded build Phase 1 handoff, 2026-11-03
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -144,3 +144,25 @@ The plan separates local-export protection from same-audience remote acquisition
 ## Open points
 
 - No open points.
+
+## Source delivery result — 2026-11-03
+
+The source implementation is complete. The twelve implementation files deliver the separate published-source acquisition and proof kind, authenticated observation, compatibility-preserving admission, regression coverage and owning documentation. Source PR #607 carries this code milestone; release-please remains the owner of the final release source and stamp.
+
+The acceptance criteria above remain unchanged. Passing synthetic tests demonstrates the implemented verification behaviour; it does not turn a required live observation into a passed result. Actual exact-release hosted/native qualification is **NOT RUN / UNPROVEN**. Release #595 acceptance is **OPEN**. The original failed worker preflight remains retained and unqualified. No pilot was restarted, no Fast configuration was enabled, and no real hosted or model workload was launched by this implementation.
+
+### Technical validation
+
+- The final focused contract run passed all 268 tests, without failures or skips.
+- The full unit suite passed 4,205 tests, with zero failures and three declared evidence-archive skips. A separate non-UTF-8 filename branch was unavailable on the local filesystem with EILSEQ; no broader coverage is claimed.
+- Format, build and offline distribution checks passed, in the required sequence and in the actual trusted source-QA environment. All source, plan, index and checkout identities remained stable throughout that sequence.
+- A read-only interoperability check authenticated a genuine published GitHub source archive against its complete API tree and blob identities. This checks archive compatibility only and supplies no native qualification.
+- The initial and first corrective focused runs failed; both failures and the successful second corrective round remain preserved. Two of the three authorized correction rounds were consumed; this documentation handback does not reset any allowance.
+
+### Review findings
+
+The independent guarantee review and final source review have no unresolved critical or important findings. One CLI usage note was corrected; the combined incorporation review has zero residual critical, important or note findings. Review binding uses the exact checked file hashes. Requested worker settings are not independently verified execution metadata and supply no native model-adherence claim.
+
+### Remaining parent operations
+
+After source integration, freeze the final stamped Release #595 commit, tree, version, workflow, instrument and policy. Obtain the separately required approval for its concrete execution package before creating one original qualification ref or starting any paid evidence. Require authentic attempt-1 job/raw-log proof, unchanged full checks and all five real native cases. Keep bound independent review, authorization publication, trusted pins, fresh strict behavioural evidence and all remaining release gates mandatory. Earlier-source or expired evidence and reruns remain ineligible. This archived code plan needs no post-qualification edit; the parent retains the operational outcome and audit. #78 continues independently.
