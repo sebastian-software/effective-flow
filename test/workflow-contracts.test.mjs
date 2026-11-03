@@ -2793,7 +2793,8 @@ test('build and fix retire delivery keys before their first delegation', () => {
 // `tool` would lose its stop (the CLI refuses it with exit 2), and an iterate or apply-review site
 // that omits `mode` would resolve the wrong successor set. Every prose site that invokes the
 // resolver therefore names `tool`, and names `mode` with its values wherever it covers a tool whose
-// successor set depends on one.
+// successor set depends on one. The helper call-shape fragment names the resolver's argv only and
+// is no call site.
 test('every prose call site of the configuration resolver names tool, and mode where it applies', () => {
   const markdownFiles = (dir) =>
     readdirSync(new URL(dir, repositoryRoot), { withFileTypes: true }).flatMap((entry) =>
@@ -2805,6 +2806,7 @@ test('every prose call site of the configuration resolver names tool, and mode w
     );
   const sites = new Set();
   for (const path of markdownFiles('src')) {
+    if (path === 'src/shared/helper-call-shape.md') continue;
     for (const block of source(path).split(/\n\s*\n|\n(?=\s*- |\s*\d+\. )/)) {
       if (!/config-resolve\.mjs|resolution call with/.test(block)) continue;
       sites.add(path);
@@ -12534,7 +12536,7 @@ test('pr stops on a retired worktree.baseBranch row in step 1, not in the shared
   );
   assert.match(
     step1,
-    /config-resolve\.mjs resolve` with `\{"cwd": "<execution root>", "tool": "pr"\}`/,
+    /config-resolve\.mjs resolve <<< '\{"cwd": "<execution root>", "tool": "pr"\}'`/,
     'pr must resolve its configuration through the resolver as tool pr',
   );
   assert.match(
@@ -20321,7 +20323,7 @@ test('setup-profiles classifies origin read-only before the Profile question and
   assert.match(classification, /read-only `repository-resolve` operation/);
   assert.match(
     classification,
-    /`node <skill-root>\/scripts\/remote-tracker\.mjs repository-resolve` with `\{\}` on standard input, run from the invocation directory without a `cwd` field/,
+    /the literal call `node <skill-root>\/scripts\/remote-tracker\.mjs repository-resolve <<< '\{\}'`, run from the invocation directory without a `cwd` field/,
   );
   assert.match(
     classification,

@@ -641,6 +641,24 @@ test('delegation-mandate.md states the lean principle once, for the orchestrator
   assert.ok(delegationMandate.split('\n').length <= 16, 'the mandate stays within its line cap');
 });
 
+// Invariant: the triviality exception waives delegation only. A run that read it as license to skip
+// a reservation, a report, a lock or a commit (measured in work package 3) loses the step itself, so
+// the clause sits in the exception's own bullet, between its definition and the lean sentence, and
+// the mandate stays within its line cap.
+test('the triviality exception states that it never waives a workflow step', () => {
+  const bullet = delegationMandate
+    .split('\n')
+    .find((line) => line.startsWith('- For analysis, exploration, and research'));
+  assert.ok(bullet, 'missing: the analysis-default bullet');
+  assert.ok(
+    bullet.includes(
+      'Sites that name this exception mean exactly this definition. It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends',
+    ),
+    'the exception bullet names what it does not waive',
+  );
+  assert.ok(delegationMandate.split('\n').length <= 16, 'the mandate stays within its line cap');
+});
+
 test('the router Rules point at the mandate and carry no copy of the lean principle', () => {
   const { section } = splitAtSection(skill, '## Rules', 'src/SKILL.md');
   assert.doesNotMatch(

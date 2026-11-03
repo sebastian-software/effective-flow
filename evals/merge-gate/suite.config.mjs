@@ -62,9 +62,10 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // The configuration resolver pair is seeded for the same reason: the gate and the `iterate` round it
 // delegates run the shipped `scripts/config-resolve.mjs` at their first configuration read, no load
 // pointer names it, and nothing stubs it. So is the runtime-state helper with the guard module and
-// the memory, harness and settings cores it imports: a first memory write in either run executes it.
+// the memory, harness, commit, review and settings cores it imports: a first memory write or an
+// item commit in either run executes it.
 //
-// The mechanics helper is seeded for the same reason, with the three cores its core imports and the
+// The mechanics helper is seeded for the same reason, with the four modules its core imports and the
 // process runner its CLI imports: the deferred `worktree-integration` fragment, with the
 // `base-branch-resolution` fragment it embeds, that a provisioning run loads executes the shipped
 // `scripts/effective-flow-mechanics.mjs` (`base-branch-resolve`, `base-branch-fetch`,
@@ -83,11 +84,15 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/effective-flow-state-core.mjs',
   'scripts/effective-flow-state-memory-core.mjs',
   'scripts/effective-flow-state-harness-core.mjs',
+  'scripts/effective-flow-state-commit-core.mjs',
+  'scripts/effective-flow-state-review-core.mjs',
+  'scripts/review-report-render.mjs',
   'scripts/claude-settings-core.mjs',
   'scripts/runtime-file-primitives.mjs',
   'scripts/runtime-state-guard.mjs',
   'scripts/effective-flow-mechanics.mjs',
   'scripts/effective-flow-mechanics-core.mjs',
+  'scripts/dated-name-allocation.mjs',
   'scripts/plan-lint-core.mjs',
   'scripts/delivery-selection-core.mjs',
   'scripts/remote-tracker-shared-core.mjs',

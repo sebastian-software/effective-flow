@@ -1,10 +1,14 @@
 **Commit-lock waiting and orphans** (`iterate-commit`, `apply-review-commit`). A unit is one
 `iterate` item or one `apply-review` finding; its delegation is the worker the orchestrator
-started for it, and an inline unit is its own delegation.
+started for it, and an inline unit is its own delegation. For `iterate`, "re-invoke `lock acquire`"
+and "the commit critical section" mean the unchanged `commit create` call, whose `LOCK_HELD`
+carries the same owner and identity details as `lock acquire`.
 
 - **Ownership check:** immediately before `git commit`, run `lock inspect` and require a `valid`
   owner whose token equals the retained token. Otherwise ownership is lost: do not commit,
-  unstage only this unit's own staging, and fail the unit closed.
+  unstage only this unit's own staging, and fail the unit closed. This bullet binds the prose
+  sequences only, `apply-review`'s and `iterate`'s `HOOKS_UNTRUSTED` fallback; `commit create`
+  performs both steps itself.
 - **Bounded worker wait:** on `LOCK_HELD` the worker re-invokes `lock acquire` unchanged. After
   three consecutive `LOCK_HELD` results with an unchanged owner and identity it stops waiting,
   leaves its edits unstaged, and returns the diagnostics (owner, identity, lock path) to the

@@ -27,7 +27,7 @@ If the commit strategy **Individually** was chosen, a global commit mutex applie
 Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
 
 ```include
-state-helper-call
+helper-call-shape
 ```
 
 Mutex convention:

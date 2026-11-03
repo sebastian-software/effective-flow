@@ -66,10 +66,11 @@ is a safe integer; defaults are judgments `3`, plans `1`. Reject zero, signs, le
 fractions, exponents, unsafe integers, duplicate flags, missing values, option tokens as values
 and every extra argument **before any write**. Freeze `{judgments, plans}` as `limits`.
 
-Run `node <skill-root>/scripts/<helper>.mjs <operation>` with one JSON object on stdin, rooted
-at the verified primary checkout. Parse exactly one successful envelope; a nonzero exit, missing
-helper, malformed envelope or unknown result stops the pass. Never interpolate JSON, paths or
-refs into shell code; pass literal arguments/stdin through the host's structured execution API.
+Run each helper as the literal call `node <skill-root>/scripts/<helper>.mjs <operation> <<< '<json>'`,
+`--apply` before `<<<` only where stated below, rooted at the verified primary checkout. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Parse exactly one successful envelope; a nonzero exit, missing
+helper, malformed envelope or unknown result stops the pass. Never assemble JSON, paths or refs
+through shell code, and never interpolate untrusted text (issue titles, bodies, comments, refs)
+unescaped: JSON-encode it as a string value, then apply the `'\''` rule above.
 No helper retry may create a second PR. Only publication operations below receive `--apply`.
 
 Every `issue-buddy.mjs` call has `cwd: EXECUTION_ROOT`; the root must equal `RUNTIME_STATE_ROOT`.
@@ -85,7 +86,7 @@ no alternate port, file-lock fallback, stale-lock break or legacy-lock deletion 
 
 Perform these checks in this exact order:
 
-1. **Configuration and root.** Call `config-resolve.mjs resolve` with
+1. **Configuration and root.** Make the literal `config-resolve.mjs resolve` call with
    `{cwd: <invocation checkout>, tool: "issue-buddy"}` once. Stop on locator failure or retired
    `stop`; retain decoded values and diagnostics. Resolve the physical primary root from Git's
    first `git worktree list --porcelain` record and prove its common-directory identity per
@@ -94,7 +95,7 @@ Perform these checks in this exact order:
 2. **Hidden mode.** Stop on `data.visibility: hidden` before tracker access or runtime writes.
 3. **Tracker.** Require configured `tracker.mode: remote`; missing, `null`, local or external
    stops without a tracker-mode question.
-4. **GitHub origin.** Call `remote-tracker.mjs repository-resolve` with `{cwd}`; require
+4. **GitHub origin.** Make the literal `remote-tracker.mjs repository-resolve` call with `{cwd}`; require
    `provider: github`. This operation resolves the origin locally and returns before any provider
    probe or forge read. A missing, invalid or unsupported origin stops.
 5. **Runtime safety.** Load and apply the runtime guard for each imminent private-state target.
@@ -102,7 +103,7 @@ Perform these checks in this exact order:
    This authorized pre-lock migration is the only possible write before the lock.
 7. **Whole-pass lock.** Call `pass-lock-acquire` with `{cwd}`; retain its `passId`. A held lock
    stops and requires explicit operator release; never break it, including after SIGKILL.
-8. **Repository visibility.** Call `remote-tracker.mjs repository-visibility-read` with `{cwd}`.
+8. **Repository visibility.** Make the literal `remote-tracker.mjs repository-visibility-read` call with `{cwd}`.
    This GET-only operation is the only forge read before collection; require the capability
    `repositoryVisibilityRead`. Read `data.result.visibility` and retain
    `repositoryVisibility: public|private|unknown`. Publishing

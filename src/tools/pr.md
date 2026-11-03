@@ -124,9 +124,10 @@ base-branch-resolution
    - Establish and verify the execution root per "Execution root" before any other step, and keep
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
-   - Read the Effective Flow configuration through `node <skill-root>/scripts/config-resolve.mjs resolve` with
-     `{"cwd": "<execution root>", "tool": "pr"}` on standard input; a nonzero exit or no single parseable envelope
-     stops the run, reporting the cause. Use `delivery.baseBranch` from `data.values`, or the documented default
+   - Read the Effective Flow configuration through the literal call
+     `node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd": "<execution root>", "tool": "pr"}'`;
+     a nonzero exit or no single parseable envelope stops the run, reporting the cause.
+     Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Use `delivery.baseBranch` from `data.values`, or the documented default
      where it is unset. Record that configured value and resolve nothing from it here: step 4 applies "Base-branch
      resolution" to it, behind the step 2 preconditions, so a direct invocation reaches the network only once its
      checkout has been accepted. A retired `worktree.baseBranch` row is never read, on a direct invocation and a
@@ -224,7 +225,7 @@ base-branch-resolution
    - **Commits found:** Continue with the unchanged delivery flow in step 5.
    - **No commits found:** Preserve the prepared branch, report that it has no commits against the
      resolved base, and stop without any remote mutation.
-5. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation with the execution root as the payload's `cwd`. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
+5. **Resolve the provider:** Make the literal call `node <skill-root>/scripts/remote-tracker.mjs repository-resolve <<< '<json>'`, in the shape of step 1: the helper's repository-resolution operation with the execution root as the payload's `cwd`. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
 6. **Check tool availability:** Invoke the helper probe once — again with the execution root as `cwd` — and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. A `tea` below the supported minimum surfaces here as `UNSUPPORTED_CAPABILITY` with its `installed` and `minimum` versions, which is the intended early gate. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
 7. **Push the branch:** Immediately before the push, require the exact head branch still resolves to
    the OID preserved in step 3. Push it to `origin` if it is not yet there or not up to date

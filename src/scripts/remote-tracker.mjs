@@ -4,7 +4,42 @@ import { realpathSync } from 'node:fs';
 import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { createProcessRunner, terminateActiveProcessGroups } from './process-runner.mjs';
-import { errorEnvelope, executeOperation, RemoteTrackerError } from './remote-tracker-core.mjs';
+import {
+  errorEnvelope,
+  executeOperation,
+  isMutationOperation,
+  REMOTE_TRACKER_OPERATIONS,
+  RemoteTrackerError,
+} from './remote-tracker-core.mjs';
+
+// The closed argv: exactly `<operation>` or `<operation> --apply`, the operation first and one of
+// REMOTE_TRACKER_OPERATIONS, and `--apply` only for a forge mutation. Anything else is refused
+// before stdin is read, so an allow rule's trailing `*` admits only the here-string and never a
+// second operation or an `--apply` on a read, a mistyped operation never waits on stdin, and
+// `--help` never blocks on a tty.
+export const USAGE = 'usage: remote-tracker.mjs <operation> [--apply]';
+
+export function parseArgv(argv) {
+  const [operation, flag, ...rest] = argv;
+  const usage = (message) => {
+    const error = new Error(`${message}; ${USAGE}`);
+    error.code = 'INVALID_PAYLOAD';
+    throw error;
+  };
+  if (typeof operation !== 'string' || operation === '' || operation.startsWith('-')) {
+    usage('the operation must be the first argument');
+  }
+  if (!REMOTE_TRACKER_OPERATIONS.includes(operation)) {
+    usage(`${operation} is not a remote-tracker operation`);
+  }
+  if (rest.length > 0 || (flag !== undefined && flag !== '--apply')) {
+    usage('only <operation> or <operation> --apply is accepted');
+  }
+  if (flag === '--apply' && !isMutationOperation(operation)) {
+    usage(`--apply is accepted only for a mutation, and ${operation} is none`);
+  }
+  return { operation, apply: flag === '--apply' };
+}
 
 async function readStdin(stream = process.stdin) {
   let input = '';
@@ -72,17 +107,13 @@ export function forwardTermination(
 export async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io.stdout ?? process.stdout;
   const stderr = io.stderr ?? process.stderr;
-  const operation = argv.find((argument) => !argument.startsWith('-'));
-  const apply = argv.includes('--apply');
+  const first = argv[0];
+  const operation = typeof first === 'string' && !first.startsWith('-') ? first : undefined;
   const run = { operation: operation ?? null, envelopeWritten: false };
   let removeTermination;
   let envelope;
   try {
-    if (!operation) {
-      const error = new Error('usage: remote-tracker.mjs <operation> [--apply]');
-      error.code = 'INVALID_PAYLOAD';
-      throw error;
-    }
+    const { apply } = parseArgv(argv);
     const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
     const baseRunner = io.runner ?? createProcessRunner();
     envelope = await executeOperation(operation, input, {

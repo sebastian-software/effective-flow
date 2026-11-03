@@ -28,7 +28,10 @@ memory-state
    `RUNTIME_STATE_ROOT` only; copies only missing entries without ever replacing a target, excluding
    `.worktrees/`; merges the legacy `memory.json` so that existing values win; and writes the marker
    last. Without a legacy source it writes the marker alone.
-3. **Handle the outcome.**
+3. **Handle the outcome.** `review write-report` runs this prerequisite in the same call: when its
+   `result.migration` has `performed: true` or `failed: true`, steps 1 and 2 already ran and are
+   not repeated; read the success fields (`source`, `copiedCount`, `keptCount`, `skipped`) from
+   `result.migration`.
    - Success: report `result.source`, `result.copiedCount`, and `result.keptCount`. Report every
      `result.skipped` entry (a symlink or special file that was never followed or copied) with its
      path and type, and `result.skippedCount`.

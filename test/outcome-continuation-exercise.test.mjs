@@ -264,7 +264,12 @@ test('the staged tracker CLI handles reads and writes entirely offline without e
   ]) {
     const process = spawnSync(
       globalThis.process.execPath,
-      [join(p.skillRoot, 'scripts/remote-tracker.mjs'), operation, '--apply'],
+      // The closed argv accepts `--apply` only for a mutation, so the read runs without it.
+      [
+        join(p.skillRoot, 'scripts/remote-tracker.mjs'),
+        operation,
+        ...(operation === 'issue-comments-read' ? [] : ['--apply']),
+      ],
       {
         cwd: p.projectRoot,
         input: JSON.stringify(

@@ -749,10 +749,13 @@ options:
    `Run state: non-interactive` as well, never `relayed`. A gated run forwards no `Run state:`
    line: its items may run as sub-agents nobody can answer, so the documentation-sync gate of each
    item run falls to the contract's chain rule exactly as without this run's state.
-   Each delegation also receives, for the commit mutex below, the absolute helper path
+   Each delegation also receives, for the item commit below, the absolute helper path
    `<skill-root>/scripts/effective-flow-state.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own
-   `delegation` `<runId>/<n>`, numbering this run's item delegations, an inline item included, and
-   the runtime-state helper call shape verbatim.
+   `delegation` `<runId>/<n>`, numbering this run's item delegations, an inline item included,
+   the concrete `worktree`, `hookBase` and `sameRepository` values the orchestrator resolved per
+   step 2 of "Commit integrity for parallel items", and verbatim the helper call shape, steps 1–3 of
+   that section (the inspection with its `expect` derivation, the call with its Bash timeout, Codex
+   escalation and `item` rule, and the outcome map), and the bolded ban on other commit paths.
    Each delegation receives its analyzed owned paths and reports its actual
    paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
    modifying that path and return it to the orchestrator. Add the path to the item's actual
@@ -762,7 +765,7 @@ options:
 
 3. **One commit per thread/item** with a clean conventional-commit message without internal
    IDs or a thread reference and without `Co-Authored-By`. Independent items may implement in
-   parallel, but every item uses the commit-integrity mutex below for staging and committing.
+   parallel, but every item commits through the one `commit create` call below.
    Resolve `language.git` once — from `Language context:` when Phase 0 step 10 received one — and
    pass it to every item for its commit description.
 4. Give internal delegation sub-agents the completion protocol and check for `DONE` or
@@ -773,63 +776,80 @@ options:
 
 #### Commit integrity for parallel items
 
-The following mutex applies in both PR and local mode. Parallel delegations may edit disjoint
-files concurrently, but all operations that mutate or inspect the shared Git index and `HEAD`
-for an item run in one critical section.
+The following applies in both PR and local mode. Parallel delegations may edit disjoint files
+concurrently, but every item commit is one `commit create` call of the runtime-state helper. It
+takes the `iterate-commit` lock (one per repository below `RUNTIME_STATE_ROOT`, shared by every
+item delegation of every run, also from an isolated worktree), requires an empty index, stages
+exactly the listed paths, checks the staged set and content, commits with the repository's hooks,
+verifies the commit, and releases the lock. The call goes through the absolute helper path handed
+over in Phase 3, with `cwd` set to `RUNTIME_STATE_ROOT`; the helper applies the runtime-state guard
+itself.
 
 ```include
-state-helper-call
+helper-call-shape
 ```
 
-Mutex convention:
+**No `git add` or `git commit` for an item runs outside `commit create`, inline items included;
+the only exception is the `HOOKS_UNTRUSTED` fallback.**
 
-- The mutex is the helper's `iterate-commit` lock, one per repository below `RUNTIME_STATE_ROOT`
-  and shared by every item delegation of every run, also from an isolated worktree. Each step is
-  one call through the absolute helper path handed over in Phase 3, with `cwd` set to
-  `RUNTIME_STATE_ROOT`, in the runtime-state helper call shape above; the helper applies the runtime-state guard itself:
+Per item, after its configured pre-commit checks:
 
-  ```text
-  node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"iterate-commit","owner":{"workflow":"iterate","runId":"<runId>","item":"<item>","delegation":"<runId>/<n>"}}'
-  ```
+1. **Inspect the diff** of the item's paths: `git diff -- <paths>` plus every untracked addition.
+   Confirm that the list holds only the item's analyzed and dynamically approved actual paths,
+   both sides of a rename included, and that every hunk belongs to the item. Record the inspected
+   content and each path's blob OID (`git hash-object -- <path>`, `null` for a deletion) in the
+   wisdom file; the OIDs are the call's `expect`. Each value must equal what `git ls-files -s`
+   reports once the path is staged: hash a symlink's link text (`readlink -n <path>` into
+   `git hash-object --stdin`), never its target, and take a gitlink's checked-out commit
+   (`git -C <path> rev-parse HEAD`).
+2. **Commit with one call.** Give the Bash tool an explicit timeout above the helper's 300000 ms
+   commit bound, for example 360000 ms. In Codex, request sandbox escalation for this call up
+   front.
 
-  `item` is the caller-supplied identifier when it matches `^[A-Za-z0-9._:/@=+-]{1,128}$`, else
-  the thread ID when that matches, else `item-<n>`. Retain `result.owner.token`. Exit 4 is an
-  outcome handled below; any other nonzero exit or `error` envelope returns `ABORT` for the item
-  without touching the index.
+   ```text
+   node <skill-root>/scripts/effective-flow-state.mjs commit create <<< '{"cwd":"<RUNTIME_STATE_ROOT>","worktree":"<EXECUTION_ROOT>","lock":"iterate-commit","owner":{"workflow":"iterate","runId":"<runId>","item":"<item>","delegation":"<runId>/<n>"},"paths":["<path>"],"expect":{"<path>":"<blob OID or null>"},"hookBase":"<hookBase>","sameRepository":<true|false>,"message":"<message>"}'
+   ```
+
+   `item` is the caller-supplied identifier when it matches `^[A-Za-z0-9._:/@=+-]{1,128}$`, else
+   the thread ID when that matches, else `item-<n>`. `worktree` is the absolute execution root the
+   item's edits live in. `hookBase` is the full SHA of `git merge-base HEAD origin/<base>` in PR
+   mode, after an explicit `git fetch origin <base>` of the PR base branch `<base>` (Phase 1
+   fetches only the head), and of `git merge-base HEAD <diff base>` with the local-mode diff base
+   otherwise. `sameRepository` is the Phase 1 pull-request read's `sameRepository`, `false` when
+   absent and `true` in local mode. The orchestrator resolves `worktree`, `hookBase` and
+   `sameRepository` and hands them to each item delegation as concrete values.
+   `message` is the item's commit message, its newlines JSON-escaped.
+
+3. **Handle the result** (exit 4 carries `outcome.code`):
+   - `ok: true`: record `result.commit` against the item (`item identity -> commit hash`) in the
+     wisdom file, with any residual working-tree state of the item's paths.
+   - `LOCK_HELD`: the commit-lock contract below; a delegation repeats the unchanged call within
+     its bounded wait and returns the diagnostics, the orchestrator applies the rest.
+   - `HOOKS_UNTRUSTED`: report `outcome.reason`; a delegation returns it, and the orchestrator
+     commits this item through the prose sequence of the fallback loaded below, which prompts in
+     default mode.
+   - `INDEX_NOT_CLEAN`, `STAGE_FAILED`, `STAGED_SET_MISMATCH`, `STAGED_CONTENT_CHANGED`,
+     `COMMIT_FAILED`: `ABORT` for the item with the reported sets and stderr; the helper unstaged
+     only the listed paths.
+   - `COMMIT_UNVERIFIED`: mark the item failed with `outcome.commit`, perform no amend, reset or
+     rebase, and stop delivery for reconciliation.
+   - `SANDBOX_DENIED`: `ABORT` with the diagnostics and no retry; escalation was already requested.
+   - `INTERRUPTED`: with `outcome.commit` set, the commit landed unverified: handle it as
+     `COMMIT_UNVERIFIED`. Without it, report it and `ABORT` the item.
+   - Any envelope carrying `heldLock` at `result`, `outcome` or `error` (the internal release did
+     not succeed, so the lock may still be held), before any `ABORT` below: retry `lock release` once with its `lock` and `token` (`{cwd, lock, token}`) and
+     report `lockRelease`; a retry result `NOT_HELD` or `NOT_OWNER` is reported and needs no
+     further action. A `leftoverTombstone` follows the contract.
+   - `INVALID_INPUT`, any other nonzero exit, or an `error` envelope: `ABORT` for the item.
+
+```lazy-include
+iterate-commit-fallback
+when: `commit create` returned `HOOKS_UNTRUSTED` for an item
+```
 
 ```include
 commit-lock-contract
 ```
-
-- **Release** on every success, abort, and error path with `lock release`
-  (`{cwd, lock, token}`). `NOT_HELD` or `NOT_OWNER` is reported as lost ownership, changes
-  nothing, and fails the item closed.
-
-Before acquiring the mutex, finish the item's configured pre-commit checks. Then, while holding
-the lock for the entire sequence:
-
-1. Run `git status --porcelain` and inspect `git diff --cached --name-only` and
-   `git diff --cached`. If any staged state already exists, treat it as foreign: do not commit,
-   take it over, or clean it up. Release the verified-owned lock and return `ABORT` for the item.
-2. Reconfirm that the item's explicit stage list contains only its analyzed and dynamically
-   approved actual paths. Stage exactly those paths. Never use `git add .`, `git add -A`,
-   `git commit -a`, or an equivalent blanket operation.
-3. Inspect `git diff --cached --name-only` and require it to equal the explicit item-owned path
-   set, then inspect the complete `git diff --cached` and require every staged hunk to belong to
-   the current item. Record the verified staged paths and content before committing.
-4. Create the item's conventional commit, capture its hash immediately with
-   `git rev-parse HEAD`, and write the `item identity -> commit hash` mapping to the wisdom file.
-5. Immediately confirm the committed paths and content against the recorded staged diff. Run
-   `git status --porcelain`, require `git diff --cached` to be empty, and inspect the remaining
-   working-tree diff. Changes from other active items may remain only when they are unstaged and
-   outside this item's owned paths; record that residual state in the wisdom file.
-
-If a check fails before the commit, unstage only paths whose staging is provably attributable to
-this item in the current lock acquisition, verify the resulting cached state, release the lock
-through the helper, and return `ABORT`. Never unstage or otherwise clean foreign
-changes. If immediate post-commit confirmation fails, do not amend, reset, rebase, or otherwise
-rewrite history: record the discrepancy, release the verified-owned lock, mark the item failed,
-and stop delivery for reconciliation.
 
 ### Phase 4: Validation
 

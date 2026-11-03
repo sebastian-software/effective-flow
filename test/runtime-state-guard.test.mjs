@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  unlinkSync,
+  utimesSync,
+  writeFileSync,
+} from 'node:fs';
+import { link as fsLink, open as fsOpen } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { test } from 'node:test';
@@ -10,7 +24,9 @@ import * as diffBaseline from '../src/scripts/diff-baseline-core.mjs';
 import { createProcessRunner as createSharedRunner } from '../src/scripts/process-runner.mjs';
 
 const {
+  NO_CLOBBER_TEMP_MAX_AGE_MS,
   RuntimeStateError,
+  createNoClobber,
   ensureGuardedDirectory,
   git,
   gitBaseEnv,
@@ -54,6 +70,7 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'LEGACY_MEMORY_ENTRY',
     'LEGACY_MEMORY_FILE',
     'LEGACY_RUNTIME_DIRS',
+    'NO_CLOBBER_TEMP_MAX_AGE_MS',
     'O_NOFOLLOW',
     'RUNTIME_STATE_DIR',
     'RuntimeStateError',
@@ -62,10 +79,12 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'atomicWrite',
     'atomicWriteHarnessSettings',
     'commonDir',
+    'createNoClobber',
     'ensureGuardedDirectory',
     'errorDetail',
     'git',
     'gitBaseEnv',
+    'gitCommitEnv',
     'gitText',
     'guardHarnessSettings',
     'guardLegacyMemory',
@@ -80,6 +99,7 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'requireToplevel',
     'resolveDirectory',
     'resolveRuntimeRoot',
+    'runGit',
     'selectLegacySource',
     'walkLegacySource',
   ]);
@@ -245,4 +265,211 @@ test('resolveRuntimeRoot refuses a linked worktree', async (t) => {
     code: 'UNSAFE_TARGET',
     message: 'cwd must be the main checkout, not a linked worktree',
   });
+});
+
+// ---------------------------------------------------------------------------------------------
+// createNoClobber
+
+async function reviewDirectory(t, options) {
+  const root = repository(t, options);
+  const context = { runner: createSharedRunner(), env: gitBaseEnv(process.env), cwd: null };
+  await resolveRuntimeRoot(context, root);
+  const directory = join(root, '.effective-flow', 'review');
+  mkdirSync(directory, { recursive: true });
+  return { root, context, directory };
+}
+
+const PREFIX = '.write-report-';
+const TEMP_NAME = /^\.write-report-[0-9a-f]{16}\.tmp$/;
+
+// Invariant: the create writes the exact content to a new file of mode 0600 and leaves no
+// temporary file behind, whose name matches no `review-report-*` family and no `*.md` glob.
+test('createNoClobber creates the target exactly and leaves no temporary file', async (t) => {
+  const { context, directory } = await reviewDirectory(t);
+  const target = join(directory, 'review-report-2026-11-01.md');
+  const temporaries = [];
+  const open = (file, ...rest) => {
+    temporaries.push(file);
+    return fsOpen(file, ...rest);
+  };
+  const result = await createNoClobber(context, target, '# report\n', {
+    tempPrefix: PREFIX,
+    fs: { open },
+  });
+  assert.deepEqual(result, { created: true, bytes: 9 });
+  assert.equal(readFileSync(target, 'utf8'), '# report\n');
+  assert.equal(lstatSync(target).mode & 0o777, 0o600);
+  assert.deepEqual(readdirSync(directory), ['review-report-2026-11-01.md']);
+  const name = temporaries[0].slice(directory.length + 1);
+  assert.match(name, TEMP_NAME);
+  assert.doesNotMatch(name, /^review-report-/);
+  assert.doesNotMatch(name, /\.md$/);
+});
+
+// Invariant: an existing target is never replaced; the taken name is reported as EEXIST, distinct
+// from a failure, and nothing is left behind.
+test('createNoClobber reports a taken name as EEXIST and keeps the existing file', async (t) => {
+  const { context, directory } = await reviewDirectory(t);
+  const target = join(directory, 'review-report-2026-11-01.md');
+  writeFileSync(target, 'foreign\n');
+  const result = await createNoClobber(context, target, 'mine\n', { tempPrefix: PREFIX });
+  assert.deepEqual(result, { created: false, code: 'EEXIST' });
+  assert.equal(readFileSync(target, 'utf8'), 'foreign\n');
+  assert.deepEqual(readdirSync(directory), ['review-report-2026-11-01.md']);
+});
+
+// Invariant: a post-link verification failure removes the target only while it is still the
+// inode this call created; a foreign file that took the name in between stays and is named as
+// `foreignPath`.
+test('createNoClobber removes only its own inode on a failed verification', async (t) => {
+  const { context, directory } = await reviewDirectory(t);
+  const own = join(directory, 'own.md');
+  const altered = async (from, to) => {
+    await fsLink(from, to);
+    appendFileSync(to, 'tampered');
+  };
+  await assert.rejects(
+    createNoClobber(context, own, 'content\n', { tempPrefix: PREFIX, fs: { link: altered } }),
+    { code: 'WRITE_FAILED', message: /failed verification.*content differs/ },
+  );
+  assert.equal(existsSync(own), false, 'the own, altered file is removed');
+  assert.deepEqual(readdirSync(directory), []);
+
+  const foreign = join(directory, 'foreign.md');
+  const replaced = async (from, to) => {
+    await fsLink(from, to);
+    unlinkSync(to);
+    writeFileSync(to, 'foreign\n');
+  };
+  await assert.rejects(
+    createNoClobber(context, foreign, 'content\n', { tempPrefix: PREFIX, fs: { link: replaced } }),
+    (error) =>
+      error.code === 'WRITE_FAILED' &&
+      /not the file just written/.test(error.message) &&
+      error.foreignPath === foreign,
+  );
+  assert.equal(readFileSync(foreign, 'utf8'), 'foreign\n', 'a foreign file is never removed');
+  assert.deepEqual(readdirSync(directory), ['foreign.md']);
+});
+
+// Invariant: a filesystem without hard links (link() failing with ENOTSUP, EOPNOTSUPP, EPERM,
+// EXDEV or ENOSYS) still gets the report through an exclusive create of the target, with the exact
+// content, mode 0600 and no temporary file left.
+test('createNoClobber falls back to an exclusive create when link is unsupported', async (t) => {
+  const { context, directory } = await reviewDirectory(t);
+  for (const code of ['ENOTSUP', 'EOPNOTSUPP', 'EPERM', 'EXDEV', 'ENOSYS']) {
+    const target = join(directory, `${code}.md`);
+    const unsupported = async () => {
+      throw Object.assign(new Error(code), { code });
+    };
+    const result = await createNoClobber(context, target, '# report\n', {
+      tempPrefix: PREFIX,
+      fs: { link: unsupported },
+    });
+    assert.deepEqual(result, { created: true, bytes: 9 }, code);
+    assert.equal(readFileSync(target, 'utf8'), '# report\n', code);
+    assert.equal(lstatSync(target).mode & 0o777, 0o600, code);
+    unlinkSync(target);
+    assert.deepEqual(readdirSync(directory), [], code);
+  }
+});
+
+// Invariant: the fallback keeps no-clobber: a name taken before the exclusive create is EEXIST and
+// the existing file stays; a failed fallback write removes only its own file; a link() failure
+// outside the unsupported set stays a WRITE_FAILED that creates nothing.
+test('createNoClobber fallback never replaces a taken name and cleans up a failed write', async (t) => {
+  const { context, directory } = await reviewDirectory(t);
+  const taken = join(directory, 'taken.md');
+  const raced = async (_from, to) => {
+    writeFileSync(to, 'foreign\n');
+    throw Object.assign(new Error('EXDEV'), { code: 'EXDEV' });
+  };
+  const result = await createNoClobber(context, taken, 'mine\n', {
+    tempPrefix: PREFIX,
+    fs: { link: raced },
+  });
+  assert.deepEqual(result, { created: false, code: 'EEXIST' });
+  assert.equal(readFileSync(taken, 'utf8'), 'foreign\n');
+  assert.deepEqual(readdirSync(directory), ['taken.md']);
+  unlinkSync(taken);
+
+  const failing = join(directory, 'failing.md');
+  const unsupported = async () => {
+    throw Object.assign(new Error('ENOTSUP'), { code: 'ENOTSUP' });
+  };
+  const open = async (file, ...rest) => {
+    const handle = await fsOpen(file, ...rest);
+    if (file !== failing) return handle;
+    return {
+      stat: (...args) => handle.stat(...args),
+      sync: () => handle.sync(),
+      close: () => handle.close(),
+      writeFile: async () => {
+        await handle.writeFile('par');
+        throw Object.assign(new Error('ENOSPC'), { code: 'ENOSPC' });
+      },
+    };
+  };
+  await assert.rejects(
+    createNoClobber(context, failing, 'content\n', {
+      tempPrefix: PREFIX,
+      fs: { link: unsupported, open },
+    }),
+    { code: 'WRITE_FAILED', message: /cannot write .*failing\.md: ENOSPC/ },
+  );
+  assert.deepEqual(readdirSync(directory), [], 'the partial fallback file is removed');
+
+  const broken = async () => {
+    throw Object.assign(new Error('EIO'), { code: 'EIO' });
+  };
+  await assert.rejects(
+    createNoClobber(context, join(directory, 'eio.md'), 'x\n', {
+      tempPrefix: PREFIX,
+      fs: { link: broken },
+    }),
+    { code: 'WRITE_FAILED', message: /cannot create .*eio\.md: EIO/ },
+  );
+  assert.deepEqual(readdirSync(directory), []);
+});
+
+// Invariant: a temporary file of the same family older than one hour is pruned; a fresh one and
+// any other name stay.
+test('createNoClobber prunes stale temporary files of its own family only', async (t) => {
+  const { context, directory } = await reviewDirectory(t);
+  const stale = join(directory, `${PREFIX}${'a'.repeat(16)}.tmp`);
+  const fresh = join(directory, `${PREFIX}${'b'.repeat(16)}.tmp`);
+  const other = join(directory, `.other-${'c'.repeat(16)}.tmp`);
+  for (const file of [stale, fresh, other]) writeFileSync(file, 'x');
+  const old = (Date.now() - NO_CLOBBER_TEMP_MAX_AGE_MS - 60_000) / 1000;
+  utimesSync(stale, old, old);
+  utimesSync(other, old, old);
+  const result = await createNoClobber(context, join(directory, 'r.md'), 'r\n', {
+    tempPrefix: PREFIX,
+  });
+  assert.equal(result.created, true);
+  assert.equal(existsSync(stale), false);
+  assert.equal(existsSync(fresh), true);
+  assert.equal(existsSync(other), true);
+  assert.equal(NO_CLOBBER_TEMP_MAX_AGE_MS, 60 * 60 * 1000);
+});
+
+// Invariant: the create passes the runtime-state guard first; a refusal creates nothing, and the
+// temporary family is a closed name shape.
+test('createNoClobber refuses an unguarded target and a malformed prefix', async (t) => {
+  const { context, directory } = await reviewDirectory(t, {
+    ignore: '.effective-flow/*\n!.effective-flow/review/\n',
+  });
+  await assert.rejects(
+    createNoClobber(context, join(directory, 'r.md'), 'r\n', { tempPrefix: PREFIX }),
+    { code: 'RUNTIME_STATE_UNSAFE' },
+  );
+  assert.deepEqual(readdirSync(directory), []);
+  for (const tempPrefix of [undefined, 'write-report-', '.write-report', '../x-', '.A-']) {
+    await assert.rejects(
+      createNoClobber(context, join(directory, 'r.md'), 'r\n', { tempPrefix }),
+      { code: 'INVALID_INPUT' },
+      String(tempPrefix),
+    );
+  }
+  assert.deepEqual(readdirSync(directory), []);
 });

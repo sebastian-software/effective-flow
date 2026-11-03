@@ -317,6 +317,17 @@ function migrationRequired(paths) {
   });
 }
 
+// A read-only look at the base memory without the lock, for a composed operation that must not
+// create anything on a layout that still needs `memory migrate-directory`: the MIGRATION_REQUIRED
+// or LEGACY_MEMORY_INVALID outcome the reserve transaction would return, or null. The transaction
+// re-reads everything under the lock.
+export async function precheckMigration(context) {
+  const paths = memoryPaths(context.cwd);
+  const base = await loadBase(context, paths);
+  if (base instanceof StateOutcome) return base;
+  return hasDirectoryMarker(base.memory) ? null : migrationRequired(paths);
+}
+
 // ---------------------------------------------------------------------------------------------
 // memory reserve
 
