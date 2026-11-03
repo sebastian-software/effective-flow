@@ -201,6 +201,12 @@ test('operations, locks and codes are frozen closed sets', () => {
       'commit create',
       'review open-report',
       'review write-report',
+      'worktree record-init',
+      'worktree transition',
+      'worktree inspect',
+      'worktree remove',
+      'cleanup plan',
+      'cleanup apply',
     ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
@@ -231,6 +237,17 @@ test('operations, locks and codes are frozen closed sets', () => {
       'SANDBOX_DENIED',
       'INTERRUPTED',
       'REPORT_WRITE_FAILED',
+      'RECORD_EXISTS',
+      'RECORD_NOT_FOUND',
+      'TRANSITION_INVALID',
+      'STATUS_MISMATCH',
+      'NOT_ELIGIBLE',
+      'LEGACY_TRACKED',
+      'LEGACY_UNMIGRATED',
+      'CARRY_OVER_OPEN',
+      'REMOVE_FAILED',
+      'BRANCH_RETAINED',
+      'DEADLINE_REACHED',
     ],
   );
   assert.deepEqual(

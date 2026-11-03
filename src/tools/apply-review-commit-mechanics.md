@@ -20,15 +20,19 @@ effective-flow-dir-migration
 when: the commit lock or a component worktree below `.effective-flow/` is about to be mutated
 ```
 
+```include
+execution-location
+```
+
+```include
+worktree-lifecycle
+```
+
 #### Git commit mutex for "Individually"
 
 If the commit strategy **Individually** was chosen, a global commit mutex applies to all delegation sub-agents. The mutex protects the entire critical git section, not just the final `git commit`.
 
 Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
-
-```include
-helper-call-shape
-```
 
 Mutex convention:
 
@@ -71,14 +75,6 @@ Critical section under the lock:
 
 If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABORT: [reason]`.
 
-```include
-execution-location
-```
-
-```include
-worktree-lifecycle
-```
-
 #### Git worktree isolation for "Individually with worktrees"
 
 If the commit strategy **Individually with worktrees** was chosen, a worktree isolation per delegation component applies instead of the git commit mutex.
@@ -95,7 +91,7 @@ Preconditions:
 
 Worktree paths:
 
-1. Determine the repo name from `basename "$(git rev-parse --show-toplevel)"`.
+1. `REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`, never of a linked checkout.
 2. Use `applyReview.worktree.baseDir` from the Effective Flow configuration (project-setup ADR) as the BaseDir, or the default `.effective-flow/.worktrees`.
    Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`; an explicitly configured absolute
    external BaseDir remains absolute and must still pass the environment and ownership checks.
@@ -116,12 +112,11 @@ Branch convention:
 - Immediately issue and verify a separate `effective-flow-created` execution-location receipt
   for the component path, branch, repository, component owner and `apply-review` purpose. Keep
   the original integration root under its own receipt and the main checkout under the unchanged
-  runtime-state handle. Immediately after the receipt succeeds, initialize a version 1
-  lifecycle record for this component as `active`, with branch policy
-  `delete-after-integration`, below the verified `RUNTIME_STATE_ROOT`. Create it before setup or
-  delegation and retain its record ID and absolute handle with the component receipt. If receipt
-  or lifecycle-record creation fails, retain the new worktree and branch for reconciliation and
-  do not delegate.
+  runtime-state handle. Immediately after the receipt succeeds, and before setup or delegation,
+  write the component's lifecycle record (purpose `apply-review`, branch policy
+  `delete-after-integration`) with `worktree record-init` and retain its record ID with the
+  component receipt. If the receipt or the record fails, retain the new worktree and branch for
+  reconciliation and do not delegate.
 
 Setup detection in the worktree:
 
@@ -155,9 +150,9 @@ Delegation in the worktree:
 - Log in the wisdom file per finding: execution-location receipt, commit hash and commit message.
 
 The component lifecycle remains `active` after a successful delegation because its commits are
-not yet proven integrated. Under the per-record lock, transition it to `failed` when the
-component implementation, commit, integration, or validation fails, or to `aborted` when the
-workflow deliberately stops that component before integration. Retain the worktree and branch in
+not yet proven integrated. Call `worktree transition` to `failed` when the component
+implementation, commit, integration, or validation fails, or to `aborted` when the workflow
+deliberately stops that component before integration. Retain the worktree and branch in
 both states. An unexpected interruption leaves `active`; never infer an outcome from age.
 
 Integration back into the original branch:
@@ -167,21 +162,24 @@ Integration back into the original branch:
 3. Revalidate the original integration receipt, then integrate the commits back into that
    verified root sequentially with `git -C <ORIGINAL_ROOT> cherry-pick <commit>`.
 4. On a cherry-pick conflict: first run the cherry-pick conflict assessment. Resolve low-risk conflicts directly; ask the user only on high-risk or unclear conflicts.
-5. After successful integration and validation, acquire the component lifecycle lock and
-   reverify that its receipt and lifecycle record still prove `effective-flow-created`, Git
-   registration, exact checkout identity, clean state, and proof that every component commit was
-   integrated. Transition `active` to `cleanup-ready`, claim it as `cleanup-in-progress`, and
-   run only `git worktree remove <WORKTREE_PATH>` without force while retaining the lock.
-   Reconcile the absence of the worktree, then apply the recorded `delete-after-integration`
-   policy only when integration is still proven, using exclusively
-   `git branch -d <BRANCH_NAME>`. Delete only the fully reconciled lifecycle record. A remove or
-   branch-cleanup refusal becomes `cleanup-failed` with the exact error and retains the remaining
-   record, branch, or partial state. Never use `git worktree prune`, `git branch -D`, or alter
-   `RUNTIME_STATE_ROOT` and its local review state.
-6. On a failed component, transition an `active` lifecycle record to `failed` under its lock,
-   keep the worktree and branch, name both paths and the record in the summary, and obtain a user
-   decision only for manual reconciliation. On a controlled cancellation, use `aborted` instead.
-   Neither status is eligible for automatic cleanup.
+5. After every successful component is integrated and validated, withdraw all of their
+   `effective-flow-created` worktrees with one call (Bash timeout 120000 ms; in Codex, request sandbox escalation up front):
+
+   ```text
+   node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<ORIGINAL_ROOT>","sessionId":"<SESSION_ID>","recordIds":["<RECORD_ID>"],"integrationRoot":"<ORIGINAL_ROOT>"}'
+   ```
+
+   The call moves each `active` record through `cleanup-ready` and removes its worktree without
+   force. `integrationRoot` lets the helper delete a branch `git branch -d <BRANCH_NAME>` refuses
+   after the cherry-picks once its exact patch-id proof against `ORIGINAL_ROOT` passes. That in-run
+   proof is the only forced branch deletion; prose never runs `git branch -D` or `git worktree prune`.
+   Handle each item by the lifecycle outcome table, with its denial fallback; name every
+   `BRANCH_RETAINED` branch with its unproven commits in the summary.
+
+6. On a failed component, call `worktree transition` `active` → `failed`, keep the worktree and
+   branch, name both paths and the record in the summary, and obtain a user decision only for
+   manual reconciliation. On a controlled cancellation, use `aborted` instead. Neither status is
+   eligible for automatic cleanup.
 
 Cherry-pick conflict assessment:
 

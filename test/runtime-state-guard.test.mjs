@@ -9,7 +9,9 @@ import {
   readFileSync,
   readdirSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   unlinkSync,
   utimesSync,
   writeFileSync,
@@ -67,17 +69,24 @@ test('the shared module exports exactly the runtime-state surface', () => {
   assert.deepEqual(Object.keys(guard).sort(), [
     'HARNESS_SETTINGS_DIR',
     'HARNESS_SETTINGS_FILE',
+    'LEGACY_CONFIG_DECISIONS',
+    'LEGACY_CONFIG_ENTRY',
     'LEGACY_MEMORY_ENTRY',
     'LEGACY_MEMORY_FILE',
     'LEGACY_RUNTIME_DIRS',
+    'LEGACY_WORKTREES_ENTRY',
+    'NON_LIVE_LOCATOR_STEPS',
     'NO_CLOBBER_TEMP_MAX_AGE_MS',
     'O_NOFOLLOW',
     'RUNTIME_STATE_DIR',
     'RuntimeStateError',
+    'TRANSITIONAL_CONFIG_FILE',
     'asBuffer',
     'assertDirectoryChain',
     'atomicWrite',
     'atomicWriteHarnessSettings',
+    'checkLegacyConfigFile',
+    'checkLegacyRuntimeDirectory',
     'commonDir',
     'createNoClobber',
     'ensureGuardedDirectory',
@@ -95,7 +104,11 @@ test('the shared module exports exactly the runtime-state surface', () => {
     'guardedRmdir',
     'guardedUnlink',
     'guardedUnlinkLegacyMemory',
+    'hashRegularFile',
+    'isLegacyMigrationMarker',
+    'listLegacyTree',
     'relativeToRoot',
+    'removeLegacyListing',
     'requireToplevel',
     'resolveDirectory',
     'resolveRuntimeRoot',
@@ -472,4 +485,211 @@ test('createNoClobber refuses an unguarded target and a malformed prefix', async
     );
   }
   assert.deepEqual(readdirSync(directory), []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Legacy removal classes and the listing-bound remover
+
+function legacyContext(root) {
+  return { runner: createSharedRunner(), env: gitBaseEnv(GIT_ENV), cwd: root };
+}
+
+function legacyDirectory(root) {
+  const target = join(root, '.firmo');
+  mkdirSync(join(target, 'review'), { recursive: true });
+  writeFileSync(join(target, 'cache.json'), '{}\n');
+  writeFileSync(join(target, 'review', 'a.md'), 'report\n');
+  writeFileSync(join(root, 'outside.txt'), 'outside\n');
+  symlinkSync(join(root, 'outside.txt'), join(target, 'link.txt'));
+  return target;
+}
+
+// Invariant: the listing names every entry with type, size, device and inode and a SHA-256 for
+// each regular file, without following a symlink; the remover deletes exactly that listing
+// bottom-up and unlinks a symlink without touching its target.
+test('removeLegacyListing deletes exactly the listing and never follows a symlink', async (t) => {
+  const root = repository(t);
+  const target = legacyDirectory(root);
+  const listing = await guard.listLegacyTree(target);
+  assert.deepEqual(
+    listing.entries.map((entry) => [entry.path, entry.type, Boolean(entry.sha256)]),
+    [
+      ['cache.json', 'file', true],
+      ['link.txt', 'symlink', false],
+      ['review', 'directory', false],
+      ['review/a.md', 'file', true],
+    ],
+  );
+  const order = [];
+  const { removed } = await guard.removeLegacyListing(legacyContext(root), target, listing, {
+    beforeEntry: (relative) => order.push(relative),
+  });
+  assert.equal(removed, 5);
+  assert.deepEqual(order, ['review/a.md', 'review', 'link.txt', 'cache.json', '']);
+  assert.equal(existsSync(target), false);
+  assert.equal(readFileSync(join(root, 'outside.txt'), 'utf8'), 'outside\n');
+});
+
+// Invariant (remover race): an entry added below a listed directory during the removal stops the
+// item with LEGACY_CHANGED and reports how far it got; the unlisted entry survives.
+test('removeLegacyListing: an entry added mid-walk is LEGACY_CHANGED with the partial state', async (t) => {
+  const root = repository(t);
+  const target = legacyDirectory(root);
+  const listing = await guard.listLegacyTree(target);
+  await assert.rejects(
+    guard.removeLegacyListing(legacyContext(root), target, listing, {
+      beforeEntry: (relative) => {
+        if (relative === 'review') writeFileSync(join(target, 'review', 'new.txt'), 'new\n');
+      },
+    }),
+    (error) =>
+      error.code === 'LEGACY_CHANGED' && error.removed === 1 && error.remaining === 'review',
+  );
+  assert.ok(existsSync(join(target, 'review', 'new.txt')));
+  assert.ok(existsSync(join(target, 'cache.json')));
+});
+
+// Invariant (remover race): a directory of the chain swapped for a symlink mid-walk is
+// UNSAFE_TARGET before any entry below it is touched, so nothing outside the listing is reached.
+test('removeLegacyListing: a chain swapped mid-walk is UNSAFE_TARGET', async (t) => {
+  const root = repository(t);
+  const target = legacyDirectory(root);
+  const listing = await guard.listLegacyTree(target);
+  mkdirSync(join(root, 'decoy'));
+  writeFileSync(join(root, 'decoy', 'a.md'), 'decoy\n');
+  await assert.rejects(
+    guard.removeLegacyListing(legacyContext(root), target, listing, {
+      beforeEntry: (relative) => {
+        if (relative !== 'review/a.md') return;
+        renameSync(join(target, 'review'), join(root, 'moved'));
+        symlinkSync(join(root, 'decoy'), join(target, 'review'));
+      },
+    }),
+    (error) => error.code === 'UNSAFE_TARGET' && error.remaining === 'review/a.md',
+  );
+  assert.equal(readFileSync(join(root, 'decoy', 'a.md'), 'utf8'), 'decoy\n');
+});
+
+// Invariant: a listed file whose size or inode changed is LEGACY_CHANGED; a target outside the
+// closed name list is UNSAFE_TARGET.
+test('removeLegacyListing: a changed entry and a foreign name are refused', async (t) => {
+  const root = repository(t);
+  const target = legacyDirectory(root);
+  const listing = await guard.listLegacyTree(target);
+  appendFileSync(join(target, 'cache.json'), 'grown\n');
+  await assert.rejects(
+    guard.removeLegacyListing(legacyContext(root), target, listing),
+    (error) => error.code === 'LEGACY_CHANGED' && error.remaining === 'cache.json',
+  );
+  mkdirSync(join(root, 'elsewhere'));
+  await assert.rejects(
+    guard.removeLegacyListing(legacyContext(root), join(root, 'elsewhere'), {
+      root: { type: 'directory' },
+      entries: [],
+    }),
+    { code: 'UNSAFE_TARGET' },
+  );
+});
+
+// Invariant: the legacyRuntimeDirectory class reports every failed condition: tracked content,
+// a missing marker, a marker for the other source or with a non-string `source`, a nested `.git`,
+// and open carry-over. A legacy marker (no `source` key) certifies only a zero-open proof.
+test('checkLegacyRuntimeDirectory reports every failed condition', async (t) => {
+  const root = repository(t);
+  const target = legacyDirectory(root);
+  const context = legacyContext(root);
+  const listing = await guard.listLegacyTree(target);
+  assert.deepEqual(
+    await guard.checkLegacyRuntimeDirectory(context, target, {
+      marker: { version: 1, source: '.firmo' },
+      listing,
+      open: [],
+    }),
+    [],
+  );
+  for (const marker of [
+    null,
+    { version: 1, source: null },
+    { version: 2 },
+    { version: 1, source: '.sf-plugin' },
+  ]) {
+    assert.deepEqual(
+      (await guard.checkLegacyRuntimeDirectory(context, target, { marker, listing, open: [] })).map(
+        (failure) => failure.code,
+      ),
+      ['LEGACY_UNMIGRATED'],
+      JSON.stringify(marker),
+    );
+  }
+  assert.equal(guard.isLegacyMigrationMarker({ version: 1 }), true);
+  assert.equal(guard.isLegacyMigrationMarker({ version: 1, source: null }), false);
+  assert.deepEqual(
+    await guard.checkLegacyRuntimeDirectory(context, target, {
+      marker: { version: 1 },
+      listing,
+      open: [],
+    }),
+    [],
+  );
+  assert.deepEqual(
+    (
+      await guard.checkLegacyRuntimeDirectory(context, target, {
+        marker: { version: 1 },
+        listing,
+        open: [{ path: '.firmo/x' }],
+      })
+    ).map((failure) => failure.code),
+    ['CARRY_OVER_OPEN'],
+  );
+  mkdirSync(join(target, '.worktrees', 'wt'), { recursive: true });
+  writeFileSync(join(target, '.worktrees', 'wt', '.git'), 'gitdir: x\n');
+  spawnSync('git', ['-C', root, 'add', '-f', '.firmo/cache.json'], { env: GIT_ENV });
+  const failures = await guard.checkLegacyRuntimeDirectory(context, target, {
+    marker: { version: 1, source: '.firmo' },
+    listing: await guard.listLegacyTree(target),
+    open: [{ path: '.firmo/x' }],
+  });
+  assert.deepEqual(
+    failures.map((failure) => [failure.code, failure.reason]),
+    [
+      ['LEGACY_TRACKED', undefined],
+      ['NOT_ELIGIBLE', 'nested-git'],
+      ['CARRY_OVER_OPEN', undefined],
+    ],
+  );
+  await assert.rejects(
+    guard.checkLegacyRuntimeDirectory(context, join(root, '.effective-flow'), {
+      marker: null,
+      listing,
+      open: [],
+    }),
+    { code: 'UNSAFE_TARGET' },
+  );
+});
+
+// Invariant: the legacyConfigFile class refuses a live configuration (locator step 3 or 4) and a
+// missing decision, and admits only its closed list of names.
+test('checkLegacyConfigFile refuses a live configuration and a missing decision', async (t) => {
+  const root = repository(t);
+  const context = legacyContext(root);
+  mkdirSync(join(root, '.effective-flow'));
+  const target = join(root, '.effective-flow', 'config.json');
+  writeFileSync(target, '{}\n');
+  const codes = async (options) =>
+    (await guard.checkLegacyConfigFile(context, target, options)).map((failure) => [
+      failure.code,
+      failure.reason,
+    ]);
+  assert.deepEqual(await codes({ locatorStep: 1, decision: 'complete' }), []);
+  assert.deepEqual(await codes({ locatorStep: 0, decision: 'discarded' }), []);
+  assert.deepEqual(await codes({ locatorStep: 3, decision: 'complete' }), [
+    ['NOT_ELIGIBLE', 'live-configuration'],
+  ]);
+  assert.deepEqual(await codes({ locatorStep: 2, decision: undefined }), [
+    ['CARRY_OVER_OPEN', 'decision-required'],
+  ]);
+  await assert.rejects(
+    guard.checkLegacyConfigFile(context, join(root, 'config.json'), { locatorStep: 1 }),
+    { code: 'UNSAFE_TARGET' },
+  );
 });

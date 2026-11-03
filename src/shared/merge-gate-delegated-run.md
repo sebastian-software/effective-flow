@@ -446,7 +446,7 @@ gate run inline generates it at the start. Use
   resolution record including every adjacent file with the check that demanded it, both verification
   verdicts, and the resulting merge commit or the abort reason
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
-  record handle and that record's last transition, plus this run's worktree-record exit self-check
+  record ID and that record's last transition, plus this run's worktree-record exit self-check
   result
 - every candidate from "Unconfigured automatic-reviewer advisory", keyed by the established
   bot-typed one-suffix equivalence and carrying its `missing reviewer` or `missing check`
@@ -717,8 +717,8 @@ run can push an unbounded number of commits onto someone's pull request.
      exactly the same path, which is why this is one step and not two: the conflict appears in one
      place either way.
    - **Close the checkout's lifecycle in the same step.** Once the push is confirmed, an Effective
-     Flow-owned worktree goes `active` → `cleanup-ready` and through the shared
-     claim/remove/reconcile sequence; a reused in-place checkout has no record to close. A later
+     Flow-owned worktree is withdrawn with one `worktree remove` call per
+     `merge-gate-checkout-boundary`; a reused in-place checkout has no record to close. A later
      round that needs this step again provisions a checkout again.
    - **A controlled stop on the conflict path** – `off`, an `ask` nobody answered, an `ABORT` from
      either verification role, or a conflict this run may not or cannot resolve – happens **before**

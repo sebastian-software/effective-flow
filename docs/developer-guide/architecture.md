@@ -612,9 +612,10 @@ pointer, so each also eagerly includes
 short fragment makes loading `worktree-integration` mandatory before any `git worktree add`, requires
 the record write immediately after the `effective-flow-created` receipt, and adds an exit
 self-check that each tool triggers with one line in its completion step. The self-check derives its
-set from durable state – the linked worktrees at the run's `SESSION_ID` path in
-`git worktree list --porcelain` and the records matching the run's `sessionId` and `workflow` – and
-accepts only a deleted record with an unregistered worktree, or a record in `cleanup-ready`,
+set from durable state through one read-only `worktree inspect` call with the run's `sessionId`
+and `executionRoot` = `RUNTIME_STATE_ROOT`, since the run's own worktree may already be withdrawn:
+the helper returns the session's records, which the caller filters to the run's `workflow`, and as `unrecorded` the
+registered worktrees under its session paths that no record names. The self-check accepts only a deleted record with an unregistered worktree, or a record in `cleanup-ready`,
 `aborted`, `failed` or `cleanup-failed`. It sets a record left `active` to `aborted` or `failed`
 once, reports an unrecorded registered worktree as a manual-reconciliation defect, and never
 removes or claims a worktree or backfills a record. `iterate`'s pull-request checkout follows the
@@ -653,8 +654,12 @@ user-managed, or recordless worktree is never adopted.
 An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
 claims `cleanup-ready` or `cleanup-failed` as `cleanup-in-progress` with its run ID and timestamp.
 A failed normal removal returns to `cleanup-failed`; complete and reverified worktree and branch
-cleanup removes only that actor's record. Foreign locks and claims are never stolen, even when
-they appear old.
+cleanup removes only that actor's record. A `delete-after-integration` branch that `git branch -d`
+refuses is kept and the item reports `BRANCH_RETAINED` with the unproven commits, its worktree and
+record already deleted. Only an `apply-review` call carrying `integrationRoot` may then prove every
+component commit by exact patch-id against the branch checked out there and compare-and-delete
+the ref; `cleanup apply` never carries that proof. Foreign locks and claims are never stolen, even
+when they appear old.
 
 Cleanup derives eligibility from the intersection of independent evidence: owned lifecycle,
 matching receipt, current Git registration, branch and purpose agreement, clean status, and the
@@ -929,9 +934,12 @@ and `memory migrate-directory` (the whole `.effective-flow/` directory migration
 takes `memory.lock` itself, re-reads and validates the file, merges only its owned field and
 replaces the file atomically; a legacy `.sf-memory.json` is adopted inside the same transaction.
 Prose no longer replays the protocol, and a build guard rejects a direct write
-([guard #176](build-system.md#guards)). `setup` can write 54 non-destructive or bounded rules, in three
-families (nine runtime-state helper operations including `commit create`, `review
-open-report` and `review write-report`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
+operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
+worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
+a prose removal of that state too. `setup` can write 58 non-destructive or bounded rules, in three
+families (thirteen runtime-state helper operations including `commit create`, `review
+open-report`, `review write-report`, `worktree record-init|transition|inspect` and `cleanup plan`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

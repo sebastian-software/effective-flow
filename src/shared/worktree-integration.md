@@ -177,8 +177,7 @@ Carry this state through baseline validation and every later phase:
 - whether this run created the delivery branch,
 - whether this run created the delivery worktree,
 - the delivery execution-location receipt,
-- for an Effective Flow-created worktree, its lifecycle record ID and retained absolute record
-  handle below `RUNTIME_STATE_ROOT`.
+- for an Effective Flow-created worktree, its lifecycle record ID.
 
 For a reused `harness-managed` or user-managed worktree or branch, both creation flags stay
 false and no lifecycle record is created. For in-place execution without delivery, no delivery
@@ -194,8 +193,8 @@ When worktree execution is active:
    through the harness-supported flow and issue a new verified receipt before committing; never
    silently switch a harness-managed worktree. The linked or native checkout becomes
    `EXECUTION_ROOT`; the porcelain main checkout remains `RUNTIME_STATE_ROOT`.
-2. Otherwise determine the repo name from `basename "$(git rev-parse --show-toplevel)"` and use
-   `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
+2. Otherwise `REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`, never of a linked or
+   harness checkout; use `worktree.baseDir` (default `.effective-flow/.worktrees`) as the base dir. Worktree path:
    `BASE_DIR/REPO_NAME/SESSION_ID`. Resolve a relative `BASE_DIR` against
    `RUNTIME_STATE_ROOT`, never against a disposable worktree. When that path is below
    `.effective-flow/`, resolve every missing base or parent directory that will be created.
@@ -206,10 +205,10 @@ When worktree execution is active:
    Create the worktree and delivery branch with
    `git worktree add <WORKTREE_PATH> -b <BRANCH_NAME> <BASE_REF>`, where `<BASE_REF>` is the
    recorded resolved base ref, then immediately issue and verify an `effective-flow-created`
-   receipt for the exact path, branch, workflow and delivery purpose. Record both artifacts as current-run-owned and capture the branch's exact creation
-   OID. Immediately after that receipt succeeds, initialize its version 1 worktree-lifecycle
-   record as `active`, with branch policy `retain`, under the verified runtime root. Do this
-   before setup or delegation. If receipt or lifecycle-record creation fails, retain the
+   receipt for the exact path, branch, workflow and delivery purpose. Record both artifacts as
+   current-run-owned and capture the branch's exact creation OID. Immediately after that receipt
+   succeeds, and before setup or delegation, write its lifecycle record (purpose `delivery`, branch
+   policy `retain`) with `worktree record-init`. If the receipt or the record fails, retain the
    worktree and branch for manual reconciliation and do not continue inside it.
 3. Only for that newly Effective Flow-created receipt, run setup per `worktree.setup` and
    briefly announce the mode beforehand:
@@ -230,23 +229,14 @@ When worktree execution is active:
 
 ### Lifecycle outcome handling
 
-For a current-run-owned `effective-flow-created` delivery or partial-diff worktree, keep its
-lifecycle record synchronized at every terminal workflow boundary. Perform every transition
-under the record lock and the runtime-state write-safety guard:
-
-- keep `active` while implementation, validation, commit, integration, or delivery preparation
-  can still change the checkout;
-- on a controlled stop before readiness, transition `active` to `aborted` with the concrete
-  reason and retain both worktree and branch;
-- on an implementation, validation, integration, ownership, or state error before readiness,
-  transition `active` to `failed` with the exact reason and retain both artifacts;
-- only after the intended changes are durably committed to the delivery branch may the owning
-  workflow transition `active` to `cleanup-ready` and enter the shared claim/remove/reconcile
-  sequence.
-
-If a lifecycle transition cannot be persisted safely, retain the worktree and branch and report
-the record handle and failed guard or operation. A sudden interruption deliberately leaves
-`active`; no age check upgrades or downgrades it.
+For a current-run-owned `effective-flow-created` delivery or partial-diff worktree, the record
+stays `active` while the checkout can still change. At every terminal boundary before readiness,
+call `worktree transition` once: a controlled stop goes to `aborted` with the concrete reason, an
+implementation, validation, integration, ownership, or state error to `failed` with the exact
+reason; both retain worktree and branch. Only after the intended changes are durably committed to
+the delivery branch does the withdrawal of "Handback and completion action" step 4 run. A
+transition that is not `ok` retains both artifacts and is reported with the record ID and code. A
+sudden interruption leaves `active`.
 
 ### In-place delivery without worktree
 
@@ -282,8 +272,8 @@ The procedure:
 1. Resolve `delivery.baseBranch` by that same rule. Create a fresh worktree branch from the
    recorded resolved base ref at that exact OID, then immediately issue and verify
    a separate `effective-flow-created` receipt whose purpose is `partial-diff`. Before setup or
-   file transfer, initialize its lifecycle record as `active` with branch policy `retain`; a
-   record-creation failure retains both worktree and branch and aborts the partial-diff flow.
+   file transfer, write its lifecycle record (branch policy `retain`) with `worktree record-init`;
+   a failure retains both worktree and branch and aborts the partial-diff flow.
 2. Take only the selected delivery states from the source checkout into the worktree. Permitted
    evidence is plan affected-file scope reconciled with actual output, review finding scope, issue
    scope, files recorded as produced by the workflow, or explicit user confirmation. Preserve
@@ -300,10 +290,9 @@ The procedure:
    delegation.
 5. Run `{{SKILL:pr}}` only for effective `pr` completion and only with the exact verified committed
    head handoff described below.
-6. Remove the worktree only through the shared lifecycle transition, claim, ordinary remove, and
-   reconciliation sequence after the receipt passes every ownership-safe cleanup check. Leave
-   the delivery branch locally and the main checkout unchanged. Non-selected changes in the
-   main checkout remain untouched.
+6. Withdraw the worktree as in "Handback and completion action" step 4. Leave the delivery branch
+   locally and the main checkout unchanged. Non-selected changes in the main checkout remain
+   untouched.
 
 A heuristic partial-diff selection by "all changed files
 except <plan.dir>" is not allowed. The workflow must know the files to include or
@@ -346,11 +335,10 @@ by the current run:
    branches, perform no lifecycle mutation. Report every retained path or branch and that it is
    externally managed.
 3. **Effective Flow-owned worktree:** Only when both current-run creation flags are true, the
-   receipt is `effective-flow-created`, and the matching lifecycle record is still `active`,
-   acquire its record lock and transition it to `aborted` with the concrete pre-implementation
-   stop reason. Retain the worktree and branch for inspection; an aborted worktree is never a
-   cleanup candidate. If the transition cannot be persisted, retain both artifacts and report
-   the lifecycle failure. Do not remove the worktree merely because `HEAD` and the branch tip
+   receipt is `effective-flow-created`, and the matching lifecycle record is still `active`, call
+   `worktree transition` to `aborted` with the concrete pre-implementation stop reason. Retain the
+   worktree and branch for inspection; an aborted worktree is never a cleanup candidate. A
+   transition that is not `ok` retains both artifacts and is reported. Do not remove the worktree merely because `HEAD` and the branch tip
    still equal the creation OID. Never compare against a moving remote tip when proving ownership
    or deciding whether any current-run artifact may be changed.
 4. **In-place transient branch:** Only when the current run created the delivery branch, freshly
@@ -438,16 +426,14 @@ options:
 
 4. **Withdraw an Effective Flow-owned worktree:** Only when the receipt is
    `effective-flow-created` and the intended changes are durably committed on its delivery
-   branch, acquire the lifecycle record lock, freshly reverify every eligibility proof, and
-   transition `active` to `cleanup-ready`. Claim it as `cleanup-in-progress` for this workflow's
-   cleanup run, execute only `git worktree remove <WORKTREE_PATH>` without force, and reconcile
-   the result while retaining the lock. The `retain` branch policy leaves the delivery branch in
-   the local repository. Delete only the successfully reconciled lifecycle record; a proof,
-   remove, or record-finalization failure becomes `cleanup-failed` where safely writable and is
-   reported with the retained path or partial state. For `in-place` and `harness-managed`
-   receipts, perform no worktree cleanup and create no lifecycle state; leave handling to the
-   user or harness. The verified `RUNTIME_STATE_ROOT` is never a cleanup target, and local review
-   state there remains intact.
+   branch, call `worktree remove` once, with `cwd` and `executionRoot` = `RUNTIME_STATE_ROOT` in the literal
+   shape, with the record ID of every
+   worktree this step withdraws (an `active` record passes `cleanup-ready` inside the call). Handle each item by the
+   lifecycle outcome table, with its denial fallback. The `retain`
+   branch policy leaves the delivery branch in the local repository. For `in-place` and
+   `harness-managed` receipts, perform no worktree cleanup and create no lifecycle state; leave
+   handling to the user or harness. The verified `RUNTIME_STATE_ROOT` is never a cleanup target,
+   and local review state there remains intact.
 5. **Execute action:** Run this step and every Git, remote-helper and provider-CLI operation it
    performs in `RUNTIME_STATE_ROOT`, per "Rooted operations". Step 4 may already have removed the
    Effective Flow-owned worktree, so an inherited execution directory can be a deleted path; the

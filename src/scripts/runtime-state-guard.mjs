@@ -15,13 +15,15 @@
 //   and `guardedRmdir` each run the guard on their exact target before touching the filesystem.
 // - Two exact-name classes outside `.effective-flow/` (legacy memory and harness settings, see
 //   their section below) and the read-only walk of the legacy runtime directories.
+// - The `legacyRuntimeDirectory` and `legacyConfigFile` removal classes and their listing-bound
+//   remover (see their section at the end).
 //
 // A context is `{ runner, env, cwd }`: `runner` is either a helper's own runner or the shared
 // `process-runner.mjs` runner, `env` comes from `gitBaseEnv`, and `cwd` is set by
 // `resolveRuntimeRoot`. Every refusal is a `RuntimeStateError`; each helper maps its code to its
 // own exit code.
 
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
 import {
   link,
@@ -891,4 +893,319 @@ export async function walkLegacySource(source) {
   };
   await visit('');
   return { directories, files, skipped };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Legacy runtime directories and legacy configuration files (removal)
+//
+// Two exact-name classes for `cleanup apply`, each admitting only its closed list of names below
+// `cwd`:
+//
+// - `legacyRuntimeDirectory`: `<cwd>/.firmo` or `<cwd>/.sf-plugin`, a real directory under
+//   `lstat`. It is removable only when `git ls-files` lists nothing below it (LEGACY_TRACKED
+//   otherwise), the `runtimeMigration.directory` marker exists and its stored `source` equals the
+//   target name (LEGACY_UNMIGRATED otherwise), no
+//   `.git` file or directory exists anywhere in it, the target itself and its `.worktrees/`
+//   included (NOT_ELIGIBLE, reason `nested-git`), and no carry-over entry stays open after the caller's decisions
+//   (CARRY_OVER_OPEN). A legacy marker, written before markers stored `source` and therefore
+//   without that key, names no directory: it certifies a target only through a carry-over proof
+//   with zero open entries, the top-level `memory.json` included (CARRY_OVER_OPEN otherwise). A
+//   `source` key with any other value certifies nothing. The marker and the carry-over comparison
+//   are derived by the caller from fresh evidence and passed in; this module never reads memory or
+//   configuration itself.
+// - `legacyConfigFile`: `<cwd>/.effective-flow/config.json`, or the `config.json` at the top of a
+//   legacy runtime directory, a regular file under `lstat` and untracked. It is removable only when
+//   the configuration locator resolves at steps 0 to 2, so the file is not the live configuration
+//   (NOT_ELIGIBLE, reason `live-configuration`), and the caller's decision for it is `complete` or
+//   `discarded` (CARRY_OVER_OPEN).
+//
+// `listLegacyTree` produces the listing a removal is bound to: every entry below the target with
+// its type, size, device and inode, and a SHA-256 for every regular file, without following any
+// link. `removeLegacyListing` removes exactly that listing bottom-up: immediately before each
+// `unlink` or `rmdir` it re-proves the symlink-free directory chain from `cwd` and compares the
+// entry's `lstat` type, device, inode and (for a non-directory) size against the listing. A
+// symlink is unlinked, never followed. A changed or unlisted entry stops the removal with
+// LEGACY_CHANGED and a swapped chain with UNSAFE_TARGET; the error carries `removed` (how many
+// entries were already removed) and `remaining` (the entry it stopped at), so the partial state
+// can be reported.
+
+export const LEGACY_CONFIG_ENTRY = 'config.json';
+export const TRANSITIONAL_CONFIG_FILE = `${RUNTIME_STATE_DIR}/config.json`;
+export const LEGACY_WORKTREES_ENTRY = '.worktrees';
+// The configuration locator steps (config-resolve-core) at which a legacy file is not the live
+// configuration.
+export const NON_LIVE_LOCATOR_STEPS = Object.freeze([0, 1, 2]);
+export const LEGACY_CONFIG_DECISIONS = Object.freeze(['complete', 'discarded']);
+const LEGACY_HASH_CHUNK_BYTES = 64 * 1024;
+
+// SHA-256 of a regular file opened without following a final symlink; null when it cannot be
+// read as the regular file `expected` (`dev`, `ino` as bigint) names.
+export async function hashRegularFile(target, expected) {
+  let handle;
+  try {
+    handle = await open(target, fsConstants.O_RDONLY | O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0));
+    const info = await handle.stat({ bigint: true });
+    if (!info.isFile()) return null;
+    if (expected && (info.dev !== expected.dev || info.ino !== expected.ino)) return null;
+    const hash = createHash('sha256');
+    const buffer = Buffer.alloc(LEGACY_HASH_CHUNK_BYTES);
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) break;
+      hash.update(buffer.subarray(0, bytesRead));
+    }
+    return hash.digest('hex');
+  } catch {
+    return null;
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+}
+
+function listingEntry(relative, info) {
+  return {
+    path: relative,
+    type: entryType(info),
+    size: String(info.size),
+    dev: String(info.dev),
+    ino: String(info.ino),
+  };
+}
+
+// The listing of one legacy target. For a directory: `{ root, entries, nestedGit }`, `entries`
+// sorted by path, `nestedGit` the paths of every `.git` entry anywhere in the tree (a directory
+// holding one is a checkout and is not descended further, so the listing is then `incomplete`). For a
+// regular file: `{ root, entries: [] }` with the file's SHA-256 on `root`. Any other type at the
+// target is UNSAFE_TARGET.
+export async function listLegacyTree(target) {
+  let rootInfo;
+  try {
+    rootInfo = await lstat(target, { bigint: true });
+  } catch (error) {
+    fail('UNSAFE_TARGET', `cannot inspect ${target}: ${error?.code ?? error?.message}`);
+  }
+  const root = listingEntry('', rootInfo);
+  if (root.type === 'file') {
+    const sha256 = await hashRegularFile(target, rootInfo);
+    if (!sha256) fail('UNSAFE_TARGET', `${target} changed while it was read`);
+    return { root: { ...root, sha256 }, entries: [], nestedGit: [], incomplete: false };
+  }
+  if (root.type !== 'directory') fail('UNSAFE_TARGET', `${target} is a ${root.type}`);
+  const entries = [];
+  const nestedGit = [];
+  let incomplete = false;
+  const visit = async (relative) => {
+    const absolute = relative === '' ? target : path.join(target, relative);
+    let names;
+    try {
+      names = (await readdir(absolute)).sort();
+    } catch (error) {
+      fail('UNSAFE_TARGET', `cannot list ${absolute}: ${error?.code ?? error?.message}`);
+    }
+    if (names.includes('.git')) {
+      nestedGit.push(relative === '' ? '.git' : `${relative}/.git`);
+      incomplete = true;
+      return;
+    }
+    for (const name of names) {
+      const child = relative === '' ? name : `${relative}/${name}`;
+      let info;
+      try {
+        info = await lstat(path.join(target, child), { bigint: true });
+      } catch (error) {
+        fail('UNSAFE_TARGET', `cannot inspect ${child}: ${error?.code ?? error?.message}`);
+      }
+      const entry = listingEntry(child, info);
+      if (entry.type === 'file') {
+        const sha256 = await hashRegularFile(path.join(target, child), info);
+        if (!sha256) fail('LEGACY_CHANGED', `${child} changed while it was read`);
+        entry.sha256 = sha256;
+      }
+      entries.push(entry);
+      if (entry.type === 'directory') await visit(child);
+    }
+  };
+  await visit('');
+  entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  return { root, entries, nestedGit, incomplete };
+}
+
+function failure(code, details = {}) {
+  return { code, ...details };
+}
+
+function requireLegacyDirectoryName(cwd, target) {
+  const name = path.basename(target);
+  if (path.dirname(target) !== cwd || !LEGACY_RUNTIME_DIRS.includes(name)) {
+    fail('UNSAFE_TARGET', `${target} is not a legacy runtime directory of ${cwd}`);
+  }
+  return name;
+}
+
+// Whether `marker` is a version-1 `runtimeMigration.directory` marker written before the marker
+// stored its `source`: the key is absent, not merely empty.
+export function isLegacyMigrationMarker(marker) {
+  return (
+    marker !== null &&
+    typeof marker === 'object' &&
+    marker.version === 1 &&
+    !Object.hasOwn(marker, 'source')
+  );
+}
+
+// Every failed `legacyRuntimeDirectory` condition of `target`, as `{code, ...}` entries (empty
+// when the target is removable). `marker` is the stored `runtimeMigration.directory` object or
+// null; `listing` comes from `listLegacyTree`; `open` lists the carry-over entries still open after
+// the caller's decisions. A name outside the closed list is UNSAFE_TARGET (thrown).
+export async function checkLegacyRuntimeDirectory(context, target, { marker, listing, open }) {
+  const name = requireLegacyDirectoryName(context.cwd, target);
+  const failures = [];
+  let info;
+  try {
+    info = await lstat(target);
+  } catch (error) {
+    fail('UNSAFE_TARGET', `cannot inspect ${target}: ${error?.code ?? error?.message}`);
+  }
+  if (info.isSymbolicLink() || !info.isDirectory()) {
+    return [failure('UNSAFE_TARGET', { reason: 'not-a-real-directory' })];
+  }
+  if (await isTracked(context, `${name}/`)) failures.push(failure('LEGACY_TRACKED'));
+  if (
+    !isLegacyMigrationMarker(marker) &&
+    (marker?.version !== 1 || typeof marker.source !== 'string' || marker.source !== name)
+  ) {
+    failures.push(
+      failure('LEGACY_UNMIGRATED', {
+        markerSource: typeof marker?.source === 'string' ? marker.source : null,
+      }),
+    );
+  }
+  if (listing.nestedGit.length > 0) {
+    failures.push(failure('NOT_ELIGIBLE', { reason: 'nested-git', paths: listing.nestedGit }));
+  }
+  if (open.length > 0) failures.push(failure('CARRY_OVER_OPEN', { open }));
+  return failures;
+}
+
+function legacyConfigTargets(cwd) {
+  return [
+    path.join(cwd, TRANSITIONAL_CONFIG_FILE),
+    ...LEGACY_RUNTIME_DIRS.map((name) => path.join(cwd, name, LEGACY_CONFIG_ENTRY)),
+  ];
+}
+
+// Every failed `legacyConfigFile` condition of `target` (see above). `locatorStep` is the step the
+// configuration locator resolved at (null when it could not resolve), `decision` the caller's
+// decision for this file (undefined when none). A name outside the closed list is UNSAFE_TARGET.
+export async function checkLegacyConfigFile(context, target, { locatorStep, decision }) {
+  const { cwd } = context;
+  if (!legacyConfigTargets(cwd).includes(target)) {
+    fail('UNSAFE_TARGET', `${target} is not a legacy configuration file of ${cwd}`);
+  }
+  try {
+    await assertDirectoryChain(cwd, path.dirname(target));
+  } catch (error) {
+    if (error instanceof RuntimeStateError) {
+      return [failure('UNSAFE_TARGET', { reason: 'unsafe-chain' })];
+    }
+    throw error;
+  }
+  let info;
+  try {
+    info = await lstat(target);
+  } catch (error) {
+    fail('UNSAFE_TARGET', `cannot inspect ${target}: ${error?.code ?? error?.message}`);
+  }
+  if (!info.isFile()) return [failure('UNSAFE_TARGET', { reason: 'not-a-regular-file' })];
+  const failures = [];
+  if (await isTracked(context, relativeToRoot(cwd, target))) {
+    failures.push(failure('LEGACY_TRACKED'));
+  }
+  if (!NON_LIVE_LOCATOR_STEPS.includes(locatorStep)) {
+    failures.push(failure('NOT_ELIGIBLE', { reason: 'live-configuration', locatorStep }));
+  }
+  if (!LEGACY_CONFIG_DECISIONS.includes(decision)) {
+    failures.push(failure('CARRY_OVER_OPEN', { reason: 'decision-required' }));
+  }
+  return failures;
+}
+
+function changed(message, removed, remaining) {
+  const error = new RuntimeStateError('LEGACY_CHANGED', message);
+  error.removed = removed;
+  error.remaining = remaining;
+  return error;
+}
+
+function sameListedNode(entry, info, { compareSize }) {
+  return (
+    entryType(info) === entry.type &&
+    String(info.dev) === entry.dev &&
+    String(info.ino) === entry.ino &&
+    (!compareSize || String(info.size) === entry.size)
+  );
+}
+
+// Removes exactly the digested `listing` of `target` (see the section header). `options.beforeEntry`
+// (a test hook) runs with the relative path of each entry, `''` for the target itself, right
+// before its checks. Returns `{ removed }`, the number of entries removed including the target.
+export async function removeLegacyListing(context, target, listing, options = {}) {
+  const { cwd } = context;
+  const isFile = listing.root.type === 'file';
+  if (isFile) {
+    if (!legacyConfigTargets(cwd).includes(target)) {
+      fail('UNSAFE_TARGET', `${target} is not a legacy configuration file of ${cwd}`);
+    }
+  } else {
+    requireLegacyDirectoryName(cwd, target);
+  }
+  const ordered = [...listing.entries].sort((left, right) => {
+    const depth = right.path.split('/').length - left.path.split('/').length;
+    if (depth !== 0) return depth;
+    return left.path < right.path ? 1 : left.path > right.path ? -1 : 0;
+  });
+  let removed = 0;
+  const removeOne = async (entry) => {
+    const absolute = entry.path === '' ? target : path.join(target, entry.path);
+    await options.beforeEntry?.(entry.path);
+    try {
+      await assertDirectoryChain(cwd, path.dirname(absolute));
+    } catch (error) {
+      if (error instanceof RuntimeStateError) {
+        error.removed = removed;
+        error.remaining = entry.path;
+      }
+      throw error;
+    }
+    let info;
+    try {
+      info = await lstat(absolute, { bigint: true });
+    } catch (error) {
+      throw changed(
+        `${absolute} cannot be inspected: ${error?.code ?? error?.message}`,
+        removed,
+        entry.path,
+      );
+    }
+    if (!sameListedNode(entry, info, { compareSize: entry.type !== 'directory' })) {
+      throw changed(`${absolute} changed after the dry run`, removed, entry.path);
+    }
+    try {
+      if (entry.type === 'directory') await rmdir(absolute);
+      else await unlink(absolute);
+    } catch (error) {
+      const unlisted = error?.code === 'ENOTEMPTY' || error?.code === 'EEXIST';
+      throw changed(
+        unlisted
+          ? `${absolute} holds an entry that was not in the dry run`
+          : `cannot remove ${absolute}: ${error?.code ?? error?.message}`,
+        removed,
+        entry.path,
+      );
+    }
+    removed += 1;
+  };
+  for (const entry of ordered) await removeOne(entry);
+  await removeOne(listing.root);
+  return { removed };
 }

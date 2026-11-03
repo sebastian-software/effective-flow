@@ -460,11 +460,13 @@ test('cleanup inventories .gitignore remnants but leaves repair exclusively to s
 });
 
 // Invariant: cleanup lazily loads runtime-state safety before any runtime mutation.
+// Invariant: `cleanup plan` and `cleanup apply` guard the runtime root themselves, so the prose
+// guard loads only for the mutations prose still performs.
 test('cleanup loads runtime safety for migrations, memory, and tracker markers', () => {
   const cleanup = readSource('tools', 'cleanup.md');
   assert.match(
     cleanup,
-    /```lazy-include\s+runtime-state-safety\s+when: [^\n]*worktree lifecycle state[^\n]*any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent\s+```/,
+    /```lazy-include\s+runtime-state-safety\s+when: a stale diff baseline will be discarded, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent\s+```/,
   );
 });
 
@@ -491,48 +493,41 @@ test('cleanup verifies location and safety before migration-dependent deletion d
 
 // Invariant: a legacy directory that still roots a linked worktree is never deleted.
 test('cleanup blocks containing legacy directory while a linked worktree remains', () => {
-  const cleanup = readSource('tools', 'cleanup.md');
+  const cleanup = readSource('tools', 'cleanup.md').replace(/\s+/g, ' ');
 
   assert.match(
     cleanup,
-    /compare[\s\S]*`<legacy-directory>\/\.worktrees\/` tree with the fresh complete Git worktree[\s\S]*inventory/,
+    /a legacy directory with a nested `\.git` or a registered worktree anywhere below it is blocked \(`NOT_ELIGIBLE`, `nested-git` or `registered-worktree`/,
   );
+  assert.match(cleanup, /deleting the directory is never a substitute for removing a worktree/);
   assert.match(
     cleanup,
-    /If any registered linked worktree is current, active, retained, not reliably[\s\S]*checkable, or otherwise still rooted below that tree, keep the containing legacy runtime[\s\S]*directory/,
-  );
-  assert.match(
-    cleanup,
-    /Worktree removal remains exclusively governed by the lifecycle[\s\S]*claim\/remove\/reconcile protocol/,
-  );
-  assert.match(
-    cleanup,
-    /immediately before removal, refresh the migration\/carry-over evidence and Git[\s\S]*worktree inventory/,
+    /The helper re-proves every selected item from fresh evidence before it removes anything/,
   );
 });
 
-// Invariant: lifecycle records live below the verified runtime root and every mutation is guarded fail-closed.
+// Invariant: lifecycle records live below the verified runtime root; only the runtime-state
+// helper mutates them, resolving the root from `cwd` and applying the runtime-state guard to every
+// record and lock handle itself, fail-closed, and every call names `RUNTIME_STATE_ROOT` as `cwd`.
 test('worktree lifecycle state is contained in the verified runtime root', () => {
   const lifecycle = readShared('worktree-lifecycle');
+  const flat = lifecycle.replace(/\s+/g, ' ');
   const { eager, lazy } = collectIncludeNames(lifecycle);
 
   assert.match(lifecycle, /execution-location receipt/i);
-  assert.match(lifecycle, /Runtime-state write safety/i);
   assert.equal(eager.has('execution-location') && lazy.has('execution-location'), false);
   assert.equal(eager.has('runtime-state-safety') && lazy.has('runtime-state-safety'), false);
   assert.match(lifecycle, /<RUNTIME_STATE_ROOT>\/\.effective-flow\/worktree-runs\//);
-  assert.match(lifecycle, /absolute handle below the verified\s+`RUNTIME_STATE_ROOT`/i);
-  assert.match(lifecycle, /canonical repository identity/i);
-  assert.match(lifecycle, /common Git directory matches the recorded repository identity/i);
   assert.match(
-    lifecycle,
-    /(?:create|write|update|transition|remove|delete)[\s\S]{0,320}(?:Runtime-state write safety|runtime-state safety)/i,
+    flat,
+    /The helper resolves `RUNTIME_STATE_ROOT` from `cwd` and applies “Runtime-state write safety” to every record and lock handle itself, fail-closed/,
   );
-  assert.match(
-    lifecycle,
-    /Runtime-state write safety” immediately before every parent[\s\S]{0,180}record deletion/i,
-  );
-  assert.match(lifecycle, /fail(?:-| )closed/i);
+  assert.match(flat, /never write, rename or delete either in prose/);
+  assert.match(flat, /Repository identity, `RUNTIME_STATE_ROOT`, path, branch/);
+  assert.match(flat, /its common Git directory matches/);
+  for (const call of lifecycle.match(/^node <skill-root>.*$/gm)) {
+    assert.match(call, /"cwd":"<RUNTIME_STATE_ROOT>"/, call);
+  }
 });
 
 // Invariant: cleanup guards every lifecycle lock, claim, and record removal and never removes its own roots.
@@ -545,13 +540,17 @@ test('cleanup guards lifecycle claims, updates, and record removal at the main r
     true,
     'cleanup must consume the lifecycle contract',
   );
+  const flat = cleanup.replace(/\s+/g, ' ');
   assert.match(cleanup, /RUNTIME_STATE_ROOT/);
   assert.match(cleanup, /worktree-runs/);
-  assert.match(cleanup, /apply runtime-state safety\s+to the exact lock and record handles/i);
-  assert.match(cleanup, /atomically write `cleanup-in-progress`/i);
+  assert.match(flat, /cleanup apply <<< '\{"cwd":"<RUNTIME_STATE_ROOT>"/);
   assert.match(
-    cleanup,
-    /Delete only this run's lifecycle record after every required postcondition is proven/i,
+    flat,
+    /Remove untracked legacy remnants, lifecycle records and worktrees only through `cleanup apply`/,
+  );
+  assert.match(
+    flat,
+    /The only current runtime-state deletions allowed are the lifecycle record of a successfully reconciled `cleanup apply` claim and a confirmed stale diff baseline/,
   );
   assert.match(
     cleanup,

@@ -56,6 +56,7 @@ import {
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
   findMemoryStateContractViolations,
+  findProseRuntimeRemovalViolations,
   collectRenderedWorkerRefs,
   findProhibitedConsumerScriptCommands,
   findRetiredConfigDocViolations,
@@ -138,6 +139,7 @@ const RUNTIME_SCRIPT_FILES = [
   'effective-flow-state-harness-core.mjs',
   'effective-flow-state-commit-core.mjs',
   'effective-flow-state-review-core.mjs',
+  'effective-flow-state-worktree-core.mjs',
   'review-report-render.mjs',
   'dated-name-allocation.mjs',
   'claude-settings-core.mjs',
@@ -1439,6 +1441,17 @@ try {
     );
   }
 
+  const proseRemovalViolations = findProseRuntimeRemovalViolations(runtimeStateSources);
+  if (proseRemovalViolations.length > 0) {
+    throw new Error(
+      'prose runtime-removal guard (work package 4): runtime state and legacy paths are removed, ' +
+        'and worktree-run records written, only through runtime-state helper operations:\n  ' +
+        proseRemovalViolations
+          .map(({ context, line, reason, target }) => `${context}:${line}: ${reason} (${target})`)
+          .join('\n  '),
+    );
+  }
+
   // Include names per read source; consumed by the documentation-sync guard
   // once every tool has been read.
   const sourceIncludes = new Map();
@@ -2452,25 +2465,25 @@ try {
     iterate: 1700,
     setup: 1543,
     'apply-review': 1071,
-    'apply-issues': 981,
-    'merge-gate': 904,
-    cleanup: 839,
-    refactor: 965,
-    deliver: 811,
+    'apply-issues': 984,
+    'merge-gate': 903,
+    cleanup: 811,
+    refactor: 964,
+    deliver: 774,
     'plan-issue': 799,
     'issue-buddy': 488,
     review: 878,
-    plan: 787,
-    'apply-review-commit-mechanics': 720,
-    maintain: 717,
-    docs: 655,
+    plan: 786,
+    'apply-review-commit-mechanics': 659,
+    maintain: 716,
+    docs: 654,
     build: 215,
     apply: 557,
     'apply-plan': 566,
     investigate: 544,
     retro: 215,
     focus: 377,
-    fix: 554,
+    fix: 553,
     'plan-review': 521,
     pr: 499,
     'concept-review': 409,

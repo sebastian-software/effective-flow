@@ -56,7 +56,10 @@ missing-key merge after a fresh re-read, and legacy `.worktrees/` is never copie
 special files are skipped and reported, and the migration still completes. Any unsafe
 memory input or carry-over failure leaves the marker unset and blocks the workflow-specific
 write so a later run can retry. Legacy directories remain untouched until the user explicitly
-runs `/effective-flow cleanup`.
+runs `/effective-flow cleanup`. The marker also records the migrated directory as
+`runtimeMigration.directory.source`; cleanup treats it as proof only for that source. A marker
+written before `source` existed certifies a legacy directory only when the helper's carry-over
+proof finds no open entry.
 
 Two orchestration paths additionally authorize this prerequisite as the runtime write itself.
 `/effective-flow cleanup` invokes it after its first legacy inventory when a legacy runtime
@@ -102,9 +105,10 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive or bounded helper operation, 54 rules in all: nine runtime-state helper operations
+each non-destructive or bounded helper operation, 58 rules in all: thirteen runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
-`memory migrate-directory`, `commit create`, `review open-report`, `review write-report`), `config-resolve.mjs resolve`,
+`memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
+`worktree record-init`, `worktree transition`, `worktree inspect`, `cleanup plan`), `config-resolve.mjs resolve`,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
@@ -149,8 +153,14 @@ This feature adds no configuration key. In particular, there is no cleanup TTL, 
 `staleAfter`, or equivalent age threshold. The existing `worktree.*` and
 `applyReview.worktree.*` blocks still control creation location and setup only; they do not weaken
 cleanup eligibility. Lifecycle status, a current receipt, and fresh Git evidence determine whether
-ordinary `git worktree remove` may be offered. Cleanup reads this runtime state but never writes
-configuration values into the project-setup ADR.
+ordinary `git worktree remove` may be offered. Cleanup never writes configuration values into the
+project-setup ADR.
+
+Records and locks change only through the `worktree` and `cleanup` operations of the
+runtime-state helper; prose never writes or deletes them
+([Build system](build-system.md#guards)). `worktree record-init`, `transition`, `inspect` and
+`cleanup plan` are allowlisted. The destructive `worktree remove` and `cleanup apply` are not, so
+the user confirms once and the whole selection runs as one call.
 
 ## Resolution order and ownership
 

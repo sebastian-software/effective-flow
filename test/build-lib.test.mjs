@@ -65,6 +65,7 @@ import {
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
   findMemoryStateContractViolations,
+  findProseRuntimeRemovalViolations,
   developerGuideBaseUrl,
   rewriteDeveloperGuideLinks,
   appendDeliveryFooter,
@@ -5738,6 +5739,177 @@ test('migration-fragment mutations still require the runtime-state safety guard'
       },
     ],
   );
+});
+
+// --- Prose runtime-removal and record-write guard (work package 4) ---
+
+const removalReasons = (violations) =>
+  violations.map(({ context, line, reason, target }) => ({ context, line, reason, target }));
+
+// Invariant: runtime state below `.effective-flow/` and every legacy-list path (`.firmo`,
+// `.sf-plugin`, `.sf-memory.json`, a legacy `config.json`) are removed only through helper
+// operations, so a prose `rm`, `rmdir` or `unlink` of any of them fails the build.
+test('findProseRuntimeRemovalViolations rejects a prose rm, rmdir or unlink of a protected path', () => {
+  const fixtures = {
+    'tools/rm-runtime.md': 'Run `rm -rf <RUNTIME_STATE_ROOT>/.effective-flow/runs/x` now.',
+    'tools/rm-firmo.md': 'Then `rm -r .firmo` once carried over.',
+    'tools/rmdir-sf-plugin.md': 'Finally `rmdir .sf-plugin`.',
+    'tools/unlink-memory.md': 'Then `unlink .sf-memory.json`.',
+    'shared/rm-config.md': 'Remove it with `rm .firmo/config.json`.',
+    'shared/rm-legacy-config.md': 'Remove it with `rm config.json`.',
+  };
+  assert.deepEqual(removalReasons(findProseRuntimeRemovalViolations(fixtures)), [
+    {
+      context: 'shared/rm-config.md',
+      line: 1,
+      reason: 'prose `rm` removes runtime state or a legacy path',
+      target: '.firmo',
+    },
+    {
+      context: 'shared/rm-legacy-config.md',
+      line: 1,
+      reason: 'prose `rm` removes runtime state or a legacy path',
+      target: 'config.json',
+    },
+    {
+      context: 'tools/rm-firmo.md',
+      line: 1,
+      reason: 'prose `rm` removes runtime state or a legacy path',
+      target: '.firmo',
+    },
+    {
+      context: 'tools/rm-runtime.md',
+      line: 1,
+      reason: 'prose `rm` removes runtime state or a legacy path',
+      target: '.effective-flow/',
+    },
+    {
+      context: 'tools/rmdir-sf-plugin.md',
+      line: 1,
+      reason: 'prose `rmdir` removes runtime state or a legacy path',
+      target: '.sf-plugin',
+    },
+    {
+      context: 'tools/unlink-memory.md',
+      line: 1,
+      reason: 'prose `unlink` removes runtime state or a legacy path',
+      target: '.sf-memory.json',
+    },
+  ]);
+});
+
+// Invariant: the guard stays narrow: a staged `git rm` of tracked remnants, a prohibition naming
+// the commands, and a removal of an unprotected path pass.
+test('findProseRuntimeRemovalViolations accepts git rm, prohibitions and unprotected paths', () => {
+  const fixtures = {
+    'tools/git-rm.md': 'Remove tracked remnants with `git rm -r .firmo/cache.json`.',
+    'tools/prohibition.md': 'Never `rm`, `rmdir` or `unlink` `.firmo/` in prose.',
+    'shared/temp.md': '`link(<temp>, <A>)` followed by `unlink(<temp>)` is that primitive.',
+    'tools/build-dir.md': 'Run `rm -rf dist/` before the build.',
+  };
+  assert.deepEqual(findProseRuntimeRemovalViolations(fixtures), []);
+});
+
+// Invariant: worktree-run records change only through the `worktree` helper operations and
+// `cleanup apply`; a line that writes, renames or deletes a `worktree-runs/` record without naming
+// one is a prose record write, while a line naming the operation passes.
+test('findProseRuntimeRemovalViolations rejects a prose worktree-run record write', () => {
+  const fixtures = {
+    'tools/write-record.md': [
+      'Immediately after the receipt, write the record',
+      '`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` as `active`.',
+    ].join('\n'),
+    'tools/rename-record.md':
+      'Atomically rename the temporary file onto `.effective-flow/worktree-runs/<RECORD_ID>.json`.',
+    'tools/delete-record.md': 'Delete `.effective-flow/worktree-runs/<RECORD_ID>.json` afterwards.',
+    'tools/helper-record.md': [
+      'Immediately after the receipt, write the record',
+      '`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` with `worktree record-init`.',
+    ].join('\n'),
+    'tools/read-record.md': 'Read `.effective-flow/worktree-runs/` read-only.',
+  };
+  const reason = 'prose writes a worktree-run record instead of naming a worktree helper operation';
+  assert.deepEqual(removalReasons(findProseRuntimeRemovalViolations(fixtures)), [
+    { context: 'tools/delete-record.md', line: 1, reason, target: 'worktree-runs' },
+    { context: 'tools/rename-record.md', line: 1, reason, target: 'worktree-runs' },
+    { context: 'tools/write-record.md', line: 2, reason, target: 'worktree-runs' },
+  ]);
+});
+
+// Invariant: the guard cannot be sidestepped by shell form: a path-prefixed `rm`, a command split
+// with a backslash continuation, `find … -delete` (or `-exec rm`) and a `>`/`>>` redirect into
+// `worktree-runs/` are each caught, while `git rm` with global options (`git -C "$ROOT" rm`), a
+// `<PLACEHOLDER>` path and `2>&1` pass.
+test('findProseRuntimeRemovalViolations catches path-prefixed, continued, find and redirect forms', () => {
+  const fixtures = {
+    'tools/bin-rm.md': 'Run `/bin/rm -rf .firmo` once.',
+    'tools/continued.md': ['```sh', 'rm -rf \\', '  .effective-flow/runs/x', '```'].join('\n'),
+    'tools/find-delete.md': 'Run `find .sf-plugin -type f -delete`.',
+    'tools/find-exec.md': 'Run `find .effective-flow/runs -name x -exec rm {} +`.',
+    'tools/redirect.md': 'Run `printf x > .effective-flow/worktree-runs/r1.json`.',
+    'tools/append.md':
+      'Run `echo x >>.effective-flow/worktree-runs/r1.json` (`worktree transition`).',
+    'tools/git-c-rm.md': 'Run `git -C "$ROOT" rm -r --cached .firmo` for tracked remnants.',
+    'tools/git-opts-rm.md': 'Run `git -c core.quotepath=off --no-pager rm .firmo/x`.',
+    'tools/placeholder.md':
+      'Read `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/` with `worktree inspect` 2>&1.',
+  };
+  const removal = (verb) => `prose \`${verb}\` removes runtime state or a legacy path`;
+  const record = 'prose writes a worktree-run record instead of naming a worktree helper operation';
+  assert.deepEqual(removalReasons(findProseRuntimeRemovalViolations(fixtures)), [
+    { context: 'tools/append.md', line: 1, reason: record, target: 'worktree-runs' },
+    { context: 'tools/bin-rm.md', line: 1, reason: removal('rm'), target: '.firmo' },
+    { context: 'tools/continued.md', line: 2, reason: removal('rm'), target: '.effective-flow/' },
+    {
+      context: 'tools/find-delete.md',
+      line: 1,
+      reason: removal('find -delete'),
+      target: '.sf-plugin',
+    },
+    {
+      context: 'tools/find-exec.md',
+      line: 1,
+      reason: removal('find -delete'),
+      target: '.effective-flow/',
+    },
+    { context: 'tools/redirect.md', line: 1, reason: record, target: 'worktree-runs' },
+  ]);
+});
+
+// Invariant: a helper operation named on the previous line does not cover a record write that the
+// next line states itself; a sentence whose verb wraps before the path stays covered by either line.
+test('findProseRuntimeRemovalViolations does not let a previous-line helper cover a new write', () => {
+  const fixtures = {
+    'tools/next-line-write.md': [
+      'Call `worktree transition` for the record.',
+      'Then delete `.effective-flow/worktree-runs/<RECORD_ID>.json` by hand.',
+    ].join('\n'),
+    'tools/wrapped.md': [
+      'Run `worktree record-init`, which writes',
+      '`.effective-flow/worktree-runs/<RECORD_ID>.json` atomically.',
+    ].join('\n'),
+  };
+  assert.deepEqual(removalReasons(findProseRuntimeRemovalViolations(fixtures)), [
+    {
+      context: 'tools/next-line-write.md',
+      line: 2,
+      reason: 'prose writes a worktree-run record instead of naming a worktree helper operation',
+      target: 'worktree-runs',
+    },
+  ]);
+});
+
+// Invariant: the checked-in sources contain no prose removal of runtime state or a legacy path
+// and no prose worktree-run record write.
+test('the checked-in sources pass the prose runtime-removal guard', () => {
+  const sources = {};
+  for (const dir of ['tools', 'agents', 'shared']) {
+    const base = fileURLToPath(new URL(`../src/${dir}`, import.meta.url));
+    for (const file of readdirSync(base).filter((entry) => entry.endsWith('.md'))) {
+      sources[`${dir}/${file}`] = readFileSync(join(base, file), 'utf8');
+    }
+  }
+  assert.deepEqual(findProseRuntimeRemovalViolations(sources), []);
 });
 
 // --- Memory-operation coverage guard (#176) ---

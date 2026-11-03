@@ -619,3 +619,63 @@ deferred eval re-recording, which is a user decision. The main corrections:
 ## Open points
 
 - No open points.
+
+## Implementation notes (build run 2026-11-03)
+
+**Delivered:**
+
+- New core `src/scripts/effective-flow-state-worktree-core.mjs` with the six operations
+  `worktree record-init`, `worktree transition`, `worktree inspect`, `worktree remove`,
+  `cleanup plan` and `cleanup apply`, wired through `effective-flow-state-core.mjs` and the CLI
+  message table. The deadline is 90 s with a 15 s item floor and a 10 s reconcile reserve, below
+  the 120000 ms prose Bash timeout.
+- Legacy guards `checkLegacyRuntimeDirectory` and `checkLegacyConfigFile` plus the remover in
+  `runtime-state-guard.mjs`; the memory migration marker now records `source`.
+- `harness allow-rules` writes 58 rules with 13 allowlisted operations; `worktree remove` and
+  `cleanup apply` stay unlisted.
+- Build guard `findProseRuntimeRemovalViolations` in `build-lib.mjs` fails prose removal of
+  runtime state and prose writes of worktree-run records.
+- Prose hosts (`cleanup`, `deliver`, `apply-review-commit-mechanics`, `apply-issues`, `iterate`
+  and the shared worktree fragments) call the helper and carry the denial fallback and the
+  `BRANCH_RETAINED` report.
+
+**Deviations from the plan text:**
+
+- A legacy migration marker without `source` certifies a directory only through a zero-open
+  carry-over proof (`legacyMarker: true`, with `memory.json` listed as an open entry).
+- `cleanup plan` returns a neutral `runs` list instead of a diff-baseline inventory, as the
+  merge-gate eval guard requires.
+- `worktree inspect` also returns `orphanLocks`; `cleanup plan` lists them as blocked and never
+  removes them.
+
+## Test results
+
+- `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` pass.
+- `pnpm test`: 4426 tests, 4397 pass, 27 skipped, 2 failed in the full run. One was a contract
+  regex left behind by a review wording fix, corrected and passing. The other is the known
+  full-suite-load timeout of `test_first_stage.py` in `test/host-driver.test.mjs`, which passes
+  alone (3/3).
+- Changed `CONTEXT_BUDGET_LINES` entries equal their built counts.
+- Eval verification, debt before the release after 1.71.0: `merge-gate` (8 stale, 1 absent),
+  `iterate` (7 stale) and `next-steps` (15 stale, already stale from earlier `develop` changes)
+  need re-recording; `build-context` has 1 current and 7 absent scenarios.
+
+**Not yet done:**
+
+- The follow-up issue for squash-merged delivery branches.
+- The "Work package 4 measurement" (six `cleanup` runs). The plan stays not implemented until it
+  passes.
+
+## Review findings
+
+**Date:** 2026-11-03
+**Reviewer:** effective-flow-nodejs-reviewer (review and one re-check round)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    29 |
+| Open / Not implemented |     6 |
+
+**External review report:** `.effective-flow/review/review-report-2026-11-03-plan-worktree-lifecycle-and-cleanup-helper-operations.md`

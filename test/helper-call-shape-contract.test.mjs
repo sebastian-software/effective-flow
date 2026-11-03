@@ -84,9 +84,23 @@ test('every shown helper call uses the literal here-string shape', () => {
   assert.deepEqual(violations, []);
 });
 
+// How often `text` reaches the fragment through eager includes, directly or through eagerly
+// included shared fragments.
+const sharedText = (name) =>
+  sources.find(({ name: path }) => path.endsWith(`src/shared/${name}.md`))?.text ?? '';
+const eagerReach = (text, seen = new Set()) =>
+  [...text.matchAll(/^```include\n([^\n]+)\n```/gm)]
+    .map((match) => match[1].trim())
+    .reduce((count, name) => {
+      if (name === FRAGMENT) return count + 1;
+      if (seen.has(name)) return count;
+      return count + eagerReach(sharedText(name), new Set([...seen, name]));
+    }, 0);
+
 // Invariant: the call-shape rule is stated once, in its owning fragment, and every source that
-// shows a state-helper call either loads it eagerly or is a lazy fragment loaded only from hosts
-// that do, so no host reaches a call without the rule and none pays for it twice.
+// shows a state-helper call either reaches it eagerly exactly once (directly or through an eagerly
+// included fragment such as `worktree-lifecycle`) or is a lazy fragment loaded only from hosts that
+// do, so no host reaches a call without the rule and none pays for it twice.
 test('every source showing a state-helper call has the call-shape fragment loaded eagerly', () => {
   const hosts = sources.filter(
     ({ name, text }) =>
@@ -97,12 +111,18 @@ test('every source showing a state-helper call has the call-shape fragment loade
     'src/shared/memory-state.md',
     'src/shared/review-write-report-fallback.md',
     'src/shared/setup-allowlist.md',
+    'src/shared/worktree-lifecycle.md',
     'src/tools/apply-review-commit-mechanics.md',
+    'src/tools/cleanup.md',
     'src/tools/iterate.md',
     'src/tools/review.md',
   ]);
+  for (const { name, text } of sources) {
+    if (name.endsWith(`shared/${FRAGMENT}.md`)) continue;
+    assert.ok(eagerReach(text) <= 1, `${name} reaches ${FRAGMENT} eagerly more than once`);
+  }
   for (const { name, text } of hosts) {
-    if (includesEagerly(text, FRAGMENT)) continue;
+    if (eagerReach(text) === 1) continue;
     const lazy = /^src\/shared\/(.+)\.md$/.exec(name)?.[1];
     const loaders = sources.filter(({ text: host }) => lazy && includesLazily(host, lazy));
     assert.ok(loaders.length > 0, `${name} includes ${FRAGMENT} eagerly or is a lazy fragment`);

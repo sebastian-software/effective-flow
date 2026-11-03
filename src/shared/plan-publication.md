@@ -17,12 +17,12 @@ local plan that differs from the published one.
 
 ```lazy-include
 runtime-state-safety
-when: the publication worktree, its lifecycle record, or its record lock below `.effective-flow/` is about to be created or changed
+when: a parent directory of the publication worktree below `.effective-flow/` is about to be created, or the publication worktree itself is about to be added there
 ```
 
 ```lazy-include
 effective-flow-dir-migration
-when: the publication worktree, its lifecycle record, or its record lock below `.effective-flow/` is about to be created or changed
+when: a parent directory of the publication worktree below `.effective-flow/` is about to be created, or the publication worktree itself is about to be added there
 ```
 
 ### Inputs
@@ -232,12 +232,13 @@ only:
   **sibling**: one Effective Flow-owned worktree under the configured base directory of the
   verified `RUNTIME_STATE_ROOT`, never nested inside the harness worktree, which is never switched.
   This is a stated exception to the "Determine mode" rule that reuses a harness-managed checkout.
-- **Its path is distinct:** `BASE_DIR/REPO_NAME/<SESSION_ID>-plan-publication`, so `{{SKILL:plan}}`
+- **Its path is distinct:** `BASE_DIR/REPO_NAME/<SESSION_ID>-plan-publication`, with step 2's
+  `REPO_NAME` (the basename of `RUNTIME_STATE_ROOT`, also under a harness receipt), so `{{SKILL:plan}}`
   and `{{SKILL:apply}}` in one session never collide on `BASE_DIR/REPO_NAME/SESSION_ID`. The
   caller's worktree-record exit self-check includes this path as the run's own.
 - **Its receipt** is `effective-flow-created` with the calling workflow and purpose
-  `plan-publication`. Its record carries the same workflow, starts `active`, and has branch policy
-  `retain`, so the caller's self-check finds it by session and workflow.
+  `plan-publication`. Its record, written with `worktree record-init`, carries the same workflow
+  and branch policy `retain`, so the caller's self-check finds it by session and workflow.
 - **No `worktree.setup` runs**, because a one-file commit needs no dependency install. Record the
   setup status as `skipped`.
 - **First publication:** `git worktree add <WORKTREE_PATH> -b <branch> <resolved base ref>`, with
@@ -339,11 +340,10 @@ moved: stop and report it, and never overwrite remote history.
 ### Withdrawal
 
 Once the commit is verified, withdraw the worktree after the push and pull-request step, whatever
-its outcome. Use "Handback and completion action" step 4 of the loaded `worktree-integration`:
-`cleanup-ready`, the claim, `git worktree remove` without force, and reconciliation. The `retain`
-policy keeps the branch. A stop before a verified commit instead transitions the record to
-`aborted` after a controlled stop, or to `failed` after an error, and retains the worktree and the
-branch. The invocation checkout and `RUNTIME_STATE_ROOT` are never a cleanup target.
+its outcome, through "Handback and completion action" step 4 of the loaded `worktree-integration`:
+one `worktree remove` call for this record, with that step's denial fallback. The `retain` policy
+keeps the branch. A stop before a verified commit instead calls `worktree transition` to `aborted`
+after a controlled stop, or to `failed` after an error, and retains the worktree and the branch. The invocation checkout and `RUNTIME_STATE_ROOT` are never a cleanup target.
 
 ### Pull request shape
 

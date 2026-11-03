@@ -209,7 +209,10 @@ reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership,
 registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but
 its lifecycle record or temporary component branch remains, the report calls this partial cleanup.
 Delivery branches are intentionally retained. A temporary `apply-review` branch is removed only
-when integration is proven and ordinary `git branch -d` accepts it.
+when integration is proven and `git branch -d` accepts it, or when `apply-review` proves every
+component commit by patch-id. Otherwise the branch stays and the report lists it as
+`BRANCH_RETAINED`: the worktree and its lifecycle record are already deleted, so delete or keep the
+branch yourself after checking the listed unproven commits.
 
 Cleanup does not use a timeout, heartbeat, or stale-after rule, so it never reclassifies `active`
 or `cleanup-in-progress` state based on age. It also never uses `--force`, `git branch -D`, or a

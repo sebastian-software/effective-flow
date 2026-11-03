@@ -1,12 +1,13 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 54
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 58
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
 - one per non-destructive or bounded runtime-state helper operation: `lock acquire`, `lock release`,
   `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`,
-  `commit create`, `review open-report` and `review write-report`;
+  `commit create`, `review open-report`, `review write-report`, `worktree record-init`,
+  `worktree transition`, `worktree inspect` and `cleanup plan`;
 - one for the `config-resolve` helper's `resolve` operation;
 - one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
   and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`.
@@ -19,8 +20,11 @@ writes only a new, generated-name file below `.effective-flow/review/` (through 
 overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful
 reservation. Separately, and only without the migration marker, it first runs the legacy-directory
 migration under that operation's own bound (no-clobber copy into `.effective-flow/`, memory merge,
-marker, adopting and removing a root `.sf-memory.json` through its own guard class). `lock break` and `harness allow-rules` never get a
-rule. Only the helper writes the settings file; never edit it in prose.
+marker, adopting and removing a root `.sf-memory.json` through its own guard class). The
+`worktree` and `cleanup plan` rules write only lifecycle records and their locks, never remove a
+worktree, branch or file. `lock break`, `harness allow-rules` and the destructive `worktree remove`
+and `cleanup apply` never get a rule. Only the helper writes the settings file; never edit it in
+prose.
 
 ### `setup allowlist`
 
@@ -46,7 +50,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 54 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 58 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

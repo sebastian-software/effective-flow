@@ -346,7 +346,9 @@ test('write-report migrates a fresh repository in the same call', async (t) => {
   assert.equal(result.migration.copiedCount, 0);
   assert.equal(result.migration.keptCount, 0);
   assert.deepEqual(result.migration.skipped, []);
-  assert.deepEqual(readMemoryFile(root).runtimeMigration, { directory: { version: 1 } });
+  assert.deepEqual(readMemoryFile(root).runtimeMigration, {
+    directory: { version: 1, source: null },
+  });
   assert.deepEqual(result.ids, ['R-0000001', 'R-0000002']);
   assert.equal(readFileSync(result.reportPath, 'utf8'), expectedReport(root, {}, result.ids));
 
@@ -511,7 +513,9 @@ test('write-report attaches the performed migration to a later reservation LOCK_
   assert.equal(outcome.outcome?.code, 'LOCK_HELD', JSON.stringify(outcome));
   assert.equal(outcome.outcome.migration.performed, true);
   assert.equal(outcome.outcome.migration.source, null);
-  assert.deepEqual(readMemoryFile(root).runtimeMigration, { directory: { version: 1 } });
+  assert.deepEqual(readMemoryFile(root).runtimeMigration, {
+    directory: { version: 1, source: null },
+  });
   assert.equal(lastFindingNumber(root), undefined);
   assert.deepEqual(reviewEntries(root), []);
 });
@@ -711,7 +715,9 @@ test('write-report reports the performed migration on REPORT_WRITE_FAILED', asyn
   assert.equal(outcome.outcome.lastId, 'R-0000002');
   assert.equal(outcome.outcome.migration.performed, true);
   assert.equal(outcome.outcome.migration.source, null);
-  assert.deepEqual(readMemoryFile(root).runtimeMigration, { directory: { version: 1 } });
+  assert.deepEqual(readMemoryFile(root).runtimeMigration, {
+    directory: { version: 1, source: null },
+  });
   const entries = reviewEntries(root);
   assert.equal(entries.length, MAX_REPORT_REALLOCATIONS + 1);
   for (const name of entries) {

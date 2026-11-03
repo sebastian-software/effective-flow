@@ -547,6 +547,13 @@ The build aborts with an error message if any of these guards is violated:
   every line naming one must follow the `## Memory operations` contract of `memory-state`, and
   the `effective-flow-dir-migration` prerequisite, loaded eagerly or through a lazy `when:`
   trigger that names memory, so the host reads both before the call.
+- **Prose runtime-removal and record-write guard:** The pure `findProseRuntimeRemovalViolations`
+  (`build-lib.mjs`) scans the runtime-state sources, and `build.mjs` aborts on a hit. It rejects
+  a prose `rm`, `rmdir` or `unlink` whose operand names `.effective-flow/` or a legacy path
+  (`.firmo`, `.sf-plugin`, `.sf-memory.json`, `config.json`; `git rm` of tracked remnants is
+  exempt), and a line near `worktree-runs` that writes, renames or deletes a record without naming
+  `worktree record-init`, `transition`, `remove` or `cleanup apply`. Runtime state and legacy
+  paths leave the disk, and records change, only through those helper operations.
 - **Lazy-include guards (#99):** (a) No fragment may be embedded in the same file both eagerly
   (` ```include `) **and** lazily (` ```lazy-include `) (otherwise the block would be loaded
   twice). (b) Every lazily referenced fragment must be delivered as `shared/<name>.md` for
@@ -1105,12 +1112,14 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   `<RUNTIME_STATE_ROOT>/.effective-flow/`. The operation is exactly two argv tokens and any other
   argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
   argument. The operations are `lock acquire|release|inspect|break`, `memory
-reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report` and `harness
-allow-rules`. The nine allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report`, `harness
+allow-rules`, `worktree record-init|transition|inspect|remove` and `cleanup plan|apply`. The
+  thirteen allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
 reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`, `review
-open-report` and `review write-report`, are non-destructive or read-only (`commit create` writes Git history; see below).
-  `lock break` is destructive and
-  `harness allow-rules` writes the settings file that holds the rules; neither is ever
+open-report`, `review write-report`, `worktree record-init`, `worktree transition`, `worktree
+inspect` and `cleanup plan`, are non-destructive or read-only (`commit create` writes Git history; see below).
+  `lock break`, `worktree remove` and `cleanup apply` are destructive and
+  `harness allow-rules` writes the settings file that holds the rules; none is ever
   allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
   the conversation. The lock is named by a closed enum, `memory`,
   `iterate-commit` or `apply-review-commit`, mapped to a fixed path; no caller supplies a path.
@@ -1197,9 +1206,29 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   with the migration result, and `{performed: false, failed: true}`; a failed migration reserves
   nothing and writes no report.
 
+  The `worktree` and `cleanup` operations (`effective-flow-state-worktree-core.mjs`, contract in
+  `src/shared/worktree-lifecycle.md`) own the lifecycle records below `worktree-runs/`, their
+  per-record `<RECORD_ID>.lock` locks, removal eligibility and the claim, remove and reconcile
+  sequence. `worktree record-init`, `transition` and `inspect` create, change and read records;
+  `worktree remove` withdraws the listed records of one session. `cleanup plan` is read-only: it
+  classifies every record and returns actionable `items` (`worktree:<RECORD_ID>`,
+  `legacy:.firmo`, `legacy:.sf-plugin`, `config:.effective-flow/config.json`) each with an
+  `itemDigest`, the SHA-256 of the item's key-sorted evidence, plus `blocked` and `unrecorded`
+  entries. `cleanup apply` takes the user's selected `items` with their digests, recomputes each
+  under its lock and answers `PREVIEW_MISMATCH` without writing when one differs; it removes
+  worktrees through the lifecycle claim and legacy items (guard classes `legacyRuntimeDirectory`
+  and `legacyConfigFile`) bottom-up without following a link. Both destructive operations run
+  under a 90 s deadline, so the caller sets a 120000 ms Bash timeout and, in Codex, requests
+  sandbox escalation up front (`SANDBOX_DENIED` otherwise). `git branch -d` is the only
+  branch deletion; a call from `apply-review` carrying `integrationRoot` may delete the ref after
+  an exact `git patch-id --verbatim` proof of every component commit, and otherwise the item
+  is `BRANCH_RETAINED`. The `runtimeMigration.directory` marker records the migrated legacy
+  directory as `source`; a legacy directory is certified for removal only by a marker naming it,
+  or, for a marker without `source`, by a carry-over proof with no open entry.
+
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 54 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 58 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a

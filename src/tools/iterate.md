@@ -545,9 +545,10 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
   worktree is created – and create one Effective Flow-owned worktree for the existing head branch
   without `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
   receipt with purpose `delivery`, set `creationOid` to the fetched head OID, and write its record
-  immediately per the worktree record obligation. Phase 5's handback closes it after the push
-  (`active` → `cleanup-ready` → claim → remove → reconcile); a controlled stop sets `aborted`, an
-  error `failed`, both retaining worktree and branch. If the PR is already merged/closed, report that and optionally
+  immediately per the worktree record obligation. Phase 5's handback withdraws it after the push
+  with one `worktree remove` call (denial fallback: `cleanup-ready`); a controlled stop sets
+  `aborted`, an error `failed`, both through `worktree transition` and retaining worktree and
+  branch. If the PR is already merged/closed, report that and optionally
   offer local mode.
 
 - **Local mode:** Take the complete open diff of the current branch against

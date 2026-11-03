@@ -41,6 +41,10 @@ import {
 
 const OWNER = Object.freeze({ workflow: 'review' });
 const MARKED = Object.freeze({ runtimeMigration: { directory: { version: 1 } } });
+// The marker `memory migrate-directory` writes when no legacy directory was migrated.
+const MIGRATED_WITHOUT_SOURCE = Object.freeze({
+  runtimeMigration: { directory: { version: 1, source: null } },
+});
 const NOW = Date.parse('2026-10-30T12:34:56.789Z');
 const TIMESTAMP = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$/;
 
@@ -627,7 +631,7 @@ test('migrate-directory writes the marker when no legacy source exists', async (
   const result = expectOk(await migrate(root));
   assert.equal(result.source, null);
   assert.deepEqual(result.marker, { version: 1 });
-  assert.deepEqual(readMemory(root), MARKED);
+  assert.deepEqual(readMemory(root), MIGRATED_WITHOUT_SOURCE);
   assert.equal(expectOk(await reserve(root, 1)).firstId, 'R-0000001');
   assertUnlocked(root);
 });
@@ -668,6 +672,35 @@ test('migrate-directory: .firmo over .sf-plugin, .worktrees excluded, legacy kep
   assert.ok(existsSync(join(root, '.firmo', 'cache.json')));
   assert.ok(existsSync(join(root, '.sf-plugin', 'old.txt')));
   assert.equal(readMemory(root).runtimeMigration.directory.version, 1);
+});
+
+// Invariant (marker source): the marker records the one legacy directory it migrated, so it never
+// certifies the other one for removal. Two runs: `.firmo/` is migrated and later removed by hand;
+// the remaining, never-migrated `.sf-plugin/` is not certified by the marker, and a second migrate
+// call does not re-certify it (MIGRATION_NOT_NEEDED, the marker unchanged).
+test('migrate-directory: the marker stores its source across the two-run sequence', async (t) => {
+  const root = checkout(t);
+  legacyTree(root, '.firmo', { 'cache.json': '{"a":1}\n' });
+  legacyTree(root, '.sf-plugin', { 'old.txt': 'old\n' });
+  expectOk(await migrate(root));
+  assert.deepEqual(readMemory(root).runtimeMigration.directory, { version: 1, source: '.firmo' });
+  rmSync(join(root, '.firmo'), { recursive: true });
+  expectOutcome(await migrate(root), 'MIGRATION_NOT_NEEDED');
+  const marker = readMemory(root).runtimeMigration.directory;
+  assert.equal(marker.source, '.firmo');
+  assert.notEqual(marker.source, '.sf-plugin');
+  assert.equal(existsSync(join(stateDir(root), 'old.txt')), false);
+});
+
+// Invariant (marker source): a `.sf-plugin/` migrated alone is recorded as the source.
+test('migrate-directory: a lone .sf-plugin is recorded as the marker source', async (t) => {
+  const root = checkout(t);
+  legacyTree(root, '.sf-plugin', { 'old.txt': 'old\n' });
+  expectOk(await migrate(root));
+  assert.deepEqual(readMemory(root).runtimeMigration.directory, {
+    version: 1,
+    source: '.sf-plugin',
+  });
 });
 
 // Invariant (no-clobber): an existing target always wins, whatever its type.
@@ -711,7 +744,8 @@ test('migrate-directory: a symlinked legacy source is skipped', async (t) => {
   const result = expectOk(await migrate(root));
   assert.deepEqual(result.skipped, [{ path: '.firmo', type: 'symlink' }]);
   assert.equal(existsSync(join(stateDir(root), 'cache.json')), false);
-  assert.deepEqual(readMemory(root), MARKED);
+  // A link at the legacy name was never migrated, so the marker certifies no source.
+  assert.deepEqual(readMemory(root), MIGRATED_WITHOUT_SOURCE);
 });
 
 // Invariant (base wins, marker last): the legacy memory is merged recursively adding absent keys
@@ -737,7 +771,7 @@ test('migrate-directory: memory merge adds absent keys only and the base wins', 
     list: [1],
     kind: 'object',
     labelMigration: { sf: { done: true } },
-    runtimeMigration: { directory: { version: 1 } },
+    runtimeMigration: { directory: { version: 1, source: '.firmo' } },
   });
 });
 
@@ -747,7 +781,7 @@ test('migrate-directory adopts .sf-memory.json so the legacy counter survives', 
   const root = checkout(t, { legacy: { lastFindingNumber: 41 } });
   const result = expectOk(await migrate(root));
   assert.equal(result.legacyAdopted, true);
-  assert.deepEqual(readMemory(root), { lastFindingNumber: 41, ...MARKED });
+  assert.deepEqual(readMemory(root), { lastFindingNumber: 41, ...MIGRATED_WITHOUT_SOURCE });
   assert.equal(existsSync(legacyPath(root)), false);
   const reserved = expectOk(await reserve(root, 2));
   assert.deepEqual([reserved.firstId, reserved.lastId], ['R-0000042', 'R-0000043']);
