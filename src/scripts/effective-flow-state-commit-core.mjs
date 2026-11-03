@@ -647,8 +647,9 @@ async function listing(context, worktree, args, incomplete) {
   return nulList(stdout);
 }
 
-// The submodules and other nested repositories at, above or below a watched path, and at or inside
-// the closed list, each as `{path, submodule}`: the watched path (the shallowest closed-list path
+// The submodules and other nested repositories at, above or below a watched path (a scope prefix or
+// any link or target a walk reached), and at or inside the closed list, each as `{path,
+// submodule}`: the watched path (the shallowest closed-list path
 // for one the list alone reaches) and the repository. A repository is a gitlink in the index, or a
 // directory in the worktree that holds `.git`, which `ls-files --others` reports as `dir/`
 // without descending, ignored or not. Git compares such a repository only as its gitlink and lists
@@ -657,8 +658,7 @@ async function listing(context, worktree, args, incomplete) {
 // recursively, so it is refused instead and its item takes the prompting fallback. A watched `.`
 // makes every repository in the worktree a boundary. A failed read is reported to `unreadable`,
 // an incomplete listing to `incomplete`.
-async function nestedRepositories(context, worktree, prefixes, unreadable, incomplete) {
-  const watched = [...prefixes.keys()];
+async function nestedRepositories(context, worktree, watched, unreadable, incomplete) {
   const whole = watched.includes('.');
   const chains = watched
     .filter((prefix) => prefix !== '.')
@@ -667,7 +667,7 @@ async function nestedRepositories(context, worktree, prefixes, unreadable, incom
       return [prefix, segments.map((_, index) => segments.slice(0, index + 1).join('/'))];
     });
   const candidates = [...new Set(chains.flatMap(([, chain]) => chain))];
-  const scope = whole ? [] : [...STATIC_HOOK_PATHSPECS, ...prefixPathspecs(prefixes)];
+  const scope = whole ? [] : [...STATIC_HOOK_PATHSPECS, ...watched.map(prefixPathspec)];
   const ancestors = whole ? [] : candidates.map((candidate) => `:(literal)${candidate}`);
   const gitlinks = new Set(
     (await listing(context, worktree, ['--stage', '-z', '--', ...scope, ...ancestors], incomplete))
@@ -718,8 +718,8 @@ async function nestedRepositories(context, worktree, prefixes, unreadable, incom
 // The scope of one trust check: `prefixes` maps each watched worktree-relative path to its class,
 // `unverifiable` lists the hook symlinks that dangle or leave the compared locations and every
 // hook path whose discovery failed for a reason other than a missing path or whose listing Git
-// could not complete (`unreadable`), and `nested` the submodule boundaries of the scope
-// (`nestedRepositories`); `incomplete` reports a later scan's incomplete listing the same way.
+// could not complete (`unreadable`), and `nested` the submodule boundaries of the scope and of every
+// link and target the walks reached, deduplicated by class or not (`nestedRepositories`); `incomplete` reports a later scan's incomplete listing the same way.
 // The hooks directory is the one Git runs, `git rev-parse --git-path hooks` at the worktree top
 // with the commit's environment so `GIT_CONFIG_*` counts: `core.hooksPath` as Git interpolates it
 // (`~` expanded, whitespace kept) or `<common dir>/hooks`, followed physically like a configured
@@ -755,8 +755,12 @@ async function hookScope(context, worktree, env) {
     return true;
   };
   const partial = () => ({ prefixes, unverifiable, nested: [], incomplete });
+  // Every link and target the walks reach, kept for the nested-repository check even where the
+  // scope already compares it: a classified path inside a submodule is still out of Git's sight.
+  const reached = new Set();
   // Adds `relative` with `kind` unless the scope already compares it as strictly; true if added.
   const add = (relative, kind) => {
+    reached.add(relative);
     const existing = scopeClass(relative, prefixes);
     if (existing !== null && (existing !== 'package-json' || kind === 'package-json')) return false;
     prefixes.set(relative, kind);
@@ -847,7 +851,8 @@ async function hookScope(context, worktree, env) {
     }
     listed = pathspecs.length > 0 ? await list(['--cached', '--others'], pathspecs) : [];
   }
-  const nested = await nestedRepositories(context, worktree, prefixes, unreadable, incomplete);
+  const watched = [...new Set([...prefixes.keys(), ...reached])];
+  const nested = await nestedRepositories(context, worktree, watched, unreadable, incomplete);
   return { prefixes, unverifiable, nested, incomplete };
 }
 

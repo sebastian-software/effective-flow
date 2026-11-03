@@ -2324,6 +2324,113 @@ test('commit create refuses a hook directory of the closed list that is or holds
   }
 });
 
+// Invariant: a hook symlink in a hooks directory outside the comparisons (the default `.git/hooks`
+// or an outside `core.hooksPath`) whose target lies in a submodule is refused although the closed
+// list already classifies that target (`vendor/.husky/pre-commit`): Git reports only `vendor`, so
+// it is HOOKS_UNTRUSTED (`hook-config-in-submodule`, the target with the submodule) before the lock
+// with no hook run.
+test('commit create refuses an outside hook linked into a submodule', async (t) => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const layouts = {
+    '.git/hooks': (root) =>
+      symlinkSync('../../vendor/.husky/pre-commit', join(root, '.git', 'hooks', 'pre-commit')),
+    'outside core.hooksPath': (root) => {
+      const hooks = join(outside, 'hooks');
+      mkdirSync(hooks);
+      symlinkSync(join(root, 'vendor', '.husky', 'pre-commit'), join(hooks, 'pre-commit'));
+      git(root, 'config', 'core.hooksPath', hooks);
+    },
+  };
+  for (const [label, configure] of Object.entries(layouts)) {
+    const root = repository(t);
+    const vendor = addSubmodule(t, root, 'vendor', join(outside, 'unrelated'));
+    configure(root);
+    const marker = join(outside, `ran-${label.replaceAll(/[ /]/g, '-')}`);
+    hookScript(join(vendor, '.husky', 'pre-commit'), marker);
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: before, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'hook-config-in-submodule', label);
+    assert.deepEqual(
+      outcome.paths,
+      [{ path: 'vendor/.husky/pre-commit', submodule: 'vendor' }],
+      label,
+    );
+    assert.equal(existsSync(marker), false, `no hook ran (${label})`);
+    assert.equal(head(root), before, label);
+    assert.equal(lockPresent(root), false, label);
+  }
+});
+
+// Invariant: an in-worktree hook-configuration symlink or symlinked `package.json` whose target, or
+// an intermediate link on whose way, lies in a submodule is refused although the closed list or the
+// scope already classifies that path: Git reports only `vendor`, so it is HOOKS_UNTRUSTED
+// (`hook-config-in-submodule`, the path inside the submodule with the submodule) before the lock
+// with no hook run.
+test('commit create refuses classified hook links reaching into a submodule', async (t) => {
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const layouts = {
+    'hook-config symlink': [
+      'vendor/.husky/pre-commit',
+      (root, vendor, marker) => {
+        hookScript(join(vendor, '.husky', 'pre-commit'), marker);
+        mkdirSync(join(root, '.husky'));
+        symlinkSync('../vendor/.husky/pre-commit', join(root, '.husky', 'pre-commit'));
+        git(root, 'add', '.husky');
+        git(root, 'config', 'core.hooksPath', '.husky');
+      },
+    ],
+    'symlinked package.json': [
+      'vendor/package.json',
+      (root, vendor, marker) => {
+        writeFileSync(join(vendor, 'package.json'), '{"scripts":{"prepare":"husky"}}\n');
+        symlinkSync('vendor/package.json', join(root, 'package.json'));
+        git(root, 'add', 'package.json');
+        hook(root, 'pre-commit', `touch '${marker}'`);
+      },
+    ],
+    'intermediate link': [
+      'vendor/.husky/run',
+      (root, vendor, marker) => {
+        hookScript(join(root, 'scripts', 'run-hook'), marker);
+        mkdirSync(join(vendor, '.husky'));
+        symlinkSync('../../scripts/run-hook', join(vendor, '.husky', 'run'));
+        mkdirSync(join(root, '.husky'));
+        symlinkSync('../vendor/.husky/run', join(root, '.husky', 'pre-commit'));
+        git(root, 'add', '.husky', 'scripts');
+        git(root, 'config', 'core.hooksPath', '.husky');
+      },
+    ],
+  };
+  for (const [label, [reported, configure]] of Object.entries(layouts)) {
+    const root = repository(t);
+    const vendor = addSubmodule(t, root, 'vendor', join(outside, 'unrelated'));
+    const marker = join(outside, `ran-${label.replaceAll(' ', '-')}`);
+    configure(root, vendor, marker);
+    git(root, 'commit', '-q', '--no-verify', '-m', 'linked hook configuration');
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    const before = head(root);
+    const outcome = expectOutcome(
+      await commitCreate(
+        input(root, { hookBase: before, expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
+      ),
+      'HOOKS_UNTRUSTED',
+    );
+    assert.equal(outcome.reason, 'hook-config-in-submodule', label);
+    assert.deepEqual(outcome.paths, [{ path: reported, submodule: 'vendor' }], label);
+    assert.equal(existsSync(marker), false, `no hook ran (${label})`);
+    assert.equal(head(root), before, label);
+    assert.equal(lockPresent(root), false, label);
+  }
+});
+
 // Invariant: Git lists nothing below an in-worktree hook directory it cannot open (execute-only,
 // mode 0111, from which it still runs hooks), warns and exits 0; that incomplete listing is
 // unverifiable, never an empty directory: HOOKS_UNTRUSTED (`unverifiable-hook-link`, the directory
