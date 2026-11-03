@@ -81,13 +81,22 @@ if (operation === 'qualify') {
 '''
 
 
+def copy_fixture_executable(source, destination):
+    """Pin private executable bytes, even when the installed runtime is shared/root-owned."""
+    source = Path(source).resolve()
+    if source != destination:
+        shutil.copyfile(source, destination)
+        shutil.copymode(source, destination)
+    return destination
+
+
 class ComposedRemainingFixture(OriginalSealFixture):
     def __init__(self, root):
         super().__init__(root)
         self.controls = root / 'control'
         self.controls.mkdir()
-        self.node = Path(shutil.which('node')).resolve()
-        self.python = Path(sys.executable).resolve()
+        self.node = copy_fixture_executable(shutil.which('node'), root / 'node-runtime')
+        self.python = copy_fixture_executable(sys.executable, root / 'python-runtime')
         self.operator.write_text(OPERATOR)
         binary = root / 'local-native-fixture'
         binary.write_text(NATIVE.replace('#!PYTHON', '#!' + str(self.python)))

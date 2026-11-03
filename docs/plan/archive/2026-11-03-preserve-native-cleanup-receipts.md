@@ -73,3 +73,19 @@ Fresh paid evidence and release readiness remain UNPROVEN. A later real executio
 reviewed, source-compatible corpus, fresh first-five closures and a separately granted remaining
 stage. Qualification, paid execution, Hosted acceptance and release publication retain their
 separate evidence and authorization gates.
+
+## CI fixture portability follow-up
+
+The initial source CI rejected direct pins to installed interpreters because they were not
+fixture-owned single-link files. The composed fixture now copies the actual executable bytes
+and modes into its own directory, and runs its cases in the copied Python so the real
+`sys.executable` binding remains consistent. Product readers and input guards are unchanged.
+
+The ownership/link regression fails with the previous fixture and passes with the correction.
+All 11 worker-module tests pass locally. Follow-up verification passes `pnpm agent:check`, `pnpm test` (4,370 passed, zero failed, three formal archive skips), `node build.mjs` and `pnpm test:distribution`; all 82 Python cases pass. Independent review reports no Critical, Important or Note findings. Linux CI remains required before merge.
+
+An earlier full local follow-up run remains failed: an unchanged Git interrupt test returned
+`INTERRUPTED` but exceeded its existing ten-second assertion at 20.7 seconds. Its cause remains
+undetermined. The original focused case and one complete verification of the unchanged
+candidate passed afterward; no source, assertion, deadline or concurrency setting was changed.
+The failed run and diagnosis remain recorded rather than reclassified as passing.
