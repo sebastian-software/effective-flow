@@ -213,6 +213,7 @@ focus never edits files, writes reports, changes the observed session's plan, or
    - Scope: a scaffold binding that serves fixture threads through the read interface and fixture replies to a self-report request, in the reader and reply shapes observed in work package 1, and a written labelling rubric for the observed and self-report verdict sets, fixed before any recording.
    - Done when: a fixture thread can be read through the stub in a scaffold run, and the rubric is committed.
    - Dependencies: 1 (read interface shape); runs in parallel with 4.
+   - Status: done (#608). Evidence: `evals/_scaffold/session-stub.mjs` (stub), `docs/developer-guide/focus-session-shape-observations.md` (recorded shapes and behaviours), `docs/developer-guide/focus-labelling-rubric.md` (rubric).
    - Handoff: `effective-flow plan "Work package 5 of docs/concept/2026-11-02-focus-session-check.md: add a session stub binding to evals/_scaffold (fixture threads and self-report replies in the shapes recorded in docs/developer-guide/focus-host-evidence.md) and a labelling rubric for the observed and self-report focus verdict sets"`
 6. **focus eval suite and calibration round**
    - Goal: show the success criterion holds.

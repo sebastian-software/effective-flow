@@ -1,0 +1,355 @@
+{
+  "repository": {
+    "host": "forge.example.invalid",
+    "owner": "eval-owner",
+    "repository": "session-stub-smoke"
+  },
+  "operations": {},
+  "session": {
+    "threads": {
+      "t-main": {
+        "thread": {
+          "threadId": "t-main",
+          "projectId": "project-1",
+          "title": "Fixture thread t-main",
+          "link": null,
+          "createdBy": "agent",
+          "creationSource": "mcp",
+          "status": "completed",
+          "latestRunId": "t-main-run-1",
+          "activeRunId": null,
+          "providerInstanceId": "provider-1",
+          "model": "fixture-model",
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "linkedPullRequest": null,
+          "pullRequests": [],
+          "titleRegeneration": null,
+          "branch": null,
+          "worktreePath": null,
+          "parentThreadId": null,
+          "relationshipToParent": null,
+          "runCount": 1,
+          "itemCount": 7,
+          "pendingRequestCount": 0,
+          "archived": false,
+          "settled": true,
+          "settledAt": "2026-11-03T09:00:00.000Z",
+          "snoozed": false,
+          "snoozedUntil": null,
+          "createdAt": "2026-11-03T09:00:00.000Z",
+          "updatedAt": "2026-11-03T09:00:00.000Z"
+        },
+        "recentRuns": [
+          {
+            "runId": "t-main-run-1",
+            "ordinal": 1,
+            "status": "completed",
+            "providerInstanceId": "provider-1",
+            "model": "fixture-model",
+            "requestedAt": "2026-11-03T09:00:00.000Z",
+            "startedAt": "2026-11-03T09:00:00.000Z",
+            "completedAt": "2026-11-03T09:00:00.000Z"
+          }
+        ],
+        "items": [
+          {
+            "position": 0,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-0",
+            "runId": "t-main-run-1",
+            "messageId": "t-main-message-0",
+            "createdBy": "user",
+            "creationSource": "mcp",
+            "type": "user_message",
+            "status": "completed",
+            "title": null,
+            "text": "Write three paragraphs and run two echo commands.",
+            "updatedAt": "2026-11-03T09:00:00.000Z",
+            "senderThreadId": "t-parent"
+          },
+          {
+            "position": 1,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-1",
+            "runId": "t-main-run-1",
+            "messageId": null,
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "command_execution",
+            "status": "completed",
+            "title": null,
+            "text": "mkdir -p work",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          },
+          {
+            "position": 2,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-2",
+            "runId": "t-main-run-1",
+            "messageId": "t-main-message-2",
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "assistant_message",
+            "status": "completed",
+            "title": null,
+            "text": "0123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          },
+          {
+            "position": 3,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-3",
+            "runId": "t-main-run-1",
+            "messageId": null,
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "command_execution",
+            "status": "completed",
+            "title": null,
+            "text": "echo one",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          },
+          {
+            "position": 4,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-4",
+            "runId": "t-main-run-1",
+            "messageId": null,
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "reasoning",
+            "status": "completed",
+            "title": null,
+            "text": "Planning the second paragraph.",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          },
+          {
+            "position": 5,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-5",
+            "runId": "t-main-run-1",
+            "messageId": "t-main-message-5",
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "assistant_message",
+            "status": "completed",
+            "title": null,
+            "text": "abcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghijabcdefghij",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          },
+          {
+            "position": 7,
+            "visibility": "visible",
+            "sourceThreadId": "t-main",
+            "itemId": "t-main-item-7",
+            "runId": "t-main-run-1",
+            "messageId": "t-main-message-7",
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "assistant_message",
+            "status": "completed",
+            "title": null,
+            "text": "012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789012345678901234567890123456789",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          }
+        ]
+      },
+      "t-offset": {
+        "thread": {
+          "threadId": "t-offset",
+          "projectId": "project-1",
+          "title": "Fixture thread t-offset",
+          "link": null,
+          "createdBy": "agent",
+          "creationSource": "mcp",
+          "status": "completed",
+          "latestRunId": "t-offset-run-1",
+          "activeRunId": null,
+          "providerInstanceId": "provider-1",
+          "model": "fixture-model",
+          "runtimeMode": "full-access",
+          "interactionMode": "default",
+          "linkedPullRequest": null,
+          "pullRequests": [],
+          "titleRegeneration": null,
+          "branch": null,
+          "worktreePath": null,
+          "parentThreadId": null,
+          "relationshipToParent": null,
+          "runCount": 1,
+          "itemCount": 2,
+          "pendingRequestCount": 0,
+          "archived": false,
+          "settled": true,
+          "settledAt": "2026-11-03T09:00:00.000Z",
+          "snoozed": false,
+          "snoozedUntil": null,
+          "createdAt": "2026-11-03T09:00:00.000Z",
+          "updatedAt": "2026-11-03T09:00:00.000Z"
+        },
+        "recentRuns": [
+          {
+            "runId": "t-offset-run-1",
+            "ordinal": 1,
+            "status": "completed",
+            "providerInstanceId": "provider-1",
+            "model": "fixture-model",
+            "requestedAt": "2026-11-03T09:00:00.000Z",
+            "startedAt": "2026-11-03T09:00:00.000Z",
+            "completedAt": "2026-11-03T09:00:00.000Z"
+          }
+        ],
+        "items": [
+          {
+            "position": 2,
+            "visibility": "visible",
+            "sourceThreadId": "t-offset",
+            "itemId": "t-offset-item-2",
+            "runId": "t-offset-run-1",
+            "messageId": "t-offset-message-2",
+            "createdBy": "user",
+            "creationSource": "mcp",
+            "type": "user_message",
+            "status": "completed",
+            "title": null,
+            "text": "Start here.",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          },
+          {
+            "position": 3,
+            "visibility": "visible",
+            "sourceThreadId": "t-offset",
+            "itemId": "t-offset-item-3",
+            "runId": "t-offset-run-1",
+            "messageId": "t-offset-message-3",
+            "createdBy": "agent",
+            "creationSource": "mcp",
+            "type": "assistant_message",
+            "status": "completed",
+            "title": null,
+            "text": "Started.",
+            "updatedAt": "2026-11-03T09:00:00.000Z"
+          }
+        ]
+      }
+    },
+    "listAgents": {
+      "sequence": [
+        {
+          "header": {
+            "name": "observer-session",
+            "ref": "a1b2c3"
+          },
+          "rows": [
+            {
+              "name": "target-session",
+              "ref": "0f1e2d",
+              "mode": "interactive"
+            }
+          ]
+        },
+        {
+          "header": {
+            "name": "observer-session",
+            "ref": "a1b2c3"
+          },
+          "rows": [
+            {
+              "name": "target-session",
+              "ref": "ffeedd",
+              "mode": "interactive"
+            },
+            {
+              "name": "target-session",
+              "ref": "ee00ee",
+              "mode": "interactive"
+            }
+          ]
+        }
+      ]
+    },
+    "send": {
+      "sequence": [
+        {
+          "messageId": "msg-0001",
+          "status": "in the target inbox, not yet read"
+        },
+        {
+          "variant": "restart-notice",
+          "messageId": "msg-0002",
+          "status": "in the target inbox, not yet read",
+          "notice": "messaging a new session for the first time under this name"
+        }
+      ]
+    },
+    "replies": [
+      {
+        "variant": "none"
+      },
+      {
+        "variant": "delivered",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "target-session",
+        "from-mode": "prompting",
+        "text": "{{NONCE}}\nDone: opened the pull request for the goal."
+      },
+      {
+        "variant": "refused",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "target-session",
+        "from-mode": "prompting",
+        "text": "I will not report on this request."
+      },
+      {
+        "variant": "narration-only",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "target-session",
+        "from-mode": "prompting",
+        "text": "I am still reading the repository and will report later."
+      },
+      {
+        "variant": "wrong-nonce",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "target-session",
+        "from-mode": "prompting",
+        "text": "focus-ffffffffffffffffffffffffffffffff\nDone: finished the work."
+      },
+      {
+        "variant": "name-mismatch",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "renamed-session",
+        "from-mode": "prompting",
+        "text": "{{NONCE}}\nDone: opened the pull request for the goal."
+      },
+      {
+        "variant": "foreign",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "unrelated-session",
+        "from-mode": "prompting",
+        "text": "Hello from another conversation."
+      },
+      {
+        "variant": "malformed",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "target-session",
+        "from-mode": "prompting",
+        "text": "focus-12 Done: finished the work."
+      },
+      {
+        "variant": "late",
+        "from": "uds:/tmp/cc-socks/4242.sock",
+        "from-name": "target-session",
+        "from-mode": "prompting",
+        "text": "{{NONCE}}\nDone: opened the pull request for the goal.",
+        "polls": 1
+      }
+    ]
+  }
+}
