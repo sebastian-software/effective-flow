@@ -1011,3 +1011,135 @@ lists `ids-round1.txt` to `ids-round4.txt`, and `analysis-round1.txt` to `analys
 | `manifest.sha256.txt` | `a82b803cad129e4bfe0b21c5c25e2acd2ff22f908942d5120ed431e00e8e84fa` |
 
 The four rounds cost 11.99 USD in total.
+
+## Work package 4 measurement
+
+Measurement step of work package 4 (plan
+`docs/plan/archive/2026-11-03-worktree-lifecycle-and-cleanup-helper-operations.md`, "Measurement"), run on
+2026-11-03. It asks whether a realistic `cleanup` run now that `cleanup plan` and `cleanup apply`
+replace the prose-replayed lock, guard and removal sequence causes no prompt and no auto-mode
+refusal for housekeeping, and at most one harness prompt for the confirmed destructive apply.
+
+### Setup
+
+| Item                  | Recorded value                                                                                                                                                                                        |
+| --------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Headless CLI          | `2.1.312`, through the Agent SDK host (`host.mjs`, unchanged) and the work package 1 `node_modules`, linked                                                                                           |
+| Build under test      | Portable build (`node build.mjs`) of the work package 4 worktree, version `1.70.0` on `c280b361`                                                                                                      |
+| Install form          | Measurement `HOME` `/home/t3/spike-sandbox/home-wp3`; `.claude/skills/effective-flow` is a symlink to the worktree's `dist/portable/effective-flow`                                                   |
+| Model, budget, policy | `claude-sonnet-5-5`, 3 USD per run, host policy `sandbox`, `settingSources: ['user', 'local']`                                                                                                        |
+| Authentication        | A dedicated Claude token of a second account, read at run time from a file outside the evidence root; the 2026-10-31 token hit its weekly usage limit on the first attempt                            |
+| Rule set              | The 58 rules of `harness allow-rules`: 13 `effective-flow-state.mjs` operations, `config-resolve.mjs resolve`, and 44 read-only `remote-tracker.mjs` operations; no rule for the two destructive ones |
+| Evidence root         | `.effective-flow/spikes/allowlist/2026-11-03-01/` in the primary checkout (untracked)                                                                                                                 |
+
+The harness is a copy of the work package 9 root. The token handling, `allowedRoots`, the
+`info/exclude` handling and the rule assertion are unchanged; every run wrote 58 rules. The other
+changes:
+
+- **Cell:** `cleanup`, 3 runs in default mode and 3 in auto mode (`CLAUDE_CODE_AUTO_MODE_SERVER=0`);
+  run ids `w4-cleanup-<mode>-<n>`. Prompt: the neutral `/effective-flow cleanup`. The host answers
+  every ask with its first option, which in every run was the confirming one ("Yes, remove as
+  listed" for the legacy directory, "Remove all verified" for the worktrees), so the answer policy
+  needed no adjustment.
+- **Seed:** `reset.sh` writes the seed through the helper under test, never by hand: real linked
+  worktrees under `.effective-flow/.worktrees/repo/<session>/`, each registered with
+  `worktree record-init`.
+  - a delivery record (`retain`), moved to `cleanup-ready` with `worktree transition`
+  - an `apply-review` record (`delete-after-integration`) at `seed-review/component-1`, its branch
+    fast-forward merged into `main` so that `git branch -d` succeeds, moved to `cleanup-ready`
+  - one `active` delivery record
+  - a `.firmo/` with `memory.json` and one review report, migrated with `memory migrate-directory`
+    (marker `source: .firmo`, the report carried over)
+- **Seed check:** before each run a direct `cleanup plan` call had to return exactly the three
+  actionable items `worktree:seed-delivery-1`, `worktree:seed-review-1` and `legacy:.firmo`, with
+  the `active` record blocked (condition 1). `seed-manifest.json` records the item digests, the
+  record hashes, the branch tips, the `.firmo/` listing and the marker.
+- **Analysis:** `analyze_wp4.py`, derived from `analyze_wp9.py`. `worktree remove` and
+  `cleanup apply` are destructive. Every other `effective-flow-state.mjs` call is helper
+  housekeeping, as is any command that names `memory.json`, a runtime lock or `worktree-runs`.
+- **Validity:** the host completed and the seed matched its manifest.
+- **Exercised:** `cleanup plan` and `cleanup apply` both succeeded, both eligible worktrees and
+  records are gone, the delivery branch remains at its seeded tip, the `apply-review` branch is
+  gone, the `active` record is byte-identical, and `.firmo/` is gone.
+
+### Rounds
+
+One round of six valid runs, 1.33 USD; no fix round was needed. One earlier attempt,
+`w4-cleanup-default-1-blocked`, is invalid: the first account's weekly usage limit ended it on the
+first API call (0 USD). It was repeated as `w4-cleanup-default-1` with the second account's token.
+
+| Run                            | Valid | Exercised | Housekeeping prompts | Housekeeping refusals | `cleanup apply` prompts | Other prompts | Cost (USD) | Duration (s) |
+| ------------------------------ | ----: | --------: | -------------------: | --------------------: | ----------------------: | ------------: | ---------: | -----------: |
+| `w4-cleanup-default-1-blocked` |    no |        no |                    – |                     – |                       – |             – |       0.00 |            2 |
+| `w4-cleanup-default-1`         |   yes |       yes |                    0 |                     0 |                       1 |             2 |       0.23 |           29 |
+| `w4-cleanup-default-2`         |   yes |       yes |                    0 |                     0 |                       1 |             3 |       0.23 |           38 |
+| `w4-cleanup-default-3`         |   yes |       yes |                    0 |                     0 |                       1 |             2 |       0.18 |           62 |
+| `w4-cleanup-auto-1`            |   yes |       yes |                    0 |                     0 |                       – |             – |       0.25 |           56 |
+| `w4-cleanup-auto-2`            |   yes |       yes |                    0 |                     0 |                       – |             – |       0.26 |           33 |
+| `w4-cleanup-auto-3`            |   yes |       yes |                    0 |                     0 |                       – |             – |       0.17 |           33 |
+
+Against the stage 0 baseline:
+
+| Measure                              | Baseline (stage 0) | Work package 4 |
+| ------------------------------------ | -----------------: | -------------: |
+| Prompts per default run              |                5–7 |            3–4 |
+| Housekeeping prompts per default run |                2–3 |              0 |
+| Destructive prompts per default run  |                1–2 |              1 |
+| Auto-mode refusals in three runs     |                  1 |              0 |
+
+Observations:
+
+- **Every run called `cleanup plan` and one `cleanup apply`** with all three items, and every
+  helper call had the literal shape (12/12). Each apply returned `ok` for all three items: the
+  delivery branch `retained` (`retain-policy`), the `apply-review` branch `deleted` through
+  `git branch -d`, and `.firmo/` removed. No run needed `PREVIEW_MISMATCH` handling or a retry.
+- **The one destructive prompt** in each default run was `cleanup apply`, as designed. In auto mode
+  the classifier evaluated it for 5 to 10 s and allowed it in all three runs.
+- **Duration:** `cleanup apply` ran for 272 to 365 ms in every run, with the explicit Bash timeout
+  of 120000 ms the prose prescribes. The 90 s internal deadline was never approached, so its
+  assumption holds with a wide margin for this seed size.
+- **Other prompts** were not helper calls: the `Read` of `tools/cleanup.md` through the symlinked
+  skill root (every default run), and raw read-only Git probes such as
+  `git -C <repo> worktree list --porcelain` or `git check-ignore … ; echo …` compounds. The stage 0
+  heuristic would have counted a raw `worktree list` as housekeeping; under this plan's definition
+  only helper calls are housekeeping. Either way none of them mutates runtime state.
+- **Read-only probes of runtime state** (`find .firmo .effective-flow …; cat .effective-flow/memory.json`)
+  appeared in five runs. They name `memory.json`, so the analysis counts them as housekeeping
+  calls, but none was prompted or refused.
+
+### Verdict
+
+**Pass condition met** in the first round.
+
+- `cleanup` was exercised in 3 of 3 valid runs in default mode and in 3 of 3 in auto mode.
+- Helper housekeeping had 0 prompts and 0 auto-mode refusals across all six valid runs.
+- Each default run showed exactly one harness prompt for `cleanup apply`.
+
+### What the measurement does not cover
+
+- The indicative evidence (one `iterate` run on a seeded PR for `record-init`, `transition` and
+  delivery cleanup with one `worktree remove` prompt) was not run; it is not part of the pass
+  condition.
+- The seed holds no carry-over decision, no legacy `config.json`, no tracked remnant and no stale
+  diff baseline, so the Carry over and Baselines asks, `PREVIEW_MISMATCH`, `LEGACY_TRACKED`,
+  `BRANCH_RETAINED` and the patch-id proof are covered by unit and Git-backed tests alone.
+- The `apply-review` branch was merged by fast-forward, so `git branch -d` succeeded without the
+  integration proof.
+- The stage 1 limits still apply: one model, the portable install form only, headless sessions,
+  server-side auto mode unmeasured, and n=3 per mode.
+
+### Retention
+
+The evidence root `.effective-flow/spikes/allowlist/2026-11-03-01/` in the primary checkout is
+untracked. It holds the harness copies (`reset.sh`, `run.sh`, `drive.sh`, `link-skill.sh`,
+`host.mjs`, `analyze_wp4.py`), the prompts, and for every run the configuration, transcript, debug
+log, permission log, result, allow-rules envelopes, settings snapshots, the seed envelopes and
+`seed-manifest.json`, and `after.json`. It also holds the id lists `ids-blocked.txt` and
+`ids-round1.txt` and the analyses `analysis-blocked.txt` and `analysis-round1.txt`.
+`manifest.sha256.txt` lists 206 files and excludes the linked `node_modules`.
+
+| File                  | SHA-256                                                            |
+| --------------------- | ------------------------------------------------------------------ |
+| `manifest.sha256.txt` | `0ae5eedac08b60a39eec91e3f5ca0673e257b0f3ecde68175352726a61daee65` |
+
+The measurement cost 1.33 USD in total, the blocked attempt included.

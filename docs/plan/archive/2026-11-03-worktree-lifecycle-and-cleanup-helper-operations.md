@@ -1,6 +1,6 @@
 # Worktree lifecycle and cleanup helper operations
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -428,10 +428,10 @@ build as a symlink, and the run asserts the written rule set against the preview
 
 ## Acceptance criteria
 
-- [ ] The six operations exist with exactly the key sets in "Architecture decisions" and reject
+- [x] The six operations exist with exactly the key sets in "Architecture decisions" and reject
       extra argv before reading stdin. Unit tests cover every outcome and error code this plan names,
       and the per-item versus whole-call error mapping.
-- [ ] The lifecycle tests cover:
+- [x] The lifecycle tests cover:
   - every valid transition, a rejected transition from each status, and a wrong `reason` per
     status
   - a wrong `sessionId`
@@ -439,7 +439,7 @@ build as a symlink, and the run asserts the written rule set against the preview
   - each of the nine eligibility conditions failing alone
   - `record-init` per purpose, with each "newly registered" criterion and each policy, purpose or
     branch mismatch failing alone
-- [ ] The claim-remove-reconcile tests cover:
+- [x] The claim-remove-reconcile tests cover:
   - a multi-record call
   - `retain`
   - `-d` success
@@ -451,33 +451,33 @@ build as a symlink, and the run asserts the written rule set against the preview
   - the absent-worktree reconcile
   - the preflight touching nothing
   - lock release in every path, including deadline and signal
-- [ ] Compatibility holds:
+- [x] Compatibility holds:
   - the helper transitions a prose-era v1 record
   - a helper-written record passes `build-run-core.mjs`'s `exact()` and lock checks
   - a record with an unknown key is refused
-- [ ] `cleanup apply` meets all of the following:
+- [x] `cleanup apply` meets all of the following:
   - it refuses a changed selected item with `PREVIEW_MISMATCH` and no write
   - it refuses an `itemId` outside the plan
   - it executes only the selected items
   - its result is unchanged when an unrelated record turns `cleanup-ready`
   - it refuses when the carry-over decisions change
-- [ ] The legacy guards and the remover meet all of the following, with one test each:
+- [x] The legacy guards and the remover meet all of the following, with one test each:
   - they delete a migrated `.firmo/` with symlinks inside once open entries are discarded, without
     following any symlink
   - they refuse each of: missing marker, a marker for the other source (two-run sequence), open
     carry-over, any `.git` below `.worktrees/`, tracked content, a symlinked legacy name, a chain
     swapped mid-walk, and an entry added mid-walk
   - `legacyConfigFile` refuses without an ADR and without a decision
-- [ ] `src/` contains no prose `rm`, `rmdir` or `unlink` of runtime state or a legacy-list path,
+- [x] `src/` contains no prose `rm`, `rmdir` or `unlink` of runtime state or a legacy-list path,
       and no prose write of a worktree-run record. The build guard fails a fixture for each.
-- [ ] `harness allow-rules` writes the four new allowlisted operations and no rule for the two
+- [x] `harness allow-rules` writes the four new allowlisted operations and no rule for the two
       destructive ones. The pinned sets, the rule count and the documentation match.
-- [ ] Each host's prose has the denial fallback for `worktree remove` and the `BRANCH_RETAINED`
+- [x] Each host's prose has the denial fallback for `worktree remove` and the `BRANCH_RETAINED`
       report, pinned by contract tests.
-- [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass. Every
+- [x] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass. Every
       changed `CONTEXT_BUDGET_LINES` entry equals the built count plus at most ten.
-- [ ] The follow-up issue for squash-merged delivery branches exists.
-- [ ] The "Work package 4 measurement" section in
+- [x] The follow-up issue for squash-merged delivery branches exists.
+- [x] The "Work package 4 measurement" section in
       `docs/developer-guide/claude-code-allowlist-evidence.md` records the six valid `cleanup` runs,
       and they meet the pass condition in "Measurement". The plan is marked implemented only when this
       criterion holds.
@@ -660,11 +660,14 @@ deferred eval re-recording, which is a user decision. The main corrections:
   `iterate` (7 stale) and `next-steps` (15 stale, already stale from earlier `develop` changes)
   need re-recording; `build-context` has 1 current and 7 absent scenarios.
 
-**Not yet done:**
+**Follow-up and measurement:**
 
-- The follow-up issue for squash-merged delivery branches.
-- The "Work package 4 measurement" (six `cleanup` runs). The plan stays not implemented until it
-  passes.
+- Squash-merged delivery branches are tracked in #612.
+- The "Work package 4 measurement" in `docs/developer-guide/claude-code-allowlist-evidence.md`
+  passed in its first round: 6 of 6 valid runs exercised, 0 housekeeping prompts and 0 auto-mode
+  refusals, exactly one `cleanup apply` prompt per default run. `cleanup apply` took 272–365 ms,
+  well within the 90 s deadline. One earlier attempt hit an account usage limit and is recorded as
+  invalid.
 
 ## Review findings
 
