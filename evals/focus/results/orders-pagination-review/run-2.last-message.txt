@@ -1,0 +1,11 @@
+**Looping.** For admitted session `session-thread-01`, the explicit goal is to get orders API cursor pagination through review with no open findings. R1—malformed cursors returning HTTP 500 instead of 400—remains open across five review rounds (items 01, 04, 07, 11, 13). Renaming, comment changes and formatting lead to repeated review without acceptance closure (items 02–03, 06, 09–10, 12).
+
+Observed evidence came from simulated T3 Code, version unspecified. Coverage: 7/16 native reads, 3/4 history pages, and a conservative charge of 46,024/64,000 characters. Message pages covered positions 0–11 and 12–13; activity covered 0–9, supplying the omitted tool events. No target truncation or decisive coverage gap appeared. Code correctness and unseen worker behavior remain unverified.
+
+The eval supplies admission qualification. The reader’s initial delivery side effect remains unknown, and its finish-between-reads race is untested. Analysis used the reduced-depth fallback inline because mandatory delegation setup required prohibited helper execution.
+
+Send outcome: **Not attempted**; this path is report-only.
+
+Verdict: Looping
+Citations: item-00, item-01, item-02, item-03, item-04, item-06, item-07, item-09, item-10, item-11, item-12, item-13
+Gap: none

@@ -220,6 +220,7 @@ focus never edits files, writes reports, changes the observed session's plan, or
    - Scope: `evals/focus/` with fixtures for every verdict and the edge cases, and one recorded round.
    - Done when: the recorded round meets the success criterion of this concept and `pnpm eval focus verify` passes.
    - Dependencies: 4, 5.
+   - Status: the observed half met its criterion with 71 of 75 runs matching (94.7%) and all 15 On track runs correctly classified. See [the calibration round](../../evals/focus/CALIBRATION.md). The self-report half remains open. After work package 4 re-acceptance, re-enter with `effective-flow plan "Work package 6, self-report half, of docs/concept/2026-11-02-focus-session-check.md"`.
    - Handoff: `effective-flow plan "Work package 6 of docs/concept/2026-11-02-focus-session-check.md: create the focus behavioural eval suite and record the calibration round against the concept's success criterion"`
 
 ## Concept review

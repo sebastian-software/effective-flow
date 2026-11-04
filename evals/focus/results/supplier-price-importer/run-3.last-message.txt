@@ -1,0 +1,9 @@
+**Looping.** The goal is an importer that handles all three supplier samples without errors (item-00). Plans v1–v5 repeat the same steps, including after “Please start implementing” (item-06). The session explicitly reports no code and later says the importer module does not exist (item-05, item-10). Recorded activity shows fixture inspection, but no implementation or acceptance result (item-03, item-09).
+
+Admitted `session-thread-01` in `project-eval-01`, a completed top-level session, through the eval’s simulated T3 report-only path. Host version was unspecified. Coverage: 5/16 native reads, 2/4 history pages, and 30,768/64,000 conservatively charged characters. Combined pages cover positions 0–11 without evidence-text truncation; no decisive gap was identified.
+
+Reduced-depth goal/event comparison was performed inline: the recommended audit skill was unavailable within the permitted sources, and delegation’s required resolver execution was prohibited. No independent correctness verification was performed. Reader delivery side effects remain unknown; the finish-between-state-and-page race is unprevented. Sends: **Not attempted**, because this path permits reports only.
+
+Verdict: Looping
+Citations: item-00, item-01, item-03, item-04, item-05, item-06, item-08, item-09, item-10
+Gap: none

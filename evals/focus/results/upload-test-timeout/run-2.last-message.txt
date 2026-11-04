@@ -1,0 +1,15 @@
+Session `session-thread-01` is **Looping** against the explicit goal: make `tests/integration/upload.test.ts` pass reliably in CI.
+
+Four recorded rounds repeat the same timeout substitution, each followed by the same 5,000 ms failure: items 03–04, 06–07, 10–11 and 13–14. The inspected record shows no new diagnostic evidence or passing result between rounds. Item 15’s claim that the fix is converging does not establish advancement.
+
+Observed evidence covers positions 0–15 across both recorded runs, with no returned truncation or missing recorded output. Consumption: **7/16 native reads, 3/4 history pages, 46,024/64,000 charged characters**, a conservative upper bound.
+
+Admission used the supplied T3 report-only simulation within `project-eval-01`; the target is top-level and completed. Host version was unspecified, and qualification relies on the eval override. The reader’s initial delivery side effect remains unknown; its finish-between-reads race is untested.
+
+Analysis ran inline using the reduced-depth fallback because the required delegation helper exceeded the permitted execution. No additional skill applied. This judges recorded trajectory; it does not independently verify code or CI.
+
+Correction delivery: **Not attempted**; T3 correction sends are disabled.
+
+Verdict: Looping
+Citations: item-00, item-03, item-04, item-06, item-07, item-10, item-11, item-13, item-14, item-15
+Gap: none

@@ -1,0 +1,15 @@
+**On track.** The observed record shows progress toward the explicit goal: count failed login attempts per account and pass security review.
+
+The account-based change was reported in item-05. Review round 1 raised S1 (item-06); the developer requested a fix and another review (item-07). Item-09 records the revised counters and additional tests. The completed review in item-10 marks S1 resolved and approves the change with no open findings. These rounds show a fix followed by acceptance; item-11’s “Looping” label does not establish a loop.
+
+Admitted session: `session-thread-01`, project `project-eval-01`, a completed top-level session. Evidence level: Observed, through the eval’s simulated T3 report-only reader; host version unspecified. This establishes no production qualification.
+
+Coverage: **5/16 native reads**, **2/4 content pages**, **17,268/64,000 characters conservatively charged**. Inspected message positions: 0, 3, 5, 6, 7, 9, 10 and 11, including item-10’s continuation. Omitted tool activity and unseen worker behavior were not verified; test results remain recorded claims.
+
+Analysis used the reduced-depth fallback inline because mandatory model selection required prohibited helper execution. No additional audit skill was used.
+
+Delivery: **Not attempted**; this path permits no sends. The reader’s initial delivery side effect is unknown, and its finish-between-reads race remains unprevented.
+
+Verdict: On track
+Citations: item-05, item-06, item-07, item-09, item-10
+Gap: none
