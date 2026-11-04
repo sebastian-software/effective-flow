@@ -4,7 +4,7 @@ This suite measures `/effective-flow focus` at the **observed evidence level onl
 On track, Drifting, Looping, Stalled and Cannot judge, including Cannot judge with its reason for a
 missing or contradictory goal and for insufficient coverage. It covers work package 6 of
 [`docs/concept/2026-11-02-focus-session-check.md`](../../docs/concept/2026-11-02-focus-session-check.md);
-the plan is [`docs/plan/2026-11-03-focus-observed-eval-suite-and-calibration.md`](../../docs/plan/2026-11-03-focus-observed-eval-suite-and-calibration.md).
+the plan is [`docs/plan/archive/2026-11-03-focus-observed-eval-suite-and-calibration.md`](../../docs/plan/archive/2026-11-03-focus-observed-eval-suite-and-calibration.md).
 
 The self-report half of the concept's success criterion is out of scope while the Claude Code
 self-report path stays disabled. Re-entry, after a work package 4 re-acceptance qualifies that
