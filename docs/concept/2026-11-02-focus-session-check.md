@@ -138,7 +138,7 @@ focus never edits files, writes reports, changes the observed session's plan, or
 - **Sending on Codex desktop:** its send tools are known only from a model self-report, with no verified sender marker or identity binding; a later extension needs its own evidence.
 - **Remote Control, cloud, and desktop Claude Code sessions:** not observed in work package 1.
 - **Self-reports where a reader exists:** on T3 Code and the Codex desktop app the observed history is better evidence than the agent's own account, so focus sends no status request there.
-- **Continuous watching or scheduling:** one snapshot per call; a developer can repeat it with existing means (`/loop`, scheduled tasks) without focus keeping state between calls.
+- **Continuous watching or scheduling outside the opt-in follow-up mode:** one invocation is one snapshot. Recurring checks exist only as focus's opt-in, report-only follow-up mode (#613): one T3 schedule bound to the observer thread, top-level targets only, a one-line checkpoint in the observer conversation as the only state between ticks, and no harness-native scheduler. The mode is defined but disabled pending candidate-bound qualification.
 - **Sending in unattended or scheduled runs:** without a developer in the conversation focus stays report-only, and a confirmation covers exactly one shown text in the same run. On Claude Code an unattended run therefore ends with the missing-capability message.
 - **Autonomous intervention:** no interrupt, restart, cancel, or unconfirmed send, because a wrong verdict would derail a healthy run.
 - **Reading private on-disk transcripts** (Claude Code JSONL, Codex rollouts): the same trust boundary as `retro`; it would add a privacy surface and a dependency on undocumented file formats.

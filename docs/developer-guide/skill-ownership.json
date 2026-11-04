@@ -52,7 +52,8 @@
         { "consumer": "commit", "classification": "delegate" },
         { "consumer": "commit-message-rules", "classification": "delegate" },
         { "consumer": "subagent-progress", "classification": "no-overlap" },
-        { "consumer": "task-tracking", "classification": "no-overlap" }
+        { "consumer": "task-tracking", "classification": "no-overlap" },
+        { "consumer": "focus-follow-up", "classification": "no-overlap" }
       ]
     },
     {
