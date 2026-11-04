@@ -1313,7 +1313,7 @@ and directive syntax").
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
-  `plan-pr-continuation`, `outcome-continuation`.
+  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its

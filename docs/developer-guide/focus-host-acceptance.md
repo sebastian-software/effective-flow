@@ -1,6 +1,6 @@
 # Focus host acceptance
 
-**Status: T3 observed/report-only snapshot accepted on November 2, 2026; all send paths remain disabled.**
+**Status: T3 observed/report-only snapshot accepted on November 2, 2026; that D binding is superseded by the follow-up mode change (#613) and requalification is pending, to be recorded before the next release PR merges. All send paths and the follow-up path remain disabled.**
 
 This page is the package-4 acceptance record for `/effective-flow focus`. It must be updated only
 from real end-to-end runs of the built candidate, using throwaway targets and the existing host
@@ -34,6 +34,13 @@ uncommitted implementation. These SHA-256 digests bind the actual tested bytes:
 
 The built portable `shared/retro-native-sources.md` had the same digest as its source. Generated
 artifacts are not tracked. Changes to these contracts require renewed candidate qualification.
+
+**Superseded binding.** The follow-up mode change (#613) edits `src/tools/focus.md`,
+`src/shared/focus-session-contract.md` and `build.mjs`, so the digests above no longer match the
+current source, and the D requalification below binds only its recorded candidate. Snapshot
+requalification is pending: an operator records it on the merged candidate, including self and
+ancestor refusal, before the next release PR is merged. Until then this page does not qualify the
+current source for release.
 
 ## Observed run and corrections
 
@@ -128,18 +135,51 @@ and calibration limitations as C.
 
 ## Acceptance matrix
 
-| Host/path                                | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                               | If unavailable                                                                                 |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------- |
-| T3 observed, report-only                 | The built candidate loads `focus`; an exact throwaway target is admitted; the observer reads only the selected source with bounded coverage; identity, scope, redaction, cited evidence, and one snapshot verdict are recorded. | Passed D on the bound corrected candidate; C also passed before the spelling correction.                     | Return missing candidate-bound observed/report-only acceptance; do not claim ordinary support. |
-| T3 delegated correction                  | A running delegated target is rechecked immediately before dispatch, and an atomic conditional primitive rejects a target that finishes between the state read and steer without starting a fresh task.                         | Disabled; no candidate-bound proof exists, and the required atomic conditional primitive is not established. | Report-only; do not invoke a correction.                                                       |
-| T3 idle top-level correction             | Candidate-bound acceptance of the documented new-turn `queue` form, including exact same-run confirmation and outcome classification.                                                                                           | Disabled; idle top-level acceptance is absent.                                                               | Do not invoke a correction.                                                                    |
-| Codex desktop observed                   | Candidate-bound deep-link reading, trusted self/ancestor refusal, bounded coverage, redaction, and cited verdict are observed on the loaded artifact.                                                                           | Disabled; this test host is unavailable here and no candidate-bound run exists.                              | Return the specific missing capability; do not read or send.                                   |
-| Local Claude Code self-report/correction | Candidate-bound default-permission top-level proof, `[ref]`-qualified delivery, bounded request/reply and nonce checks, refusal/late/foreign-reply handling, and a separate confirmed correction case.                          | Disabled; this test host is unavailable here and no candidate-bound run exists.                              | Return the specific missing capability; do not look up, request, wait, or correct.             |
-| Codex desktop send                       | A host-supported sender is independently observed and candidate-bound.                                                                                                                                                          | Disabled in this version; the spike recorded only a model self-report, not a host sender.                    | Never send through this path.                                                                  |
+| Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                               | If unavailable                                                                                 |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| T3 observed, report-only                        | The built candidate loads `focus`; an exact throwaway target is admitted; the observer reads only the selected source with bounded coverage; identity, scope, redaction, cited evidence, and one snapshot verdict are recorded. | Passed D on the bound corrected candidate; C also passed before the spelling correction. The D binding is superseded by the follow-up mode change (#613); requalification is pending and must be recorded before the next release PR merges. | Return missing candidate-bound observed/report-only acceptance; do not claim ordinary support. |
+| T3 delegated correction                         | A running delegated target is rechecked immediately before dispatch, and an atomic conditional primitive rejects a target that finishes between the state read and steer without starting a fresh task.                         | Disabled; no candidate-bound proof exists, and the required atomic conditional primitive is not established.                                                                                                                                 | Report-only; do not invoke a correction.                                                       |
+| T3 idle top-level correction                    | Candidate-bound acceptance of the documented new-turn `queue` form, including exact same-run confirmation and outcome classification.                                                                                           | Disabled; idle top-level acceptance is absent.                                                                                                                                                                                               | Do not invoke a correction.                                                                    |
+| Codex desktop observed                          | Candidate-bound deep-link reading, trusted self/ancestor refusal, bounded coverage, redaction, and cited verdict are observed on the loaded artifact.                                                                           | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                              | Return the specific missing capability; do not read or send.                                   |
+| Local Claude Code self-report/correction        | Candidate-bound default-permission top-level proof, `[ref]`-qualified delivery, bounded request/reply and nonce checks, refusal/late/foreign-reply handling, and a separate confirmed correction case.                          | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                              | Return the specific missing capability; do not look up, request, wait, or correct.             |
+| Codex desktop send                              | A host-supported sender is independently observed and candidate-bound.                                                                                                                                                          | Disabled in this version; the spike recorded only a model self-report, not a host sender.                                                                                                                                                    | Never send through this path.                                                                  |
+| T3 observed follow-up (schedule_task, T3/Codex) | The follow-up qualification checklist below is recorded on the built candidate, with trusted host context naming provider instance `codex` for the observer thread.                                                             | Disabled; no candidate-bound run exists.                                                                                                                                                                                                     | Offer no follow-up; `follow-up stop` and a tick's deletion of its own handle stay available.   |
 
 Every advertised path must have a completed row backed by the current candidate. A failed or
 unavailable row is a missing-capability result, not a reason to broaden permissions, switch hosts,
 use a name-only address, or substitute a private transcript or log.
+
+## Follow-up qualification checklist
+
+The follow-up gate row opens only after an operator on T3/Codex records each scenario below for the
+merged candidate on this page. For each one, record the setup, the trigger, the expected observer
+output, and the schedule state verified in the T3 UI; focus never lists schedules.
+
+- renewed snapshot qualification, including self and ancestor refusal, recorded before the next
+  release PR merges;
+- a quiet unchanged tick;
+- a genuine repetition across tick boundaries;
+- a long test or approval wait without a false loop;
+- a completion stop;
+- lost access, by archiving or deleting the throwaway target;
+- a tick without a valid checkpoint;
+- a failed deletion, with the task deleted in the UI before the completion tick;
+- overlapping ticks, including a tick queued behind a busy turn and the next fire within a minute;
+- a tick in an approval-requiring observer mode, with approvals answered late;
+- a host notification run in the observer thread that is not treated as a tick;
+- reaching the loop cap;
+- the scheduled-turn skill load;
+- an explicit stop, and an explicit resume after a stop with access rechecked;
+- a queued tick sent early through the T3 UI;
+- a real quiet tick's observer growth, and whether the first loop reaches the cap before
+  compaction.
+
+The [focus schedule evidence](focus-schedule-evidence.md) spike motivates these scenarios: it
+measured 13,130 characters of observer transcript growth per proxy tick in the `activity` view
+(partial, without skill load, ancestry reads or leaf), one host version, and one interval, so the
+merged candidate re-observes them. Only then does the operator enable the gate row; in the same step
+the contract's sole-executable-path wording and its test, the `focus` `catalogHint`, the user-guide
+wording, and owed eval recordings are updated.
 
 ## Required send cases
 
