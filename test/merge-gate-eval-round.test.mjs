@@ -3203,3 +3203,147 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     ['the merge-gate evaluator cannot judge partial evidence'],
   );
 });
+
+// --- The optional last-message receipt key ---------------------------------------------------------
+
+// Sealed evidence the way a last-message suite declares it: the seal copies the host-written last
+// message. `capturesLastMessage` is the declaration; without it the same block is an ordinary
+// sealed capture, which is how every existing suite with sealed evidence declares it.
+function lastMessageSealedEvidence(captured, { capturesLastMessage }) {
+  return {
+    fileName: 'last-message.txt',
+    archiveSuffix: 'last-message.txt',
+    sealDigestKey: 'lastMessage',
+    required: () => true,
+    ...(capturesLastMessage ? { capturesLastMessage: true } : {}),
+    capture(argument) {
+      captured.push(argument);
+      return typeof argument.lastMessagePath === 'string'
+        ? readFileSync(argument.lastMessagePath, 'utf8')
+        : 'no last message\n';
+    },
+    missingMessage: 'missing last message',
+    orphanMessage: 'orphan last message',
+  };
+}
+
+test(
+  'a sealed capture that declares capturesLastMessage receives the host receipt lastMessagePath, and every other suite keeps the fixed receipt and capture argument',
+  { timeout: 120_000 },
+  () => {
+    const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-last-message-')));
+    const base = resolve(temporary, 'rounds');
+    const hostRoot = resolve(temporary, 'host');
+    mkdirSync(hostRoot);
+    const scenario = 'guard-blocks-merge';
+    const captured = [];
+    // Both variants share merge-gate's instrument, so they seal slots of the one round below.
+    const evaluator = {
+      ...suite.evaluator,
+      parseSealedEvidence: (text) => ({ problems: [], state: text }),
+    };
+    const declaring = {
+      ...suite,
+      evaluator,
+      sealedEvidence: lastMessageSealedEvidence(captured, { capturesLastMessage: true }),
+    };
+    const plain = {
+      ...suite,
+      evaluator,
+      sealedEvidence: lastMessageSealedEvidence(captured, { capturesLastMessage: false }),
+    };
+    try {
+      const prepared = createRound(declaring, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId: 'last-message-receipt',
+      });
+      const slot = (number) => sandboxPaths(prepared.roundRoot, scenario, number, 1);
+      const seal = (target, number, receipt) =>
+        sealAttempt(target, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot: number,
+          hostReceipt: receipt,
+          base,
+        });
+      for (const number of [1, 2, 3]) {
+        writeFileSync(slot(number).callLog, legacyLog(slot(number).projectRoot));
+      }
+      const lastMessage = resolve(hostRoot, 'slot-1-last-message.txt');
+      writeFileSync(lastMessage, 'Verdict: On track\n');
+      const receipt = { ...hostReceipt(slot(1).projectRoot), lastMessagePath: lastMessage };
+
+      // A declaring scenario's receipt must carry the path, absolute, outside the attempt root and
+      // in no home directory; each refusal comes before any capture.
+      for (const [label, candidate, pattern] of [
+        ['omitted', hostReceipt(slot(1).projectRoot), /fields must be exactly .*lastMessagePath/],
+        ['relative', { ...receipt, lastMessagePath: 'last-message.txt' }, /absolute path/],
+        [
+          'inside the attempt root',
+          { ...receipt, lastMessagePath: resolve(slot(1).attemptRoot, 'last-message.txt') },
+          /outside the attempt root/,
+        ],
+        [
+          'in a home directory',
+          { ...receipt, lastMessagePath: '/home/operator/last-message.txt' },
+          /home directory/,
+        ],
+      ]) {
+        assert.throws(() => seal(declaring, 1, candidate), pattern, label);
+      }
+      assert.equal(captured.length, 0, 'a refused receipt reached a capture');
+
+      const sealed = seal(declaring, 1, receipt);
+      assert.equal(captured.length, 1);
+      assert.deepEqual(Object.keys(captured[0]).sort(), ['lastMessagePath', 'paths', 'scenario']);
+      assert.equal(captured[0].lastMessagePath, lastMessage);
+      assert.equal(captured[0].paths.attemptRoot, slot(1).attemptRoot);
+      assert.equal(
+        readFileSync(resolve(slot(1).traceDir, 'last-message.txt'), 'utf8'),
+        'Verdict: On track\n',
+      );
+      assert.equal(typeof sealed.digests.lastMessage, 'string');
+      assert.equal(
+        JSON.parse(readFileSync(slot(1).hostReceipt, 'utf8')).lastMessagePath,
+        lastMessage,
+      );
+      // The same receipt re-seals idempotently without a second capture; another path is refused.
+      assert.deepEqual(seal(declaring, 1, receipt), sealed);
+      assert.equal(captured.length, 1);
+      assert.throws(
+        () => seal(declaring, 1, { ...receipt, lastMessagePath: resolve(hostRoot, 'other.txt') }),
+        /already sealed with a different host receipt/,
+      );
+
+      // A sealed capture without the declaration: the key is refused as before, and its capture
+      // still receives exactly the scenario and the paths.
+      const extraKey = { ...hostReceipt(slot(2).projectRoot), lastMessagePath: lastMessage };
+      assert.throws(() => seal(plain, 2, extraKey), /fields must be exactly/);
+      seal(plain, 2, hostReceipt(slot(2).projectRoot));
+      assert.deepEqual(Object.keys(captured.at(-1)).sort(), ['paths', 'scenario']);
+
+      // A suite without sealed evidence at all, merge-gate itself, keeps the fixed key set too.
+      const gateReceipt = { ...hostReceipt(slot(3).projectRoot), lastMessagePath: lastMessage };
+      assert.throws(() => seal(suite, 3, gateReceipt), /fields must be exactly/);
+      seal(suite, 3, hostReceipt(slot(3).projectRoot));
+
+      // A stopped attempt has no host receipt, so a declaring capture is told so with null.
+      const before = captured.length;
+      retryAborted(declaring, {
+        handle: prepared.manifestPath,
+        scenario,
+        slot: 4,
+        assertion: { schemaVersion: 1, stopped: true, reason: 'host stopped the task' },
+        base,
+      });
+      assert.equal(captured.length, before + 1);
+      assert.equal(captured.at(-1).lastMessagePath, null);
+    } finally {
+      const manifest = resolve(base, 'last-message-receipt', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);

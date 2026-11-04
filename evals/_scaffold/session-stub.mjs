@@ -9,9 +9,10 @@
 // It follows the tracker stub's protocol (`remote-tracker.mjs`): exactly `<operation>` as argv, one
 // JSON object on standard input, exactly one JSON envelope on standard output, a non-zero exit when
 // `ok` is false, and every call appended to a lock-protected trace. Like the tracker stub it invents
-// no host envelope: every host-shaped key comes from `session-shapes.mjs`, whose single source is
-// the dated addendum `docs/developer-guide/focus-session-shape-observations.md`. A read path runs
-// only while its behaviour entry there is `recorded: true`; a request that would need any other
+// no host envelope: every host-shaped key comes from `session-shapes.mjs`, whose sources are the
+// dated addenda `docs/developer-guide/focus-session-shape-observations.md` and
+// `focus-session-shape-observations-2.md`, merged by behaviour name. A read path runs only while its
+// behaviour entry there is `recorded: true`; a request that would need any other
 // behaviour fails with an `unrecorded` error envelope naming the parameter. The envelope keys and
 // error codes are the stub's own protocol (`STUB_PROTOCOL`), never presented as host shape.
 //
@@ -20,7 +21,15 @@
 // tracker stub's `operations` map and the project writer's `repository` key stay untouched:
 //
 //   session.threads      { <threadId>: { thread, recentRuns, items } }; items hold full `text` and
-//                        every recorded item key except the computed `textTruncated`/`nextTextOffset`
+//                        every recorded item key except the computed `textTruncated`/`nextTextOffset`.
+//                        A target is completed with one or two runs; `recentRuns` holds all of them
+//                        in any order (two runs carry the ordinals 1 and 2), and the stub serves them
+//                        ordinal descending, cut to `runLimit`
+//   session.observerThreadId
+//                        optional; names the one thread that is the observer's own. Only that thread
+//                        may be `running`, its `recentRuns` holds just its running latest run, and
+//                        only `OBSERVER_READ_FORM` serves it; a running thread under any other id is
+//                        a running target and stays `unrecorded`
 //   session.listAgents   { header, rows } or { sequence: [{ header, rows }, ...], repeatLast? }
 //   session.send         { variant?, messageId, status, notice? } or { sequence: [...], repeatLast? }
 //   session.replies      [ { variant, ...reply fields, polls? }, ... ], consumed by await-reply polls
@@ -70,7 +79,7 @@ const USAGE = 'usage: session-stub.mjs <operation>';
 // host's own client rejects it before it is sent. The upper bounds appear only in the schema's
 // descriptions, so a value above one is not rejected client-side and its host behaviour is
 // unrecorded (`limitOutOfRange`, `maxCharsPerItemOutOfRange`, and `runLimitAboveOne` for any
-// runLimit above 1).
+// runLimit above the recorded 1 and 2).
 const THREAD_READ_SCHEMA = Object.freeze({
   keys: Object.freeze([
     'threadId',
@@ -98,14 +107,29 @@ const THREAD_READ_SCHEMA = Object.freeze({
 });
 // The item keys the stub computes per read; a fixture item carries every other recorded item key.
 const COMPUTED_ITEM_KEYS = Object.freeze(['textTruncated', 'nextTextOffset']);
-// Stub-side readings of recorded facts, kept here because the addendum block states them as
-// behaviour entries, not as values: the one observed thread status (`completedTarget`), the one
-// observed run count (`runLimitOne`), and the one item type that carried `senderThreadId`.
+// Stub-side readings of recorded facts, kept here because the addendum blocks state them as
+// behaviour entries, not as values: the one observed target status (`completedTarget`), the
+// observed run counts and runLimit values (`runLimitOne`, `runCountTwo`, `runLimitTwo`), the
+// observer's status and its one served read form (`runningObserverStateRead`), and the one item
+// type that carried `senderThreadId`.
 const RECORDED_THREAD_STATUS = 'completed';
-const RECORDED_RUN_COUNT = 1;
+const RECORDED_RUN_COUNTS = Object.freeze([1, 2]);
+const RECORDED_RUN_LIMITS = Object.freeze([1, 2]);
+const OBSERVER_THREAD_STATUS = 'running';
+const OBSERVER_RUN_STATUS = 'running';
+// Read form (c) of the second addendum: these values exactly, and none of `afterPosition`, `itemId`
+// or `textOffset`. Exported so a fixture walk can make the observer read the stub serves.
+export const OBSERVER_READ_FORM = Object.freeze({
+  view: 'activity',
+  limit: 1,
+  maxCharsPerItem: 256,
+  runLimit: 1,
+});
+const OBSERVER_ABSENT_PARAMETERS = Object.freeze(['afterPosition', 'itemId', 'textOffset']);
 const SENDER_THREAD_ID_ITEM_TYPE = 'user_message';
 
-const SESSION_KEYS = Object.freeze(['threads', 'listAgents', 'send', 'replies']);
+const OBSERVER_KEY = 'observerThreadId';
+const SESSION_KEYS = Object.freeze(['threads', OBSERVER_KEY, 'listAgents', 'send', 'replies']);
 const SEQUENCE_FIELD = 'sequence';
 const REPEAT_LAST_FIELD = 'repeatLast';
 
@@ -250,16 +274,26 @@ export function validateThreadReadInput(input) {
   return input;
 }
 
-// Validates one fixture thread against the recorded key sets and the recorded thread state.
-function checkThreadFixture(threadId, entry) {
-  const label = `session.threads.${threadId}`;
-  requireKeys(entry, ['thread', 'recentRuns', 'items'], label);
-  requireKeys(entry.thread, HOST_KEY_SETS.thread, `${label}.thread`);
+// The thread the fixture marks as the observer's own, or null when it marks none.
+function observerThreadIdOf(session, threads) {
+  if (!Object.hasOwn(session, OBSERVER_KEY)) return null;
+  const threadId = session[OBSERVER_KEY];
+  if (typeof threadId !== 'string' || threadId === '') {
+    throw fixtureInvalid(`session.${OBSERVER_KEY} must be a non-empty string`);
+  }
+  if (!Object.hasOwn(threads, threadId)) {
+    throw fixtureInvalid(`session.${OBSERVER_KEY} names no fixture thread: "${threadId}"`);
+  }
+  return threadId;
+}
+
+// A target: completed, with one or two runs. A completed thread has no active run
+// (focus-host-evidence.md:73, Q3), so a fixture that keeps one, or a running run, contradicts the
+// recorded thread state rather than extending it.
+function checkTargetState(label, entry) {
   if (entry.thread.status !== RECORDED_THREAD_STATUS) {
     behaviour('runningTarget', 'thread.status', `status ${JSON.stringify(entry.thread.status)}`);
   }
-  // A completed thread has no active run (focus-host-evidence.md:73, Q3), so a fixture that keeps
-  // one, or a running run, contradicts the one recorded thread state rather than extending it.
   if (entry.thread.activeRunId !== null) {
     throw fixtureInvalid(`${label}.thread.activeRunId must be null in a completed thread`);
   }
@@ -271,12 +305,78 @@ function checkThreadFixture(threadId, entry) {
       throw fixtureInvalid(`${label}.recentRuns[${index}] is running in a completed thread`);
     }
   });
-  if (entry.thread.runCount !== RECORDED_RUN_COUNT) {
-    behaviour('runCountOtherThanOne', 'thread.runCount', `runCount ${entry.thread.runCount}`);
+  const { runCount } = entry.thread;
+  if (!RECORDED_RUN_COUNTS.includes(runCount)) {
+    behaviour('runCountOtherThanOne', 'thread.runCount', `runCount ${runCount}`);
   }
-  if (entry.recentRuns.length !== RECORDED_RUN_COUNT) {
+  if (!RECORDED_RUN_COUNTS.includes(entry.recentRuns.length)) {
     behaviour('runCountOtherThanOne', 'recentRuns', `${entry.recentRuns.length} run(s)`);
   }
+  if (entry.recentRuns.length !== runCount) {
+    throw fixtureInvalid(`${label}.recentRuns must hold each of the thread's ${runCount} run(s)`);
+  }
+  if (runCount === 2) {
+    behaviour('runCountTwo');
+    const ordinals = entry.recentRuns.map((run) => run.ordinal).sort((left, right) => left - right);
+    if (ordinals[0] !== 1 || ordinals[1] !== 2) {
+      throw fixtureInvalid(
+        `${label}.recentRuns of a two-run thread must carry the ordinals 1 and 2`,
+      );
+    }
+  }
+}
+
+// The observer's own thread, as read form (c) of the second addendum saw it: running, top-level,
+// without pending requests, its active run the latest one and the one run its read form serves.
+// `runCount` is a positive integer the fixture author keeps; it is no run ordinal.
+function checkObserverState(label, entry) {
+  const { thread } = entry;
+  if (thread.status !== OBSERVER_THREAD_STATUS) {
+    throw fixtureInvalid(`${label} is the observer's own thread, which is running while it reads`);
+  }
+  for (const key of ['parentThreadId', 'relationshipToParent']) {
+    if (thread[key] !== null) behaviour('parentedObserver', `thread.${key}`, 'a parented observer');
+  }
+  if (thread.pendingRequestCount !== 0) {
+    behaviour(
+      'runningObserverPendingRequest',
+      'thread.pendingRequestCount',
+      `pendingRequestCount ${JSON.stringify(thread.pendingRequestCount)}`,
+    );
+  }
+  if (typeof thread.activeRunId !== 'string' || thread.activeRunId === '') {
+    throw fixtureInvalid(`${label}.thread.activeRunId must name the running run`);
+  }
+  if (thread.activeRunId !== thread.latestRunId) {
+    throw fixtureInvalid(`${label}.thread.activeRunId must equal latestRunId`);
+  }
+  if (!Number.isInteger(thread.runCount) || thread.runCount < 1) {
+    throw fixtureInvalid(`${label}.thread.runCount must be a positive integer`);
+  }
+  if (!Array.isArray(entry.recentRuns) || entry.recentRuns.length !== 1) {
+    throw fixtureInvalid(`${label}.recentRuns must hold exactly the observer's running latest run`);
+  }
+  const [run] = entry.recentRuns;
+  requireKeys(run, HOST_KEY_SETS.run, `${label}.recentRuns[0]`);
+  if (
+    run.runId !== thread.activeRunId ||
+    run.status !== OBSERVER_RUN_STATUS ||
+    run.completedAt !== null ||
+    run.startedAt === null
+  ) {
+    throw fixtureInvalid(
+      `${label}.recentRuns[0] must be the active run, running, started and not completed`,
+    );
+  }
+}
+
+// Validates one fixture thread against the recorded key sets and the recorded thread state.
+function checkThreadFixture(threadId, entry, isObserver) {
+  const label = `session.threads.${threadId}`;
+  requireKeys(entry, ['thread', 'recentRuns', 'items'], label);
+  requireKeys(entry.thread, HOST_KEY_SETS.thread, `${label}.thread`);
+  if (isObserver) checkObserverState(label, entry);
+  else checkTargetState(label, entry);
   if (!Array.isArray(entry.items)) throw fixtureInvalid(`${label}.items must be an array`);
   if (!Number.isInteger(entry.thread.itemCount) || entry.thread.itemCount < entry.items.length) {
     throw fixtureInvalid(
@@ -314,6 +414,28 @@ function checkThreadFixture(threadId, entry) {
     positions.add(item.position);
     itemIds.add(item.itemId);
   });
+  if (!isObserver && entry.thread.runCount === 2) checkRunAssignment(label, entry);
+}
+
+// A two-run target's items each belong to one of its runs, and the later run's items follow the
+// earlier run's (`positionsContinueAcrossRuns`). The observer's earlier runs are not in its
+// `recentRuns`, so this holds for targets only.
+function checkRunAssignment(label, entry) {
+  behaviour('positionsContinueAcrossRuns');
+  const ordinalOf = new Map(entry.recentRuns.map((run) => [run.runId, run.ordinal]));
+  let previous = 0;
+  for (const item of [...entry.items].sort((left, right) => left.position - right.position)) {
+    const ordinal = ordinalOf.get(item.runId);
+    if (ordinal === undefined) {
+      throw fixtureInvalid(`${label} item at position ${item.position} names no run of the thread`);
+    }
+    if (ordinal < previous) {
+      throw fixtureInvalid(
+        `${label} item at position ${item.position} belongs to an earlier run than an item before it`,
+      );
+    }
+    previous = ordinal;
+  }
 }
 
 // One item's served text window, following only the recorded truncation behaviours.
@@ -334,8 +456,16 @@ function serveText(text, offset, maxChars) {
       : { text, textTruncated: false, nextTextOffset: null };
   }
   if (offset === length) behaviour('textOffsetAtEnd', 'textOffset', 'equals the text length');
-  if (length - offset <= maxChars) {
-    behaviour('textOffsetFinalChunk', 'textOffset', 'the remaining text fits maxCharsPerItem');
+  if (length - offset === maxChars) {
+    behaviour(
+      'textOffsetRemainingEqualsMaxCharsPerItem',
+      'maxCharsPerItem',
+      'equals the remaining text length',
+    );
+  }
+  if (length - offset < maxChars) {
+    behaviour('textOffsetFinalChunk');
+    return { text: text.slice(offset), textTruncated: false, nextTextOffset: null };
   }
   behaviour('textOffsetContinuation');
   return {
@@ -357,10 +487,10 @@ function serveItem(item, offset, maxChars) {
   return served;
 }
 
-function threadResponse(entry, items, nextPosition, hasMore) {
+function threadResponse(entry, runs, items, nextPosition, hasMore) {
   const parts = {
     thread: pick(entry.thread, HOST_KEY_SETS.thread),
-    recentRuns: entry.recentRuns.map((run) => pick(run, HOST_KEY_SETS.run)),
+    recentRuns: runs.map((run) => pick(run, HOST_KEY_SETS.run)),
     items,
     nextPosition,
     hasMore,
@@ -368,6 +498,17 @@ function threadResponse(entry, items, nextPosition, hasMore) {
   return pick(parts, HOST_KEY_SETS.response);
 }
 
+// The runs `recentRuns` serves: ordinal descending, cut to `runLimit` (`runLimitTwo`,
+// `runLimitOneLatestRun`; one run is served as it is, `runLimitOne`).
+function servedRuns(entry, runLimit) {
+  return [...entry.recentRuns]
+    .sort((left, right) => right.ordinal - left.ordinal)
+    .slice(0, runLimit);
+}
+
+// The pure read every `thread-read` call runs: the fixture `session` and the call's input in, the
+// host-shaped result out, or a `StubError`. It touches no file, so an evaluator can replay each
+// traced input against the slot's fixture to derive what the run was served.
 export function readThread(session, input) {
   validateThreadReadInput(input);
   if (typeof input.environmentId === 'string' && input.environmentId !== '') {
@@ -387,11 +528,46 @@ export function readThread(session, input) {
     );
   }
   const entry = threads[input.threadId];
-  checkThreadFixture(input.threadId, entry);
+  const isObserver = input.threadId === observerThreadIdOf(session, threads);
+  checkThreadFixture(input.threadId, entry, isObserver);
+  if (isObserver) return readRunningObserver(entry, input);
   if (input.runLimit === undefined) behaviour('omittedRunLimit', 'runLimit');
-  if (input.runLimit > 1) behaviour('runLimitAboveOne', 'runLimit', `runLimit ${input.runLimit}`);
-  behaviour('runLimitOne');
+  if (!RECORDED_RUN_LIMITS.includes(input.runLimit)) {
+    behaviour('runLimitAboveOne', 'runLimit', `runLimit ${input.runLimit}`);
+  }
+  const { runCount } = entry.thread;
+  if (input.runLimit > runCount) {
+    behaviour('runLimitAboveRunCount', 'runLimit', `runLimit ${input.runLimit} on ${runCount} run`);
+  }
+  if (input.runLimit === 2) behaviour('runLimitTwo');
+  else behaviour(runCount === 1 ? 'runLimitOne' : 'runLimitOneLatestRun');
+  if (runCount > 1) behaviour('itemsNotRestrictedByRunLimit');
   behaviour('completedTarget');
+  return serveRead(entry, input, servedRuns(entry, input.runLimit));
+}
+
+// The observer's own running thread is served in read form (c) only; any other parameter or value
+// is unrecorded rather than guessed from the completed-target reads.
+function readRunningObserver(entry, input) {
+  for (const parameter of OBSERVER_ABSENT_PARAMETERS) {
+    if (input[parameter] !== undefined) {
+      behaviour('runningObserverOtherReadForm', parameter, `${parameter} on the running observer`);
+    }
+  }
+  for (const [parameter, value] of Object.entries(OBSERVER_READ_FORM)) {
+    if (input[parameter] !== value) {
+      behaviour(
+        'runningObserverOtherReadForm',
+        parameter,
+        `${parameter} ${JSON.stringify(input[parameter]) ?? 'omitted'} on the running observer`,
+      );
+    }
+  }
+  behaviour('runningObserverStateRead');
+  return serveRead(entry, input, entry.recentRuns);
+}
+
+function serveRead(entry, input, runs) {
   const items = [...entry.items].sort((left, right) => left.position - right.position);
 
   if (input.itemId !== undefined) {
@@ -406,7 +582,7 @@ export function readThread(session, input) {
     if (input.textOffset === 0) behaviour('textOffsetZero', 'textOffset', 'given as 0');
     behaviour('itemIdSingleItemRead');
     const served = serveItem(item, input.textOffset ?? 0, input.maxCharsPerItem);
-    return threadResponse(entry, [served], item.position, false);
+    return threadResponse(entry, runs, [served], item.position, false);
   }
 
   if (input.textOffset !== undefined) {
@@ -441,12 +617,12 @@ export function readThread(session, input) {
   const page = candidates.slice(0, input.limit);
   if (page.length === 0) {
     behaviour('emptyPage');
-    return threadResponse(entry, [], null, false);
+    return threadResponse(entry, runs, [], null, false);
   }
   behaviour('nextPositionIsLastServed');
   behaviour('hasMoreWhenViewContinues');
   const served = page.map((item) => serveItem(item, 0, input.maxCharsPerItem));
-  return threadResponse(entry, served, page.at(-1).position, candidates.length > page.length);
+  return threadResponse(entry, runs, served, page.at(-1).position, candidates.length > page.length);
 }
 
 // --- self-report surfaces -------------------------------------------------------------------
