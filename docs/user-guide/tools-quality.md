@@ -47,11 +47,10 @@ explicit `focus follow-up stop <session-ref>`, lost access, or a loop cap. While
 disabled, a snapshot offers nothing; asking for follow-up returns the limitation, and `follow-up
 stop` stays available.
 
-The T3 observed/report-only path passed the candidate-bound snapshot acceptance recorded above; the
-follow-up change supersedes that binding, and requalification is pending before the next release. It
-returns a bounded view of the selected session and may omit later progress. Other
-host paths remain disabled where the required candidate-bound reader, identity, mode, or delivery proof
-is unavailable.
+The T3 observed/report-only path passed the candidate-bound snapshot requalification (phase E,
+candidate `ada4fdae`) recorded on the acceptance page. It returns a bounded view of the selected
+session and may omit later progress. Other host paths remain disabled where the required
+candidate-bound reader, identity, mode, or delivery proof is unavailable.
 
 ## `/effective-flow retro`
 
