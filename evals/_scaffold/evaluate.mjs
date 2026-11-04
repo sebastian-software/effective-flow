@@ -357,14 +357,16 @@ export function evaluateEvidence(
     if (typeof sealedEvidenceText !== 'string') {
       validityProblems.push(sealed.missingMessage);
     } else {
-      // The parsed trace goes along so a suite can let a trace-visible behaviour decide how the
-      // sealed record is classified (`focus`: a contract violation outranks a stated refusal).
-      // Evaluators are in no instrument hash, and a parser that reads only the text ignores it.
+      // The parsed trace and call records go along so a suite can let a behaviour they show decide
+      // how the sealed record is classified (`focus`: a contract violation or a tracker write
+      // outranks a stated refusal). Evaluators are in no instrument hash, and a parser that reads
+      // only the text ignores them. A call log that does not parse hands in no records.
       const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText, {
         scenario,
         fixture,
         auxiliaryRecords,
         auxiliaryProblems,
+        callRecords: parsed.problems.length === 0 ? parsed.records : [],
       });
       validityProblems.push(...parsedSealed.problems);
       sealedEvidence = parsedSealed.state;
@@ -442,12 +444,14 @@ export function assessAbortedEvidence(
   if (requiresSealed) {
     if (typeof sealedEvidenceText !== 'string') unjudgeable.push(sealed.missingMessage);
     else {
-      // Same context argument as in `evaluateEvidence`: the parsed trace, for evaluators that read it.
+      // Same context argument as in `evaluateEvidence`: the parsed trace and call records, for
+      // evaluators that read them.
       const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText, {
         scenario,
         fixture,
         auxiliaryRecords,
         auxiliaryProblems,
+        callRecords: parsed.problems.length === 0 ? parsed.records : [],
       });
       unjudgeable.push(...parsedSealed.problems);
       sealedEvidence = parsedSealed.state;

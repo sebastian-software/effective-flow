@@ -75,7 +75,9 @@ export default {
   projectDocuments,
   prepareCheckout,
   evaluator,
-  // A not-admitted run is retried; a slot that needs a sixth attempt is reported as not measured.
+  // A not-admitted attempt is discarded and retried up to five times, so a slot's sixth attempt
+  // still runs; `retry-invalid` refuses once five are discarded, so a slot whose sixth attempt is
+  // also not admitted is not measured (`round-core.mjs`, `reprovision`).
   retryDiscardLimit: () => 5,
   // The next-steps profile at implementation time, so the launch is that suite's verified mode.
   expectedProfile: Object.freeze({

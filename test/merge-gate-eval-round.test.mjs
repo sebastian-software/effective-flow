@@ -3347,3 +3347,89 @@ test(
     }
   },
 );
+
+// Invariant: publication re-validates every archived host receipt (`validateSealedSlot`, then
+// `ensureCanonicalGeneration` on the candidate) with the receipt keys the scenario's sealed
+// evidence declares, so a declaring scenario's `lastMessagePath` is archived, accepted there and
+// its sealed last message published beside the run, while the scenarios without the declaration
+// keep the fixed key set.
+test(
+  'publication archives and re-validates a declaring scenario receipt that carries lastMessagePath',
+  { timeout: 120_000 },
+  () => {
+    const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-last-message-pub-')));
+    const base = resolve(temporary, 'rounds');
+    const hostRoot = resolve(temporary, 'host');
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    mkdirSync(hostRoot);
+    const scenario = 'guard-blocks-merge';
+    const declaring = {
+      ...suite,
+      evaluator: {
+        ...suite.evaluator,
+        parseSealedEvidence: (text) => ({ problems: [], state: text }),
+      },
+      sealedEvidence: {
+        fileName: 'last-message.txt',
+        archiveSuffix: 'last-message.txt',
+        sealDigestKey: 'lastMessage',
+        // Declared for the published scenario only, so the copied corpus beside it stays valid.
+        required: (name) => name === scenario,
+        capturesLastMessage: true,
+        capture: ({ lastMessagePath }) => readFileSync(lastMessagePath, 'utf8'),
+        missingMessage: 'missing last message',
+        orphanMessage: 'orphan last message',
+      },
+    };
+    try {
+      const prepared = createRound(declaring, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId: 'last-message-publication',
+      });
+      const lastMessages = [];
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const paths = sandboxPaths(prepared.roundRoot, scenario, slot, 1);
+        writeFileSync(paths.callLog, legacyLog(paths.projectRoot));
+        const lastMessage = resolve(hostRoot, `slot-${slot}-last-message.txt`);
+        writeFileSync(lastMessage, `last message of slot ${slot}\n`);
+        lastMessages.push(lastMessage);
+        sealAttempt(declaring, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot,
+          hostReceipt: { ...hostReceipt(paths.projectRoot), lastMessagePath: lastMessage },
+          base,
+        });
+      }
+      mkdirSync(publicationRoot, { recursive: true });
+      copyRestampedResults(resultsDir);
+      const published = publishRound(declaring, {
+        handle: prepared.manifestPath,
+        base,
+        resultsDir,
+        publicationRoot,
+      });
+      assert.ok(published.generation);
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const archived = resolve(resultsDir, scenario, `run-${slot}`);
+        const metadata = JSON.parse(readFileSync(`${archived}.metadata.json`, 'utf8'));
+        assert.equal(metadata.hostAttestation.lastMessagePath, lastMessages[slot - 1]);
+        assert.equal(
+          readFileSync(`${archived}.last-message.txt`, 'utf8'),
+          `last message of slot ${slot}\n`,
+        );
+      }
+      const neighbour = JSON.parse(
+        readFileSync(resolve(resultsDir, 'merge-proceeds', 'run-1.metadata.json'), 'utf8'),
+      );
+      assert.equal(Object.hasOwn(neighbour.hostAttestation, 'lastMessagePath'), false);
+    } finally {
+      const manifest = resolve(base, 'last-message-publication', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);

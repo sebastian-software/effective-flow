@@ -70,10 +70,15 @@ registration. No product behaviour changes.
 **Original outcome:** a focus suite that `pnpm eval focus verify --mode strict` reports as current,
 with one published round scored against the observed half of the concept's success criterion and
 the result recorded; no `src/` change, no other suite's evidence staled
-**Last evaluated attempt:** none
+**Last evaluated attempt:** 2026-11-04 `effective-flow build`, initial implementation: Approach steps 1
+to 5 done on the plan pull request; step 6 not run, because the implementing host is Linux x86_64
+and cannot record
 **No-progress count:** 0
-**Cumulative approach:** fresh baseline
-**Continuation decision:** none
+**Cumulative approach:** observation, stub extension, rubric amendment, labels and fixtures, and the
+focus suite with CI registration; no round recorded
+**Continuation decision:** Continue within authority: the maintainer records the 75-run round on the
+macOS aarch64 recording host per `evals/focus/README.md`, then completes step 7; allowance 1,
+remaining 1; stop when the recording host is unavailable or the round is not measurable
 
 ## Architecture decisions
 
@@ -588,6 +593,104 @@ All fifteen findings are incorporated, and none remains open.
   content SHA-256.
 - **Note, Error cases: a parented observer and the recording platform were unstated.** Both
   stated, with a stop rule.
+
+## Implementation notes
+
+**Run:** 2026-11-03 to 2026-11-04, `effective-flow build` on draft pull request #616. Steps 1 to 5
+are implemented and committed. Step 6, the recorded round, needs the maintainer's macOS aarch64
+recording host and was not run. Step 7 depends on the round, so `evals/focus/CALIBRATION.md` and the
+concept's work package 6 status line are not written yet. No evidence was recorded, simulated or
+backfilled.
+
+**Observation (step 1).** One throwaway top-level thread with two completed runs, read as planned
+(a) to (c). The orchestrating thread was top-level, so the stop rule for a parented observer did not
+fire. Two differences from the plan's assumptions are recorded in
+`docs/developer-guide/focus-session-shape-observations-2.md`:
+
+- the provider instance was `claudeAgent_claude_eg`, not the first addendum's `claudeAgent`, so the
+  new behaviours stand under their own entries;
+- the activity view served a new item type, `checkpoint`, at the end of each run. It is recorded in
+  prose only. `itemTypesByView` still comes from the first block, so fixtures keep to the four
+  recorded types and the stub keeps refusing `checkpoint`.
+
+The throwaway thread id is in the untracked `.effective-flow/focus-wp6-observation.json`, for the
+developer to archive.
+
+**Decisions made during implementation**
+
+- The stub marks the observer with `session.observerThreadId` and serves it only in read form (c).
+  Two served read forms compose independently observed behaviours: `runLimit` 2 on an `itemId`
+  continuation, and `runLimit` 1 on a full page. The stub header and the suite README disclose this.
+- Scenario names carry no verdict, because the slot path reaches the prompt.
+- An `afterPosition` counts as a served cursor only for the view that served it. This is the reading
+  of the contract's same-source pagination rule.
+- The closing block is the message's last three lines, with no blank line between them. Keyed lines
+  further up the body are ignored.
+- A trace-visible contract violation or a tracker write outranks a stated refusal and an instrument
+  gap, so it is scored as a mismatch. A violation that arises only after an instrument gap is not
+  scored, and the run is retried.
+- `summarize.mjs --round` reports an unpublishable round whose slot exhausted its retries as not
+  measurable, labelled by cause.
+- The launch attestation runs the focus checks first, then the shared `verifyHostQualification` on
+  the same launch under the next-steps mode, whose argv is identical. The README lists what it
+  cannot attest.
+
+**Files beyond the affected-files table**
+
+- `evals/_scaffold/evaluate.mjs`: `parseSealedEvidence` also receives the scenario, the fixture, the
+  auxiliary records and the call records. The file is in no suite's instrument hash, and the other
+  suites' parsers read only the text.
+- `evals/merge-gate/README.md` names the optional `lastMessagePath` receipt key, and
+  `evals/host-run.md` names the focus suite.
+- The plan file was reformatted so that `pnpm agent:check` passes.
+- `docs/developer-guide/focus-host-evidence.md` still names only the first addendum, because that
+  record stays unchanged. `focus-host-acceptance.md` is unchanged, as planned.
+
+**Commits:** `712ed9d4` (addendum, rubric amendment, guide index; committed before any label),
+`326942ff` (stub, shapes, round-core), `612593bb` (labels, fixtures, read walk) and `58eaf426`
+(suite, CI, docs), followed by the review and completion commit.
+
+**Test results.** All checks ran through the T3 project runner. The container sees no `.git`, so
+git-dependent checks ran in a disposable single-commit snapshot of the worktree.
+
+- `pnpm agent:check` passed.
+- `pnpm test`: 4,508 tests, 4,474 passed, 7 failed, 27 skipped. The seven failures fail identically
+  on `origin/develop` in the same container: six host-driver Python tests on this Linux host, and
+  one test that needs commit history a single-commit snapshot lacks.
+- `node build.mjs` and `pnpm test:distribution` passed.
+- After the review fixes, the focus, session-stub, round, iterate and next-steps eval tests passed
+  280 of 280.
+- `pnpm eval focus verify` reports all fifteen scenarios absent. merge-gate, iterate, next-steps and
+  build-context report the same states and file lists as before this run.
+- No file under `src/` changed.
+
+**Re-entry for step 6.** Record on the macOS aarch64 host per `evals/focus/README.md`, publish,
+write `evals/focus/CALIBRATION.md` from `summarize.mjs`, write the concept's work package 6 status
+line, then finish this pull request. Every branch commit here touches more than the plan, so plan
+pull-request continuation no longer applies to this branch. Continue the branch directly and finish
+the pull request with `effective-flow pr`.
+
+## Review findings
+
+**Date:** 2026-11-04
+**Reviewer:** `effective-flow-nodejs-reviewer` (one review and one re-review of the fixes); the
+documentation and tooling buckets got technical validation only
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    13 |
+| Open / Not implemented |     0 |
+
+There were no Critical findings. The first review raised 5 Important findings and 7 Notes. The
+re-review found 3 of those fixes partial and raised 3 more Notes, and all of those were fixed. Of
+the 15 findings, 13 are fixed and 2 were closed without a report:
+
+- the state-recheck and repeated-cursor checks, because the plan's violation list does not include
+  them;
+- the remaining part of a test-gap Note, a test of the attestation against the real shared checks,
+  because the attestation fails closed on the recording host. Its other parts were fixed.
 
 ## Open points
 

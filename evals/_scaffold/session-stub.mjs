@@ -16,6 +16,15 @@
 // behaviour fails with an `unrecorded` error envelope naming the parameter. The envelope keys and
 // error codes are the stub's own protocol (`STUB_PROTOCOL`), never presented as host shape.
 //
+// Two served combinations are compositions of independently recorded behaviours, not observed
+// combinations. An `itemId` continuation at `runLimit` 2 on a two-run thread composes
+// `itemIdSingleItemRead` (observed at `runLimit` 1) with `runLimitTwo` (`recentRuns` at
+// `runLimit` 2, observed on list reads only). A full history page (`limit` above 1, say 10 and
+// `maxCharsPerItem` 1500) at `runLimit` 1 on a two-run thread composes `runLimitOneLatestRun`
+// (observed on the smallest state read and on a continuation only) with
+// `itemsNotRestrictedByRunLimit` and `limitCapsPage`. Each part rests on the addenda, and the
+// assumption is that `recentRuns` depends only on `runLimit` and items do not depend on it at all.
+//
 // Fixture: the slot's `fixture.json`, two levels above `<skill>/scripts/` like the tracker stub's,
 // overridable through `EVAL_SESSION_FIXTURE`. Only its top-level `session` key is read, so the
 // tracker stub's `operations` map and the project writer's `repository` key stay untouched:

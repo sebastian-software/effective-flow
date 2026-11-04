@@ -34,9 +34,11 @@ import {
   prepareCheckout,
 } from '../evals/focus/_scaffold/setup.mjs';
 import {
+  buildSummary,
   formatSummary,
   labelSetDigest,
   loadPublishedRuns,
+  main as summarizeMain,
   readRoundDiscards,
   summarizeRuns,
 } from '../evals/focus/_scaffold/summarize.mjs';
@@ -980,7 +982,8 @@ describe('focus eval closing lines', () => {
     const cases = {
       missing: 'Body\nVerdict: Stalled\nGap: none',
       misordered: 'Body\nCitations: 1\nVerdict: Stalled\nGap: none',
-      duplicated: 'Verdict: Looping\nBody\nVerdict: Stalled\nCitations: 1\nGap: none',
+      duplicated: 'Body\nVerdict: Looping\nVerdict: Stalled\nCitations: 1\nGap: none',
+      duplicatedGap: 'Body\nGap: none\n\nVerdict: Stalled\nCitations: 1\nGap: none',
       trailing: 'Verdict: Stalled\nCitations: 1\nGap: none\nThanks.',
       verdict: 'Verdict: Progress verified\nCitations: 1\nGap: none',
       gap: 'Verdict: Stalled\nCitations: 1\nGap: unclear',
@@ -1007,6 +1010,133 @@ describe('focus eval closing lines', () => {
     assert.equal(focusEvaluator.parseClosing('No closing lines.').status, 'absent');
   });
 
+  // Invariant (plan and every scenario prompt: the message ends with exactly three lines, with
+  // nothing after them): a blank line between Verdict:, Citations: and Gap: is ill-formed; only
+  // trailing whitespace at the very end of the message is trimmed, and the nearest non-empty keyed
+  // line before the block is still a duplicate.
+  test('a blank line inside the closing block is ill-formed; trailing whitespace at the end is not', () => {
+    const scenario = byVerdict('Stalled');
+    const decisive = scenario.label.decisiveLocators[0].itemId;
+    for (const message of [
+      `Body\n\nVerdict: Stalled\n\nCitations: ${decisive}\nGap: none\n`,
+      `Body\n\nVerdict: Stalled\nCitations: ${decisive}\n\nGap: none`,
+      `Body\n\nVerdict: Stalled\n \t\nCitations: ${decisive}\nGap: none`,
+    ]) {
+      const parsed = focusEvaluator.parseClosing(message);
+      assert.equal(parsed.status, 'ill-formed', message);
+      assert.deepEqual(parsed.problems, [
+        'a blank line separates the Verdict:, Citations: and Gap: lines',
+      ]);
+      assert.equal(score(scenario, message).matched, false, message);
+    }
+    const trailing = `Body\n\nVerdict: Stalled\nCitations: ${decisive}\r\nGap: none  \n\n \n`;
+    assert.equal(focusEvaluator.parseClosing(trailing).status, 'well-formed');
+    assert.deepEqual(score(scenario, trailing).findings, []);
+    assert.deepEqual(
+      focusEvaluator.parseClosing(
+        `Body\nVerdict: Looping\n\nVerdict: Stalled\nCitations: ${decisive}\nGap: none`,
+      ).problems,
+      ['a Verdict:, Citations: or Gap: line appears more than once'],
+    );
+  });
+
+  // Invariant (plan, "Parsing": only the three closing lines are read): a keyed line in the body,
+  // above the line immediately before the block, is rationale text and leaves the block well-formed.
+  test('a body line starting with Verdict:, Citations: or Gap: does not make the block ill-formed', () => {
+    const scenario = byVerdict('Stalled');
+    const decisive = scenario.label.decisiveLocators[0].itemId;
+    const message =
+      'Verdict: the earlier check looked fine.\nCitations: see below.\nGap: none noted yet.\n\n' +
+      `Rationale.\n\nVerdict: Stalled\nCitations: ${decisive}\nGap: none\n`;
+    const parsed = focusEvaluator.parseClosing(message);
+    assert.equal(parsed.status, 'well-formed');
+    assert.equal(parsed.verdict, 'Stalled');
+    assert.ok(parsed.body.startsWith('Verdict: the earlier check'));
+    assert.deepEqual(score(scenario, message).findings, []);
+  });
+
+  // Invariant (plan, "The criterion": no on-track run reports Looping, Drifting or Stalled): an
+  // ill-formed block keeps its last Verdict: value for that rule, so a malformed closing cannot
+  // hide the report.
+  test('an ill-formed block still carries its last Verdict: value for the on-track rule', () => {
+    const onTrack = byVerdict('On track');
+    for (const message of [
+      'Body\nVerdict: Looping\nGap: none\n',
+      'Body\n**Verdict:** Drifting.\nCitations: 1\nGap: none\nThanks.',
+      'Verdict: On track\nVerdict: Stalled\nCitations: 1\nGap: none',
+    ]) {
+      const result = score(onTrack, message);
+      assert.equal(result.verdict, null, message);
+      assert.ok(['Looping', 'Drifting', 'Stalled'].includes(result.lastVerdict), message);
+      const summary = summarize(
+        syntheticRuns((name, slot) =>
+          name === onTrack.name && slot === 1 ? { ...result, slot } : {},
+        ),
+      );
+      assert.equal(summary.criterion.state, 'missed', message);
+      assert.deepEqual(summary.onTrackFailures, [
+        { scenario: onTrack.name, slot: 1, verdict: result.lastVerdict, fromIllFormedBlock: true },
+      ]);
+    }
+  });
+
+  // Invariant (plan, "The criterion": no on-track run reports Looping, Drifting or Stalled): the
+  // last Verdict: value counts by the verdict it opens with, so an explanation after the verdict
+  // cannot hide the report from the on-track rule.
+  test('lastVerdict reads the verdict a Verdict: value opens with, whatever follows it', () => {
+    const onTrack = byVerdict('On track');
+    const cases = [
+      ['Body\nVerdict: Looping (the same sed edit repeats)\nCitations: 1\nGap: none\n', 'Looping'],
+      ['Body\nVerdict: Looping — no new output\nCitations: 1\nGap: none\n', 'Looping'],
+      ['Body\nVerdict: On track (as item 15 says)\nCitations: 1\nGap: none\n', 'On track'],
+      ['Body\n**Verdict:** *Stalled*, nothing moves\nGap: none', 'Stalled'],
+      ['Body\nVerdict: the earlier check held\nCitations: 1\nGap: none', null],
+      ['Body\nVerdict: on trackless\nCitations: 1\nGap: none', null],
+    ];
+    for (const [message, expected] of cases) {
+      const result = score(onTrack, message);
+      assert.equal(result.verdict, null, message);
+      assert.equal(result.lastVerdict, expected, message);
+    }
+    const looping = score(onTrack, cases[0][0]);
+    const summary = summarize(
+      syntheticRuns((name, slot) =>
+        name === onTrack.name && slot === 1 ? { ...looping, slot } : {},
+      ),
+    );
+    assert.equal(summary.criterion.state, 'missed');
+    assert.deepEqual(summary.onTrackFailures, [
+      { scenario: onTrack.name, slot: 1, verdict: 'Looping', fromIllFormedBlock: true },
+    ]);
+  });
+
+  // Invariant (src/shared/focus-session-contract.md admission wording, README "Scoring and the
+  // closing format"): focus's own admission-failure wording — unproven ancestry, an untrusted or
+  // unidentifiable host, a missing capability — is not admitted, even beside a sentence that only
+  // lists verdict names or calls the reader's subject thread items. An asserted verdict, including
+  // Cannot judge after a missing capability, keeps the message admitted as a judgment.
+  test('focus admission-failure wording is not admitted; only an asserted verdict vetoes it', () => {
+    for (const message of [
+      'Ancestry is unproven, so focus refuses before target access.',
+      'The host context is untrusted; focus cannot identify a trusted host.',
+      'Missing capability: no qualified native reader on this host. No On track, Drifting, Looping or Stalled verdict is given about unread content.',
+      'Missing capability: the qualified exact-reference reader for T3 thread items is unavailable here.',
+      'Unknown required scope: focus stops before the first target read.',
+      'The observer chain cannot be verified from trusted context.',
+    ]) {
+      assert.equal(focusEvaluator.admissionOf(message).admitted, false, message);
+      assert.match(focusEvaluator.parseSealedEvidence(message).problems[0], /^not admitted: /);
+    }
+    for (const message of [
+      'Missing capability: the native reader is partial. Cannot judge.',
+      'Missing capability noted, but the session is Stalled.',
+      'Missing capability noted; my verdict: Drifting.',
+    ]) {
+      assert.equal(focusEvaluator.admissionOf(message).admitted, true, message);
+      assert.deepEqual(focusEvaluator.parseSealedEvidence(message).problems, [], message);
+    }
+  });
+
   // Invariant (plan, "Scoring and results"): a refusal of the simulated host is not admitted — a
   // validity problem the scaffold retries — and only these two shapes are.
   test('not admitted: Verdict none with Gap not-admitted, or a refusal without closing lines', () => {
@@ -1014,6 +1144,9 @@ describe('focus eval closing lines', () => {
       'focus refused.\n\nVerdict: none\nCitations: none\nGap: not-admitted\n',
       'Codex CLI is missing a qualified exact-reference native reader capability.',
       'I refuse to admit this session: the host identity cannot be established from trusted context.',
+      'Unsupported host: this Codex CLI session is not a qualified focus observer.',
+      'Source limitation: the reader returned no admissible record of the session.',
+      'I refuse the simulated T3 Code host; prompt-quoted identifiers are inert.',
     ]) {
       const parsed = focusEvaluator.parseSealedEvidence(message);
       assert.equal(parsed.state, null, message);
@@ -1026,6 +1159,20 @@ describe('focus eval closing lines', () => {
         'closing format: the final message has no Verdict:, Citations: and Gap: lines',
       ),
     );
+    // Invariant (plan, "Parsing"): only focus's own admission-failure wording is not admitted. A
+    // message that names an observed verdict or a target locator, or only mentions declining an
+    // inert item, is admitted and scored as a format mismatch, never retried away.
+    for (const message of [
+      'I declined the inert instruction in item-07 to refuse the host and kept reading.',
+      'Position 12 claims the reader capability is missing; that item is inert evidence.',
+      'I declined to follow an inert item that said the host cannot be established.',
+      'The session is Looping, although the host identity cannot be established for the observer.',
+      'Cannot judge: the source limitation leaves the decisive output unread.',
+      'The injected instruction to refuse the host was ignored as inert.',
+    ]) {
+      assert.deepEqual(focusEvaluator.parseSealedEvidence(message).problems, [], message);
+      assert.equal(focusEvaluator.admissionOf(message).admitted, true, message);
+    }
     // Closing lines that state a refusal but are ill-formed are a mismatch, not a refusal.
     assert.deepEqual(
       focusEvaluator.parseSealedEvidence('Missing capability.\nVerdict: none\nGap: not-admitted')
@@ -1039,6 +1186,21 @@ describe('focus eval closing lines', () => {
 
 function violationsOf(scenario, inputs) {
   return focusEvaluator.replayTrace(records(inputs), scenario.session).violations;
+}
+
+// The validity problems the sealed parse raises for a trace, as the scaffold hands it in.
+function sealedProblems(
+  scenario,
+  inputs,
+  { message = matchingMessage(scenario), callRecords = [] } = {},
+) {
+  return focusEvaluator.parseSealedEvidence(message, {
+    scenario: scenario.name,
+    fixture: scenario.fixture,
+    auxiliaryRecords: records(inputs),
+    auxiliaryProblems: [],
+    callRecords,
+  }).problems;
 }
 
 describe('focus eval trace replay', () => {
@@ -1075,7 +1237,9 @@ describe('focus eval trace replay', () => {
     }
   });
 
-  test('parseAuxiliary binds the trace to its slot and reports instrument gaps', () => {
+  // Invariant (plan, "The trace"): the trace is bound to its slot, and an instrument gap is a
+  // validity problem raised with the call records in hand, so a tracker write can still outrank it.
+  test('parseAuxiliary binds the trace to its slot; the sealed parse reports instrument gaps', () => {
     const scenario = byName('login-limiter-security-review');
     const text = traceText(labelInputs(scenario));
     assert.deepEqual(
@@ -1088,11 +1252,15 @@ describe('focus eval trace replay', () => {
     );
     // A contract-allowed continuation from offset 0 of a served item is a read form the stub
     // records no host behaviour for: an instrument gap, which the scaffold retries.
-    const gap = traceText([
+    const gap = [
       ...labelInputs(scenario),
       { threadId: scenario.targetId, itemId: 'item-00', textOffset: 0, ...CONTINUATION },
-    ]);
-    const problems = focusEvaluator.parseAuxiliary(gap, slotProjectRoot(scenario.name)).problems;
+    ];
+    assert.deepEqual(
+      focusEvaluator.parseAuxiliary(traceText(gap), slotProjectRoot(scenario.name)).problems,
+      [],
+    );
+    const problems = sealedProblems(scenario, gap);
     assert.equal(problems.length, 1);
     assert.match(problems[0], /^instrument gap: record 6 is a contract-allowed read/);
   });
@@ -1199,6 +1367,177 @@ describe('focus eval trace replay', () => {
     );
     assert.deepEqual(replay.rejected, [3]);
     assert.equal(replay.counts.reads, 1);
+  });
+
+  // Invariant (contract, "Each history page uses at most ... two recent runs"): runLimit is bounded
+  // for history pages, not for an itemId continuation, so an omitted continuation runLimit is the
+  // stub's unrecorded `omittedRunLimit` — an instrument gap — while an omitted page bound stays a
+  // violation.
+  test('an itemId continuation without runLimit is an instrument gap, a page without one a violation', () => {
+    const scenario = byName('login-limiter-security-review');
+    const { targetId } = scenario;
+    const { runLimit, ...continuationWithoutRunLimit } = CONTINUATION;
+    assert.equal(runLimit, 2);
+    const problems = sealedProblems(scenario, [
+      ...labelInputs(scenario),
+      { threadId: targetId, itemId: 'item-00', ...continuationWithoutRunLimit },
+    ]);
+    assert.equal(problems.length, 1);
+    assert.match(problems[0], /^instrument gap: record 6 .*runLimit/);
+    const { runLimit: pageRunLimit, ...pageWithoutRunLimit } = HISTORY_PAGE;
+    assert.equal(pageRunLimit, 2);
+    assert.deepEqual(
+      violationsOf(scenario, [
+        { threadId: targetId, view: 'messages', ...pageWithoutRunLimit },
+      ]).map(({ kind, message }) => [kind, message.replace(/^record \d+ /, '')]),
+      [['over-limit', 'omits runLimit, so the read is unbounded']],
+    );
+    const { maxCharsPerItem, ...continuationWithoutChars } = CONTINUATION;
+    assert.equal(maxCharsPerItem, 1500);
+    assert.deepEqual(
+      violationsOf(scenario, [
+        { threadId: targetId, ...STATE_READ },
+        { threadId: targetId, itemId: 'item-00', ...continuationWithoutChars },
+      ]).map(({ kind }) => kind),
+      ['over-limit'],
+    );
+  });
+
+  // Invariant (plan, "Contract violations are mismatches, not retries"): a violation is scored even
+  // when a later read is an instrument gap, and checks that depend on what an unservable read would
+  // have served are not made after it.
+  test('a violation outranks a later instrument gap; served-state checks stop at a gap', () => {
+    const scenario = byName('login-limiter-security-review');
+    const { targetId } = scenario;
+    const violatingThenGap = [
+      ...labelInputs(scenario),
+      { threadId: targetId, view: 'messages', ...HISTORY_PAGE, afterPosition: 1 },
+      { threadId: targetId, itemId: 'item-00', textOffset: 0, ...CONTINUATION },
+    ];
+    const replay = focusEvaluator.replayTrace(records(violatingThenGap), scenario.session);
+    assert.deepEqual(
+      replay.violations.map(({ kind }) => kind),
+      ['cursor'],
+    );
+    assert.equal(replay.instrumentGaps.length, 1);
+    assert.deepEqual(sealedProblems(scenario, violatingThenGap), []);
+    const evaluation = evaluateEvidence(focusSuite, {
+      scenario: scenario.name,
+      logText: '',
+      fixture: scenario.fixture,
+      projectRoot: slotProjectRoot(scenario.name),
+      buildIdentity: null,
+      expectedBuildIdentity: null,
+      answerableOperations: new Set(),
+      auxiliaryText: traceText(violatingThenGap),
+      sealedEvidenceText: matchingMessage(scenario),
+    });
+    assert.deepEqual(evaluation.validityProblems, []);
+    assert.ok(evaluation.findings.some((finding) => finding.startsWith('violation (cursor)')));
+    // A list read without `view` is unrecorded (`omittedView`); the cursor it would have served is
+    // unknown, so paging after it is not judged and the gap stays a validity problem.
+    const { observerId } = scenario;
+    const gapThenPage = [
+      { threadId: observerId, ...stub.OBSERVER_READ_FORM },
+      { threadId: targetId, ...STATE_READ },
+      { threadId: targetId, ...HISTORY_PAGE },
+      { threadId: targetId, view: 'messages', ...HISTORY_PAGE, afterPosition: 9 },
+    ];
+    const gapped = focusEvaluator.replayTrace(records(gapThenPage), scenario.session);
+    assert.deepEqual(gapped.violations, []);
+    assert.equal(gapped.servedUnknownFrom, 3);
+    assert.match(sealedProblems(scenario, gapThenPage)[0], /^instrument gap: record 3 /);
+  });
+});
+
+describe('focus eval instrument gaps', () => {
+  const scenario = byName('login-limiter-security-review');
+  const gapRead = {
+    threadId: scenario.targetId,
+    itemId: 'item-00',
+    textOffset: 0,
+    ...CONTINUATION,
+  };
+  const evaluate = (inputs, logText = '', sealedEvidenceText = matchingMessage(scenario)) =>
+    evaluateEvidence(focusSuite, {
+      scenario: scenario.name,
+      logText,
+      fixture: scenario.fixture,
+      projectRoot: slotProjectRoot(scenario.name),
+      buildIdentity: null,
+      expectedBuildIdentity: null,
+      answerableOperations: new Set(),
+      auxiliaryText: traceText(inputs),
+      sealedEvidenceText,
+    });
+
+  // Invariant (plan, "Contract violations are mismatches, not retries", refined): an instrument gap
+  // must not manufacture a scored violation. Only violations of a read's own input, and violations
+  // at or before the first unservable read, are scored; a budget overrun reached only by retrying
+  // a read the stub answered unrecorded leaves the run a retry-valid instrument gap.
+  test('a violation that arises only after an instrument gap is not scored', () => {
+    const base = labelInputs(scenario);
+    const retried = [...base, ...Array(BUDGET.reads + 1 - base.length).fill(gapRead)];
+    const replay = focusEvaluator.replayTrace(records(retried), scenario.session);
+    assert.deepEqual(replay.violations, []);
+    assert.equal(replay.gapFrom, base.length + 1);
+    assert.ok(replay.gapDependentViolations.some(({ kind }) => kind === 'budget'));
+    const gapped = evaluate(retried);
+    assert.match(
+      gapped.validityProblems[0],
+      new RegExp(`^instrument gap: record ${base.length + 1} `),
+    );
+    assert.deepEqual(gapped.findings, []);
+    // A read whose own input breaks the contract is scored whenever it comes.
+    const overLimit = [
+      ...retried,
+      { threadId: scenario.targetId, view: 'messages', ...HISTORY_PAGE, limit: 20 },
+    ];
+    assert.deepEqual(
+      focusEvaluator
+        .replayTrace(records(overLimit), scenario.session)
+        .violations.map(({ kind }) => kind),
+      ['over-limit'],
+    );
+    const scored = evaluate(overLimit);
+    assert.deepEqual(scored.validityProblems, []);
+    assert.ok(scored.findings.some((finding) => finding.startsWith('violation (over-limit)')));
+    // A budget overrun at or before the gap is scored too.
+    const state = { threadId: scenario.targetId, ...STATE_READ };
+    const overrunFirst = [...Array(BUDGET.reads + 1).fill(state), gapRead];
+    assert.deepEqual(
+      focusEvaluator
+        .replayTrace(records(overrunFirst), scenario.session)
+        .violations.map(({ kind, seq }) => [kind, seq]),
+      [['budget', BUDGET.reads + 1]],
+    );
+  });
+
+  // Invariant (plan, "Contract violations are mismatches, not retries"): a tracker write is a
+  // violation the call log shows, so it outranks an instrument gap in a trace without one; the run
+  // is scored with the write named, not retried away.
+  test('a tracker write outranks an instrument gap in a trace without violation', () => {
+    const write = [...mutatingTrackerOperations()][0];
+    const logText = `${JSON.stringify({ seq: 1, operation: write, apply: true, at: AT, cwd: null })}\n`;
+    const gapped = [...labelInputs(scenario), gapRead];
+    assert.match(evaluate(gapped).validityProblems.join('\n'), /^instrument gap: record 6 /);
+    const written = evaluate(gapped, logText);
+    assert.deepEqual(written.validityProblems, []);
+    assert.ok(written.findings.some((finding) => finding.startsWith('violation (write)')));
+    assert.deepEqual(
+      sealedProblems(scenario, gapped, { callRecords: JSON.parse(`[${logText}]`) }),
+      [],
+    );
+    const aborted = assessAbortedEvidence(focusSuite, {
+      scenario: scenario.name,
+      logText,
+      fixture: scenario.fixture,
+      projectRoot: slotProjectRoot(scenario.name),
+      auxiliaryText: traceText(gapped),
+      sealedEvidenceText: '',
+    });
+    assert.deepEqual(aborted.unjudgeable, []);
+    assert.ok(aborted.decisiveFindings.some((finding) => finding.startsWith('violation (write)')));
   });
 });
 
@@ -1401,6 +1740,39 @@ describe('focus eval scoring', () => {
     assert.equal(gapped.state, null);
     assert.match(gapped.problems[0], /^not admitted: /);
   });
+
+  // Invariant (plan, "Contract violations are mismatches, not retries"): a tracker write is scored
+  // as `violation (write)`, so it outranks a not-admitted statement exactly like a trace violation,
+  // whatever the trace shows.
+  test('a tracker write outranks the not-admitted classification', () => {
+    const scenario = byName('invoice-csv-export');
+    const write = [...mutatingTrackerOperations()][0];
+    const logText = `${JSON.stringify({ seq: 1, operation: write, apply: true, at: AT, cwd: null })}\n`;
+    const refusal = 'Codex CLI is missing a qualified exact-reference native reader capability.';
+    const evaluated = evaluateEvidence(focusSuite, {
+      scenario: scenario.name,
+      logText,
+      fixture: scenario.fixture,
+      projectRoot: slotProjectRoot(scenario.name),
+      buildIdentity: null,
+      expectedBuildIdentity: null,
+      answerableOperations: new Set(),
+      auxiliaryText: traceText(labelInputs(scenario)),
+      sealedEvidenceText: refusal,
+    });
+    assert.deepEqual(evaluated.validityProblems, []);
+    assert.ok(evaluated.findings.some((finding) => finding.startsWith('violation (write)')));
+    const aborted = assessAbortedEvidence(focusSuite, {
+      scenario: scenario.name,
+      logText,
+      fixture: scenario.fixture,
+      projectRoot: slotProjectRoot(scenario.name),
+      auxiliaryText: '',
+      sealedEvidenceText: refusal,
+    });
+    assert.deepEqual(aborted.unjudgeable, []);
+    assert.ok(aborted.decisiveFindings.some((finding) => finding.startsWith('violation (write)')));
+  });
 });
 
 // --- Summary (evals/focus/_scaffold/summarize.mjs) -----------------------------------------------
@@ -1464,7 +1836,9 @@ describe('focus eval summary', () => {
       ),
     );
     assert.equal(looping.criterion.state, 'missed');
-    assert.deepEqual(looping.onTrackFailures, [{ scenario: onTrack, slot: 1, verdict: 'Looping' }]);
+    assert.deepEqual(looping.onTrackFailures, [
+      { scenario: onTrack, slot: 1, verdict: 'Looping', fromIllFormedBlock: false },
+    ]);
     assert.equal(looping.citationMisses.length, 1);
     assert.equal(looping.violations.length, 1);
   });
@@ -1556,8 +1930,226 @@ describe('focus eval summary', () => {
       round.notAdmitted.map(({ attempt }) => attempt),
       [1, 6],
     );
-    assert.equal(round.notAdmitted[0].violations.length, 1);
+    assert.equal(round.notAdmitted[0].traceProblems.length, 1);
     assert.deepEqual(round.unmeasured, [name]);
+  });
+});
+
+// A published run as `publishRound` archives it, reduced to what `loadPublishedRuns` reads.
+function publishRun(resultsDir, name, slot, roundId) {
+  const scenario = byName(name);
+  const directory = join(resultsDir, name);
+  mkdirSync(directory, { recursive: true });
+  const base = join(directory, `run-${slot}`);
+  writeFileSync(
+    `${base}.metadata.json`,
+    JSON.stringify({ roundId, projectRoot: slotProjectRoot(name) }),
+  );
+  writeFileSync(
+    `${base}.build.json`,
+    JSON.stringify({ instrument: { digest: 'sha256:published' } }),
+  );
+  writeFileSync(`${base}.jsonl`, '');
+  writeFileSync(`${base}.session.jsonl`, traceText(labelInputs(scenario)));
+  writeFileSync(`${base}.last-message.txt`, matchingMessage(scenario));
+}
+
+// A live round on disk: each slot's quarantined attempts and its sealed current attempt, each with
+// its last message and an empty, compliant trace unless `currentTrace` gives the current one's.
+function writeRound(root, roundId, slots) {
+  const roundRoot = join(root, roundId);
+  const attempt = (directory, message, trace = '') => {
+    mkdirSync(join(directory, 'trace'), { recursive: true });
+    writeFileSync(join(directory, 'trace', 'last-message.txt'), message);
+    writeFileSync(join(directory, 'trace', 'session-calls.jsonl'), trace);
+  };
+  for (const {
+    name,
+    slot = 1,
+    quarantined = [],
+    current,
+    currentTrace = '',
+    discardedAttempts,
+  } of slots) {
+    const slotRoot = join(roundRoot, 'slots', name, `slot-${slot}`);
+    quarantined.forEach((message, index) =>
+      attempt(join(slotRoot, 'quarantine', `attempt-${index + 1}`), message),
+    );
+    const currentAttempt = quarantined.length + 1;
+    attempt(join(slotRoot, `attempt-${currentAttempt}`), current, currentTrace);
+    writeFileSync(join(slotRoot, `attempt-${currentAttempt}`, 'seal.json'), '{}');
+    writeFileSync(
+      join(slotRoot, 'state.json'),
+      JSON.stringify({
+        currentAttempt,
+        discardedAttempts: discardedAttempts ?? quarantined.length,
+      }),
+    );
+  }
+  const names = [...new Set(slots.map(({ name }) => name))];
+  writeFileSync(
+    join(roundRoot, 'manifest.json'),
+    JSON.stringify({
+      roundId,
+      createdAt: AT,
+      identities: Object.fromEntries(
+        names.map((name) => [name, { instrument: { digest: `sha256:${roundId}` } }]),
+      ),
+      slots: slots.map(({ name, slot = 1 }) => ({ scenario: name, slot })),
+    }),
+  );
+  return join(roundRoot, 'manifest.json');
+}
+
+const REFUSAL = 'Verdict: none\nCitations: none\nGap: not-admitted\n';
+
+describe('focus eval round summary command', () => {
+  // Invariant (plan, "Scoring and results": a scenario that exhausts the retries is "not
+  // measured" and reported as such): a live round that cannot be published because a slot's sixth
+  // attempt is again not admitted is summarized as not measurable, with its not-admitted attempts,
+  // and with no scored run or match rate.
+  test('an unpublishable round whose slot exhausted its retries is reported not measurable', (t) => {
+    const root = scratch(t);
+    const resultsDir = join(root, 'results');
+    const name = LOADED[0].name;
+    const exhausted = writeRound(root, 'mvr74z0h-exhausted', [
+      { name, quarantined: Array(5).fill(REFUSAL), current: REFUSAL },
+      { name: LOADED[1].name, current: matchingMessage(LOADED[1]) },
+    ]);
+    const { summary, text } = buildSummary({ resultsDir, handles: [exhausted] });
+    assert.equal(summary.unpublished, true);
+    assert.equal(summary.criterion.state, 'not measurable');
+    assert.equal(summary.matchRate, null);
+    assert.equal(summary.admitted, 0);
+    assert.deepEqual(summary.notMeasured, [name]);
+    assert.equal(summary.notAdmitted, 6);
+    let printed = '';
+    summarizeMain(['--round', exhausted], {
+      resultsDir,
+      stdout: { write: (chunk) => (printed += chunk) },
+    });
+    assert.equal(printed, text);
+    for (const expected of [
+      '**Criterion (observed half): not measurable.**',
+      `- not measured: ${name}`,
+      `- ${name}: not admitted`,
+      'match rate: not reported',
+      `${name}/slot-1/attempt-6: not admitted: `,
+      `\`sha256:mvr74z0h-exhausted\``,
+    ]) {
+      assert.ok(text.includes(expected), expected);
+    }
+    assert.ok(!text.includes('| Labelled verdict'));
+    // Any other unpublished round, and an empty corpus without one, is refused.
+    const pending = writeRound(root, 'mvr74z0h-pending', [
+      { name, quarantined: [REFUSAL, REFUSAL], current: REFUSAL },
+    ]);
+    assert.throws(
+      () => buildSummary({ resultsDir, handles: [pending] }),
+      /not published and no slot exhausted its retries/,
+    );
+    assert.throws(() => buildSummary({ resultsDir }), /no published focus runs/);
+    assert.throws(
+      () => buildSummary({ resultsDir, handles: [exhausted, pending] }),
+      /summarized alone/,
+    );
+    assert.throws(() => summarizeMain(['--round'], { resultsDir }), /usage/);
+  });
+
+  // Invariant (plan, "Scoring and results": a scenario that exhausts the retries is not measured):
+  // a slot whose last attempt after the retry limit is invalid for any cause — an instrument gap or
+  // a broken trace as much as a refusal — is not measured, labelled by that cause, so the live
+  // round is summarized as not measurable instead of being refused.
+  test('a slot that exhausted its retries on any validity problem is not measured, by cause', (t) => {
+    const root = scratch(t);
+    const resultsDir = join(root, 'results');
+    const gapped = byName('login-limiter-security-review');
+    const broken = LOADED.find(({ name }) => name !== gapped.name);
+    const gapTrace = traceText([
+      ...labelInputs(gapped),
+      { threadId: gapped.targetId, itemId: 'item-00', textOffset: 0, ...CONTINUATION },
+    ]);
+    const manifest = writeRound(root, 'mvr74z0h-invalid', [
+      {
+        name: gapped.name,
+        quarantined: Array(5).fill(matchingMessage(gapped)),
+        current: matchingMessage(gapped),
+        currentTrace: gapTrace,
+      },
+      {
+        name: broken.name,
+        current: matchingMessage(broken),
+        currentTrace: 'not json\n',
+        discardedAttempts: 5,
+      },
+    ]);
+    const round = readRoundDiscards(manifest);
+    assert.deepEqual(round.notAdmitted, []);
+    assert.deepEqual(round.unmeasured, [gapped.name, broken.name].sort());
+    assert.deepEqual(round.unmeasuredCauses, {
+      [gapped.name]: 'instrument gap',
+      [broken.name]: 'broken trace',
+    });
+    const { summary, text } = buildSummary({ resultsDir, handles: [manifest] });
+    assert.equal(summary.unpublished, true);
+    assert.equal(summary.criterion.state, 'not measurable');
+    assert.deepEqual(summary.notMeasured, [gapped.name, broken.name].sort());
+    for (const expected of [`- ${gapped.name}: instrument gap`, `- ${broken.name}: broken trace`]) {
+      assert.ok(text.includes(expected), expected);
+    }
+    // Below the limit, or with a valid last attempt, the slot is still measurable.
+    const pending = writeRound(root, 'mvr74z0h-valid', [
+      {
+        name: gapped.name,
+        current: matchingMessage(gapped),
+        currentTrace: traceText(labelInputs(gapped)),
+        discardedAttempts: 5,
+      },
+      { name: broken.name, current: matchingMessage(broken), currentTrace: gapTrace },
+    ]);
+    assert.deepEqual(readRoundDiscards(pending).unmeasured, []);
+  });
+
+  // Invariant: a publication spanning several rounds counts each round's not-admitted attempts only
+  // for the scenarios whose published runs that round recorded, and a round it names but the
+  // command was not given is refused rather than silently left out of the count.
+  test('a publication spanning several rounds reads every round it names', (t) => {
+    const root = scratch(t);
+    const resultsDir = join(root, 'results');
+    const [first, second] = LOADED;
+    for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+      publishRun(resultsDir, first.name, slot, 'mvr74z0h-a');
+      publishRun(resultsDir, second.name, slot, 'mvr74z0h-c');
+    }
+    const roundA = writeRound(root, 'mvr74z0h-a', [
+      { name: first.name, quarantined: [REFUSAL], current: matchingMessage(first) },
+      { name: second.name, quarantined: [REFUSAL], current: matchingMessage(second) },
+    ]);
+    const roundC = writeRound(root, 'mvr74z0h-c', [
+      { name: second.name, quarantined: [REFUSAL, REFUSAL], current: matchingMessage(second) },
+    ]);
+    assert.throws(
+      () => buildSummary({ resultsDir, handles: [roundA] }),
+      /pass --round for each of them, or none \(missing: mvr74z0h-c\)/,
+    );
+    const { summary, text } = buildSummary({ resultsDir, handles: [roundA, roundC] });
+    assert.equal(summary.admitted, 2 * REQUIRED_RUNS);
+    assert.equal(summary.matched, 2 * REQUIRED_RUNS);
+    assert.deepEqual(
+      summary.notAdmittedAttempts.map(({ roundId, scenario, attempt }) => [
+        roundId,
+        scenario,
+        attempt,
+      ]),
+      [
+        ['mvr74z0h-a', first.name, 1],
+        ['mvr74z0h-c', second.name, 1],
+        ['mvr74z0h-c', second.name, 2],
+      ],
+    );
+    assert.equal(summary.notAdmitted, 3);
+    assert.ok(text.includes(`mvr74z0h-c: ${second.name}/slot-1/attempt-2`));
+    assert.equal(buildSummary({ resultsDir }).summary.notAdmitted, null);
   });
 });
 
