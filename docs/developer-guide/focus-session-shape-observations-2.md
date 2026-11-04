@@ -5,7 +5,7 @@ It extends the first addendum, [focus session shape observations](focus-session-
 which stays unchanged. It records the `t3_thread_read` behaviours that work package 6 of
 `docs/concept/2026-11-02-focus-session-check.md` needs beyond the first record: reads of a thread
 with two runs at `runLimit` 1 and 2, and the smallest read of the observer's own running thread.
-The plan is `docs/plan/2026-11-03-focus-observed-eval-suite-and-calibration.md`.
+The plan is `docs/plan/archive/2026-11-03-focus-observed-eval-suite-and-calibration.md`.
 
 The machine-readable block at the end holds only the behaviour entries this observation adds or
 overrides. `evals/_scaffold/session-shapes.mjs` equals the first addendum's block merged with this

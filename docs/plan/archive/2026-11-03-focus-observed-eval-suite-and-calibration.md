@@ -1,6 +1,6 @@
 # Focus observed eval suite and calibration round
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -71,14 +71,16 @@ registration. No product behaviour changes.
 with one published round scored against the observed half of the concept's success criterion and
 the result recorded; no `src/` change, no other suite's evidence staled
 **Last evaluated attempt:** 2026-11-04 `effective-flow build`, initial implementation: Approach steps 1
-to 5 done on the plan pull request; step 6 not run, because the implementing host is Linux x86_64
-and cannot record
+to 5 done on the plan pull request; step 6 was then completed on the maintainer's macOS aarch64
+recording host in round `mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321`
+**Recorded result:** 75 admitted runs across 15 scenarios; 71 matched (94.7%, threshold 80%);
+all 15 On track runs matched; zero not-admitted. Archived strict verification passed, and CI passed
+on the PR head before merge.
 **No-progress count:** 0
-**Cumulative approach:** observation, stub extension, rubric amendment, labels and fixtures, and the
-focus suite with CI registration; no round recorded
-**Continuation decision:** Continue within authority: the maintainer records the 75-run round on the
-macOS aarch64 recording host per `evals/focus/README.md`, then completes step 7; allowance 1,
-remaining 1; stop when the recording host is unavailable or the round is not measurable
+**Cumulative approach:** observation, stub extension, rubric amendment, labels and fixtures, the
+focus suite with CI registration, and a successful macOS recording with published results
+**Continuation decision:** The observed half is complete. The self-report half remains open until
+work package 4 re-acceptance qualifies the Claude Code self-report path.
 
 ## Architecture decisions
 
@@ -414,26 +416,26 @@ trajectory that is not decisive unread history; Cannot judge (3) covers history 
 
 ## Acceptance criteria
 
-- [ ] The new addendum records (a) to (c) with only the retained fields and with host version and
+- [x] The new addendum records (a) to (c) with only the retained fields and with host version and
       provider. `session-shapes.mjs` equals the merge-by-name of both blocks.
       `test/session-stub.test.mjs` passes, including the still-refused neighbours.
-- [ ] The rubric amendment is committed before the first recorded run.
-- [ ] `evals/focus/` holds fifteen scenarios, three per observed verdict, each present in
+- [x] The rubric amendment is committed before the first recorded run.
+- [x] `evals/focus/` holds fifteen scenarios, three per observed verdict, each present in
       scenarios, fixtures, registry and evaluator, with its label in `labels/` and none in the
       fixture, and each label committed before the first recorded run.
-- [ ] `test/focus-eval.test.mjs` passes. It covers:
+- [x] `test/focus-eval.test.mjs` passes. It covers:
   - the read walk, with rechecks and budgets, and no `unrecorded`;
   - decisive locators reachable, and Cannot judge (3)'s material unreachable;
   - injection placement;
   - the attestation's refusals;
   - closing-line parsing, the not-admitted class and violation detection;
   - the scoring and summary on synthetic records.
-- [ ] The round-core receipt key test passes, and suites without a last-message capture behave as
+- [x] The round-core receipt key test passes, and suites without a last-message capture behave as
       before.
-- [ ] `focus` is in the CI suite loop. `AGENTS.md`, `build-system.md` and
+- [x] `focus` is in the CI suite loop. `AGENTS.md`, `build-system.md` and
       `release-and-installation.md` name it. `test/workflow-contracts.test.mjs` passes.
-- [ ] One round of 75 runs is published, and `pnpm eval focus verify --mode strict` passes.
-- [ ] `evals/focus/CALIBRATION.md` reports the following against the rubric, label and
+- [x] One round of 75 runs is published, and `pnpm eval focus verify --mode strict` passes.
+- [x] `evals/focus/CALIBRATION.md` reports the following against the rubric, label and
       instrument digests:
   - the overall and per-verdict match rate over admitted runs;
   - the not-admitted count;
@@ -443,9 +445,9 @@ trajectory that is not decisive unread history; Cannot judge (3) covers history 
   The concept's work package 6 status line states whether the observed half of the success
   criterion was met, missed or not measurable.
 
-- [ ] No file under `src/` changed. `pnpm eval <suite> verify` for merge-gate, iterate,
+- [x] No file under `src/` changed. `pnpm eval <suite> verify` for merge-gate, iterate,
       next-steps and build-context reports the same states as before.
-- [ ] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`,
+- [x] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`,
       `pnpm test:distribution`.
 
 ## Validation plan
@@ -596,11 +598,13 @@ All fifteen findings are incorporated, and none remains open.
 
 ## Implementation notes
 
-**Run:** 2026-11-03 to 2026-11-04, `effective-flow build` on draft pull request #616. Steps 1 to 5
-are implemented and committed. Step 6, the recorded round, needs the maintainer's macOS aarch64
-recording host and was not run. Step 7 depends on the round, so `evals/focus/CALIBRATION.md` and the
-concept's work package 6 status line are not written yet. No evidence was recorded, simulated or
-backfilled.
+**Run:** Steps 1 to 5 were implemented in PR #616 on 2026-11-03 and 2026-11-04. The first recording
+round exposed an instrument gap and was retained as unpublishable. After the prompt fix, macOS
+aarch64 round `mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321` admitted 75 runs across 15 scenarios
+on 2026-11-04. It met the observed criterion with 71 matches (94.7%, against the 80% threshold).
+All 15 On track runs matched, and there were zero not-admitted runs. The published results are in
+[CALIBRATION.md](../../../evals/focus/CALIBRATION.md). Strict Focus verification passed, and CI
+passed on the PR head before merge.
 
 **Observation (step 1).** One throwaway top-level thread with two completed runs, read as planned
 (a) to (c). The orchestrating thread was top-level, so the stop rule for a parented observer did not
@@ -646,12 +650,13 @@ developer to archive.
 - `docs/developer-guide/focus-host-evidence.md` still names only the first addendum, because that
   record stays unchanged. `focus-host-acceptance.md` is unchanged, as planned.
 
-**Commits:** `712ed9d4` (addendum, rubric amendment, guide index; committed before any label),
-`326942ff` (stub, shapes, round-core), `612593bb` (labels, fixtures, read walk) and `58eaf426`
-(suite, CI, docs), followed by the review and completion commit.
+**Commits:** `712ed9d4` (addendum, rubric amendment, guide index, before the labels), `326942ff`
+(stub, shapes, round-core), `612593bb` (labels, fixtures, read walk), `58eaf426` (suite, CI, docs),
+`919175f` (review fixes and implementation notes), `aec80c0` (prompt fix), `e03065d` (published
+results, summary and concept), `9fd84a5` (`develop` sync) and `9f8a8c1` (squash into `develop`).
 
-**Test results.** All checks ran through the T3 project runner. The container sees no `.git`, so
-git-dependent checks ran in a disposable single-commit snapshot of the worktree.
+**Initial implementation test results.** All checks ran through the T3 project runner. Its container
+had no `.git`, so Git-dependent checks ran in a disposable single-commit snapshot of the worktree.
 
 - `pnpm agent:check` passed.
 - `pnpm test`: 4,508 tests, 4,474 passed, 7 failed, 27 skipped. The seven failures fail identically
@@ -664,11 +669,12 @@ git-dependent checks ran in a disposable single-commit snapshot of the worktree.
   build-context report the same states and file lists as before this run.
 - No file under `src/` changed.
 
-**Re-entry for step 6.** Record on the macOS aarch64 host per `evals/focus/README.md`, publish,
-write `evals/focus/CALIBRATION.md` from `summarize.mjs`, write the concept's work package 6 status
-line, then finish this pull request. Every branch commit here touches more than the plan, so plan
-pull-request continuation no longer applies to this branch. Continue the branch directly and finish
-the pull request with `effective-flow pr`.
+**Re-entry for the self-report half.** Once work package 4 re-acceptance qualifies the Claude Code
+self-report path, run:
+
+```sh
+effective-flow plan "Work package 6, self-report half, of docs/concept/2026-11-02-focus-session-check.md"
+```
 
 ## Review findings
 
