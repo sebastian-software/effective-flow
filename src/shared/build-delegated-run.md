@@ -97,7 +97,7 @@ For a delegated run, apply “Helper invocation and failure handling” in `buil
 
 A refused/unavailable nesting probe returns `ABORT` with a bounded pre-mutation capability-failure result. The caller can then select the complete inline fallback. An actual failed probe cannot be called successful. The caller binds and supplies the actual opaque agent handle as soon as spawn returns; after the probe, require that validated binding before mutation. A lost agent or transient pilot capability after mutation causes a controlled stop, retained recovery artifacts and explicit pending/unproven pilot finalization; do not reconstruct capabilities or restart implementation.
 
-The inline fallback follows this entire fragment, including every phases-2–7 gate and specialist. It skips only the runner transport and nesting probe, records isolation as unavailable, and applies the normal terminal lifecycle. This is the sole compatibility path, never an isolation success.
+The inline fallback follows this entire fragment, including every phases-2–7 gate and specialist. It skips only the runner transport and nesting probe, records isolation as unavailable, and applies the normal terminal lifecycle. This is the current inline Quality route while planned-build delegation is unqualified, never an isolation success. Select it before mutation; no failed mandatory helper or post-mutation transport loss authorizes a restart.
 
 For delegated progress, the caller owns the one visible phase overview; send only bounded completed/pending phase projections for it. Await all specialists before yielding a question or terminal result. Full wisdom, diffs, logs and findings remain in their owning artifacts rather than in parent messages.
 

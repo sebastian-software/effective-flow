@@ -20,6 +20,7 @@ import {
 import { tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, relative, resolve, sep } from 'node:path';
 import {
+  assertArchivedIdentity,
   buildPortableSkill,
   canonicalDigest,
   digestFile,
@@ -28,7 +29,7 @@ import {
   pristineScenarioBuildIdentity,
   scenarioBuildIdentity,
 } from './build-identity.mjs';
-import { assessAbortedEvidence, evaluateEvidence } from './evaluate.mjs';
+import { assessAbortedEvidence, evaluateEvidence, evidenceDisposition } from './evaluate.mjs';
 import { stopReceiptHostAbort } from './host-abort.mjs';
 import { assertProfileMatchesPin, normalizeProfile, PROFILE_KEYS, sameKeys } from './profile.mjs';
 import { sealedEvidencePath, validateArchivedPairing } from './run-evidence.mjs';
@@ -1225,29 +1226,6 @@ function sameGeneration(actual, expected) {
   );
 }
 
-// Historical units retain their own provenance; carrying them forward must not turn an
-// inconsistent stamp into evidence merely by comparing it with itself.
-function assertArchivedIdentity(stamp, scenario, slot) {
-  const hash = (value) => typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
-  const parts = ['skill', 'instrument', 'scenario_inputs'];
-  const consistent =
-    stamp?.scenario === scenario &&
-    parts.every((name) => {
-      const part = stamp[name];
-      return (
-        part?.files &&
-        !Array.isArray(part.files) &&
-        Object.keys(part.files).length > 0 &&
-        Object.values(part.files).every(hash) &&
-        part.digest === canonicalDigest(part.files)
-      );
-    }) &&
-    stamp.digest === digestOf(parts.map((name) => stamp[name].digest).join('\n')) &&
-    (stamp.skill.versionNeutralDigest === undefined || hash(stamp.skill.versionNeutralDigest));
-  if (!consistent)
-    throw new Error(`${scenario}/run-${slot} has inconsistent archived build provenance`);
-}
-
 function ensureCanonicalGeneration(suite, candidate, scenarios, identities, selectedScenarios) {
   const findings = [];
   const allowedTopLevel = new Set([...scenarios, '.generation.json']);
@@ -1313,7 +1291,7 @@ function ensureCanonicalGeneration(suite, candidate, scenarios, identities, sele
         scenario,
       );
       // Carried-forward units retain the pinned profile and original host binding even when their
-      // skill/instrument is stale. Freshness is still reported and enforced at release by verify.
+      // skill/instrument is stale. Freshness remains visible debt; strict verify owns full-suite acceptance.
       assertProfileMatchesPin(
         suite.expectedProfile,
         metadata.profile,
@@ -1748,9 +1726,9 @@ export function publishRound(
 // It exists because the question moved. It used to be asked once per pull request, as an assertion
 // inside `pnpm test`, where a stale answer turned an ordinary pull request red and the only remedy
 // was a fresh round of six scenarios times five runs. The claim the evidence supports is about the
-// build that ships, so the enforcement belongs at the release point and the *report* belongs
-// everywhere: `pnpm eval <tool> verify` prints the verdict on every pull request and
-// `--mode strict` fails only on the release pull request. The structural assertions — a stamp
+// build a capability will execute, so full acceptance belongs at its activation boundary and the
+// report belongs everywhere. Package CI uses report mode on every PR; strict manual verification
+// retains full-suite acceptance semantics. The structural assertions — a stamp
 // exists, a log parses, five runs of five — stay hard in `pnpm test`, because they are properties
 // of the archived files alone rather than of the pair.
 //
@@ -1813,19 +1791,97 @@ function archivedStamp(scenario, directory, slot) {
 function scenarioFreshness(suite, scenario, identity, resultsDir) {
   const directory = resolve(resultsDir, scenario);
   if (!existsSync(directory)) {
-    return { scenario, state: 'absent', runs: [], drift: [] };
+    return { scenario, state: 'absent', current: identity.digest, runs: [], drift: [] };
   }
+  // Check pairing even when no log survived: an orphan stamp/sealed record is an invalid archive,
+  // not an absent recording. Full archive population assertions remain in their existing owners.
+  validateArchivedPairing(directory, archivedPartners(suite, scenario));
   const runs = archivedSlots(directory).map((slot) => {
+    const stamp = archivedStamp(scenario, directory, slot);
     const verdict = {
       slot,
-      ...freshnessVerdict(suite, scenario, archivedStamp(scenario, directory, slot), identity),
+      ...freshnessVerdict(suite, scenario, stamp, identity),
     };
-    const problems = suite.verifyArchivedScenario?.({ scenario, slot, directory, identity }) ?? [];
-    if (!Array.isArray(problems))
-      throw new Error('suite archive verifier returned malformed problems');
-    return problems.length ? { ...verdict, state: 'invalid', problems } : verdict;
+    let evaluation;
+    try {
+      const stem = resolve(directory, `run-${slot}`);
+      assertArchivedIdentity(stamp, scenario, slot);
+      const metadata = json(`${stem}.metadata.json`);
+      if (
+        metadata.scenario !== scenario ||
+        metadata.slot !== slot ||
+        metadata.promptDigest !== digestFile(`${stem}.prompt.txt`) ||
+        metadata.buildDigest !== stamp.digest
+      )
+        throw new Error('metadata does not bind its archived files');
+      if (
+        metadata.fixtureDigest !==
+        stamp.scenario_inputs.files[`evals/${suite.name}/fixtures/${scenario}.json`]
+      )
+        throw new Error('metadata does not bind its archived fixture identity');
+      safeHostReceipt(
+        metadata.hostAttestation,
+        { profile: metadata.profile },
+        { projectRoot: metadata.projectRoot },
+        suite,
+        scenario,
+      );
+      assertProfileMatchesPin(
+        suite.expectedProfile,
+        metadata.profile,
+        `${scenario}/run-${slot} archived profile`,
+      );
+      validateArchivedPairing(directory, archivedPartners(suite, scenario));
+      const auxiliary = auxiliaryFor(suite, scenario);
+      const sealed = sealedFor(suite, scenario);
+      const fixturePath = resolve(suite.root, 'fixtures', `${scenario}.json`);
+      const fixtureCompatible = metadata.fixtureDigest === digestFile(fixturePath);
+      const fixture = fixtureCompatible ? json(fixturePath) : null;
+      evaluation = suite.verifyArchivedScenario
+        ? suite.verifyArchivedScenario({ scenario, slot, directory, identity })
+        : evaluateEvidence(suite, {
+            scenario,
+            logText: readFileSync(`${stem}.jsonl`, 'utf8'),
+            fixture,
+            fixtureCompatible,
+            answerableOperations: fixtureCompatible
+              ? new Set(Object.keys(fixture.operations ?? {}))
+              : null,
+            projectRoot: metadata.projectRoot,
+            buildIdentity: stamp,
+            // Expected candidate drift is freshness debt; internal stamp consistency was
+            // checked independently above. Never re-stamp archived evidence.
+            expectedBuildIdentity: stamp,
+            auxiliaryText: auxiliary
+              ? readFileSync(`${stem}.${auxiliary.archiveSuffix}`, 'utf8')
+              : null,
+            sealedEvidenceText: sealed
+              ? readFileSync(`${stem}.${sealed.archiveSuffix}`, 'utf8')
+              : null,
+          });
+      evaluation.fixtureCompatible = fixtureCompatible;
+    } catch (error) {
+      evaluation = { validityProblems: [error.message], findings: [] };
+    }
+    if (
+      !evaluation ||
+      !Array.isArray(evaluation.validityProblems) ||
+      !Array.isArray(evaluation.findings)
+    )
+      throw new Error('suite archive verifier returned malformed evaluation');
+    return {
+      ...verdict,
+      freshness: verdict.state,
+      integrity: evaluation.validityProblems.length ? 'invalid' : 'valid',
+      validityProblems: evaluation.validityProblems,
+      findings: evaluation.findings,
+      ...(evaluation.fixtureCompatible === false
+        ? { fixtureCompatible: false, fixtureEvaluation: 'unproven: archived fixture differs' }
+        : {}),
+      ...(evaluation.validityProblems.length ? { state: 'invalid' } : {}),
+    };
   });
-  const firstStale = runs.find((run) => run.state === 'stale');
+  const firstStale = runs.find((run) => run.freshness === 'stale');
   const drift = firstStale?.drift ?? [];
   const unusable = runs.some((run) => !['current', 'waived'].includes(run.state));
   let state = 'current';
@@ -1838,7 +1894,7 @@ function scenarioFreshness(suite, scenario, identity, resultsDir) {
   )
     state = 'invalid';
   else if (unusable) state = runs.some((run) => run.state === 'invalid') ? 'invalid' : 'stale';
-  return { scenario, state, runs, drift };
+  return { scenario, state, current: identity.digest, runs, drift };
 }
 
 // One walk of the corpus, with the archived generation read before it and again after it. Nothing
@@ -1925,15 +1981,19 @@ export function verifyFreshness(suite, { resultsDir = resultsDirOf(suite) } = {}
       ...recordedScenarios,
       ...additional.map((row) => ({ ...row, drift: row.drift ?? [] })),
     ];
+    const disposition = evidenceDisposition(scenarios);
     return {
       requiredRuns: REQUIRED_RUNS,
       resultsDir: resolve(resultsDir),
       scenarios,
+      ...disposition,
       // What `--mode strict` fails on, decided here rather than in the CLI so the rule is one
-      // expression a test can read. At a release point "nothing was observed" is not an acceptable
-      // state, even though it is a legitimate skip in a fresh checkout — so `absent` and `short`
-      // fail beside `stale`.
-      failsStrict: scenarios.some(({ state }) => state !== 'current'),
+      // expression a test can read. Full acceptance requires current coverage and no integrity
+      // blockers or recorded negatives; package reporting preserves the independent dimensions.
+      failsStrict:
+        scenarios.some(({ state }) => state !== 'current') ||
+        disposition.failsReport ||
+        disposition.findings.length > 0,
     };
   } finally {
     rmSync(outputRoot, { recursive: true, force: true });

@@ -370,6 +370,7 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
       projectRoot,
       profile: { ...PROFILE },
       promptDigest: `sha256:${createHash('sha256').update(prompt).digest('hex')}`,
+      fixtureDigest: identity.scenario_inputs.files[`evals/merge-gate/fixtures/${scenario}.json`],
       buildDigest: identity.digest,
       hostAttestation: hostReceipt(projectRoot),
     };
@@ -2248,6 +2249,132 @@ test('the round CLI rejects unknown, duplicate, and command-inapplicable flags',
 
 const ROUND_CLI = resolve(import.meta.dirname, '..', 'evals', 'eval.mjs');
 
+test(
+  'verification retains short/stale corruption and stale valid negatives independently',
+  { timeout: 120_000 },
+  () => {
+    // Invariant: no coverage/source rollup can turn malformed provenance into report success or
+    // discard a valid recorded negative. All edits are confined to temporary verifier fixtures.
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-mixed-verdict-'));
+    try {
+      const resultsDir = resolve(temporary, 'results');
+      copyRestampedResults(resultsDir);
+      const scenario = 'guard-blocks-merge';
+      const directory = resolve(resultsDir, scenario);
+      for (const name of readdirSync(directory).filter((name) => /^run-[2-5]\./.test(name)))
+        rmSync(resolve(directory, name));
+      const log = resolve(directory, 'run-1.jsonl');
+      const original = readFileSync(log, 'utf8');
+      writeFileSync(log, 'malformed json\n');
+      const short = verifyFreshness(suite, { resultsDir });
+      assert.equal(short.scenarios.find((row) => row.scenario === scenario).state, 'short');
+      assert.equal(short.failsReport, true);
+      assert.equal(
+        short.scenarios.find((row) => row.scenario === scenario).runs[0].integrity,
+        'invalid',
+      );
+
+      const stampPath = resolve(directory, 'run-1.build.json');
+      const stamp = JSON.parse(readFileSync(stampPath, 'utf8'));
+      stamp.skill.files['tools/merge-gate.md'] = digestOf('different source');
+      stamp.skill.digest = canonicalDigest(stamp.skill.files);
+      stamp.skill.versionNeutralDigest = digestOf('different neutral source');
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
+      writeFileSync(stampPath, JSON.stringify(stamp));
+      const metadataPath = resolve(directory, 'run-1.metadata.json');
+      const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      const staleCorrupt = verifyFreshness(suite, { resultsDir });
+      const corruptRun = staleCorrupt.scenarios.find((row) => row.scenario === scenario).runs[0];
+      assert.equal(corruptRun.freshness, 'stale');
+      assert.equal(corruptRun.integrity, 'invalid');
+      assert.equal(staleCorrupt.failsReport, true);
+
+      const records = original
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const fixture = JSON.parse(
+        readFileSync(resolve(suite.root, 'fixtures', `${scenario}.json`), 'utf8'),
+      );
+      const undefinedOperation = [...supportedTrackerOperations()].find(
+        (operation) => !Object.hasOwn(fixture.operations, operation) && operation !== 'pr-merge',
+      );
+      assert.ok(undefinedOperation);
+      const undefinedRecords = [
+        ...records,
+        { ...records.at(-1), seq: records.at(-1).seq + 1, operation: undefinedOperation },
+      ];
+      writeFileSync(log, undefinedRecords.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      const undefinedVerdict = verifyFreshness(suite, { resultsDir });
+      const undefinedScenario = undefinedVerdict.scenarios.find((row) => row.scenario === scenario);
+      assert.equal(undefinedScenario.state, 'short');
+      assert.equal(undefinedScenario.runs[0].freshness, 'stale');
+      assert.equal(undefinedScenario.runs[0].integrity, 'invalid');
+      assert.ok(
+        undefinedScenario.runs[0].validityProblems.includes(
+          `fixture leaves supported operation ${undefinedOperation} undefined`,
+        ),
+      );
+      assert.equal(undefinedVerdict.failsReport, true);
+      assert.equal(undefinedVerdict.failsStrict, true);
+      records.push({
+        ...records.at(-1),
+        seq: records.at(-1).seq + 1,
+        operation: 'pr-merge',
+        apply: true,
+      });
+      writeFileSync(log, records.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      const negative = verifyFreshness(suite, { resultsDir });
+      const negativeRun = negative.scenarios.find((row) => row.scenario === scenario).runs[0];
+      assert.equal(negativeRun.freshness, 'stale');
+      assert.equal(negativeRun.integrity, 'valid');
+      assert.ok(negativeRun.findings.length > 0);
+      assert.equal(negative.failsReport, false);
+      assert.equal(negative.failsStrict, true);
+      const fixtureKey = `evals/${suite.name}/fixtures/${scenario}.json`;
+      stamp.scenario_inputs.files[fixtureKey] = digestOf('historical fixture bytes');
+      stamp.scenario_inputs.digest = canonicalDigest(stamp.scenario_inputs.files);
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
+      metadata.fixtureDigest = stamp.scenario_inputs.files[fixtureKey];
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(stampPath, JSON.stringify(stamp));
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      writeFileSync(log, undefinedRecords.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      const fixtureDrift = verifyFreshness(suite, { resultsDir });
+      const driftRun = fixtureDrift.scenarios.find((row) => row.scenario === scenario).runs[0];
+      assert.equal(driftRun.freshness, 'stale');
+      assert.equal(driftRun.integrity, 'valid');
+      assert.equal(driftRun.fixtureCompatible, false);
+      assert.match(driftRun.fixtureEvaluation, /unproven/);
+      assert.equal(fixtureDrift.failsReport, false);
+      assert.equal(fixtureDrift.failsStrict, true);
+      const driftReport = runVerify(resultsDir);
+      assert.equal(driftReport.status, 0, driftReport.stderr);
+      assert.match(driftReport.stdout, /unproven: archived fixture differs/);
+      assert.equal(runVerify(resultsDir, ['--mode', 'strict']).status, 1);
+      metadata.fixtureDigest = digestOf('corrupt fixture binding');
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      assert.equal(verifyFreshness(suite, { resultsDir }).failsReport, true);
+      metadata.fixtureDigest = stamp.scenario_inputs.files[fixtureKey];
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      writeFileSync(log, 'malformed json\n');
+      assert.equal(
+        runVerify(resultsDir).status,
+        1,
+        'CLI report mode must propagate mixed invalidity',
+      );
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 function runVerify(resultsDir, args = []) {
   return spawnSync(process.execPath, [ROUND_CLI, 'merge-gate', 'verify', ...args], {
     encoding: 'utf8',
@@ -2294,8 +2421,15 @@ test(
       stamp.skill.files['tools/merge-gate.md'] = `sha256:${'a'.repeat(64)}`;
       stamp.skill.digest = `sha256:${'b'.repeat(64)}`;
       stamp.skill.versionNeutralDigest = `sha256:${'c'.repeat(64)}`;
-      stamp.digest = `sha256:${'d'.repeat(64)}`;
+      stamp.skill.digest = canonicalDigest(stamp.skill.files);
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
       writeFileSync(drifted, `${JSON.stringify(stamp, null, 2)}\n`);
+      const driftMetadataPath = drifted.replace(/\.build\.json$/, '.metadata.json');
+      const driftMetadata = JSON.parse(readFileSync(driftMetadataPath, 'utf8'));
+      driftMetadata.buildDigest = stamp.digest;
+      writeFileSync(driftMetadataPath, JSON.stringify(driftMetadata));
       rmSync(resolve(resultsDir, 'linked-issue-open-points'), { recursive: true, force: true });
 
       const report = runVerify(resultsDir);
@@ -2432,7 +2566,7 @@ test(
       }
 
       const report = runVerify(resultsDir);
-      assert.equal(report.status, 0, `report mode must not fail on a verdict: ${report.stderr}`);
+      assert.equal(report.status, 1, `surplus must fail report mode: ${report.stderr}`);
       assert.match(
         report.stdout,
         new RegExp(`^${surplusScenario}\\tsurplus\\t${extra}/${REQUIRED_RUNS} run\\(s\\)`, 'm'),
@@ -2442,7 +2576,7 @@ test(
 
       const strict = runVerify(resultsDir, ['--mode', 'strict']);
       assert.equal(strict.status, 1, `a surplus round must fail strict: ${strict.stdout}`);
-      assert.equal(strict.stderr.split('\n')[0], `${surplusScenario} is surplus`);
+      assert.match(strict.stderr, new RegExp(`${surplusScenario} is surplus`));
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }

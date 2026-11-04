@@ -599,6 +599,29 @@ export function buildPortableSkill(outputRoot) {
   return root;
 }
 
+// Historical units retain their own provenance; carrying them forward must not turn an
+// inconsistent stamp into evidence merely by comparing it with itself.
+export function assertArchivedIdentity(stamp, scenario, slot) {
+  const hash = (value) => typeof value === 'string' && /^sha256:[0-9a-f]{64}$/.test(value);
+  const parts = ['skill', 'instrument', 'scenario_inputs'];
+  const consistent =
+    stamp?.scenario === scenario &&
+    parts.every((name) => {
+      const part = stamp[name];
+      return (
+        part?.files &&
+        !Array.isArray(part.files) &&
+        Object.keys(part.files).length > 0 &&
+        Object.values(part.files).every(hash) &&
+        part.digest === canonicalDigest(part.files)
+      );
+    }) &&
+    stamp.digest === digestOf(parts.map((name) => stamp[name].digest).join('\n')) &&
+    (stamp.skill.versionNeutralDigest === undefined || hash(stamp.skill.versionNeutralDigest));
+  if (!consistent)
+    throw new Error(`${scenario}/run-${slot} has inconsistent archived build provenance`);
+}
+
 // Takes the built tree to hash rather than finding one, so a caller cannot accidentally describe a
 // run with a stale `dist/` it never built. Returns the three parts separately as well as combined,
 // so a mismatch can name which one moved before naming the files.

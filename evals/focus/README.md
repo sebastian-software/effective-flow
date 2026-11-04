@@ -150,13 +150,16 @@ The run writes no evidence file of its own. Residual risks:
 
 The seeds are `SKILL.md` and `tools/focus.md`; every fragment either reaches is derived
 transitively from the built tree, and the stub and its shapes module enter only as overlay seeds.
-**Editing focus or any fragment it loads stales this suite** and owes a re-recorded round before the
-next release, not the next merge. A runtime-executed script such as `scripts/config-resolve.mjs` is
-no seed, so a change there does not stale focus evidence.
+**Editing focus or any fragment it loads stales this suite** and creates visible evidence debt.
+A runtime-executed script such as `scripts/config-resolve.mjs` is no seed, so a change there does
+not stale focus evidence.
 
-CI's `Behavioural eval evidence` step verifies this suite with the others. A release pull request
-fails `--mode strict` until a round is published, so the suite registration and its first round
-land in the same pull request, which stays a draft until then.
+CI reports all five suites identically on ordinary and release PRs under the
+[capability policy](../../docs/adr/pragmatic-test-release-policy.md). Strict manual verification
+still requires a complete current round; report mode fails integrity/errors without disguising
+missing/stale coverage or valid negatives as passes. Snapshot-host execution is disabled before
+target/ancestry reads pending current candidate-bound T3 observed/report-only acceptance. Follow-up
+and sends remain disabled independently; this suite's pure fixtures cannot qualify a real host.
 
 ## Recording a round
 

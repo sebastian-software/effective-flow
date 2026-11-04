@@ -9879,81 +9879,28 @@ test('ci.yml keeps the job names the develop ruleset requires', () => {
   }
 });
 
-test('the behavioural eval gate always reports and turns strict only for release-please', () => {
-  // Enforcement of the archived eval evidence moved from every pull request to the release one,
-  // which leaves four properties that all fail silently when they are lost: the step exists at
-  // all, it is the last step of the required job, nothing can stop it reporting, and the release
-  // pull request is still recognized by the literal release-please writes into its head ref.
+test('package evidence reporting preserves broad checks and identical freshness policy on every PR', () => {
+  // Invariant: no branch-name bypass, omitted suite or ignored verifier failure may hide debt or
+  // invalid evidence, and reporting must follow every mandatory broad package check.
   const ci = source('.github/workflows/ci.yml');
   const buildJob = boundedSlice(ci, '  build:\n', '\n  shellcheck:');
-
-  assert.ok(
-    buildJob.includes('      - name: Behavioural eval evidence\n'),
-    'ci.yml must carry the `Behavioural eval evidence` step inside the job the develop ruleset ' +
-      'requires; anywhere else it reports nothing the release pull request can be blocked on',
-  );
-
-  // All build and distribution checks must complete before the full strict evidence verdict. The
-  // provisional disposition is a separate blocking step that may run only after that verdict has
-  // been recorded, so a release cannot publish while its ordinary build checks are still pending.
-  const steps = [...buildJob.matchAll(/^ {6}- (?:name|uses|run): (.*)$/gm)].map(
-    (match) => match[1],
-  );
-  assert.ok(
-    steps.indexOf('Behavioural eval evidence') <
-      steps.indexOf('Build-context provisional PR581 release disposition'),
-  );
   ordered(
     buildJob,
-    'name: Build distribution',
-    'name: Distribution and installation smoke tests',
+    'pnpm agent:check',
+    'pnpm test',
+    'node build.mjs',
+    'pnpm test:distribution',
     'name: Behavioural eval evidence',
-    'name: Build-context provisional PR581 release disposition',
   );
-
-  // No condition at either level. A required status check that never reports blocks the pull
-  // request forever, with no timeout and no override short of editing the ruleset outside this
-  // repository. A well-meant condition on the step is the cheaper version of the same mistake:
-  // the check still reports, but the gate is gone and CI stays green about its absence.
-  assert.doesNotMatch(
-    buildJob.slice(0, buildJob.indexOf('    steps:')),
-    /^ {4}if:/m,
-    'job `build` must carry no `if:`; a skipped job never reports the status check the develop ' +
-      'ruleset requires',
-  );
-  // Comments stripped first, so a rationale line that merely mentions a condition cannot fail
-  // this — and, in the other direction, cannot be where a real one hides.
+  assert.doesNotMatch(buildJob.slice(0, buildJob.indexOf('    steps:')), /^ {4}if:/m);
   const step = shellCode(workflowStep(ci, 'Behavioural eval evidence'));
   assert.doesNotMatch(
     step,
-    /^\s*if:/m,
-    'the eval-evidence step must carry no `if:`; it selects its mode from inside the step so ' +
-      'that it always runs and always reports',
+    /^\s*if:|continue-on-error|HEAD_REF|EVENT_NAME|mode=strict|provisional_required/m,
   );
-
-  // The strict half of the gate hangs off a single literal. If release-please ever renames its
-  // head-branch prefix, nothing else in the repository notices: every release would simply pass
-  // unverified.
-  assert.match(
-    step,
-    /release-please--[^\n]*mode=strict/,
-    'strict mode must be selected from a `release-please--` head ref, on one recognizable line',
-  );
-  assert.match(
-    step,
-    /\bmode=report\b/,
-    'report mode must be the default, so an ordinary pull request stays green on a stale verdict',
-  );
-  assert.match(
-    step,
-    /pnpm eval "\$suite" verify --mode "\$mode"/,
-    'the step must run the read-only `verify` subcommand for each suite with the mode it selected',
-  );
-  // The suites the step verifies are a literal list, so a suite added under `evals/` would be left
-  // out of the release gate — its evidence never enforced, and CI green about it — unless the list
-  // is held to the directories that actually declare a suite.
+  assert.match(step, /pnpm eval "\$suite" verify --mode report/);
   const loop = step.match(/^\s*for suite in ([a-z0-9 -]+); do$/m);
-  assert.ok(loop, 'the step must verify the suites in one `for suite in …; do` loop');
+  assert.ok(loop);
   const declared = readdirSync(new URL('evals/', repositoryRoot), { withFileTypes: true })
     .filter(
       (entry) =>
@@ -9962,24 +9909,79 @@ test('the behavioural eval gate always reports and turns strict only for release
     )
     .map((entry) => entry.name)
     .sort();
-  assert.deepEqual(
-    loop[1].trim().split(/\s+/).sort(),
-    declared,
-    'the eval-evidence step must verify exactly the suites that carry an evals/<tool>/suite.config.mjs',
-  );
-  // One suite's failure must not end the loop before the next suite has reported: the status is
-  // captured per suite and the step fails only after every verdict reached the summary.
-  assert.match(
-    step,
-    /\|\| suite_status=\$\?/,
-    'each suite verdict must be captured rather than aborting the step before later suites report',
-  );
-  assert.match(step, /exit "\$status"/, 'the step must fail when any suite failed');
-  assert.match(
-    step,
-    /GITHUB_STEP_SUMMARY/,
-    'the verdict must reach the step summary; a staleness report nobody sees is not a report',
-  );
+  assert.deepEqual(loop[1].trim().split(/\s+/).sort(), declared);
+  assert.match(step, /\|\| suite_status=\$\?/);
+  assert.match(step, /status=\$suite_status/);
+  assert.match(step, /exit "\$status"/);
+  assert.match(step, /GITHUB_STEP_SUMMARY/);
+  assert.doesNotMatch(buildJob, /Build-context provisional PR581 release disposition/);
+});
+
+test('the CI evidence loop reports every suite and preserves process failures on ordinary and release PRs', async () => {
+  // Invariant: a corrupt/crashed verifier fails after all five summaries; freshness alone has
+  // identical treatment on release and ordinary PRs. Exercise the actual workflow shell body.
+  const { spawnSync } = await import('node:child_process');
+  const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+  const { join } = await import('node:path');
+  const root = mkdtempSync(join(tmpdir(), 'ef-package-policy-'));
+  try {
+    writeFileSync(
+      join(root, 'pnpm'),
+      '#!/bin/sh\nprintf "%s\\t%s\\n" "$2" "$VERDICT"\ncase "$VERDICT:$2" in invalid:merge-gate|surplus:merge-gate|unknown:merge-gate|malformed:merge-gate|crash:merge-gate|omitted:merge-gate) exit 37;; esac\n',
+      { mode: 0o755 },
+    );
+    const step = workflowStep(source('.github/workflows/ci.yml'), 'Behavioural eval evidence');
+    const script = step
+      .slice(step.indexOf('        run: |') + '        run: |'.length)
+      .replace(/^ {10}/gm, '');
+    for (const head of [
+      'feature/example',
+      'release-please--branches--develop--components--effective-flow',
+    ]) {
+      for (const verdict of [
+        'current',
+        'stale',
+        'absent',
+        'short',
+        'waived',
+        'missing-stamp',
+        'unproven',
+        'negative',
+        'invalid',
+        'surplus',
+        'unknown',
+        'malformed',
+        'crash',
+        'omitted',
+      ]) {
+        const summary = join(root, 'summary');
+        writeFileSync(summary, '');
+        const result = spawnSync('bash', ['-e', '-c', script], {
+          encoding: 'utf8',
+          timeout: 5_000,
+          env: {
+            ...process.env,
+            PATH: `${root}:${process.env.PATH}`,
+            RUNNER_TEMP: root,
+            GITHUB_STEP_SUMMARY: summary,
+            HEAD_REF: head,
+            EVENT_NAME: 'pull_request',
+            VERDICT: verdict,
+          },
+        });
+        const fails = ['invalid', 'surplus', 'unknown', 'malformed', 'crash', 'omitted'].includes(
+          verdict,
+        );
+        assert.equal(result.status, fails ? 37 : 0, `${head}: ${verdict}: ${result.stderr}`);
+        const report = readFileSync(summary, 'utf8');
+        for (const suite of ['merge-gate', 'iterate', 'next-steps', 'build-context', 'focus'])
+          assert.ok(report.includes(`### ${suite} eval evidence`), `${verdict}: omitted ${suite}`);
+      }
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('every workflow action is pinned to a commit', () => {

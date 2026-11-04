@@ -8,6 +8,7 @@ import {
   BASELINE_COMMIT,
 } from './host-receipt.mjs';
 import { archiveReuseProblems } from './archive.mjs';
+import { nativeWorkerNames } from './native-workers.mjs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import {
   existsSync,
@@ -22,6 +23,7 @@ import { tmpdir } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
+  assertArchivedIdentity,
   freshnessVerdict,
   pristineScenarioBuildIdentity,
   builtSkillIdentity,
@@ -558,10 +560,7 @@ export function nativeTargetIdentity(skillRoot, target) {
   const root = resolve(skillRoot),
     inventoryText = readRegular(resolve(root, 'native-agent-inventory.json'), 64 * 1024),
     inventory = JSON.parse(inventoryText);
-  requireThat(
-    inventory.harness === target && inventory.schemaVersion === 1,
-    'actual native inventory required; portable output is not native',
-  );
+  const workers = nativeWorkerNames(root, target);
   const walk = (dir, prefix = '') =>
     readdirSync(dir, { withFileTypes: true }).flatMap((entry) =>
       entry.isDirectory()
@@ -572,7 +571,7 @@ export function nativeTargetIdentity(skillRoot, target) {
   const skill = builtSkillIdentity(root, files);
   const extension = target === 'codex' ? '.toml' : '.md';
   const sidecars = Object.fromEntries(
-    [...inventory.baseWorkers, ...inventory.fastWorkers]
+    workers
       .sort()
       .map((name) => [
         name,
@@ -850,7 +849,7 @@ export function nativeProblems(record) {
   return problems;
 }
 export function verifyAdditionalEvidence(suite, { skillRoot, resultsDir }) {
-  const behaviouralProblems = archiveReuseProblems(suite, resultsDir);
+  const behaviouralProblems = archiveReuseProblems(suite, resultsDir, { requireComplete: false });
   const integrity = {
     scenario: 'behavioural-archive-integrity',
     state: behaviouralProblems.length ? 'invalid' : 'current',
@@ -876,37 +875,98 @@ export function verifyAdditionalEvidence(suite, { skillRoot, resultsDir }) {
     .map((n) => readSealedRecord(resolve(directory, n)));
   const current = pristineScenarioBuildIdentity(suite, 'approved-single-module', skillRoot);
   const identityProblems = [];
+  const validityProblems = [];
 
   const baselineIds = new Set(),
     candidateIds = new Set();
+  const pairedSlots = new Set(),
+    nativeTargets = new Set(),
+    sessions = new Set(),
+    sources = new Set();
   for (const record of records) {
+    if (!['attempt', 'pair', 'native'].includes(record.kind))
+      throw new Error('unknown auxiliary record kind');
+    if (!['codex-cli', 'claude-code'].includes(record.harness))
+      validityProblems.push('undeclared auxiliary harness');
+    if (
+      record.kind === 'pair' &&
+      (!CELL_NAMES.includes(`${record.harness}:${record.complexity}`) ||
+        ![1, 2, 3, 4, 5].includes(record.slot) ||
+        !record.baselineRun ||
+        !record.candidateRun)
+    )
+      validityProblems.push('malformed paired lane/slot or missing execution');
+    if (
+      record.kind === 'native' &&
+      (!['codex', 'claude'].includes(record.target) ||
+        !record.run ||
+        record.harness !== (record.target === 'codex' ? 'codex-cli' : 'claude-code'))
+    )
+      validityProblems.push('malformed native lane or missing execution');
+    if (
+      record.kind === 'native' &&
+      !['skillDigest', 'sidecarsDigest', 'inventoryDigest'].every((key) =>
+        digestValue(record.nativeIdentity?.[key]),
+      )
+    )
+      validityProblems.push('malformed native identity');
+    if (record.kind === 'pair') {
+      const key = `${record.harness}:${record.complexity}:${record.slot}`;
+      if (pairedSlots.has(key)) validityProblems.push('surplus/reused paired slot');
+      pairedSlots.add(key);
+    }
+    if (record.kind === 'native') {
+      if (nativeTargets.has(record.target))
+        validityProblems.push('surplus native compatibility lane');
+      nativeTargets.add(record.target);
+    }
     if (record.kind === 'attempt') {
       try {
+        const failed = verifyEnvelope(record.hostFailure, 'failed-launch');
+        const prepared = verifyEnvelope(failed.prepared, 'prepared');
+        if (
+          !['failed', 'invalid', 'unsupported-depth'].includes(record.outcome) ||
+          record.outcome !== failed.outcome ||
+          !isDeepStrictEqual(record.failure, failed.failure) ||
+          !isDeepStrictEqual(record.sourceBuild, prepared.build) ||
+          record.metrics !== null
+        )
+          validityProblems.push('attempt differs from sealed failed launch');
         const source = verifyEnvelope(record.sourceBuild, 'build');
         if (source.identity.instrument.digest !== current.instrument.digest)
           identityProblems.push('failed attempt instrument changed');
         if (source.condition === 'baseline' && source.source.commit !== BASELINE_COMMIT)
-          identityProblems.push('failed attempt used unapproved baseline');
+          validityProblems.push('failed attempt used unapproved baseline');
       } catch (error) {
-        identityProblems.push(error.message);
+        validityProblems.push(error.message);
       }
       continue;
     }
     const pin = pins.profiles[record.harness];
-    if (!pin) identityProblems.push('undeclared expected host profile');
+    if (!pin) validityProblems.push('undeclared expected host profile');
     for (const run of [record.baselineRun, record.candidateRun, record.run].filter(Boolean)) {
+      validityProblems.push(...completionProblems(run));
       if (
         run.profile?.reportedVersion !== pin?.reportedVersion ||
         run.profile?.model !== pin?.rootModel ||
         run.profile?.reasoningEffort !== pin?.rootEffort
       )
-        identityProblems.push('run differs from predeclared parent profile');
+        validityProblems.push('run differs from predeclared parent profile');
       for (const o of run.observations ?? []) {
+        if (
+          !digestValue(o.sessionIdentity) ||
+          !digestValue(o.sourceDigest) ||
+          sessions.has(o.sessionIdentity) ||
+          sources.has(o.sourceDigest)
+        )
+          validityProblems.push('missing/reused actual auxiliary session or transcript');
+        sessions.add(o.sessionIdentity);
+        sources.add(o.sourceDigest);
         if (
           !actualModelMatches(o.requestedModel, o.actualModel, record.harness) ||
           o.actualEffort !== o.requestedEffort
         )
-          identityProblems.push('actual execution differs from pinned concrete model/effort');
+          validityProblems.push('actual execution differs from pinned concrete model/effort');
         const tier =
           (record.kind === 'native' && o.role === 'fast-implementer') ||
           ['validator', 'test-writer', 'nesting-probe'].includes(o.role)
@@ -917,25 +977,38 @@ export function verifyAdditionalEvidence(suite, { skillRoot, resultsDir }) {
           (o.requestedModel !== pin?.[tier + 'Model'] ||
             o.requestedEffort !== pin?.[tier + 'Effort'])
         )
-          identityProblems.push('required worker tier differs from pinned profile');
+          validityProblems.push('required worker tier differs from pinned profile');
       }
     }
-    for (const buildReceipt of [record.baselineBuildReceipt, record.candidateBuildReceipt]) {
+    for (const [index, buildReceipt] of [
+      record.baselineBuildReceipt,
+      record.candidateBuildReceipt,
+    ].entries()) {
       try {
         const build = verifyEnvelope(buildReceipt, 'build');
+        assertArchivedIdentity(build.identity, current.scenario, record.slot ?? record.target);
+        if (build.condition !== (index === 0 ? 'baseline' : 'candidate'))
+          validityProblems.push('sealed build receipt condition changed');
         if (
           build.membershipDigest !== digest(JSON.stringify(build.membership)) ||
           !['portable', 'codex', 'claude'].every(
             (target) => build.membership['dist/' + target + '/effective-flow/SKILL.md'],
           )
         )
-          identityProblems.push('incomplete or changed actual built file membership');
+          validityProblems.push('incomplete or changed actual built file membership');
+        if (
+          !isDeepStrictEqual(
+            build.identity,
+            index === 0 ? record.baselineIdentity : record.candidateIdentity,
+          )
+        )
+          validityProblems.push('record identity differs from sealed build receipt');
       } catch (error) {
-        identityProblems.push(error.message);
+        validityProblems.push(error.message);
       }
     }
     if (record.baselineRevision !== BASELINE_COMMIT)
-      identityProblems.push('baseline full commit changed');
+      validityProblems.push('baseline full commit changed');
     baselineIds.add(record.baselineIdentity?.skill?.digest);
     candidateIds.add(record.candidateIdentity?.skill?.digest);
     if (
@@ -950,12 +1023,15 @@ export function verifyAdditionalEvidence(suite, { skillRoot, resultsDir }) {
     )
       identityProblems.push('instrument identity changed');
   }
-  if (baselineIds.size !== 1 || candidateIds.size !== 1)
-    identityProblems.push('matrix mixes baseline or candidate identities');
+  if (baselineIds.size > 1 || candidateIds.size > 1)
+    validityProblems.push('matrix mixes baseline or candidate identities');
   const matrix = summarizeMatrix(records);
   const results = matrix.cells.map((cell) => ({
     scenario: `paired:${cell.cell}`,
     state: identityProblems.length ? 'stale' : cell.state,
+    integrity: validityProblems.length ? 'invalid' : 'valid',
+    validityProblems,
+    findings: cell.pairs || matrix.attempts.length ? cell.problems : [],
     runs: [],
     details: JSON.stringify({ ...cell, identityProblems, attempts: matrix.attempts }),
   }));
@@ -969,13 +1045,17 @@ export function verifyAdditionalEvidence(suite, { skillRoot, resultsDir }) {
       lanes.length === 1
         ? nativeProblems(lanes[0])
         : ['exactly one native compatibility lane required'];
+    const laneIdentityProblems = [...identityProblems];
     if (lanes.length === 1 && !isDeepStrictEqual(lanes[0].nativeIdentity, expectedNative))
-      problems.push('native target/sidecar identity changed');
+      laneIdentityProblems.push('native target/sidecar identity changed');
     results.push({
       scenario: `native:${target}`,
-      state: identityProblems.length ? 'stale' : problems.length ? 'unproven' : 'current',
+      state: laneIdentityProblems.length ? 'stale' : problems.length ? 'unproven' : 'current',
+      integrity: validityProblems.length ? 'invalid' : 'valid',
+      validityProblems,
+      findings: lanes.length ? problems : [],
       runs: [],
-      details: JSON.stringify({ problems, identityProblems }),
+      details: JSON.stringify({ problems, identityProblems: laneIdentityProblems }),
     });
   }
   return [integrity, ...results];

@@ -145,8 +145,11 @@ pnpm eval merge-gate verify
 pnpm eval iterate verify
 ```
 
-CI reports every suite on each PR and enforces current evidence on release PRs. Changed shared
-production sources stale existing merge-gate and iterate evidence too; re-record before release.
+CI reports all five suites identically on ordinary and release PRs under the
+[capability policy](../../docs/adr/pragmatic-test-release-policy.md). Changed shared production
+sources stale merge-gate and iterate evidence too. That debt remains visible; applicable activation
+requires current evidence. Integrity/errors block package acceptance, and strict manual verification
+retains full-suite acceptance semantics.
 Passing deterministic checks does not establish green semantic model behavior.
 
 ## Bounded source-update and re-entry exercise
