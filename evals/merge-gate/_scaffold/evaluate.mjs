@@ -402,6 +402,23 @@ export function findings({ scenario, records, fixture, auxiliaryRecords, require
   ];
 }
 
+export function fixtureIndependentFindings({ scenario, records }) {
+  const findings = [];
+  if (
+    scenario === 'merge-proceeds' ||
+    scenario === BOT_LOGIN_SCENARIO ||
+    scenario === NESTED_SPAWN_SCENARIO
+  ) {
+    const applied = appliedMergeCount(records);
+    if (applied > 1) findings.push(appliedMergeFinding(applied));
+  }
+  if (scenario === 'linked-issue-open-points') {
+    findings.push(...mergeRefusalFindings(scenario, records), ...appliedMutationFindings(records));
+  }
+  if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
+  return findings;
+}
+
 // The findings a run the host stopped has already earned, which `retry-aborted` asks for before it
 // discards an attempt that left a call (see `assessAbortedEvidence` in the shared evaluator). Only
 // what no continuation could undo counts: a merge the scenario refuses, a second applied merge where

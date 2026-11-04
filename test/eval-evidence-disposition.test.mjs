@@ -163,6 +163,42 @@ test('package evidence distinguishes debt, integrity and valid negatives for eve
   }
 });
 
+test('fixture-independent hooks receive only valid parsed sealed state and no current fixture', () => {
+  const state = { before: {}, after: {} };
+  const inputs = [];
+  const suite = {
+    scenarios: ['drift'],
+    sealedEvidence: { required: () => true, missingMessage: 'missing state' },
+    evaluator: {
+      permitsEmptyCallLog: () => true,
+      usesLifecycleSchema: () => false,
+      parseSealedEvidence: (text) => ({
+        state,
+        problems: text === '{}' ? [] : ['corrupt state'],
+      }),
+      fixtureIndependentFindings: (input) => {
+        inputs.push(input);
+        return [];
+      },
+    },
+  };
+  for (const sealedEvidenceText of ['{}', 'bad', null]) {
+    const result = evaluateEvidence(suite, {
+      scenario: 'drift',
+      logText: '',
+      fixture: { changed: true },
+      fixtureCompatible: false,
+      projectRoot: '/fixture',
+      sealedEvidenceText,
+    });
+    const input = inputs.at(-1);
+    assert.equal(Object.hasOwn(input, 'fixture'), false);
+    assert.equal(Object.hasOwn(input, 'sealedEvidence'), sealedEvidenceText === '{}');
+    if (sealedEvidenceText === '{}') assert.equal(input.sealedEvidence, state);
+    assert.equal(result.validityProblems.length > 0, sealedEvidenceText !== '{}');
+  }
+});
+
 test('unknown, missing and malformed evidence dispositions fail closed', () => {
   // Invariant: a verifier cannot convert an unclassifiable or unchecked result into report success.
   for (const rows of [

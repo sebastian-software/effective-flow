@@ -419,7 +419,7 @@ export function evaluateEvidence(
         callRecords: parsed.problems.length === 0 ? parsed.records : [],
       });
       validityProblems.push(...parsedSealed.problems);
-      sealedEvidence = parsedSealed.state;
+      if (parsedSealed.problems.length === 0) sealedEvidence = parsedSealed.state;
     }
   } else if (sealedEvidenceText !== null && sealedEvidenceText !== undefined) {
     validityProblems.push(sealed ? sealed.orphanMessage : 'sealed evidence is orphaned');
@@ -444,6 +444,7 @@ export function evaluateEvidence(
             scenario,
             records: parsed.problems.length === 0 ? parsed.records : [],
             auxiliaryRecords: auxiliaryProblems.length === 0 ? auxiliaryRecords : [],
+            ...(requiresSealed && sealedEvidence !== null ? { sealedEvidence } : {}),
           }) ?? []);
   return { records: parsed.records, validityProblems, findings };
 }
