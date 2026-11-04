@@ -68,7 +68,7 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
 
 ### The release pull request gates the behavioural eval evidence
 
-The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate`, `next-steps` and `build-context` — archive evidence
+The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, `build-context` and `focus` — archive evidence
 about a build, and the build that matters is the one that ships, so the release pull request is
 where that evidence has to be current. The last step of the required `Format, test and build` job,
 `Behavioural eval evidence`, runs `pnpm eval <tool> verify` once for each suite: a read-only command
@@ -81,7 +81,7 @@ suite and the claim it supports is about the delivered build rather than about e
 way there. When the head ref starts with `release-please--` — the prefix of release-please's own
 `release-please--branches--develop--components--effective-flow`, matched rather than the full name
 so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
-absent corpus in either suite fails the check. There is no general waiver: without a current round
+absent corpus in any suite fails the check. There is no general waiver: without a current round
 of every suite there is no release.
 
 #### The separately named PR581 provisional disposition
@@ -98,7 +98,7 @@ The disposition is a separate blocking step after the complete ordinary evidence
 only when the release PR is a live `release-please--*` pull request and both repository variables
 are present: `BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB` (a 40-hex Git Blob object ID) and
 `BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256` (a `sha256:` digest with 64 hex characters). The
-ordinary `merge-gate`, `iterate`, and `next-steps` suites remain strict. The provisional branch is
+ordinary `merge-gate`, `iterate`, `next-steps`, and `focus` suites remain strict. The provisional branch is
 admitted only when the full `build-context` verdict is a truthful strict failure with no archived
 results and its absence list is exactly the 22 entries implemented by the suite: 16 behavioural
 variants, four paired cells, and the two native lanes. No model, role, authority, or quality
