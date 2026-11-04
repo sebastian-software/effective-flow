@@ -1,6 +1,6 @@
 # focus snapshot requalification on the develop head (WP2a of #613)
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -47,6 +47,7 @@ Roles:
   - the limitations.
 
   E stays comparable with D, and the matrix row cites one phase.
+
 - **Candidate.** The fetched `origin/develop` head when the operator starts, which must be a descendant of `2b1e0f4`.
   - Build it in a scratch checkout with `git worktree add --detach <scratch path> <SHA>`. This checkout is not part of the lifecycle contract, which needs a branch. It is registered in the evidence register and removed with `git worktree remove` in step 8.
   - `<scratch path>` is the absolute path `{root}/candidate`. It lies under the gitignored evidence root, outside `.effective-flow/.worktrees` and outside the docs session's worktree base.
@@ -56,6 +57,7 @@ Roles:
   - the built `dist/portable/effective-flow/tools/focus.md` and `dist/portable/effective-flow/shared/focus-follow-up.md`.
 
   E also states whether the built portable `shared/retro-native-sources.md` matches its source digest, as D did.
+
 - **Slot swap** (owner decision: copy, then restore). The Codex skill slot is `~/.agents/skills/effective-flow`. It is a DALO-managed symlink into the DALO store, which it shares with the Claude slot.
   - **Before the swap,** the operator records whether the slot is a symlink, its exact link target string, and the tree digest of that target.
   - **Tree digest** means `(cd <dir> && find . -type f -print0 | LC_ALL=C sort -z | xargs -0 sha256sum) | sha256sum`, computed the same way before the swap and after the restore.
@@ -94,6 +96,7 @@ Roles:
   - a load proof that shows a path other than the slot, even after the provider restart (owner decision).
 
   Any `focus` behaviour failure records E as failed, with no retry.
+
 - **Publication rule.**
   - The page uses only the pseudonyms O1, P, O2 and T, call numbers, positions, timestamps and digests.
   - The install path appears only as `~/.agents/skills/effective-flow`.
@@ -107,11 +110,11 @@ Roles:
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `docs/developer-guide/focus-host-acceptance.md` | New section "E requalification after the follow-up mode change (#613)" after the D section. Updated status paragraph, the intro of "Observed run and corrections" (labels A–E, E as the second requalification), "Candidate binding" (D content introduced as history; the closing sentence becomes the binding-drift rule), "Superseded binding" note, "T3 observed, report-only" matrix row, the "Every advertised path …" sentence, and the checklist item 1 suffix. |
-| `docs/user-guide/tools-quality.md` | The qualification paragraph ("requalification is pending before the next release") names the E binding. |
-| `<RUNTIME_STATE_ROOT>/.effective-flow/spikes/focus-requalification/<run-id>/` | Untracked evidence root, never committed. |
+| File                                                                          | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/developer-guide/focus-host-acceptance.md`                               | New section "E requalification after the follow-up mode change (#613)" after the D section. Updated status paragraph, the intro of "Observed run and corrections" (labels A–E, E as the second requalification), "Candidate binding" (D content introduced as history; the closing sentence becomes the binding-drift rule), "Superseded binding" note, "T3 observed, report-only" matrix row, the "Every advertised path …" sentence, and the checklist item 1 suffix. |
+| `docs/user-guide/tools-quality.md`                                            | The qualification paragraph ("requalification is pending before the next release") names the E binding.                                                                                                                                                                                                                                                                                                                                                                 |
+| `<RUNTIME_STATE_ROOT>/.effective-flow/spikes/focus-requalification/<run-id>/` | Untracked evidence root, never committed.                                                                                                                                                                                                                                                                                                                                                                                                                               |
 
 Both pages are extended in place, with no replacement and no new slug. `tools-quality.md` is user-guide and uses `language.documentation.user`. No `src/`, test, build or eval file changes. `docs/developer-guide/focus-session-shape-observations.md` and `evals/_scaffold/session-shapes.mjs` cite this page by line number, and those citations already drift. They stay untouched on purpose. Fixing them means changing `session-shapes.mjs` and the observations page's JSON block in lockstep (`test/session-stub.test.mjs:399`), which changes the focus suite's overlay seeds and belongs with the focus re-recording.
 
@@ -145,6 +148,7 @@ The `docs` orchestrator completes steps 1–8 itself, after the plan's clarity g
    - no correction was sent;
    - no follow-up offer appears, because the follow-up row is disabled;
    - the T3 UI shows no new schedule.
+
 6. **R2 self refusal (script 5 into O1).** R2 has its own ledger:
    - at most one ancestry read, since O1 is the root and the contract may refuse self from the observer's own ID alone; the ledger records the actual count;
    - R2 relies on R1's load proof in the same O1 thread, and the record says so;
@@ -254,6 +258,7 @@ The orchestrator fills the `{…}` placeholders from the register and stores eac
   - checklist item 1.
 
   The follow-up row and every send row are unchanged.
+
 - [ ] `docs/user-guide/tools-quality.md` names the requalified binding, and "requalification is pending" no longer appears in it.
 - [ ] `git diff --name-only origin/develop...HEAD` lists exactly `docs/developer-guide/focus-host-acceptance.md`, `docs/user-guide/tools-quality.md` and `docs/plan/archive/2026-11-04-focus-snapshot-requalification.md`.
 - [ ] An identifier scan of every file in `git diff --name-only origin/develop...HEAD` finds no:
@@ -296,57 +301,57 @@ The orchestrator fills the `{…}` placeholders from the register and stores eac
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 0 | 1 |
-| Security | 0 | 1 | 0 |
-| Data protection | 0 | 1 | 0 |
-| Error cases | 0 | 3 | 4 |
-| Testability | 0 | 4 | 3 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 0 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         0 |    1 |
+| Security        |        0 |         1 |    0 |
+| Data protection |        0 |         1 |    0 |
+| Error cases     |        0 |         3 |    4 |
+| Testability     |        0 |         4 |    3 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         0 |    1 |
 
 ### Findings
 
 Deep interactive review (the summary counts this round):
 
-- **Important, Error cases.** R1's analysis leaf was an unregistered fifth thread. *Incorporated:* leaf L is never read, is outside the cap, and is archived.
-- **Important, Error cases.** O2's registration read could steal its result, and P's wait mode was unset. *Incorporated:* reads only after P has the result, `mode: 'wait'`, and waits only on top-level threads.
-- **Important, Testability.** A long-lived Codex process could keep loading the release skill. *Resolution by owner decision:* restart the provider after install and restore, and treat a foreign load path as a setup-invalid retry.
-- **Important, Error cases.** The cap of two R1 attempts contradicted the failure rule. *Incorporated:* a retry only after a setup-invalid attempt.
-- **Important, Testability.** Pausing T after step 6 gave only one history page. *Resolution by owner decision:* pause after step 11.
-- **Important, Testability.** `dalo status --check` had no baseline from before the swap. *Incorporated.*
-- **Important, Testability.** The manifest criterion could not pass. *Incorporated:* the manifest is written last, excludes the backup, and is checked with `sha256sum -c`.
-- **Important, Data protection.** The identifier scan missed the archived plan. *Incorporated:* it covers every changed file.
-- **Important, Security.** Full-access threads in a repository that mandates Effective Flow could act on the main checkout. *Resolution by owner decision:* a throwaway T3 project outside every repository, plus the prohibitions in script 3.
-- **Note, Architecture.** The Claude slot path was wrong for this host. *Incorporated.*
-- **Note, Error cases.** Path placement was contradictory. *Incorporated:* a defined scratch path and the evidence-root ignore check.
-- **Note, Error cases.** `prepare` lacked its definition. *Incorporated.*
-- **Note, Error cases.** The autosync check was not global. *Incorporated.*
-- **Note, Testability.** O2's model was unpinned. *Incorporated.*
-- **Note, Testability.** An R3 refusal on selection grounds was unclassified. *Resolution by owner decision:* ancestor refusal counts as unproven, and the owner decides the next step.
-- **Note, Error cases.** The non-symlink edge case contradicted the restore. *Incorporated:* stop at preflight.
-- **Note, Maintainability.** Naming all drift made E a moving target. *Incorporated:* later drift goes into the release-PR comment.
-- **Note, Testability.** The `tools-quality.md` wording did not name the binding. *Incorporated.*
-- **Note, Scope.** The docs workflow would stop to ask about the existing targets. *Incorporated:* both pages are extended in place.
+- **Important, Error cases.** R1's analysis leaf was an unregistered fifth thread. _Incorporated:_ leaf L is never read, is outside the cap, and is archived.
+- **Important, Error cases.** O2's registration read could steal its result, and P's wait mode was unset. _Incorporated:_ reads only after P has the result, `mode: 'wait'`, and waits only on top-level threads.
+- **Important, Testability.** A long-lived Codex process could keep loading the release skill. _Resolution by owner decision:_ restart the provider after install and restore, and treat a foreign load path as a setup-invalid retry.
+- **Important, Error cases.** The cap of two R1 attempts contradicted the failure rule. _Incorporated:_ a retry only after a setup-invalid attempt.
+- **Important, Testability.** Pausing T after step 6 gave only one history page. _Resolution by owner decision:_ pause after step 11.
+- **Important, Testability.** `dalo status --check` had no baseline from before the swap. _Incorporated._
+- **Important, Testability.** The manifest criterion could not pass. _Incorporated:_ the manifest is written last, excludes the backup, and is checked with `sha256sum -c`.
+- **Important, Data protection.** The identifier scan missed the archived plan. _Incorporated:_ it covers every changed file.
+- **Important, Security.** Full-access threads in a repository that mandates Effective Flow could act on the main checkout. _Resolution by owner decision:_ a throwaway T3 project outside every repository, plus the prohibitions in script 3.
+- **Note, Architecture.** The Claude slot path was wrong for this host. _Incorporated._
+- **Note, Error cases.** Path placement was contradictory. _Incorporated:_ a defined scratch path and the evidence-root ignore check.
+- **Note, Error cases.** `prepare` lacked its definition. _Incorporated._
+- **Note, Error cases.** The autosync check was not global. _Incorporated._
+- **Note, Testability.** O2's model was unpinned. _Incorporated._
+- **Note, Testability.** An R3 refusal on selection grounds was unclassified. _Resolution by owner decision:_ ancestor refusal counts as unproven, and the owner decides the next step.
+- **Note, Error cases.** The non-symlink edge case contradicted the restore. _Incorporated:_ stop at preflight.
+- **Note, Maintainability.** Naming all drift made E a moving target. _Incorporated:_ later drift goes into the release-PR comment.
+- **Note, Testability.** The `tools-quality.md` wording did not name the binding. _Incorporated._
+- **Note, Scope.** The docs workflow would stop to ask about the existing targets. _Incorporated:_ both pages are extended in place.
 
 Internal plan review (5 important, 10 notes):
 
-- **Important, Error cases.** `dalo sync --check` refreshes the shared DALO store. *Incorporated:* `dalo status --check -g`, and an autosync precheck.
-- **Important, Error cases.** The restore half could delete a live link when the install had not completed or the restore ran twice. *Incorporated:* a precondition and a re-link path.
-- **Important, Testability.** Exact ancestry-read counts for R2 and R3 were stricter than the contract. *Incorporated:* upper bounds, with the actual count recorded.
-- **Important, Testability.** R3 had no load proof, and a missing capability from O2 was unclassified. *Incorporated.*
-- **Important, Data protection.** The T3 project and the target's scratch directory were unplaced. *Incorporated:* the same project, and a scratch directory under the evidence root that is removed afterwards.
-- **Note, Testability.** The tree digest method was undefined. *Incorporated.*
-- **Note, Testability.** Install verification covered two files only. *Incorporated:* an empty `diff -r` against the build.
-- **Note, Error cases.** The `t3-project` runner steps were missing. *Incorporated:* doctor, inspect, prepare and clean.
-- **Note, Testability.** P's settings, which O2 inherits, were unset. *Incorporated.*
-- **Note, Error cases.** O2 might never deliver a result. *Incorporated:* edge case.
-- **Note, Testability.** T's readiness was ambiguous. *Incorporated.*
-- **Note, Testability.** The manifest could not hash the symlink backup. *Incorporated.*
-- **Note, Maintainability.** The page intro would be stale after E. *Incorporated.*
-- **Note, Architecture.** R1's topology differs from D's. *Incorporated* as a limitation.
-- **Note, Maintainability.** The reason for leaving line citations untouched was wrong. *Incorporated.*
+- **Important, Error cases.** `dalo sync --check` refreshes the shared DALO store. _Incorporated:_ `dalo status --check -g`, and an autosync precheck.
+- **Important, Error cases.** The restore half could delete a live link when the install had not completed or the restore ran twice. _Incorporated:_ a precondition and a re-link path.
+- **Important, Testability.** Exact ancestry-read counts for R2 and R3 were stricter than the contract. _Incorporated:_ upper bounds, with the actual count recorded.
+- **Important, Testability.** R3 had no load proof, and a missing capability from O2 was unclassified. _Incorporated._
+- **Important, Data protection.** The T3 project and the target's scratch directory were unplaced. _Incorporated:_ the same project, and a scratch directory under the evidence root that is removed afterwards.
+- **Note, Testability.** The tree digest method was undefined. _Incorporated._
+- **Note, Testability.** Install verification covered two files only. _Incorporated:_ an empty `diff -r` against the build.
+- **Note, Error cases.** The `t3-project` runner steps were missing. _Incorporated:_ doctor, inspect, prepare and clean.
+- **Note, Testability.** P's settings, which O2 inherits, were unset. _Incorporated._
+- **Note, Error cases.** O2 might never deliver a result. _Incorporated:_ edge case.
+- **Note, Testability.** T's readiness was ambiguous. _Incorporated._
+- **Note, Testability.** The manifest could not hash the symlink backup. _Incorporated._
+- **Note, Maintainability.** The page intro would be stale after E. _Incorporated._
+- **Note, Architecture.** R1's topology differs from D's. _Incorporated_ as a limitation.
+- **Note, Maintainability.** The reason for leaving line citations untouched was wrong. _Incorporated._
 
 Gap analysis before the review (11 important, 6 notes), all incorporated or resolved by owner decision:
 
@@ -370,3 +375,16 @@ Gap analysis before the review (11 important, 6 notes), all incorporated or reso
 ## Open points
 
 - No open points.
+
+## Test results
+
+- Phase E run on November 4, 2026 against candidate `ada4fdae` (portable build, stamp `1.70.0 (nogit)`): R1 positive snapshot passed (7/16 native reads, 1/8 ancestry reads, 3/4 history pages, at most 46,024/64,000 charged characters; leaf verdict On track, no correction, send Not attempted, no follow-up offer, no schedule). R2 self refusal passed (one ancestry read, no target or history read). R3 ancestor refusal passed on its second attempt (one ancestry read, no target or history read); the first attempt was setup-invalid because the delegation script used an unsupported option name.
+- Load proof: O1 and O2 read the swapped slot's `tools/focus.md` and `shared/retro-native-sources.md`; installed digests matched and `diff -r` against the build was empty before R1 and after R3; a new Codex app-server process started after the swap.
+- Restore: original DALO link restored with identical target and target tree digest; `dalo status --check -g --json` byte-identical to the preflight baseline; autosync not installed before and after.
+- Cleanup: throwaway threads and project archived, project root and scratch checkout removed, no schedule in the project; evidence manifest verified with `sha256sum -c` (17 files).
+- `pnpm agent:check` passed; the identifier scan over every changed file found no thread or task IDs, links, home paths or run-id titles.
+
+## Review findings
+
+- Independent verification of the changed pages against the run evidence found no critical findings. Three important findings (an unbacked "no other Codex work" sentence, an unbacked "every reservation preceded its call" sentence copied from D, and the built `retro-native-sources.md` statement not yet in the supplied evidence) and eleven notes (cited positions, `runLimit`, O2's actual model, R3 charged characters, invocation wording, spelling, wrapping) were incorporated; the built-file digest was added to the evidence log from the preflight measurement.
+- Deviations from the plan, recorded in phase E: the orchestrator created the throwaway threads and sent the target task and invocations through T3 tools at the operator's request, so they are agent-authored rather than typed; the leaf's model compliance stays unverified.
