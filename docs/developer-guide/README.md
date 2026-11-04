@@ -68,3 +68,5 @@ is no runtime application – you edit `src/`, never `dist/`.
   projection, the single source of the eval session stub's shapes.
 - [focus labelling rubric](focus-labelling-rubric.md) – how fixture sessions receive their expected
   observed and self-report labels, the partial-trajectory rule and the scoring procedure.
+- [focus schedule evidence](focus-schedule-evidence.md) – dated addendum to the host evidence:
+  T3 Code `schedule_task` behaviour on Codex threads and the go decision for the follow-up mode.

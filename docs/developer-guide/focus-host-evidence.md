@@ -237,3 +237,5 @@ SHA-256 digest from `digests.sha256`.
 | `raw/codex-threadB-read.png`    | `45f4d64f601b186dfe7d24258e703192eba88e6580f40bef602de9069f312183` |
 
 Later session-shape observations for the eval stub: [focus session shape observations](focus-session-shape-observations.md).
+
+Later `schedule_task` observations for the follow-up mode: [focus schedule evidence](focus-schedule-evidence.md).
