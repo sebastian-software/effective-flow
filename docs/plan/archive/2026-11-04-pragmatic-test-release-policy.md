@@ -1,6 +1,6 @@
 # Pragmatic test and release policy
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -18,6 +18,25 @@ This is a policy change, not a waiver under the existing policy. Explicitly supe
 - **No-progress count:** 0 for this newly requested policy-planning outcome only.
 - **Cumulative approach:** Prior release investigations, attempted fixture repairs and recording-environment work remain historical; their budgets are not reset or extended by this plan.
 - **Continuation decision:** Implement this bounded policy before considering another recording campaign; evaluate the release afresh afterwards.
+
+## Implementation and validation record
+
+The implementation on PR #622 completed the bounded package/capability separation without changing
+source integration or claiming release acceptance. It preserves mandatory package checks, reports all
+five behavioural suites as evidence debt when stale or absent, keeps integrity and valid negative
+findings fail-closed and visible, and leaves the unqualified planned-build and Focus execution paths
+disabled. The final correction preserves fixture-independent negative findings during evidence drift
+and retains valid `sealedEvidence` handling.
+
+The verified final candidate passed the full CI package checks: format, 4,550 total tests with 4,523
+passing, zero failures and 27 skips, build, distribution, Shellcheck, Manager compatibility and
+Generated README. All five behavioural suites report their qualification debt honestly. Five focused
+regression passes and the full CI run reviewed the final correction. Native/provider qualification is
+absent, so the related functions remain disabled. Historical local readonly Git projection failures
+and the host-driver race are not claimed fixed.
+
+This archival records implementation completion only. Reviewed source integration to `develop` and
+the subsequent release reassessment remain follow-up work and are not completed by this archive.
 
 ## Architecture decisions
 
@@ -76,14 +95,18 @@ Paths refer to the inspected `origin/develop` tree, not the stale root checkout.
 
 ## Acceptance criteria
 
-- [ ] The ADR explicitly supersedes blanket release freshness and identifies unchanged mandatory checks, evidence-debt reporting and capability activation ownership; repository guidance has no contradictory blanket-release instruction.
-- [ ] Deterministic workflow/verifier tests cover release and ordinary PRs with current, stale, absent and short evidence for all five suites. Only the latter freshness/coverage states cease to block package delivery; summaries remain truthful.
-- [ ] Corrupt evidence, malformed results, verifier crashes and omitted suites fail the appropriate checks. Strict manual verification retains its previous full-acceptance semantics. Existing archive integrity assertions are not weakened.
-- [ ] Deterministic fixtures cover short-plus-corrupt, stale-plus-corrupt and stale-plus-valid-negative, plus `waived`, `missing-stamp`, `surplus` and `unproven`. Both underlying evidence validity and freshness are visible; invalid evidence cannot escape through a successful report-mode process exit or a coverage/staleness rollup.
-- [ ] Planned-build delegation is unreachable while unqualified, and the complete inline Quality path remains available before mutation. Tests preserve post-mutation recovery/stop boundaries.
-- [ ] Focus follow-up/sends stay disabled; any snapshot-host route without required current qualification is disabled or retains its specific blocker, with tests and documentation matching the supported surface.
-- [ ] Full CI-order acceptance passes on the final source tree: format, full `pnpm test`, build and distribution smoke, plus unchanged Shellcheck and other required jobs. No reduction in test population, concurrency, assertions, security guards or deadlines is used to obtain a pass.
+- [x] The ADR explicitly supersedes blanket release freshness and identifies unchanged mandatory checks, evidence-debt reporting and capability activation ownership; repository guidance has no contradictory blanket-release instruction.
+- [x] Deterministic workflow/verifier tests cover release and ordinary PRs with current, stale, absent and short evidence for all five suites. Only the latter freshness/coverage states cease to block package delivery; summaries remain truthful.
+- [x] Corrupt evidence, malformed results, verifier crashes and omitted suites fail the appropriate checks. Strict manual verification retains its previous full-acceptance semantics. Existing archive integrity assertions are not weakened.
+- [x] Deterministic fixtures cover short-plus-corrupt, stale-plus-corrupt and stale-plus-valid-negative, plus `waived`, `missing-stamp`, `surplus` and `unproven`. Both underlying evidence validity and freshness are visible; invalid evidence cannot escape through a successful report-mode process exit or a coverage/staleness rollup.
+- [x] Planned-build delegation is unreachable while unqualified, and the complete inline Quality path remains available before mutation. Tests preserve post-mutation recovery/stop boundaries.
+- [x] Focus follow-up/sends stay disabled; any snapshot-host route without required current qualification is disabled or retains its specific blocker, with tests and documentation matching the supported surface.
+- [x] Full CI-order acceptance passes on the final source tree: format, full `pnpm test`, build and distribution smoke, plus unchanged Shellcheck and other required jobs. No reduction in test population, concurrency, assertions, security guards or deadlines is used to obtain a pass.
 - [ ] One reviewed source delivery to `develop` establishes the policy. A subsequent release assessment uses the updated release head, checks capability limitations and known security-critical defects, and does not claim a release merge or renewed behavioural qualification without evidence.
+
+The final criterion remains unchecked intentionally: this PR has not yet been merged to `develop`, and
+the post-integration release assessment is still pending. Archival does not grant merge permission,
+release acceptance or renewed behavioural qualification.
 
 ## Validation plan
 
