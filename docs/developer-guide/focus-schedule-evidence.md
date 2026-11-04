@@ -200,8 +200,11 @@ The re-run derives the loop cap and the quiet-tick budget from these values.
 - **S7 side observation:** the tick keeps the last numeric position when a read returns a null next
   position, and never omits the cursor.
 - **S8:** the gate row matches the harness by provider instance `codex` on the observer thread.
-- **S9:** a tick is detected, and its checkpoint attributed, by `createdBy: "agent"` and
-  `creationSource: "mcp"` on the run's first `user_message`, not by prompt text.
+- **S9:** a run is identified as scheduled by `createdBy: "agent"` and `creationSource: "mcp"` on
+  its first `user_message`, not by prompt text. Another task bound to the same thread passes that
+  test too, so the run and its checkpoint are attributed to the follow-up loop only when the `<task>`
+  segment of the message ID `scheduled-task-message:<task>:<epoch-ms>:scheduled` matches the
+  expected task handle.
 - **S10:** the overlap rule expects a queued tick to start right after a busy turn and the next tick
   to follow on the nominal grid, possibly within a minute.
 - **S11:** in `approval-required` mode every tick needs approval for `t3_thread_read`, and the final
