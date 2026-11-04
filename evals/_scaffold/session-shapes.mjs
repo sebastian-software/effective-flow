@@ -1,10 +1,13 @@
 // Host shapes and behaviours for the eval session stub (`session-stub.mjs`).
 //
-// Single source: the fenced `json` block of
-// `docs/developer-guide/focus-session-shape-observations.md`, the dated addendum that records what
-// T3 Code `0.1.6` actually served and which Claude Code self-report facts the committed evidence
-// cites. This module restates that block and nothing beyond it; a change belongs in a new dated
-// addendum first, and the stub test asserts that this data deep-equals the block.
+// Sources: the fenced `json` blocks of two dated addenda that record what T3 Code `0.1.6` actually
+// served, `docs/developer-guide/focus-session-shape-observations.md` (which also records the Claude
+// Code self-report facts the committed evidence cites) and
+// `docs/developer-guide/focus-session-shape-observations-2.md` (two-run threads and the running
+// observer). This module restates the first block merged with the second by behaviour `name` and
+// nothing beyond them; the second block holds only behaviours, so key sets, item types by view and
+// the self-report projection come from the first alone. A change belongs in a new dated addendum
+// first, and the stub test asserts that this data deep-equals the merge of the blocks.
 //
 // `STUB_PROTOCOL` is the one deliberate exception, kept apart from the block: it lists the stub's
 // own envelope keys, which make no claim to be host shape.
@@ -86,7 +89,8 @@ export const ITEM_TYPES_BY_VIEW = deepFreeze({
   messages: ['user_message', 'assistant_message'],
 });
 
-export const BEHAVIOURS = deepFreeze([
+// The first addendum's `behaviours`, restated unchanged.
+const FIRST_BLOCK_BEHAVIOURS = [
   {
     name: 'activityViewServesAllTypes',
     recorded: true,
@@ -329,7 +333,125 @@ export const BEHAVIOURS = deepFreeze([
     observedResult: null,
     source: 'not observed',
   },
-]);
+];
+
+// The second addendum's `behaviours`: only the entries it adds or overrides.
+const SECOND_BLOCK_BEHAVIOURS = [
+  {
+    name: 'textOffsetFinalChunk',
+    recorded: true,
+    observedResult:
+      'itemId with textOffset above 0 whose remaining text is shorter than maxCharsPerItem serves the remaining text with textTruncated false and nextTextOffset null',
+    source: 'second addendum, observation call 6',
+  },
+  {
+    name: 'runLimitAboveOne',
+    recorded: false,
+    observedResult: null,
+    source:
+      'not observed: a runLimit other than 1 and 2; since the second addendum this entry names every such value, and runLimit 2 is recorded as runLimitTwo',
+  },
+  {
+    name: 'runCountOtherThanOne',
+    recorded: false,
+    observedResult: null,
+    source:
+      'not observed: a thread whose run count is other than 1 and 2; since the second addendum this entry names every such value, and two runs are recorded as runCountTwo',
+  },
+  {
+    name: 'unobservedItemType',
+    recorded: false,
+    observedResult: null,
+    source:
+      "not admitted: item types beyond itemTypesByView, which keeps the first addendum's four types; the checkpoint type the second addendum's activity view served stays outside fixtures",
+  },
+  {
+    name: 'runCountTwo',
+    recorded: true,
+    observedResult:
+      'a completed thread with two runs reports runCount 2, and its runs carry the ordinals 1 and 2',
+    source: 'second addendum, setup row and observation calls 1-6',
+  },
+  {
+    name: 'runLimitTwo',
+    recorded: true,
+    observedResult:
+      'runLimit 2 on a thread with two runs serves both runs in recentRuns, ordinal descending',
+    source: 'second addendum, observation calls 1-4',
+  },
+  {
+    name: 'runLimitOneLatestRun',
+    recorded: true,
+    observedResult:
+      'runLimit 1 on a thread with two runs serves only the latest run, the one with the highest ordinal, in recentRuns while thread.runCount stays 2',
+    source: 'second addendum, observation calls 5 and 6',
+  },
+  {
+    name: 'itemsNotRestrictedByRunLimit',
+    recorded: true,
+    observedResult:
+      'runLimit restricts only recentRuns: items of every run are served, so a runLimit 1 read serves an item of the earlier run',
+    source: 'second addendum, observation call 5; calls 1-3',
+  },
+  {
+    name: 'positionsContinueAcrossRuns',
+    recorded: true,
+    observedResult:
+      "the later run's items follow the earlier run's last position, every item's runId names its own run, and a page may cross the run boundary",
+    source: 'second addendum, observation calls 1-4',
+  },
+  {
+    name: 'runningObserverStateRead',
+    recorded: true,
+    observedResult:
+      "view activity, limit 1, maxCharsPerItem 256 and runLimit 1, without afterPosition, itemId or textOffset, on the observer's own running top-level thread serves status running, activeRunId equal to latestRunId, parentThreadId and relationshipToParent null, pendingRequestCount 0, one running run with completedAt null in recentRuns, and the thread's first activity item; runCount need not equal the latest run's ordinal",
+    source: 'second addendum, observation call 7',
+  },
+  {
+    name: 'runLimitAboveRunCount',
+    recorded: false,
+    observedResult: null,
+    source: 'not observed: runLimit 2 on a thread with one run',
+  },
+  {
+    name: 'textOffsetRemainingEqualsMaxCharsPerItem',
+    recorded: false,
+    observedResult: null,
+    source: 'not observed: a continuation whose remaining text length equals maxCharsPerItem',
+  },
+  {
+    name: 'runningObserverOtherReadForm',
+    recorded: false,
+    observedResult: null,
+    source: 'not observed: any read of the running observer other than the observation call 7 form',
+  },
+  {
+    name: 'parentedObserver',
+    recorded: false,
+    observedResult: null,
+    source:
+      'not observed: the observer was top-level; a running observer with a parentThreadId or relationshipToParent',
+  },
+  {
+    name: 'runningObserverPendingRequest',
+    recorded: false,
+    observedResult: null,
+    source: 'not observed: a running observer with pendingRequestCount above 0',
+  },
+];
+
+// The one merge rule: a second-block entry replaces the first-block entry of the same `name` in
+// its place, and every other second-block entry is appended in block order.
+function mergeByName(first, second) {
+  const overrides = new Map(second.map((entry) => [entry.name, entry]));
+  const firstNames = new Set(first.map((entry) => entry.name));
+  return [
+    ...first.map((entry) => overrides.get(entry.name) ?? entry),
+    ...second.filter((entry) => !firstNames.has(entry.name)),
+  ];
+}
+
+export const BEHAVIOURS = deepFreeze(mergeByName(FIRST_BLOCK_BEHAVIOURS, SECOND_BLOCK_BEHAVIOURS));
 
 export const SELF_REPORT_PROJECTION = deepFreeze({
   kind: 'projection of prose host output, Claude Code 2.1.292',

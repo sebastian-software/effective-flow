@@ -62,6 +62,11 @@ const RECEIPT_KEYS = [
   'schemaVersion',
   'taskInput',
 ];
+// The one optional receipt key: the absolute path the host wrote the session's last message to. A
+// receipt carries it exactly when the scenario's sealed evidence declares `capturesLastMessage:
+// true`, and the seal hands it to that evidence's `capture`; every other receipt keeps exactly
+// `RECEIPT_KEYS`, so a suite that declares no last-message capture seals as it always did.
+const LAST_MESSAGE_RECEIPT_KEY = 'lastMessagePath';
 
 function json(path) {
   return JSON.parse(readFileSync(path, 'utf8'));
@@ -109,12 +114,29 @@ function archivedPartners(suite, scenario) {
   return partners;
 }
 
+function capturesLastMessage(suite, scenario) {
+  return sealedFor(suite, scenario)?.capturesLastMessage === true;
+}
+
+function receiptKeysFor(suite, scenario) {
+  return capturesLastMessage(suite, scenario)
+    ? [...RECEIPT_KEYS, LAST_MESSAGE_RECEIPT_KEY]
+    : RECEIPT_KEYS;
+}
+
 // Observe the sealed evidence the suite declares for this attempt, without writing it. `null` for a
-// scenario that has none.
-function captureSealedEvidence(suite, scenario, paths) {
+// scenario that has none. A last-message capture also receives `lastMessagePath`: the host
+// receipt's value at the seal, `null` where no host receipt exists (a stopped attempt).
+function captureSealedEvidence(suite, scenario, paths, hostReceipt = null) {
   const sealed = sealedFor(suite, scenario);
   if (!sealed) return null;
-  const text = sealed.capture({ scenario, paths });
+  const text = sealed.capture({
+    scenario,
+    paths,
+    ...(capturesLastMessage(suite, scenario)
+      ? { lastMessagePath: hostReceipt?.[LAST_MESSAGE_RECEIPT_KEY] ?? null }
+      : {}),
+  });
   if (typeof text !== 'string') {
     throw new Error(`${scenario}: the suite's sealed-evidence capture returned no text`);
   }
@@ -217,10 +239,13 @@ function sameProfile(left, right) {
 }
 
 function sameHostReceipt(left, right) {
+  const keys = Object.hasOwn(left, LAST_MESSAGE_RECEIPT_KEY)
+    ? [...RECEIPT_KEYS, LAST_MESSAGE_RECEIPT_KEY]
+    : RECEIPT_KEYS;
   return (
-    sameKeys(left, RECEIPT_KEYS) &&
-    sameKeys(right, RECEIPT_KEYS) &&
-    RECEIPT_KEYS.filter((key) => key !== 'profile').every((key) => left[key] === right[key]) &&
+    sameKeys(left, keys) &&
+    sameKeys(right, keys) &&
+    keys.filter((key) => key !== 'profile').every((key) => left[key] === right[key]) &&
     sameProfile(left.profile, right.profile)
   );
 }
@@ -644,12 +669,16 @@ function currentAttempt(manifest, roundRoot, scenario, slot) {
   return { state, paths };
 }
 
-function safeHostReceipt(receipt, manifest, paths) {
+function safeHostReceipt(receipt, manifest, paths, suite, scenario) {
   if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) {
     throw new Error('host receipt must be an object');
   }
-  if (!sameKeys(receipt, RECEIPT_KEYS)) {
-    throw new Error(`host receipt fields must be exactly ${RECEIPT_KEYS.join(', ')}`);
+  const receiptKeys = receiptKeysFor(suite, scenario);
+  if (!sameKeys(receipt, receiptKeys)) {
+    throw new Error(`host receipt fields must be exactly ${receiptKeys.join(', ')}`);
+  }
+  if (receiptKeys.includes(LAST_MESSAGE_RECEIPT_KEY)) {
+    safeLastMessagePath(receipt[LAST_MESSAGE_RECEIPT_KEY], paths);
   }
   if (
     receipt.schemaVersion !== 1 ||
@@ -680,6 +709,27 @@ function safeHostReceipt(receipt, manifest, paths) {
     throw new Error('host receipt contains a sensitive or link-like field/value');
   }
   return receipt;
+}
+
+// The host writes the last message outside the attempt root, where the run cannot author it, and
+// the path is archived with the receipt, so it names no home directory. The attempt root is known
+// while a slot is sealed or validated; an archived receipt is checked for its form only.
+function safeLastMessagePath(value, paths) {
+  if (typeof value !== 'string' || !isAbsolute(value)) {
+    throw new Error(`host receipt ${LAST_MESSAGE_RECEIPT_KEY} must be an absolute path`);
+  }
+  if (/^(?:\/Users\/|\/home\/|~)/.test(value)) {
+    throw new Error(`host receipt ${LAST_MESSAGE_RECEIPT_KEY} must not name a home directory`);
+  }
+  if (!paths.attemptRoot) return;
+  const inside = (root, candidate) => candidate === root || candidate.startsWith(`${root}${sep}`);
+  const physical = existsSync(value) ? realpathSync(value) : resolve(value);
+  if (
+    inside(resolve(paths.attemptRoot), resolve(value)) ||
+    inside(realpathSync(paths.attemptRoot), physical)
+  ) {
+    throw new Error(`host receipt ${LAST_MESSAGE_RECEIPT_KEY} must lie outside the attempt root`);
+  }
 }
 
 function preparedDigests(suite, paths) {
@@ -721,7 +771,7 @@ export function sealAttempt(
   const slotLock = sandboxPaths(roundRoot, scenario, slot, 1).slotLock;
   return withLock(slotLock, () => {
     const { state, paths } = currentAttempt(manifest, roundRoot, scenario, slot);
-    safeHostReceipt(hostReceipt, manifest, paths);
+    safeHostReceipt(hostReceipt, manifest, paths, suite, scenario);
     if (existsSync(paths.sealReceipt)) {
       if (existsSync(paths.hostReceipt) && sameHostReceipt(json(paths.hostReceipt), hostReceipt)) {
         return json(paths.sealReceipt);
@@ -783,7 +833,12 @@ export function sealAttempt(
     pauseAtBoundary('host-receipt-written');
     // Observed last, after every refusal above, so a refused seal leaves no such file behind and the
     // state recorded is the one the session ended in.
-    writeSealedEvidence(suite, scenario, paths);
+    writeSealedEvidence(
+      suite,
+      scenario,
+      paths,
+      captureSealedEvidence(suite, scenario, paths, hostReceipt),
+    );
     const receipt = {
       schemaVersion: 1,
       scenario,
@@ -1254,6 +1309,8 @@ function ensureCanonicalGeneration(suite, candidate, scenarios, identities, sele
         {
           projectRoot: metadata.projectRoot,
         },
+        suite,
+        scenario,
       );
       // Carried-forward units retain the pinned profile and original host binding even when their
       // skill/instrument is stale. Freshness is still reported and enforced at release by verify.
@@ -1456,7 +1513,7 @@ function validateSealedSlot(suite, manifest, roundRoot, scenario, slot) {
   const sealed = json(paths.sealReceipt);
   const metadata = json(paths.runMetadata);
   const host = json(paths.hostReceipt);
-  safeHostReceipt(host, manifest, paths);
+  safeHostReceipt(host, manifest, paths, suite, scenario);
   const actualIdentity = scenarioBuildIdentity(suite, scenario, paths.skillRoot);
   if (
     sealed.scenario !== scenario ||

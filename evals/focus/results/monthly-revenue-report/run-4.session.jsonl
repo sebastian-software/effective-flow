@@ -1,0 +1,7 @@
+{"seq":1,"operation":"thread-read","input":{"threadId":"observer-thread-01","view":"activity","limit":1,"maxCharsPerItem":256,"runLimit":1},"at":"2026-11-04T09:18:32.748Z"}
+{"seq":2,"operation":"thread-read","input":{"threadId":"session-thread-01","view":"activity","limit":1,"maxCharsPerItem":256,"runLimit":1},"at":"2026-11-04T09:18:36.824Z"}
+{"seq":3,"operation":"thread-read","input":{"threadId":"session-thread-01","view":"messages","limit":10,"maxCharsPerItem":1500,"runLimit":2},"at":"2026-11-04T09:18:41.764Z"}
+{"seq":4,"operation":"thread-read","input":{"threadId":"session-thread-01","view":"activity","limit":1,"maxCharsPerItem":256,"runLimit":1},"at":"2026-11-04T09:18:54.455Z"}
+{"seq":5,"operation":"thread-read","input":{"threadId":"session-thread-01","view":"activity","limit":10,"maxCharsPerItem":1500,"runLimit":2},"at":"2026-11-04T09:19:06.188Z"}
+{"seq":6,"operation":"thread-read","input":{"threadId":"session-thread-01","view":"activity","limit":1,"maxCharsPerItem":256,"runLimit":1},"at":"2026-11-04T09:19:11.325Z"}
+{"seq":7,"operation":"thread-read","input":{"threadId":"session-thread-01","view":"activity","limit":5,"maxCharsPerItem":1500,"runLimit":2,"afterPosition":9},"at":"2026-11-04T09:19:15.654Z"}

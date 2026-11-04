@@ -330,6 +330,7 @@ export function evaluateEvidence(
   const auxiliary = suite.auxiliaryEvidence;
   const requiresAuxiliary = auxiliary ? auxiliary.required(scenario) : false;
   let auxiliaryRecords = [];
+  let auxiliaryProblems = [];
   if (requiresAuxiliary) {
     if (typeof auxiliaryText !== 'string') {
       validityProblems.push(auxiliary.missingMessage);
@@ -337,6 +338,7 @@ export function evaluateEvidence(
       const parsedAuxiliary = evaluator.parseAuxiliary(auxiliaryText, projectRoot);
       validityProblems.push(...parsedAuxiliary.problems);
       auxiliaryRecords = parsedAuxiliary.records;
+      auxiliaryProblems = parsedAuxiliary.problems;
     }
   } else if (auxiliaryText !== null && auxiliaryText !== undefined) {
     validityProblems.push(auxiliary ? auxiliary.orphanMessage : 'an auxiliary trace is orphaned');
@@ -355,7 +357,17 @@ export function evaluateEvidence(
     if (typeof sealedEvidenceText !== 'string') {
       validityProblems.push(sealed.missingMessage);
     } else {
-      const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText);
+      // The parsed trace and call records go along so a suite can let a behaviour they show decide
+      // how the sealed record is classified (`focus`: a contract violation or a tracker write
+      // outranks a stated refusal). Evaluators are in no instrument hash, and a parser that reads
+      // only the text ignores them. A call log that does not parse hands in no records.
+      const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText, {
+        scenario,
+        fixture,
+        auxiliaryRecords,
+        auxiliaryProblems,
+        callRecords: parsed.problems.length === 0 ? parsed.records : [],
+      });
       validityProblems.push(...parsedSealed.problems);
       sealedEvidence = parsedSealed.state;
     }
@@ -418,11 +430,13 @@ export function assessAbortedEvidence(
   const auxiliary = suite.auxiliaryEvidence;
   const requiresAuxiliary = auxiliary ? auxiliary.required(scenario) : false;
   let auxiliaryRecords = [];
+  let auxiliaryProblems = [];
   // An absent paired trace is a helper that was never called, which a stopped run may well be.
   if (requiresAuxiliary && typeof auxiliaryText === 'string') {
     const parsedAuxiliary = evaluator.parseAuxiliary(auxiliaryText, projectRoot);
     unjudgeable.push(...parsedAuxiliary.problems);
     auxiliaryRecords = parsedAuxiliary.records;
+    auxiliaryProblems = parsedAuxiliary.problems;
   }
   const sealed = suite.sealedEvidence ?? null;
   const requiresSealed = sealed ? sealed.required(scenario) : false;
@@ -430,7 +444,15 @@ export function assessAbortedEvidence(
   if (requiresSealed) {
     if (typeof sealedEvidenceText !== 'string') unjudgeable.push(sealed.missingMessage);
     else {
-      const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText);
+      // Same context argument as in `evaluateEvidence`: the parsed trace and call records, for
+      // evaluators that read them.
+      const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText, {
+        scenario,
+        fixture,
+        auxiliaryRecords,
+        auxiliaryProblems,
+        callRecords: parsed.problems.length === 0 ? parsed.records : [],
+      });
       unjudgeable.push(...parsedSealed.problems);
       sealedEvidence = parsedSealed.state;
     }

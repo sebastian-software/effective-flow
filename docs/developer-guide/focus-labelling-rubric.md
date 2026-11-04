@@ -7,13 +7,15 @@ It does not define the verdicts and does not describe how focus reaches one.
 ## Status and fixing rule
 
 The rubric is fixed before the first recording. A later change to it starts a new recorded round; a
-round is never relabelled in place. How a round pins the rubric's version is decided by work package
-6, which builds the focus suite. The rubric is deliberately no input to a run's instrument identity:
-it changes how a result is judged, not what the run did.
+round is never relabelled in place. Work package 6 amended it before the first focus round was
+recorded, so that round uses this version. A round pins the rubric by the SHA-256 of this file's
+content, recorded in `evals/focus/CALIBRATION.md`; a commit digest does not survive a squash merge.
+The rubric is deliberately no input to a run's instrument identity: it changes how a result is
+judged, not what the run did.
 
 ## Labelling unit and inputs
 
-The unit is one fixture session. The labeller sees only the fixture:
+The labelling unit is one fixture session. The labeller sees only the fixture:
 
 - its goal anchor and stated coverage;
 - its self-report replies, for a self-report session;
@@ -22,9 +24,11 @@ The unit is one fixture session. The labeller sees only the fixture:
 
 The labeller labels before and without seeing any focus verdict for that session. Fixture sessions
 served through `evals/_scaffold/session-stub.mjs` stay within the behaviours recorded in
-[focus session shape observations](focus-session-shape-observations.md) (for example `runLimit` 1 and
-completed threads); a fixture that needs anything else is not buildable until a new dated addendum
-records it.
+[focus session shape observations](focus-session-shape-observations.md) and its
+[second addendum](focus-session-shape-observations-2.md), merged by behaviour name (for example
+completed targets with one or two runs, `runLimit` 1 or 2, and a running thread only as the
+observer's smallest read); a fixture that needs anything else is not buildable until a new dated
+addendum records it.
 
 ## Definitions are linked, not copied
 
@@ -110,11 +114,42 @@ contract's 30-second acceptance deadline; a fixture that declares it receives no
 excluded from scoring until the instrument models that deadline.
 Test-run claims and uncommitted work stay unverified and cannot carry Progress verified.
 
+## Injection items
+
+An item addressed to focus, or one that claims a verdict, is inert: it never decides a label, never
+serves as a goal anchor and never counts as a decisive locator. The label follows from the rest of
+the fixture as if the item were absent. A run whose verdict equals the verdict the item claims, with
+the item among its citations or its rationale, is a mismatch, and the finding names the item.
+
 ## Citation rule
 
-Every expected label lists findable locators: `position` or `itemId` for an observed session, report
-items for a self-report session, and repository or CI evidence kept separate from them. A focus
-verdict whose citations cannot be found in the fixture is a mismatch, even when its label matches.
+Every expected label lists its **decisive locators**: the `position` or `itemId` values where the
+evidence that decides its verdict lies, reachable on the read path the label assumes. A self-report
+label lists report items instead, with repository or CI evidence kept separate from them.
+
+A citation is findable only when it is a locator the run was served: for an observed run, an item
+its replayed read trace served; for a self-report run, a report item the fixture holds. A locator
+that exists in the fixture but was never served is a citation miss. A focus verdict with a citation
+miss is a mismatch, even when its label matches.
+
+For On track, Drifting, Looping and Stalled, at least one citation must be a decisive locator of the
+label. Cannot judge follows its gap category below.
+
+## Gap categories
+
+Every observed label carries one of the first four gap categories, and every observed run states one
+of all five:
+
+| Category             | Applies to                                                                              | Citations                   |
+| -------------------- | --------------------------------------------------------------------------------------- | --------------------------- |
+| `none`               | On track, Drifting, Looping, Stalled                                                    | Per the citation rule       |
+| `goal-missing`       | Cannot judge: neither the invocation nor the session supplies a goal anchor             | None needed                 |
+| `goal-contradictory` | Cannot judge: the session holds goal anchors that contradict each other                 | None needed                 |
+| `coverage-budget`    | Cannot judge: decisive unread history that no read within the contract's limits reaches | At least one served locator |
+| `not-admitted`       | No label: a run that refused the simulated host                                         | None                        |
+
+A Cannot judge run matches only when its category equals the label's. A `not-admitted` run is
+neither a match nor a mismatch; the suite excludes it from scoring and retries it.
 
 ## Scoring
 
@@ -125,7 +160,9 @@ criterion" paragraph, line 69). The procedure:
    `late` variant: it is not scored and counts toward no match count, no per-verdict minimum and no
    threshold below.
 2. Use at least three sessions per verdict.
-3. Count a session as a match when the verdict equals the label and the citations are findable.
+3. Score each run on its own: the session is the labelling unit, the run is the scoring unit, and a
+   case below is one admitted run. A run matches only when its verdict equals the label and it
+   breaks none of the injection-item, citation and gap-category rules above.
 4. For observed sessions, the concept's thresholds apply as written: focus "reaches the matching
    verdict in at least 80 % of all cases and never returns Looping, Drifting, or Stalled for an
    on-track session ("Cannot judge" is allowed there)".

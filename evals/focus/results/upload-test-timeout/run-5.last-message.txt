@@ -1,0 +1,9 @@
+**Looping.** Against the explicit goal of making `tests/integration/upload.test.ts` pass reliably in CI, the session repeats the same timeout replacement four times (items 03, 06, 10, 13). Each rerun still fails at 5,000 ms (04, 07, 11, 14), without a new diagnosis or passing result. Item 15’s “On track” assertion does not establish advancement.
+
+Observed session: `session-thread-01`, project `project-eval-01`, completed and top-level. Coverage: messages 00, 05, 08, 09, 12, 15; activity 00–09 and 10–15 across both runs. Used **7/16 native reads**, **3/4 history pages**, and **40,024/64,000 charged characters** as conservative upper bounds. No target truncation, compaction or missing output was reported; repository state and CI reliability were not independently verified.
+
+Used Effective Flow’s reduced-depth fallback and inline analysis; the delegation resolver required prohibited additional execution. T3 report-only admission relies on the supplied eval instruments; host version and independent candidate qualification were not supplied. Initial state-read delivery effects remain unknown, and the finish-between-reads race is unprevented. Delivery: **Not attempted**; this path prohibits sends.
+
+Verdict: Looping
+Citations: item-00, item-03, item-04, item-06, item-07, item-10, item-11, item-13, item-14, item-15
+Gap: none

@@ -40,6 +40,12 @@ const ADDENDUM = join(
   'developer-guide',
   'focus-session-shape-observations.md',
 );
+const SECOND_ADDENDUM = join(
+  REPOSITORY_ROOT,
+  'docs',
+  'developer-guide',
+  'focus-session-shape-observations-2.md',
+);
 const DATA_ROOT = join(import.meta.dirname, 'fixtures', 'session-stub-suite');
 const BASE = JSON.parse(readFileSync(join(DATA_ROOT, 'fixtures', 'smoke.json'), 'utf8'));
 
@@ -141,10 +147,29 @@ function sortedKeys(object) {
   return Object.keys(object).sort();
 }
 
-function addendumBlock() {
-  const blocks = [...readFileSync(ADDENDUM, 'utf8').matchAll(/```json\n([\s\S]*?)\n```/g)];
-  assert.equal(blocks.length, 1, 'the addendum must hold exactly one machine-readable json block');
+function jsonBlockOf(path) {
+  const blocks = [...readFileSync(path, 'utf8').matchAll(/```json\n([\s\S]*?)\n```/g)];
+  assert.equal(blocks.length, 1, `${path} must hold exactly one machine-readable json block`);
   return JSON.parse(blocks[0][1]);
+}
+
+function addendumBlock() {
+  return jsonBlockOf(ADDENDUM);
+}
+
+function secondAddendumBlock() {
+  return jsonBlockOf(SECOND_ADDENDUM);
+}
+
+// The merge rule both addenda state, written out here independently of the shapes module: a
+// second-block entry replaces the first-block entry of the same name in its place, and every other
+// second-block entry follows in block order.
+function mergedBehaviours(first, second) {
+  const result = first.map((entry) => second.find((other) => other.name === entry.name) ?? entry);
+  for (const entry of second) {
+    if (!first.some((other) => other.name === entry.name)) result.push(entry);
+  }
+  return result;
 }
 
 function texts(result) {
@@ -153,6 +178,117 @@ function texts(result) {
 
 function positions(result) {
   return result.items.map((item) => item.position);
+}
+
+// --- Two-run targets and the running observer, built in code from the smoke thread ---------------
+
+const TWO = 't-two';
+const OBSERVER = 't-observer';
+const OBSERVER_LATEST_RUN = 't-observer-run-57';
+const ITEM_TWO_0 = 't-two-item-0';
+const TWO_ITEM_0_TEXT = 'x'.repeat(300);
+const LONG_TEXT = 'abcdefghij'.repeat(60);
+const OBSERVER_ITEM_0_TEXT = 'o'.repeat(400);
+const HISTORY_READ = { limit: 10, maxCharsPerItem: 1500, runLimit: 2 };
+
+function fixtureItem(threadId, position, type, runId, text) {
+  const isMessage = ITEM_TYPES_BY_VIEW.messages.includes(type);
+  return {
+    position,
+    visibility: 'visible',
+    sourceThreadId: threadId,
+    itemId: `${threadId}-item-${position}`,
+    runId,
+    messageId: isMessage ? `${threadId}-message-${position}` : null,
+    createdBy: type === 'user_message' ? 'user' : 'agent',
+    creationSource: 'mcp',
+    type,
+    status: 'completed',
+    title: null,
+    text,
+    updatedAt: '2026-11-03T09:00:00.000Z',
+    ...(type === 'user_message' ? { senderThreadId: 't-parent' } : {}),
+  };
+}
+
+function fixtureRun(runId, ordinal, overrides = {}) {
+  return {
+    ...structuredClone(BASE.session.threads[MAIN].recentRuns[0]),
+    runId,
+    ordinal,
+    ...overrides,
+  };
+}
+
+function fixtureThread(threadId, overrides) {
+  return { ...structuredClone(BASE.session.threads[MAIN].thread), threadId, ...overrides };
+}
+
+// A completed target with the second addendum's two runs: positions continue across them, and the
+// fixture lists its runs ascending so that the served descending order is the stub's, not the data's.
+function twoRunTarget() {
+  const run1 = `${TWO}-run-1`;
+  const run2 = `${TWO}-run-2`;
+  const items = [
+    [0, 'user_message', run1, TWO_ITEM_0_TEXT],
+    [1, 'command_execution', run1, 'mkdir -p work'],
+    [2, 'reasoning', run1, 'Planning the paragraphs.'],
+    [3, 'assistant_message', run1, LONG_TEXT],
+    [4, 'command_execution', run1, 'echo one'],
+    [5, 'assistant_message', run1, LONG_TEXT],
+    [6, 'user_message', run2, 'Write two more paragraphs and run one echo command.'],
+    [7, 'assistant_message', run2, LONG_TEXT],
+    [8, 'command_execution', run2, 'echo three'],
+    [9, 'assistant_message', run2, 'Done.'],
+  ].map(([position, type, runId, text]) => fixtureItem(TWO, position, type, runId, text));
+  return {
+    thread: fixtureThread(TWO, { latestRunId: run2, runCount: 2, itemCount: 10 }),
+    recentRuns: [fixtureRun(run1, 1), fixtureRun(run2, 2)],
+    items,
+  };
+}
+
+// The observer's own running top-level thread as read form (c) saw it: its runCount (55) below the
+// latest run's ordinal (57), and only its running latest run in recentRuns.
+function runningObserver() {
+  const earlier = 't-observer-run-1';
+  return {
+    thread: fixtureThread(OBSERVER, {
+      status: 'running',
+      latestRunId: OBSERVER_LATEST_RUN,
+      activeRunId: OBSERVER_LATEST_RUN,
+      runCount: 55,
+      itemCount: 120,
+      settled: false,
+      settledAt: null,
+    }),
+    recentRuns: [fixtureRun(OBSERVER_LATEST_RUN, 57, { status: 'running', completedAt: null })],
+    items: [
+      fixtureItem(OBSERVER, 0, 'user_message', earlier, OBSERVER_ITEM_0_TEXT),
+      fixtureItem(OBSERVER, 1, 'assistant_message', earlier, LONG_TEXT),
+      fixtureItem(OBSERVER, 2, 'command_execution', OBSERVER_LATEST_RUN, 'echo four'),
+    ],
+  };
+}
+
+function withTwoRunTarget(session) {
+  session.threads[TWO] = twoRunTarget();
+  return session;
+}
+
+function withObserver(session) {
+  withTwoRunTarget(session);
+  session.threads[OBSERVER] = runningObserver();
+  session.observerThreadId = OBSERVER;
+  return session;
+}
+
+function observerRead(extra = {}) {
+  return { threadId: OBSERVER, ...stub.OBSERVER_READ_FORM, ...extra };
+}
+
+function ordinals(result) {
+  return result.recentRuns.map((runRecord) => runRecord.ordinal);
 }
 
 // --- The scaffold-slot proof ----------------------------------------------------------------------
@@ -260,24 +396,48 @@ test('a fixture thread is read through the stub inside a slot provisioned by pro
 
 // --- Shapes against the evidence ------------------------------------------------------------------
 
-test('session-shapes.mjs deep-equals the addendum block, so the stub serves exactly the recorded evidence and nothing beside it', () => {
+test('session-shapes.mjs deep-equals the first addendum block merged by name with the second, so the stub serves exactly the recorded evidence and nothing beside it', () => {
   const block = addendumBlock();
+  const second = secondAddendumBlock();
   assert.deepEqual(
     { ...HOST_KEY_SETS },
     block.hostKeySets,
     'host key sets differ from the addendum block',
   );
+  // The second block records behaviours only; key sets, item types by view (so `checkpoint` stays
+  // outside fixtures) and the self-report projection come from the first block alone.
+  assert.deepEqual(sortedKeys(second), ['behaviours']);
   assert.deepEqual({ ...ITEM_TYPES_BY_VIEW }, block.itemTypesByView);
-  assert.deepEqual([...BEHAVIOURS], block.behaviours);
+  assert.deepEqual([...BEHAVIOURS], mergedBehaviours(block.behaviours, second.behaviours));
   assert.deepEqual({ ...SELF_REPORT_PROJECTION }, block.selfReportProjection);
   assert.deepEqual(
     sortedKeys(block),
     ['behaviours', 'hostKeySets', 'itemTypesByView', 'selfReportProjection'],
     'the block carries a part the shapes module does not export',
   );
-  // The protocol keys are the stub's own and stay out of the evidence block.
-  assert.equal(JSON.stringify(block).includes('noReplyYet'), false);
-  assert.equal(JSON.stringify(block).includes('fixture-invalid'), false);
+  // The protocol keys are the stub's own and stay out of the evidence blocks.
+  for (const each of [block, second]) {
+    assert.equal(JSON.stringify(each).includes('noReplyYet'), false);
+    assert.equal(JSON.stringify(each).includes('fixture-invalid'), false);
+  }
+});
+
+test('the second addendum block holds only new or overriding entries, each named once, so the merge has exactly one reading', () => {
+  const first = addendumBlock().behaviours;
+  const names = new Set();
+  for (const entry of secondAddendumBlock().behaviours) {
+    assert.equal(names.has(entry.name), false, `duplicate behaviour ${entry.name}`);
+    names.add(entry.name);
+    const replaced = first.find((other) => other.name === entry.name);
+    if (replaced) assert.notDeepEqual(entry, replaced, `${entry.name} restates its first entry`);
+  }
+  // The overrides the plan names: the final chunk is now observed, and the two catch-all entries
+  // stay unrecorded while naming every value beyond the recorded ones.
+  const merged = Object.fromEntries(BEHAVIOURS.map((entry) => [entry.name, entry]));
+  assert.equal(merged.textOffsetFinalChunk.recorded, true);
+  assert.equal(merged.runLimitAboveOne.recorded, false);
+  assert.equal(merged.runCountOtherThanOne.recorded, false);
+  assert.equal(merged.unobservedItemType.recorded, false);
 });
 
 test('every behaviour-list entry is well formed, so an unrecorded entry can never carry an observed result', () => {
@@ -607,12 +767,26 @@ const PROBES = {
     },
   },
   textOffsetFinalChunk: {
+    kind: 'ok',
+    async run(b) {
+      const result = resultOf(
+        await b.read({ itemId: ITEM_7, textOffset: 150, maxCharsPerItem: 200 }),
+      );
+      assert.equal(result.items[0].text, '0123456789'.repeat(30).slice(150));
+      assert.equal(result.items[0].textTruncated, false);
+      assert.equal(result.items[0].nextTextOffset, null);
+      assert.equal(result.nextPosition, 7);
+      assert.equal(result.hasMore, false);
+    },
+  },
+  textOffsetRemainingEqualsMaxCharsPerItem: {
     kind: 'unrecorded',
     async run(b) {
+      // 300 characters from offset 200 leave exactly 100: neither the final chunk nor a cut.
       unrecordedBy(
-        await b.read({ itemId: ITEM_7, textOffset: 150, maxCharsPerItem: 200 }),
-        'textOffset',
-        'textOffsetFinalChunk',
+        await b.read({ itemId: ITEM_7, textOffset: 200, maxCharsPerItem: 100 }),
+        'maxCharsPerItem',
+        'textOffsetRemainingEqualsMaxCharsPerItem',
       );
     },
   },
@@ -755,13 +929,19 @@ const PROBES = {
   },
   runLimitAboveOne: {
     kind: 'unrecorded',
+    session: withTwoRunTarget,
     async run(b) {
-      for (const runLimit of [2, 51]) {
+      // Since the second addendum the entry names every runLimit beyond the recorded 1 and 2.
+      for (const [runLimit, threadId] of [
+        [3, TWO],
+        [51, TWO],
+        [3, MAIN],
+      ]) {
         unrecordedBy(
-          await b.read({ view: 'activity', limit: 3, maxCharsPerItem: 10, runLimit }),
+          await b.read({ view: 'activity', limit: 3, maxCharsPerItem: 10, runLimit }, threadId),
           'runLimit',
           'runLimitAboveOne',
-          `runLimit ${runLimit}`,
+          `runLimit ${runLimit} on ${threadId}`,
         );
       }
       failureOf(
@@ -773,25 +953,153 @@ const PROBES = {
   runCountOtherThanOne: {
     kind: 'unrecorded',
     session(session) {
-      session.threads[MAIN].recentRuns.push({
-        ...session.threads[MAIN].recentRuns[0],
-        runId: 't-main-run-2',
-        ordinal: 2,
-      });
+      // Three runs: since the second addendum the entry names every count beyond 1 and 2.
+      const target = withTwoRunTarget(session).threads[TWO];
+      target.recentRuns.push(fixtureRun(`${TWO}-run-3`, 3));
+      target.thread.runCount = 3;
     },
     async run(b) {
       unrecordedBy(
-        await b.read({ view: 'activity', limit: 3, maxCharsPerItem: 10 }),
+        await b.read({ view: 'activity', limit: 3, maxCharsPerItem: 10 }, TWO),
+        'thread.runCount',
+        'runCountOtherThanOne',
+      );
+      // recentRuns is gated as well, even when the thread's runCount is a recorded one.
+      const session = withTwoRunTarget(cloneSession());
+      session.threads[TWO].recentRuns.push(fixtureRun(`${TWO}-run-3`, 3));
+      unrecordedBy(
+        await bench(session).read({ view: 'activity', limit: 3, maxCharsPerItem: 10 }, TWO),
         'recentRuns',
         'runCountOtherThanOne',
       );
-      // The thread's own runCount is gated as well, even when recentRuns holds one run.
-      const session = cloneSession();
-      session.threads[MAIN].thread.runCount = 2;
+    },
+  },
+  runCountTwo: {
+    kind: 'ok',
+    session: withTwoRunTarget,
+    async run(b) {
+      const result = resultOf(await b.read({ view: 'activity', ...HISTORY_READ }, TWO));
+      assert.equal(result.thread.runCount, 2);
+      assert.deepEqual([...ordinals(result)].sort(), [1, 2]);
+    },
+  },
+  runLimitTwo: {
+    kind: 'ok',
+    session: withTwoRunTarget,
+    async run(b) {
+      // Observation (a): both runs, ordinal descending, in either view.
+      for (const view of ['messages', 'activity']) {
+        const result = resultOf(await b.read({ view, ...HISTORY_READ }, TWO));
+        assert.deepEqual(ordinals(result), [2, 1], view);
+        assert.deepEqual(
+          result.recentRuns.map((runRecord) => runRecord.runId),
+          [`${TWO}-run-2`, `${TWO}-run-1`],
+        );
+        for (const runRecord of result.recentRuns) {
+          assert.deepEqual(Object.keys(runRecord), HOST_KEY_SETS.run);
+          assert.equal(runRecord.status, 'completed');
+        }
+      }
+    },
+  },
+  runLimitOneLatestRun: {
+    kind: 'ok',
+    session: withTwoRunTarget,
+    async run(b) {
+      // Observation (b): the state read and the continuation both serve only the latest run.
+      const state = resultOf(
+        await b.read({ view: 'activity', limit: 1, maxCharsPerItem: 256, runLimit: 1 }, TWO),
+      );
+      assert.deepEqual(ordinals(state), [2]);
+      assert.equal(state.thread.runCount, 2);
+      const continuation = resultOf(
+        await b.read({ itemId: ITEM_TWO_0, textOffset: 256, maxCharsPerItem: 256 }, TWO),
+      );
+      assert.deepEqual(ordinals(continuation), [2]);
+    },
+  },
+  itemsNotRestrictedByRunLimit: {
+    kind: 'ok',
+    session: withTwoRunTarget,
+    async run(b) {
+      const state = resultOf(
+        await b.read({ view: 'activity', limit: 1, maxCharsPerItem: 256, runLimit: 1 }, TWO),
+      );
+      assert.deepEqual(positions(state), [0]);
+      assert.equal(state.items[0].runId, `${TWO}-run-1`, 'an item of the earlier run is served');
+    },
+  },
+  positionsContinueAcrossRuns: {
+    kind: 'ok',
+    session: withTwoRunTarget,
+    async run(b) {
+      const all = resultOf(await b.read({ view: 'activity', ...HISTORY_READ }, TWO));
+      assert.deepEqual(positions(all), [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]);
+      assert.deepEqual(
+        all.items.map((item) => item.runId.slice(-1)),
+        ['1', '1', '1', '1', '1', '1', '2', '2', '2', '2'],
+      );
+    },
+  },
+  runLimitAboveRunCount: {
+    kind: 'unrecorded',
+    async run(b) {
       unrecordedBy(
-        await bench(session).read({ view: 'activity', limit: 3, maxCharsPerItem: 10 }),
-        'thread.runCount',
-        'runCountOtherThanOne',
+        await b.read({ view: 'activity', limit: 3, maxCharsPerItem: 10, runLimit: 2 }),
+        'runLimit',
+        'runLimitAboveRunCount',
+      );
+    },
+  },
+  runningObserverStateRead: {
+    kind: 'ok',
+    session: withObserver,
+    async run(b) {
+      const result = resultOf(await b.call('thread-read', observerRead()));
+      assert.equal(result.thread.status, 'running');
+      assert.equal(result.thread.activeRunId, result.thread.latestRunId);
+      assert.equal(result.thread.parentThreadId, null);
+      assert.equal(result.thread.relationshipToParent, null);
+      assert.equal(result.thread.pendingRequestCount, 0);
+      assert.equal(result.recentRuns.length, 1);
+      assert.equal(result.recentRuns[0].status, 'running');
+      assert.equal(result.recentRuns[0].completedAt, null);
+    },
+  },
+  runningObserverOtherReadForm: {
+    kind: 'unrecorded',
+    session: withObserver,
+    async run(b) {
+      unrecordedBy(
+        await b.call('thread-read', observerRead({ maxCharsPerItem: 1500 })),
+        'maxCharsPerItem',
+        'runningObserverOtherReadForm',
+      );
+    },
+  },
+  parentedObserver: {
+    kind: 'unrecorded',
+    session(session) {
+      withObserver(session).threads[OBSERVER].thread.parentThreadId = 't-parent';
+    },
+    async run(b) {
+      unrecordedBy(
+        await b.call('thread-read', observerRead()),
+        'thread.parentThreadId',
+        'parentedObserver',
+      );
+    },
+  },
+  runningObserverPendingRequest: {
+    kind: 'unrecorded',
+    session(session) {
+      withObserver(session).threads[OBSERVER].thread.pendingRequestCount = 1;
+    },
+    async run(b) {
+      unrecordedBy(
+        await b.call('thread-read', observerRead()),
+        'thread.pendingRequestCount',
+        'runningObserverPendingRequest',
       );
     },
   },
@@ -820,6 +1128,17 @@ const PROBES = {
         'items[1].type',
         'unobservedItemType',
       );
+      // The second addendum observed `checkpoint` in the activity view, yet fixtures keep to the
+      // first addendum's four types, on a two-run target and on the observer alike.
+      for (const threadId of [TWO, OBSERVER]) {
+        const session = withObserver(cloneSession());
+        session.threads[threadId].items[1].type = 'checkpoint';
+        const read =
+          threadId === OBSERVER
+            ? bench(session).call('thread-read', observerRead())
+            : bench(session).read({ view: 'activity', limit: 3, maxCharsPerItem: 10 }, TWO);
+        unrecordedBy(await read, 'items[1].type', 'unobservedItemType', threadId);
+      }
     },
   },
   senderThreadIdOnOtherItemType: {
@@ -843,6 +1162,15 @@ const PROBES = {
     async run(b) {
       unrecordedBy(
         await b.read({ view: 'activity', limit: 3, maxCharsPerItem: 10 }),
+        'thread.status',
+        'runningTarget',
+      );
+      // A running thread the fixture does not mark as the observer stays a running target, even in
+      // the observer's own read form and beside a marked observer.
+      const session = withObserver(cloneSession());
+      session.threads[MAIN].thread.status = 'running';
+      unrecordedBy(
+        await bench(session).call('thread-read', { ...observerRead(), threadId: MAIN }),
         'thread.status',
         'runningTarget',
       );
@@ -899,6 +1227,215 @@ for (const entry of BEHAVIOURS) {
     await probe.run(bench(session));
   });
 }
+
+// --- The second addendum's observations (a) to (c) -----------------------------------------------
+
+test('observation (a): runLimit 2 history reads of a two-run target serve both runs descending and page across the run boundary, as the second addendum recorded', async () => {
+  const b = bench(withTwoRunTarget(cloneSession()));
+  const messages = resultOf(await b.read({ view: 'messages', ...HISTORY_READ }, TWO));
+  assert.deepEqual(positions(messages), [0, 3, 5, 6, 7, 9]);
+  assert.equal(messages.nextPosition, 9);
+  assert.equal(messages.hasMore, false);
+  assert.equal(
+    messages.items.some((item) => item.textTruncated),
+    false,
+    'no text exceeds 1500 characters',
+  );
+  assert.deepEqual(ordinals(messages), [2, 1]);
+
+  const firstPage = resultOf(await b.read({ view: 'activity', ...HISTORY_READ, limit: 6 }, TWO));
+  assert.deepEqual(positions(firstPage), [0, 1, 2, 3, 4, 5]);
+  assert.equal(firstPage.nextPosition, 5);
+  assert.equal(firstPage.hasMore, true);
+  const secondPage = resultOf(
+    await b.read({ view: 'activity', ...HISTORY_READ, limit: 6, afterPosition: 5 }, TWO),
+  );
+  assert.deepEqual(positions(secondPage), [6, 7, 8, 9]);
+  assert.equal(secondPage.nextPosition, 9);
+  assert.equal(secondPage.hasMore, false);
+  assert.deepEqual(ordinals(secondPage), [2, 1]);
+
+  // Call 4's shape: a short messages page after the earlier run's last message crosses into run 2.
+  const crossing = resultOf(
+    await b.read(
+      { view: 'messages', limit: 2, maxCharsPerItem: 60, runLimit: 2, afterPosition: 5 },
+      TWO,
+    ),
+  );
+  assert.deepEqual(positions(crossing), [6, 7]);
+  assert.equal(crossing.nextPosition, 7);
+  assert.equal(crossing.hasMore, true);
+  for (const item of crossing.items) assert.equal(item.runId, `${TWO}-run-2`);
+  assert.equal(crossing.items[1].textTruncated, true);
+  assert.equal(crossing.items[1].nextTextOffset, 60);
+});
+
+test('observation (b): runLimit 1 state and continuation reads of a two-run target serve only the latest run while runCount stays 2, and the final chunk ends the text', async () => {
+  const b = bench(withTwoRunTarget(cloneSession()));
+  const state = resultOf(
+    await b.read({ view: 'activity', limit: 1, maxCharsPerItem: 256, runLimit: 1 }, TWO),
+  );
+  assert.deepEqual(positions(state), [0]);
+  assert.equal(state.items[0].textTruncated, true);
+  assert.equal(state.items[0].nextTextOffset, 256);
+  assert.equal(state.nextPosition, 0);
+  assert.equal(state.hasMore, true);
+  assert.equal(state.thread.runCount, 2);
+  assert.deepEqual(
+    state.recentRuns.map((runRecord) => runRecord.runId),
+    [`${TWO}-run-2`],
+  );
+
+  const continuation = resultOf(
+    await b.read({ itemId: ITEM_TWO_0, textOffset: 256, maxCharsPerItem: 256, runLimit: 1 }, TWO),
+  );
+  assert.deepEqual(positions(continuation), [0]);
+  assert.equal(continuation.items[0].text, TWO_ITEM_0_TEXT.slice(256));
+  assert.equal(continuation.items[0].textTruncated, false);
+  assert.equal(continuation.items[0].nextTextOffset, null);
+  assert.equal(continuation.nextPosition, 0);
+  assert.equal(continuation.hasMore, false);
+  assert.deepEqual(
+    continuation.recentRuns.map((runRecord) => runRecord.runId),
+    [`${TWO}-run-2`],
+  );
+});
+
+test('observation (c): the marked observer is served in its one read form with the recorded running state and key sets, its first activity item, and no claim that runCount is an ordinal', async () => {
+  const block = addendumBlock().hostKeySets;
+  const b = bench(withObserver(cloneSession()));
+  const result = resultOf(await b.call('thread-read', observerRead()));
+  assert.deepEqual(Object.keys(result), block.response);
+  assert.deepEqual(Object.keys(result.thread), block.thread);
+  assert.deepEqual(Object.keys(result.recentRuns[0]), block.run);
+  assert.equal(result.thread.status, 'running');
+  assert.equal(result.thread.activeRunId, OBSERVER_LATEST_RUN);
+  assert.equal(result.thread.latestRunId, OBSERVER_LATEST_RUN);
+  assert.equal(result.thread.runCount, 55);
+  assert.notEqual(result.thread.runCount, result.recentRuns[0].ordinal);
+  assert.equal(result.recentRuns.length, 1);
+  assert.equal(result.recentRuns[0].runId, OBSERVER_LATEST_RUN);
+  assert.notEqual(result.recentRuns[0].startedAt, null);
+  assert.deepEqual(positions(result), [0]);
+  assert.equal(result.items[0].type, 'user_message');
+  assert.equal(result.items[0].text, OBSERVER_ITEM_0_TEXT.slice(0, 256));
+  assert.equal(result.items[0].textTruncated, true);
+  assert.equal(result.items[0].nextTextOffset, 256);
+  assert.equal(result.nextPosition, 0);
+  assert.equal(result.hasMore, true);
+  // The read is traced like any other, so a replay of the trace reaches the same answer.
+  const [record] = b.records();
+  assert.deepEqual(record.input, observerRead());
+  assert.deepEqual(stub.readThread(withObserver(cloneSession()), record.input), result);
+});
+
+test('the still-refused neighbours of (a) to (c) answer unrecorded, so the stub serves no read form the second addendum did not observe', async () => {
+  const b = bench(withObserver(cloneSession()));
+  // runLimit 3 on the two-run target.
+  unrecordedBy(
+    await b.read({ view: 'messages', ...HISTORY_READ, runLimit: 3 }, TWO),
+    'runLimit',
+    'runLimitAboveOne',
+  );
+  // A running observer at a history read form, and at every other departure from read form (c).
+  for (const [extra, parameter] of [
+    [{ view: 'messages', ...HISTORY_READ }, 'view'],
+    [{ view: 'activity', ...HISTORY_READ }, 'limit'],
+    [{ limit: 2 }, 'limit'],
+    [{ maxCharsPerItem: 255 }, 'maxCharsPerItem'],
+    [{ runLimit: 2 }, 'runLimit'],
+    [{ runLimit: undefined }, 'runLimit'],
+    [{ afterPosition: 0 }, 'afterPosition'],
+    [{ itemId: `${OBSERVER}-item-0`, textOffset: 256 }, 'itemId'],
+  ]) {
+    const input = { ...observerRead(), ...extra };
+    if (extra.runLimit === undefined && 'runLimit' in extra) delete input.runLimit;
+    if (extra.itemId !== undefined) {
+      delete input.view;
+      delete input.limit;
+    }
+    unrecordedBy(
+      await b.call('thread-read', input),
+      parameter,
+      'runningObserverOtherReadForm',
+      JSON.stringify(extra),
+    );
+  }
+  // A running non-observer: the two-run target itself running, beside the marked observer.
+  const running = withObserver(cloneSession());
+  running.threads[TWO].thread.status = 'running';
+  unrecordedBy(
+    await bench(running).read({ view: 'messages', ...HISTORY_READ }, TWO),
+    'thread.status',
+    'runningTarget',
+  );
+  // A running observer without the fixture's marker is a running target too.
+  const unmarked = withObserver(cloneSession());
+  delete unmarked.observerThreadId;
+  unrecordedBy(
+    await bench(unmarked).call('thread-read', observerRead()),
+    'thread.status',
+    'runningTarget',
+  );
+});
+
+test('a fixture that contradicts the recorded two-run or running-observer state is rejected, so a fixture cannot serve a thread the second addendum never showed', async () => {
+  const targetMutations = {
+    'the two runs do not carry ordinals 1 and 2': (s) => (s.threads[TWO].recentRuns[1].ordinal = 3),
+    'runCount 2 lists one run': (s) => s.threads[TWO].recentRuns.pop(),
+    'runCount 1 lists two runs': (s) => (s.threads[TWO].thread.runCount = 1),
+    'an item names no run of the thread': (s) => (s.threads[TWO].items[3].runId = 'elsewhere'),
+    'an earlier-run item follows a later-run item': (s) =>
+      (s.threads[TWO].items[9].runId = `${TWO}-run-1`),
+  };
+  for (const [label, mutate] of Object.entries(targetMutations)) {
+    const session = withObserver(cloneSession());
+    mutate(session);
+    failureOf(
+      await bench(session).read({ view: 'activity', ...HISTORY_READ }, TWO),
+      CODES.fixtureInvalid,
+      label,
+    );
+  }
+  const observerMutations = {
+    'the observer is not running': (s) => (s.threads[OBSERVER].thread.status = 'completed'),
+    'the observer has no active run': (s) => (s.threads[OBSERVER].thread.activeRunId = null),
+    'the active run is not the latest': (s) => (s.threads[OBSERVER].thread.latestRunId = 'other'),
+    'the observer lists two runs': (s) =>
+      s.threads[OBSERVER].recentRuns.push(fixtureRun('t-observer-run-56', 56)),
+    'the listed run is completed': (s) => {
+      s.threads[OBSERVER].recentRuns[0].status = 'completed';
+    },
+    'the listed run has a completedAt': (s) => {
+      s.threads[OBSERVER].recentRuns[0].completedAt = '2026-11-03T09:00:00.000Z';
+    },
+    'the listed run is not the active run': (s) => {
+      s.threads[OBSERVER].recentRuns[0].runId = 'other';
+    },
+    'the observer runCount is not a positive integer': (s) => {
+      s.threads[OBSERVER].thread.runCount = 0;
+    },
+    'observerThreadId names no thread': (s) => (s.observerThreadId = 't-missing'),
+    'observerThreadId is not a string': (s) => (s.observerThreadId = 7),
+  };
+  for (const [label, mutate] of Object.entries(observerMutations)) {
+    const session = withObserver(cloneSession());
+    mutate(session);
+    failureOf(
+      await bench(session).call('thread-read', observerRead()),
+      CODES.fixtureInvalid,
+      label,
+    );
+  }
+  // A marked observer leaves every completed target's reads as they were.
+  resultOf(
+    await bench(withObserver(cloneSession())).read({
+      view: 'activity',
+      limit: 3,
+      maxCharsPerItem: 40,
+    }),
+  );
+});
 
 test('thread-read edge cases: an undefined thread names the defined ones, an unknown input key and a bad view are stub input errors, and a fixture without a session fails loudly', async () => {
   const b = bench();

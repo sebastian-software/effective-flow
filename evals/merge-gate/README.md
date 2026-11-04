@@ -373,7 +373,9 @@ After a session finishes, create a host receipt with exactly these fields:
 ```
 
 The working root and profile must exactly match that attempt and its round. Do not add task, thread,
-or session IDs, account or email values, or links. Seal only after the host task has ended:
+or session IDs, account or email values, or links. One optional key exists: a scenario whose sealed
+evidence declares `capturesLastMessage: true` (only `focus` today) carries `lastMessagePath`, the
+absolute path of the session's last message, and no other receipt may. Seal only after the host task has ended:
 
 ```sh
 pnpm eval merge-gate seal \

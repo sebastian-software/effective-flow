@@ -1,0 +1,42 @@
+{
+  "scenario": "invoice-csv-export",
+  "digest": "sha256:5177c8d98660cb229da10e5fde40b163a29762c33c2b18667f576e795e65e772",
+  "skill": {
+    "digest": "sha256:5f556925be6724b6cdcd64ac102d8c2f190e69efa21e1805e4f9e6aa2f889a3f",
+    "versionNeutralDigest": "sha256:a25ffafa2a50a6d5026a0a955a6fb107d1363bbbc457eb417f1cfbd9938570ff",
+    "files": {
+      "SKILL.md": "sha256:17552c90bdf2114c65c2d0acfa0e41338b9448d687a5ef5b0a1f0f0f3927a0d2",
+      "scripts/session-shapes.mjs": "sha256:a9e76dd2708b1e375a2a2d0b13ea4edcf1869ba5f85edcac8a5800e9fe15bea4",
+      "scripts/session-stub.mjs": "sha256:7f935af41f212be21bdc5bbda897321f2dd6da4801f1747a56508a0b16d7aa50",
+      "shared/config-migration-edge-cases.md": "sha256:519a0cc04ad2ce0f28fabd5c4065c5796ade61eec6a2a7fb3af265bab8d4c290",
+      "shared/config-migration.md": "sha256:a988150129b93385453f1de72334de7045fc45423fd3dcff4f57f93da2b2ec87",
+      "shared/model-selection.md": "sha256:839f5625ec6ab5c4e4174915f728fff775e8b2b8562c31b1ef5489ab92366a20",
+      "shared/model-tiers.md": "sha256:27fa8c21ac390cf9a6c7d6679c20c1e385a1050daf3b32eb0c32ef5d942a56fd",
+      "shared/retro-native-sources.md": "sha256:bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3",
+      "shared/subagent-progress.md": "sha256:604979f4641527dc174925b282fb24b00a1bee2363d17c3f457aee85cb444aef",
+      "shared/typography-rules.md": "sha256:c61e1d2b20b4f390a4e8b7fcc093ec780072361f9bd981ec1315cae267e6838f",
+      "tools/focus.md": "sha256:5b2a4d25ff96c219fe22fef69a45d8cc1e8c7145d2c1397be711a0a8fd31af6d"
+    }
+  },
+  "instrument": {
+    "digest": "sha256:d0acb99b18055bef5aeef8c43b0e58bcf034c2cf6f9948d1651a90889ddd1919",
+    "files": {
+      "evals/focus/suite.config.mjs": "sha256:48a54125cd5328e9af86896efecbe81bea43981b54c235434eab7b60b11d611d",
+      "evals/_scaffold/remote-tracker.mjs": "sha256:9864a7fb759805cdd28b778c59a68456b742a75f6ee6d0e5178e9381859eb925",
+      "evals/_scaffold/host-qualification.mjs": "sha256:f01853ed2ae5b90fcb1e59b7596f59255b2aeacf5bf368c8e31cd01589186a4f",
+      "evals/_scaffold/sandbox.mjs": "sha256:cf92e932001ba399b414a9508214d73a6af9256e05e48b88888782219d0b2b39",
+      "evals/_scaffold/scaffold.mjs": "sha256:b8890df300a29eb2fb50b51361d98e60cd27b014afff46f468c7d74b75b2986f",
+      "evals/_scaffold/prompt.mjs": "sha256:d1883022ac622d31d40e10d5cc734f038549ae4a7b71b737b5343bf06f9a2913",
+      "evals/_scaffold/suite.mjs": "sha256:2561900fd927e215edc65de50587f77d65a5e52c6a67d393671010c262bed00e",
+      "evals/focus/_scaffold/setup.mjs": "sha256:e6f7e26c8205df4c8592730c1d2da409211d3a53e1f42d1d0a2cbf672a0d6cb6",
+      "evals/focus/_scaffold/launch-attestation.mjs": "sha256:8961cb261266859037cdcc03b1e03c0f44c1a1a13487213d4a9115ded956a596"
+    }
+  },
+  "scenario_inputs": {
+    "digest": "sha256:80725d69907b49f9b88130353b2bcd25942f342e36df05a2c8ef20ca20655b3f",
+    "files": {
+      "evals/focus/fixtures/invoice-csv-export.json": "sha256:7b31eaf3cd2e95eb4f661ea7fd549d04f41927c43c8b138c3069f5b685447294",
+      "evals/focus/scenarios/invoice-csv-export.md": "sha256:6b7b71d30a7f18dc1068c7b555cd006baf32617e4f5d2481fc1d1d04054a1776"
+    }
+  }
+}

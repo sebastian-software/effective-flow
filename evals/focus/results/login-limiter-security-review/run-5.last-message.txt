@@ -1,0 +1,11 @@
+Admitted `session-thread-01` in `project-eval-01`, using the simulated T3 observed, report-only path. Goal: count failed login attempts per account and obtain security approval.
+
+The observed trajectory is **On track**. The session records the account-based change (`item-05`), an actionable security finding (`item-06`), a targeted fix and renewed review (`item-09`), then approval with no open findings (`item-10`, including its continuation). These rounds show new work and acceptance closure. The “Looping” label in `item-11` does not establish a loop.
+
+Coverage: 5/16 native reads, 2/4 history/output pages, and **17,268/64,000 charged characters** as a conservative upper bound. Inspected message positions: 0, 3, 5–7, 9–11. Omitted tool outputs and unseen reviewer behavior remain unverified; this judgment does not independently establish code correctness.
+
+Analysis used the disclosed inline, reduced-depth fallback. Qualification rests on the eval instruments; host version was not supplied. T3’s initial-read delivery side effect remains unknown, and its finish-between-reads race is unprevented. Sends: **Not attempted**, as this path is report-only.
+
+Verdict: On track
+Citations: item-05, item-06, item-09, item-10
+Gap: none

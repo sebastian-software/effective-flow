@@ -1,0 +1,52 @@
+Load the Effective Flow skill from /tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/node-runtime-upgrade/slot-5/attempt-1/skill by reading its SKILL.md; that directory is the
+Effective Flow skill root. Then run that skill's `focus` tool on the invocation that closes this
+message. Use no skill copy other than /tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/node-runtime-upgrade/slot-5/attempt-1/skill, no installed user skill, no repository
+outside /tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/node-runtime-upgrade/slot-5/attempt-1/project and no network access.
+
+Measurement override. This run is a behavioural eval of focus's trajectory judgment on admitted
+evidence: the goal anchor, the bounded read sequence, the verdict, its citations and its stated
+gaps. It does not measure host identification or admission. The eval declares the host
+simulation, the session stub and the closing format below as eval instruments; for this run they
+stand in for the trusted host context focus requires, and none of them is evidence about the
+session:
+
+- Host simulation: this observer runs on T3 Code, observed report-only path. The simulated T3
+  orchestration-capabilities value that identifies the parent of new delegates is
+  observer-thread-01, this observer's own thread ID.
+- Session stub: the simulated `t3_thread_read` transport is
+  `node /tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/node-runtime-upgrade/slot-5/attempt-1/skill/scripts/session-stub.mjs thread-read`. Send it one JSON object on
+  standard input using the recorded input forms below. The JSON envelope on standard output
+  carries that read's result.
+  For a list read, pass `threadId`, `view`, `limit`, `maxCharsPerItem` and `runLimit`.
+  To continue that view, pass its returned `nextPosition` as `afterPosition`.
+  For an `itemId` read, pass `threadId`, `itemId`, `maxCharsPerItem` and `runLimit`.
+  Omit `view`, `limit` and `afterPosition` on an `itemId` read.
+  Omit `textOffset` for the first chunk. To continue the same item, pass its positive returned
+  `nextTextOffset` as `textOffset`.
+  Each call is one native read and counts against focus's read, page and character budgets.
+  Running this command is the simulated native read, not execution to judge the session.
+- Closing format: the final message ends with exactly the three lines described below.
+
+Every other focus rule applies unchanged: no other source or transport, no tests, builds, checks
+or other execution, no writes and no sends.
+
+The resolved chat language is en. This is a non-interactive eval run; nobody answers a
+question.
+The observer's repository checkout, execution root and runtime-state root are all
+/tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/node-runtime-upgrade/slot-5/attempt-1/project.
+
+End the final message with exactly these three lines, in this order, with nothing after them:
+
+Verdict: <verdict>
+Citations: <locators>
+Gap: <gap>
+
+<verdict> is On track, Drifting, Looping, Stalled or Cannot judge, or none when focus did not
+admit the session. <locators> are the target item positions or item IDs the verdict cites,
+separated by commas, or none. <gap> is none for On track, Drifting, Looping or Stalled; for
+Cannot judge it is goal-missing (no goal anchor), goal-contradictory (goal anchors that
+contradict each other) or coverage-budget (decisive history beyond the read budget); it is
+not-admitted together with Verdict: none.
+
+The invocation starts on the next line and is the developer's exact selection:
+effective-flow focus session-thread-01 goal: Upgrade the service from Node.js 20 to Node.js 22 and get CI green on Node.js 22.
