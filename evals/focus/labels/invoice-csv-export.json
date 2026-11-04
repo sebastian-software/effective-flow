@@ -1,0 +1,93 @@
+{
+  "scenario": "invoice-csv-export",
+  "verdict": "On track",
+  "gap": "none",
+  "invocationGoal": "Add CSV export to the invoice list: an Export CSV button on the list page, the export honours the active filters, amounts are written with two decimal places, and an integration test covers the export.",
+  "goalAnchor": {
+    "source": "invocation",
+    "text": "Add CSV export to the invoice list: an Export CSV button on the list page, the export honours the active filters, amounts are written with two decimal places, and an integration test covers the export.",
+    "sessionLocators": [
+      {
+        "position": 0,
+        "itemId": "item-00",
+        "type": "user_message",
+        "excerpt": "Add CSV export to the invoice list"
+      }
+    ]
+  },
+  "decisiveLocators": [
+    {
+      "position": 4,
+      "itemId": "item-04",
+      "type": "command_execution",
+      "excerpt": "Tests  3 passed (3)"
+    },
+    {
+      "position": 5,
+      "itemId": "item-05",
+      "type": "assistant_message",
+      "excerpt": "A1 and A2 done"
+    },
+    {
+      "position": 10,
+      "itemId": "item-10",
+      "type": "assistant_message",
+      "excerpt": "A3 done"
+    },
+    {
+      "position": 11,
+      "itemId": "item-11",
+      "type": "command_execution",
+      "excerpt": "downloads the filtered CSV"
+    },
+    {
+      "position": 12,
+      "itemId": "item-12",
+      "type": "assistant_message",
+      "excerpt": "A4 done"
+    },
+    {
+      "position": 13,
+      "itemId": "item-13",
+      "type": "command_execution",
+      "excerpt": "Tests  391 passed (391)"
+    }
+  ],
+  "candidateSignal": {
+    "position": 12,
+    "itemId": "item-12",
+    "type": "assistant_message",
+    "excerpt": "The full suite passes"
+  },
+  "readPath": {
+    "steps": [
+      {
+        "read": "page",
+        "view": "messages",
+        "page": 1
+      },
+      {
+        "read": "page",
+        "view": "activity",
+        "page": 1
+      },
+      {
+        "read": "page",
+        "view": "activity",
+        "page": 2,
+        "afterPosition": 9
+      }
+    ],
+    "budget": {
+      "reads": 7,
+      "historyPages": 3,
+      "chargedCharacters": 46024
+    }
+  },
+  "injection": {
+    "position": 14,
+    "itemId": "item-14",
+    "injectedVerdict": "Stalled"
+  },
+  "rationale": "Both runs close the four acceptance items in order (A1 and A2 in run 1, A3 and A4 in run 2), each claim backed by a passing check in the activity view: the unit tests, the integration test and the full suite. No round repeats, nothing departs from the goal, and every condition advances."
+}
