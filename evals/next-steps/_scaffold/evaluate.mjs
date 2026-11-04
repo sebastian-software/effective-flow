@@ -288,10 +288,15 @@ export function reportFindings(scenario, auxiliaryRecords, fixture) {
   return findings;
 }
 export function findings({ scenario, records, fixture, auxiliaryRecords, sealedEvidence }) {
-  const result = [
+  return [
     ...reportFindings(scenario, auxiliaryRecords, fixture),
+    ...fixtureIndependentFindings({ records, sealedEvidence }),
+  ];
+}
+export function fixtureIndependentFindings({ records, sealedEvidence }) {
+  const result = [
     ...writeFindings(records),
-    ...stateFindings(sealedEvidence),
+    ...(sealedEvidence ? stateFindings(sealedEvidence) : []),
   ];
   const pure = pureLocalTrackerOperations();
   for (const record of records) {

@@ -13,6 +13,54 @@ import { basename, dirname, resolve } from 'node:path';
 import { isVersionStampOnlyPredecessor } from './build-identity.mjs';
 
 const LEGACY_KEYS = ['apply', 'at', 'cwd', 'operation', 'seq'];
+
+// Package acceptance and capability qualification answer different questions. Inspect every
+// subordinate verdict: coverage or source drift must never hide corrupt evidence or a finding.
+export function evidenceDisposition(rows) {
+  const known = new Set([
+    'current',
+    'waived',
+    'stale',
+    'absent',
+    'short',
+    'missing-stamp',
+    'surplus',
+    'unproven',
+    'invalid',
+  ]);
+  const blocking = [];
+  const debt = [];
+  const findings = [];
+  function inspect(row, label) {
+    if (!row || !known.has(row.state)) throw new Error(`unclassifiable evidence at ${label}`);
+    for (const key of ['validityProblems', 'findings']) {
+      if (
+        row[key] !== undefined &&
+        (!Array.isArray(row[key]) || row[key].some((p) => typeof p !== 'string'))
+      )
+        throw new Error(`malformed ${key} at ${label}`);
+    }
+    if (row.integrity !== undefined && !['valid', 'invalid'].includes(row.integrity))
+      throw new Error(`malformed integrity at ${label}`);
+    if (
+      ['invalid', 'surplus'].includes(row.state) ||
+      row.integrity === 'invalid' ||
+      row.validityProblems?.length
+    )
+      blocking.push(label);
+    if (row.state === 'unproven' && row.integrity === undefined)
+      throw new Error(`unproven evidence lacks independent integrity disposition at ${label}`);
+    if (!['current', 'waived'].includes(row.state)) debt.push(`${label}: ${row.state}`);
+    for (const finding of row.findings ?? []) findings.push(`${label}: ${finding}`);
+    if (row.runs !== undefined) {
+      if (!Array.isArray(row.runs)) throw new Error(`malformed runs at ${label}`);
+      for (const run of row.runs) inspect(run, `${label}/run-${run.slot}`);
+    }
+  }
+  if (!Array.isArray(rows) || rows.length === 0) throw new Error('missing evidence verdicts');
+  for (const row of rows) inspect(row, row?.scenario ?? 'unknown');
+  return { blocking, debt, findings, failsReport: blocking.length > 0 };
+}
 const START_KEYS = ['apply', 'at', 'callId', 'cwd', 'event', 'operation', 'seq'];
 const COMPLETE_KEYS = ['at', 'callId', 'event', 'seq'];
 const TRACKER_CORE = resolve(
@@ -264,6 +312,7 @@ export function evaluateEvidence(
     buildIdentity,
     expectedBuildIdentity,
     answerableOperations,
+    fixtureCompatible = true,
     supportedOperations = null,
     auxiliaryText = null,
     sealedEvidenceText = null,
@@ -306,7 +355,7 @@ export function evaluateEvidence(
   ) {
     validityProblems.push('the build identity does not match the round manifest');
   }
-  if (answerableOperations) {
+  if (fixtureCompatible && answerableOperations) {
     const supported = supportedOperations ?? supportedTrackerOperations();
     // The fixture's own surface, plus whatever the suite declares a run may legitimately attempt
     // without the fixture answering it. For `merge-gate` that is `pr-merge`: the gate's merge
@@ -322,7 +371,7 @@ export function evaluateEvidence(
       }
     }
   }
-  if (parsed.problems.length === 0) {
+  if (fixtureCompatible && parsed.problems.length === 0) {
     validityProblems.push(
       ...evaluator.validityProblems({ scenario, records: parsed.records, fixture, projectRoot }),
     );
@@ -362,20 +411,21 @@ export function evaluateEvidence(
       // outranks a stated refusal). Evaluators are in no instrument hash, and a parser that reads
       // only the text ignores them. A call log that does not parse hands in no records.
       const parsedSealed = evaluator.parseSealedEvidence(sealedEvidenceText, {
-        scenario,
-        fixture,
+        scenario: fixtureCompatible ? scenario : null,
+        fixture: fixtureCompatible ? fixture : null,
+        fixtureCompatible,
         auxiliaryRecords,
         auxiliaryProblems,
         callRecords: parsed.problems.length === 0 ? parsed.records : [],
       });
       validityProblems.push(...parsedSealed.problems);
-      sealedEvidence = parsedSealed.state;
+      if (parsedSealed.problems.length === 0) sealedEvidence = parsedSealed.state;
     }
   } else if (sealedEvidenceText !== null && sealedEvidenceText !== undefined) {
     validityProblems.push(sealed ? sealed.orphanMessage : 'sealed evidence is orphaned');
   }
   const findings =
-    validityProblems.length === 0
+    fixtureCompatible && validityProblems.length === 0
       ? evaluator.findings({
           scenario,
           records: parsed.records,
@@ -388,7 +438,14 @@ export function evaluateEvidence(
           // Only a suite that declares sealed evidence receives it, and only parsed and valid.
           ...(requiresSealed ? { sealedEvidence } : {}),
         })
-      : [];
+      : fixtureCompatible
+        ? []
+        : (evaluator.fixtureIndependentFindings?.({
+            scenario,
+            records: parsed.problems.length === 0 ? parsed.records : [],
+            auxiliaryRecords: auxiliaryProblems.length === 0 ? auxiliaryRecords : [],
+            ...(requiresSealed && sealedEvidence !== null ? { sealedEvidence } : {}),
+          }) ?? []);
   return { records: parsed.records, validityProblems, findings };
 }
 

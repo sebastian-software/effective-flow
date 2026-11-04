@@ -57,9 +57,9 @@ Omitted profile values are recorded explicitly as "unknown". A suite may pin pro
 prepare then rejects any deviation, an omitted pinned flag included, and publish rejects a
 generation whose archived profile deviates. No command launches a model.
 verify reads the archived corpus and writes nothing: report (the default) prints the verdict and
-exits 0 even when a scenario is stale, strict additionally exits 1 on any scenario that is not
-current. Only a failure to reach a verdict at all — a build that fails, an unreadable archived
-file — exits nonzero in report mode.
+exits 0 for freshness/coverage debt and valid recorded negative outcomes. Integrity failures,
+surplus evidence, unknown states and verifier errors fail in both modes. Strict additionally
+exits 1 on any scenario that is not current; package reporting never qualifies a capability.
 `;
 }
 
@@ -124,7 +124,7 @@ function printStatus(rows) {
 }
 
 // A test seam, and the only one this CLI carries. The exit-code mapping — report mode exits 0 on a
-// stale verdict, strict mode exits 1, and both exit nonzero when no verdict could be produced — is
+// stale verdict, strict mode exits 1, and both reject invalid evidence or a verifier error — is
 // the property the release gate rests on, and the only honest way to observe it is to run this
 // process against a corpus that is stale and against one that cannot be read. Neither state can be
 // produced in the repository's own `results/` without leaving damaged evidence behind.
@@ -166,12 +166,23 @@ function printFreshness(report) {
   // makes possible — a verdict about some other directory — is exactly the one an operator cannot
   // spot from the scenario lines alone.
   process.stdout.write(`corpus: ${report.resultsDir}\n`);
-  for (const { scenario, state, runs, drift, details } of report.scenarios) {
+  for (const { scenario, state, current, runs, drift, details } of report.scenarios) {
     const summary = runs.length === 0 ? 'no archived runs' : runSummary(runs);
     process.stdout.write(
       `${scenario}\t${state}\t${runs.length}/${report.requiredRuns} run(s)\t${summary}\n`,
     );
+    if (current) process.stdout.write(`  candidate basis: ${current}\n`);
     if (details) process.stdout.write(`  ${details}\n`);
+    for (const run of runs) {
+      process.stdout.write(
+        `  run-${run.slot}: freshness=${run.freshness ?? run.state}, integrity=${run.integrity ?? 'unspecified'}\n`,
+      );
+      for (const problem of run.validityProblems ?? [])
+        process.stdout.write(`    invalid: ${problem}\n`);
+      if (run.fixtureEvaluation) process.stdout.write(`    ${run.fixtureEvaluation}\n`);
+      for (const finding of run.findings ?? [])
+        process.stdout.write(`    recorded negative: ${finding}\n`);
+    }
     // Named individually, because these are the runs somebody has to act on: which slots went
     // stale is what decides whether a scenario is re-recorded or the whole round is.
     //
@@ -180,9 +191,10 @@ function printFreshness(report) {
     // to look one of them up in a round manifest or in another scenario's stamp and decide whether
     // the whole corpus drifted or only this run did.
     for (const run of runs) {
-      if (run.state !== 'stale' && run.state !== 'missing-stamp') continue;
-      process.stdout.write(`  run-${run.slot}: ${run.state}\n`);
-      if (run.state !== 'stale') continue;
+      const freshness = run.freshness ?? run.state;
+      if (freshness !== 'stale' && freshness !== 'missing-stamp') continue;
+      process.stdout.write(`  run-${run.slot}: ${freshness}\n`);
+      if (freshness !== 'stale') continue;
       process.stdout.write(`    archived: ${run.archived}\n    current:  ${run.current}\n`);
     }
     // The moved files, for the first stale run of the scenario. This is the bisect list an operator
@@ -193,6 +205,14 @@ function printFreshness(report) {
     process.stdout.write('  changed since the round was recorded:\n');
     for (const line of drift) process.stdout.write(`${line}\n`);
   }
+  process.stdout.write(`evidence debt: ${report.debt.join('; ') || 'none'}\n`);
+  process.stdout.write(`integrity blockers: ${report.blocking.join('; ') || 'none'}\n`);
+  for (const finding of report.findings)
+    process.stdout.write(`recorded negative (applicability requires triage): ${finding}\n`);
+  if (['build-context', 'focus'].includes(report.suite))
+    process.stdout.write(
+      `disabled capability: ${report.suite === 'build-context' ? 'automatic planned-build delegation (inline Quality available)' : 'snapshot-host execution, follow-up and sends'}; activation requires current applicable acceptance\n`,
+    );
 }
 
 async function main() {
@@ -273,16 +293,18 @@ async function main() {
       throw new Error(`--mode accepts report or strict, not ${mode}`);
     }
     const report = verifyFreshness(suite, { resultsDir: verifyResultsDir() });
-    printFreshness(report);
-    // Report mode reaches this line with every verdict it can produce, stale included, and exits 0.
-    // Only a thrown error — a build that failed, an archived file that would not parse — reaches
-    // the handler below, which is what keeps an ordinary pull request green while still failing
-    // loudly when the step could not answer at all.
+    printFreshness({ ...report, suite: suite.name });
+    // Freshness debt and valid negative outcomes remain visible. Integrity failures are blocking
+    // even when a verdict exists; thrown verifier errors take the same nonzero process boundary.
+    if (report.failsReport) {
+      process.stderr.write(`Invalid evidence: ${report.blocking.join('; ')}\n`);
+      process.exitCode = 1;
+    }
     if (mode === 'strict' && report.failsStrict) {
       const failing = report.scenarios.filter(({ state }) => state !== 'current');
       process.stderr.write(
         `${failing.map(({ scenario, state }) => `${scenario} is ${state}`).join('; ')}\n` +
-          'A release needs a current round: re-record the evidence before releasing ' +
+          'Full suite acceptance is unproven: resolve debt, invalidity and recorded negatives before activation ' +
           `(see evals/${suite.name}/README.md).\n`,
       );
       process.exitCode = 1;

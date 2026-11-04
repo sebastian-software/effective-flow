@@ -1,6 +1,6 @@
 # Focus host acceptance
 
-**Status: T3 observed/report-only snapshot requalified on November 4, 2026 (E, candidate `ada4fdae`). All send paths and the follow-up path remain disabled. Release duties: a passing record merged before the release PR merges, and the maintainer's drift comment on the release PR (see "Candidate binding").**
+**Status: snapshot-host execution is disabled before target or ancestry reads by the current source restriction. Phase E passed on November 4, 2026 for candidate `ada4fdae`; that record is preserved below, but this policy changes a focus source and E does not qualify the changed artifact. Follow-up and all sends remain disabled independently. Activation follows [the capability policy](../adr/pragmatic-test-release-policy.md).**
 
 This page is the package-4 acceptance record for `/effective-flow focus`. It must be updated only
 from real end-to-end runs of the built candidate, using throwaway targets and the existing host
@@ -36,21 +36,24 @@ uncommitted implementation. These SHA-256 digests bind the actual tested bytes:
 The built portable `shared/retro-native-sources.md` had the same digest as its source. Generated
 artifacts are not tracked.
 
-**Binding-drift rule.** A record binds its candidate only. A later change to a digest-bound file
-outside the focus sources (`src/tools/focus.md`, `src/shared/focus-session-contract.md`,
-`src/shared/focus-follow-up.md`, `src/shared/retro-native-sources.md`), and outside the `focus`
-`CONTEXT_BUDGET_LINES` line in `build.mjs`, is drift and owes no requalification. A change to a
-focus source does owe requalification.
+**Binding-drift rule.** A record binds its candidate only. A change to a focus source
+(`src/tools/focus.md`, `src/shared/focus-session-contract.md`, `src/shared/focus-follow-up.md`,
+`src/shared/retro-native-sources.md`) owes candidate-bound requalification. Other digest-bound
+changes are exempt only when the maintainer demonstrates that they are nonbehavioral for the
+qualified path, for example a context-budget adjustment with identical rendered focus bytes.
 
 For the built files, the maintainer rebuilds the release head and compares the digests with the
-record's table. A built-file change caused by a focus source owes requalification. A change caused
-by an eagerly included fragment (for example `chat-language`, `delegation-mandate`,
-`skill-discovery`) or by `build.mjs` rendering is drift.
+record's table. Material changes to the loaded artifact require candidate-bound acceptance,
+including changes from eagerly included fragments (for example `chat-language`,
+`delegation-mandate`, `skill-discovery`) or `build.mjs` rendering. Their location outside the focus
+sources is not an exemption; only a documented, demonstrably nonbehavioral difference is binding
+drift that may retain the earlier qualification.
 
-Before merging the release PR, the maintainer comments on it naming the record relied on, every
-digest-bound file changed since that record, and the cause of each changed built file.
+Before activating snapshot execution, the maintainer names the applicable record, every
+digest-bound file changed since that record, and the cause of each changed built file. Package
+reporting is not capability qualification; material rendered changes retain the requalification duty.
 
-**Superseded binding.** E is the current snapshot binding; the D binding above is history. The
+**Recorded bindings.** E is the latest recorded snapshot binding; current source execution remains disabled until its applicable acceptance is satisfied; the D binding above is history. The
 follow-up mode change (#613) edited `src/tools/focus.md`, `src/shared/focus-session-contract.md` and
 `build.mjs`, so the D digests no longer match the source, and the D requalification below binds only
 its recorded candidate.
@@ -259,21 +262,24 @@ delivery was **Not attempted**.
 - Each case ran once.
 - The state-to-history finish race, the incidental-content behavior of native metadata reads and
   the absence of a calibration claim remain as described for C and D.
-- The `focus` eval suite is still stale, so the next release still owes a re-recorded round.
+- At the E review, stale `focus` evidence was considered a next-release re-recording obligation.
+  The current [capability policy](../adr/pragmatic-test-release-policy.md) supersedes that blanket
+  release obligation: stale evidence remains visible package debt, while snapshot activation still
+  requires applicable candidate-bound acceptance. E does not qualify the current source.
 
 ## Acceptance matrix
 
-| Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                | If unavailable                                                                                 |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| T3 observed, report-only                        | The built candidate loads `focus`; an exact throwaway target is admitted; the observer reads only the selected source with bounded coverage; identity, scope, redaction, cited evidence, and one snapshot verdict are recorded. | Passed E on the bound candidate `ada4fdae`. History: passed D on the bound corrected candidate; C also passed before the spelling correction. The D binding is superseded by the follow-up mode change (#613) and is history. | Return missing candidate-bound observed/report-only acceptance; do not claim ordinary support. |
-| T3 delegated correction                         | A running delegated target is rechecked immediately before dispatch, and an atomic conditional primitive rejects a target that finishes between the state read and steer without starting a fresh task.                         | Disabled; no candidate-bound proof exists, and the required atomic conditional primitive is not established.                                                                                                                  | Report-only; do not invoke a correction.                                                       |
-| T3 idle top-level correction                    | Candidate-bound acceptance of the documented new-turn `queue` form, including exact same-run confirmation and outcome classification.                                                                                           | Disabled; idle top-level acceptance is absent.                                                                                                                                                                                | Do not invoke a correction.                                                                    |
-| Codex desktop observed                          | Candidate-bound deep-link reading, trusted self/ancestor refusal, bounded coverage, redaction, and cited verdict are observed on the loaded artifact.                                                                           | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                               | Return the specific missing capability; do not read or send.                                   |
-| Local Claude Code self-report/correction        | Candidate-bound default-permission top-level proof, `[ref]`-qualified delivery, bounded request/reply and nonce checks, refusal/late/foreign-reply handling, and a separate confirmed correction case.                          | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                               | Return the specific missing capability; do not look up, request, wait, or correct.             |
-| Codex desktop send                              | A host-supported sender is independently observed and candidate-bound.                                                                                                                                                          | Disabled in this version; the spike recorded only a model self-report, not a host sender.                                                                                                                                     | Never send through this path.                                                                  |
-| T3 observed follow-up (schedule_task, T3/Codex) | The follow-up qualification checklist below is recorded on the built candidate, with trusted host context naming provider instance `codex` for the observer thread.                                                             | Disabled; no candidate-bound run exists.                                                                                                                                                                                      | Offer no follow-up; `follow-up stop` and a tick's deletion of its own handle stay available.   |
+| Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| T3 observed, report-only                        | The built candidate loads `focus`; an exact throwaway target is admitted; the observer reads only the selected source with bounded coverage; identity, scope, redaction, cited evidence, and one snapshot verdict are recorded. | Passed E on the bound candidate `ada4fdae`. History: passed D on the bound corrected candidate; C also passed before the spelling correction. The D binding is superseded by the follow-up mode change (#613) and is history. Current source execution is disabled; E qualifies its recorded artifact only. | Return missing current snapshot qualification before target or ancestry reads; do not claim support. |
+| T3 delegated correction                         | A running delegated target is rechecked immediately before dispatch, and an atomic conditional primitive rejects a target that finishes between the state read and steer without starting a fresh task.                         | Disabled; no candidate-bound proof exists, and the required atomic conditional primitive is not established.                                                                                                                                                                                                | Report-only; do not invoke a correction.                                                             |
+| T3 idle top-level correction                    | Candidate-bound acceptance of the documented new-turn `queue` form, including exact same-run confirmation and outcome classification.                                                                                           | Disabled; idle top-level acceptance is absent.                                                                                                                                                                                                                                                              | Do not invoke a correction.                                                                          |
+| Codex desktop observed                          | Candidate-bound deep-link reading, trusted self/ancestor refusal, bounded coverage, redaction, and cited verdict are observed on the loaded artifact.                                                                           | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                                                                                             | Return the specific missing capability; do not read or send.                                         |
+| Local Claude Code self-report/correction        | Candidate-bound default-permission top-level proof, `[ref]`-qualified delivery, bounded request/reply and nonce checks, refusal/late/foreign-reply handling, and a separate confirmed correction case.                          | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                                                                                             | Return the specific missing capability; do not look up, request, wait, or correct.                   |
+| Codex desktop send                              | A host-supported sender is independently observed and candidate-bound.                                                                                                                                                          | Disabled in this version; the spike recorded only a model self-report, not a host sender.                                                                                                                                                                                                                   | Never send through this path.                                                                        |
+| T3 observed follow-up (schedule_task, T3/Codex) | The follow-up qualification checklist below is recorded on the built candidate, with trusted host context naming provider instance `codex` for the observer thread.                                                             | Disabled; no candidate-bound run exists.                                                                                                                                                                                                                                                                    | Offer no follow-up; `follow-up stop` and a tick's deletion of its own handle stay available.         |
 
-Every advertised path must have a completed row backed by a candidate record whose differences
+Activation of any advertised path requires a completed row backed by a candidate record whose differences
 from the current source are only binding drift. A failed or unavailable row is a missing-capability result, not a reason to broaden permissions, switch hosts,
 use a name-only address, or substitute a private transcript or log.
 
@@ -284,7 +290,7 @@ merged candidate on this page. For each one, record the setup, the trigger, the 
 output, and the schedule state verified in the T3 UI; focus never lists schedules.
 
 - renewed snapshot qualification, including self and ancestor refusal, recorded before the next
-  release PR merges — recorded: E for `ada4fdae`;
+  activation — recorded: E for `ada4fdae`; this policy changes a focus source, so current activation still needs its applicable acceptance;
 - a quiet unchanged tick;
 - a genuine repetition across tick boundaries;
 - a long test or approval wait without a false loop;

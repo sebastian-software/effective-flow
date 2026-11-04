@@ -5,20 +5,40 @@ behavioural recordings, paired workloads or native compatibility recordings**. C
 quality preservation and release readiness remain unproven. Unit tests use synthetic fixtures;
 CI never launches a model. Report mode reports missing evidence; strict mode fails it.
 
-## Bounded PR581 release disposition
+## Package acceptance and capability activation
 
-The complete strict verifier remains the acceptance authority. It stays `FAILED`/`UNPROVEN`
+The [capability policy](../../docs/adr/pragmatic-test-release-policy.md) supersedes blanket release
+freshness. CI reports all five suites in report mode on ordinary and release PRs alike. Coverage
+and identity drift remain debt; independent integrity failures, surplus, unknown results and errors
+block. Recorded negative lane results remain visible under stale rollups for applicability/security
+triage. Strict verification retains full acceptance semantics.
+
+Archive provenance and structural evidence are checked independently of current fixture bytes.
+When fixtures differ, fixture-dependent re-evaluation is explicitly unproven rather than archive
+corruption; strict acceptance still fails. Build-context's recorded workflow observations are
+fixture-independent and retain their negative findings even when the current fixture is unavailable.
+
+Automatic planned-build delegation remains disabled; `build` selects complete inline Quality
+execution before mutation, retaining every specialist and gate. The full behavioural, paired and
+native contract below is still owed before reviewed activation. Fast default-off does not qualify
+the Quality delegation path. No recording campaign or host/model re-pin is authorized here.
+
+## Historical bounded PR581 disposition (no CI activation)
+
+The complete strict verifier remains the capability acceptance authority, not the package or
+release CI gate. It stays `FAILED`/`UNPROVEN`
 until all required populations below are current, valid, and bound to the same candidate and
 instrument: 16 behavioural variants with five recordings each, four five-pair portable Quality
 cells, and one complete native lane for Codex and Claude. A partial, stale, invalid, failed,
 synthetic, or archived record is not an absence and cannot be converted into a pass. Missing
 diagnostics remain outside `results/`.
 
-For the bounded provisional implementation on feature PR581, CI has a separate named blocking
-disposition after the ordinary evidence loop. It admits only the exact complete absence of those
+Before the current capability policy, the bounded provisional implementation on feature PR581
+specified a separate named blocking CI disposition after the ordinary evidence loop. That
+superseded disposition admitted only the exact complete absence of those
 22 populations, as listed by `ABSENT_POPULATIONS` in
 `evals/build-context/_scaffold/provisional-release.mjs`: 16 behavioural entries, four paired
-cells, and two native lanes. The other behavioural suites remain strict. No model, role,
+cells, and two native lanes. This historical disposition does not change the package policy or activate any capability. No model, role,
 authority, or quality invariant may fail, and the disposition makes no performance, cost, context,
 or quality-equivalence claim.
 
@@ -38,13 +58,14 @@ the actual user authority and digest, an independent policy report with closed m
 and the original protected host request, preparation, policy, run, jobs, logs, and materialization
 files. The live release PR must remain open and unmerged against `develop` at the authorized head.
 After final source, original host qualification, and bound review are complete, the release
-operator creates the detached authorization JSON, publishes it as a Git Blob through the API,
-then sets both trusted repository variables and reruns CI. GitHub Blob availability is not
+operator would create the detached authorization JSON, publish it as a Git Blob through the API,
+then set both trusted repository variables and rerun that historical CI gate. These are historical
+steps, not the current package or release procedure. GitHub Blob availability is not
 guaranteed throughout the maximum seven-day authorization window; the pins provide no storage
 guarantee. If the exact blob is unavailable, reading it and verifying admission fail closed. The
 original validation snapshot branch is create-only and immutable: never move or overwrite it.
 No record or pin is created now, and no new branch or delivery PR is used. Repository variables
-provide only the 40-hex blob ID and its `sha256:` digest; absent pins fail the ordinary strict route.
+retain the 40-hex blob ID and its `sha256:` digest for this explicit verifier; CI no longer consumes these pins.
 
 Bootstrap requires a clean, committed final source candidate. The CLI rejects tracked changes and
 untracked files, so foreign plans are preserved separately and a separate clean committed source
@@ -572,7 +593,7 @@ retains all 21 definitions. Current installation inventories remain schema-2-onl
 This recorder change changes the instrument identity. Retain both failed attempts and their
 original identities; do not resume or relabel them. Any later actual recording needs the newly
 reviewed, clean candidate and instrument pin, including a matching baseline build receipt. The
-six scenarios, twenty pairs, native lifecycle/continuation lanes and release freshness gates are
+six scenarios, twenty pairs, native lifecycle/continuation lanes and capability acceptance gates are
 unchanged.
 
 A model-free continuation inspected the official local App-Server's full turn hydration and
@@ -622,4 +643,4 @@ labels, loaded contracts, later messages and hook registration cannot replace it
 
 The new instrument needs a fresh clean candidate/baseline pin. Existing failed archives remain
 unchanged and ineligible. Both PRs stay draft; full behavioral, paired, native continuation and
-release-freshness acceptance remains outstanding.
+capability acceptance remains outstanding.

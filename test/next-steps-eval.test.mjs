@@ -21,7 +21,7 @@ import { renderPrompt, promptTemplate } from '../evals/_scaffold/prompt.mjs';
 import { provisionSlot } from '../evals/_scaffold/scaffold.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { loadSuite } from '../evals/_scaffold/suite-loader.mjs';
-import { evaluateEvidence } from '../evals/_scaffold/evaluate.mjs';
+import { evaluateEvidence, evidenceDisposition } from '../evals/_scaffold/evaluate.mjs';
 import { reportRecord } from '../evals/iterate/_scaffold/report-channel.mjs';
 import {
   EXPECTATIONS,
@@ -573,6 +573,86 @@ test('the generic evidence boundary rejects missing or forged report channels an
   );
   assert.ok(
     evaluateEvidence(suite, { ...common, sealedEvidenceText: '{}' }).validityProblems.length > 0,
+  );
+});
+
+test('fixture drift retains next-steps forbidden calls and valid sealed-state negatives without report judgments', () => {
+  const scenario = 'q2a-canonical-record-lags-merged';
+  const common = {
+    scenario,
+    fixture: {},
+    fixtureCompatible: false,
+    projectRoot: '/tmp/eval/project',
+    auxiliaryText: JSON.stringify({ ...reportRecord('A different archived report.'), seq: 1 }),
+    sealedEvidenceText: JSON.stringify(untouched),
+  };
+  for (const operation of [
+    'issue-comment',
+    'pr-merge',
+    'thread-ledger-record',
+    'thread-ledger-lookup',
+    'probe',
+    'viewer-read',
+    'repository-resolve',
+    'issue-read',
+    'issue-comments-read',
+  ]) {
+    const result = evaluateEvidence(suite, {
+      ...common,
+      logText: JSON.stringify({
+        seq: 1,
+        at: '2026-11-04T00:00:00.000Z',
+        cwd: common.projectRoot,
+        operation,
+        apply: false,
+      }),
+    });
+    assert.deepEqual(result.validityProblems, [], operation);
+    assert.ok(result.findings.length > 0, operation);
+    assert.ok(
+      result.findings.every((finding) => finding.includes(operation)),
+      operation,
+    );
+    const disposition = evidenceDisposition([
+      { state: 'stale', integrity: 'valid', findings: result.findings },
+    ]);
+    assert.equal(disposition.failsReport, false);
+    assert.equal(disposition.findings.length, result.findings.length);
+  }
+  assert.deepEqual(evaluateEvidence(suite, { ...common, logText: '' }).findings, []);
+  const changed = evaluateEvidence(suite, {
+    ...common,
+    logText: '',
+    sealedEvidenceText: JSON.stringify({
+      ...untouched,
+      after: { '.git/config': ['file', 0o644, `sha256:${'1'.repeat(64)}`] },
+    }),
+  });
+  assert.deepEqual(changed.validityProblems, []);
+  assert.deepEqual(changed.findings, ['recommendation changed project/Git artifacts: .git/config']);
+});
+
+test('fixture drift keeps corrupt next-steps sealed state blocking without hiding forbidden calls', () => {
+  const result = evaluateEvidence(suite, {
+    scenario: 'q2a-canonical-record-lags-merged',
+    logText: JSON.stringify({
+      seq: 1,
+      at: '2026-11-04T00:00:00.000Z',
+      cwd: '/tmp/eval/project',
+      operation: 'issue-comment',
+      apply: false,
+    }),
+    fixture: {},
+    fixtureCompatible: false,
+    projectRoot: '/tmp/eval/project',
+    auxiliaryText: JSON.stringify({ ...reportRecord('Archived report.'), seq: 1 }),
+    sealedEvidenceText: '{}',
+  });
+  assert.match(result.validityProblems.join('\n'), /invalid sealed recommendation state/);
+  assert.match(result.findings.join('\n'), /issue-comment/);
+  assert.equal(
+    evidenceDisposition([{ state: 'stale', integrity: 'invalid', ...result }]).failsReport,
+    true,
   );
 });
 

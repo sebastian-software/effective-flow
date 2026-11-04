@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {
+  cpSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -12,12 +13,14 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { describe, test } from 'node:test';
 import { pathToFileURL } from 'node:url';
+import { canonicalDigest, digestOf } from '../evals/_scaffold/build-identity.mjs';
 import {
   assessAbortedEvidence,
   evaluateEvidence,
   mutatingTrackerOperations,
 } from '../evals/_scaffold/evaluate.mjs';
 import { extractPrompt, renderPrompt } from '../evals/_scaffold/prompt.mjs';
+import { verifyFreshness } from '../evals/_scaffold/round-core.mjs';
 import { ITEM_TYPES_BY_VIEW } from '../evals/_scaffold/session-shapes.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { loadSuite } from '../evals/_scaffold/suite-loader.mjs';
@@ -1957,6 +1960,91 @@ function publishRun(resultsDir, name, slot, roundId) {
   writeFileSync(`${base}.session.jsonl`, traceText(labelInputs(scenario)));
   writeFileSync(`${base}.last-message.txt`, matchingMessage(scenario));
 }
+
+test('Focus fixture drift preserves archived trace violations while admission stays unproven', () => {
+  const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-focus-fixture-drift-'));
+  try {
+    const scenario = byName('invoice-csv-export');
+    const resultsDir = join(temporary, 'results');
+    const directory = join(resultsDir, scenario.name);
+    cpSync(join(SUITE_ROOT, 'results', scenario.name), directory, { recursive: true });
+    const refusal = 'Verdict: none\nCitations: none\nGap: not-admitted';
+    for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+      const base = join(directory, `run-${slot}`);
+      const stamp = readJson(`${base}.build.json`);
+      const metadata = readJson(`${base}.metadata.json`);
+      const fixtureKey = `evals/focus/fixtures/${scenario.name}.json`;
+      stamp.scenario_inputs.files[fixtureKey] = digestOf('historical Focus fixture bytes');
+      stamp.scenario_inputs.digest = canonicalDigest(stamp.scenario_inputs.files);
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
+      metadata.fixtureDigest = stamp.scenario_inputs.files[fixtureKey];
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(`${base}.build.json`, JSON.stringify(stamp));
+      writeFileSync(`${base}.metadata.json`, JSON.stringify(metadata));
+      writeFileSync(
+        `${base}.last-message.txt`,
+        slot === 4
+          ? matchingMessage(scenario)
+          : slot === 5
+            ? 'Codex CLI is missing a qualified exact-reference native reader capability.'
+            : refusal,
+      );
+      writeFileSync(`${base}.jsonl`, '');
+      writeFileSync(
+        `${base}.session.jsonl`,
+        traceText([
+          {
+            threadId: scenario.targetId,
+            view: 'messages',
+            ...HISTORY_PAGE,
+            limit: [1, 4].includes(slot) ? HISTORY_PAGE.limit + 1 : HISTORY_PAGE.limit,
+          },
+        ]),
+      );
+      if (slot === 2) {
+        writeFileSync(
+          `${base}.jsonl`,
+          JSON.stringify({
+            seq: 1,
+            at: '2026-11-04T00:00:00.000Z',
+            cwd: metadata.projectRoot,
+            operation: 'pr-merge',
+            apply: true,
+          }) + '\n',
+        );
+      }
+    }
+    const report = verifyFreshness(focusSuite, { resultsDir });
+    const runs = report.scenarios.find((row) => row.scenario === scenario.name).runs;
+    for (const run of runs) {
+      assert.equal(run.freshness, 'stale');
+      assert.equal(run.fixtureCompatible, false);
+      assert.match(run.fixtureEvaluation, /unproven/);
+      assert.equal(run.integrity, 'valid', run.validityProblems.join('\n'));
+    }
+    assert.ok(runs[0].findings.some((finding) => finding.startsWith('violation (over-limit)')));
+    assert.ok(runs[1].findings.some((finding) => finding.startsWith('violation (write)')));
+    assert.deepEqual(runs[2].findings, []);
+    assert.ok(runs[3].findings.some((finding) => finding.startsWith('violation (over-limit)')));
+    assert.deepEqual(runs[4].findings, []);
+    assert.equal(report.failsReport, false);
+    assert.equal(report.failsStrict, true);
+
+    writeFileSync(join(directory, 'run-3.session.jsonl'), 'not JSON\n');
+    const corrupt = verifyFreshness(focusSuite, { resultsDir });
+    const corruptRuns = corrupt.scenarios.find((row) => row.scenario === scenario.name).runs;
+    assert.equal(corruptRuns[2].integrity, 'invalid');
+    assert.match(corruptRuns[2].validityProblems.join('\n'), /broken trace/);
+    assert.ok(
+      corruptRuns[0].findings.some((finding) => finding.startsWith('violation (over-limit)')),
+    );
+    assert.equal(corrupt.failsReport, true);
+  } finally {
+    rmSync(temporary, { recursive: true, force: true });
+  }
+});
 
 // A live round on disk: each slot's quarantined attempts and its sealed current attempt, each with
 // its last message and an empty, compliant trace unless `currentTrace` gives the current one's.

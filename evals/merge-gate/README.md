@@ -1,8 +1,8 @@
 # Behavioural evals for `merge-gate`
 
 A behavioural safety net for `src/tools/merge-gate.md`, recorded deliberately rather than in CI: no
-runner here ever starts a model. What CI does read is the archived result, and the release pull
-request is where it has to still describe the build — see
+runner here ever starts a model. CI reads the archived result and reports its current basis and
+evidence debt on every PR — see
 [Freshness and the release gate](#freshness-and-the-release-gate). It exists because every other
 assertion guarding that file checks its **text**: a restructure can move a fail-closed rule out of
 reach of the run and the whole suite still passes, because the wording is present somewhere. This
@@ -549,58 +549,21 @@ scenario, with its runs counted by state and any waiver named, then the slots th
 the files that moved behind the first of them; it exits 0 even when a scenario is stale.
 `--mode strict` additionally exits 1 for any scenario that is not `current`.
 
-A scenario is one of five states, and they are kept apart because each one sends an operator
-somewhere different:
+The [pragmatic test and release policy](../../docs/adr/pragmatic-test-release-policy.md) separates
+package acceptance from capability qualification. CI verifies all five suites in report mode on
+ordinary and release PRs alike, after broad package checks. Stale, absent and short evidence is
+visible debt; it is never current acceptance. Validated waivers retain only their existing scope.
+Missing stamps are debt only where the archive contract does not require them. Surplus evidence,
+invalid archives, internal stamp inconsistencies, unknown states and verifier failures block in
+both modes. `unproven` can be debt only after independent integrity checks pass.
 
-| State     | Meaning                                                 | Remedy                                            |
-| --------- | ------------------------------------------------------- | ------------------------------------------------- |
-| `current` | every archived stamp still describes this tree          | nothing to do                                     |
-| `stale`   | a stamp describes another build, or a run carries none  | re-record the round                               |
-| `short`   | fewer runs than the five-of-five bar                    | finish the round                                  |
-| `surplus` | more runs than that bar — the shape publication rejects | reconcile the directory before publishing again   |
-| `absent`  | no archived runs at all                                 | record a round; nothing is proven about this gate |
-
-The count is read before the content, so a round that is both short and stale reports `short`; the
-remedies chain correctly, because a run recorded against the current tree leaves the rest of that
-round visibly stale on the next verdict.
-
-`surplus` exists because the count is wrong in two directions and the remedies are opposites:
-telling an operator to finish a round that is already over-complete costs more than the extra word
-in the vocabulary. Every state other than `current` fails `--mode strict`: at a release point
-"nothing was observed" is not an acceptable state, although it stays a legitimate skip in a fresh
-checkout.
-
-Only a failure to reach a verdict at all — a build that fails, an archived stamp that will not
-parse — exits nonzero in report mode: an unwelcome verdict is not an operational error, and
-conflating the two would turn every pull request red through the step that exists to keep it green.
-
-CI runs exactly that command in the `Behavioural eval evidence` step, the last step of the required
-`Format, test and build` job, once for every suite — this one and
-[`iterate`](../iterate/README.md) — with each suite's verdict in its own section of the job summary,
-every suite verified even after an earlier one failed, and the step failing if any did. That is the
-whole of CI's involvement with this layer: no model, no quota, no round. On an ordinary
-pull request the step reports — the verdict goes to the job summary and the check stays green even
-when the corpus is stale — because paying a round per pull request for a claim about the build that
-ships is the cost this arrangement removes. On the release pull request, recognised by its
-`release-please--` head-ref prefix, the same step runs strict and a stale, short, or absent corpus
-fails the required check. There is no waiver: without a current round there is no release.
-
-That moves the deadline, not the bar. Five of five still holds, the load set is still the derived
-one, and the evidence is still recorded by hand. What changed is when the invalidated round comes
-due — once per release rather than once per pull request that touches the load set — and that
-staleness is now visible, with its list of moved files, from the pull request that caused it. Record
-the round as an ordinary pull request into `develop`; never commit evidence onto the release branch,
-which release-please owns and force-pushes.
-
-Merging the re-record does not by itself re-run the release pull request's CI. It lands as a commit
-type release-please ignores, such as `test:`, and release-please does not refresh its pull request
-for it, so the strict step keeps its old red verdict. Give the release pull request a fresh
-`pull_request` event by closing and reopening it. The first such event can still test a stale merge
-commit: before reading a strict failure as stale evidence, check that the merge ref the run checked
-out already contains the re-record, and close and reopen once more if it does not. The close itself
-leaves no blocking check behind, because the `Close referenced issues` workflow guards each step
-rather than its job and so concludes `SUCCESS` on a close without a merge – once a release has
-delivered that workflow to `main`, since `pull_request_target` runs the default branch's copy.
+Every per-run validity result and recorded negative remains visible even under a short or stale
+rollup. A valid negative requires applicability/security triage, never a passing behavioural label.
+Known reachable security-critical defects block delivery. Strict verification retains full
+acceptance semantics, including failure on stale, absent, short, invalid or negative evidence.
+The five-of-five bar, manual recording procedures, archive assertions and host security boundaries
+are unchanged. Record activation evidence through an ordinary source PR to `develop`; no model
+runs in CI, and package release reporting cannot activate an unqualified capability.
 
 ### Evidence units and invalid runs
 
@@ -615,7 +578,7 @@ configured-reviewer route, its trace.
 Pairing is necessary, not sufficient. Selected runs must match the current scenario build identity.
 Publication may preserve unselected historical units byte-for-byte with self-consistent original
 provenance, unchanged scenario inputs and the pinned profile; `verify` still reports their moved
-skill or instrument as stale, and strict release verification rejects them. Every unit must carry
+skill or instrument as stale, and strict full-suite verification rejects them. Every unit must carry
 a readable and correctly rooted tracker log, request no operation the production helper supports
 but the fixture leaves undefined, and satisfy any scenario-specific validity rule. For the
 configured-reviewer route, a trace whose records are unreadable, carry another schema or sequence, or
@@ -671,8 +634,8 @@ The version still binds every run whose build differs in anything the version do
 
 That is a narrower trigger, not an absent one — but an invalidated round is no longer owed at the
 next merge. Two pull requests that both touch those files leave the corpus stale in the same way,
-and one round re-recorded before the next release answers for both; `verify` reports that staleness
-on every pull request in between and enforces it on the release pull request. A load pointer also
+and one applicable re-recorded round can answer for both; `verify` reports that debt
+on every pull request and strict verification enforces full capability acceptance. A load pointer also
 counts whether or not a run can take its branch: `shared/typography-rules.md` is hashed today only
 because `chat-language` points at it under `when: the resolved chat language is de`, a branch
 neither scenario reaches. That widening is a recorded decision rather than an accident, and its
@@ -711,8 +674,8 @@ correlated `complete` events are not additional calls.
   permanently red `pnpm test` in every checkout that has not spent quota on a run — CI included,
   which runs these assertions and never a model — is ignored within a week, and would cost more
   evidence than it gathers. `node --test` prints the skip reason beside the test, and the pass count
-  does not include it. `verify --mode strict` does fail on that same empty corpus, because at a
-  release point "nothing was observed" is not an acceptable state; in `pnpm test`, in any checkout,
+  does not include it. `verify --mode strict` does fail on that same empty corpus, because for full-suite
+  acceptance "nothing was observed" is not an acceptable state; in `pnpm test`, in any checkout,
   it stays a skip.
 - **Between one and four archived runs is a failure, not a skip.** The five-of-five bar is asserted
   rather than printed. Zero runs and a short round are different facts: zero describes a checkout
@@ -829,9 +792,8 @@ correlated `complete` events are not additional calls.
   This is a named residual, not a gap to be closed by weakening anything here.
 - **No round is ever run in CI**, which has neither the credentials nor the quota for it: the
   evidence is recorded by hand or not at all. What CI does is read the result. `verify` reports on
-  every pull request whether the archive still describes the tree and fails the required check on
-  the release pull request, so what makes the suite binding is now that check rather than a
-  convention. The body convention survives for one pull request only — the one that re-records a
+  every pull request whether the archive still describes the tree and rejects invalid evidence.
+  Strict verification remains binding at applicable capability activation. The body convention survives for one pull request only — the one that re-records a
   round, which carries the suite's output in its body: date, commit, per-scenario run count and
   result. It produces the evidence, and it is the only place in the history where the recording
   profile is stated. Every other pull request carries nothing.

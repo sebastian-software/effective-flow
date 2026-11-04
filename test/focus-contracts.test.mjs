@@ -86,6 +86,20 @@ test('Focus frontmatter and opening contract establish authority before host acc
   assert.match(focus, /```include\ndelegation-mandate\n```/);
 });
 
+test('Focus acceptance requires requalification for material shared-fragment and rendered changes', () => {
+  const acceptance = source('docs/developer-guide/focus-host-acceptance.md');
+  const binding = boundedSlice(acceptance, '**Binding-drift rule.**', '**Recorded bindings.**');
+  assert.match(
+    binding,
+    /Material changes to the loaded artifact require candidate-bound acceptance/,
+  );
+  assert.match(binding, /including changes from eagerly included fragments/);
+  assert.match(binding, /or `build\.mjs` rendering/);
+  assert.match(binding, /only a documented, demonstrably nonbehavioral difference/);
+  assert.doesNotMatch(binding, /owes no requalification/);
+  assert.match(acceptance, /supersedes that blanket\s+release obligation/);
+});
+
 test('Focus binds runtime host qualification and fails closed for unqualified paths', () => {
   // Invariant: host capability is determined by the actual candidate-bound runtime path, never by
   // the build target or a primitive spike, and every currently unqualified path returns a limitation.
@@ -101,6 +115,15 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
   assert.match(qualification, /throwaway target/);
   assert.match(qualification, /T3 observed, report-only/);
   assert.match(qualification, /candidate-bound observed\/report-only acceptance/);
+  // Invariant: package report mode and confirmation cannot activate an unqualified snapshot.
+  assert.match(
+    qualification,
+    /T3 observed, report-only\s*\| Disabled pending snapshot-host requalification/,
+  );
+  assert.match(qualification, /Before any target or ancestry read/);
+  assert.match(qualification, /no content access, analysis leaf or verdict about unread content/);
+  assert.match(qualification, /No snapshot execution route is currently qualified/);
+  assert.match(qualification, /configuration or developer confirmation cannot enable one/);
   assert.match(qualification, /T3 delegated correction[\s\S]*?Disabled/);
   assert.match(qualification, /T3 idle top-level correction[\s\S]*?Disabled/);
   assert.match(qualification, /Codex desktop observed[\s\S]*?Disabled/);

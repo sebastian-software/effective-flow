@@ -47,7 +47,7 @@ every other host tool are forbidden in a tick, which sends nothing and requests 
 
 ## Current qualification gate
 
-Primitive spike observations are not end-to-end acceptance of this tool. The report-only path below requires candidate-bound acceptance before release; primitive evidence
+Primitive spike observations are not end-to-end acceptance of this tool. The T3 observed/report-only snapshot route is disabled pending candidate-bound observed/report-only acceptance; package evidence reporting does not qualify it. Primitive evidence
 alone never qualifies this tool or another host/path. Bind acceptance to the actual candidate revision and relevant
 uncommitted source state, build target, loaded focus artifact, host/version, throwaway target and
 sanitized call/result locators through the existing operator acceptance record, not a new store,
@@ -55,7 +55,7 @@ configuration field or runtime helper. A different host, mode or artifact is not
 
 | Actual host/path                                | Current availability and missing-capability result                                                                                                                                                                                                                                                                                                                                                                                      |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| T3 observed, report-only                        | Observed report-only path. Admit only through the trusted runtime identity, exact-reference reader, ancestry and scope checks below; if any is unavailable, return its missing capability. Release qualification requires candidate-bound observed/report-only acceptance of the loaded focus artifact; no sends.                                                                                                                       |
+| T3 observed, report-only                        | Disabled pending snapshot-host requalification. Before any target or ancestry read, return the missing candidate-bound snapshot qualification; no content access, analysis leaf or verdict about unread content. Historical acceptance is not current qualification.                                                                                                                                                                    |
 | T3 delegated correction                         | Disabled: no atomic conditional steer established to reject a target finishing between state read and send without starting a fresh task. A running-state check does not close this known race.                                                                                                                                                                                                                                         |
 | T3 idle top-level correction                    | Disabled: candidate-bound idle top-level new-turn acceptance is missing.                                                                                                                                                                                                                                                                                                                                                                |
 | Codex desktop observed                          | Disabled: candidate-bound deep-link reader, trusted self/ancestor refusal and coverage acceptance are missing; this test host is unavailable here. No read or send.                                                                                                                                                                                                                                                                     |
@@ -67,8 +67,8 @@ Identify the host from trusted context and documented operations, never `{{BUILD
 self-description. On a disabled path return the stated missing capability before content access or
 dispatch. Changing availability requires review of these source restrictions against actual
 candidate-bound results; a user confirmation, passing build, primitive rerun or historical spike
-does not unlock a disabled path. T3 observed report-only is the sole executable path. It sends
-nothing, even with developer confirmation or a broader runtime mode.
+does not unlock a disabled path. No snapshot execution route is currently qualified; ordinary configuration or developer confirmation cannot enable one.
+Reader/analysis specifications remain dormant; follow-up and sends stay disabled, retaining only the existing stop/tick-handle cleanup authority.
 
 ## Reader admission and bounded evidence
 

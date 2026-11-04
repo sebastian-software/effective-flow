@@ -1178,6 +1178,24 @@ test('planned build dispatch keeps caller guards eager and all execution gates i
   const caller = readSource('tools', 'build.md');
   const runner = readSource('shared', 'build-delegated-run.md');
   const callerIncludes = collectIncludeNames(caller);
+  // Invariant: unqualified transport cannot be enabled by host support or Fast configuration;
+  // fallback is selected before the first helper write and preserves the complete phase owner.
+  assert.match(caller, /Current route: inline Quality only/);
+  assert.match(
+    caller,
+    /Before creating a build-run request, spawning a runner or making any project\/runtime mutation/,
+  );
+  assert.match(caller, /Ordinary configuration or user confirmation cannot activate/);
+  assert.match(caller, /transport specification below is dormant/);
+  assert.match(caller, /already-mutated delegated run retains its stop\/recovery rules/);
+  assert.match(
+    runner,
+    /no failed mandatory helper or post-mutation transport loss authorizes a restart/,
+  );
+  assert.ok(
+    caller.indexOf('Current route: inline Quality only') <
+      caller.indexOf('Start exactly one initially fresh'),
+  );
   for (const guard of [
     'chat-language',
     'delegation-mandate',

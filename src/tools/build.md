@@ -119,7 +119,7 @@ Derive one explicit measurable completion condition from the acceptance criteria
 
 ```lazy-include
 build-delegated-run
-when: inline fallback was selected before mutation because runner delegation, same-agent continuation or nesting is unavailable
+when: the approved plan reaches dispatch; current policy selects complete inline Quality execution before mutation
 ```
 
 ```lazy-include
@@ -127,7 +127,7 @@ build-run-contract
 when: the clarified and approved Feature plan reaches the dispatch seam, before selecting delegated execution or inline fallback
 ```
 
-Follow `build-run-contract` in order: verify safe roots/runtime state and immutable inputs, create and validate the bounded request, and establish same-agent continuation support. Keep only control projections and evidence references in this caller; never import the runner's full workflow, phase reports, diffs or logs here for a normal delegated run.
+**Current route: inline Quality only.** Before creating a build-run request, spawning a runner or making any project/runtime mutation, disclose unavailable isolation and follow the complete `build-delegated-run` phases 2–7 here, retaining every specialist and gate. Ordinary configuration or user confirmation cannot activate unqualified delegation, independently of Fast or host capabilities. The transport specification below is dormant pending reviewed source activation with behavioural/native acceptance; do not execute it or probe nesting. An already-mutated delegated run retains its stop/recovery rules; mandatory-helper failures never permit fallback.
 
 Start exactly one initially fresh built-in general-purpose workflow orchestrator with zero inherited turns where supported (otherwise the smallest supported history), the helper's bounded dispatch projection, the validated request path/digest, and the instruction to read `shared/build-delegated-run.md` once. This runner may orchestrate its specialists; named workers remain leaves. Retain its opaque handle for continuation and bind it before mutation. Pass only the rendered site values, never an ad hoc model choice.
 <!-- spawn-site:build/delegated-run -->

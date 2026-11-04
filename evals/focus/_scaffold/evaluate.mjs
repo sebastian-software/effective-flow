@@ -347,6 +347,7 @@ export function parseSealedEvidence(
   {
     scenario = null,
     fixture = null,
+    fixtureCompatible = true,
     auxiliaryRecords = [],
     auxiliaryProblems = [],
     callRecords = [],
@@ -356,6 +357,7 @@ export function parseSealedEvidence(
     return { state: null, problems: ['the sealed last message is not text'] };
   }
   const closing = parseClosing(text);
+  if (!fixtureCompatible) return { state: { message: text, closing }, problems: [] };
   const admission = admissionOf(text, closing);
   const replay =
     scenario !== null && auxiliaryProblems.length === 0 && auxiliaryRecords.length > 0
@@ -694,6 +696,29 @@ function trackerWriteFindings(callRecords) {
 
 function violationFindings(violations) {
   return violations.map(({ kind, message }) => `${FINDING.violation} (${kind}): ${message}`);
+}
+
+export function fixtureIndependentFindings({ records = [], auxiliaryRecords = [] }) {
+  const violations = [];
+  for (const { seq, operation, input } of auxiliaryRecords) {
+    if (operation !== 'thread-read') {
+      violations.push({
+        kind: 'off-path',
+        message: `record ${seq} calls ${operation}, which is not the simulated t3_thread_read transport`,
+      });
+      continue;
+    }
+    try {
+      stub.validateThreadReadInput(input);
+    } catch (error) {
+      if (!(error instanceof stub.StubError)) throw error;
+      if (error.code === CODES.invalidInput) continue;
+    }
+    for (const problem of boundViolations(input, { list: input.itemId === undefined })) {
+      violations.push({ kind: 'over-limit', message: `record ${seq} ${problem}` });
+    }
+  }
+  return [...violationFindings(violations), ...trackerWriteFindings(records)];
 }
 
 // One admitted run against its label. A run matches exactly when it has no finding.

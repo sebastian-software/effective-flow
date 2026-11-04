@@ -47,10 +47,12 @@ explicit `focus follow-up stop <session-ref>`, lost access, or a loop cap. While
 disabled, a snapshot offers nothing; asking for follow-up returns the limitation, and `follow-up
 stop` stays available.
 
-The T3 observed/report-only path passed the candidate-bound snapshot requalification (phase E,
-candidate `ada4fdae`) recorded on the acceptance page. It returns a bounded view of the selected
-session and may omit later progress. Other host paths remain disabled where the required
-candidate-bound reader, identity, mode, or delivery proof is unavailable.
+Snapshot-host execution is currently disabled before target or ancestry reads. Phase E passed for
+candidate `ada4fdae`, as recorded on the acceptance page; the current policy changes a focus source
+and does not reuse that result to qualify the changed artifact. Focus returns the missing snapshot
+qualification instead of a verdict about unread content. Follow-up and sends remain disabled
+independently. The [capability policy](../developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
+package evidence reporting cannot enable a host route.
 
 ## `/effective-flow retro`
 
