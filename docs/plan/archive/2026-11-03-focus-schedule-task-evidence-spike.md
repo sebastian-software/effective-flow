@@ -1,6 +1,6 @@
 # focus schedule_task evidence spike: T3 Code with the Codex harness
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Documentation (`effective-flow docs`)
 **Doc category:** developer-guide
@@ -235,13 +235,13 @@ The page names each condition that led to the decision. The literal decision lin
 
 ## Acceptance criteria
 
-- [ ] `docs/developer-guide/focus-schedule-evidence.md` answers each of S1–S12 as observed, observed with deviation, or not observable. Each answer gives its method, its evidence class (host data or self-report), its run count, and the versions recorded in step 1 (or "unavailable").
-- [ ] Under `## Conclusions`, the page carries the line `**Decision: go**` or `**Decision: no-go**`, derived by the decision rule. That literal string appears exactly once on the page. The page lists the measured S12 values and every WP1 wording that S4, S5, and S8–S11 change.
-- [ ] `observations.md` in the evidence root records a match or mismatch for every equality check in S2–S4 and S6, and the page cites it by digest.
-- [ ] The page contains no thread or task IDs, links, titles, raw session content, credentials, or user paths. It cites raw artifacts by evidence-root path and SHA-256 digest, and reports the thread, task, run, and wall-time counts and any register violation.
-- [ ] The evidence root holds the empty-task-list screenshot or note with its digest. The orchestrator's final read of O shows no scheduled run after the confirmed deletion, and O and T are archived.
-- [ ] `docs/developer-guide/focus-host-evidence.md` gains exactly one tail link line, and `docs/developer-guide/README.md` exactly one entry.
-- [ ] Compared with the step 1 snapshot, only the three affected files and this plan's own status change or archive move differ. No file under `src/`, `test/`, `evals/`, `build.mjs`, or `docs/concept/` changes, and `pnpm agent:check` passes.
+- [x] `docs/developer-guide/focus-schedule-evidence.md` answers each of S1–S12 as observed, observed with deviation, or not observable. Each answer gives its method, its evidence class (host data or self-report), its run count, and the versions recorded in step 1 (or "unavailable").
+- [x] Under `## Conclusions`, the page carries the line `**Decision: go**` or `**Decision: no-go**`, derived by the decision rule. That literal string appears exactly once on the page. The page lists the measured S12 values and every WP1 wording that S4, S5, and S8–S11 change.
+- [x] `observations.md` in the evidence root records a match or mismatch for every equality check in S2–S4 and S6, and the page cites it by digest.
+- [x] The page contains no thread or task IDs, links, titles, raw session content, credentials, or user paths. It cites raw artifacts by evidence-root path and SHA-256 digest, and reports the thread, task, run, and wall-time counts and any register violation.
+- [x] The evidence root holds the empty-task-list screenshot or note with its digest. The orchestrator's final read of O shows no scheduled run after the confirmed deletion, and O and T are archived.
+- [x] `docs/developer-guide/focus-host-evidence.md` gains exactly one tail link line, and `docs/developer-guide/README.md` exactly one entry.
+- [x] Compared with the step 1 snapshot, only the three affected files and this plan's own status change or archive move differ. No file under `src/`, `test/`, `evals/`, `build.mjs`, or `docs/concept/` changes, and `pnpm agent:check` passes.
 
 The package is complete when all seven criteria hold together.
 
@@ -326,6 +326,20 @@ The package is complete when all seven criteria hold together.
 - **Note, Testability.** The S10 coalescing default was unrecorded. _Incorporated:_ the stored schedule, including `dedupe`, is recorded.
 - **Note, Maintainability.** The decision string could appear more than once. _Incorporated:_ it appears exactly once.
 - **Note, Error cases.** "Replace O once" was ambiguous. _Incorporated:_ a second failure ends the spike with a no-go page.
+
+## Test results
+
+- Measurement steps 1 to 8 ran on 2026-11-03 from 22:36 to 23:46 UTC (run fsx-11032236); the S4 silence check and cleanup followed on 2026-11-04. Evidence root `.effective-flow/spikes/focus-schedule/fsx-11032236/`, untracked. Budget: 2 valid threads (plus 2 invalid Claude-harness setup threads outside the budget by owner decision), 3 of 5 tasks, 18 of 25 scheduled runs.
+- Decision rule applied: S1 to S7 observed by host data without a no-go condition, so `**Decision: go**`. S12 is labelled partial; S10 has one valid observation (attempt 1 invalid, repeat skipped for budget).
+- Cleanup: `list_scheduled_tasks` returned no tasks, matching the operator's note on the empty automation list (no screenshot); the thread list filtered on the run label returned no threads after archiving.
+- All 16 digests on the evidence page verified against the evidence root with `sha256sum -c`.
+- Identifier scan of the evidence page (UUIDs, URLs, thread links, home paths, thread titles): no match. The decision line appears exactly once.
+- `pnpm agent:check` passed in the delivery worktree.
+- Changed files: the evidence page, one tail link line in `focus-host-evidence.md`, one README entry, and this plan's status and archive move. The primary checkout's `git status` differs from the step 1 snapshot only by two `evals/host-driver/` modifications and one untracked directory that were no longer present; this run wrote nothing there.
+
+## Review findings
+
+- No review phase in the documentation workflow. The orchestrator wrote the page inline instead of through the docs-writer worker and checked it against `observations.md` and `register.md`; it corrected three counts (S1 run count, S3 rewrite count, scheduled-run duration) before commit.
 
 ## Open points
 
