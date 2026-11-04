@@ -72,3 +72,5 @@ is no runtime application – you edit `src/`, never `dist/`.
 - [focus labelling rubric](focus-labelling-rubric.md) – how fixture sessions receive their expected
   observed and self-report labels, the partial-trajectory, injection-item and citation rules, the
   gap categories and the scoring procedure.
+- [focus schedule evidence](focus-schedule-evidence.md) – dated addendum to the host evidence:
+  T3 Code `schedule_task` behaviour on Codex threads and the go decision for the follow-up mode.
