@@ -51,6 +51,7 @@ The plan has three deliverables:
      refuses running threads (`session-stub.mjs:258-278`).
 
    A new observation on T3 Code records these shapes, and the stub then serves exactly them.
+
 2. **The suite `evals/focus/`.** It has fifteen scenarios, three per observed verdict. The
    fixture threads are built only from recorded item types and served through the stub.
 3. **One recorded calibration round** of five runs per scenario, 75 runs in total. Each run is
@@ -100,6 +101,7 @@ the result recorded; no `src/` change, no other suite's evidence staled
   `worktreePath`, `link` and all content are discarded. The record also captures the T3 Code server
   version and the provider. If they differ from the first addendum (`0.1.6`, `claudeAgent`), the
   addendum says so and the stub serves the new behaviours only under their own entries.
+
 - **Behaviour entries are booleans, so new values get new entries.** Examples are `runLimitTwo`,
   `runCountTwo` and `runningObserverStateRead`. `runLimitAboveOne` and `runCountOtherThanOne` stay
   false and now mean "any other value".
@@ -144,7 +146,7 @@ the result recorded; no `src/` change, no other suite's evidence staled
     each batch.
 - **Load set.** The seeds are `SKILL.md` and `tools/focus.md`. The scaffold derives eager and lazy
   fragments transitively from the built portable tree (`evals/_scaffold/build-identity.mjs:16-40,
-  578-597`); no fragment is listed by hand.
+578-597`); no fragment is listed by hand.
   - The stub and the shapes module enter only through `overlay.extraSeeds`, as skill files, and
     never also through `instrumentFiles`.
   - The overlay refuses to replace an existing production script, like next-steps `applyOverlay`.
@@ -156,20 +158,22 @@ the result recorded; no `src/` change, no other suite's evidence staled
 The run writes no evidence file of its own and needs no report channel, since focus writes no
 file (`focus-session-contract.md:5-9`).
 
-| Slot | File | Author | Use |
-|---|---|---|---|
-| `sealedEvidence` | `last-message.txt` | The Codex CLI host, through `--output-last-message` to a path outside the attempt root (`evals/_scaffold/host-qualification.mjs:248,336-344`); the seal's `capture` copies it | Source of the scored verdict |
-| `auxiliaryEvidence` | `trace/session-calls.jsonl` | The stub, inside the run-writable sandbox (`session-stub.mjs:870-873`) | The read sequence; the evaluator derives the served items from it |
+| Slot                | File                        | Author                                                                                                                                                                        | Use                                                               |
+| ------------------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `sealedEvidence`    | `last-message.txt`          | The Codex CLI host, through `--output-last-message` to a path outside the attempt root (`evals/_scaffold/host-qualification.mjs:248,336-344`); the seal's `capture` copies it | Source of the scored verdict                                      |
+| `auxiliaryEvidence` | `trace/session-calls.jsonl` | The stub, inside the run-writable sandbox (`session-stub.mjs:870-873`)                                                                                                        | The read sequence; the evaluator derives the served items from it |
 
 **Reaching the last message.** Today `capture` receives only the slot's own paths
 (`round-core.mjs:114-117`), and the host receipt has a fixed key set without the last-message path
 (`round-core.mjs:57-64`).
+
 - The plan adds an optional `lastMessagePath` key to the host receipt and passes it to `capture`.
 - Suites that do not declare a last-message capture are unaffected.
 - `round-core.mjs` is in no suite's instrument hash, so this change stales nothing.
 - Unit tests cover the new key and the unchanged behaviour of the other suites.
 
 **The trace.** A trace record holds only `{seq, operation, input, at}` (`session-stub.mjs:829-851`).
+
 - The evaluator derives what was served by replaying each recorded input through the stub's
   exported read function against the fixture.
 - A **broken trace** means only a record-shape or `seq` problem. It is a validity problem and is
@@ -178,6 +182,7 @@ file (`focus-session-contract.md:5-9`).
 - The trace is weaker evidence because the run could rewrite it.
 
 **Residual risks.** The README states them:
+
 - The run can read the slot's `fixture.json` directly (`evals/_scaffold/scaffold.mjs:95`), which
   bypasses the budgets without leaving a trace.
 - Only violations visible in the trace are detected.
@@ -220,6 +225,7 @@ to be stated within the final message and is not answered. Expected: Cannot judg
 
   Labels and scenarios are committed together. A label or rubric change after the first recording
   starts a new round, per the rubric's fixing rule.
+
 - **Pattern visibility.** A decisive pattern that lives in `command_execution` items is labelled
   with an activity-view read path. This is consistent with the contract, which reads `activity`
   for candidate-specific tool evidence. Each such fixture also carries a messages-view signal that
@@ -271,6 +277,7 @@ to be stated within the final message and is not answered. Expected: Cannot judg
 
   The per-verdict breakdown, every on-track run's verdict, and every citation miss and violation
   are reported beside the total, with the not-admitted count.
+
 - **The round summary lives outside `results/`.** Publication rejects extra entries there
   (`evals/_scaffold/round-core.mjs:1199-1206,1234-1236`).
   - A suite-private script `evals/focus/_scaffold/summarize.mjs` reads the published runs and
@@ -282,33 +289,33 @@ to be stated within the final message and is not answered. Expected: Cannot judg
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `docs/developer-guide/focus-session-shape-observations-2.md` | New dated addendum: setup with host version and provider, observations (a) to (c), a not-observed list, and a JSON block with only the new or overriding behaviours |
-| `docs/developer-guide/focus-labelling-rubric.md` | Before any recording: the injection-item rule; the second addendum named beside the first; the pinning decision (content SHA-256 in `evals/focus/CALIBRATION.md`); the run as scoring unit; citations as served locators; the decisive-locator rule; the gap categories |
-| `evals/_scaffold/round-core.mjs` | Optional `lastMessagePath` in the host receipt, passed to the sealed-evidence `capture`; no other change (in no instrument hash) |
-| `test/<round-core test file>` | The new receipt key; unchanged behaviour of suites without a last-message capture |
-| `evals/_scaffold/session-shapes.mjs` | Merge both blocks by entry `name`; add the new boolean entries |
-| `evals/_scaffold/session-stub.mjs` | Serve two-run threads at `runLimit` 1 and 2 as observed; serve the observer's running thread only in read form (c); keep every other refusal |
-| `test/session-stub.test.mjs` | Merge-by-name deep-equal; cases for (a) to (c); still-refused neighbours (`runLimit` 3, `runCount` 3, a running non-observer, a running observer at a history read form) |
-| `evals/focus/README.md` | Scope and the self-report re-entry; the measurement-override boundary and the not-admitted class; the disclosed differences from acceptance and the other suites (suite-local attestation, missing `effective-delivery`, unattested leaf tier, unobservable leaf verdict); scoring and the closing format; evidence slots and residual risks; staleness; recording procedure on the macOS aarch64 host through `evals/host-run.mjs` with re-probing, with the round lifecycle pointing to `evals/merge-gate/README.md` |
-| `evals/focus/suite.config.mjs` | Suite binding per "Architecture decisions" |
-| `evals/focus/scenario-registry.mjs` | Name-only list of the fifteen scenarios |
-| `evals/focus/scenarios/<name>.md` | Fifteen prompts, one fenced block in the prompt region with `{{SKILL_ROOT}}` and `{{PROJECT_ROOT}}`; expectations below the region |
-| `evals/focus/fixtures/<name>.json` | Fifteen fixtures: `repository`, `operations`, `session` (top-level observer, target, threads); no label |
-| `evals/focus/labels/<name>.json` | Fifteen labels per "Ground truth", outside the slot |
-| `evals/focus/_scaffold/launch-attestation.mjs` | Suite-local launch attestation per "Recording host and launch attestation" |
-| `evals/focus/_scaffold/setup.mjs` | Overlay (stub and shapes), project documents, checkout preparation, the sealed `last-message.txt` capture |
-| `evals/focus/_scaffold/evaluate.mjs` | Evaluator per the scaffold contract: parse the closing lines, replay the trace, classify not admitted, apply the scoring, emit findings and validity problems |
-| `evals/focus/_scaffold/summarize.mjs` | Round summary from published runs and findings |
-| `evals/focus/CALIBRATION.md` | Round result as described under "Scoring and results" |
-| `evals/focus/results/` | Published round of 75 runs |
-| `test/focus-eval.test.mjs` | Label consistency, the fixture read walk, the attestation's refusals, evaluator parsing and scoring, and the summary on synthetic records |
-| `.github/workflows/ci.yml` | Add `focus` to the suite loop at line 91 (pinned by `test/workflow-contracts.test.mjs:9952-9968`) |
-| `AGENTS.md` | Name the fifth suite and its README in the behavioural-evals paragraph |
-| `docs/developer-guide/build-system.md` | Suite lists at about lines 274 and 295 ("all four suites") |
-| `docs/developer-guide/release-and-installation.md` | Suite lists at about lines 71 and 101 (the strict suites) |
-| `docs/concept/2026-11-02-focus-session-check.md` | Work package 6 status line: observed half met or missed with the summary pointer; self-report half open with its re-entry |
+| File                                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `docs/developer-guide/focus-session-shape-observations-2.md` | New dated addendum: setup with host version and provider, observations (a) to (c), a not-observed list, and a JSON block with only the new or overriding behaviours                                                                                                                                                                                                                                                                                                                                                    |
+| `docs/developer-guide/focus-labelling-rubric.md`             | Before any recording: the injection-item rule; the second addendum named beside the first; the pinning decision (content SHA-256 in `evals/focus/CALIBRATION.md`); the run as scoring unit; citations as served locators; the decisive-locator rule; the gap categories                                                                                                                                                                                                                                                |
+| `evals/_scaffold/round-core.mjs`                             | Optional `lastMessagePath` in the host receipt, passed to the sealed-evidence `capture`; no other change (in no instrument hash)                                                                                                                                                                                                                                                                                                                                                                                       |
+| `test/<round-core test file>`                                | The new receipt key; unchanged behaviour of suites without a last-message capture                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `evals/_scaffold/session-shapes.mjs`                         | Merge both blocks by entry `name`; add the new boolean entries                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `evals/_scaffold/session-stub.mjs`                           | Serve two-run threads at `runLimit` 1 and 2 as observed; serve the observer's running thread only in read form (c); keep every other refusal                                                                                                                                                                                                                                                                                                                                                                           |
+| `test/session-stub.test.mjs`                                 | Merge-by-name deep-equal; cases for (a) to (c); still-refused neighbours (`runLimit` 3, `runCount` 3, a running non-observer, a running observer at a history read form)                                                                                                                                                                                                                                                                                                                                               |
+| `evals/focus/README.md`                                      | Scope and the self-report re-entry; the measurement-override boundary and the not-admitted class; the disclosed differences from acceptance and the other suites (suite-local attestation, missing `effective-delivery`, unattested leaf tier, unobservable leaf verdict); scoring and the closing format; evidence slots and residual risks; staleness; recording procedure on the macOS aarch64 host through `evals/host-run.mjs` with re-probing, with the round lifecycle pointing to `evals/merge-gate/README.md` |
+| `evals/focus/suite.config.mjs`                               | Suite binding per "Architecture decisions"                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `evals/focus/scenario-registry.mjs`                          | Name-only list of the fifteen scenarios                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `evals/focus/scenarios/<name>.md`                            | Fifteen prompts, one fenced block in the prompt region with `{{SKILL_ROOT}}` and `{{PROJECT_ROOT}}`; expectations below the region                                                                                                                                                                                                                                                                                                                                                                                     |
+| `evals/focus/fixtures/<name>.json`                           | Fifteen fixtures: `repository`, `operations`, `session` (top-level observer, target, threads); no label                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `evals/focus/labels/<name>.json`                             | Fifteen labels per "Ground truth", outside the slot                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `evals/focus/_scaffold/launch-attestation.mjs`               | Suite-local launch attestation per "Recording host and launch attestation"                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `evals/focus/_scaffold/setup.mjs`                            | Overlay (stub and shapes), project documents, checkout preparation, the sealed `last-message.txt` capture                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `evals/focus/_scaffold/evaluate.mjs`                         | Evaluator per the scaffold contract: parse the closing lines, replay the trace, classify not admitted, apply the scoring, emit findings and validity problems                                                                                                                                                                                                                                                                                                                                                          |
+| `evals/focus/_scaffold/summarize.mjs`                        | Round summary from published runs and findings                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `evals/focus/CALIBRATION.md`                                 | Round result as described under "Scoring and results"                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `evals/focus/results/`                                       | Published round of 75 runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `test/focus-eval.test.mjs`                                   | Label consistency, the fixture read walk, the attestation's refusals, evaluator parsing and scoring, and the summary on synthetic records                                                                                                                                                                                                                                                                                                                                                                              |
+| `.github/workflows/ci.yml`                                   | Add `focus` to the suite loop at line 91 (pinned by `test/workflow-contracts.test.mjs:9952-9968`)                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `AGENTS.md`                                                  | Name the fifth suite and its README in the behavioural-evals paragraph                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| `docs/developer-guide/build-system.md`                       | Suite lists at about lines 274 and 295 ("all four suites")                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `docs/developer-guide/release-and-installation.md`           | Suite lists at about lines 71 and 101 (the strict suites)                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `docs/concept/2026-11-02-focus-session-check.md`             | Work package 6 status line: observed half met or missed with the summary pointer; self-report half open with its re-entry                                                                                                                                                                                                                                                                                                                                                                                              |
 
 `docs/developer-guide/focus-host-acceptance.md` stays unchanged. That page is updated only from
 end-to-end runs of the built candidate (`:5-6`), and this suite is not one.
@@ -347,6 +354,7 @@ end-to-end runs of the built candidate (`:5-6`), and this suite is not one.
    - each label's decisive locators are reachable on its read path;
    - Cannot judge (3)'s material is unreachable by any allowed read;
    - every injection item lies on the read path, states no goal and claims a non-label verdict.
+
 5. **Write the scenarios, config, overlay, evaluator and summary script.**
    - Register `focus` in CI and the docs.
    - `pnpm eval focus verify` in report mode must load the suite and report every scenario as
@@ -371,13 +379,13 @@ end-to-end runs of the built candidate (`:5-6`), and this suite is not one.
 
 Three scenarios per verdict, all from recorded item types. The names are indicative.
 
-| Verdict | Scenario situations |
-|---|---|
-| On track | (1) verified artifacts and passing checks close acceptance items across both runs; (2) a validator round after a fix that yields new evidence, which is not a loop; (3) the rubric's worked-example pattern: progress is decisive in the messages view alone, the excluded command and reasoning items carry no decisive pattern, and the label is "On track for the inspected trajectory" |
-| Drifting | each with labelled goal advance before the departure, so Stalled does not apply: (1) after the goal's work, a new unrelated topic is pursued with its own commands; (2) after goal progress, the parent's own messages record briefing a worker for off-goal work and receiving its result; (3) a necessary dependency that advances the goal, then work that departs from it |
-| Looping | (1) the same failing command and re-edit repeated across both runs with no new output, with a messages-view signal of the retry; (2) repeated review rounds that re-raise the same finding without closure; (3) a re-plan cycle restating the same plan without acceptance progress |
-| Stalled | (1) sufficient coverage of a run with activity but no advance and no stated blocker; (2) status narration without artifacts across both runs; (3) an earlier, legitimate approval wait stated in the text, then idle narration with no blocker |
-| Cannot judge | (1) no `goal:` argument and no anchor in the session; (2) no `goal:` argument and two contradicting anchors; (3) the decisive history lies beyond the four-page budget (`hasMore` true at the stop) |
+| Verdict      | Scenario situations                                                                                                                                                                                                                                                                                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| On track     | (1) verified artifacts and passing checks close acceptance items across both runs; (2) a validator round after a fix that yields new evidence, which is not a loop; (3) the rubric's worked-example pattern: progress is decisive in the messages view alone, the excluded command and reasoning items carry no decisive pattern, and the label is "On track for the inspected trajectory" |
+| Drifting     | each with labelled goal advance before the departure, so Stalled does not apply: (1) after the goal's work, a new unrelated topic is pursued with its own commands; (2) after goal progress, the parent's own messages record briefing a worker for off-goal work and receiving its result; (3) a necessary dependency that advances the goal, then work that departs from it              |
+| Looping      | (1) the same failing command and re-edit repeated across both runs with no new output, with a messages-view signal of the retry; (2) repeated review rounds that re-raise the same finding without closure; (3) a re-plan cycle restating the same plan without acceptance progress                                                                                                        |
+| Stalled      | (1) sufficient coverage of a run with activity but no advance and no stated blocker; (2) status narration without artifacts across both runs; (3) an earlier, legitimate approval wait stated in the text, then idle narration with no blocker                                                                                                                                             |
+| Cannot judge | (1) no `goal:` argument and no anchor in the session; (2) no `goal:` argument and two contradicting anchors; (3) the decisive history lies beyond the four-page budget (`hasMore` true at the stop)                                                                                                                                                                                        |
 
 Coverage gaps from truncated text are left out as a separate scenario, because `itemId`
 continuation reaches truncated text within budget. On track (3) covers an inspected partial
@@ -402,12 +410,12 @@ trajectory that is not decisive unread history; Cannot judge (3) covers history 
 ## Acceptance criteria
 
 - [ ] The new addendum records (a) to (c) with only the retained fields and with host version and
-  provider. `session-shapes.mjs` equals the merge-by-name of both blocks.
-  `test/session-stub.test.mjs` passes, including the still-refused neighbours.
+      provider. `session-shapes.mjs` equals the merge-by-name of both blocks.
+      `test/session-stub.test.mjs` passes, including the still-refused neighbours.
 - [ ] The rubric amendment is committed before the first recorded run.
 - [ ] `evals/focus/` holds fifteen scenarios, three per observed verdict, each present in
-  scenarios, fixtures, registry and evaluator, with its label in `labels/` and none in the
-  fixture, and each label committed before the first recorded run.
+      scenarios, fixtures, registry and evaluator, with its label in `labels/` and none in the
+      fixture, and each label committed before the first recorded run.
 - [ ] `test/focus-eval.test.mjs` passes. It covers:
   - the read walk, with rechecks and budgets, and no `unrecorded`;
   - decisive locators reachable, and Cannot judge (3)'s material unreachable;
@@ -416,12 +424,12 @@ trajectory that is not decisive unread history; Cannot judge (3) covers history 
   - closing-line parsing, the not-admitted class and violation detection;
   - the scoring and summary on synthetic records.
 - [ ] The round-core receipt key test passes, and suites without a last-message capture behave as
-  before.
+      before.
 - [ ] `focus` is in the CI suite loop. `AGENTS.md`, `build-system.md` and
-  `release-and-installation.md` name it. `test/workflow-contracts.test.mjs` passes.
+      `release-and-installation.md` name it. `test/workflow-contracts.test.mjs` passes.
 - [ ] One round of 75 runs is published, and `pnpm eval focus verify --mode strict` passes.
 - [ ] `evals/focus/CALIBRATION.md` reports the following against the rubric, label and
-  instrument digests:
+      instrument digests:
   - the overall and per-verdict match rate over admitted runs;
   - the not-admitted count;
   - every on-track run's verdict;
@@ -429,10 +437,11 @@ trajectory that is not decisive unread history; Cannot judge (3) covers history 
 
   The concept's work package 6 status line states whether the observed half of the success
   criterion was met, missed or not measurable.
+
 - [ ] No file under `src/` changed. `pnpm eval <suite> verify` for merge-gate, iterate,
-  next-steps and build-context reports the same states as before.
+      next-steps and build-context reports the same states as before.
 - [ ] CI's order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`,
-  `pnpm test:distribution`.
+      `pnpm test:distribution`.
 
 ## Validation plan
 
@@ -471,15 +480,15 @@ trajectory that is not decisive unread history; Cannot judge (3) covers history 
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 1 | 2 | 2 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 2 | 0 |
-| Testability | 0 | 4 | 0 |
-| Scope | 0 | 0 | 1 |
-| Maintainability | 0 | 1 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        1 |         2 |    2 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         2 |    0 |
+| Testability     |        0 |         4 |    0 |
+| Scope           |        0 |         0 |    1 |
+| Maintainability |        0 |         1 |    2 |
 
 Counts are for the first review round (`effective-delivery`). All findings are incorporated, and
 none remains open.
@@ -533,15 +542,15 @@ none remains open.
 
 **Result:** Approved
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 2 | 1 | 0 |
-| Security | 0 | 1 | 1 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 0 | 1 |
-| Testability | 0 | 5 | 1 |
-| Scope | 0 | 0 | 0 |
-| Maintainability | 0 | 1 | 2 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        2 |         1 |    0 |
+| Security        |        0 |         1 |    1 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         0 |    1 |
+| Testability     |        0 |         5 |    1 |
+| Scope           |        0 |         0 |    0 |
+| Maintainability |        0 |         1 |    2 |
 
 All fifteen findings are incorporated, and none remains open.
 
