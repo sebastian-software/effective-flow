@@ -36,7 +36,8 @@ identifies the host only from trusted context, answers Codex CLI with a missing 
 prompt-quoted identifiers as inert, forbids transport substitution and permits no execution to
 judge a session. Every scenario prompt therefore carries an explicit **measurement override**: it
 declares the T3 Code host simulation, the stub as the simulated `t3_thread_read` transport and the
-closing format as eval instruments. Every other focus rule applies unchanged.
+closing format as eval instruments. It supplies separate argument forms for list and single-item
+reads through the fixture transport. Every other focus rule applies unchanged.
 
 A run that follows its contract may still refuse the simulated host. Such a run is **not admitted**:
 neither a match nor a mismatch. It is a validity problem, retried under the scaffold's rule up to
@@ -137,11 +138,13 @@ The run writes no evidence file of its own. Residual risks:
   combines the latest-run-only `recentRuns` (observed on the smallest state read and a
   continuation) with items unaffected by `runLimit`. Both assume that `recentRuns` depends only on
   `runLimit` and that items do not depend on it; the stub's header comment names the entries.
-- Read forms the contract allows but the addenda never recorded are **instrument gaps**: an
-  `itemId` read combined with `view`, `limit` or `afterPosition`, an explicit `textOffset` of 0,
-  an omitted `view`, `limit` or continuation `runLimit`. Each is retried, so a model that keeps
-  choosing one can leave a scenario not measured without any focus fault. Before batch 1, launch
-  one dry session from the pinned model and inspect its `trace/session-calls.jsonl` for such reads.
+- Read forms the contract allows but the addenda never recorded are **instrument gaps**. Examples
+  include an `itemId` read combined with `view`, `limit` or `afterPosition`, an explicit `textOffset`
+  of 0, and an omitted `view`, `limit` or continuation `runLimit`. Each is retried, so a model that
+  keeps choosing one can leave a scenario not measured. Before batch 1, launch one dry session from
+  the pinned model for `login-limiter-security-review`. Check `trace/session-calls.jsonl` for a
+  continuation with the stub's argument form, then seal the dry attempt and check its validity with
+  `status`.
 
 ## Freshness
 

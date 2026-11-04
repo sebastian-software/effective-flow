@@ -22,9 +22,14 @@ session:
   observer-thread-01, this observer's own thread ID.
 - Session stub: the simulated `t3_thread_read` transport is
   `node {{SKILL_ROOT}}/scripts/session-stub.mjs thread-read`. Send it one JSON object on
-  standard input with the `t3_thread_read` parameters, identical in name and meaning
-  (`threadId`, `view`, `limit`, `maxCharsPerItem`, `runLimit`, `afterPosition`,
-  `itemId`, `textOffset`); the JSON envelope on standard output carries that read's result.
+  standard input using the recorded input forms below. The JSON envelope on standard output
+  carries that read's result.
+  For a list read, pass `threadId`, `view`, `limit`, `maxCharsPerItem` and `runLimit`.
+  To continue that view, pass its returned `nextPosition` as `afterPosition`.
+  For an `itemId` read, pass `threadId`, `itemId`, `maxCharsPerItem` and `runLimit`.
+  Omit `view`, `limit` and `afterPosition` on an `itemId` read.
+  Omit `textOffset` for the first chunk. To continue the same item, pass its positive returned
+  `nextTextOffset` as `textOffset`.
   Each call is one native read and counts against focus's read, page and character budgets.
   Running this command is the simulated native read, not execution to judge the session.
 - Closing format: the final message ends with exactly the three lines described below.
