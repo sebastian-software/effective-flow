@@ -180,11 +180,13 @@ class ComposedRemainingFixture(OriginalSealFixture):
         write_json(artifact / 'operator-result.json', outcome)
         return outcome
 
-    def real_coordinator(self, context):
+    def real_coordinator(self, context, observer=None, stack=None):
         # Both Git roots are real and distinct; retain actual source/pin checks.
         spec = importlib.util.spec_from_file_location('composed_remaining_driver', self.driver / 'run-cohorts.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        if observer is not None:
+            observer.attach(module, stack)
         from unittest import mock
         with mock.patch.dict(sys.modules, {'eval_first_stage': self.stage}):
             driver = module.Driver(self.config_path, self.profiles, operator=self.operator,

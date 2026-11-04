@@ -9,6 +9,46 @@ The fixed local round contains 155 slots: 9 merge-gate, 7 iterate, and 15 next-s
 each with five independent runs (45/35/75). It does not establish native-executor acceptance.
 A successful fixture run is local process evidence only.
 
+## Temporary composed-fixture diagnostics
+
+CI sets `EF_HOST_DRIVER_DIAGNOSTICS` to a dedicated directory under `RUNNER_TEMP`
+for the unchanged `pnpm test` command. The Node adapter forwards this opt-in only
+to `test_remaining_stage_composed.py`. With it unset, no hooks, worker bootstrap,
+or retained files are installed. This instrumentation is diagnostic only: a pass
+is not release readiness, and no historical CI ordering is established by it.
+
+The fixture adapter bootstraps the original, unmodified worker module and wraps
+only named operations. JSONL records carry PID and `monotonic_ns` from the same
+host clock: original refusal-writer entry/successful return/exception, authenticated
+job execution, cancellation-latch calls, worker group signals, coordinator `kill`
+syscall targets/signals (excluding signal-zero probes), original bound-reader
+outcomes and original accounting projections.
+Each wrapped operation delegates exactly once. A successful bound read is not an
+authentication verdict; only the original accounting projection is that decision.
+Wrapper-internal JavaScript signals are not hooked. Existing runner receipts bind
+the observed wrapper PID to its worker group. No profiler, new barrier, sleep,
+sync, receipt fabrication, or assertion change is involved.
+
+Before temporary-directory cleanup, the parent captures selected cohort receipts,
+jobs, tasks, results, runner logs, and the remaining-stage summary/journal, including
+when the coordinator fails or its existing 120-second child timeout expires.
+Per-PID events are written directly outside the fixture namespace, so already
+written events survive even if parent capture cannot run. A killed outer Python
+test process can therefore leave events without `capture.json`; raw fixture files
+are then **unobserved**, not absent. A writer entry without return does not prove a
+completed refusal, and no event does not prove the writer never ran.
+
+`capture.json` maps raw bytes to allowlisted relative paths and reports missing-at-
+capture, unsafe, unreadable and oversized files separately. Captures are snapshots,
+potentially partial while a child is still shutting down, not newly authenticated
+evidence. Ancestor/file symlinks, nonregular files and multiply linked files are
+rejected; HOME, credentials, arbitrary directory trees and environments are not
+copied. Bounds are 4,096 events per process, 128 KiB per raw file, 8 MiB total raw
+bytes, 64 scenario names per known suite and 4,096 selected paths per capture.
+Exceeding a bound leaves the omitted observations unknown. CI uploads only this
+dedicated directory even on failure, with three-day retention, before the existing
+build/distribution and behavioural-evidence steps; their gates remain unchanged.
+
 The maintenance-only [fixed stages](#private-first-stage-adapter) use the same complete corpus:
 five original D3 slots, followed only under a separate exact grant by the
 [remaining 150](#private-fixed-remaining-150-adapter). The ordinary full-round CLI is not a

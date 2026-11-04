@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import concurrent.futures
+from contextlib import ExitStack
 import json
 import os
 from pathlib import Path
@@ -18,6 +19,7 @@ from unittest import mock
 from test_first_stage import TEST_TEMP_ROOT, LOCAL_POPEN, LOCAL_RUN, digest
 from remaining_stage_support import RemainingStageFixtureMixin
 from composed_remaining_support import ComposedRemainingFixture, copy_fixture_executable
+from composed_diagnostics import Observer, create_session, retain
 
 
 class ComposedRemainingStageContracts(unittest.TestCase):
@@ -76,6 +78,7 @@ class ComposedRemainingStageContracts(unittest.TestCase):
     def run_composed_batch(self, *, unknown):
         with tempfile.TemporaryDirectory(prefix='remaining-composed-', dir=str(TEST_TEMP_ROOT)) as name:
             root = Path(name)
+            diagnostics = create_session(root, 'unknown' if unknown else 'clean')
             python = copy_fixture_executable(sys.executable, root / 'python-runtime')
             # Run the actual coordinator in the pinned interpreter, so its unchanged
             # sys.executable launch check describes the real process and child command.
@@ -85,15 +88,20 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                 "from test_remaining_stage_composed import ComposedRemainingStageContracts\n"
                 "case = ComposedRemainingStageContracts()\n"
                 "try:\n"
-                "    case._run_composed_batch(Path(sys.argv[2]), unknown=sys.argv[3] == '1')\n"
+                "    case._run_composed_batch(Path(sys.argv[2]), unknown=sys.argv[3] == '1',\n"
+                "                             diagnostics=sys.argv[4] or None)\n"
                 "finally:\n"
                 "    case.doCleanups()\n"
             )
-            result = LOCAL_RUN([str(python), '-B', '-c', script, str(Path(__file__).resolve().parent),
-                                str(root), str(int(unknown))], capture_output=True, text=True, timeout=120)
-            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            try:
+                result = LOCAL_RUN([str(python), '-B', '-c', script, str(Path(__file__).resolve().parent),
+                                    str(root), str(int(unknown)), str(diagnostics) if diagnostics else ''],
+                                   capture_output=True, text=True, timeout=120)
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            finally:
+                retain(diagnostics, root)
 
-    def _run_composed_batch(self, root, *, unknown):
+    def _run_composed_batch(self, root, *, unknown, diagnostics=None):
         old_path = list(sys.path)
         self.addCleanup(lambda: sys.path.__setitem__(slice(None), old_path))
         self.f = ComposedRemainingFixture(root)
@@ -109,7 +117,9 @@ class ComposedRemainingStageContracts(unittest.TestCase):
         admitted = self.f.stage.admit_remaining_stage(context)
         admission_path = Path(admitted['admission']['path'])
         admission_bytes = admission_path.read_bytes()
-        driver = self.f.real_coordinator(admitted)
+        observation = ExitStack()
+        self.addCleanup(observation.close)
+        driver = self.f.real_coordinator(admitted, Observer(diagnostics), observation)
         first = [Path(self.f.remaining_grant['orderedTasks'][i]['artifactDir']) for i in range(6)]
         starts, lock = [], threading.Lock()
         # Hold real startup recovery at its existing bakery claims. Claims are
