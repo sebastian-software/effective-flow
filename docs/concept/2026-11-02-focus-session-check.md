@@ -192,12 +192,14 @@ focus never edits files, writes reports, changes the observed session's plan, or
    - Scope: the correction message and the self-report request, the reference-bound admission with its two lookup exceptions, identity binding, developer-only confirmation, reply acceptance by name, nonce, and post-reply lookup, how these stand in for the filter-before-model rule of `input-trust-boundary.md`, state-dependent mode choice with the mode precondition, the separate self-report evidence level, the text-only marker with user-turn weight, the foreground wait as the only execution, the separate four-state send-outcome contract with no retry or duplicate-send fallback, the accepted read side-effect risk, injection and redaction limits, the unattended rule, and the relation to `session-rename-butler.md` and `input-trust-boundary.md`.
    - Done when: the ADR is accepted and consistent with the spike evidence.
    - Dependencies: 1.
+   - Status: done (#604). Evidence: `docs/adr/focus-cross-session-messages.md`.
    - Handoff: `effective-flow plan "Work package 2 of docs/concept/2026-11-02-focus-session-check.md: write the ADR for focus's confirmed cross-session messages (correction and self-report request), relating it to docs/adr/session-rename-butler.md and docs/adr/input-trust-boundary.md and using the evidence in docs/developer-guide/focus-host-evidence.md"`
 3. **Skill-ownership check for focus**
    - Goal: settle who owns the trajectory judgment.
    - Scope: classify focus against `effective-delivery` (delegate or route-when-relevant) and record the consumer relationship in `skill-ownership.json` and the guide.
    - Done when: the classification is recorded and the build's ownership guards accept it.
    - Dependencies: none; runs in parallel with 1 and 2.
+   - Status: done (#603). Evidence: `docs/developer-guide/skill-ownership.json` (`focus`: route-when-relevant to `effective-delivery`), `docs/developer-guide/skill-ownership.md`.
    - Handoff: `effective-flow plan "Work package 3 of docs/concept/2026-11-02-focus-session-check.md: run the skill-ownership check for the new focus tool and record its effective-delivery relationship in docs/developer-guide/skill-ownership.json and skill-ownership.md"`
 4. **focus tool and its contract**
    - Goal: ship `effective-flow focus` as described in the solution sketch.
@@ -207,6 +209,7 @@ focus never edits files, writes reports, changes the observed session's plan, or
      - Codex desktop: a cited verdict from a deep-link reference, and recognition of the observer itself and its ancestors.
      - Claude Code: a self-report round trip with a self-report verdict and the nonce, with the observer in the default permission mode. Also the spike cells left open: background wait and `notify_when_idle`, late reply, sub-agent sender, busy target, and plan-mode repeats.
    - Dependencies: 1, 2, 3.
+   - Status: done for a narrowed scope (#603). Evidence: `docs/developer-guide/focus-host-acceptance.md`. Only the T3 Code observed, report-only path is accepted and advertised; T3 Code sends, Codex desktop, and the Claude Code self-report path are disabled and end with the missing-capability message until a candidate-bound acceptance run passes.
    - Handoff: `effective-flow plan "Work package 4 of docs/concept/2026-11-02-focus-session-check.md: implement the focus tool and its focus-owned contract per the elaborated concept, the ADR from work package 2, and the open cells in docs/developer-guide/focus-host-evidence.md"`
 5. **Eval instrument: session stub and labelling rubric**
    - Goal: make focus evidence reproducible.
