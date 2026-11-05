@@ -1187,7 +1187,10 @@ export async function removeLegacyListing(context, target, listing, options = {}
         entry.path,
       );
     }
-    if (!sameListedNode(entry, info, { compareSize: entry.type !== 'directory' })) {
+    if (
+      !sameListedNode(entry, info, { compareSize: entry.type !== 'directory' }) ||
+      (entry.type === 'file' && (await hashRegularFile(absolute, info)) !== entry.sha256)
+    ) {
       throw changed(`${absolute} changed after the dry run`, removed, entry.path);
     }
     try {

@@ -549,6 +549,53 @@ test('removeLegacyListing: an entry added mid-walk is LEGACY_CHANGED with the pa
   assert.ok(existsSync(join(target, 'cache.json')));
 });
 
+test('removeLegacyListing: a same-length in-place legacy edit is preserved with partial progress', async (t) => {
+  const root = repository(t);
+  const target = legacyDirectory(root);
+  const listing = await guard.listLegacyTree(target);
+  const edited = join(target, 'cache.json');
+  const entry = listing.entries.find((candidate) => candidate.path === 'cache.json');
+  await assert.rejects(
+    guard.removeLegacyListing(legacyContext(root), target, listing, {
+      beforeEntry: (relative) => {
+        if (relative !== 'cache.json') return;
+        writeFileSync(edited, '[]\n');
+        const info = lstatSync(edited, { bigint: true });
+        for (const field of ['dev', 'ino', 'size']) {
+          assert.equal(String(info[field]), entry[field]);
+        }
+      },
+    }),
+    { code: 'LEGACY_CHANGED', removed: 3, remaining: 'cache.json' },
+  );
+  assert.equal(readFileSync(edited, 'utf8'), '[]\n');
+  assert.equal(existsSync(join(target, 'review')), false);
+  assert.equal(existsSync(join(target, 'link.txt')), false);
+  assert.equal(readFileSync(join(root, 'outside.txt'), 'utf8'), 'outside\n');
+});
+
+test('removeLegacyListing: a same-length in-place transitional config edit is preserved', async (t) => {
+  const root = repository(t);
+  const target = join(root, guard.TRANSITIONAL_CONFIG_FILE);
+  mkdirSync(join(root, '.effective-flow'));
+  writeFileSync(target, '{"value":1}\n');
+  const listing = await guard.listLegacyTree(target);
+  await assert.rejects(
+    guard.removeLegacyListing(legacyContext(root), target, listing, {
+      beforeEntry: (relative) => {
+        assert.equal(relative, '');
+        writeFileSync(target, '{"value":2}\n');
+        const info = lstatSync(target, { bigint: true });
+        for (const field of ['dev', 'ino', 'size']) {
+          assert.equal(String(info[field]), listing.root[field]);
+        }
+      },
+    }),
+    { code: 'LEGACY_CHANGED', removed: 0, remaining: '' },
+  );
+  assert.equal(readFileSync(target, 'utf8'), '{"value":2}\n');
+});
+
 // Invariant (remover race): a directory of the chain swapped for a symlink mid-walk is
 // UNSAFE_TARGET before any entry below it is touched, so nothing outside the listing is reached.
 test('removeLegacyListing: a chain swapped mid-walk is UNSAFE_TARGET', async (t) => {
