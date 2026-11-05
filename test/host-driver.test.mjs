@@ -19,12 +19,14 @@ for (const filename of pythonTestFiles) {
       timeout: 180_000,
     },
     () => {
+      const env = { ...process.env, PYTHONDONTWRITEBYTECODE: '1' };
+      if (filename !== 'test_remaining_stage_composed.py') delete env.EF_HOST_DRIVER_DIAGNOSTICS;
       execFileSync(
         'python3',
         ['-B', '-m', 'unittest', 'discover', '-s', 'evals/host-driver/tests', '-p', filename],
         {
           cwd: root,
-          env: { ...process.env, PYTHONDONTWRITEBYTECODE: '1' },
+          env,
           stdio: 'inherit',
           timeout: 150_000,
         },
