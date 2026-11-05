@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.71.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.70.0...effective-flow-v1.71.0) (2026-11-04)
+
+
+### Features
+
+* add commit and review-report helper operations with structural review persistence ([#601](https://github.com/sebastian-software/effective-flow/issues/601)) ([44d7dff](https://github.com/sebastian-software/effective-flow/commit/44d7dff1374ee847ca4db7a52960339be776189f))
+* add Focus session trajectory checks ([c953c68](https://github.com/sebastian-software/effective-flow/commit/c953c682320468bfa98549c1a0a3d9627fc033d3))
+* add runtime-state helper with guard and lock core ([#599](https://github.com/sebastian-software/effective-flow/issues/599)) ([c626151](https://github.com/sebastian-software/effective-flow/commit/c626151e0d68a0f0ee7435d9c0ca2f04429163f9))
+* add typed memory operations and Claude Code allow-rule setup ([#600](https://github.com/sebastian-software/effective-flow/issues/600)) ([893d877](https://github.com/sebastian-software/effective-flow/commit/893d8770abad2ed77de4182cefb88b40bb6395f6))
+* **build:** delegate planned work with bounded progress ([47ce145](https://github.com/sebastian-software/effective-flow/commit/47ce14570d2320b5484b21f9a44b59f13b3526b0))
+* **evals:** complete the fixed remaining cohort ([63ad757](https://github.com/sebastian-software/effective-flow/commit/63ad7577a551bec38b51db0afe504c192f4add81))
+* **focus:** define an opt-in follow-up mode behind a disabled gate ([#620](https://github.com/sebastian-software/effective-flow/issues/620)) ([2b1e0f4](https://github.com/sebastian-software/effective-flow/commit/2b1e0f4aac66af6fbeb964387da90b882841d69d))
+* **merge-gate:** declare user-typed bot accounts with mergeGate.botAccounts ([#596](https://github.com/sebastian-software/effective-flow/issues/596)) ([6dfeed9](https://github.com/sebastian-software/effective-flow/commit/6dfeed9f3dc8b9f27bf4b54cbb317739f1e19617))
+* pick the invocation prefix by the client surface in the portable skill ([#594](https://github.com/sebastian-software/effective-flow/issues/594)) ([d19fb22](https://github.com/sebastian-software/effective-flow/commit/d19fb220553bfd97abdd9d788aa3a349bd2c82dc))
+* separate package release checks from capability qualification ([23ea36e](https://github.com/sebastian-software/effective-flow/commit/23ea36e3828613056202b2fc1deec6efe1d39f8d))
+* support native current-thread renaming in T3 Code ([ad05349](https://github.com/sebastian-software/effective-flow/commit/ad05349e4109c70f53bd033eb88dec1c4b60261e))
+* **validation:** qualify published release sources ([3cbe566](https://github.com/sebastian-software/effective-flow/commit/3cbe56610c9ae71319a12caa84b73eed250cf411))
+
+
+### Bug Fixes
+
+* preserve completed native cleanup receipts during recovery ([301eafd](https://github.com/sebastian-software/effective-flow/commit/301eafd2a1edceb5b84dbfa8f5e8a7e57072a46f))
+
 ## [1.70.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.69.0...effective-flow-v1.70.0) (2026-10-27)
 
 
