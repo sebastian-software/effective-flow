@@ -305,7 +305,18 @@ test('E3 malformed or missing state/logs never become fresh via current metadata
       }),
     );
     writeFileSync(stem + '.prompt.txt', prompt);
-    writeFileSync(stem + '.build.json', '{}');
+    writeFileSync(
+      stem + '.build.json',
+      JSON.stringify({
+        scenario_inputs: {
+          files: {
+            [`evals/${suite.name}/fixtures/${scenario}.json`]: digest(
+              JSON.stringify(fixture, null, 2) + '\n',
+            ),
+          },
+        },
+      }),
+    );
     writeFileSync(resolve(directory, 'run-' + slot + '.jsonl'), 'not-json\n');
     writeFileSync(
       resolve(directory, 'run-' + slot + '.build-context-state.json'),
@@ -313,8 +324,8 @@ test('E3 malformed or missing state/logs never become fresh via current metadata
     );
     const malformed = verifyArchivedScenario(suite, { scenario, slot, directory, identity: {} });
     assert.ok(
-      malformed.some((p) => /JSON|json|malformed/.test(p)),
-      malformed.join('\n'),
+      malformed.validityProblems.some((p) => /JSON|json|malformed/.test(p)),
+      malformed.validityProblems.join('\n'),
     );
     writeFileSync(stem + '.jsonl', '');
     writeFileSync(
@@ -322,12 +333,25 @@ test('E3 malformed or missing state/logs never become fresh via current metadata
       JSON.stringify({ schema: SCHEMA, scenario, variants: [], errors: [] }),
     );
     assert.match(
-      verifyArchivedScenario(suite, { scenario, slot, directory, identity: {} }).join('\n'),
+      verifyArchivedScenario(suite, { scenario, slot, directory, identity: {} }).findings.join(
+        '\n',
+      ),
       /missing unique complete actual execution/,
     );
+    const fixtureDrift = verifyArchivedScenario(
+      { ...suite, root: resolve(directory, 'changed-fixtures') },
+      { scenario, slot, directory, identity: {} },
+    );
+    assert.deepEqual(fixtureDrift.validityProblems, []);
+    assert.match(fixtureDrift.findings.join('\n'), /missing unique complete actual execution/);
     rmSync(stem + '.build-context-state.json');
     assert.match(
-      verifyArchivedScenario(suite, { scenario, slot, directory, identity: {} }).join('\n'),
+      verifyArchivedScenario(suite, {
+        scenario,
+        slot,
+        directory,
+        identity: {},
+      }).validityProblems.join('\n'),
       /ENOENT/,
     );
   }

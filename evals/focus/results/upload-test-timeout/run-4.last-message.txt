@@ -1,0 +1,13 @@
+**Looping.** In admitted session `session-thread-01`, the goal was to make `tests/integration/upload.test.ts` pass reliably in CI.
+
+Four recorded rounds repeat the same timeout substitution (items 03, 06, 10, 13), each followed by the unchanged 5,000 ms failure (04, 07, 11, 14). Across both runs, there is no new diagnosis or passing result. Item 15’s claim that the fix is converging is unsupported by those outcomes.
+
+Observed evidence came through the supplied T3 report-only simulation; host version was unspecified and qualification was accepted under the eval override. Coverage: messages at positions 0, 5, 8, 9, 12, 15 and activity at 0–15; **7/16 native reads, 3/4 history pages, 46,024/64,000 charged characters**, a conservative upper bound. No inspected history item was truncated; both views were exhausted. No independent code or CI verification was performed.
+
+The recommended audit skill was unavailable under the supplied-skill-only restriction. Analysis used the reduced-depth inline fallback because mandatory delegation setup required prohibited helper execution.
+
+Delivery: **Not attempted**; this path permits no sends. Initial state-read delivery effects remain unknown, and the state-check/page race is untested and unprevented.
+
+Verdict: Looping
+Citations: item-03, item-04, item-06, item-07, item-10, item-11, item-13, item-14, item-15
+Gap: none

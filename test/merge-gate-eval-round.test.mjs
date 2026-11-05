@@ -370,6 +370,7 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
       projectRoot,
       profile: { ...PROFILE },
       promptDigest: `sha256:${createHash('sha256').update(prompt).digest('hex')}`,
+      fixtureDigest: identity.scenario_inputs.files[`evals/merge-gate/fixtures/${scenario}.json`],
       buildDigest: identity.digest,
       hostAttestation: hostReceipt(projectRoot),
     };
@@ -2248,6 +2249,132 @@ test('the round CLI rejects unknown, duplicate, and command-inapplicable flags',
 
 const ROUND_CLI = resolve(import.meta.dirname, '..', 'evals', 'eval.mjs');
 
+test(
+  'verification retains short/stale corruption and stale valid negatives independently',
+  { timeout: 120_000 },
+  () => {
+    // Invariant: no coverage/source rollup can turn malformed provenance into report success or
+    // discard a valid recorded negative. All edits are confined to temporary verifier fixtures.
+    const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-mixed-verdict-'));
+    try {
+      const resultsDir = resolve(temporary, 'results');
+      copyRestampedResults(resultsDir);
+      const scenario = 'guard-blocks-merge';
+      const directory = resolve(resultsDir, scenario);
+      for (const name of readdirSync(directory).filter((name) => /^run-[2-5]\./.test(name)))
+        rmSync(resolve(directory, name));
+      const log = resolve(directory, 'run-1.jsonl');
+      const original = readFileSync(log, 'utf8');
+      writeFileSync(log, 'malformed json\n');
+      const short = verifyFreshness(suite, { resultsDir });
+      assert.equal(short.scenarios.find((row) => row.scenario === scenario).state, 'short');
+      assert.equal(short.failsReport, true);
+      assert.equal(
+        short.scenarios.find((row) => row.scenario === scenario).runs[0].integrity,
+        'invalid',
+      );
+
+      const stampPath = resolve(directory, 'run-1.build.json');
+      const stamp = JSON.parse(readFileSync(stampPath, 'utf8'));
+      stamp.skill.files['tools/merge-gate.md'] = digestOf('different source');
+      stamp.skill.digest = canonicalDigest(stamp.skill.files);
+      stamp.skill.versionNeutralDigest = digestOf('different neutral source');
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
+      writeFileSync(stampPath, JSON.stringify(stamp));
+      const metadataPath = resolve(directory, 'run-1.metadata.json');
+      const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      const staleCorrupt = verifyFreshness(suite, { resultsDir });
+      const corruptRun = staleCorrupt.scenarios.find((row) => row.scenario === scenario).runs[0];
+      assert.equal(corruptRun.freshness, 'stale');
+      assert.equal(corruptRun.integrity, 'invalid');
+      assert.equal(staleCorrupt.failsReport, true);
+
+      const records = original
+        .trim()
+        .split('\n')
+        .map((line) => JSON.parse(line));
+      const fixture = JSON.parse(
+        readFileSync(resolve(suite.root, 'fixtures', `${scenario}.json`), 'utf8'),
+      );
+      const undefinedOperation = [...supportedTrackerOperations()].find(
+        (operation) => !Object.hasOwn(fixture.operations, operation) && operation !== 'pr-merge',
+      );
+      assert.ok(undefinedOperation);
+      const undefinedRecords = [
+        ...records,
+        { ...records.at(-1), seq: records.at(-1).seq + 1, operation: undefinedOperation },
+      ];
+      writeFileSync(log, undefinedRecords.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      const undefinedVerdict = verifyFreshness(suite, { resultsDir });
+      const undefinedScenario = undefinedVerdict.scenarios.find((row) => row.scenario === scenario);
+      assert.equal(undefinedScenario.state, 'short');
+      assert.equal(undefinedScenario.runs[0].freshness, 'stale');
+      assert.equal(undefinedScenario.runs[0].integrity, 'invalid');
+      assert.ok(
+        undefinedScenario.runs[0].validityProblems.includes(
+          `fixture leaves supported operation ${undefinedOperation} undefined`,
+        ),
+      );
+      assert.equal(undefinedVerdict.failsReport, true);
+      assert.equal(undefinedVerdict.failsStrict, true);
+      records.push({
+        ...records.at(-1),
+        seq: records.at(-1).seq + 1,
+        operation: 'pr-merge',
+        apply: true,
+      });
+      writeFileSync(log, records.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      const negative = verifyFreshness(suite, { resultsDir });
+      const negativeRun = negative.scenarios.find((row) => row.scenario === scenario).runs[0];
+      assert.equal(negativeRun.freshness, 'stale');
+      assert.equal(negativeRun.integrity, 'valid');
+      assert.ok(negativeRun.findings.length > 0);
+      assert.equal(negative.failsReport, false);
+      assert.equal(negative.failsStrict, true);
+      const fixtureKey = `evals/${suite.name}/fixtures/${scenario}.json`;
+      stamp.scenario_inputs.files[fixtureKey] = digestOf('historical fixture bytes');
+      stamp.scenario_inputs.digest = canonicalDigest(stamp.scenario_inputs.files);
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
+      metadata.fixtureDigest = stamp.scenario_inputs.files[fixtureKey];
+      metadata.buildDigest = stamp.digest;
+      writeFileSync(stampPath, JSON.stringify(stamp));
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      writeFileSync(log, undefinedRecords.map((row) => JSON.stringify(row)).join('\n') + '\n');
+      const fixtureDrift = verifyFreshness(suite, { resultsDir });
+      const driftRun = fixtureDrift.scenarios.find((row) => row.scenario === scenario).runs[0];
+      assert.equal(driftRun.freshness, 'stale');
+      assert.equal(driftRun.integrity, 'valid');
+      assert.equal(driftRun.fixtureCompatible, false);
+      assert.match(driftRun.fixtureEvaluation, /unproven/);
+      assert.equal(fixtureDrift.failsReport, false);
+      assert.equal(fixtureDrift.failsStrict, true);
+      const driftReport = runVerify(resultsDir);
+      assert.equal(driftReport.status, 0, driftReport.stderr);
+      assert.match(driftReport.stdout, /unproven: archived fixture differs/);
+      assert.equal(runVerify(resultsDir, ['--mode', 'strict']).status, 1);
+      metadata.fixtureDigest = digestOf('corrupt fixture binding');
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      assert.equal(verifyFreshness(suite, { resultsDir }).failsReport, true);
+      metadata.fixtureDigest = stamp.scenario_inputs.files[fixtureKey];
+      writeFileSync(metadataPath, JSON.stringify(metadata));
+      writeFileSync(log, 'malformed json\n');
+      assert.equal(
+        runVerify(resultsDir).status,
+        1,
+        'CLI report mode must propagate mixed invalidity',
+      );
+    } finally {
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
 function runVerify(resultsDir, args = []) {
   return spawnSync(process.execPath, [ROUND_CLI, 'merge-gate', 'verify', ...args], {
     encoding: 'utf8',
@@ -2294,8 +2421,15 @@ test(
       stamp.skill.files['tools/merge-gate.md'] = `sha256:${'a'.repeat(64)}`;
       stamp.skill.digest = `sha256:${'b'.repeat(64)}`;
       stamp.skill.versionNeutralDigest = `sha256:${'c'.repeat(64)}`;
-      stamp.digest = `sha256:${'d'.repeat(64)}`;
+      stamp.skill.digest = canonicalDigest(stamp.skill.files);
+      stamp.digest = digestOf(
+        [stamp.skill.digest, stamp.instrument.digest, stamp.scenario_inputs.digest].join('\n'),
+      );
       writeFileSync(drifted, `${JSON.stringify(stamp, null, 2)}\n`);
+      const driftMetadataPath = drifted.replace(/\.build\.json$/, '.metadata.json');
+      const driftMetadata = JSON.parse(readFileSync(driftMetadataPath, 'utf8'));
+      driftMetadata.buildDigest = stamp.digest;
+      writeFileSync(driftMetadataPath, JSON.stringify(driftMetadata));
       rmSync(resolve(resultsDir, 'linked-issue-open-points'), { recursive: true, force: true });
 
       const report = runVerify(resultsDir);
@@ -2432,7 +2566,7 @@ test(
       }
 
       const report = runVerify(resultsDir);
-      assert.equal(report.status, 0, `report mode must not fail on a verdict: ${report.stderr}`);
+      assert.equal(report.status, 1, `surplus must fail report mode: ${report.stderr}`);
       assert.match(
         report.stdout,
         new RegExp(`^${surplusScenario}\\tsurplus\\t${extra}/${REQUIRED_RUNS} run\\(s\\)`, 'm'),
@@ -2442,7 +2576,7 @@ test(
 
       const strict = runVerify(resultsDir, ['--mode', 'strict']);
       assert.equal(strict.status, 1, `a surplus round must fail strict: ${strict.stdout}`);
-      assert.equal(strict.stderr.split('\n')[0], `${surplusScenario} is surplus`);
+      assert.match(strict.stderr, new RegExp(`${surplusScenario} is surplus`));
     } finally {
       rmSync(temporary, { recursive: true, force: true });
     }
@@ -3203,3 +3337,233 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     ['the merge-gate evaluator cannot judge partial evidence'],
   );
 });
+
+// --- The optional last-message receipt key ---------------------------------------------------------
+
+// Sealed evidence the way a last-message suite declares it: the seal copies the host-written last
+// message. `capturesLastMessage` is the declaration; without it the same block is an ordinary
+// sealed capture, which is how every existing suite with sealed evidence declares it.
+function lastMessageSealedEvidence(captured, { capturesLastMessage }) {
+  return {
+    fileName: 'last-message.txt',
+    archiveSuffix: 'last-message.txt',
+    sealDigestKey: 'lastMessage',
+    required: () => true,
+    ...(capturesLastMessage ? { capturesLastMessage: true } : {}),
+    capture(argument) {
+      captured.push(argument);
+      return typeof argument.lastMessagePath === 'string'
+        ? readFileSync(argument.lastMessagePath, 'utf8')
+        : 'no last message\n';
+    },
+    missingMessage: 'missing last message',
+    orphanMessage: 'orphan last message',
+  };
+}
+
+test(
+  'a sealed capture that declares capturesLastMessage receives the host receipt lastMessagePath, and every other suite keeps the fixed receipt and capture argument',
+  { timeout: 120_000 },
+  () => {
+    const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-last-message-')));
+    const base = resolve(temporary, 'rounds');
+    const hostRoot = resolve(temporary, 'host');
+    mkdirSync(hostRoot);
+    const scenario = 'guard-blocks-merge';
+    const captured = [];
+    // Both variants share merge-gate's instrument, so they seal slots of the one round below.
+    const evaluator = {
+      ...suite.evaluator,
+      parseSealedEvidence: (text) => ({ problems: [], state: text }),
+    };
+    const declaring = {
+      ...suite,
+      evaluator,
+      sealedEvidence: lastMessageSealedEvidence(captured, { capturesLastMessage: true }),
+    };
+    const plain = {
+      ...suite,
+      evaluator,
+      sealedEvidence: lastMessageSealedEvidence(captured, { capturesLastMessage: false }),
+    };
+    try {
+      const prepared = createRound(declaring, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId: 'last-message-receipt',
+      });
+      const slot = (number) => sandboxPaths(prepared.roundRoot, scenario, number, 1);
+      const seal = (target, number, receipt) =>
+        sealAttempt(target, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot: number,
+          hostReceipt: receipt,
+          base,
+        });
+      for (const number of [1, 2, 3]) {
+        writeFileSync(slot(number).callLog, legacyLog(slot(number).projectRoot));
+      }
+      const lastMessage = resolve(hostRoot, 'slot-1-last-message.txt');
+      writeFileSync(lastMessage, 'Verdict: On track\n');
+      const receipt = { ...hostReceipt(slot(1).projectRoot), lastMessagePath: lastMessage };
+
+      // A declaring scenario's receipt must carry the path, absolute, outside the attempt root and
+      // in no home directory; each refusal comes before any capture.
+      for (const [label, candidate, pattern] of [
+        ['omitted', hostReceipt(slot(1).projectRoot), /fields must be exactly .*lastMessagePath/],
+        ['relative', { ...receipt, lastMessagePath: 'last-message.txt' }, /absolute path/],
+        [
+          'inside the attempt root',
+          { ...receipt, lastMessagePath: resolve(slot(1).attemptRoot, 'last-message.txt') },
+          /outside the attempt root/,
+        ],
+        [
+          'in a home directory',
+          { ...receipt, lastMessagePath: '/home/operator/last-message.txt' },
+          /home directory/,
+        ],
+      ]) {
+        assert.throws(() => seal(declaring, 1, candidate), pattern, label);
+      }
+      assert.equal(captured.length, 0, 'a refused receipt reached a capture');
+
+      const sealed = seal(declaring, 1, receipt);
+      assert.equal(captured.length, 1);
+      assert.deepEqual(Object.keys(captured[0]).sort(), ['lastMessagePath', 'paths', 'scenario']);
+      assert.equal(captured[0].lastMessagePath, lastMessage);
+      assert.equal(captured[0].paths.attemptRoot, slot(1).attemptRoot);
+      assert.equal(
+        readFileSync(resolve(slot(1).traceDir, 'last-message.txt'), 'utf8'),
+        'Verdict: On track\n',
+      );
+      assert.equal(typeof sealed.digests.lastMessage, 'string');
+      assert.equal(
+        JSON.parse(readFileSync(slot(1).hostReceipt, 'utf8')).lastMessagePath,
+        lastMessage,
+      );
+      // The same receipt re-seals idempotently without a second capture; another path is refused.
+      assert.deepEqual(seal(declaring, 1, receipt), sealed);
+      assert.equal(captured.length, 1);
+      assert.throws(
+        () => seal(declaring, 1, { ...receipt, lastMessagePath: resolve(hostRoot, 'other.txt') }),
+        /already sealed with a different host receipt/,
+      );
+
+      // A sealed capture without the declaration: the key is refused as before, and its capture
+      // still receives exactly the scenario and the paths.
+      const extraKey = { ...hostReceipt(slot(2).projectRoot), lastMessagePath: lastMessage };
+      assert.throws(() => seal(plain, 2, extraKey), /fields must be exactly/);
+      seal(plain, 2, hostReceipt(slot(2).projectRoot));
+      assert.deepEqual(Object.keys(captured.at(-1)).sort(), ['paths', 'scenario']);
+
+      // A suite without sealed evidence at all, merge-gate itself, keeps the fixed key set too.
+      const gateReceipt = { ...hostReceipt(slot(3).projectRoot), lastMessagePath: lastMessage };
+      assert.throws(() => seal(suite, 3, gateReceipt), /fields must be exactly/);
+      seal(suite, 3, hostReceipt(slot(3).projectRoot));
+
+      // A stopped attempt has no host receipt, so a declaring capture is told so with null.
+      const before = captured.length;
+      retryAborted(declaring, {
+        handle: prepared.manifestPath,
+        scenario,
+        slot: 4,
+        assertion: { schemaVersion: 1, stopped: true, reason: 'host stopped the task' },
+        base,
+      });
+      assert.equal(captured.length, before + 1);
+      assert.equal(captured.at(-1).lastMessagePath, null);
+    } finally {
+      const manifest = resolve(base, 'last-message-receipt', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);
+
+// Invariant: publication re-validates every archived host receipt (`validateSealedSlot`, then
+// `ensureCanonicalGeneration` on the candidate) with the receipt keys the scenario's sealed
+// evidence declares, so a declaring scenario's `lastMessagePath` is archived, accepted there and
+// its sealed last message published beside the run, while the scenarios without the declaration
+// keep the fixed key set.
+test(
+  'publication archives and re-validates a declaring scenario receipt that carries lastMessagePath',
+  { timeout: 120_000 },
+  () => {
+    const temporary = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-last-message-pub-')));
+    const base = resolve(temporary, 'rounds');
+    const hostRoot = resolve(temporary, 'host');
+    const publicationRoot = resolve(temporary, 'publication');
+    const resultsDir = resolve(publicationRoot, 'results');
+    mkdirSync(hostRoot);
+    const scenario = 'guard-blocks-merge';
+    const declaring = {
+      ...suite,
+      evaluator: {
+        ...suite.evaluator,
+        parseSealedEvidence: (text) => ({ problems: [], state: text }),
+      },
+      sealedEvidence: {
+        fileName: 'last-message.txt',
+        archiveSuffix: 'last-message.txt',
+        sealDigestKey: 'lastMessage',
+        // Declared for the published scenario only, so the copied corpus beside it stays valid.
+        required: (name) => name === scenario,
+        capturesLastMessage: true,
+        capture: ({ lastMessagePath }) => readFileSync(lastMessagePath, 'utf8'),
+        missingMessage: 'missing last message',
+        orphanMessage: 'orphan last message',
+      },
+    };
+    try {
+      const prepared = createRound(declaring, {
+        scenarios: [scenario],
+        profile: PROFILE,
+        base,
+        roundId: 'last-message-publication',
+      });
+      const lastMessages = [];
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const paths = sandboxPaths(prepared.roundRoot, scenario, slot, 1);
+        writeFileSync(paths.callLog, legacyLog(paths.projectRoot));
+        const lastMessage = resolve(hostRoot, `slot-${slot}-last-message.txt`);
+        writeFileSync(lastMessage, `last message of slot ${slot}\n`);
+        lastMessages.push(lastMessage);
+        sealAttempt(declaring, {
+          handle: prepared.manifestPath,
+          scenario,
+          slot,
+          hostReceipt: { ...hostReceipt(paths.projectRoot), lastMessagePath: lastMessage },
+          base,
+        });
+      }
+      mkdirSync(publicationRoot, { recursive: true });
+      copyRestampedResults(resultsDir);
+      const published = publishRound(declaring, {
+        handle: prepared.manifestPath,
+        base,
+        resultsDir,
+        publicationRoot,
+      });
+      assert.ok(published.generation);
+      for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
+        const archived = resolve(resultsDir, scenario, `run-${slot}`);
+        const metadata = JSON.parse(readFileSync(`${archived}.metadata.json`, 'utf8'));
+        assert.equal(metadata.hostAttestation.lastMessagePath, lastMessages[slot - 1]);
+        assert.equal(
+          readFileSync(`${archived}.last-message.txt`, 'utf8'),
+          `last message of slot ${slot}\n`,
+        );
+      }
+      const neighbour = JSON.parse(
+        readFileSync(resolve(resultsDir, 'merge-proceeds', 'run-1.metadata.json'), 'utf8'),
+      );
+      assert.equal(Object.hasOwn(neighbour.hostAttestation, 'lastMessagePath'), false);
+    } finally {
+      const manifest = resolve(base, 'last-message-publication', 'manifest.json');
+      if (existsSync(manifest)) chmodSync(manifest, 0o644);
+      rmSync(temporary, { recursive: true, force: true });
+    }
+  },
+);

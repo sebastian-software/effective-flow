@@ -126,6 +126,39 @@ contract is stated once.
     Third, the residual injection risk of the prompt-level stand-in in rule 5 (Design decision, no
     host claim).
 
+### Decision change: opt-in follow-up ticks (#613)
+
+Focus gains an opt-in follow-up mode, defined behind a disabled gate row until candidate-bound
+operator qualification. The [schedule spike](../developer-guide/focus-schedule-evidence.md) on T3
+Code with Codex threads answered every no-go question with go (Evidence: observed, single sequences
+for several questions, one host version and interval). The decision:
+
+- **Opted-in scheduled ticks.** Only the developer's next turn after an offer, naming one fixed
+  interval, starts recurring checks; nothing schedules itself.
+- **A single host schedule.** Each loop is one T3 `schedule_task` bound to the observer thread, whose
+  prompt holds only the tick invocation, the session reference and its own handle. A one-line
+  checkpoint in the observer conversation is the only state between ticks; focus writes no file,
+  cache, memory or configuration. Harness-native schedulers are out of scope.
+- **Report-only ticks.** A tick sends nothing and asks for no confirmation; a warranted correction
+  points to an interactive focus run. Rule 1's "unattended or scheduled runs send nothing" stands.
+- **Top-level targets only.** Delegated targets keep the one-off snapshot, so scheduled reads do not
+  multiply the residual read side effect of rule 11, which stays unchanged.
+- **The tick allow-list.** A tick may use only the contract's admission and page reads, the one
+  analysis leaf, and deletion of its own handle.
+- **Tick identification by prompt grammar and handle, with a deletion safeguard.** Host fields that
+  mark a scheduled turn are not read, so a hand-typed tick prompt counts as a tick; this is harmless
+  because ticks are report-only. A tick or stop deletes only a handle an earlier assistant message of
+  the observer conversation names, so an edited prompt cannot delete an unrelated task.
+- **A loop cap of 24 hours or 48 ticks.** The spike measured 13,130 characters of observer growth
+  per proxy tick in the `activity` view (partial), which puts a full loop at roughly 630,000
+  characters or more; continuing past the cap needs an explicit resume.
+
+Residual risk: ticks read the target unattended, in whatever mode the observer runs. In an
+approval-requiring mode each read waits for approval; in a broader mode the reads run without a
+present developer. Target content that reaches a tick is still governed only by rule 5's
+prompt-level stand-in, now applied with no developer in the conversation to notice an injection.
+The report-only rule bounds what such content can cause to a visible observer message.
+
 ### Send-outcome reporting
 
 The trajectory verdict and send outcome are independent. Both outbound kinds use these states:
@@ -170,12 +203,14 @@ that a correction was received or acted on. Missing self-report evidence still y
 Review this living decision when a host reply carries a stable reference, Claude Code gains a
 session reader, the T3 Code delivery side effect becomes observable, a Codex sender is verified, a
 host offers a pre-model filter or hook for cross-session messages, real-host runs of work package 4
-contradict a rule here, or the work package 4 focus contract diverges from a rule here.
+contradict a rule here, the work package 4 focus contract diverges from a rule here, or follow-up
+operator qualification contradicts the decision change above.
 
 ## References
 
 - [Focus session check concept](../concept/2026-11-02-focus-session-check.md)
 - [Focus host evidence](../developer-guide/focus-host-evidence.md)
+- [Focus schedule evidence](../developer-guide/focus-schedule-evidence.md)
 - [Focus host verification spike plan](../plan/archive/2026-11-02-focus-host-verification-spike.md)
 - [Session rename butler](./session-rename-butler.md)
 - [Input trust boundary](./input-trust-boundary.md)

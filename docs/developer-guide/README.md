@@ -63,3 +63,14 @@ is no runtime application – you edit `src/`, never `dist/`.
   reply behaviour of T3 Code, Codex desktop, and Claude Code, with one conclusion per host.
 - [Focus host acceptance](focus-host-acceptance.md) – the current candidate-bound acceptance matrix;
   it is intentionally separate from the immutable primitive spike evidence above.
+- [focus session shape observations](focus-session-shape-observations.md) – dated addendum to the
+  host evidence: `t3_thread_read` shapes and paging behaviour plus the Claude Code self-report
+  projection.
+- [focus session shape observations, second addendum](focus-session-shape-observations-2.md) –
+  two-run threads, `runLimit` 2 and the observer's running-thread read; the eval session stub's
+  shapes module merges both addenda by behaviour name.
+- [focus labelling rubric](focus-labelling-rubric.md) – how fixture sessions receive their expected
+  observed and self-report labels, the partial-trajectory, injection-item and citation rules, the
+  gap categories and the scoring procedure.
+- [focus schedule evidence](focus-schedule-evidence.md) – dated addendum to the host evidence:
+  T3 Code `schedule_task` behaviour on Codex threads and the go decision for the follow-up mode.

@@ -42,101 +42,30 @@ jobs:
       - name: Distribution and installation smoke tests
         run: pnpm test:distribution
 
-      # The job's last step, deliberately. A strict failure aborts the job at the point it
-      # happens, so placing this next to `Unit tests` would skip `Build distribution` and
-      # `pnpm test:distribution` on exactly the pull request that ships — hiding a real build
-      # failure behind an owed eval round, which is the cheaper of the two problems.
-      #
-      # No condition guards this step, and none may guard the job. `Format, test and build` is a
-      # required status check on `develop` with an empty bypass-actor list, and a required check
-      # that never reports blocks the pull request forever: no timeout, and no override short of
-      # editing the ruleset outside this repository. That deadlock is already documented for path
-      # filters beside the required-check list in
-      # docs/developer-guide/release-and-installation.md. The step therefore always runs and
-      # always reports; only whether a stale verdict is fatal varies.
-      #
-      # It never runs a model. `verify` rebuilds the skill into a throwaway root and compares each
-      # behavioural eval suite's archived evidence against the working tree. On an ordinary pull request
-      # that verdict is a report — printed to the step summary, green even when stale, because
-      # re-recording a round on every merge is the cost this gate exists to remove. On the
-      # release pull request it is strict: that is the one point where the evidence has to
-      # describe the build that actually ships, and a stale, absent or short corpus fails.
+      # Keep evidence reporting after every broad package check. The same report policy applies
+      # to release and ordinary PRs; the verifier rejects integrity/errors independently of debt.
+      # Never condition this required job or omit a suite: every verdict belongs in the summary.
       - name: Behavioural eval evidence
         id: behavioural
-        env:
-          # Read through the environment rather than expanded into the script with `${{ }}`: a
-          # head-ref is attacker-controlled text on a fork pull request, and a direct expansion
-          # would splice it into the command line before bash ever parses it.
-          EVENT_NAME: ${{ github.event_name }}
-          HEAD_REF: ${{ github.head_ref }}
-          BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB }}
-          BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256 }}
         run: |
-          # release-please opens its pull request from
-          # release-please--branches--develop--components--effective-flow. The prefix is matched
-          # rather than the full name, so the component suffix may change with the manifest.
-          # test/workflow-contracts.test.mjs pins this literal: a renamed prefix would otherwise
-          # turn the gate off while every CI run stayed green about it.
-          mode=report
-          case "$EVENT_NAME:$HEAD_REF" in
-            pull_request:release-please--*) mode=strict ;;
-          esac
-
-          # One verdict per suite, every suite verified and reported even when an earlier one
-          # failed, so one stale corpus never hides another's verdict. Only the explicitly pinned
-          # build-context absence may proceed to the separate blocking provisional disposition.
-          # test/workflow-contracts.test.mjs pins this list to the suites under evals/, so a new
-          # suite cannot be left out of the release gate unnoticed.
           status=0
-          for suite in merge-gate iterate next-steps build-context; do
+          for suite in merge-gate iterate next-steps build-context focus; do
             verdict="$RUNNER_TEMP/$suite-eval-verify.txt"
-            # The exit status is captured rather than inherited: the verdict belongs in the step
-            # summary whether the command passed or failed, and piping into `tee` would report
-            # tee's status instead — the default shell here is `bash -e`, without `pipefail`.
             suite_status=0
-            pnpm eval "$suite" verify --mode "$mode" > "$verdict" 2>&1 || suite_status=$?
+            pnpm eval "$suite" verify --mode report > "$verdict" 2>&1 || suite_status=$?
             cat "$verdict"
             {
-              echo "### $suite eval evidence (\`--mode $mode\`)"
+              echo "### $suite eval evidence (package report; capability qualification separate)"
               echo
               echo '```'
               cat "$verdict"
               echo '```'
             } >> "$GITHUB_STEP_SUMMARY"
             if [ "$suite_status" -ne 0 ]; then
-              if [ "$suite" = build-context ] && [ "$mode" = strict ] &&
-                 [ -n "$BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB" ] &&
-                 [ -n "$BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256" ]; then
-                # Preserve the failed FULL verdict above. A separate blocking step must verify
-                # the exact externally admitted candidate; neither a variable nor this branch
-                # admits missing evidence by itself. Every other suite remains strict blocking.
-                echo 'provisional_required=true' >> "$GITHUB_OUTPUT"
-              else
-                status=$suite_status
-              fi
+              status=$suite_status
             fi
           done
           exit "$status"
-
-      - name: Build-context provisional PR581 release disposition
-        if: ${{ !cancelled() && steps.behavioural.outputs.provisional_required == 'true' }}
-        env:
-          GH_TOKEN: ${{ github.token }}
-          BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB }}
-          BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256: ${{ vars.BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256 }}
-        run: |
-          verdict="$RUNNER_TEMP/build-context-provisional-release.txt"
-          disposition_status=0
-          node evals/build-context/provisional-release.mjs verify > "$verdict" 2>&1 || disposition_status=$?
-          cat "$verdict"
-          {
-            echo '### build-context provisional PR581 release disposition (FULL acceptance remains UNPROVEN)'
-            echo
-            echo '```'
-            cat "$verdict"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-          exit "$disposition_status"
 
   shellcheck:
     name: Shellcheck

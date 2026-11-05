@@ -98,17 +98,54 @@ function cacheSafe(root, profile, record, parts) {
   return 'safe';
 }
 
+function processesGone(record, own) {
+  return (
+    ((own && record.ownerPid === process.pid) || processState(record.ownerPid) === 'gone') &&
+    (record.childPgid === null || processState(-record.childPgid) === 'gone')
+  );
+}
+
+function completedReceipt(profile, record) {
+  let receipt;
+  try {
+    receipt = readJson(join(profile, RECEIPT));
+  } catch {
+    return false;
+  }
+  return (
+    receipt?.schema === 1 &&
+    receipt.profileId === record.id &&
+    typeof receipt.cleanedAt === 'string' &&
+    Number.isFinite(Date.parse(receipt.cleanedAt)) &&
+    new Date(receipt.cleanedAt).toISOString() === receipt.cleanedAt &&
+    Array.isArray(receipt.caches) &&
+    receipt.caches.length === CACHE_PATHS.length &&
+    CACHE_PATHS.every(
+      (parts, index) =>
+        receipt.caches[index]?.path === parts.join('/') &&
+        receipt.caches[index]?.status === 'removed',
+    )
+  );
+}
+
 export async function cleanupProfile(root, profile, { own = false } = {}) {
   const record = readRecord(root, profile);
-  if ((!own || record.ownerPid !== process.pid) && processState(record.ownerPid) !== 'gone')
-    return false;
-  if (record.childPgid !== null && processState(-record.childPgid) !== 'gone') return false;
+  if (!processesGone(record, own)) return false;
   const release = await claimCleanup(root, profile, record);
   if (release === undefined) return false;
   try {
     // Recheck after obtaining the claim: a previous cleaner may have been killed mid-delete.
     guard(root, profile, record);
-    if (record.childPgid !== null && processState(-record.childPgid) !== 'gone') return false;
+    if (!processesGone(record, own)) return false;
+    // Completed receipts are retained-closure inputs. Preserve their exact bytes only while
+    // this claim still proves the same profile, gone processes and four absent cache paths.
+    if (
+      completedReceipt(profile, record) &&
+      CACHE_PATHS.every((parts) => cacheSafe(root, profile, record, parts) === 'absent')
+    ) {
+      guard(root, profile, record);
+      return processesGone(record, own);
+    }
     const caches = [];
     for (const parts of CACHE_PATHS) {
       const safety = cacheSafe(root, profile, record, parts);

@@ -2444,7 +2444,7 @@ function syntheticLegacyLog(operations) {
     .join('');
 }
 
-function evaluateSynthetic(scenario, operations) {
+function evaluateSynthetic(scenario, operations, options = {}) {
   const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
   return evaluateEvidence(suite, {
     scenario,
@@ -2452,8 +2452,63 @@ function evaluateSynthetic(scenario, operations) {
     fixture,
     projectRoot: SYNTHETIC_PROJECT,
     answerableOperations: new Set(Object.keys(fixture.operations)),
+    ...options,
   });
 }
+
+test('fixture drift retains merge-gate call-only violations without current fixture judgments', () => {
+  for (const [scenario, operations, expected] of [
+    ['linked-issue-open-points', [{ operation: 'issue-comment', apply: true }], /applied mutation/],
+    ['linked-issue-open-points', ['pr-merge'], /observer-only run requested pr-merge/],
+    ['merge-proceeds', Array(2).fill({ operation: 'pr-merge', apply: true }), /2 applied pr-merge/],
+    [
+      'bot-login-excluded',
+      Array(2).fill({ operation: 'pr-merge', apply: true }),
+      /2 applied pr-merge/,
+    ],
+    [
+      'nested-spawn-abort-runs-inline',
+      Array(2).fill({ operation: 'pr-merge', apply: true }),
+      /2 applied pr-merge/,
+    ],
+    ['non-interactive-dispatch-reports', ['probe', 'probe', 'probe'], /second dispatch/],
+    ['nested-spawn-abort-runs-inline', ['probe', 'probe', 'probe'], /second dispatch/],
+  ]) {
+    const result = evaluateSynthetic(scenario, operations, {
+      fixtureCompatible: false,
+      fixture: {},
+    });
+    assert.deepEqual(result.validityProblems, [], scenario);
+    assert.equal(result.findings.length, 1, scenario);
+    assert.match(result.findings[0], expected, scenario);
+  }
+});
+
+test('fixture drift does not infer merge-gate refusals or omissions from the replacement fixture', () => {
+  for (const scenario of [
+    'guard-blocks-merge',
+    'unreported-checks-block-merge',
+    'configured-reviewer-set-aside-blocks',
+    'merge-proceeds',
+    'bot-login-excluded',
+    'nested-spawn-abort-runs-inline',
+    'non-interactive-dispatch-reports',
+  ]) {
+    const result = evaluateSynthetic(scenario, [{ operation: 'pr-merge', apply: true }], {
+      fixtureCompatible: false,
+      fixture: { operations: {} },
+      auxiliaryText: scenario === 'configured-reviewer-set-aside-blocks' ? '' : null,
+    });
+    assert.deepEqual(result.validityProblems, [], scenario);
+    assert.deepEqual(result.findings, [], scenario);
+  }
+  const observer = evaluateSynthetic(
+    'linked-issue-open-points',
+    [{ operation: 'issue-comment', apply: false }],
+    { fixtureCompatible: false, fixture: {} },
+  );
+  assert.deepEqual(observer.findings, []);
+});
 
 function decisiveSynthetic(scenario, operations) {
   const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));

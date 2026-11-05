@@ -66,63 +66,38 @@ The release workflow (`.github/workflows/release.yml`) runs on every push to the
    below. While it is enabled, a failure in this downstream job marks the release workflow as
    failed, but does not roll back the already published release, archive, or delivery commit.
 
-### The release pull request gates the behavioural eval evidence
+<a id="the-release-pull-request-gates-the-behavioural-eval-evidence"></a>
 
-The behavioural eval suites under `evals/<tool>/` — `merge-gate`, `iterate`, `next-steps` and `build-context` — archive evidence
-about a build, and the build that matters is the one that ships, so the release pull request is
-where that evidence has to be current. The last step of the required `Format, test and build` job,
-`Behavioural eval evidence`, runs `pnpm eval <tool> verify` once for each suite: a read-only command
-that rebuilds the skill into a throwaway root and compares it against that suite's archived stamps,
-writing nothing and launching no model. Every suite is verified even after an earlier one failed,
-each verdict gets its own section of the job summary, and the step fails if any suite did. On an
-ordinary pull request it reports — the verdicts go to the job summary and the check stays green
-even when a corpus is stale, because a round costs five fresh agent sessions per scenario of each
-suite and the claim it supports is about the delivered build rather than about every merge on the
-way there. When the head ref starts with `release-please--` — the prefix of release-please's own
-`release-please--branches--develop--components--effective-flow`, matched rather than the full name
-so the component suffix may change — the same step runs `--mode strict`, and a stale, short, or
-absent corpus in either suite fails the check. There is no general waiver: without a current round
-of every suite there is no release.
+### Package checks and capability evidence
 
-#### The separately named PR581 provisional disposition
+The [pragmatic test and release policy](../adr/pragmatic-test-release-policy.md) owns package
+acceptance and experimental capability activation. The required `Format, test and build` job
+retains format, the full unit/integration population, build guards and distribution/installation
+smoke. Shellcheck and generated README checks remain required; advisory jobs keep their status.
 
-The `build-context` suite has one release-only disposition for the bounded provisional
-implementation on feature PR581. It does not change `pnpm eval build-context verify --mode strict`.
-The full verifier still reports `FAILED`/`UNPROVEN` until all six behavioural scenario families,
-all twenty portable Quality pairs (Codex and Claude, simple and review-correction, five slots each),
-and one complete native lane for each harness are current and valid. Partial, invalid, stale,
-synthetic, failed, or archived records are not converted into passes; missing diagnostics remain
-outside `results/`.
+Its final `Behavioural eval evidence` step runs `pnpm eval <tool> verify --mode report` for all
+five suites: `merge-gate`, `iterate`, `next-steps`, `build-context` and `focus`. Every suite reports
+in the summary even if an earlier verifier fails. Ordinary and release PRs use the same policy:
+stale, absent or incomplete coverage is visible debt; invalid archives, inconsistent internal
+stamps, surplus, unknown results and verifier failures block. Valid negative outcomes remain
+visible for applicability/security triage. Known reachable security-critical defects block delivery.
 
-The disposition is a separate blocking step after the complete ordinary evidence loop. It can run
-only when the release PR is a live `release-please--*` pull request and both repository variables
-are present: `BUILD_CONTEXT_PR581_AUTHORIZATION_BLOB` (a 40-hex Git Blob object ID) and
-`BUILD_CONTEXT_PR581_AUTHORIZATION_SHA256` (a `sha256:` digest with 64 hex characters). The
-ordinary `merge-gate`, `iterate`, and `next-steps` suites remain strict. The provisional branch is
-admitted only when the full `build-context` verdict is a truthful strict failure with no archived
-results and its absence list is exactly the 22 entries implemented by the suite: 16 behavioural
-variants, four paired cells, and the two native lanes. No model, role, authority, or quality
-invariant may fail.
+`pnpm eval <tool> verify --mode strict` retains full suite acceptance semantics. It remains a
+manual capability-qualification check, not a universal package-release prerequisite. Source drift
+does not become a pass, and no archive is re-stamped to hide debt. Planned-build workflow
+delegation uses the complete inline Quality path while unqualified. Focus snapshot execution,
+follow-up and sends remain disabled pending their own current acceptance.
 
-`node evals/build-context/provisional-release.mjs inspect` and `verify` are read-only. `inspect`
-reports the candidate's commit, tree, instrument, policy, and release-version binding. `verify`
-loads only the pinned Git Blob and re-observes the original authenticated protected-host run,
-jobs, logs, and exact source file modes and digests through the existing backend, using the selected
-proof kind. The original transport authorization remains schema
-`effective-flow.build-context-provisional-pr581/1`, including its materialization proof. The separate
-published-source authorization uses version `/2` with `host.kind: "github-published-source"`; it cannot
-replay transport evidence or fabricate snapshot parents or materialization. Both versions bind repository,
-feature PR581, the exact release PR/ref/version, source/tree/instrument/policy, a maximum seven-day
-window, the user's actual authority text and digest, an independent policy report with closed material
-findings, and the selected original protected-host proof. The live release PR must remain open,
-unmerged, based on `develop`, and point at the authorized source commit. After the final source,
-original host qualification, and bound review exist, the release operator creates the detached
-authorization JSON, publishes it as a detached Git Blob through the API, and then sets both
-trusted repository variables before rerunning CI. GitHub Blob availability is not guaranteed
-throughout the maximum seven-day authorization window; the two pins provide no storage guarantee.
-If the exact blob is unavailable, reading it and verifying admission fail closed. The original
-transport snapshot branch is create-only and immutable: never move or overwrite it. Qualification
-refs are not delivery branches and do not open delivery PRs.
+The former PR581 provisional CI branch is retired by this policy. Its bounded verifier and
+protected-host/security validation functions remain available under their original contracts;
+repository variables cannot enable delegation or waive invalid evidence. See the
+[build-context recording documentation](../../evals/build-context/README.md) for those historical
+proof formats and the outstanding capability work. This policy grants no release merge permission.
+
+#### Protected-host qualification remains independent
+
+These existing native qualification and security boundaries remain mandatory for their selected
+executor lane; package evidence reporting does not satisfy or replace them.
 
 The published-source alternative is a trusted maintenance operation for `sebastian-software/effective-flow`
 on its already authorized ephemeral `macos-15` executor. Deliver its implementation through `develop`, then let
@@ -163,11 +138,13 @@ path guard remains unchanged, including forbidden historical configuration and `
 availability grants no local-export exception. Its owning contract is
 [`protected-validation.md`](../../src/shared/protected-validation.md).
 
-Only successful qualification of that exact final source and its bound independent review permit the
-authorized release operator to publish the detached authorization and set the two pins described above.
+For capability-specific protected-host qualification, only successful qualification of that exact
+final source and its bound independent review permit the authorized release operator to publish the
+detached authorization under the owning contract. The former two-pin CI activation procedure is
+retired: those pins neither gate package acceptance nor enable an unqualified capability.
 Expired or earlier-source proof, attempt 2, a manual rerun, ordinary CI or local QA cannot substitute.
-Paid behavioural recordings require their separate grant; the remaining strict suites and release
-gates still apply. This path establishes neither full native feature acceptance nor performance,
+Paid behavioural recordings require their separate grant; applicable strict capability acceptance
+and unchanged mandatory package gates still apply. This path establishes neither full native feature acceptance nor performance,
 cost, context-reduction or quality-equivalence evidence.
 
 This bridge is a practical bootstrap for a missing complete population. A local candidate binding
@@ -184,27 +161,20 @@ paired matrix. Preserve failed attempts and fallback outcomes, obtain the origin
 then use frozen controlled Codex recordings and deferred Claude recordings. Do not activate Fast
 or restart the stopped pilot through production configuration.
 
-A re-record therefore lands as its own ordinary pull request into `develop`, never as a commit on
-the release branch, which release-please owns and force-pushes. Merging that pull request into
-`develop` does not by itself re-run the release pull request's CI: a re-record lands as a commit
-type release-please ignores, such as `test:`, and release-please does not refresh its pull request
-for it. The release pull request then needs a fresh `pull_request` event — close and reopen it.
-The first such event can still test a stale merge commit, so before trusting the strict verdict,
-check that the merge ref the run checked out already contains the re-record, and close and reopen
-once more if it does not. Closing without a merge leaves no blocking check behind: the
-`Close referenced issues` workflow guards each of its steps rather than its job, so an unmerged
-close concludes `SUCCESS` instead of leaving a `SKIPPED` run. `merge-gate` would pass a `SKIPPED`
-run, but a `SUCCESS` keeps the check list clean without depending on that handling.
-That holds once a release has delivered the workflow to `main`, because `pull_request_target` runs
-the default branch's copy (see "Trusted default-branch automation" below). Start the round when
-`verify` first reports stale rather than when the release pull request turns red; see
-[`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for what invalidates a round and how
-one is recorded.
+A re-record lands as its own ordinary pull request into `develop`, never as a commit on the release
+branch, which release-please owns and force-pushes. Ordinary and release PRs use the same report-mode
+package gate; stale evidence alone does not require a re-record or a release-PR refresh. The former
+instruction to close and reopen a release PR to obtain a trusted strict CI verdict is retired.
+For capability qualification, run the applicable manual strict check against the exact candidate
+containing the re-record, and verify its source and evidence bindings. A result from an earlier tree
+does not qualify that candidate. See [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md)
+for what invalidates a round and how one is recorded; the capability's own acceptance contract
+determines when current strict evidence is required.
 
-The gate is deliberately not in `release.yml`. That workflow runs on every push to `develop` and its
-`pnpm test` sits ahead of the `Release Please` step, so a strict check there would block ordinary
-development pushes and stall the release pull request's own updates — and once release-please has
-run, the tag exists and it is too late to gate anything.
+The report-mode evidence step runs in `ci.yml`, not `release.yml`. The release workflow retains its
+technical checks ahead of `Release Please`; it does not impose universal strict suite acceptance on
+development pushes or release updates. Capability-specific qualification remains separate from
+package acceptance and from authorization to merge or publish a release.
 
 ### A mistakenly breaking commit is pinned forward
 
@@ -336,15 +306,12 @@ both strings. Second, `ci.yml` currently runs on every `pull_request` with no `p
 is what lets a docs-only pull request satisfy the requirement — adding a path filter would deadlock
 every filtered pull request.
 
-The behavioural eval freshness gate sits inside that same required job for exactly those reasons. It
-has to be strict on the release pull request and merely reporting everywhere else, and a job that an
-`if:` skips never reports at all — so it is a step of `Format, test and build` rather than a job of
-its own, carries no `if:` at either level, and selects its mode from inside the step. See
-[The release pull request gates the behavioural eval evidence](#the-release-pull-request-gates-the-behavioural-eval-evidence).
-`test/workflow-contracts.test.mjs` pins the step, its placement as the job's last, the absent
-condition, and the literal `release-please--` prefix it matches. Each of those is a literal, and
-without those assertions a rename of any one would turn the gate off while every CI run stayed green
-about it — the same silent-green failure mode the two constraints above describe.
+The behavioural evidence step sits inside the same required job and carries no condition at job or
+step level. It reports all five suites identically on ordinary and release PRs after the broad
+checks, rejecting integrity/errors while retaining freshness debt. See
+[Package checks and capability evidence](#package-checks-and-capability-evidence).
+`test/workflow-contracts.test.mjs` protects the placement, all-suite population and error propagation;
+no release branch name or repository variable can waive invalid evidence.
 
 Inspect either ruleset with `gh api repos/sebastian-software/effective-flow/rulesets`, and check
 what actually applies to a branch for the calling user with
@@ -558,11 +525,11 @@ The build stamps `<manifest version> (<git short hash>)` into all three routers.
 makes the build fail unless native Claude, native Codex, and portable output agree.
 
 Because the stamp sits in `SKILL.md`, a release changes a file every behavioural eval suite
-binds its archived runs to — on the one pull request where that evidence is
-[enforced](#the-release-pull-request-gates-the-behavioural-eval-evidence). That is handled and needs
-no action: every archived round carries a version-neutral skill digest beside its exact one, and a
-bump that moves only the version token is accepted without re-recording, so an otherwise current
-corpus clears the strict check on its own. See
+binds its archived runs to. The package gate reports the resulting evidence debt on both ordinary and
+release PRs; it does not turn stale evidence into a release-blocking failure. Every archived round
+carries a version-neutral skill digest beside its exact one, and a bump that moves only the version
+token is accepted without re-recording. Capability-specific strict verification still applies when
+an experimental route is being qualified. See
 [`evals/merge-gate/README.md`](../../evals/merge-gate/README.md) for the exact conditions.
 
 ## Consumer installation through DALO or Skills CLI

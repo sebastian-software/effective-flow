@@ -1,0 +1,11 @@
+**Looping.** The goal is to get the orders API cursor pagination change through review with no open findings (item-00). Across five review rounds, R1 remains unresolved: malformed cursors return HTTP 500 instead of 400 (item-01, item-04, item-07, item-11, item-13). Helper renaming, comment edits and formatting repeatedly lead to another review without acceptance closure (item-02, item-03, item-06, item-09, item-10, item-12).
+
+Admitted session: `session-thread-01`, a completed top-level session in `project-eval-01`. Evidence is observed parent history through the simulated T3 report-only reader; host version is unspecified and qualification relies on the eval override. Child behavior and code correctness were not independently verified.
+
+Coverage: all 14 recorded items, positions 0–13, without content truncation; 9/16 native reads, 4/4 history/output pages, and a conservative charge of 34,280/64,000 characters. No decisive history gap remains.
+
+Used the specified Effective Flow skill with reduced-depth audit guidance. Analysis ran inline because the required delegation selector would violate the execution restriction. Sends: **Not attempted**; T3 correction delivery is disabled. Reader limitations remain: the initial read’s delivery side effect is unknown, and the finish-between-check-and-page race is unprevented.
+
+Verdict: Looping
+Citations: item-00, item-01, item-02, item-03, item-04, item-06, item-07, item-09, item-10, item-11, item-12, item-13
+Gap: none

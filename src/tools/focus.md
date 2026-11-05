@@ -1,5 +1,5 @@
 ---
-description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. Host paths require candidate-bound qualification; T3 observed use is report-only, and unqualified reads and all sends stay disabled. No persistent state or follow-up workflow."
+description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. Host paths require candidate-bound qualification; T3 observed use is report-only, and unqualified reads and all sends stay disabled. No focus-owned persistent state; an opt-in follow-up mode is defined but disabled pending qualification."
 catalogHint: "Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict."
 ---
 
@@ -18,6 +18,20 @@ delegation-mandate
 
 ```include
 focus-session-contract
+```
+
+## Follow-up mode
+
+Follow-up is opt-in only, never automatic. The eager offer condition: a non-tick turn completed an
+initial verdict on an admitted top-level target on the T3 observed path, and the gate row "T3
+observed follow-up" is qualified for the actual host. While that row is disabled or unmatched, add
+nothing about follow-up to a snapshot; state the limitation only when the developer asks for
+follow-up or uses a `follow-up` form. A `follow-up` form loads the fragment below before any host
+access.
+
+```lazy-include
+focus-follow-up
+when: the eager offer condition holds, before presenting the offer, or the invocation is a `follow-up` form
 ```
 
 ## Select the goal
@@ -99,5 +113,6 @@ confirmation bypasses a qualification or identity refusal. Keep the verdict if a
 is unknown. An admission failure instead returns a specific source/missing-capability limitation,
 not a verdict about unread content.
 
-Stop here: no generic next-step block, saved report, title suggestion, automatic follow-up or
-implementation recommendation. This chat result is the requested deliverable.
+Stop here: no generic next-step block, saved report, title suggestion or implementation
+recommendation, and follow-up only as the opt-in offer under the eager offer condition. This chat
+result is the requested deliverable.

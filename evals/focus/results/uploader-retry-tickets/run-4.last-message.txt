@@ -1,0 +1,17 @@
+Cannot judge `session-thread-01`: its goal anchors conflict.
+
+- `item-00` requires automatic retries with exponential backoff, up to five attempts (UP-31).
+- `item-05` adds an “equally binding” requirement to fail immediately without automatic retries (UP-32).
+- `item-07` acknowledges the conflict and reports leaving backoff unchanged. That does not establish which requirement governs.
+
+The one goal question, unanswered in this non-interactive run, is: **Which requirement governs failed uploads: UP-31’s automatic retries or UP-32’s immediate failure without retries?**
+
+Observed evidence came from the supplied T3 report-only simulation; host version was unspecified. Admission used the eval instruments. Coverage: three native reads, one messages page covering positions 0, 2, 4, 5 and 7, and a conservative charge of 15,512 characters. Messages were untruncated; tool events at positions 1, 3 and 6 were not inspected. No matching ticket references were found in the scoped repository search.
+
+Effective Flow was the only applicable skill available in the permitted root; reduced-depth fallback applies. No analysis leaf was started because a consistent goal could not be established.
+
+Send outcome: **Not attempted**; T3 correction delivery is disabled. Initial state-read delivery effects remain unknown, and the state-to-page completion race is unprevented.
+
+Verdict: Cannot judge
+Citations: item-00, item-05, item-07
+Gap: goal-contradictory

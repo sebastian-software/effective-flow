@@ -478,6 +478,13 @@ export function findings({ scenario, records, auxiliaryRecords, fixture, sealedE
   return outcomeFindings(scenario, records, auxiliaryRecords, fixture, sealedEvidence);
 }
 
+// Preserve report- and call-observable negatives when the current fixture cannot judge the
+// fixture-dependent branch. Sealed git-state findings remain deferred because they require the
+// historical fixture, but a refusal or forge-read/write violation is independently visible.
+export function fixtureIndependentFindings({ scenario, records, auxiliaryRecords }) {
+  return verdictFindings(scenario, records, auxiliaryRecords);
+}
+
 // The findings a run the host stopped has already earned, which `retry-aborted` asks for before it
 // discards an attempt that left a call or a report (see `assessAbortedEvidence` in the shared
 // evaluator).

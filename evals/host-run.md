@@ -90,3 +90,4 @@ suite-specific evidence contracts remain authoritative. The qualified cohort dri
 - [`merge-gate`](merge-gate/README.md) documents the caller and delegation scenarios.
 - [`iterate`](iterate/README.md) documents the report channel and fail-closed input cases.
 - [`next-steps`](next-steps/README.md) documents completed-run recommendations and continuation.
+- [`focus`](focus/README.md) documents the observed session verdicts and their recording procedure.

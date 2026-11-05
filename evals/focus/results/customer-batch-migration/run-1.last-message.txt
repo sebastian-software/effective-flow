@@ -1,0 +1,13 @@
+Cannot judge: decisive later history lies beyond the four-page budget.
+
+Admitted `session-thread-01` in `project-eval-01` under the supplied T3 report-only simulation. Host version was unspecified; loaded skill version was `1.70.0 (eval)`. The explicit goal is all 48 batches migrated to v3 with a passing reconciliation report.
+
+Messages report batches 01–33 reconciling. Batch 34 then shows 14 discrepancies, reduced to 9 after a mapping change (item-45, item-47). Subsequent reruns retain 9 discrepancies; item-51 adds new evidence that the override column reads as null. This does not establish looping or stalling. Later history remains unread, including the outcome and any final reconciliation.
+
+Coverage: 9/16 native reads, 4/4 history pages, **61,280/64,000 charged characters** as a conservative upper bound. Message-page spans were 0–11, 13–24, 25–36 and 38–51. Returned messages were untruncated; tool outputs and subsequent history were not inspected.
+
+No additional permitted skill fit; reduced-depth analysis ran inline because the required delegation selector would violate the execution restriction. No checks, writes or sends occurred. Delivery: **Not attempted**, as required by the report-only path. The T3 reader’s initial delivery side effect remains unknown, and its finish-between-read race is unprevented; the admitted target was top-level.
+
+Verdict: Cannot judge
+Citations: item-00, item-43, item-45, item-47, item-49, item-50, item-51
+Gap: coverage-budget

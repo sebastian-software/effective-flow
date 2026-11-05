@@ -271,7 +271,7 @@ PR-review integration load it at their admission decision. Keep admission before
 artifact writes, and do not duplicate its materiality or irreversibility tests in consumers.
 
 One consequence is worth knowing before you write the fence. Each behavioural eval suite under
-`evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, and `build-context` — derives the content identity each archived
+`evals/<tool>/` — `merge-gate`, `iterate`, `next-steps`, `build-context`, and `focus` — derives the content identity each archived
 round is stamped with by following exactly these rendered pointers through the built tree from its
 own seeds, so adding a `lazy-include` to a fragment a suite's tool can reach widens that identity,
 invalidates every archived round of that suite, and owes a re-record of the affected scenario
@@ -292,7 +292,8 @@ it. See
 [`evals/iterate/README.md`](../../evals/iterate/README.md) for how the `iterate` seeds differ,
 [`evals/next-steps/README.md`](../../evals/next-steps/README.md) for the bounded final-report suite,
 [`evals/build-context/README.md`](../../evals/build-context/README.md) for planned-build host evidence,
-and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all four suites on
+[`evals/focus/README.md`](../../evals/focus/README.md) for the observed focus verdicts,
+and `evals/_scaffold/build-identity.mjs` for the derivation itself. CI reports all five suites on
 every PR and requires current evidence on release PRs. Each suite's README owns its scenario count
 and recording requirements.
 
@@ -1341,7 +1342,7 @@ and directive syntax").
   `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
-  `plan-pr-continuation`, `outcome-continuation`.
+  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its

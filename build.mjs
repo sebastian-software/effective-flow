@@ -2482,7 +2482,7 @@ try {
     'apply-plan': 566,
     investigate: 544,
     retro: 215,
-    focus: 377,
+    focus: 404,
     fix: 553,
     'plan-review': 521,
     pr: 499,

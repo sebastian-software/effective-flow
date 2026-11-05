@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
@@ -30,6 +30,105 @@ import suite from '../evals/build-context/suite.config.mjs';
 import { BASELINE_COMMIT, envelope } from '../evals/build-context/_scaffold/host-receipt.mjs';
 import { claudeUserInput } from '../evals/build-context/_scaffold/claude-process.mjs';
 import { runtimePin } from '../evals/build-context/_scaffold/claude-runtime.mjs';
+import {
+  buildPortableSkill,
+  canonicalDigest,
+  digestOf,
+  pristineScenarioBuildIdentity,
+} from '../evals/_scaffold/build-identity.mjs';
+import { evidenceDisposition } from '../evals/_scaffold/evaluate.mjs';
+
+test('stale auxiliary identities cannot hide invalid receipts or native/paired lane findings', (t) => {
+  // Invariant: source drift and subordinate lane integrity are independent; a structurally sealed
+  // test record is not valid execution evidence merely because its candidate is old.
+  const root = mkdtempSync(path.join(tmpdir(), 'build-context-disposition-'));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const skillRoot = buildPortableSkill(root);
+  const resultsDir = path.join(root, 'results');
+  mkdirSync(path.join(resultsDir, '_auxiliary'), { recursive: true });
+  const current = pristineScenarioBuildIdentity(suite, 'approved-single-module', skillRoot);
+  const stale = structuredClone(current);
+  stale.skill.files['tools/build.md'] = digestOf('older source');
+  stale.skill.digest = canonicalDigest(stale.skill.files);
+  stale.skill.versionNeutralDigest = digestOf('older neutral source');
+  stale.digest = digestOf(
+    [stale.skill.digest, stale.instrument.digest, stale.scenario_inputs.digest].join('\n'),
+  );
+  const record = {
+    schema: SCHEMA,
+    kind: 'pair',
+    harness: 'codex-cli',
+    complexity: 'simple',
+    slot: 1,
+    baselineRevision: BASELINE_COMMIT,
+    baselineIdentity: current,
+    candidateIdentity: stale,
+    baselineRun: validRun(
+      {
+        parentPeakInput: 100,
+        firstRequestInput: 100,
+        cumulativeInput: 100,
+        elapsedMs: 100,
+        identityKey: 'baseline',
+      },
+      true,
+    ),
+    candidateRun: validRun({
+      parentPeakInput: 20,
+      firstRequestInput: 20,
+      cumulativeInput: 30,
+      elapsedMs: 100,
+      identityKey: 'candidate',
+    }),
+    instrumentDigest: current.instrument.digest,
+  };
+  const recordPath = path.join(resultsDir, '_auxiliary', 'fixture.json');
+  const write = (value) =>
+    writeFileSync(
+      recordPath,
+      JSON.stringify({ schema: SCHEMA, record: value, seal: digest(JSON.stringify(value)) }),
+    );
+  write(record);
+  const rows = verifyAdditionalEvidence(suite, { skillRoot, resultsDir });
+  const paired = rows.find((row) => row.scenario === 'paired:codex-cli:simple');
+  assert.equal(paired.state, 'stale');
+  assert.equal(paired.integrity, 'invalid');
+  assert.ok(paired.validityProblems.length > 0);
+  assert.ok(paired.findings.length > 0);
+  assert.equal(evidenceDisposition(rows).failsReport, true);
+  write({ ...record, kind: 'native', target: 'unknown' });
+  const malformed = verifyAdditionalEvidence(suite, { skillRoot, resultsDir });
+  assert.equal(evidenceDisposition(malformed).failsReport, true);
+  assert.ok(
+    malformed.some((row) =>
+      row.validityProblems?.includes('malformed native lane or missing execution'),
+    ),
+  );
+  write({
+    ...record,
+    kind: 'native',
+    target: 'codex',
+    run: record.candidateRun,
+    candidateIdentity: current,
+    nativeIdentity: {
+      skillDigest: digest('old skill'),
+      sidecarsDigest: digest('old sidecars'),
+      inventoryDigest: digest('old inventory'),
+    },
+  });
+  const nativeDrift = verifyAdditionalEvidence(suite, { skillRoot, resultsDir });
+  assert.equal(nativeDrift.find((row) => row.scenario === 'native:codex').state, 'stale');
+  assert.equal(
+    evidenceDisposition(nativeDrift).failsReport,
+    true,
+    'independent bad receipts still block under native drift',
+  );
+  write({ ...record, kind: 'unknown' });
+  assert.throws(
+    () => verifyAdditionalEvidence(suite, { skillRoot, resultsDir }),
+    /unknown auxiliary record kind/,
+  );
+});
 
 test('build-context evidence protocol declares the complete behavioural and compatibility matrix', () => {
   assert.equal(SCHEMA, 'effective-flow.build-context/1');

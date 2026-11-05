@@ -1,0 +1,34 @@
+{
+  "schemaVersion": 1,
+  "roundId": "mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321",
+  "scenario": "role-change-audit-log",
+  "slot": 3,
+  "attempt": 1,
+  "sourceRevision": "aec80c08c6a832ab6c3bbae3865f3db916389fb1",
+  "projectRoot": "/tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/role-change-audit-log/slot-3/attempt-1/project",
+  "profile": {
+    "harness": "codex-cli",
+    "model": "gpt-6.1-sol",
+    "reasoningEffort": "high",
+    "reportedVersion": "0.163.0",
+    "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+  },
+  "promptDigest": "sha256:6c28204bdc04ee5d0de65b8d7f5adf2560d95c6dae6e23cf33baa62ad2e37e2f",
+  "fixtureDigest": "sha256:62b010d5f9bfc3c3daaf7735bcaaf176e8d8bd486f3568f7720a073aa591b521",
+  "buildDigest": "sha256:12c68982444bcb913848e5160f3c71479694f8ca2822f050a05fefe7d1a783b8",
+  "hostAttestation": {
+    "schemaVersion": 1,
+    "nonForked": true,
+    "initialWorkingRoot": "/tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/role-change-audit-log/slot-3/attempt-1/project",
+    "taskInput": "rendered-prompt-only",
+    "completed": true,
+    "profile": {
+      "harness": "codex-cli",
+      "model": "gpt-6.1-sol",
+      "reasoningEffort": "high",
+      "reportedVersion": "0.163.0",
+      "toolPolicy": "workspace-write;approval-never;network-disabled;isolated-home;attempt-root-writable;ignore-user-config;ignore-rules;ephemeral"
+    },
+    "lastMessagePath": "/private/tmp/effective-flow-focus-eval/rounds/mw1w0i3e-065eac94-6f4f-40d3-8aca-fd7304e59321/slots/role-change-audit-log/slot-3/attempt-1-last-message.txt"
+  }
+}

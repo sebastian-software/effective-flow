@@ -1,6 +1,6 @@
 # Bounded build-run control
 
-This build-owned protocol carries control and evidence identity. Its dependency-free `scripts/build-run.mjs` JSON CLI owns the closed versioned schemas; never hand-write, overwrite or repair a refused control record. Digests establish byte identity, not authorization, command execution or substantive correctness. The existing domain gates retain those judgments.
+This build-owned protocol carries control and evidence identity. Its dependency-free `scripts/build-run.mjs` JSON CLI owns the closed versioned schemas; never hand-write, overwrite or repair a refused control record. Digests establish byte identity, not authorization, command execution or substantive correctness. The existing domain gates retain those judgments. The build caller's current inline-only restriction takes precedence over the dormant dispatch steps below; it never permits recovery from failed mandatory helpers or restarting mutated delegated work.
 
 ## Helper invocation and failure handling
 

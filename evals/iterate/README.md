@@ -109,10 +109,12 @@ region pairs with zero `Item:` entries.
 | `results/<name>/run-<n>.metadata.json`| Safe slot, build, prompt, fixture, execution-profile and host-attestation metadata                      |
 
 `results/` does not exist until the first round is published. Until then `pnpm eval iterate verify`
-reports every scenario `absent` and exits 0, and `--mode strict` exits 1 — the release gate treats
-"nothing observed" as not current. CI's `Behavioural eval evidence` step verifies this suite beside
-`merge-gate` on every pull request and strictly on the release pull request, so no release can pass
-that gate until a complete round of this suite is published. Before any scenario existed, the same command failed parity with
+reports every scenario `absent` and exits 0, while `--mode strict` exits 1 for incomplete full-suite
+acceptance. Under the [capability policy](../../docs/adr/pragmatic-test-release-policy.md), CI reports
+all five suites identically on ordinary and release PRs. Missing/stale coverage remains evidence
+debt; integrity failures, surplus, unknown states and verifier errors block, and valid negatives
+remain visible for applicability/security triage. Activation owes the applicable current evidence.
+Before any scenario existed, the same command failed parity with
 a named reason rather than reporting success over nothing; `discoverSuite` still refuses a
 registered name without its scenario, fixture and evaluator branch.
 

@@ -9,9 +9,10 @@ belongs to [Deliver changes](tools-deliver.md).
 
 `focus` is a session-trajectory check, not a code review or retrospective. It compares exactly one
 developer-selected session with one goal and returns one cited snapshot verdict. It does not execute
-commands, persist state, create a report, start a follow-up, or change a session title. Host reads and
-cross-session messages are available only after the candidate-bound host qualification described in
-the [Focus host acceptance](../developer-guide/focus-host-acceptance.md) record.
+commands, persist focus-owned state, create a report, or change a session title. Host reads, cross-session
+messages, and the opt-in follow-up mode are available only after the candidate-bound host
+qualification described in the [Focus host acceptance](../developer-guide/focus-host-acceptance.md)
+record.
 
 ## `/effective-flow focus`
 
@@ -38,10 +39,20 @@ exact redacted text in the same run. Each kind is independent and has one of fou
 receipt, reading, or action. Focus never retries, resends, switches addresses, or advises a duplicate
 manual send; an ambiguous acknowledgement retains the verdict and warns that the message may have arrived.
 
-The T3 observed/report-only path passed the candidate-bound snapshot acceptance recorded above. It
-returns a bounded view of the selected session and may omit later progress. Other
-host paths remain disabled where the required candidate-bound reader, identity, mode, or delivery proof
-is unavailable.
+**Follow-up:** An opt-in follow-up mode is defined but disabled pending qualification, like the send
+paths. Once qualified, it would offer recurring report-only checks of a top-level T3 target after a
+snapshot, through one T3 schedule bound to the observer thread that persists until it is deleted.
+Ticks stay quiet while nothing material changes, never send a message, and end at completion, an
+explicit `focus follow-up stop <session-ref>`, lost access, or a loop cap. While the mode is
+disabled, a snapshot offers nothing; asking for follow-up returns the limitation, and `follow-up
+stop` stays available.
+
+Snapshot-host execution is currently disabled before target or ancestry reads. Phase E passed for
+candidate `ada4fdae`, as recorded on the acceptance page; the current policy changes a focus source
+and does not reuse that result to qualify the changed artifact. Focus returns the missing snapshot
+qualification instead of a verdict about unread content. Follow-up and sends remain disabled
+independently. The [capability policy](../developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
+package evidence reporting cannot enable a host route.
 
 ## `/effective-flow retro`
 

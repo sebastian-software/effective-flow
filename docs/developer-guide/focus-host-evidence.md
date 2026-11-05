@@ -235,3 +235,7 @@ SHA-256 digest from `digests.sha256`.
 | `raw/codex-threadA-after.png`   | `d9937280080dccb904aead4ff8e5f6f4fc73006843c5d8306ba34692a97209be` |
 | `raw/codex-threadA-before.png`  | `4bbfb8c9162e343d9845dc1c8474db7e033beccb70e0cfa95c31e2d3e9ad98a4` |
 | `raw/codex-threadB-read.png`    | `45f4d64f601b186dfe7d24258e703192eba88e6580f40bef602de9069f312183` |
+
+Later session-shape observations for the eval stub: [focus session shape observations](focus-session-shape-observations.md).
+
+Later `schedule_task` observations for the follow-up mode: [focus schedule evidence](focus-schedule-evidence.md).

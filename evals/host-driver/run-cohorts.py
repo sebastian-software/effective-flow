@@ -66,8 +66,32 @@ def writable_future(path, protected=()):
 class Driver:
     def __init__(self, config_file, profiles_root, *, operator, operator_sha256, binary,
                  auth_file, node='node', timeout_seconds=1800, fixture_tools=False,
-                 first_stage=_NO_FIRST_STAGE):
+                 first_stage=_NO_FIRST_STAGE, remaining_stage=_NO_FIRST_STAGE):
         self.first_stage = None
+        self.remaining_stage = None
+        if first_stage is not _NO_FIRST_STAGE and remaining_stage is not _NO_FIRST_STAGE:
+            raise ValueError('simultaneous stage contexts')
+        if remaining_stage is not _NO_FIRST_STAGE:
+            from eval_first_stage import remaining_context_data
+            staged = remaining_context_data(remaining_stage)
+            if set(remaining_stage) != {'schemaVersion', 'corpus', 'grant', 'admission'}:
+                raise ValueError('remaining coordinator requires a fresh consumed admission')
+            expected = staged['config']
+            if type(fixture_tools) is not bool or fixture_tools is not staged['fixtureOnly']:
+                raise ValueError('remaining actual fixture mode changed')
+            if (str(config_file) != staged['corpusData']['config']['path']
+                    or str(profiles_root) != expected['profilesRoot']
+                    or str(operator) != staged['corpusData']['operator']['path']
+                    or operator_sha256 != staged['corpusData']['operator']['sha256']
+                    or str(binary) != expected['toolchain']['binary']['path']
+                    or str(node) != expected['node'] or str(auth_file) != expected['authFile']
+                    or str(HERE.parents[1]) != expected['driverRoot']
+                    or str(Path(sys.executable).resolve()) != expected['python']):
+                raise ValueError('remaining actual coordinator launch inputs changed')
+            self.remaining_stage = remaining_stage
+            # Consumed admission also consumes setup: no second constructor after an early failure.
+            self.journal = Path(expected['outputRoot']) / 'cohorts/remaining-stage-events.jsonl'
+            self.journal.touch(mode=0o600, exist_ok=False)
         if first_stage is not _NO_FIRST_STAGE:
             from eval_first_stage import context_data
             staged = context_data(first_stage, initial=True)
@@ -110,31 +134,92 @@ class Driver:
         if self.first_stage is not None:
             for ref in (*staged['corpusData']['driverFiles'], first_stage['corpus'], first_stage['grant']):
                 self.pins[ref['path']] = ref['sha256']
+        if self.remaining_stage is not None:
+            for ref in (*staged['corpusData']['driverFiles'], remaining_stage['corpus'],
+                        remaining_stage['grant'], remaining_stage['admission']):
+                self.pins[ref['path']] = ref['sha256']
         self.check_source()
         self.outroot = self.root / 'cohorts'
-        self.outroot.mkdir(mode=0o700, exist_ok=False)
-        self.journal = self.outroot / 'host-events.jsonl'
-        self.journal.touch(mode=0o600, exist_ok=False)
+        if self.remaining_stage is None:
+            self.outroot.mkdir(mode=0o700, exist_ok=False)
+        else:
+            from eval_first_stage import remaining_context_data
+            remaining_context_data(self.remaining_stage)
+        self.journal = self.outroot / ('remaining-stage-events.jsonl' if self.remaining_stage is not None
+                                      else 'host-events.jsonl')
+        if self.remaining_stage is None:
+            self.journal.touch(mode=0o600, exist_ok=False)
         self.blocker = self.outroot / 'launch-blocked'
         self.gate = self.outroot / 'launch-gate'
-        self.gate.touch(mode=0o600, exist_ok=False)
+        if self.remaining_stage is None:
+            self.gate.touch(mode=0o600, exist_ok=False)
         self.base_accounting = capture_accounting_paths(self.outroot, self.root, self.gate)
         self.stop = threading.Event()
         self.lock, self.launch_lock, self.active_lock = (threading.Lock() for _ in range(3))
         self.active = {}
         self.admissions = {}
         self.parent_identities = {}
+        if self.remaining_stage is not None:
+            for directory in self.outroot.iterdir():
+                if directory.is_dir():
+                    for parent in (directory, *(p for p in directory.iterdir() if p.is_dir())):
+                        info = parent.lstat()
+                        self.parent_identities[parent] = (info.st_dev, info.st_ino)
         self.interrupted_signal = None
         self.profiles_root.mkdir(mode=0o700, exist_ok=True)
         info = self.profiles_root.lstat()
         if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
             raise ValueError('profiles root must be an owned directory')
-        self.cancellation_path = self.profiles_root / ('launch-cancellation-' + str(uuid.uuid4()) + '.fifo')
+        self.cancellation_path = (Path(staged['remainingGrantData']['cancellation']['path'])
+                                  if self.remaining_stage is not None else
+                                  self.profiles_root / ('launch-cancellation-' + str(uuid.uuid4()) + '.fifo'))
         os.mkfifo(self.cancellation_path, 0o600)
+        created_fifo = None
+
+        def owned_created_fifo(info):
+            return (stat.S_ISFIFO(info.st_mode) and info.st_uid == os.getuid()
+                    and info.st_nlink == 1 and stat.S_IMODE(info.st_mode) == 0o600
+                    and (info.st_dev, info.st_ino) == created_fifo)
+
         try:
+            if self.remaining_stage is not None:
+                # Retain the creation identity before opening either coordinator descriptor.
+                info = self.cancellation_path.lstat()
+                created_fifo = (info.st_dev, info.st_ino)
+                if not owned_created_fifo(info):
+                    raise ValueError('created remaining cancellation is unsafe')
             self.cancellation = open_cancellation({'cancellationPath': str(self.cancellation_path)})
+            if self.remaining_stage is not None:
+                from eval_first_stage import durable_remaining_record, remaining_context_data
+                for info in (*(os.fstat(fd) for fd in self.cancellation), self.cancellation_path.lstat()):
+                    if not owned_created_fifo(info):
+                        raise ValueError('opened remaining cancellation differs from created FIFO')
+                ref = durable_remaining_record(self.outroot / 'remaining-stage-cancellation.json',
+                    {'schemaVersion': 1, 'admission': self.remaining_stage['admission'],
+                     'path': str(self.cancellation_path), 'dev': created_fifo[0], 'ino': created_fifo[1]})
+                self.remaining_stage = {**self.remaining_stage, 'cancellation': ref}
+                self.pins[ref['path']] = ref['sha256']
+                remaining_context_data(self.remaining_stage)
         except BaseException:
-            self.cancellation_path.unlink()
+            if self.remaining_stage is None:
+                if getattr(self, 'cancellation', None) is not None:
+                    for fd in self.cancellation:
+                        os.close(fd)
+                    self.cancellation = None
+                self.cancellation_path.unlink()
+            else:
+                # Cleanup must neither unlink a replacement nor obscure the setup refusal.
+                for fd in getattr(self, 'cancellation', ()) or ():
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+                self.cancellation = None
+                try:
+                    if created_fifo is not None and owned_created_fifo(self.cancellation_path.lstat()):
+                        self.cancellation_path.unlink()
+                except OSError:
+                    pass
             raise
 
     def close(self):
@@ -142,6 +227,12 @@ class Driver:
             for fd in self.cancellation:
                 os.close(fd)
             self.cancellation = None
+            if getattr(self, 'remaining_stage', None) is not None:
+                from eval_first_stage import pinned
+                record = pinned(self.remaining_stage['cancellation'], json_value=True)
+                info = self.cancellation_path.lstat()
+                if (info.st_dev, info.st_ino) != (record['dev'], record['ino']) or not stat.S_ISFIFO(info.st_mode):
+                    raise ValueError('remaining cancellation changed before close')
             self.cancellation_path.unlink()
 
     def check_source(self):
@@ -169,7 +260,7 @@ class Driver:
             raise ValueError('frozen source branch changed')
         if git('rev-parse', 'HEAD') != self.config['expectedFrozenHead']:
             raise ValueError('frozen source HEAD changed')
-        if getattr(self, 'first_stage', None) is not None:
+        if getattr(self, 'first_stage', None) is not None or getattr(self, 'remaining_stage', None) is not None:
             if git('rev-parse', 'HEAD^{tree}') != self.config['expectedFrozenTree']:
                 raise ValueError('first-stage frozen source tree changed')
         for args in (('diff', '--name-only', 'HEAD'), ('diff', '--cached', '--name-only'),
@@ -250,6 +341,14 @@ class Driver:
             raise
 
     def _run_slot(self, task):
+        if getattr(self, 'remaining_stage', None) is not None:
+            from eval_first_stage import pinned, remainder_tasks, validate_remaining_task, CORPUS_LIMIT
+            corpus = pinned(self.remaining_stage['corpus'], json_value=True, maximum=CORPUS_LIMIT)
+            tasks = remainder_tasks([r['task'] for suite in corpus['suites'] for r in suite['tasks']])
+            ordinal = tasks.index(task) + 1
+            validate_remaining_task(self.remaining_stage, task, self.outroot / task['suite'] /
+                                    task['scenario'] / f"slot-{task['slot']}",
+                                    ordinal=ordinal, batch=(ordinal - 1) // 6 + 1)
         if getattr(self, 'first_stage', None) is not None:
             from eval_first_stage import validate_stage_task
             validate_stage_task(self.first_stage, task, self.outroot / task['suite'] /
@@ -296,6 +395,8 @@ class Driver:
                'blockerPath': str(self.blocker), 'launchGatePath': str(self.gate)}
         if getattr(self, 'first_stage', None) is not None:
             job['firstStage'] = {**self.first_stage, 'ordinal': task['slot']}
+        if getattr(self, 'remaining_stage', None) is not None:
+            job['remainingStage'] = {**self.remaining_stage, 'ordinal': ordinal, 'batch': (ordinal - 1) // 6 + 1}
         job['accounting'] = capture_accounting_paths(directory, self.root, self.gate)
         current = {entry['path']: entry for entry in job['accounting']['directories']}
         if (job['accounting']['gate'] != self.base_accounting['gate']
