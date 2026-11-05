@@ -61,12 +61,12 @@ import { lstat, mkdir, open, readdir, realpath, rmdir, unlink } from 'node:fs/pr
 import { hostname as osHostname } from 'node:os';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
+import { isDeepStrictEqual } from 'node:util';
 import { resolveConfiguration } from './config-resolve-core.mjs';
 import {
   LEGACY_CONFIG_ENTRY,
   LEGACY_MEMORY_ENTRY,
   LEGACY_RUNTIME_DIRS,
-  LEGACY_WORKTREES_ENTRY,
   NON_LIVE_LOCATOR_STEPS,
   O_NOFOLLOW,
   RUNTIME_STATE_DIR,
@@ -2078,23 +2078,51 @@ export async function removeRecords(input, deps) {
 // when the key exists, `source`; null when memory or the marker is absent or unreadable. The
 // absent-versus-present distinction of `source` is load-bearing: an absent key is the legacy marker
 // that certifies a directory only through a zero-open carry-over (`isLegacyMigrationMarker`), while
-// a present key certifies exactly the directory it names.
+// a present key identifies the migrated source, not proof that its current content is preserved.
 async function readMarker(context) {
-  const target = path.join(context.cwd, RUNTIME_STATE_DIR, 'memory.json');
-  const read = await readBoundedFile(context.fs, target, 1024 * 1024);
-  if (read.state !== 'ok') return null;
+  const memory = await readCleanupMemory(
+    context,
+    path.join(RUNTIME_STATE_DIR, LEGACY_MEMORY_ENTRY),
+  );
+  const marker = memory?.runtimeMigration?.directory;
+  if (!isObject(marker)) return null;
+  // A marker written before `source` existed keeps the key absent, which the guard reads as a
+  // legacy marker (see `checkLegacyRuntimeDirectory`).
+  return Object.hasOwn(marker, 'source')
+    ? { version: marker.version, source: marker.source }
+    : { version: marker.version };
+}
+
+async function readCleanupMemory(context, relative, expected) {
+  const target = path.join(context.cwd, relative);
   try {
+    await assertDirectoryChain(context.cwd, path.dirname(target));
+    const read = await readBoundedFile(context.fs, target, 1024 * 1024);
+    if (read.state !== 'ok' || (expected && read.sha256 !== expected.sha256)) return null;
     const memory = JSON.parse(read.content.toString('utf8'));
-    const marker = memory?.runtimeMigration?.directory;
-    if (!isObject(marker)) return null;
-    // A marker written before `source` existed keeps the key absent, which the guard reads as a
-    // legacy marker (see `checkLegacyRuntimeDirectory`).
-    return Object.hasOwn(marker, 'source')
-      ? { version: marker.version, source: marker.source }
-      : { version: marker.version };
+    return isObject(memory) ? memory : null;
   } catch {
     return null;
   }
+}
+
+function containsMemory(target, source) {
+  if (!isObject(source)) return isDeepStrictEqual(target, source);
+  return (
+    isObject(target) &&
+    Object.keys(source).every(
+      (key) => Object.hasOwn(target, key) && containsMemory(target[key], source[key]),
+    )
+  );
+}
+
+async function memoryCarriedOver(context, name, entry) {
+  const source = await readCleanupMemory(context, path.join(name, LEGACY_MEMORY_ENTRY), entry);
+  const target = await readCleanupMemory(
+    context,
+    path.join(RUNTIME_STATE_DIR, LEGACY_MEMORY_ENTRY),
+  );
+  return source !== null && target !== null && containsMemory(target, source);
 }
 
 // Whether `.effective-flow/<relative>` is a regular file byte-identical to the listed one.
@@ -2128,10 +2156,10 @@ function applicableDecisions(name, decisions) {
 // Re-derives the carry-over of one legacy directory from fresh evidence: every regular file is
 // carried only when a byte-identical regular file exists at the same path below `.effective-flow/`;
 // every missing or differing file and every non-regular entry is open unless a decision discards
-// it. `.worktrees/` and the top-level `config.json` follow their own rules (nested-Git block,
-// legacy-config rule). The top-level `memory.json` is no carry-over entry when the marker names this
-// directory as its source, which certifies that it was merged; under a legacy marker without
-// `source` it is an ordinary entry, since the marker does not say which directory it merged.
+// it. The top-level `config.json` follows the legacy-config rule. The top-level `memory.json`
+// may instead prove its current values remain in canonical memory under a source-named marker;
+// conflicts, even ones the migration's target-wins merge accepted, still require explicit discard.
+// Under a legacy marker without `source` it remains an ordinary byte-identical carry-over entry.
 async function carryOver(context, name, listing, decisions, locatorStep, { legacyMarker }) {
   const applicable = applicableDecisions(name, decisions);
   const carried = [];
@@ -2139,11 +2167,7 @@ async function carryOver(context, name, listing, decisions, locatorStep, { legac
   const discarded = [];
   for (const entry of listing.entries) {
     const relative = entry.path;
-    if (relative === LEGACY_WORKTREES_ENTRY || relative.startsWith(`${LEGACY_WORKTREES_ENTRY}/`)) {
-      continue;
-    }
     if (entry.type === 'directory') continue;
-    if (relative === LEGACY_MEMORY_ENTRY && !legacyMarker) continue;
     const full = `${name}/${relative}`;
     if (relative === LEGACY_CONFIG_ENTRY) {
       const decision = applicable.config[full];
@@ -2158,7 +2182,12 @@ async function carryOver(context, name, listing, decisions, locatorStep, { legac
     }
     let reason;
     if (entry.type !== 'file') reason = 'non-regular';
-    else if (await carriedOver(context, relative, entry)) {
+    else if (
+      (await carriedOver(context, relative, entry)) ||
+      (relative === LEGACY_MEMORY_ENTRY &&
+        !legacyMarker &&
+        (await memoryCarriedOver(context, name, entry)))
+    ) {
       carried.push(full);
       continue;
     } else reason = 'missing-or-different';
@@ -2429,21 +2458,38 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
   return { digest, config: { ...config, listing } };
 }
 
-// Removes one legacy item through the guard's listing-bound remover. The listing was recomputed
-// from fresh evidence and matched to the previewed digest in `cleanupApply`; the remover then
-// re-proves each entry against it, so an entry that changed in between stops the item
-// (LEGACY_CHANGED) instead of being removed. A non-actionable item is refused with its first
-// failure code and removes nothing. Tracked files are never removed here (`git rm` stays prose).
-async function applyLegacy(context, itemId, prepared, deps) {
-  const target = path.join(context.cwd, prepared.legacy?.item.path ?? TRANSITIONAL_CONFIG_FILE);
-  const entry = prepared.legacy ?? prepared.config;
-  if (!entry.actionable) {
-    const [first] = entry.item.failures;
-    return { itemId, ok: false, code: first.code, failures: entry.item.failures };
-  }
-  if (prepared.config) await guardTarget(context, target);
+// Removes one legacy item through the guard's listing-bound remover. Recompute eligibility and
+// match the digest after earlier items, then recheck current preservation and guards for each
+// non-directory source. The original listing still binds every source identity and SHA-256;
+// owned removals change the remaining listing, so only the initial recheck compares its digest.
+// Tracked files are never removed here (`git rm` stays prose).
+async function applyLegacy(context, roots, itemId, prepared, decisions, deps) {
+  const recheck = async (matchDigest) => {
+    const fresh = await recomputeItem(context, roots, itemId, decisions, {}, deps);
+    if (fresh.reason || (matchDigest && fresh.digest !== prepared.digest)) {
+      const error = new RuntimeStateError(
+        'LEGACY_CHANGED',
+        `${itemId} no longer matches its cleanup proof`,
+      );
+      error.itemDetails = {
+        reason: fresh.reason ?? 'digest',
+        ...(fresh.failures ? { failures: fresh.failures } : {}),
+      };
+      error.removed = 0;
+      error.remaining = '';
+      throw error;
+    }
+    return fresh;
+  };
+  const fresh = await recheck(true);
+  const target = path.join(context.cwd, fresh.legacy?.item.path ?? TRANSITIONAL_CONFIG_FILE);
+  const entry = fresh.legacy ?? fresh.config;
+  if (fresh.config) await guardTarget(context, target);
   const { removed } = await removeLegacyListing(context, target, entry.listing, {
     beforeEntry: deps.onLegacyEntry,
+    validateEntry: async (source) => {
+      if (source.type !== 'directory') await recheck(false);
+    },
   });
   return { itemId, ok: true, removed: true, removedEntries: removed };
 }
@@ -2500,7 +2546,7 @@ export async function cleanupApply(input, deps) {
       );
       return { itemId: entry.itemId, ...result };
     }
-    return applyLegacy(context, entry.itemId, entry, deps);
+    return applyLegacy(context, roots, entry.itemId, entry, decisions, deps);
   });
   return { items };
 }

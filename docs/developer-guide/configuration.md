@@ -61,6 +61,18 @@ runs `/effective-flow cleanup`. The marker also records the migrated directory a
 written before `source` existed certifies a legacy directory only when the helper's carry-over
 proof finds no open entry.
 
+Cleanup does not treat the marker as a snapshot of preserved data. It verifies current regular
+files, including ordinary legacy `.worktrees/` files, against surviving byte-identical canonical
+copies or explicit discard decisions. For the named source's `memory.json`, recursive object
+containment with exact scalar and array values also proves preservation; target-wins migration
+conflicts and later source additions require preservation or explicit discard. Unreadable or
+unsafe proof is refused. After earlier selected worktrees are removed, cleanup recomputes the
+selected legacy item's digest, marker, carry-over, configuration locator and eligibility; it
+rechecks current guards and preservation before each non-directory source unlink as well.
+An initial mismatch still writes nothing; a later refusal reports prior item results and the
+legacy entry count already removed, retaining the remaining source. These checks are not an
+atomic filesystem snapshot and do not eliminate arbitrary concurrent filesystem races.
+
 Two orchestration paths additionally authorize this prerequisite as the runtime write itself.
 `/effective-flow cleanup` invokes it after its first legacy inventory when a legacy runtime
 directory exists and the marker is missing, then re-inventories before any deletion decision.

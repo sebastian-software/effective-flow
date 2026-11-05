@@ -212,13 +212,13 @@ is read-only and returns `items` (actionable, each with `itemId` and `itemDigest
 
 ### Phase 2: Carry-over check
 
-The plan re-derives carry-over from fresh evidence: a regular file below a legacy directory is
-carried only when a byte-identical file exists at the same path below `.effective-flow/`; every
-missing or differing file and every non-regular entry is in its item's `carryOver.open`, and a
-legacy `config.json` is open until it has a `config` decision. Legacy `.worktrees/` is never a
-carry-over entry. For a legacy `config.json`, parse it: invalid JSON is **not** a carry-over source
-(report the path and error); for valid JSON, values not represented in the project setup ADR are
-carry-over candidates. `.gitignore` and labels have no file carry-over.
+The plan re-derives carry-over: ordinary files, legacy `.worktrees/` included, require byte-identical
+counterparts below `.effective-flow/` or explicit discard; missing/differing files and non-regular entries
+stay in `carryOver.open`. Source-named markers allow `memory.json` proof by current canonical
+containment (recursive objects, exact arrays/scalars), not marker alone; unpreserved keys/conflicts
+and unavailable proof stay open. Legacy `config.json` needs a `config` decision: parse it; invalid
+JSON is **not** a carry-over source (report path and error), while values absent from the project
+setup ADR are candidates. `.gitignore` and labels have no file carry-over.
 
 ### Phase 3: Confirm and perform carry-over
 
@@ -256,7 +256,7 @@ options:
 - **Labels:** carried over in Phase 5 as add-`effective-flow-`-before-remove-`firmo-`.
 
 After the copies, call `cleanup plan` with the decisions so far and present every entry still in
-`carryOver.open` – a differing file, a non-regular entry, a `memory.json` under a legacy marker –
+`carryOver.open` – a differing file, a non-regular entry, or unpreserved `memory.json` content –
 with a discard option. A differing or non-regular entry can only be discarded, never copied; an
 entry the user keeps blocks its directory. Then call `cleanup plan` with the final `decisions`;
 this plan is the dry run of Phase 4.

@@ -1148,7 +1148,9 @@ function sameListedNode(entry, info, { compareSize }) {
 
 // Removes exactly the digested `listing` of `target` (see the section header). `options.beforeEntry`
 // (a test hook) runs with the relative path of each entry, `''` for the target itself, right
-// before its checks. Returns `{ removed }`, the number of entries removed including the target.
+// before its checks. `options.validateEntry` rechecks the caller's current deletion authority
+// before the source checks; its refusal carries the same partial-progress diagnostics.
+// Returns `{ removed }`, the number of entries removed including the target.
 export async function removeLegacyListing(context, target, listing, options = {}) {
   const { cwd } = context;
   const isFile = listing.root.type === 'file';
@@ -1169,6 +1171,7 @@ export async function removeLegacyListing(context, target, listing, options = {}
     const absolute = entry.path === '' ? target : path.join(target, entry.path);
     await options.beforeEntry?.(entry.path);
     try {
+      await options.validateEntry?.(entry);
       await assertDirectoryChain(cwd, path.dirname(absolute));
     } catch (error) {
       if (error instanceof RuntimeStateError) {
