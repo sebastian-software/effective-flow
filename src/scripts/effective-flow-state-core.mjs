@@ -2,10 +2,12 @@
 // that workflows used to acquire and release by following prose, plus the dispatch, codes and
 // envelopes of every helper operation. The `memory` operations live in
 // `effective-flow-state-memory-core.mjs`, `harness allow-rules` in
-// `effective-flow-state-harness-core.mjs`, `commit create` in `effective-flow-state-commit-core.mjs`
-// and `review open-report` and `review write-report` in `effective-flow-state-review-core.mjs`
-// (the report renderer of `write-report` in `review-report-render.mjs`); each imports this module and
-// is loaded on first use.
+// `effective-flow-state-harness-core.mjs`, `commit create` in `effective-flow-state-commit-core.mjs`,
+// `review open-report` and `review write-report` in `effective-flow-state-review-core.mjs` (the
+// report renderer of `write-report` in `review-report-render.mjs`), and the worktree-lifecycle and
+// cleanup operations (`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree
+// remove`, `cleanup plan`, `cleanup apply`) in `effective-flow-state-worktree-core.mjs`; each imports
+// this module and is loaded on first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
 //
@@ -89,12 +91,18 @@ export const STATE_OPERATIONS = Object.freeze([
   'commit create',
   'review open-report',
   'review write-report',
+  'worktree record-init',
+  'worktree transition',
+  'worktree inspect',
+  'worktree remove',
+  'cleanup plan',
+  'cleanup apply',
 ]);
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
-// STATE_OPERATIONS is classified here; a destructive operation (`lock break`) and the rule writer
-// itself are never allowlisted. The allowlisted ones equal ALLOWLISTED_OPERATIONS of the shared
-// settings module, which a unit test pins.
+// STATE_OPERATIONS is classified here; a destructive operation (`lock break`, `worktree remove`,
+// `cleanup apply`) and the rule writer itself are never allowlisted. The allowlisted ones equal
+// ALLOWLISTED_OPERATIONS of the shared settings module, which a unit test pins.
 export const STATE_OPERATION_CLASSES = Object.freeze({
   'lock acquire': 'allowlisted',
   'lock release': 'allowlisted',
@@ -107,6 +115,12 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'commit create': 'allowlisted',
   'review open-report': 'allowlisted',
   'review write-report': 'allowlisted',
+  'worktree record-init': 'allowlisted',
+  'worktree transition': 'allowlisted',
+  'worktree inspect': 'allowlisted',
+  'worktree remove': 'not-allowlisted',
+  'cleanup plan': 'allowlisted',
+  'cleanup apply': 'not-allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
@@ -145,6 +159,17 @@ export const OUTCOME_CODES = Object.freeze([
   'SANDBOX_DENIED',
   'INTERRUPTED',
   'REPORT_WRITE_FAILED',
+  'RECORD_EXISTS',
+  'RECORD_NOT_FOUND',
+  'TRANSITION_INVALID',
+  'STATUS_MISMATCH',
+  'NOT_ELIGIBLE',
+  'LEGACY_TRACKED',
+  'LEGACY_UNMIGRATED',
+  'CARRY_OVER_OPEN',
+  'REMOVE_FAILED',
+  'BRANCH_RETAINED',
+  'DEADLINE_REACHED',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
@@ -259,6 +284,29 @@ export const OPERATION_KEYS = Object.freeze({
     'validationSkipped',
     'waitSeconds',
   ]),
+  'worktree record-init': Object.freeze(['cwd', 'executionRoot', 'record']),
+  'worktree transition': Object.freeze([
+    'cwd',
+    'executionRoot',
+    'recordId',
+    'from',
+    'to',
+    'reason',
+    'sessionId',
+    'branch',
+    'workflow',
+    'fetchedHeadOid',
+  ]),
+  'worktree inspect': Object.freeze(['cwd', 'executionRoot', 'sessionId']),
+  'worktree remove': Object.freeze([
+    'cwd',
+    'executionRoot',
+    'sessionId',
+    'recordIds',
+    'integrationRoot',
+  ]),
+  'cleanup plan': Object.freeze(['cwd', 'executionRoot', 'decisions']),
+  'cleanup apply': Object.freeze(['cwd', 'executionRoot', 'decisions', 'items']),
 });
 
 // The caller-supplied owner fields per lock. The helper adds `token`, `acquiredAt`, `host` and
@@ -1073,13 +1121,14 @@ async function decideBreak(context, lock, paths, tombstone, expected) {
   return removeThroughTombstone(context, lock, paths, observed, tombstone);
 }
 
-// The memory, harness, commit and review operations live in their own modules, which import this
-// one. They are loaded on first use through literal specifiers, so the import graph stays acyclic,
-// a lock call never loads them, and the build's dependency scan still sees all four.
+// The memory, harness, commit, review and worktree operations live in their own modules, which
+// import this one. They are loaded on first use through literal specifiers, so the import graph
+// stays acyclic, a lock call never loads them, and the build's dependency scan still sees all five.
 const loadMemory = () => import('./effective-flow-state-memory-core.mjs');
 const loadHarness = () => import('./effective-flow-state-harness-core.mjs');
 const loadCommit = () => import('./effective-flow-state-commit-core.mjs');
 const loadReview = () => import('./effective-flow-state-review-core.mjs');
+const loadWorktree = () => import('./effective-flow-state-worktree-core.mjs');
 
 const HANDLERS = Object.freeze({
   'lock acquire': acquireLock,
@@ -1094,6 +1143,12 @@ const HANDLERS = Object.freeze({
   'commit create': async (input, deps) => (await loadCommit()).commitCreate(input, deps),
   'review open-report': async (input, deps) => (await loadReview()).openReport(input, deps),
   'review write-report': async (input, deps) => (await loadReview()).writeReport(input, deps),
+  'worktree record-init': async (input, deps) => (await loadWorktree()).recordInit(input, deps),
+  'worktree transition': async (input, deps) => (await loadWorktree()).transition(input, deps),
+  'worktree inspect': async (input, deps) => (await loadWorktree()).inspect(input, deps),
+  'worktree remove': async (input, deps) => (await loadWorktree()).removeRecords(input, deps),
+  'cleanup plan': async (input, deps) => (await loadWorktree()).cleanupPlan(input, deps),
+  'cleanup apply': async (input, deps) => (await loadWorktree()).cleanupApply(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process
@@ -1101,7 +1156,9 @@ const HANDLERS = Object.freeze({
 // reads `deps.signalTarget` (the process whose SIGINT, SIGTERM and SIGHUP it handles) and
 // `deps.terminateChildren` (stops the running Git child's process group). Tests may also inject
 // `sleep`, `monotonicNow`, `now`, `hostname`, `randomToken` and `fs` (a partial override of the
-// filesystem calls in DEFAULT_FS).
+// filesystem calls in DEFAULT_FS). every `worktree` operation that writes a record
+// and `cleanup apply` also read `signalTarget`, and tests may inject `deadlineMs`, `itemFloorMs`,
+// `reconcileReserveMs`, `onPhase` and `onLegacyEntry` (see the worktree core).
 export async function executeOperation(operation, input, deps = {}) {
   try {
     if (!STATE_OPERATIONS.includes(operation)) {

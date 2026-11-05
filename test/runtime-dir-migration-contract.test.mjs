@@ -163,8 +163,8 @@ test('cleanup loads the migration prerequisite before the marker check, the firs
   const phaseFive = cleanupTool.indexOf('### Phase 5:');
   assert.ok(phaseFive !== -1, 'Phase 5 must stay in core');
   assert.ok(
-    cleanupTool.indexOf('claim/remove/reconcile protocol', phaseFive) > phaseFive,
-    'Phase 5 must keep its worktree lifecycle mutation sequence in core',
+    cleanupTool.indexOf('`cleanup apply` call', phaseFive) > phaseFive,
+    'Phase 5 must keep its helper-owned worktree and legacy removal call in core',
   );
   assert.ok(
     cleanupTool.indexOf('scripts/diff-baseline.mjs discard', phaseFive) > phaseFive,
@@ -212,12 +212,13 @@ test('cleanup triggers the shared migration after inventory and refreshes eviden
 
 // Invariant: an unselected legacy source is never released for deletion by the marker.
 test('cleanup keeps simultaneous unselected legacy source separate', () => {
+  const flatCleanup = cleanupTool.replace(/\s+/g, ' ');
   assert.match(
-    cleanupTool,
+    flatCleanup,
     /If `\.firmo\/` and `\.sf-plugin\/` both exist[\s\S]*inventory[\s\S]*unselected `\.sf-plugin\/` separately/,
   );
   assert.match(
-    cleanupTool,
+    flatCleanup,
     /marker does not certify its carry-over and never[\s\S]*releases it for deletion/,
   );
 });

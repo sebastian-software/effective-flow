@@ -27,6 +27,7 @@ import { LOCKS, LOCK_NAMES, executeOperation } from '../src/scripts/effective-fl
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import { RULE_ENTRIES } from '../src/scripts/claude-settings-core.mjs';
 import { writeHelperScripts } from './support/state-helper-fixtures.mjs';
+import * as wf from './support/worktree-fixtures.mjs';
 
 const CLI = fileURLToPath(new URL('../src/scripts/effective-flow-state.mjs', import.meta.url));
 const GIT_ENV = {
@@ -736,4 +737,782 @@ test('harness allow-rules: worktree of the current repository versus another clo
     const accepted = await allowRules(root, install(t, layout));
     assert.equal(accepted.ok, true, JSON.stringify(accepted));
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Worktree lifecycle against real linked worktrees
+
+// A cleanup-ready apply-review component whose one commit `change(worktreePath)` makes.
+async function component(root, name, change, recordId = name) {
+  const { worktree, record } = await wf.initialized(root, {
+    purpose: 'apply-review',
+    component: name,
+    recordId,
+  });
+  if (change) {
+    change(worktree.worktreePath);
+    wf.git(worktree.worktreePath, 'add', '-A');
+    wf.git(worktree.worktreePath, 'commit', '-q', '-m', `component ${name}`);
+  }
+  await wf.moveTo(root, record, 'cleanup-ready');
+  return { worktree, record, tip: wf.git(worktree.worktreePath, 'rev-parse', 'HEAD') };
+}
+
+function removeComponents(root, recordIds, extra = {}, integrationRoot = root) {
+  return wf.call(
+    'worktree remove',
+    {
+      cwd: root,
+      executionRoot: root,
+      sessionId: wf.SESSION,
+      recordIds,
+      ...(integrationRoot ? { integrationRoot } : {}),
+    },
+    extra,
+  );
+}
+
+// Integrates `commit` onto `main` the way a real integration lands: after an unrelated commit, so
+// the cherry-pick is a new commit object with an equal patch, never the same object.
+function integrate(root, commit) {
+  writeFileSync(join(root, 'unrelated.txt'), `${commit}\n`);
+  wf.git(root, 'add', 'unrelated.txt');
+  wf.git(root, 'commit', '-q', '-m', 'unrelated');
+  wf.git(root, 'cherry-pick', commit);
+}
+
+function branchExists(root, branch) {
+  return wf.git(root, 'branch', '--list', branch) !== '';
+}
+
+// Invariant: a real linked worktree of every purpose is created, claimed and removed; only the
+// temporary apply-review branch is deleted.
+test('worktree lifecycle: every purpose is initialized, claimed and removed', async (t) => {
+  for (const purpose of ['delivery', 'partial-diff', 'plan-publication', 'apply-review']) {
+    const root = wf.repository(t);
+    const { worktree, record } = await wf.initialized(root, { purpose });
+    const result = wf.expectOk(await removeComponents(root, [record.recordId], {}, null));
+    assert.equal(result.items[0].ok, true, `${purpose}: ${JSON.stringify(result)}`);
+    assert.equal(existsSync(worktree.worktreePath), false);
+    assert.equal(existsSync(wf.recordFile(root)), false);
+    assert.equal(branchExists(root, record.branch), purpose !== 'apply-review', purpose);
+  }
+});
+
+// Invariant: a dirty worktree is refused by condition 7 before the claim, and by Git itself when
+// it turns dirty after the claim: `cleanup-failed` with Git's own error, never `--force`.
+test('worktree lifecycle: a dirty worktree is refused by condition 7 and by Git', async (t) => {
+  const root = wf.repository(t);
+  const { worktree } = await component(root, 'c1');
+  writeFileSync(join(worktree.worktreePath, 'dirty.txt'), 'dirty\n');
+  const refused = wf.expectOk(await removeComponents(root, ['c1'], {}, null));
+  assert.equal(refused.items[0].code, 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.items[0].conditions, [7]);
+  unlinkSync(join(worktree.worktreePath, 'dirty.txt'));
+  const byGit = wf.expectOk(
+    await removeComponents(
+      root,
+      ['c1'],
+      {
+        onPhase: (name) => {
+          if (name === 'afterClaim') writeFileSync(join(worktree.worktreePath, 'late.txt'), 'x\n');
+        },
+      },
+      null,
+    ),
+  );
+  assert.equal(byGit.items[0].code, 'REMOVE_FAILED');
+  assert.match(byGit.items[0].reason, /untracked|modified/);
+  const record = wf.readRecord(root, 'c1');
+  assert.equal(record.status, 'cleanup-failed');
+  assert.equal(record.reason, byGit.items[0].reason);
+  assert.ok(existsSync(join(worktree.worktreePath, 'late.txt')));
+});
+
+// Invariant: a locked or prunable registration and a branch that no longer contains `creationOid`
+// are ineligible (conditions 4 and 6) in `worktree inspect`.
+test('worktree lifecycle: locked, prunable and rewritten registrations are ineligible', async (t) => {
+  const root = wf.repository(t);
+  const locked = await component(root, 'c1');
+  const prunable = await component(root, 'c2');
+  const rewritten = await component(root, 'c3');
+  wf.git(root, 'worktree', 'lock', locked.worktree.worktreePath);
+  rmSync(prunable.worktree.worktreePath, { recursive: true, force: true });
+  const tree = wf.git(rewritten.worktree.worktreePath, 'rev-parse', 'HEAD^{tree}');
+  const orphan = wf.git(rewritten.worktree.worktreePath, 'commit-tree', tree, '-m', 'rewritten');
+  wf.git(rewritten.worktree.worktreePath, 'reset', '-q', '--hard', orphan);
+  const result = wf.expectOk(await wf.call('worktree inspect', { cwd: root, executionRoot: root }));
+  const conditions = Object.fromEntries(
+    result.records.map((record) => [record.recordId, record.conditions]),
+  );
+  assert.deepEqual(conditions.c1, [4]);
+  assert.ok(conditions.c2.includes(4), JSON.stringify(conditions.c2));
+  assert.deepEqual(conditions.c3, [6]);
+});
+
+// Invariant: inside `apply-review`, a branch whose every commit has an exact `--verbatim` patch-id
+// match on the integration target is deleted with a compare-and-delete after `git branch -d`
+// refuses it.
+test('integration proof: a cherry-picked component branch is deleted after the proof', async (t) => {
+  const root = wf.repository(t);
+  const { record, tip } = await component(root, 'c1', (wt) =>
+    writeFileSync(join(wt, 'feature.txt'), 'feature line\n'),
+  );
+  integrate(root, tip);
+  const result = wf.expectOk(await removeComponents(root, ['c1']));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(result.items[0].branch.outcome, 'deleted-after-proof');
+  assert.equal(branchExists(root, record.branch), false);
+  assert.equal(existsSync(wf.recordFile(root, 'c1')), false);
+});
+
+// Invariant: without `integrationRoot` (the `cleanup` path) the same unmerged branch is retained
+// as BRANCH_RETAINED with its unproven commits, and the record is still deleted.
+test('integration proof: without integrationRoot the branch is BRANCH_RETAINED', async (t) => {
+  const root = wf.repository(t);
+  const { record, tip } = await component(root, 'c1', (wt) =>
+    writeFileSync(join(wt, 'feature.txt'), 'feature line\n'),
+  );
+  integrate(root, tip);
+  const result = wf.expectOk(await removeComponents(root, ['c1'], {}, null));
+  const item = result.items[0];
+  assert.equal(item.code, 'BRANCH_RETAINED');
+  assert.equal(item.removed, true);
+  assert.equal(item.branch.branch, record.branch);
+  assert.deepEqual(item.branch.unproven, [tip]);
+  assert.ok(branchExists(root, record.branch));
+  assert.equal(existsSync(wf.recordFile(root, 'c1')), false);
+});
+
+// Invariant: the proof refuses a merge commit, a whitespace-only difference, a target equal to a
+// component branch, a tip moved between proof and deletion, and a branch still checked out; each
+// keeps the branch as BRANCH_RETAINED with its reason.
+test('integration proof: each refusal keeps the branch', async (t) => {
+  const cases = [
+    [
+      'merge-commit',
+      async (root) => {
+        const { worktree, record } = await wf.initialized(root, {
+          purpose: 'apply-review',
+          component: 'c1',
+          recordId: 'c1',
+        });
+        const wt = worktree.worktreePath;
+        wf.git(wt, 'switch', '-q', '-c', 'side');
+        writeFileSync(join(wt, 'side.txt'), 'side\n');
+        wf.git(wt, 'add', 'side.txt');
+        wf.git(wt, 'commit', '-q', '-m', 'side');
+        wf.git(wt, 'switch', '-q', record.branch);
+        writeFileSync(join(wt, 'main-side.txt'), 'main side\n');
+        wf.git(wt, 'add', 'main-side.txt');
+        wf.git(wt, 'commit', '-q', '-m', 'component');
+        wf.git(wt, 'merge', '-q', '--no-ff', '--no-edit', 'side');
+        wf.git(root, 'branch', '-D', 'side');
+        await wf.moveTo(root, record, 'cleanup-ready');
+        wf.git(root, 'merge', '-q', '--squash', record.branch);
+        wf.git(root, 'commit', '-q', '-m', 'squashed');
+        return { recordIds: ['c1'], branch: record.branch };
+      },
+    ],
+    [
+      'patch-id-mismatch',
+      async (root) => {
+        const { record } = await component(root, 'c1', (wt) =>
+          writeFileSync(join(wt, 'feature.txt'), 'a b\n'),
+        );
+        writeFileSync(join(root, 'feature.txt'), 'a  b\n');
+        wf.git(root, 'add', 'feature.txt');
+        wf.git(root, 'commit', '-q', '-m', 'whitespace variant');
+        return { recordIds: ['c1'], branch: record.branch };
+      },
+    ],
+    [
+      'target-is-component',
+      async (root) => {
+        const first = await component(root, 'c1', (wt) =>
+          writeFileSync(join(wt, 'one.txt'), 'one\n'),
+        );
+        const second = await component(root, 'c2');
+        return {
+          recordIds: ['c1', 'c2'],
+          branch: first.record.branch,
+          integrationRoot: second.worktree.worktreePath,
+        };
+      },
+    ],
+    [
+      'ref-moved',
+      async (root) => {
+        const { record, tip } = await component(root, 'c1', (wt) =>
+          writeFileSync(join(wt, 'feature.txt'), 'feature\n'),
+        );
+        integrate(root, tip);
+        return {
+          recordIds: ['c1'],
+          branch: record.branch,
+          onPhase: (name) => {
+            if (name === 'beforeBranchDelete') {
+              wf.git(root, 'update-ref', `refs/heads/${record.branch}`, `${tip}~1`);
+            }
+          },
+        };
+      },
+    ],
+    [
+      'checked-out',
+      async (root) => {
+        const { record, tip } = await component(root, 'c1', (wt) =>
+          writeFileSync(join(wt, 'feature.txt'), 'feature\n'),
+        );
+        integrate(root, tip);
+        const elsewhere = join(root, '.effective-flow', 'elsewhere');
+        return {
+          recordIds: ['c1'],
+          branch: record.branch,
+          onPhase: (name) => {
+            if (name === 'afterRemove')
+              wf.git(root, 'worktree', 'add', '-q', elsewhere, record.branch);
+          },
+        };
+      },
+    ],
+  ];
+  for (const [reason, prepare] of cases) {
+    const root = wf.repository(t);
+    const scenario = await prepare(root);
+    const result = wf.expectOk(
+      await removeComponents(
+        root,
+        scenario.recordIds,
+        { onPhase: scenario.onPhase },
+        scenario.integrationRoot ?? root,
+      ),
+    );
+    const item = result.items[0];
+    assert.equal(item.code, 'BRANCH_RETAINED', `${reason}: ${JSON.stringify(result)}`);
+    assert.equal(item.branch.reason, reason, `${reason}: ${JSON.stringify(item)}`);
+    assert.ok(branchExists(root, scenario.branch), `${reason} keeps the branch`);
+    assert.equal(existsSync(wf.recordFile(root, 'c1')), false, `${reason} deletes the record`);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Legacy guards through cleanup plan and cleanup apply
+
+const MIGRATE_OWNER = Object.freeze({ workflow: 'cleanup' });
+
+async function migrateLegacy(root) {
+  wf.expectOk(
+    await wf.call('memory migrate-directory', { cwd: root, owner: MIGRATE_OWNER, waitSeconds: 0 }),
+  );
+}
+
+function legacyFiles(root, name, files) {
+  for (const [relative, content] of Object.entries(files)) {
+    const target = join(root, name, relative);
+    mkdirSync(join(target, '..'), { recursive: true });
+    writeFileSync(target, content);
+  }
+}
+
+async function cleanupPlan(root, decisions) {
+  return wf.expectOk(
+    await wf.call('cleanup plan', {
+      cwd: root,
+      executionRoot: root,
+      ...(decisions ? { decisions } : {}),
+    }),
+  );
+}
+
+function blockedCodes(planned, itemId) {
+  const item = planned.blocked.find((entry) => entry.itemId === itemId);
+  assert.ok(item, `${itemId} is blocked: ${JSON.stringify(planned)}`);
+  return item.failures.map((failure) => failure.code);
+}
+
+function apply(root, planned, itemIds, decisions, extra) {
+  return wf.call(
+    'cleanup apply',
+    {
+      cwd: root,
+      executionRoot: root,
+      ...(decisions ? { decisions } : {}),
+      items: Object.fromEntries(
+        planned.items
+          .filter((item) => itemIds.includes(item.itemId))
+          .map((item) => [item.itemId, item.itemDigest]),
+      ),
+    },
+    extra,
+  );
+}
+
+// A migrated `.firmo/` with a symlink inside that points at a file outside it.
+async function migratedFirmo(t) {
+  const root = wf.repository(t);
+  legacyFiles(root, '.firmo', { 'cache.json': '{"a":1}\n', 'review/a.md': 'report\n' });
+  writeFileSync(join(root, 'outside.txt'), 'outside\n');
+  symlinkSync(join(root, 'outside.txt'), join(root, '.firmo', 'link.txt'));
+  await migrateLegacy(root);
+  return root;
+}
+
+test('cleanup preservation: migrated memory must still contain every source value', async (testContext) => {
+  const root = wf.repository(testContext);
+  const original = { counters: { plan: 7 }, labels: ['a', 'b'] };
+  legacyFiles(root, '.firmo', { 'memory.json': `${JSON.stringify(original)}\n` });
+  await migrateLegacy(root);
+  const migrated = await cleanupPlan(root);
+  assert.ok(migrated.items.some((entry) => entry.itemId === 'legacy:.firmo'));
+  const { record } = await component(root, 'c1');
+  const selected = await cleanupPlan(root);
+  legacyFiles(root, '.firmo', {
+    'memory.json': `${JSON.stringify({ ...original, counters: { plan: 7, review: 9 } })}\n`,
+  });
+  const blocked = await cleanupPlan(root);
+  assert.deepEqual(blockedCodes(blocked, 'legacy:.firmo'), ['CARRY_OVER_OPEN']);
+  assert.equal(blocked.blocked[0].carryOver.open[0].path, '.firmo/memory.json');
+  wf.expectOutcome(
+    await apply(root, selected, ['worktree:c1', 'legacy:.firmo']),
+    'PREVIEW_MISMATCH',
+  );
+  assert.ok(existsSync(record.worktreePath));
+  assert.ok(existsSync(wf.recordFile(root, 'c1')));
+  const decisions = { discard: ['.firmo/memory.json'] };
+  const discarded = await cleanupPlan(root, decisions);
+  const result = wf.expectOk(await apply(root, discarded, ['legacy:.firmo'], decisions));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(root, '.firmo')), false);
+});
+
+test('cleanup preservation: target-wins memory conflicts require explicit discard', async (testContext) => {
+  const root = wf.repository(testContext);
+  legacyFiles(root, '.effective-flow', {
+    'memory.json': '{"counters":{"plan":10},"labels":["b","a"]}\n',
+  });
+  legacyFiles(root, '.firmo', {
+    'memory.json': '{"counters":{"plan":7},"labels":["a","b"]}\n',
+  });
+  await migrateLegacy(root);
+  const memory = JSON.parse(readFileSync(join(root, '.effective-flow', 'memory.json'), 'utf8'));
+  assert.equal(memory.counters.plan, 10);
+  assert.deepEqual(memory.labels, ['b', 'a']);
+  assert.deepEqual(blockedCodes(await cleanupPlan(root), 'legacy:.firmo'), ['CARRY_OVER_OPEN']);
+  const decisions = { discard: ['.firmo/memory.json'] };
+  const planned = await cleanupPlan(root, decisions);
+  const result = wf.expectOk(await apply(root, planned, ['legacy:.firmo'], decisions));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(root, '.firmo')), false);
+});
+
+test('cleanup preservation: ordinary .worktrees data requires a copy or explicit discard', async (testContext) => {
+  for (const discard of [false, true]) {
+    const root = wf.repository(testContext);
+    legacyFiles(root, '.firmo', { '.worktrees/notes.txt': 'not a Git checkout\n' });
+    await migrateLegacy(root);
+    assert.deepEqual(blockedCodes(await cleanupPlan(root), 'legacy:.firmo'), ['CARRY_OVER_OPEN']);
+    const decisions = discard ? { discard: ['.firmo/.worktrees/notes.txt'] } : undefined;
+    if (!discard)
+      legacyFiles(root, '.effective-flow', { '.worktrees/notes.txt': 'not a Git checkout\n' });
+    const planned = await cleanupPlan(root, decisions);
+    const result = wf.expectOk(await apply(root, planned, ['legacy:.firmo'], decisions));
+    assert.equal(result.items[0].ok, true, JSON.stringify(result));
+    assert.equal(existsSync(join(root, '.firmo')), false);
+    if (!discard)
+      assert.equal(
+        readFileSync(join(root, '.effective-flow', '.worktrees', 'notes.txt'), 'utf8'),
+        'not a Git checkout\n',
+      );
+  }
+});
+
+test('cleanup preservation: worktree removal cannot invalidate a later legacy preservation proof', async (testContext) => {
+  for (const mutation of ['missing', 'different', 'marker', 'discard']) {
+    const root = wf.repository(testContext);
+    legacyFiles(root, '.firmo', { 'cache.json': '{"a":1}\n' });
+    await migrateLegacy(root);
+    const { record } = await component(root, 'c1');
+    const decisions = mutation === 'discard' ? { discardAll: ['.firmo'] } : undefined;
+    const planned = await cleanupPlan(root, decisions);
+    let changed = false;
+    const result = wf.expectOk(
+      await apply(root, planned, ['worktree:c1', 'legacy:.firmo'], decisions, {
+        onPhase: (phase, { recordId }) => {
+          if (phase !== 'afterRemove' || recordId !== 'c1') return;
+          changed = true;
+          if (mutation === 'marker')
+            writeFileSync(join(root, '.effective-flow', 'memory.json'), '{}\n');
+          else if (mutation === 'different')
+            writeFileSync(join(root, '.effective-flow', 'cache.json'), '{"a":2}\n');
+          else unlinkSync(join(root, '.effective-flow', 'cache.json'));
+        },
+      }),
+    );
+    assert.equal(changed, true);
+    assert.equal(result.items[0].ok, true, JSON.stringify(result));
+    assert.equal(result.items[0].removed, true);
+    assert.equal(existsSync(record.worktreePath), false);
+    assert.equal(existsSync(wf.recordFile(root, 'c1')), false);
+    if (mutation === 'discard') {
+      assert.equal(result.items[1].ok, true, JSON.stringify(result));
+      assert.equal(existsSync(join(root, '.firmo')), false);
+    } else {
+      assert.equal(result.items[1].ok, false, `${mutation}: ${JSON.stringify(result)}`);
+      assert.equal(result.items[1].code, 'LEGACY_CHANGED');
+      assert.equal(result.items[1].removedEntries, 0);
+      assert.equal(
+        result.items[1].failures[0].code,
+        mutation === 'marker' ? 'LEGACY_UNMIGRATED' : 'CARRY_OVER_OPEN',
+      );
+      assert.equal(readFileSync(join(root, '.firmo', 'cache.json'), 'utf8'), '{"a":1}\n');
+    }
+  }
+});
+
+test('cleanup preservation: a configuration made live by earlier removal is never discarded', async (testContext) => {
+  for (const kind of ['legacy', 'config']) {
+    const root = wf.repository(testContext);
+    legacyFiles(root, '.firmo', { 'config.json': '{"worktree":{"enabled":true}}\n' });
+    await migrateLegacy(root);
+    setupAdr(root);
+    const { record } = await component(root, 'c1');
+    const decisions = {
+      discardAll: ['.firmo'],
+      config: { '.firmo/config.json': 'discarded', '.effective-flow/config.json': 'discarded' },
+    };
+    const itemId = kind === 'legacy' ? 'legacy:.firmo' : 'config:.effective-flow/config.json';
+    const planned = await cleanupPlan(root, decisions);
+    const result = wf.expectOk(
+      await apply(root, planned, ['worktree:c1', itemId], decisions, {
+        onPhase: (phase) => {
+          if (phase === 'afterRemove')
+            unlinkSync(join(root, 'docs', 'adr', 'effective-flow-project-setup.md'));
+        },
+      }),
+    );
+    assert.equal(result.items[0].ok, true, JSON.stringify(result));
+    assert.equal(existsSync(record.worktreePath), false);
+    assert.equal(result.items[1].code, 'LEGACY_CHANGED', JSON.stringify(result));
+    assert.equal(result.items[1].removedEntries, 0);
+    assert.equal(
+      kind === 'legacy'
+        ? result.items[1].failures[0].open[0].reason
+        : result.items[1].failures[0].reason,
+      'live-configuration',
+    );
+    assert.ok(
+      existsSync(join(root, kind === 'legacy' ? '.firmo' : '.effective-flow', 'config.json')),
+    );
+  }
+});
+
+test('cleanup preservation: each source rechecks surviving copies after earlier entries are removed', async (testContext) => {
+  const root = wf.repository(testContext);
+  legacyFiles(root, '.firmo', { 'z.txt': 'first\n', 'a.txt': 'retain me\n' });
+  await migrateLegacy(root);
+  const planned = await cleanupPlan(root);
+  const result = wf.expectOk(
+    await apply(root, planned, ['legacy:.firmo'], undefined, {
+      onLegacyEntry: (relative) => {
+        if (relative !== 'a.txt') return;
+        assert.equal(existsSync(join(root, '.firmo', 'z.txt')), false);
+        unlinkSync(join(root, '.effective-flow', 'a.txt'));
+      },
+    }),
+  );
+  assert.equal(result.items[0].code, 'LEGACY_CHANGED', JSON.stringify(result));
+  assert.equal(result.items[0].removedEntries, 1);
+  assert.equal(result.items[0].stoppedAt, 'a.txt');
+  assert.equal(result.items[0].failures[0].code, 'CARRY_OVER_OPEN');
+  assert.equal(readFileSync(join(root, '.firmo', 'a.txt'), 'utf8'), 'retain me\n');
+  assert.equal(readFileSync(join(root, '.effective-flow', 'z.txt'), 'utf8'), 'first\n');
+});
+
+// Invariant: a migrated `.firmo/` whose open entries (here a symlink) are discarded is deleted
+// through its digested listing; the symlink is unlinked and its target untouched.
+test('legacy guard: a migrated .firmo with a symlink is removed once its open entries are discarded', async (t) => {
+  const root = await migratedFirmo(t);
+  const open = await cleanupPlan(root);
+  assert.deepEqual(blockedCodes(open, 'legacy:.firmo'), ['CARRY_OVER_OPEN']);
+  const decisions = { discardAll: ['.firmo'] };
+  const planned = await cleanupPlan(root, decisions);
+  const item = planned.items.find((entry) => entry.itemId === 'legacy:.firmo');
+  assert.equal(item.carryOver.carried, 2);
+  assert.deepEqual(
+    item.carryOver.discarded.map((entry) => entry.path),
+    ['.firmo/link.txt'],
+  );
+  const result = wf.expectOk(await apply(root, planned, ['legacy:.firmo'], decisions));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(root, '.firmo')), false);
+  assert.equal(readFileSync(join(root, 'outside.txt'), 'utf8'), 'outside\n');
+  assert.equal(readFileSync(join(root, '.effective-flow', 'cache.json'), 'utf8'), '{"a":1}\n');
+});
+
+// Invariant: changed decisions or a new file after the dry run refuse the selection with
+// PREVIEW_MISMATCH and remove nothing.
+test('legacy guard: changed decisions or a new file are PREVIEW_MISMATCH', async (t) => {
+  const root = await migratedFirmo(t);
+  const planned = await cleanupPlan(root, { discardAll: ['.firmo'] });
+  const changedDecisions = wf.expectOutcome(
+    await apply(root, planned, ['legacy:.firmo'], { discard: ['.firmo/link.txt'] }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.equal(changedDecisions.itemId, 'legacy:.firmo');
+  writeFileSync(join(root, '.firmo', 'new.txt'), 'new\n');
+  wf.expectOutcome(
+    await apply(root, planned, ['legacy:.firmo'], { discardAll: ['.firmo'] }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.ok(existsSync(join(root, '.firmo', 'cache.json')));
+});
+
+// Invariant: each refusal of the legacyRuntimeDirectory class holds alone.
+test('legacy guard: missing marker, other-source marker, open carry-over, nested .git, tracked content and a symlinked name refuse', async (t) => {
+  const missing = wf.repository(t);
+  legacyFiles(missing, '.firmo', { 'cache.json': '{}\n' });
+  assert.deepEqual(
+    blockedCodes(await cleanupPlan(missing, { discardAll: ['.firmo'] }), 'legacy:.firmo'),
+    ['LEGACY_UNMIGRATED'],
+  );
+
+  const twoRun = wf.repository(t);
+  legacyFiles(twoRun, '.firmo', { 'cache.json': '{}\n' });
+  legacyFiles(twoRun, '.sf-plugin', { 'old.txt': 'old\n' });
+  await migrateLegacy(twoRun);
+  rmSync(join(twoRun, '.firmo'), { recursive: true });
+  assert.deepEqual(
+    blockedCodes(await cleanupPlan(twoRun, { discardAll: ['.sf-plugin'] }), 'legacy:.sf-plugin'),
+    ['LEGACY_UNMIGRATED'],
+  );
+
+  const open = wf.repository(t);
+  legacyFiles(open, '.firmo', { 'cache.json': '{}\n' });
+  await migrateLegacy(open);
+  writeFileSync(join(open, '.effective-flow', 'cache.json'), '{"changed":true}\n');
+  const openPlan = await cleanupPlan(open);
+  assert.deepEqual(blockedCodes(openPlan, 'legacy:.firmo'), ['CARRY_OVER_OPEN']);
+  assert.deepEqual(
+    openPlan.blocked[0].carryOver.open.map((entry) => [entry.path, entry.reason]),
+    [['.firmo/cache.json', 'missing-or-different']],
+  );
+
+  const nested = wf.repository(t);
+  legacyFiles(nested, '.firmo', { 'cache.json': '{}\n', '.worktrees/wt/.git': 'gitdir: x\n' });
+  await migrateLegacy(nested);
+  const nestedPlan = await cleanupPlan(nested, { discardAll: ['.firmo'] });
+  assert.deepEqual(blockedCodes(nestedPlan, 'legacy:.firmo'), ['NOT_ELIGIBLE']);
+  assert.equal(nestedPlan.blocked[0].failures[0].reason, 'nested-git');
+
+  const tracked = wf.repository(t);
+  legacyFiles(tracked, '.firmo', { 'cache.json': '{}\n' });
+  wf.git(tracked, 'add', '-f', '.firmo/cache.json');
+  wf.git(tracked, 'commit', '-q', '-m', 'tracked legacy');
+  await migrateLegacy(tracked);
+  assert.deepEqual(blockedCodes(await cleanupPlan(tracked), 'legacy:.firmo'), ['LEGACY_TRACKED']);
+
+  const linked = wf.repository(t);
+  legacyFiles(linked, 'real-dir', { 'cache.json': '{}\n' });
+  symlinkSync(join(linked, 'real-dir'), join(linked, '.firmo'));
+  await migrateLegacy(linked);
+  assert.deepEqual(
+    blockedCodes(await cleanupPlan(linked, { discardAll: ['.firmo'] }), 'legacy:.firmo'),
+    ['UNSAFE_TARGET'],
+  );
+  assert.ok(existsSync(join(linked, 'real-dir', 'cache.json')));
+});
+
+// Invariant: a legacy directory is blocked by a `.git` entry or a porcelain-registered worktree
+// anywhere in it, not only below its `.worktrees/`, and nothing in it is removed.
+test('legacy guard: a .git entry or a registered worktree outside .worktrees blocks the directory', async (t) => {
+  const nested = wf.repository(t);
+  legacyFiles(nested, '.firmo', { 'cache.json': '{}\n' });
+  await migrateLegacy(nested);
+  legacyFiles(nested, '.firmo', { 'vendor/repo/.git': 'gitdir: elsewhere\n' });
+  const nestedPlan = await cleanupPlan(nested, { discardAll: ['.firmo'] });
+  const nestedItem = nestedPlan.blocked.find((entry) => entry.itemId === 'legacy:.firmo');
+  assert.deepEqual(
+    nestedItem?.failures.map(({ code, reason, paths }) => [code, reason, paths]),
+    [['NOT_ELIGIBLE', 'nested-git', ['vendor/repo/.git']]],
+    JSON.stringify(nestedPlan),
+  );
+
+  // A registered worktree whose `.git` file is gone is found through the porcelain list alone.
+  const registered = wf.repository(t);
+  legacyFiles(registered, '.firmo', { 'cache.json': '{}\n' });
+  await migrateLegacy(registered);
+  const checkout = join(registered, '.firmo', 'checkout');
+  wf.git(registered, 'worktree', 'add', '-q', '-b', 'legacy-checkout', checkout, 'HEAD');
+  rmSync(join(checkout, '.git'));
+  const registeredPlan = await cleanupPlan(registered, { discardAll: ['.firmo'] });
+  const registeredItem = registeredPlan.blocked.find((entry) => entry.itemId === 'legacy:.firmo');
+  assert.ok(registeredItem, JSON.stringify(registeredPlan));
+  const failure = registeredItem.failures.find((entry) => entry.reason === 'registered-worktree');
+  assert.ok(failure, JSON.stringify(registeredItem));
+  assert.deepEqual(
+    failure.registrations.map((entry) => entry.path),
+    [realpathSync(checkout)],
+  );
+  assert.ok(existsSync(join(checkout, 'base.txt')), 'nothing below the directory was removed');
+});
+
+// Rewrites the migration marker into its pre-`source` shape, as markers written before the marker
+// stored its source look.
+function dropMarkerSource(root) {
+  const target = join(root, '.effective-flow', 'memory.json');
+  const memory = JSON.parse(readFileSync(target, 'utf8'));
+  assert.equal(memory.runtimeMigration.directory.source, '.firmo', JSON.stringify(memory));
+  delete memory.runtimeMigration.directory.source;
+  writeFileSync(target, `${JSON.stringify(memory, null, 2)}\n`);
+}
+
+// Invariant: a legacy marker (no `source` key) certifies a legacy directory only through a
+// carry-over proof with zero open entries after decisions, and the item says `legacyMarker: true`.
+test('legacy guard: a legacy marker certifies only a fully carried or discarded directory', async (t) => {
+  const carried = wf.repository(t);
+  legacyFiles(carried, '.firmo', { 'cache.json': '{"a":1}\n', 'review/a.md': 'report\n' });
+  await migrateLegacy(carried);
+  dropMarkerSource(carried);
+  const planned = await cleanupPlan(carried);
+  const item = planned.items.find((entry) => entry.itemId === 'legacy:.firmo');
+  assert.ok(item, JSON.stringify(planned));
+  assert.equal(item.legacyMarker, true);
+  assert.deepEqual(item.carryOver.open, []);
+  const result = wf.expectOk(await apply(carried, planned, ['legacy:.firmo']));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(carried, '.firmo')), false);
+
+  const open = wf.repository(t);
+  legacyFiles(open, '.firmo', { 'cache.json': '{}\n' });
+  await migrateLegacy(open);
+  dropMarkerSource(open);
+  writeFileSync(join(open, '.effective-flow', 'cache.json'), '{"changed":true}\n');
+  const openPlan = await cleanupPlan(open);
+  assert.deepEqual(blockedCodes(openPlan, 'legacy:.firmo'), ['CARRY_OVER_OPEN']);
+  assert.equal(openPlan.blocked[0].legacyMarker, true);
+
+  const unmigrated = wf.repository(t);
+  legacyFiles(unmigrated, '.firmo', { 'cache.json': '{}\n' });
+  legacyFiles(unmigrated, '.sf-plugin', { 'old.txt': 'old\n', 'memory.json': '{}\n' });
+  await migrateLegacy(unmigrated);
+  rmSync(join(unmigrated, '.firmo'), { recursive: true });
+  dropMarkerSource(unmigrated);
+  const unmigratedPlan = await cleanupPlan(unmigrated);
+  assert.deepEqual(blockedCodes(unmigratedPlan, 'legacy:.sf-plugin'), ['CARRY_OVER_OPEN']);
+  assert.deepEqual(unmigratedPlan.blocked[0].carryOver.open.map((entry) => entry.path).sort(), [
+    '.sf-plugin/memory.json',
+    '.sf-plugin/old.txt',
+  ]);
+  const decisions = { discardAll: ['.sf-plugin'] };
+  const discarded = await cleanupPlan(unmigrated, decisions);
+  assert.ok(
+    discarded.items.some((entry) => entry.itemId === 'legacy:.sf-plugin'),
+    JSON.stringify(discarded),
+  );
+});
+
+// Invariant: a chain swapped and an entry added during the removal stop that item (UNSAFE_TARGET,
+// LEGACY_CHANGED) with the partial state reported; a symlink in the swapped chain is never followed.
+test('legacy guard: a chain swapped or an entry added mid-walk stops the item', async (t) => {
+  const swapped = await migratedFirmo(t);
+  const decisions = { discardAll: ['.firmo'] };
+  let planned = await cleanupPlan(swapped, decisions);
+  const decoy = join(swapped, 'decoy');
+  legacyFiles(swapped, 'decoy', { 'a.md': 'report\n' });
+  const swap = wf.expectOk(
+    await apply(swapped, planned, ['legacy:.firmo'], decisions, {
+      onLegacyEntry: (relative) => {
+        if (relative !== 'review/a.md') return;
+        renameSync(join(swapped, '.firmo', 'review'), join(swapped, 'moved-review'));
+        symlinkSync(decoy, join(swapped, '.firmo', 'review'));
+      },
+    }),
+  );
+  assert.equal(swap.items[0].code, 'UNSAFE_TARGET', JSON.stringify(swap));
+  assert.equal(swap.items[0].stoppedAt, 'review/a.md');
+  assert.equal(readFileSync(join(decoy, 'a.md'), 'utf8'), 'report\n');
+
+  const added = await migratedFirmo(t);
+  planned = await cleanupPlan(added, decisions);
+  const grow = wf.expectOk(
+    await apply(added, planned, ['legacy:.firmo'], decisions, {
+      onLegacyEntry: (relative) => {
+        if (relative === 'review') writeFileSync(join(added, '.firmo', 'review', 'new.txt'), 'x\n');
+      },
+    }),
+  );
+  assert.equal(grow.items[0].code, 'LEGACY_CHANGED', JSON.stringify(grow));
+  assert.equal(grow.items[0].stoppedAt, 'review');
+  assert.ok(grow.items[0].removedEntries >= 1);
+  assert.ok(existsSync(join(added, '.firmo', 'review', 'new.txt')));
+});
+
+function setupAdr(root) {
+  writeFileSync(
+    join(root, 'AGENTS.md'),
+    '# Agents\n\n**Effective Flow project setup:** docs/adr/effective-flow-project-setup.md\n',
+  );
+  mkdirSync(join(root, 'docs', 'adr'), { recursive: true });
+  writeFileSync(
+    join(root, 'docs', 'adr', 'effective-flow-project-setup.md'),
+    '# Effective Flow project setup\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n| worktree.enabled | true |\n',
+  );
+}
+
+// Invariant: the transitional `.effective-flow/config.json` is removable only when the locator
+// resolves at steps 0 to 2 (it is not the live configuration) and a decision marks it complete or
+// discarded.
+test('legacy guard: legacyConfigFile needs a project-setup ADR and a decision', async (t) => {
+  const root = wf.repository(t);
+  mkdirSync(join(root, '.effective-flow'));
+  writeFileSync(join(root, '.effective-flow', 'config.json'), '{"worktree":{"enabled":true}}\n');
+  const live = await cleanupPlan(root, {
+    config: { '.effective-flow/config.json': 'discarded' },
+  });
+  const liveItem = live.blocked.find(
+    (item) => item.itemId === 'config:.effective-flow/config.json',
+  );
+  assert.equal(live.locatorStep, 3);
+  assert.deepEqual(
+    liveItem.failures.map((failure) => [failure.code, failure.reason]),
+    [['NOT_ELIGIBLE', 'live-configuration']],
+  );
+  setupAdr(root);
+  const undecided = await cleanupPlan(root);
+  assert.ok([0, 1, 2].includes(undecided.locatorStep), String(undecided.locatorStep));
+  assert.deepEqual(blockedCodes(undecided, 'config:.effective-flow/config.json'), [
+    'CARRY_OVER_OPEN',
+  ]);
+  const decisions = { config: { '.effective-flow/config.json': 'complete' } };
+  const planned = await cleanupPlan(root, decisions);
+  const result = wf.expectOk(
+    await apply(root, planned, ['config:.effective-flow/config.json'], decisions),
+  );
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(existsSync(join(root, '.effective-flow', 'config.json')), false);
+});
+
+// Invariant: per-item guard errors never stop the other selected items: a legacy item stopped
+// mid-walk is reported while a selected worktree item is still removed.
+test('cleanup apply: a per-item guard error leaves the other items running', async (t) => {
+  const root = await migratedFirmo(t);
+  const { record } = await component(root, 'c1');
+  const decisions = { discardAll: ['.firmo'] };
+  const planned = await cleanupPlan(root, decisions);
+  const result = wf.expectOk(
+    await apply(root, planned, ['worktree:c1', 'legacy:.firmo'], decisions, {
+      onLegacyEntry: (relative) => {
+        if (relative === 'review') writeFileSync(join(root, '.firmo', 'review', 'x.txt'), 'x\n');
+      },
+    }),
+  );
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, code }) => [itemId, ok, code]),
+    [
+      ['worktree:c1', true, undefined],
+      ['legacy:.firmo', false, 'LEGACY_CHANGED'],
+    ],
+  );
+  assert.equal(existsSync(record.worktreePath), false);
 });

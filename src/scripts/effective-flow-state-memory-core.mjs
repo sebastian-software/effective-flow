@@ -27,7 +27,9 @@
 // The on-disk protocol stays that of the prose writers: the same lock directory and owner format,
 // a temp-plus-rename write of the full object, a counter that is never decremented, and the marker
 // shapes below. `memory reserve` and `memory set-marker` require the `runtimeMigration.directory`
-// marker (MIGRATION_REQUIRED otherwise); `memory migrate-directory` is what writes it.
+// marker (MIGRATION_REQUIRED otherwise); `memory migrate-directory` is what writes it, with
+// `version` and `source`, the legacy directory it migrated (`.firmo` or `.sf-plugin`, or `null`).
+// Only `source` certifies a legacy directory for removal; a marker without it certifies nothing.
 
 import { randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
@@ -702,6 +704,9 @@ export async function migrateDirectory(input, deps) {
     const directory = ensureObject(migration, 'directory', 'runtimeMigration.directory');
     setOwn(directory, 'version', DIRECTORY_MIGRATION_VERSION);
     const name = source?.name ?? null;
+    // The source the marker certifies for a later removal: only a real directory that was walked
+    // and copied. A link or special file at the legacy name was never migrated, so it is `null`.
+    setOwn(directory, 'source', source?.type === 'directory' ? name : null);
     return {
       write: true,
       result: {

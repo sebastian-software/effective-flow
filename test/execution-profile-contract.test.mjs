@@ -150,6 +150,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'effective-flow-state-harness-core.mjs',
   'effective-flow-state-memory-core.mjs',
   'effective-flow-state-review-core.mjs',
+  'effective-flow-state-worktree-core.mjs',
   'effective-flow-state.mjs',
   'issue-buddy-core.mjs',
   'issue-buddy.mjs',
@@ -921,11 +922,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 46);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 47);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 46 approved runtime scripts',
+    'build.mjs must register exactly the 47 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

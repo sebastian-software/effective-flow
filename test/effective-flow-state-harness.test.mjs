@@ -148,9 +148,19 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
     'commit create',
     'review open-report',
     'review write-report',
+    'worktree record-init',
+    'worktree transition',
+    'worktree inspect',
+    'cleanup plan',
   ]);
   assert.equal(STATE_OPERATION_CLASSES['lock break'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['worktree remove'], 'not-allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['cleanup apply'], 'not-allowlisted');
+  assert.deepEqual(
+    [...NEVER_ALLOWLISTED_OPERATIONS],
+    ['lock break', 'harness allow-rules', 'worktree remove', 'cleanup apply'],
+  );
   assert.deepEqual(
     STATE_OPERATIONS.filter((operation) => STATE_OPERATION_CLASSES[operation] !== 'allowlisted'),
     [...NEVER_ALLOWLISTED_OPERATIONS],
@@ -1082,4 +1092,31 @@ test('apply maps a write-path settings refusal to its outcome and guards twice',
     assert.equal(outcome.path, '.claude/settings.local.json');
     assert.equal(existsSync(settingsPath(root)), false);
   }
+});
+
+// Invariant: `harness allow-rules` writes a rule for each of the four non-destructive worktree and
+// cleanup operations and for neither destructive one (`worktree remove`, `cleanup apply`), and the
+// written rule count is exactly the pinned entry list.
+test('apply writes the four new worktree and cleanup rules and none for the destructive two', async (t) => {
+  const root = fakeRoot(t);
+  const installed = install(t);
+  await previewAndApply(root, installed);
+  const allow = JSON.parse(readFileSync(settingsPath(root), 'utf8')).permissions.allow;
+  assert.equal(allow.length, RULE_ENTRIES.length);
+  for (const operation of [
+    'worktree record-init',
+    'worktree transition',
+    'worktree inspect',
+    'cleanup plan',
+  ]) {
+    assert.ok(allow.includes(helperRule(installed.skillRoot, operation)), operation);
+  }
+  for (const operation of NEVER_ALLOWLISTED_OPERATIONS) {
+    assert.equal(allow.includes(helperRule(installed.skillRoot, operation)), false, operation);
+  }
+  assert.ok(
+    !allow.some((rule) =>
+      /effective-flow-state\.mjs (?:worktree remove|cleanup apply) /.test(rule),
+    ),
+  );
 });

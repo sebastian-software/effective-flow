@@ -345,16 +345,6 @@ const QUESTION_INVENTORY = Object.freeze(
         'header: Completion',
       ],
     ],
-    'shared/worktree-lifecycle.md': [
-      [
-        'not-a-site: worktree cleanup confirmation belongs to explicit cleanup; P-PUB prevents publication provisioning',
-        'After explicit user confirmation, process each selected candidate independently:',
-      ],
-      [
-        'not-a-site: worktree cleanup confirmation belongs to explicit cleanup; P-PUB prevents publication provisioning',
-        'before rerunning cleanup; ask the known owner before unlocking a Git-locked worktree; let the',
-      ],
-    ],
     'tools/plan-review.md': [
       [
         'R-IN',

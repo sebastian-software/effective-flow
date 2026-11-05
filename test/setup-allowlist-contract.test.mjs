@@ -4,7 +4,11 @@ import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderBody } from '../build-lib.mjs';
-import { ALLOWLISTED_OPERATIONS, RULE_ENTRIES } from '../src/scripts/claude-settings-core.mjs';
+import {
+  ALLOWLISTED_OPERATIONS,
+  NEVER_ALLOWLISTED_OPERATIONS,
+  RULE_ENTRIES,
+} from '../src/scripts/claude-settings-core.mjs';
 import { OUTCOME_CODES, STATE_OPERATIONS } from '../src/scripts/effective-flow-state-core.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -51,7 +55,8 @@ test('the allowlist step confirms in the conversation between preview and apply'
 
 // Invariant: the prose names exactly the state helper's allowlisted operations, the three rule
 // families and the rule count the helper writes, states the `commit create` risk and its bounds,
-// and the destructive `lock break` and the rule writer itself never get a rule.
+// and the destructive `lock break`, `worktree remove`, `cleanup apply` and the rule writer itself
+// never get a rule.
 test('the allowlist step names the rule families, the rule count and no rule for lock break', () => {
   const named = STATE_OPERATIONS.filter((operation) => allowlist.includes(`\`${operation}\``));
   assert.deepEqual(
@@ -73,8 +78,13 @@ test('the allowlist step names the rule families, the rule count and no rule for
     text,
     /`commit create` writes Git history and runs the repository's hooks without a prompt; it commits only the listed paths, refuses paths below `\.effective-flow\/` and an untrusted hook configuration, and never pushes, amends, resets or rebases/,
   );
-  assert.match(text, /`lock break` and `harness allow-rules` never get a rule/);
-  assert.ok(!ALLOWLISTED_OPERATIONS.includes('lock break'));
+  assert.match(
+    text,
+    /`lock break`, `harness allow-rules` and the destructive `worktree remove` and `cleanup apply` never get a rule/,
+  );
+  for (const operation of NEVER_ALLOWLISTED_OPERATIONS) {
+    assert.ok(!ALLOWLISTED_OPERATIONS.includes(operation), operation);
+  }
 });
 
 // Invariant: `review write-report` writes model-supplied content without a prompt, so it is

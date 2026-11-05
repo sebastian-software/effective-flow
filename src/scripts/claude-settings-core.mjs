@@ -57,10 +57,23 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   // the memory merge, the marker, and adopting and removing a root `.sf-memory.json` through its
   // own guard class.
   'review write-report',
+  // The worktree-lifecycle housekeeping: `record-init` writes one new `active` record no-clobber,
+  // `transition` rewrites one record's status under its lock, and `inspect` and `cleanup plan` only
+  // read. None of them removes a worktree, a branch, a record or a legacy path.
+  'worktree record-init',
+  'worktree transition',
+  'worktree inspect',
+  'cleanup plan',
 ]);
-// The runtime-state helper operations that never get a rule: destructive, or the writer of the
-// rules itself. A rule that would also admit one of them is widened.
-export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze(['lock break', 'harness allow-rules']);
+// The runtime-state helper operations that never get a rule: destructive (`lock break`, the
+// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`), or
+// the writer of the rules itself. A rule that would also admit one of them is widened.
+export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
+  'lock break',
+  'harness allow-rules',
+  'worktree remove',
+  'cleanup apply',
+]);
 
 // `config-resolve.mjs` has one operation, and it reads only.
 export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze(['resolve']);

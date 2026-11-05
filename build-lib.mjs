@@ -5809,6 +5809,103 @@ export function findMemoryStateContractViolations(
   );
 }
 
+// --- Prose runtime-removal and record-write guard (work package 4) ---
+//
+// Runtime state below `.effective-flow/` and the closed legacy list (`.firmo`, `.sf-plugin`,
+// `.sf-memory.json`, a legacy `config.json`) leave the disk only through runtime-state helper
+// operations, whose guards prove what prose cannot: no source may instruct a prose `rm`, `rmdir` or
+// `unlink` of such a path. Worktree-run records change only through the `worktree` operations and
+// `cleanup apply`, so a line that writes, renames or deletes a `worktree-runs/` record without
+// naming one of them is a prose record write. `git rm` of tracked remnants stays prose.
+
+export const PROTECTED_REMOVAL_PATH_RE =
+  /\.effective-flow(?:\/|\b)|\.firmo\b|\.sf-plugin\b|\.sf-memory\.json\b|\bconfig\.json\b/;
+// `rm`, `rmdir` or `unlink`, bare or path-prefixed (`/bin/rm`), as a command or a call.
+const PROSE_REMOVAL_RE = /(?<![\w./-])((?:\/[\w.-]+)*\/)?(rm|rmdir|unlink)(?=\s+\S|\()/g;
+// A `git` invocation with only global options (`-C <dir>`, `-c <k=v>`, `--no-pager`) before the
+// matched word, which makes it the `git rm` subcommand of tracked remnants.
+const GIT_PREFIX_RE =
+  /(?:^|[\s(`])(?:\S*\/)?git(?:\s+(?:-[Cc]\s+(?:"[^"]*"|'[^']*'|[^\s"'`]+)|--[\w-]+(?:=\S+)?|-[A-Za-z]))*\s+$/;
+const FIND_DELETE_RE =
+  /\bfind\s[^`;|&]*?(?:-delete\b|-exec(?:dir)?\s+(?:\S*\/)?(?:rm|rmdir|unlink)\b)/g;
+// A shell redirect (`>`, `>>` or `1>`, at a word boundary, so neither `->`, `=>`, `2>&1` nor the
+// closing `>` of a `<PLACEHOLDER>`) whose target names a worktree-run path.
+const RECORD_REDIRECT_RE = /(?:^|[\s`(])\d?>>?(?!&)\s*["']?[^\s"'`;|&]*worktree-runs/;
+// The end of one shell command inside a line: an inline-code boundary or a command separator.
+const COMMAND_SEPARATOR_RE = /`|;|&&|\|\||\|/;
+const RECORD_WRITE_VERB_RE =
+  /\b(?:write|writes|writing|written|create|creates|creating|rename|renames|renaming|replace|replaces|overwrite|overwrites|rewrite|rewrites|persist|persists|delete|deletes|deleting|remove|removes|removing|echo|tee|mv|cp)\b/i;
+const RECORD_HELPER_OPERATION_RE =
+  /\bworktree (?:record-init|transition|remove)\b|\bcleanup apply\b/;
+
+// Joins backslash-continued shell lines, so a command split over lines is checked as one; each
+// logical line keeps the number of its first physical line.
+function logicalLines(body) {
+  const logical = [];
+  let pending = null;
+  for (const [index, raw] of normalizeLineEndings(body).split('\n').entries()) {
+    const continued = /\\\s*$/.test(raw);
+    const text = continued ? raw.replace(/\\\s*$/, ' ') : raw;
+    if (pending) pending.text += text;
+    else pending = { text, line: index + 1 };
+    if (!continued) {
+      logical.push(pending);
+      pending = null;
+    }
+  }
+  if (pending) logical.push(pending);
+  return logical;
+}
+
+function lastCommandSegment(prefix) {
+  const parts = prefix.split(COMMAND_SEPARATOR_RE);
+  return parts[parts.length - 1];
+}
+
+export function findProseRuntimeRemovalViolations(sources) {
+  const entries = sources instanceof Map ? [...sources] : Object.entries(sources);
+  const violations = [];
+  for (const [context, body] of entries) {
+    const lines = logicalLines(body);
+    for (const [index, { text: line, line: lineNumber }] of lines.entries()) {
+      const report = (reason, target) =>
+        violations.push({ context, line: lineNumber, reason, target: target.trim() });
+      for (const match of line.matchAll(PROSE_REMOVAL_RE)) {
+        if (GIT_PREFIX_RE.test(lastCommandSegment(line.slice(0, match.index)))) continue;
+        // The operand runs to the end of the inline code span, the command, or the line.
+        const operand = line.slice(match.index + match[0].length).split(/`|;|&&|\|\|/)[0];
+        const target = PROTECTED_REMOVAL_PATH_RE.exec(operand)?.[0];
+        if (target) report(`prose \`${match[2]}\` removes runtime state or a legacy path`, target);
+      }
+      for (const match of line.matchAll(FIND_DELETE_RE)) {
+        const target = PROTECTED_REMOVAL_PATH_RE.exec(match[0])?.[0];
+        if (target) report('prose `find -delete` removes runtime state or a legacy path', target);
+      }
+      if (!line.includes('worktree-runs')) continue;
+      const recordWrite =
+        'prose writes a worktree-run record instead of naming a worktree helper operation';
+      if (RECORD_REDIRECT_RE.test(line)) {
+        report(recordWrite, 'worktree-runs');
+        continue;
+      }
+      // A write verb on this line needs the helper operation on this line; a verb only on the
+      // previous line (a sentence wrapped before the path) may be covered by either line. A helper
+      // named on the previous line never covers a write this line states itself.
+      const previous = lines[index - 1]?.text ?? '';
+      const covered = RECORD_WRITE_VERB_RE.test(line)
+        ? RECORD_HELPER_OPERATION_RE.test(line)
+        : !RECORD_WRITE_VERB_RE.test(previous) ||
+          RECORD_HELPER_OPERATION_RE.test(line) ||
+          RECORD_HELPER_OPERATION_RE.test(previous);
+      if (!covered) report(recordWrite, 'worktree-runs');
+    }
+  }
+  return violations.sort(
+    (a, b) =>
+      a.context.localeCompare(b.context) || a.line - b.line || a.reason.localeCompare(b.reason),
+  );
+}
+
 // --- Consumer-document command guard (#160) ---
 //
 // These scripts operate on a source checkout or release-maintenance payload;

@@ -5994,9 +5994,12 @@ test('apply-issues loads the worktree lifecycle contract directly instead of ref
   // Both ends of the lifecycle have to be instructed, not just the format.
   assert.match(
     flatIssues,
-    /Write the record immediately after the `effective-flow-created` receipt is verified/,
+    /Write the record with `worktree record-init` immediately after the `effective-flow-created` receipt is verified/,
   );
-  assert.match(applyIssues, /transition its lifecycle record from `active` to `cleanup-ready`/);
+  assert.match(
+    flatIssues,
+    /call `worktree remove` for its record per the loaded `worktree-lifecycle` contract \(with its denial fallback to `cleanup-ready`\)/,
+  );
   // Every exit from the phase ends in a status, so no record is stranded at `active`.
   // Post-delegation failures count: a rejected push or a failed PR creation must also land.
   // Matched on flattened prose so a reflow by the formatter cannot break these.
@@ -6007,7 +6010,7 @@ test('apply-issues loads the worktree lifecycle contract directly instead of ref
   assert.match(flatIssues, /A record must never be left at `active` once the issue is done with/);
   // The error path itself must record `failed` with its reason; which failures count is pinned
   // by the status-set assertion above.
-  assert.match(flatIssues, /transition its lifecycle record to `failed` with the exact reason/);
+  assert.match(flatIssues, /call `worktree transition` to `failed` with the exact reason/);
 
   // The fence renders as a load pointer that names the fragment file and keeps its trigger, and
   // the fragment it loads exists and carries the record path.
@@ -21735,19 +21738,25 @@ test('the plan continuation provisions the existing head branch without -b and r
     'stop',
   );
 
-  // Invariant: adoption revives exactly one proven record under its lock, keeps it Effective
-  // Flow-owned for every abort path (F21), and never adopts a harness-managed, user-managed, or
-  // recordless worktree.
+  // Invariant: adoption revives exactly one proven record through the helper's `worktree
+  // transition`, whose proofs run under the record lock (purpose, repository and runtime root,
+  // branch and workflow, `creationOid` against the fetched head OID, registration, clean status),
+  // keeps it Effective Flow-owned for every abort path (F21), and never adopts a harness-managed,
+  // user-managed, or recordless worktree.
   const adoption = section(continuation, '### Resumption by adoption');
   const adoptionProse = prose(adoption);
   includesAll(
     adoptionProse,
     [
-      '`aborted`/`failed` → `active`',
-      'Acquire the record lock',
-      '`creationOid` equals the fetched head OID',
-      '`git worktree list --porcelain -z`',
-      '`git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none`',
+      '`worktree inspect`',
+      'Exactly one such record may be adopted, with one `worktree transition` call',
+      '`from` its stored `aborted` or `failed`, `to` `active`',
+      '`fetchedHeadOid` (the fetched head OID)',
+      'Under the record lock the helper proves purpose `delivery`',
+      '`branch` and `workflow` equal to the record',
+      '`creationOid` equal to `fetchedHeadOid` and an ancestor of the tip (condition 6)',
+      'registration, and a clean status',
+      'retains the record unchanged',
       'never an externally managed worktree',
       '`active` → `aborted`',
     ],
@@ -21757,7 +21766,6 @@ test('the plan continuation provisions the existing head branch without -b and r
     adoptionProse,
     /A `harness-managed`, user-managed, or recordless worktree is never adopted/,
   );
-  assert.equal(adoption.split(/\n(?=\d+\. )/).length - 1, 5, 'adoption must carry five proofs');
 });
 
 test('the plan continuation fixes pr completion, proves implementation before archival, and finishes through pr', () => {

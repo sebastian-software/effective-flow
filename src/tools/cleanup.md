@@ -49,7 +49,7 @@ task-tracking
 
 ```lazy-include
 runtime-state-safety
-when: worktree lifecycle state will be read or mutated, a stale diff baseline will be discarded, or any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent
+when: a stale diff baseline will be discarded, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent
 ```
 
 ```lazy-include
@@ -57,13 +57,13 @@ next-steps
 when: the run reaches its completion report
 ```
 
-```include
-worktree-lifecycle
-```
-
 ```lazy-include
 effective-flow-dir-migration
 when: Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker), or any confirmed Phase 3 or Phase 5 mutation below `.effective-flow/` is about to run, even when Phase 1 found no legacy runtime directory (for example a carry-over copy or directory creation, a worktree lifecycle lock, claim, removal, reconcile, record write or deletion, a stale diff-baseline discard, or the confirmed removal of a legacy file such as a transitional `.effective-flow/config.json`)
+```
+
+```include
+worktree-lifecycle
 ```
 
 ```include
@@ -95,8 +95,8 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
 - **Never delete the new.** The active runtime directory `.effective-flow/` itself, its current
   runtime state, and the project setup ADR are never deleted. The recognized legacy
   `config.json` exception remains governed by the legacy classes below. The only current
-  runtime-state deletions allowed are the exact lifecycle record owned by a successfully
-  reconciled cleanup claim and a confirmed stale diff baseline; no other active runtime file is a
+  runtime-state deletions allowed are the lifecycle record of a successfully reconciled
+  `cleanup apply` claim and a confirmed stale diff baseline; no other active runtime file is a
   cleanup target.
 - **Never target the main or current execution worktree.** `RUNTIME_STATE_ROOT` and the worktree
   from which cleanup is running are never removal candidates. A linked current execution
@@ -138,36 +138,45 @@ directory, and never infer staleness from age.
 
 ## Workflow
 
+`cleanup plan` and `cleanup apply` are the helper operations of this tool, in the call shape of the
+included lifecycle contract. `cwd` is `RUNTIME_STATE_ROOT`, `executionRoot` the cleanup checkout:
+
+```text
+node <skill-root>/scripts/effective-flow-state.mjs cleanup plan <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>}'
+node <skill-root>/scripts/effective-flow-state.mjs cleanup apply <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","decisions":<decisions>,"items":{"<itemId>":"<itemDigest>"}}'
+```
+
+`decisions` holds the carry-over answers: `discardAll` (legacy directory names whose open entries
+are discarded), `discard` (single `.firmo/<path>` or `.sf-plugin/<path>` entries), and `config`
+(`".effective-flow/config.json"`, `".firmo/config.json"` or `".sf-plugin/config.json"` →
+`"complete"` once its values are in the ADR, `"discarded"` when the user drops them). `cleanup plan`
+is read-only and returns `items` (actionable, each with `itemId` and `itemDigest`), `blocked` (with
+`failures`), and `unrecorded` registered worktrees; item IDs are `worktree:<RECORD_ID>`,
+`legacy:.firmo`, `legacy:.sf-plugin` and `config:.effective-flow/config.json`.
+
 ### Phase 1: Discovery / inventory
 
 1. If this is a Git repository, issue and verify an execution-location receipt for the cleanup
-   checkout and retain the verified main checkout as `RUNTIME_STATE_ROOT`. Inventory worktrees
-   with `git worktree list --porcelain -z`, parsing NUL-delimited fields and records rather than
-   human-formatted lines. The first record is the main worktree: validate it as the runtime root,
-   exclude it as a removal target, and omit it only from the final retained-linked-worktree list.
-   If Git or worktree support is unavailable, skip worktree removal, report the reason, and
-   continue the migration inventory where possible.
-2. Before reading lifecycle state, load and apply the runtime-root portion of “Runtime-state
-   write safety”. Read schema-valid records only from the canonical absolute
-   `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/` handle. Match records to Git entries by
-   canonical repository identity, path, checkout identity, and receipt owner/purpose. Treat the
-   immutable `creationOid` as branch-history evidence: it must resolve as a commit and remain an
-   ancestor of the current recorded branch tip, not equal current `HEAD`; path shape and branch
-   prefix are never sufficient.
+   checkout and retain the verified main checkout as `RUNTIME_STATE_ROOT`. If Git or worktree
+   support is unavailable, skip worktree removal, report the reason, and continue the migration
+   inventory where possible.
+2. Call `cleanup plan` without `decisions`; the helper guards the runtime root itself. From
+   `git worktree list --porcelain -z` and the records below
+   `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/` it classifies every record by the removal
+   eligibility conditions; the main worktree and this cleanup's own execution worktree are
+   excluded as removal candidates.
 3. Classify every linked worktree other than the main worktree into exactly one preliminary
-   result:
-   - **removal candidate** only when every shared lifecycle eligibility proof passes and status
-     is `cleanup-ready` or `cleanup-failed`;
-   - **retained** with the first concrete failed proof, including current cleanup execution,
-     `active`, `aborted`, `failed`, `cleanup-in-progress`, dirty, locked, prunable, missing,
-     mismatched, foreign/harness-managed, unknown or invalid schema, or recordless state;
-   - **not reliably checkable** when repository, path, runtime-state, or receipt evidence cannot
-     be read safely; this is retained, never silently skipped.
+   result: a **removal candidate** (`worktree:` item), **retained** with its first failed condition
+   or status (a `blocked` record: `active`, `aborted`, `failed`, `cleanup-in-progress`, dirty,
+   locked, prunable, missing, mismatched, unknown or invalid schema), or **recordless** (an
+   `unrecorded` entry: foreign, harness-managed, user-managed or created before lifecycle
+   recording). A call that is not `ok` makes the worktrees **not reliably checkable**: retained,
+   never silently skipped.
 4. **Stale diff baselines:** list every `<RUNTIME_STATE_ROOT>/.effective-flow/runs/*/diff-baseline/`
    directory read-only, without following a symlink.
 5. Capture the existing legacy remnants in the project root:
-   - **Runtime directories:** do `.firmo/` and/or `.sf-plugin/` exist?
-   - **Legacy `config.json`:** does `.firmo/config.json`, `.sf-plugin/config.json`, or a `config.json` recognizable as outdated in `.effective-flow/` (transitional fallback whose values belong in the ADR) exist?
+   - **Runtime directories and legacy `config.json`:** the plan's `legacy:` and `config:` items,
+     ready or blocked.
    - **`.gitignore`:** does it contain outdated lines for `.firmo/`/`.sf-plugin/` or the old two-line pattern?
    - **`info/exclude`:** read `$(git rev-parse --git-common-dir)/info/exclude` read-only and note
      whether it carries the `.effective-flow/` line. Inventory that line as the **active
@@ -187,38 +196,35 @@ directory, and never infer staleness from age.
      failure and safe retry through `{{SKILL:cleanup}}` (or the required ignore/index repair
      through `{{SKILL:setup}}`), and continue only independent inventory/reporting;
    - after success, repeat the legacy-runtime, counterpart, legacy-config, and nested-worktree
-     inventory from fresh filesystem and Git evidence before making any carry-over or deletion
-     decision.
+     inventory by calling `cleanup plan` again before making any carry-over or deletion decision.
      Do not invoke the prerequisite when no legacy runtime directory exists: such a cleanup run
      creates no runtime footprint merely to record a marker.
-7. Treat the migration marker as proof only for the source selected by the shared precedence
-   rule (`.firmo/`, otherwise `.sf-plugin/`). If `.firmo/` and `.sf-plugin/` both exist, inventory
-   the unselected `.sf-plugin/` separately; the marker does not certify its carry-over and never
-   releases it for deletion.
-8. For each existing legacy remnant, determine whether its **new counterpart** exists (`.effective-flow/`, project setup ADR, or `effective-flow-` labels).
+7. The marker certifies only the source it names. If `.firmo/` and `.sf-plugin/` both exist, the
+   plan's inventory lists the unselected `.sf-plugin/` separately: the marker does not certify its
+   carry-over and never releases it for deletion (`LEGACY_UNMIGRATED`). An item with
+   `legacyMarker: true` comes from a marker written before markers named their source; it is
+   certified only by a carry-over with no open entry.
+8. For `firmo-` labels, determine whether the `effective-flow-` counterpart exists.
 9. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists),
-   worktree counts (removal candidate, retained, not reliably checkable), and stale diff baselines
-   by run ID. Never end for lack of migration remnants; worktree preview and the final report still run.
+   worktree counts (removal candidate, retained, recordless or not reliably checkable), and stale
+   diff baselines by run ID. Never end for lack of migration remnants; worktree preview and the
+   final report still run.
 
-### Phase 2: Carry-over check (read + compare)
+### Phase 2: Carry-over check
 
-Read the legacy remnants and determine whether anything still needs to be carried over before deleting:
-
-- **Runtime directories:** For the source selected by the shared migration, verify the freshly
-  written marker and compare any divergent or newer entries that the no-clobber migration
-  deliberately left in place. If both legacy directories exist, compare the unselected
-  `.sf-plugin/` independently against `.effective-flow/`; missing or divergent entries remain
-  explicit carry-over/discard decisions because the selected source's marker proves nothing
-  about them. Never treat legacy `.worktrees/` as a file carry-over candidate.
-- **Legacy `config.json`:** Parse it. If it is not valid JSON, it is **not** a carry-over source: report the path and error and treat the file only as a deletion candidate (after confirmation). For valid JSON, compare each set value with the project setup ADR; values not represented there are carry-over candidates.
-- **`.gitignore`/labels:** no file carry-over. For labels, the add-before-remove step in Phase 5 applies.
+The plan re-derives carry-over: ordinary files, legacy `.worktrees/` included, require byte-identical
+counterparts below `.effective-flow/` or explicit discard; missing/differing files and non-regular entries
+stay in `carryOver.open`. Source-named markers allow `memory.json` proof by current canonical
+containment (recursive objects, exact arrays/scalars), not marker alone; unpreserved keys/conflicts
+and unavailable proof stay open. Legacy `config.json` needs a `config` decision: parse it; invalid
+JSON is **not** a carry-over source (report path and error), while values absent from the project
+setup ADR are candidates. `.gitignore` and labels have no file carry-over.
 
 ### Phase 3: Confirm and perform carry-over
 
-The shared prerequisite has already carried over missing entries from its selected source
-non-destructively. Present only the remaining divergent entries and any entries from an
-unselected simultaneous legacy directory to the user, grouped by source, and obtain a decision
-per group. Carry over only explicitly confirmed candidates.
+Present the open entries grouped by legacy directory and obtain a decision per group. Before the
+Carry over question, tell the user about every item with `legacyMarker: true`: its marker names no
+source, so every entry, its `memory.json` included, must be carried or discarded.
 
 ```ask
 when: there are runtime file candidates that are missing in `.effective-flow/` or differ
@@ -233,51 +239,57 @@ options:
     description: Carry over no file — the entire old content is released for deletion
 ```
 
-- **Runtime files:** If a copy needs a missing directory below `.effective-flow/`, apply
-  “Runtime-state write safety” to that exact directory immediately before its `mkdir`; repeat
-  this for every missing parent created. Immediately before each confirmed copy, apply the guard
-  again to the concrete file target. Copy only after it passes (do not move); do **not** overwrite
-  a file already present in the target. A block preserves both source and target and directs the
-  user to `{{SKILL:setup}}`. Rejected items remain deletion candidates.
-- **Config values:** Do **not** write differing values into the ADR yourself. Disclose them and refer to `{{SKILL:setup}}` for the carry-over. Output the affected keys concretely so the user can confirm them in `{{SKILL:setup}}`. Only once the values are in the ADR or the user explicitly discards them is the legacy `config.json` considered free of carry-over and thus deletable.
-- **Labels:** no file carry-over; the carry-over happens in Phase 5 as add-`effective-flow-`-before-remove-`firmo-`.
+- **Carry over:** if a copy needs a missing directory below `.effective-flow/`, apply
+  “Runtime-state write safety” to that exact directory immediately before its `mkdir`, and to the
+  concrete file target immediately before each confirmed copy. Copy (do not move) and never
+  overwrite a file already present; a differing file therefore stays open until it is discarded. A
+  block preserves source and target and directs the user to `{{SKILL:setup}}`.
+- **Discard:** "Carry over nothing" adds the directory to `discardAll`; a file discarded under
+  "Select individually" goes to `discard`.
+- **Config values:** do **not** write them into the ADR yourself. Name the affected keys and refer
+  to `{{SKILL:setup}}`; record `complete` once they are in the ADR, `discarded` when the user drops
+  them. Until then the legacy `config.json`, and the runtime directory containing it, stay blocked.
+  Reason `live-configuration` (`NOT_ELIGIBLE` on the `config:` item, an open carry-over entry inside
+  a legacy directory) means the config locator finds no project setup ADR (steps 0–2), so a legacy
+  `config.json` can still be the live configuration (step 3): no decision, `discarded` included,
+  unblocks it; the next step is `{{SKILL:setup}}` to create the ADR.
+- **Labels:** carried over in Phase 5 as add-`effective-flow-`-before-remove-`firmo-`.
+
+After the copies, call `cleanup plan` with the decisions so far and present every entry still in
+`carryOver.open` – a differing file, a non-regular entry, or unpreserved `memory.json` content –
+with a discard option. A differing or non-regular entry can only be discarded, never copied; an
+entry the user keeps blocks its directory. Then call `cleanup plan` with the final `decisions`;
+this plan is the dry run of Phase 4.
 
 ### Phase 4: Dry-run preview
 
 Before any deletion, list exactly what will be removed — **without** deleting yet:
 
-1. Per artifact: path or label and the class.
-2. Per file/directory, the Git status: **tracked**, **untracked**, or **gitignored**. Tracked ones are recoverable via the Git history; untracked/gitignored artifacts (`.effective-flow/`, `.firmo/`, `.sf-plugin/` are gitignored) are **not** recoverable via Git.
+1. Per artifact: path or label, class, and `itemId`.
+2. Per file or directory, the Git status: **tracked** artifacts (a `LEGACY_TRACKED` item) are
+   recoverable via the Git history and go through `git rm`; untracked or gitignored ones are
+   **not** recoverable.
 3. Warn on a dirty working tree and recommend committing/stashing first, so that a `git rm` staging is clean.
-4. For each legacy runtime directory, demonstrate from the refreshed inventory that its new
-   counterpart exists and its own carry-over is complete or deliberately discarded. A valid
-   marker may certify only the preferred source selected by the shared migration. If migration
-   failed, the counterpart or marker is missing, or the directory was the unselected simultaneous
-   source, do **not** offer it for deletion; report the concrete missing proof and the safe retry
-   through `{{SKILL:cleanup}}` or repair through `{{SKILL:setup}}`.
-5. **Couple nested classes:** A legacy `config.json` lies physically **inside** a runtime directory (e.g. `.firmo/config.json` in `.firmo/`). Do **not** offer the containing runtime directory (class "Runtime directories") for deletion while the contained legacy `config.json` (class "Legacy `config.json`") still has open carry-over — otherwise deleting the directory would take the not-yet-carried-over `config.json` with it. Only once its values are in the ADR or explicitly discarded is the containing directory also considered deletable.
-6. **Couple legacy worktrees:** Before offering a legacy runtime directory for deletion, compare
-   its canonical `<legacy-directory>/.worktrees/` tree with the fresh complete Git worktree
-   inventory. If any registered linked worktree is current, active, retained, not reliably
-   checkable, or otherwise still rooted below that tree, keep the containing legacy runtime
-   directory. Worktree removal remains exclusively governed by the lifecycle
-   claim/remove/reconcile protocol; deleting the containing directory is never a substitute.
-7. Show verified worktree candidates as their own artifact class. For each candidate list path,
-   checkout identity, lifecycle status, owner workflow/purpose, branch policy, and the successful
-   receipt, registration, unlocked/non-prunable, clean-state, and non-current-worktree proofs.
-   State that eligibility will be checked again under an exclusive record lock immediately
-   before removal.
-8. List preliminary retained and not-reliably-checkable worktrees separately with their concrete
-   reason. They are not offered for confirmation. In particular, never offer the main worktree,
-   current cleanup execution worktree, a worktree with `active`, `aborted`, `failed`, or
-   `cleanup-in-progress` status, or a worktree without a valid matching lifecycle record.
-9. Explain that worktree removal uses only `git worktree remove <path>` without force. For
-   `apply-review` records, a proven integrated temporary branch may subsequently use
-   `git branch -d`; delivery and partial-diff branches remain. Cleanup never runs
+4. Offer a legacy runtime directory only as a `legacy:` item: the plan proves its counterpart and
+   marker, its carry-over complete or discarded (a contained legacy `config.json` included), and
+   no `.git` below it. A blocked one is not offered; report its failures (`LEGACY_UNMIGRATED`,
+   `CARRY_OVER_OPEN` with the open entries, `LEGACY_TRACKED`, `NOT_ELIGIBLE`, `UNSAFE_TARGET`) and
+   the safe retry through `{{SKILL:cleanup}}` or repair through `{{SKILL:setup}}`.
+5. **Legacy worktrees:** a legacy directory with a nested `.git` or a registered worktree anywhere
+   below it is blocked (`NOT_ELIGIBLE`, `nested-git` or `registered-worktree` with its
+   `registrations`); deleting the directory is never a substitute for removing a worktree.
+6. Show worktree candidates as their own class: path, checkout identity, status, owner
+   workflow/purpose, and branch policy. State that eligibility is checked again under an exclusive
+   record lock immediately before removal.
+7. List retained and recordless worktrees separately with their concrete reason. They are not
+   offered for confirmation.
+8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
+   `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
+   reports it as `BRANCH_RETAINED`. Delivery and partial-diff branches remain. Cleanup never runs
    `git worktree prune` or `git branch -D`.
-10. If there are no deletable migration artifacts, stale diff baselines, or worktree removal candidates, call the
-    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
-    still produced.
+9. If there are no deletable migration artifacts, stale diff baselines, or worktree removal candidates, call the
+   action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
+   still produced.
 
 ### Phase 5: Confirm deletion and execute git-aware
 
@@ -324,12 +336,13 @@ options:
 
 Execute per class:
 
-- **Tracked files:** remove via `git rm` (staged, **no** commit). For untracked/gitignored, `git rm` does not apply.
-- **Untracked/gitignored directories** (`.firmo/`, `.sf-plugin/`, a gitignored legacy
-  `config.json`): immediately before removal, refresh the migration/carry-over evidence and Git
-  worktree inventory. Remove physically only when no registered linked worktree remains below
-  the directory's `.worktrees/` tree and only after the explicit “irreversible” confirmation
-  above, without a backup.
+- **Tracked files:** remove via `git rm` (staged, **no** commit).
+- **Untracked/gitignored legacy items and worktrees:** "Yes, remove as listed" selects every
+  `legacy:` and `config:` item of the dry run; "Remove all verified" every `worktree:` item,
+  "Select individually" the chosen ones. Send all selected items in **one** `cleanup apply` call
+  with the dry run's `decisions` and each item's `itemDigest`; give it an explicit Bash timeout of
+  120000 ms and, in Codex, request sandbox escalation for it up front. The helper re-proves every
+  selected item from fresh evidence before it removes anything.
 - **Stale diff baselines:** for each confirmed directory, revalidate the receipt and `RUNTIME_STATE_ROOT`, apply runtime-state safety to its exact handle,
   and remove it only through `node <skill-root>/scripts/diff-baseline.mjs discard` with
   `{ "cwd": "<RUNTIME_STATE_ROOT>", "dir": "<its absolute handle>" }` on stdin, as
@@ -338,37 +351,21 @@ Execute per class:
   user to `{{SKILL:setup}}`, the sole owner of normalization and repair.
 - **`firmo-` labels:** only on the forge target with a successful helper probe; skipped on an external target. Build the full normalized label transitions through the remote helper: first add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains. Inspect the dry-run steps before applying; if a step fails, report the completed steps and preserve the still-classified issue.
 
-For each explicitly selected worktree candidate, independently execute the shared lifecycle
-claim/remove/reconcile protocol:
+`cleanup apply` outcomes:
 
-1. Revalidate the cleanup execution receipt and `RUNTIME_STATE_ROOT`, apply runtime-state safety
-   to the exact lock and record handles, and atomically acquire the per-record lock. If the lock
-   exists, retain the worktree and report its readable owner/timestamp; never break it.
-2. Under the lock, freshly reread the record, receipt, `git worktree list --porcelain -z`, exact
-   branch, common directory, `locked`/`prunable` attributes, path, clean status including
-   untracked files and submodules, and main/current-worktree exclusions. Require `creationOid` to
-   resolve as a commit and run
-   `git merge-base --is-ancestor <CREATION_OID> <CURRENT_BRANCH_TIP>`: only exit `0` passes; exit
-   `1`, every other code, and command errors block. Current `HEAD` and Git registration must still
-   name the recorded branch, but later commits are valid and no moving remote tip is compared.
-   Drift makes this candidate retained without affecting another candidate.
-3. Only from `cleanup-ready` or `cleanup-failed`, atomically write `cleanup-in-progress` with this
-   cleanup run's unique ID and claim timestamp. Keep the lock through the Git operation and
-   reconciliation.
-4. Run exactly `git worktree remove <WORKTREE_PATH>`. On refusal, persist `cleanup-failed` with
-   the exact error, clear this run's claim fields, release only its own lock, and continue with
-   independently valid candidates.
-5. After success, prove that the worktree registration and path are gone and reread the claimed
-   record. Preserve `retain` branches. For `delete-after-integration`, reconfirm the recorded
-   integration proof and use only `git branch -d <BRANCH_NAME>`; if safe deletion is refused,
-   retain the branch and lifecycle record and report partial cleanup.
-6. Delete only this run's lifecycle record after every required postcondition is proven, then
-   release only its own lock. A failure after worktree removal is partial cleanup, not success.
-   Never reconstruct the worktree or take over a foreign/orphaned claim to complete it.
-
-If the claimed worktree is already removed or no longer registered before record or branch
-post-processing finishes, reconcile only while this run still owns the matching lock and claim.
-Otherwise retain the lifecycle evidence and report manual reconciliation.
+- `PREVIEW_MISMATCH` (`itemId`, `reason`), whole call: a selected item changed since the dry run
+  (`digest`), vanished (`unknown-item`) or is no longer actionable (`not-actionable`), and nothing
+  was written. Call `cleanup plan` again, show the new dry run, and ask again.
+- `result.items[]`, one per selected item: worktree items follow the lifecycle outcome table, where
+  `BRANCH_RETAINED` keeps an `apply-review` branch Git refused to delete. A legacy item reports
+  `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and `WRITE_FAILED` stop
+  that item with the partial state (`removedEntries`, `stoppedAt`), the plan codes of Phase 4 block
+  it, and `DEADLINE_REACHED` or `INTERRUPTED` leave it for a later run. Every other item continues.
+  After `git rm` of tracked remnants, rerun cleanup so the untracked rest of a mixed legacy
+  directory is planned.
+- A denied or refused call, another nonzero exit, an `error` (`INVALID_ROOT`, `INVALID_INPUT`,
+  `RUNTIME_STATE_UNSAFE`, `GIT_FAILED`): nothing beyond the reported items changed; report it and
+  retain every selected artifact.
 
 On a migration-cleanup error (e.g. `git rm` fails or the tracker is unreachable), abort that
 dependent migration sequence in a controlled manner: report the partial state and delete nothing
@@ -378,8 +375,6 @@ candidate and is reported as retained, failed, or partial cleanup.
 ### Phase 6: Completion
 
 The completion report is mandatory even when no migration remnant or worktree candidate exists.
-For a linked current execution checkout, use the explicit reason “Cleanup is running in this
-worktree.”
 
 Report to the user:
 
@@ -390,19 +385,39 @@ Report to the user:
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
   hidden mode's active ignore entry that this run left untouched
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
-- worktrees removed successfully, with their checkout identities and retained/deleted branch
-  outcomes
+- worktrees removed successfully, with their checkout identities and branch outcomes, and every
+  `BRANCH_RETAINED` branch with its unproven commits
 - failed removal attempts and partial cleanup, including exact record, lock, branch, or command
   state that remains
 - every remaining linked worktree other than the main worktree, one entry per worktree, with a
   path relative to the project root when internal (otherwise canonical absolute), checkout
   identity, lifecycle status and verification status, one concrete retention reason, and one
-  safe next step
+  safe next step; never collapse several worktrees behind a shared reason
 - unmatched lifecycle records whose worktree is absent or mismatched, separately from linked
   worktrees, so interrupted post-removal state remains visible
 - an explicit statement when no linked worktrees remain
 - what else deliberately remains and why
 - that **no** commit was created and which removals are staged
+
+Retention reasons and their safe next steps:
+
+- the current cleanup execution worktree: “Cleanup is running in this worktree.”
+- `active`: an Effective Flow run is registered as active and may still be running or may have
+  been interrupted unexpectedly; let the named owner finish
+- `aborted` or `failed`: the owning run stopped or failed before cleanup readiness; inspect and
+  recover its work
+- `cleanup-in-progress` or an existing lock: cleanup is claimed, active, or may have been
+  interrupted; include known owner and timestamp and let the owner finish
+- dirty: clean the checkout before rerunning cleanup; locked: ask the known owner before unlocking
+- prunable, missing, detached, branch/OID-, receipt- or repository-mismatched: name the failed
+  condition and reconcile manually
+- reused, user-managed, foreign, or `harness-managed`: not Effective Flow-owned; the harness or
+  user manages it
+- no lifecycle record or an unknown/invalid schema: ownership cannot be proven; reconcile manually
+- `cleanup-failed`: include the recorded removal failure; rerun cleanup once it is eligible again
+- an orphan record lock (no record, or no owner): report its path; never break it
+
+Cleanup never breaks a lock or upgrades a retained lifecycle status to make it eligible.
 
 Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
 row when this run staged deletions, the configuration row when it only referred config values on. A
@@ -412,16 +427,14 @@ report that found neither matches no row and emits nothing.
 
 - Never delete without a dry run and explicit confirmation.
 - Do not delete any artifact before its new counterpart exists and the carry-over is complete or deliberately discarded.
-- Do not delete a runtime directory while it contains a legacy `config.json` with open carry-over; only after carry-over into the ADR or deliberate discard is it deletable.
-- Do not delete a runtime directory while a registered current, active, retained, or otherwise
-  unresolved linked worktree remains below its `.worktrees/` tree.
-- A migration marker certifies only the one source selected by the shared precedence rule; never
-  use it as deletion proof for an unselected simultaneous legacy directory.
+- Remove untracked legacy remnants, lifecycle records and worktrees only through `cleanup apply`;
+  never `rm`, `rmdir` or `unlink` them, or write a record, in prose.
+- A migration marker certifies only the source it names; never use it as deletion proof for an
+  unselected simultaneous legacy directory.
 - Preserve the active `.effective-flow/` directory and all unrelated runtime state. Mutate below
-  it only for the explicitly confirmed legacy carry-over/migration operations above, a confirmed
-  stale diff-baseline discard, or the exact lifecycle record, temporary record, and owned lock
-  handles authorized by the shared worktree-lifecycle contract, always through runtime-state safety. Do not mutate the project
-  setup ADR or a global skill installation.
+  it only for the explicitly confirmed carry-over copies, migration and `cleanup apply` above, or a
+  confirmed stale diff-baseline discard, always through runtime-state safety. Do not mutate the
+  project setup ADR or a global skill installation.
 - Do not create commits or backup directories.
 - Do not write config yourself; config carry-over runs through `{{SKILL:setup}}`.
 - Never edit `.gitignore`; inventory and report outdated entries and route repair to
@@ -431,11 +444,7 @@ report that found neither matches no row and emits nothing.
 - Never classify a worktree from age, last-modified time, base-directory shape, branch prefix, or
   apparent emptiness. There is no TTL, heartbeat, stale-after threshold, or automatic crash
   inference.
-- Never remove a worktree without a valid Effective Flow lifecycle record, dry-run listing,
-  explicit confirmation, fresh eligibility proof, per-record lock, and exclusive
-  `cleanup-in-progress` claim.
-- Use only ordinary `git worktree remove <path>` and, for a proven integrated temporary branch,
-  `git branch -d`. Never use `--force`, `git worktree prune`, or `git branch -D`.
+- Never use `git worktree remove --force`, `git worktree prune`, or `git branch -D`.
 - If no legacy remnant is present, continue through worktree inventory and completion reporting.
   A no-op means that neither a migration action nor an eligible confirmed worktree removal ran.
 - Output project-internal paths relative to the project root and external worktree paths in

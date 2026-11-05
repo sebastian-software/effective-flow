@@ -222,43 +222,30 @@ is ahead is resumed only through the worktree that holds its commits ("Resumptio
 execution" step 2 prescribes, then run
 `git -C <RUNTIME_STATE_ROOT> worktree add <WORKTREE_PATH> '<head-branch>'` without `-b`. Issue and
 verify its `effective-flow-created` receipt with purpose `delivery`, record the worktree as created
-by this run, and immediately write its lifecycle record as `active` with `creationOid` set to the
-fetched head OID. Setup follows "Worktree execution" step 3.
+by this run, and immediately write its lifecycle record with `worktree record-init`, `creationOid`
+set to the fetched head OID. Setup follows "Worktree execution" step 3.
 
 **Under a harness-managed receipt** (a Claude Code or Codex worktree session), this is a stated
 exception to "Determine mode": create the dedicated worktree as a **sibling** under the configured
-base directory of the verified `RUNTIME_STATE_ROOT`, never nested in the harness worktree, which is
-never switched. The sibling becomes `EXECUTION_ROOT`, and the report says the changes live there,
+base directory of the verified `RUNTIME_STATE_ROOT`, at step 2's path with `REPO_NAME` the basename
+of `RUNTIME_STATE_ROOT`, never nested in the harness worktree, which is never switched. The sibling becomes `EXECUTION_ROOT`, and the report says the changes live there,
 not in the harness session's tree.
 
 ### Resumption by adoption
 
 A failed or stopped earlier run retains its worktree and branch with lifecycle status `aborted` or
 `failed`, and its local branch is usually ahead of the untouched remote head. When another linked
-worktree holds the head branch, read the lifecycle records of this repository, read-only. Exactly
-one record naming that worktree's path may be adopted through the `aborted`/`failed` → `active`
-transition of `worktree-lifecycle`; no record, several records, or any failed, unavailable, or
-ambiguous proof below stops the run, retains the record unchanged, and names the retained worktree.
-Acquire the record lock, then freshly prove:
-
-1. the record is schema-valid, with ownership `effective-flow-created`, status `aborted` or
-   `failed`, and purpose `delivery`, and no foreign lock or claim exists;
-2. its repository identity and `RUNTIME_STATE_ROOT` match this run's verified receipt, and its
-   branch and workflow equal this run's head branch and workflow;
-3. exactly one matching linked-worktree record exists in `git worktree list --porcelain -z`; it is
-   neither `locked` nor `prunable`, its `HEAD` is on the exact recorded branch, and a fresh
-   execution-location receipt for it matches the immutable identity fields of the `receipt`
-   snapshot;
-4. `creationOid` equals the fetched head OID and is an ancestor of the local branch tip, checked
-   exactly as condition 6 of `worktree-lifecycle`'s removal eligibility checks it; the commits after
-   it are the retained run's own commits;
-5. `git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none` is
-   empty.
-
-Then, still under the lock, atomically rewrite only `status` to `active`, `reason` to `null`,
-`updatedAt`, and `sessionId` to this run's session, so its exit self-check covers the record.
-`creationOid`, the branch, and the `receipt` snapshot never change. A `harness-managed`,
-user-managed, or recordless worktree is never adopted.
+worktree holds the head branch, find the records naming that worktree's path with `worktree inspect`
+without `sessionId`. Exactly one such record may be adopted, with one `worktree transition` call
+in the shape `worktree-lifecycle` shows: `from` its stored `aborted` or `failed`, `to` `active`,
+`reason` `null`, this run's `sessionId`, plus `branch` (the head branch), `workflow` and
+`fetchedHeadOid` (the fetched head OID). Under the record lock the helper proves purpose
+`delivery`, matching repository and runtime root, `branch` and `workflow` equal to the record's,
+`creationOid` equal to `fetchedHeadOid` and an ancestor of the tip (condition 6), registration, and
+a clean status, then rewrites only `status`, `reason`, `updatedAt` and `sessionId`, so this run's
+exit self-check covers the record. No record, several records, or a result that is not `ok`
+(`NOT_ELIGIBLE` names the failed proofs) stops the run, retains the record unchanged, and names the
+retained worktree. A `harness-managed`, user-managed, or recordless worktree is never adopted.
 
 After adoption the worktree keeps the `receipt` snapshot's `effective-flow-created` origin,
 workflow, and purpose. It is Effective Flow-owned and created by this run for lifecycle outcome
@@ -273,7 +260,7 @@ delivery branch" stays false, the worktree's retained setup is not repeated, and
 run's residual output plus its verified commits touch at least one path other than `P` and `A`:
 `git -C <EXECUTION_ROOT> diff --name-only -z --no-renames <creation OID>`, against the run-owned
 creation OID, plus the run's untracked residual output. Without evidence, end in a controlled stop:
-transition an owned worktree's lifecycle record `active` → `aborted` with that reason, retain
+call `worktree transition` `active` → `aborted` with that reason for an owned worktree, retain
 worktree and branch, archive nothing, leave the local plan copy in place, push nothing, and leave
 the draft untouched.
 

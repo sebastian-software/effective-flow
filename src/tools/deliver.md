@@ -203,8 +203,9 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
    cleaning, resetting, or otherwise changing the source checkout. Issue a separate
    `effective-flow-created` receipt with purpose `partial-diff`, record the exact creation OID and
-   current-run ownership flags, and initialize its version 1 lifecycle record as `active` with
-   branch policy `retain`. Receipt or record failure retains both artifacts and stops.
+   current-run ownership flags, and write its lifecycle record as `active` with branch policy
+   `retain` through `worktree record-init`. Receipt or record failure retains both artifacts and
+   stops.
 4. Run setup only for the newly owned receipt according to `worktree.setup`, record its terminal
    setup status, then require its tracked tree and index to remain clean. A tracked setup change is
    not selected content and aborts before transfer.
@@ -261,9 +262,9 @@ commits, and never push or create a PR.
 
 After every group is a verified commit, require a clean delivery worktree and a non-empty commit
 range against the refreshed base. Record the final head OID and strongest Conventional Commit effect
-across the range. Transition only the run-owned lifecycle record through `cleanup-ready` and
-`cleanup-in-progress`, remove only its verified clean worktree without force, reconcile the result,
-and retain the local branch.
+across the range. Withdraw only the run-owned worktree with one `worktree remove` call for its
+record, which removes only the verified clean worktree without force and retains the local branch;
+any not-`ok` item or failed call takes the lifecycle denial fallback to `cleanup-ready`.
 
 Delegate to `{{SKILL:pr}}` from the verified `RUNTIME_STATE_ROOT` with the exact head branch, base
 branch, final verified head OID, successful committed-handoff evidence, strongest type/effect hint,
@@ -299,9 +300,8 @@ operation.
   followed by staged-only `{{SKILL:commit}}` and commit-only `{{SKILL:pr}}`.
 - Never treat all current dirt as session-owned, force-add ignored content, dereference an untracked
   symlink, overwrite newer base content, rewrite commit history, or force cleanup.
-- A failure after artifact creation records `aborted`, `failed`, or `cleanup-failed` through the
-  shared lifecycle contract when safely possible and otherwise retains the artifacts with the
-  failed proof.
+- A failure after artifact creation calls `worktree transition` to `aborted` or `failed` and
+  retains the artifacts; a call that is not `ok` is reported with the failed proof.
 
 Returning commit groups and commit-only PR publication retain this run's overview. Eligible
 cross-agent reporting follows `shared/subagent-progress.md` with each hop's own immediate-parent

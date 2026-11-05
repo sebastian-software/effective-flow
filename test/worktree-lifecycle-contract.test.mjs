@@ -115,20 +115,37 @@ test('the lifecycle record has one stable schema and explicit status transitions
   ]);
 });
 
+// Invariant: every lifecycle writer goes through the runtime-state helper, which takes the
+// per-record lock, re-reads fresh evidence under it and writes atomically; prose never writes a
+// record or its lock, never breaks a foreign lock or claim, and names the claim owner fields.
 test('all lifecycle writers share a fail-closed lock and fresh claim protocol', () => {
-  assertClauses(lifecycle, [
-    [/per-record lock[\s\S]{0,220}Acquire it atomically/i, 'atomic per-record lock'],
+  const flat = lifecycle.replace(/\s+/g, ' ');
+  assertClauses(flat, [
+    [/per-record lock `<RECORD_ID>\.lock`/, 'per-record lock'],
     [
-      /(?:under|while holding) the\s+lock[\s\S]{0,220}(?:fresh|re-read|read again)/i,
-      'fresh locked read',
+      /Only the runtime-state helper operations below create, change, claim or delete a record or take its lock; never write, rename or delete either in prose/,
+      'helper-only record and lock writes',
     ],
+    [
+      /applies “Runtime-state write safety” to every record and lock handle itself, fail-closed/,
+      'guarded handles',
+    ],
+    [/from fresh evidence under the record lock/i, 'fresh locked read'],
     [/cleanup claim, `cleanupRunId` and `claimedAt`/i, 'claim owner and timestamp'],
     [
       /(?:foreign|another|unknown|orphaned|stale)[^\n]*(?:lock|claim)[\s\S]{0,220}(?:must not|never|do not)[^\n]*(?:break|steal|overwrite|remove)/i,
       'foreign lock retention',
     ],
-    [/writing a complete sibling temporary file and atomically renaming/i, 'atomic record write'],
   ]);
+  for (const operation of ['record-init', 'transition', 'inspect', 'remove']) {
+    assert.match(
+      lifecycle,
+      new RegExp(
+        `node <skill-root>/scripts/effective-flow-state\\.mjs worktree ${operation} <<< '\\{"cwd":"<RUNTIME_STATE_ROOT>"`,
+      ),
+      `literal worktree ${operation} call`,
+    );
+  }
 });
 
 test('delivery, partial-diff, apply-review, and cleanup consume the same lifecycle contract', () => {
@@ -236,8 +253,11 @@ test('the final report is mandatory and accounts for every remaining linked work
   ]);
 });
 
+// Invariant: prose never forces a worktree removal, prunes, or force-deletes a branch; the only
+// non-`-d` branch deletion is the helper's compare-and-delete inside `apply-review` after its
+// exact patch-id proof against the integration root, which `cleanup apply` never receives.
 test('dangerous broad or forced Git cleanup commands are explicitly prohibited', () => {
-  const relevant = `${lifecycle}\n${cleanup}`;
+  const relevant = `${lifecycle}\n${cleanup}\n${applyReview}`;
   assertDangerousCommandIsOnlyMentionedAsProhibited(
     relevant,
     /git worktree remove[\s\S]{0,140}--force/g,
@@ -254,6 +274,71 @@ test('dangerous broad or forced Git cleanup commands are explicitly prohibited',
     'forced branch deletion',
   );
   assert.match(relevant, /git branch -d <(?:BRANCH_NAME|branch)>/i);
+
+  const flatLifecycle = lifecycle.replace(/\s+/g, ' ');
+  assert.match(
+    flatLifecycle,
+    /only an `apply-review` call carrying `integrationRoot` lets the helper prove every component commit by exact patch-id/,
+  );
+  assert.match(flatLifecycle, /a forced deletion outside that proof never happens/);
+  const flatApplyReview = applyReview.replace(/\s+/g, ' ');
+  assert.match(flatApplyReview, /"integrationRoot":"<ORIGINAL_ROOT>"/);
+  assert.match(flatApplyReview, /That in-run proof is the only forced branch deletion/);
+  assert.doesNotMatch(cleanup, /integrationRoot/, 'cleanup apply never carries the proof target');
+  assert.match(
+    cleanup.replace(/\s+/g, ' '),
+    /cleanup keeps it and reports it as `BRANCH_RETAINED`/,
+  );
+});
+
+// Invariant: no failed or partial `worktree remove` leaves completed work `active`, because
+// cleanup collects only `cleanup-ready` and `cleanup-failed`: the lifecycle contract owns one
+// denial fallback to the allowlisted `worktree transition` `active` → `cleanup-ready` with a null
+// reason, triggered by any not-ok item or whole-call failure (after the one SANDBOX_DENIED rerun,
+// which resends only the denied records), and every host that withdraws through `worktree remove`
+// applies it.
+test('every delivering host carries the worktree remove denial fallback', () => {
+  const flatLifecycle = lifecycle.replace(/\s+/g, ' ');
+  const fallback = flatLifecycle.match(/\*\*Denial fallback\.\*\*[^*]*/)?.[0];
+  assert.ok(fallback, 'lifecycle contract owns the denial fallback paragraph');
+  assert.match(fallback, /returns any item that is not `ok`[\s\S]*or fails as a whole call/);
+  assert.match(fallback, /after the one `SANDBOX_DENIED` rerun/);
+  assert.match(fallback, /`worktree transition` `active` → `cleanup-ready` with `"reason":null`/);
+  assert.match(fallback, /collects only `cleanup-ready` and `cleanup-failed`/);
+  assert.match(flatLifecycle, /listing only the denied `recordIds`/);
+  for (const [name, text] of [
+    ['shared/worktree-integration.md', delivery],
+    ['tools/deliver.md', extractBody(readSource('tools', 'deliver.md'))],
+    ['tools/apply-review-commit-mechanics.md', applyReview],
+    ['tools/apply-issues.md', extractBody(readSource('tools', 'apply-issues.md'))],
+    ['shared/plan-publication.md', readShared('plan-publication')],
+    ['shared/merge-gate-checkout-boundary.md', readShared('merge-gate-checkout-boundary')],
+    ['tools/iterate.md', extractBody(readSource('tools', 'iterate.md'))],
+  ]) {
+    const flat = text.replace(/\s+/g, ' ');
+    assert.match(
+      flat,
+      /`worktree remove`|worktree remove <<</,
+      `${name} withdraws through worktree remove`,
+    );
+    assert.match(flat, /denial fallback/, `${name} names the denial fallback`);
+  }
+});
+
+// Invariant: a branch the helper kept (`BRANCH_RETAINED`) has no record left pointing at it, so
+// every final report that can meet one names it with its unproven commits.
+test('final reports name every BRANCH_RETAINED branch', () => {
+  const flat = (text) => text.replace(/\s+/g, ' ');
+  assert.match(
+    flat(lifecycle),
+    /A final report names every retained worktree and every `BRANCH_RETAINED` branch/,
+  );
+  assert.match(flat(lifecycle), /report `branch\.branch`, `branch\.reason` and `branch\.unproven`/);
+  assert.match(
+    flat(applyReview),
+    /name every `BRANCH_RETAINED` branch with its unproven commits in the summary/,
+  );
+  assert.match(flat(cleanup), /every `BRANCH_RETAINED` branch with its unproven commits/);
 });
 
 // Invariant: lifecycle statuses and the runtime root survive every render with no unresolved directive.
@@ -291,10 +376,14 @@ test('deliver owns only its partial-diff lifecycle and retains artifacts on inco
       'later-group failure retention',
     ],
     [
-      /After every group is a verified commit[\s\S]{0,320}transition only the run-owned lifecycle record through `cleanup-ready` and\s+`cleanup-in-progress`/i,
+      /After every group is a verified commit[\s\S]{0,320}Withdraw only the run-owned worktree with one `worktree remove` call/i,
       'commit-gated cleanup transition',
     ],
-    [/remove only its verified clean worktree without force/i, 'ordinary owned cleanup'],
+    [/removes only the verified clean worktree without force/i, 'ordinary owned cleanup'],
+    [
+      /any not-`ok` item or failed call takes the lifecycle denial fallback to `cleanup-ready`/,
+      'denial fallback',
+    ],
     [/A PR failure retains the committed branch/i, 'PR failure branch retention'],
   ]);
 
@@ -445,5 +534,134 @@ test('the record obligation survives every harness render of every host tool', (
       );
     }
     assert.equal(sentences.size, 1, `${name} renders a different fixed sentence per harness`);
+  }
+});
+
+// Invariant: a call made after the run's own worktree was withdrawn cannot name that deleted path
+// as `executionRoot`, so `worktree inspect`, the exit self-check and every later call pass
+// `RUNTIME_STATE_ROOT`.
+test('post-withdrawal lifecycle calls use the runtime root as executionRoot', () => {
+  const flatLifecycle = lifecycle.replace(/\s+/g, ' ');
+  assert.match(
+    flatLifecycle,
+    /`RUNTIME_STATE_ROOT` for `worktree inspect`, the exit self-check and every call after the run's own worktree was withdrawn/,
+  );
+  assert.match(
+    lifecycle,
+    /worktree inspect <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<RUNTIME_STATE_ROOT>"/,
+  );
+  assert.match(
+    readShared('worktree-record-obligation').replace(/\s+/g, ' '),
+    /Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`/,
+  );
+  assert.match(
+    delivery.replace(/\s+/g, ' '),
+    /call `worktree remove` once, with `cwd` and `executionRoot` = `RUNTIME_STATE_ROOT` in the literal shape/,
+  );
+  assert.doesNotMatch(delivery, /cd <RUNTIME_STATE_ROOT> &&/);
+});
+
+// Invariant: the helper's purpose table derives `REPO_NAME` from `cwd` (the main checkout), so
+// prose must name the same directory; `git rev-parse --show-toplevel` in a linked or harness
+// checkout would name a path the helper refuses.
+test('REPO_NAME is the basename of RUNTIME_STATE_ROOT at every worktree path derivation', () => {
+  const flat = (text) => text.replace(/\s+/g, ' ');
+  assert.match(flat(delivery), /`REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`/);
+  assert.match(
+    flat(applyReview),
+    /`REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(
+    flat(readShared('plan-publication')),
+    /`REPO_NAME` \(the basename of `RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(
+    flat(readShared('plan-pr-continuation')),
+    /`REPO_NAME` the basename of `RUNTIME_STATE_ROOT`/,
+  );
+  for (const text of [delivery, applyReview]) {
+    assert.doesNotMatch(text, /basename "\$\(git rev-parse --show-toplevel\)"/);
+  }
+});
+
+// Invariant: the purpose table admits one `delivery` worktree per session path, so parallel issue
+// worktrees need a distinct per-issue sessionId that every later call for that record reuses.
+test('apply-issues gives each issue worktree its own sessionId and path', () => {
+  const flat = extractBody(readSource('tools', 'apply-issues.md')).replace(/\s+/g, ' ');
+  assert.match(
+    flat,
+    /`sessionId` `<SESSION_ID>-issue-<n>` \(`<n>` the issue number\), path `BASE_DIR\/REPO_NAME\/<SESSION_ID>-issue-<n>` and purpose `delivery`/,
+  );
+  assert.match(
+    flat,
+    /its record, transitions, withdrawal and the exit self-check use that `sessionId`/,
+  );
+});
+
+// Invariant: cleanup never deletes a legacy directory with an open carry-over entry, so every
+// entry a copy cannot close is presented for an explicit discard, a legacy marker is disclosed
+// before the carry-over question, and a live legacy configuration is routed to setup.
+test('cleanup closes or surfaces every open carry-over entry before the final plan', () => {
+  const flat = cleanup.replace(/\s+/g, ' ');
+  assert.match(
+    flat,
+    /Before the Carry over question, tell the user about every item with `legacyMarker: true`/,
+  );
+  assert.match(
+    flat,
+    /After the copies, call `cleanup plan` with the decisions so far and present every entry still in `carryOver\.open`/,
+  );
+  assert.match(flat, /A differing or non-regular entry can only be discarded, never copied/);
+  assert.match(
+    flat,
+    /Reason `live-configuration` \(`NOT_ELIGIBLE` on the `config:` item, an open carry-over entry inside a legacy directory\)[\s\S]*no decision, `discarded` included, unblocks it; the next step is `\{\{SKILL:setup\}\}`/,
+  );
+  assert.match(flat, /After `git rm` of tracked remnants, rerun cleanup/);
+});
+
+// Invariant: `cleanup plan` and `cleanup apply` guard the runtime root themselves; prose loads the
+// runtime-state guard only for its own carry-over copies, migration and baseline discard.
+test('cleanup applies the prose runtime-state guard only to prose mutations', () => {
+  assert.doesNotMatch(cleanup, /Before reading lifecycle state, load and apply/);
+  const trigger = cleanup
+    .split('\n')
+    .find((line, index, lines) => lines[index - 1] === 'runtime-state-safety');
+  assert.ok(trigger, 'cleanup keeps a runtime-state-safety trigger');
+  assert.doesNotMatch(trigger, /lifecycle/);
+  assert.match(trigger, /stale diff baseline/);
+  assert.match(trigger, /carry-over copy/);
+});
+
+// Invariant: every helper outcome a host can receive has a handling row, so none is improvised.
+test('the lifecycle and cleanup outcome tables cover every helper code', () => {
+  const flatLifecycle = lifecycle.replace(/\s+/g, ' ');
+  for (const code of [
+    'RECORD_NOT_FOUND',
+    'INVALID_STATE',
+    'UNSAFE_TARGET',
+    'WRITE_FAILED',
+    'GIT_FAILED',
+    'PREVIEW_MISMATCH',
+    'SANDBOX_DENIED',
+    'DEADLINE_REACHED',
+    'INTERRUPTED',
+    'REMOVE_FAILED',
+    'BRANCH_RETAINED',
+  ]) {
+    assert.match(flatLifecycle, new RegExp(`\`${code}\``), `lifecycle outcome table names ${code}`);
+  }
+  assert.match(flatLifecycle, /orphan record lock/);
+  const flatCleanup = cleanup.replace(/\s+/g, ' ');
+  assert.match(flatCleanup, /no longer actionable \(`not-actionable`\)/);
+  assert.match(flatCleanup, /orphan record lock/);
+});
+
+// Invariant: record locks are helper-owned, so no prose instructs a host to take, hold or release
+// one, and no lazy trigger fires on a helper-owned record or lock write.
+test('no prose owns a lifecycle record lock', () => {
+  assert.doesNotMatch(readShared('build-run-contract'), /Release the lifecycle lock/);
+  assert.doesNotMatch(readShared('merge-gate-delegated-run'), /lifecycle\s+record handle/);
+  for (const line of readShared('plan-publication').split('\n')) {
+    if (line.startsWith('when:')) assert.doesNotMatch(line, /record lock|lifecycle record/);
   }
 });

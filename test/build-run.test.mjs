@@ -29,6 +29,9 @@ import {
   REQUIRED_GATES,
 } from '../src/scripts/build-run-core.mjs';
 import { executeOperation as executeTrackerOperation } from '../src/scripts/remote-tracker-core.mjs';
+import { executeOperation as executeStateOperation } from '../src/scripts/effective-flow-state-core.mjs';
+import { RECORD_KEYS, recordPaths } from '../src/scripts/effective-flow-state-worktree-core.mjs';
+import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 
 const env = {
   ...process.env,
@@ -526,9 +529,12 @@ test('noninteractive mode never gains question authority through the relay', asy
   await assert.rejects(pause(live), error('NON_INTERACTIVE'));
 });
 
+// `helperRecord` writes the lifecycle record through the runtime-state helper's `worktree
+// record-init` instead of by hand, so its output meets the build-run checks below.
 async function setupDelivery(
   live,
   mode = live.targetExecutionRoot === live.root ? 'in-place-delivery' : 'owned-worktree',
+  { helperRecord = false } = {},
 ) {
   const branch = mode === 'in-place-no-delivery' ? live.input.execution.branch : 'feature';
   const authorization = await live.call('authorize-execution', {
@@ -551,7 +557,6 @@ async function setupDelivery(
   let ownership = null;
   if (mode === 'owned-worktree') {
     git(live.root, 'worktree', 'add', '-b', branch, live.targetExecutionRoot);
-    mkdirSync(path.join(live.root, '.effective-flow', 'worktree-runs'), { recursive: true });
     const value = {
       schemaVersion: 1,
       recordId: 'owned-delivery',
@@ -582,10 +587,20 @@ async function setupDelivery(
       status: 'active',
       reason: null,
     };
-    writeFileSync(
-      path.join(live.root, '.effective-flow', 'worktree-runs', 'owned-delivery.json'),
-      JSON.stringify(value),
-    );
+    if (helperRecord) {
+      const envelope = await executeStateOperation(
+        'worktree record-init',
+        { cwd: live.root, executionRoot: live.root, record: value },
+        { runner: createProcessRunner(), env },
+      );
+      assert.equal(envelope.ok, true, JSON.stringify(envelope));
+    } else {
+      mkdirSync(path.join(live.root, '.effective-flow', 'worktree-runs'), { recursive: true });
+      writeFileSync(
+        path.join(live.root, '.effective-flow', 'worktree-runs', 'owned-delivery.json'),
+        JSON.stringify(value),
+      );
+    }
     ownership = live.ref(live.root, '.effective-flow/worktree-runs/owned-delivery.json');
   } else if (mode === 'in-place-delivery') git(live.root, 'switch', '-c', branch);
   const execution = {
@@ -4237,6 +4252,55 @@ test('existing in-place handback may restore its verified original checkout with
   const accepted = await live.call('verify-terminal', { ...live.common, terminal });
   assert.deepEqual(accepted.checkoutReturn, returned);
   assert.equal(accepted.finalCheckout.head, live.finalPlan.commit);
+});
+
+// Invariant (compatibility): a record the runtime-state helper writes passes build-run's lifecycle
+// proof (`exact()` over the version 1 key set, every identity field) at the transition, and the
+// helper's per-record lock path is the one build-run's lock check reads: a held lock blocks build
+// continuation, and the helper reports the same lock as held.
+test('a helper-written lifecycle record passes the build-run record and lock checks', async (t) => {
+  const fx = fixture(t, true);
+  fx.targetExecutionRoot = path.join(
+    fx.root,
+    '.effective-flow',
+    '.worktrees',
+    path.basename(fx.root),
+    fx.input.runId,
+  );
+  const live = await setupDelivery(await start(fx), 'owned-worktree', { helperRecord: true });
+  assert.ok(live.transition, 'transition-execution accepted the helper-written record');
+  const record = JSON.parse(
+    readFileSync(path.join(live.root, '.effective-flow/worktree-runs/owned-delivery.json'), 'utf8'),
+  );
+  assert.deepEqual(Object.keys(record), [...RECORD_KEYS]);
+  const { lock } = recordPaths(live.root, 'owned-delivery');
+  mkdirSync(lock);
+  await assert.rejects(
+    live.call('checkpoint', {
+      ...live.common,
+      checkpointId: 'locked-by-helper-path',
+      agentHandle: 'original-child-handle',
+      completed: [],
+      pending: REQUIRED_GATES,
+      evidence: [],
+    }),
+    error('LOCKED'),
+  );
+  const held = await executeStateOperation(
+    'worktree transition',
+    {
+      cwd: live.root,
+      executionRoot: live.root,
+      recordId: 'owned-delivery',
+      from: 'active',
+      to: 'cleanup-ready',
+      reason: null,
+      sessionId: live.input.runId,
+    },
+    { runner: createProcessRunner(), env },
+  );
+  assert.equal(held.outcome?.code, 'LOCK_HELD', JSON.stringify(held));
+  rmSync(lock, { recursive: true });
 });
 
 test('owned user pauses require released lifecycle locks and valid runtime ignore state', async (t) => {
