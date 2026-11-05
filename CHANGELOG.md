@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.71.0...effective-flow-v1.72.0) (2026-11-05)
+
+
+### Features
+
+* move worktree lifecycle and cleanup into runtime-state helper operations ([d887a2a](https://github.com/sebastian-software/effective-flow/commit/d887a2a0bd37af0292e635e76da85e3c9d46a6b3))
+
 ## [1.71.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.70.0...effective-flow-v1.71.0) (2026-11-04)
 
 
