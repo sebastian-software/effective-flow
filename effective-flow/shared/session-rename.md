@@ -5,20 +5,47 @@ That contract owns **whether** and **which** title is emitted; this fragment own
 rename paths — how each is installed, how it is called, what it reports, and how it degrades. It adds
 no title rule and widens no permission: a run never retitles another session of its own accord.
 
-**Dispatch on the running host first, and read only its own section.** Two hosts have an established
-path today, and both are the same shape: one native call that names no session, silence on a reported
+**Dispatch on the running host first, and read only its own section.** Three hosts have an established
+path today, and all share the same shape: one native call that names no session, silence on a reported
 success, and the visible fallback on every other outcome. What differs is the operation each host
 exposes and how it addresses the running session, which is why the shared shape still resolves to one
 section rather than one instruction:
 
 | Host                                | Section to read                                         |
 | ----------------------------------- | ------------------------------------------------------- |
+| T3 Code                             | "T3 Code: rename the calling thread directly"           |
 | ChatGPT Desktop, Codex tab          | "ChatGPT Desktop: rename the calling task directly"     |
 | Claude Code                         | "Claude Code: rename this session directly"             |
 | Codex CLI or any other running host | none — emit the suggestion line and **read no further** |
 
-A section that belongs to another host decides nothing here. In particular, the native Desktop
-operation is not a generic Codex mechanism and supplies no Codex CLI compatibility path.
+A section that belongs to another host decides nothing here. Host identity comes from explicit
+running-environment context, not merely from seeing a management tool. T3 Code therefore wins before
+the provider or harness is considered; its path applies when T3 Code runs Codex or Claude. Plain
+Codex CLI remains in the catch-all path, and the native Desktop operation is not a generic Codex
+mechanism.
+
+### T3 Code: rename the calling thread directly
+
+When the running environment explicitly identifies T3 Code, call exactly
+`mcp__t3_code.t3_thread_update` with `action: rename` and the already-cut literal `title`. Omit both
+`threadId` and `environmentId`: the host operation targets the calling thread. Never derive either
+identifier from a delegate, parent, fork, environment, listing or search; never regenerate a title,
+read a thread back, inspect title ownership, or use another transport. Tool visibility alone is not
+host proof, and an unavailable named operation is not permission to discover a substitute.
+
+- Treat only the host's actual reported success as success and stay silent. A work reference that
+  becomes available after that success licenses exactly one further call with the newly derived title,
+  as the session-title contract allows, and nothing after that.
+- For an unavailable, denied, errored, ambiguous, or otherwise unconfirmed result, emit the one
+  `**Suggested session title:**` line. Do not block, retry, fall back to another host path, or claim
+  that a title was applied.
+
+The T3 operation does not provide a verified title-ownership check. A later automatic title may
+replace an existing title, including one chosen manually; do not infer a narrower guarantee.
+
+`effective-flow setup` uses this same operation only after the user accepts its visible capability probe.
+For that probe, pass the fixed title `Effective Flow setup check`, still omitting both identifiers,
+and report the concrete host result. No setup is required for ordinary T3 Code runs.
 
 ### ChatGPT Desktop: rename the calling task directly
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // Thin JSON CLI over setup-status-core.mjs:
-//   node setup-status.mjs status   (one JSON object on stdin: { cwd })
+//   node setup-status.mjs status   (one JSON object on stdin: { cwd, skillRoot? })
 // Writes exactly one JSON envelope line to stdout and exits non-zero only when the envelope fails:
 // 2 for invalid input, 1 for an internal failure. A configuration the resolver cannot read is a
 // finding inside a successful envelope, not a failure. Input never travels as command-line

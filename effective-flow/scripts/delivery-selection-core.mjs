@@ -1468,7 +1468,7 @@ export function diagnosticText(value) {
 
 // Hooks are repository code that could write into the source checkout; the upstream step runs
 // every mutating Git command with them disabled.
-const HOOKS_DISABLED = ['-c', 'core.hooksPath=/dev/null'];
+export const HOOKS_DISABLED = Object.freeze(['-c', 'core.hooksPath=/dev/null']);
 
 const GITLINK_MODE = '160000';
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
@@ -1530,7 +1530,7 @@ async function trackingRef(root, branch, runner) {
 
 // A remote name or URL and a merge ref taken from Git configuration are only passed to `git fetch`
 // when neither can be read as an option or as anything but one full ref name.
-async function fetchableUpstream(root, remote, mergeRef, runner) {
+export async function fetchableUpstream(root, remote, mergeRef, runner) {
   if (remote.startsWith('-') || /[\0-\x1f\x7f]/.test(remote)) return false;
   if (!mergeRef.startsWith('refs/') || /[:+*^\s\0-\x1f\x7f]/.test(mergeRef)) return false;
   const result = await git(runner, root, ['check-ref-format', mergeRef], {

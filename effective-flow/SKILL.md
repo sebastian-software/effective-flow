@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, apply, build, fix, refactor, docs, maintain, iterate, review, retro, deliver, commit, pr, merge-gate, setup, cleanup, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|apply|build|fix|refactor|docs|maintain|iterate|review|retro|deliver|commit|pr|merge-gate|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, setup, cleanup, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.70.0 (694e0cc)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.71.0 (4010471)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -15,10 +15,15 @@ session lean and avoids token exhaustion from preloading all tools.
 
 ## Invocation
 
-- Claude Code: `/effective-flow <tool> [arguments]`
+- Claude Code (CLI, desktop, IDE): `/effective-flow <tool> [arguments]`
 - Codex: `$effective-flow <tool> [arguments]`
+- T3 Code, with any provider including Claude: `$effective-flow <tool> [arguments]`
 
-The portable instructions below use `effective-flow <tool>` as harness-neutral notation; invoke the skill with the syntax of the active harness.
+The portable instructions below use `effective-flow <tool>` as harness-neutral notation.
+Chat text you write yourself (tool catalog, deprecated-alias notice, next-step block, invocation suggestions) never shows that notation; it uses the syntax of the client surface the user types into, not of the model or provider.
+Identify the surface only from context signals, such as the host's self-identification in the session context (T3 Code's runtime information or its `t3-code` MCP tools), never from a shell or environment check; without such a signal, use the running harness's native syntax.
+The form this skill was invoked with is no signal: T3 Code forwards a `$` chip as a native slash command.
+Persisted artifacts (plans, issues, PRs, commits) keep the harness-neutral notation, and relayed worker reports keep their wording.
 
 ## Dispatch rule
 
@@ -60,6 +65,7 @@ _from a clarified plan/issue to code_
 
 - `effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
 - `effective-flow retro` — Reviews one session for supported improvements – current conversation, supplied export, or available native history.
+- `effective-flow focus` — Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict.
 
 ### Deliver changes
 
@@ -92,3 +98,5 @@ clarification instead of a guess.
 - Never load multiple tool files "just in case"; always only the currently invoked tool (plus, if applicable, the single internal `apply` source).
 - Specialist workers (implementers, reviewers, validators, test/docs writers …) are **not** `effective-flow` tools. Only the workflow/tool orchestrator may start worker roles or analysis fan-out, using bundled `workers/effective-flow-<worker>.md` contracts delegated through the host harness's built-in general-purpose subagent mechanism; workers are leaf executors and never delegate further. Invoking a tool is the user's standing request for exactly that internal delegation. Load or delegate only the selected worker, never the full worker set.
 - Start each worker with zero inherited turns when supported, otherwise the smallest host-supported history, and give it a compact self-contained handoff: objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. A worker returns missing essential context to the orchestrator instead of starting a child.
+- Every bundled helper call is one bare command, `node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'`, run from any directory: no `cd`, `&&`, `;` or pipe around it.
+- `review` presents local findings only as the `result.summary` of its `review write-report` call, also when it reviews a small diff inline. Two exceptions: the migration report of `shared/effective-flow-dir-migration.md` step 3 may precede it, and on `migration.failed: true` review presents only "N findings not persisted: `<code>`" with the severity counts plus that migration report, and no finding content, title or location.

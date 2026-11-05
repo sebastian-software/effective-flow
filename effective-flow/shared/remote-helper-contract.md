@@ -3,11 +3,13 @@
 All deterministic remote mechanics of the forge target run through the shipped helper:
 
 ```text
-node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+node <skill-root>/scripts/remote-tracker.mjs <operation> <<< '<json>'
+node <skill-root>/scripts/remote-tracker.mjs <operation> --apply <<< '<json>'
 ```
 
-Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from
-standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
+The argv is exactly `<operation>`, or `<operation> --apply` for a mutation; any other argv, and
+`--apply` on a non-mutation, fails with `INVALID_PAYLOAD` before standard input is read. `<json>`
+is exactly one JSON object; parse exactly one JSON result envelope from standard output. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
 the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea`
 probing, capability normalization, command construction, JSON normalization, payload validation,
 compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens

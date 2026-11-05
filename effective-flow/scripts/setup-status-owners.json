@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.70.0",
+  "version": "1.71.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -17,6 +17,7 @@
     "iterate",
     "review",
     "retro",
+    "focus",
     "deliver",
     "commit",
     "pr",
@@ -1110,6 +1111,36 @@
       "skill": "effective-delivery",
       "consumer": "build",
       "consumerKind": "tool",
+      "classification": "delegate",
+      "tools": [
+        "apply",
+        "build",
+        "iterate",
+        "merge-gate"
+      ],
+      "reach": [
+        {
+          "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "build",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "iterate",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "merge-gate",
+          "scope": "tools.build"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "build-delegated-run",
+      "consumerKind": "shared",
       "classification": "delegate",
       "tools": [
         "apply",
@@ -2672,6 +2703,7 @@
         "deliver",
         "docs",
         "fix",
+        "focus",
         "investigate",
         "issue-buddy",
         "iterate",
@@ -2798,6 +2830,10 @@
         {
           "tool": "fix",
           "scope": "tools.pr"
+        },
+        {
+          "tool": "focus",
+          "scope": "tools.focus"
         },
         {
           "tool": "investigate",

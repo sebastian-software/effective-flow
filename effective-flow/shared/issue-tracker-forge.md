@@ -7,11 +7,13 @@ These are the forge mechanics of the tracker integration: the target, mode resol
 All deterministic remote mechanics of the forge target run through the shipped helper:
 
 ```text
-node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+node <skill-root>/scripts/remote-tracker.mjs <operation> <<< '<json>'
+node <skill-root>/scripts/remote-tracker.mjs <operation> --apply <<< '<json>'
 ```
 
-Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from
-standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
+The argv is exactly `<operation>`, or `<operation> --apply` for a mutation; any other argv, and
+`--apply` on a non-mutation, fails with `INVALID_PAYLOAD` before standard input is read. `<json>`
+is exactly one JSON object; parse exactly one JSON result envelope from standard output. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
 the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea`
 probing, capability normalization, command construction, JSON normalization, payload validation,
 compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens
@@ -84,7 +86,9 @@ removes the in-progress label only after it freshly observes the issue as termin
 - **Listing/filtering** (dedup, epic/issue search): `gh`/`tea` combine multiple `--label` specifications with AND semantics. Therefore run the query **separately per prefix** (once `effective-flow-…`, once `firmo-…`) and union the matches by the issue number.
 - **Removing a status label** (`effective-flow-needs-planning`, `effective-flow-issue-done`): additionally remove the legacy `firmo-` variant, if present, so an issue does not stay "stuck" through a leftover legacy label. `effective-flow-issue-in-progress` is new and has no legacy variant.
 
-**One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). If the runtime directory is missing, apply the owning workflow's loaded “Runtime-state write safety” contract from `RUNTIME_STATE_ROOT` to that exact directory immediately before its `mkdir`. After the remote migration, use the loaded shared memory mutation contract against the retained absolute memory handle: acquire its lock, re-read memory, merge only `labelMigration.sf`, and atomically persist `done` plus the completion timestamp while preserving every sibling and unknown field. If this marker mutation blocks or fails, preserve local state, report that the remote labels may already have migrated, and direct the user to `effective-flow setup`; the next run may repeat the idempotent remote migration. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the one-time `sf-` label migration is about to set its `labelMigration.sf` memory marker.
+
+**One-time `sf-` label migration:** The even older prefix `sf-` (`sf-review-finding`, `sf-review-epic`, `sf-fix`/`sf-refactor`/`sf-build`/`sf-docs`, `sf-issue-done`, `sf-needs-planning`) is **no longer** detected continuously, but **migrated once per repo**. On the **first** remote tracker access — provided the marker `labelMigration.sf.done` in the retained absolute `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` handle is missing and an authenticated CLI is present — an idempotent migration moves every still-present `sf-<x>` label to `effective-flow-<x>`: first add `effective-flow-<x>` on the issue, then remove `sf-<x>` (not the other way around, so an abort leaves no issue unclassified). After the remote migration, set the marker with `memory set-marker` and `"marker":"label-migration-sf"` (“Memory operations”). If this call blocks or fails, preserve local state, report that the remote labels may already have migrated, and direct the user to `effective-flow setup`; the next run may repeat the idempotent remote migration. If the migration finds no `sf-` labels, it is a silent no-op. If the marker is set, any further scan is skipped — ongoing operations know only `effective-flow-` and `firmo-`. `sf-` is referenced exclusively in this migration.
 
 ### Security disclosure gate
 

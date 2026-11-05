@@ -2,6 +2,8 @@
 
 Names matching `effective-flow-<worker>` in this instruction identify bundled worker contracts, not installed custom-agent roles. Only the workflow/tool orchestrator starts workers or analysis fan-out. When a worker is selected, read only its matching `workers/effective-flow-<worker>.md` file, then delegate through the host harness's built-in general-purpose subagent mechanism with zero inherited turns when supported, otherwise its smallest supported history. Use that contract as the worker instructions and add a compact, self-contained handoff containing the objective, relevant artifact paths, scoped paths and ownership, execution and runtime-state roots when writes are allowed, resolved language, authority and write limits, and completion protocol. The worker is a leaf executor: it starts no child and returns missing essential context to the orchestrator. Do not request a custom role by the contract name. If the host offers no built-in subagent delegation, stop with a clear explanation; a single spawn the host refuses at run time is a declined delegation and follows the delegation mandate's inline fallback. Never claim that an undiscoverable worker ran.
 
+<!-- progress-context-receiver:1 -->
+
 # Effective Flow Iterate
 
 You are the orchestrator that **further changes an already delivered change** instead of
@@ -77,13 +79,19 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 ## Delegation mandate
 
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent; when it has confirmed a materially useful intermediate result for that parent and necessary domain work remains, it sends one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words). Keep at most one per logical handoff. Stay silent for short work, no such result, unsupported shape, missing/denied channel or missing trusted parent; continue domain work without acknowledgement. Require no parent idle/busy attestation or probe; use no time/read/file-count trigger or artificial work/delay. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
@@ -109,11 +117,11 @@ private, ignored runtime state, and no `config.json` is a configuration source.
 
 ### Config locator (resolution call)
 
-Before the first configuration-dependent step, run
-`node <skill-root>/scripts/config-resolve.mjs resolve` with one JSON object on standard input:
-`cwd` (the checkout this run works in), `tool` (this tool's own name, e.g. `refactor`; an internal
-source such as `apply-plan` passes its own), and `mode` for `iterate` (`local`/`pr`) and
-`apply-review` (`local`/`remote`). The script runs the whole config locator (steps 0–4), decodes
+Before the first configuration-dependent step, make the literal call
+`node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd":"<checkout>","tool":"<tool>"}'`:
+`cwd` the absolute checkout this run works in, `tool` this tool's own name (e.g. `refactor`; an
+internal source such as `apply-plan` passes its own), plus `mode` for `iterate` (`local`/`pr`) and
+`apply-review` (`local`/`remote`). Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The script runs the whole config locator (steps 0–4), decodes
 the table, forces the hidden-mode values, and classifies retired rows; never read the ADR by hand.
 Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line
 `{ ok, operation, data }` stops the run before that step, reporting the cause. Exit 3
@@ -195,9 +203,15 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.botAccounts` is not `mergeGate.bots`.** It lists non-reviewer bots: automated accounts,
+possibly typed as users, whose top-level comments and review-thread items effective-flow merge-gate
+treats as bot comments. The gate never triggers or waits for them, and their changes-requested
+reviews still count. A record a `mergeGate.bots` entry matches is a reviewer either way.
 
 **`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
 row; one that exists anyway is retired like any other `prReview.<key>` row, with successor
@@ -297,11 +311,15 @@ When you use internal sub-agents, give them this response protocol:
 - `DONE` for fully completed
 - `ABORT: [reason]` for not completable
 
-Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
+Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT`, `BLOCKED-USER` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
 
 1. `DONE`: apply the orchestrator's `model-selection` result check (including its Fast exception) before accepting the phase as completed; a keyword alone proves no execution settings.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
 3. No keyword: resume once, then retry with escalation.
+
+A keyword-recovery resume retains the same logical dispatch and checkpoint allowance. A new
+authorized retry creates a fresh child/dispatch association; completed/replaced/cancelled
+associations reject late checkpoints. Progress never authorizes an agent resume.
 
 ### Retry escalation
 
@@ -325,7 +343,7 @@ the handoff.
 
 **Load on demand:** Read `shared/outcome-continuation.md`, when entering or returning from an outcome-directed continuation, prior continuation history is unknown, or the proposed approach materially expands.
 
-**Load on demand:** Read `shared/subagent-progress.md`, when the active overview owner considers eligible longer ordinary worker/analysis progress under the delegation mandate; workers never load this contract.
+**Load on demand:** Read `shared/subagent-progress.md`, when an orchestrator considers longer delegated work or receives trusted progress context; leaves never load this contract.
 
 ### Goal controls
 
@@ -335,7 +353,7 @@ the handoff.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
    - Before work, list every known remaining numbered phase; add findings, issues or parallel subtasks as soon as their set is known; on resume, continue the existing list; keep more specific per-finding, per-issue, per-source and per-reviewer rules authoritative.
-   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input. Fold eligible ordinary worker checkpoints into this same overview once: during an ordinary event wait, integrate then resume waiting; while busy, coalesce until a natural boundary, using the subagent-progress contract.
+   - After each numbered phase and correction round, post a short update with its result and next step; these updates are not gates, so continue unless an existing approval rule or a genuine blocker requires input. Fold eligible worker and returning-workflow checkpoints into this same overview once: during an ordinary event wait, integrate then resume waiting; while busy, coalesce until a natural boundary, using the subagent-progress contract.
    - Mark skipped, terminally failed and aborted steps as such; keep a step awaiting user input open with its blocker; never treat terminal failure or abort as satisfying the completion condition.
    - If tracking fails irrecoverably, report that failure once, move still-open tracking to chat without claiming a successful tool update, and continue the domain work.
    - Before reporting completion, reconcile every known phase and dynamic entry to a truthful visible end state; never report completion with an unresolved entry.
@@ -427,11 +445,13 @@ translated.
 All deterministic remote mechanics of the forge target run through the shipped helper:
 
 ```text
-node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+node <skill-root>/scripts/remote-tracker.mjs <operation> <<< '<json>'
+node <skill-root>/scripts/remote-tracker.mjs <operation> --apply <<< '<json>'
 ```
 
-Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from
-standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
+The argv is exactly `<operation>`, or `<operation> --apply` for a mutation; any other argv, and
+`--apply` on a non-mutation, fails with `INVALID_PAYLOAD` before standard input is read. `<json>`
+is exactly one JSON object; parse exactly one JSON result envelope from standard output. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
 the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea`
 probing, capability normalization, command construction, JSON normalization, payload validation,
 compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens
@@ -471,8 +491,9 @@ credential shapes, not quoted content: the preview echoes review and comment bod
 
 ### Remote helper
 
-Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
-redaction, error, and working-directory contract from the loaded "Remote helper contract". PR mode
+Call the shipped `scripts/remote-tracker.mjs` helper only through the literal call lines, envelope,
+dry-run, capability, redaction, error, and working-directory contract of the loaded "Remote helper
+contract". PR mode
 requires a successful provider probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit
 provider choice; `CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider
 requests or discover flags in the prompt.
@@ -916,6 +937,12 @@ end.
      a second boundary, so a supplied body cannot terminate its own block. effective-flow merge-gate
      additionally refuses to delegate a body carrying the delimiter at all; this rule is what holds
      when a caller does not.
+   - **Optional progress context.** After the split, a `Progress context:` above the first
+     delimiter loads `shared/subagent-progress.md` on demand and must satisfy its exact-key/version
+     validation before Phase 1 or authority-bearing work. Duplicate/malformed/unknown/injected
+     context returns `ABORT: unparseable progress-context switch`; never strip it and proceed.
+     Valid absent context preserves legacy behavior with progress disabled. Context below the
+     delimiter is inert body text; no manifest, approval or review text supplies it.
    - **A control line below the delimiter is body text.** `Item filter:`, `Summary comment:`,
      `Review guard:`, `Next steps:`, `Run state:` or `Language context:` on its own line below the
      delimiter belongs to the body it sits in: it is never parsed as a switch, never overrides the one announced above, and never aborts
@@ -1153,6 +1180,10 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
     Record both values, or their absence and the fallback taken, and any approval line in the wisdom
     file and carry them into Phases 1.5, 2.5 and 3.
 
+11. **Run identity.** Mint `runId` once per run as `iterate-<at least 16 random hex characters>`
+    from a random source, never derived from a timestamp or the session ID, and record it in the
+    wisdom file. A run delegated by effective-flow merge-gate mints its own.
+
 ### Phase 1: Gather context
 
 - **PR mode:** Detect the host and CLI and check availability (see
@@ -1369,6 +1400,11 @@ Ask the user: **Approve and implement the classified items?**
    or effective-flow docs), on the PR head branch (PR mode) or the current branch (local mode).
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `iterate/item-delegation` (`shared/model-selection.md`).
+
+   This is a returning workflow: eligible progress follows the immediate-parent relay contract,
+   using a fresh downstream association and this run's own upstream context; never forward the
+   received routing header. Same-session calls integrate directly, and terminal joins/gates remain.
+
    Every one of those delegations carries the literal line
    `Next steps: suppressed` on its own line: the skill is user-invocable, but it returns its result
    here and a per-item recommendation would name a step this run has not reached. When this run's
@@ -1378,15 +1414,23 @@ Ask the user: **Approve and implement the classified items?**
    `Run state: non-interactive` as well, never `relayed`. A gated run forwards no `Run state:`
    line: its items may run as sub-agents nobody can answer, so the documentation-sync gate of each
    item run falls to the contract's chain rule exactly as without this run's state.
+   Each delegation also receives, for the item commit below, the absolute helper path
+   `<skill-root>/scripts/effective-flow-state.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own
+   `delegation` `<runId>/<n>`, numbering this run's item delegations, an inline item included,
+   the concrete `worktree`, `hookBase` and `sameRepository` values the orchestrator resolved per
+   step 2 of "Commit integrity for parallel items", and verbatim the helper call shape, steps 1–3 of
+   that section (the inspection with its `expect` derivation, the call with its Bash timeout, Codex
+   escalation and `item` rule, and the outcome map), and the bolded ban on other commit paths.
    Each delegation receives its analyzed owned paths and reports its actual
    paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
    modifying that path and return it to the orchestrator. Add the path to the item's actual
    ownership, compare it with every active item's analyzed and actual paths, and serialize the
    affected items before allowing work on that path to continue. Never let two active items edit
    the same path based only on the original analysis.
+
 3. **One commit per thread/item** with a clean conventional-commit message without internal
    IDs or a thread reference and without `Co-Authored-By`. Independent items may implement in
-   parallel, but every item uses the commit-integrity mutex below for staging and committing.
+   parallel, but every item commits through the one `commit create` call below.
    Resolve `language.git` once — from `Language context:` when Phase 0 step 10 received one — and
    pass it to every item for its commit description.
 4. Give internal delegation sub-agents the completion protocol and check for `DONE` or
@@ -1397,58 +1441,130 @@ Ask the user: **Approve and implement the classified items?**
 
 #### Commit integrity for parallel items
 
-The following mutex applies in both PR and local mode. Parallel delegations may edit disjoint
-files concurrently, but all operations that mutate or inspect the shared Git index and `HEAD`
-for an item run in one critical section.
+The following applies in both PR and local mode. Parallel delegations may edit disjoint files
+concurrently, but every item commit is one `commit create` call of the runtime-state helper. It
+takes the `iterate-commit` lock (one per repository below `RUNTIME_STATE_ROOT`, shared by every
+item delegation of every run, also from an isolated worktree), requires an empty index, stages
+exactly the listed paths, checks the staged set and content, commits with the repository's hooks,
+verifies the commit, and releases the lock. The call goes through the absolute helper path handed
+over in Phase 3, with `cwd` set to `RUNTIME_STATE_ROOT`; the helper applies the runtime-state guard
+itself.
 
-Mutex convention:
+**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
 
-- Retain one absolute lock handle for the repository at
-  `<RUNTIME_STATE_ROOT>/.effective-flow/iterate-commit.lock`. Every item delegation in this
-  `iterate` run uses that same handle, including when the execution checkout is an isolated
-  worktree.
-- Apply "Runtime-state write safety" from `RUNTIME_STATE_ROOT` separately and immediately before
-  every mutation of the exact lock directory or its `owner` file. Guard the repository-relative
-  target `.effective-flow/iterate-commit.lock` before each acquisition attempt; do not create,
-  remove, or modify the lock when a guard blocks.
-- Acquire the lock atomically with `mkdir <absolute-lock-handle>`. Immediately after successful
-  acquisition, write `<absolute-lock-handle>/owner` with the item identity, delegation identity,
-  a unique acquisition token, and timestamp. The successful acquisition and matching owner
-  record together prove ownership.
-- If the lock exists, read its owner for diagnostics, wait, and retry without touching the index.
-  Never infer permission to remove it from age alone. If it appears orphaned, obtain explicit
-  user confirmation before removal, then rerun the runtime-state guards for the exact owner file
-  and lock directory immediately before deleting either.
-- Release the lock on every success, abort, and error path, but only after rereading the owner
-  file and verifying that its complete identity and acquisition token match the current item.
-  If ownership cannot be verified, do not remove or alter the lock; fail closed and report the
-  mismatch.
+```text
+node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
+```
 
-Before acquiring the mutex, finish the item's configured pre-commit checks. Then, while holding
-the lock for the entire sequence:
+with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
+`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
+mutation.
 
-1. Run `git status --porcelain` and inspect `git diff --cached --name-only` and
-   `git diff --cached`. If any staged state already exists, treat it as foreign: do not commit,
-   take it over, or clean it up. Release the verified-owned lock and return `ABORT` for the item.
-2. Reconfirm that the item's explicit stage list contains only its analyzed and dynamically
-   approved actual paths. Stage exactly those paths. Never use `git add .`, `git add -A`,
-   `git commit -a`, or an equivalent blanket operation.
-3. Inspect `git diff --cached --name-only` and require it to equal the explicit item-owned path
-   set, then inspect the complete `git diff --cached` and require every staged hunk to belong to
-   the current item. Record the verified staged paths and content before committing.
-4. Create the item's conventional commit, capture its hash immediately with
-   `git rev-parse HEAD`, and write the `item identity -> commit hash` mapping to the wisdom file.
-5. Immediately confirm the committed paths and content against the recorded staged diff. Run
-   `git status --porcelain`, require `git diff --cached` to be empty, and inspect the remaining
-   working-tree diff. Changes from other active items may remain only when they are unstaged and
-   outside this item's owned paths; record that residual state in the wisdom file.
+- Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
+  reached (a symlinked install path included, never resolved through `realpath`), and spell it out
+  literally as an absolute path. Never use a shell variable, `$PWD`, `~`, command substitution,
+  `cd … &&`, an `echo … |` or `printf … |` pipe, a heredoc, a loop or function, a compound
+  command joined by `;`, `&&` or `||`, a trailing `echo "exit=$?"` or any other trailing command,
+  or `| grep` or any other pipe on the output. Read the exit status and the envelope from the tool
+  result itself.
+- Every JSON value is literal too: `cwd`, where sent, is the literal absolute path its owning
+  contract names (`RUNTIME_STATE_ROOT` for `effective-flow-state.mjs`), never `$PWD`. Write a `'`
+  inside the JSON as `'\''`.
+- The Claude Code allow rule matches only this literal shape, so any other shape prompts for
+  permission on every call. The rule binds every harness, since it is also the auditable shape.
 
-If a check fails before the commit, unstage only paths whose staging is provably attributable to
-this item in the current lock acquisition, verify the resulting cached state, release the lock
-only after owner verification, and return `ABORT`. Never unstage or otherwise clean foreign
-changes. If immediate post-commit confirmation fails, do not amend, reset, rebase, or otherwise
-rewrite history: record the discrepancy, release the verified-owned lock, mark the item failed,
-and stop delivery for reconciliation.
+**No `git add` or `git commit` for an item runs outside `commit create`, inline items included;
+the only exception is the `HOOKS_UNTRUSTED` fallback.**
+
+Per item, after its configured pre-commit checks:
+
+1. **Inspect the diff** of the item's paths: `git diff -- <paths>` plus every untracked addition.
+   Confirm that the list holds only the item's analyzed and dynamically approved actual paths,
+   both sides of a rename included, and that every hunk belongs to the item. Record the inspected
+   content and each path's blob OID (`git hash-object -- <path>`, `null` for a deletion) in the
+   wisdom file; the OIDs are the call's `expect`. Each value must equal what `git ls-files -s`
+   reports once the path is staged: hash a symlink's link text (`readlink -n <path>` into
+   `git hash-object --stdin`), never its target, and take a gitlink's checked-out commit
+   (`git -C <path> rev-parse HEAD`).
+2. **Commit with one call.** Give the Bash tool an explicit timeout above the helper's 300000 ms
+   commit bound, for example 360000 ms. In Codex, request sandbox escalation for this call up
+   front.
+
+   ```text
+   node <skill-root>/scripts/effective-flow-state.mjs commit create <<< '{"cwd":"<RUNTIME_STATE_ROOT>","worktree":"<EXECUTION_ROOT>","lock":"iterate-commit","owner":{"workflow":"iterate","runId":"<runId>","item":"<item>","delegation":"<runId>/<n>"},"paths":["<path>"],"expect":{"<path>":"<blob OID or null>"},"hookBase":"<hookBase>","sameRepository":<true|false>,"message":"<message>"}'
+   ```
+
+   `item` is the caller-supplied identifier when it matches `^[A-Za-z0-9._:/@=+-]{1,128}$`, else
+   the thread ID when that matches, else `item-<n>`. `worktree` is the absolute execution root the
+   item's edits live in. `hookBase` is the full SHA of `git merge-base HEAD origin/<base>` in PR
+   mode, after an explicit `git fetch origin <base>` of the PR base branch `<base>` (Phase 1
+   fetches only the head), and of `git merge-base HEAD <diff base>` with the local-mode diff base
+   otherwise. `sameRepository` is the Phase 1 pull-request read's `sameRepository`, `false` when
+   absent and `true` in local mode. The orchestrator resolves `worktree`, `hookBase` and
+   `sameRepository` and hands them to each item delegation as concrete values.
+   `message` is the item's commit message, its newlines JSON-escaped.
+
+3. **Handle the result** (exit 4 carries `outcome.code`):
+   - `ok: true`: record `result.commit` against the item (`item identity -> commit hash`) in the
+     wisdom file, with any residual working-tree state of the item's paths.
+   - `LOCK_HELD`: the commit-lock contract below; a delegation repeats the unchanged call within
+     its bounded wait and returns the diagnostics, the orchestrator applies the rest.
+   - `HOOKS_UNTRUSTED`: report `outcome.reason`; a delegation returns it, and the orchestrator
+     commits this item through the prose sequence of the fallback loaded below, which prompts in
+     default mode.
+   - `INDEX_NOT_CLEAN`, `STAGE_FAILED`, `STAGED_SET_MISMATCH`, `STAGED_CONTENT_CHANGED`,
+     `COMMIT_FAILED`: `ABORT` for the item with the reported sets and stderr; the helper unstaged
+     only the listed paths.
+   - `COMMIT_UNVERIFIED`: mark the item failed with `outcome.commit`, perform no amend, reset or
+     rebase, and stop delivery for reconciliation.
+   - `SANDBOX_DENIED`: `ABORT` with the diagnostics and no retry; escalation was already requested.
+   - `INTERRUPTED`: with `outcome.commit` set, the commit landed unverified: handle it as
+     `COMMIT_UNVERIFIED`. Without it, report it and `ABORT` the item.
+   - Any envelope carrying `heldLock` at `result`, `outcome` or `error` (the internal release did
+     not succeed, so the lock may still be held), before any `ABORT` below: retry `lock release` once with its `lock` and `token` (`{cwd, lock, token}`) and
+     report `lockRelease`; a retry result `NOT_HELD` or `NOT_OWNER` is reported and needs no
+     further action. A `leftoverTombstone` follows the contract.
+   - `INVALID_INPUT`, any other nonzero exit, or an `error` envelope: `ABORT` for the item.
+
+**Load on demand:** Read `shared/iterate-commit-fallback.md`, when `commit create` returned `HOOKS_UNTRUSTED` for an item.
+
+**Commit-lock waiting and orphans** (`iterate-commit`, `apply-review-commit`). A unit is one
+`iterate` item or one `apply-review` finding; its delegation is the worker the orchestrator
+started for it, and an inline unit is its own delegation. For `iterate`, "re-invoke `lock acquire`"
+and "the commit critical section" mean the unchanged `commit create` call, whose `LOCK_HELD`
+carries the same owner and identity details as `lock acquire`.
+
+- **Ownership check:** immediately before `git commit`, run `lock inspect` and require a `valid`
+  owner whose token equals the retained token. Otherwise ownership is lost: do not commit,
+  unstage only this unit's own staging, and fail the unit closed. This bullet binds the prose
+  sequences only, `apply-review`'s and `iterate`'s `HOOKS_UNTRUSTED` fallback; `commit create`
+  performs both steps itself.
+- **Bounded worker wait:** on `LOCK_HELD` the worker re-invokes `lock acquire` unchanged. After
+  three consecutive `LOCK_HELD` results with an unchanged owner and identity it stops waiting,
+  leaves its edits unstaged, and returns the diagnostics (owner, identity, lock path) to the
+  orchestrator. A worker cannot know whether another delegation is still active, so it never
+  waits beyond that, never asks the user, and never breaks a lock.
+- **Sibling rule:** only the orchestrator knows which delegations are active. While the owner
+  `runId` equals this run's `runId` and the owning delegation is still active, it re-dispatches
+  the waiting unit's commit critical section only after that owning delegation has returned,
+  once per returned owner, and never takes the orphan path; a re-dispatch that meets another
+  active sibling owner waits for that one's return the same way, so the re-dispatches are bounded
+  by the run's delegations. A re-dispatched section keeps the unit's original `delegation` value
+  `<runId>/<n>`. Once the orchestrator holds that delegation's result and its lock remains, the lock
+  counts as foreign.
+- **Foreign owner:** the orchestrator only reports the owner to the user, with no break
+  suggestion. Age never counts. An apparent orphan is an owner `missing`, `invalid` or
+  `oversized`, or one the user identifies as stale; only then, in a gated run, it runs
+  `lock inspect`, obtains explicit user confirmation, and runs `lock break` with the observed
+  token, or the identity plus owner digest (`ownerSize` for an `oversized` owner). A relayed or
+  non-interactive run fails closed with the diagnostics.
+- **`BREAK_MISMATCH`** (`changed-before-removal` included) removed nothing. The orchestrator
+  re-reads the lock once with `lock inspect`: a sibling owner falls under the sibling rule, any
+  other is reported to the user as foreign. No second break runs without a fresh confirmation.
+- **After a confirmed break,** the orchestrator re-dispatches that unit's commit critical section
+  once; its edits are still unstaged in the tree.
+- **Tombstones:** a `leftoverTombstone` in a release or break result (the lock is free), or a
+  `WRITE_FAILED` naming a tombstone path, is reported to the user with that path.
 
 ### Phase 4: Validation
 

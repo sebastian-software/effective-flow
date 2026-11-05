@@ -70,11 +70,13 @@ translated.
 All deterministic remote mechanics of the forge target run through the shipped helper:
 
 ```text
-node <skill-root>/scripts/remote-tracker.mjs <operation> [--apply]
+node <skill-root>/scripts/remote-tracker.mjs <operation> <<< '<json>'
+node <skill-root>/scripts/remote-tracker.mjs <operation> --apply <<< '<json>'
 ```
 
-Pass exactly one JSON object through standard input and parse exactly one JSON result envelope from
-standard output. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
+The argv is exactly `<operation>`, or `<operation> --apply` for a mutation; any other argv, and
+`--apply` on a non-mutation, fails with `INVALID_PAYLOAD` before standard input is read. `<json>`
+is exactly one JSON object; parse exactly one JSON result envelope from standard output. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Resolve `<skill-root>` from the currently loaded Effective Flow skill; never copy
 the helper into the target project. The helper owns origin/provider/reference parsing, `gh`/`tea`
 probing, capability normalization, command construction, JSON normalization, payload validation,
 compatibility aliases, exact body patching, redaction, and stale-write preconditions. It never opens
@@ -114,8 +116,9 @@ credential shapes, not quoted content: the preview echoes review and comment bod
 
 ### Remote helper
 
-Use the shipped `scripts/remote-tracker.mjs` helper and the envelope, dry-run, capability,
-redaction, error, and working-directory contract from the loaded "Remote helper contract". PR mode
+Call the shipped `scripts/remote-tracker.mjs` helper only through the literal call lines, envelope,
+dry-run, capability, redaction, error, and working-directory contract of the loaded "Remote helper
+contract". PR mode
 requires a successful provider probe. `AMBIGUOUS_HOST` returns to the orchestrator for an explicit
 provider choice; `CLI_MISSING`/`AUTH_FAILED` abort without side effects. Never assemble provider
 requests or discover flags in the prompt.
@@ -484,9 +487,13 @@ After admission and reservation and before any tracker mutation, persist the `lo
 findings, so a
 declined offer, a CLI failure, or an interrupted session cannot lose them:
 
-1. **Write the report.** Use the calling workflow's report path, guard, and collision mechanics,
-   with the file name `review-report-YYYY-MM-DD-security[-N].md`. The `review-report-` prefix keeps
-   the apply routing and the design-decision globbing intact. The report uses `language.workflow`
+1. **Write the report.** Use the calling workflow's report path and guard. Take the file name
+   from `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate` with exactly one
+   JSON object on standard input — `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` the report
+   directory relative to it, `family` `review-report-security` — and write to `data.path` of
+   `allocated`. A nonzero exit, an unparsable envelope or `ok: false` stops the run, naming the
+   error code; never compose the name by hand. The `review-report-` prefix keeps the apply routing
+   and the design-decision globbing intact. The report uses `language.workflow`
    even when the run's remote artifacts use `language.forge`; each artifact stays complete in its
    own language.
 2. **Report fields.** Every finding block carries its `Security` field with the exposure value, and
@@ -553,7 +560,7 @@ restated here. Pull requests stay on the forge behind `origin` regardless of `tr
 ### Inputs
 
 The caller supplies a **resolved pull request** (number, head ref, base ref, URL, state), its **run
-state** — gated or non-interactive delegation, which a relayed run passes as non-interactive — and
+state** — gated or non-interactive delegation, which a relayed run passes as non-interactive; the sole exception is a validated interactive build relay — and
 exactly one of these three **input states**:
 
 - **`finding-set`** — the caller's residual findings: what survived its own correction rounds, not
@@ -740,13 +747,14 @@ Governed by the configuration key `delivery.prReview` with the values `ask` (def
   `effective-flow review <PR>` invocation is never affected.
 - `ask` — resolved by the run state:
   - **gated** — ask exactly once with the question below.
+  - **interactive build relay** — only `build-run-contract` with originating mode `interactive`, a validated outstanding question and trusted same-agent reply. Relay the exact question below; consent publishes once through the existing gates and fresh idempotency reads, refusal publishes nothing. A pause retains the same build-run identity and no lock.
   - **non-interactive delegation** — the state any higher-level orchestrator creates when it
-    delegates a workflow non-interactively; the authoritative list of those orchestrators is the
+    delegates a workflow non-interactively; merge-gate `relayed` stays in this state, and the authoritative list of those orchestrators is the
     one in the documentation-sync contract. Publish nothing and report that the question could not be posed, naming
     `delivery.prReview: always` as the setting that would authorize publication in such a run. This
     follows the loaded gate, where an unanswered, skipped, or non-interactive run publishes nothing.
 
-If a delivery created or reused a pull request, `delivery.prReview` is `ask` or unset, and the run is gated: Ask the user: **Publish this run's review findings as comments on the pull request?**
+If a delivery created or reused a pull request, `delivery.prReview` is `ask` or unset, and the run is gated or a validated interactive build relay: Ask the user: **Publish this run's review findings as comments on the pull request?**
 - Yes -- Submit the surviving findings as inline comments plus a summary on the pull request
 - No -- Leave the pull request without comments; the findings stay in this run's report
 

@@ -46,9 +46,13 @@ After admission and reservation and before any tracker mutation, persist the `lo
 findings, so a
 declined offer, a CLI failure, or an interrupted session cannot lose them:
 
-1. **Write the report.** Use the calling workflow's report path, guard, and collision mechanics,
-   with the file name `review-report-YYYY-MM-DD-security[-N].md`. The `review-report-` prefix keeps
-   the apply routing and the design-decision globbing intact. The report uses `language.workflow`
+1. **Write the report.** Use the calling workflow's report path and guard. Take the file name
+   from `node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate` with exactly one
+   JSON object on standard input — `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` the report
+   directory relative to it, `family` `review-report-security` — and write to `data.path` of
+   `allocated`. A nonzero exit, an unparsable envelope or `ok: false` stops the run, naming the
+   error code; never compose the name by hand. The `review-report-` prefix keeps the apply routing
+   and the design-decision globbing intact. The report uses `language.workflow`
    even when the run's remote artifacts use `language.forge`; each artifact stays complete in its
    own language.
 2. **Report fields.** Every finding block carries its `Security` field with the exposure value, and

@@ -65,13 +65,19 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 ## Delegation mandate
 
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent; when it has confirmed a materially useful intermediate result for that parent and necessary domain work remains, it sends one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words). Keep at most one per logical handoff. Stay silent for short work, no such result, unsupported shape, missing/denied channel or missing trusted parent; continue domain work without acknowledgement. Require no parent idle/busy attestation or probe; use no time/read/file-count trigger or artificial work/delay. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
@@ -195,58 +201,54 @@ If the project has an `AGENTS.md`, read it before creating the PR and follow its
 
 ## Base-branch resolution
 
-`delivery.baseBranch` has exactly one resolution rule, and this is it; every later step refers
-back to the results recorded here instead of restating the rule or re-deriving anything from the
-configured value. Absent, the key takes `origin/` prefixed to the branch
-`git symbolic-ref refs/remotes/origin/HEAD` names, else `origin/main`; the derived value is a
-remote ref like any other and is classified below as one. An explicit value is used as written. The value is a
-remote ref only when the part before its first `/` is a remote that `git remote` lists for this
-repository; local branch names carry slashes too, so `feature/foo` is that branch unless `feature`
-is a configured remote. A value with no `/` at all (`main`, `develop`, whatever `setup` proposes
-where no `origin` exists) has no such leading part and is therefore never a remote ref.
+`delivery.baseBranch` has exactly one resolution rule, and this is it; every later step uses the
+results recorded here instead of restating the rule or re-deriving anything from the configured
+value. The helper executes the rule: run
+`node <skill-root>/scripts/effective-flow-mechanics.mjs <operation>` with exactly one JSON object on
+standard input, `cwd` the verified absolute repository root. **Fail closed:** a nonzero exit, an
+envelope that does not parse, or `ok: false` stops the run, naming the error code; never replay the
+rule by hand.
 
-- Remote configured: run `git fetch REMOTE BRANCH`, then resolve the ref, so the delivery
-  branch starts from the current remote state. If the fetch or the resolution fails (offline,
-  credentials, deleted branch), report and stop — never fall back here: a stale local branch
-  can be far behind and would start delivery from the wrong commit. After a successful
-  resolution, and only where REMOTE is `origin`, read `origin/HEAD`: where it resolves and names
-  another branch, name both facts once, neither as authoritative — the clone-time cache may be the
-  stale side — and offer `git remote set-head origin -a`. This adds no gate: the configured value
-  wins. A `origin/HEAD` that does not resolve is not an error and reports nothing; a base on a
-  differently named remote is not compared against origin's at all. Stay silent where the project
-  setup ADR carries, in prose outside its configuration table, a sentence calling the divergence
-  between `delivery.baseBranch` and the repository default deliberate and permanent.
-- Remote not configured: no such ref can exist in this repository. Resolve the value as a
-  local ref instead: as it stands first, and only if that fails the local branch part after
-  the first `/` (`main` for `origin/main`); report that substitution once.
-- Neither the remote ref nor any local candidate for the value resolves: abort, naming both
-  facts. Never invent or create a base branch.
+1. Run `base-branch-resolve` with `cwd` and `configured`: the configured value as written, or
+   `null` when the key is absent, from which the helper derives `origin/` plus the branch
+   `origin/HEAD` names, else `origin/main`. By `data.outcome`:
+   - `fetch-required`: the part before the value's first `/` is a remote that `git remote` lists
+     (the remote-configured arm); continue with step 2.
+   - `resolved`: the value resolved as a local ref as it stands (the remote-not-configured arm).
+   - `resolved-substituted`: the same arm, where only the local branch part after the first `/`
+     resolved (`main` for `origin/main`); report that substitution once.
+   - `unresolvable`: neither the remote ref nor any local candidate resolves; abort, naming the
+     value. Never invent or create a base branch.
+2. Remote-configured arm only: run `base-branch-fetch` with `cwd`, `remote` and `branch` from step
+   1, and `deliberateDivergence`: `true` only where the project setup ADR carries, in prose outside
+   its configuration table, a sentence calling the divergence between `delivery.baseBranch` and the
+   repository default deliberate and permanent, otherwise `false`. By `data.outcome`:
+   - `resolved`: delivery starts from the current remote state. A non-`null` `data.divergence`
+     means `origin/HEAD` names another branch, `data.divergence.originHead`: name both facts once,
+     neither as authoritative — the clone-time cache may be the stale side — and offer
+     `git remote set-head origin -a`. This adds no gate: the configured value wins.
+   - `fetch-failed` (with `data.error`), `tracking-stale` or `unresolvable`: report and stop. Never
+     fall back to a local branch here: a stale one would start delivery from the wrong commit.
+   - `fetch-denied`: the sandbox refused the network or a `.git` write. Where the harness can rerun
+     a command with escalated sandbox permissions (Codex), rerun this call once that way; otherwise,
+     or when it is refused again, stop as for `fetch-failed`.
 
 ### Recorded results
 
 The arm that ran records two named results. They are the only base-branch values later steps use,
 and no step recomputes either one from the configured value.
 
-- **Resolved base ref** — what a delivery branch is created from, and what a commit range is
-  computed against.
-- **Resolved local base branch** — the local branch every merge target, switch-back target and
-  pull-request target uses.
+- **Resolved base ref** (`data.baseRef`) — what a delivery branch is created from, and what a
+  commit range is computed against.
+- **Resolved local base branch** (`data.localBranch`) — the local branch every merge target,
+  switch-back target and pull-request target uses.
 
-The remote-configured arm records the fetched remote-tracking ref as the resolved base ref, and
-the branch name after the remote name as the resolved local base branch. The
-remote-not-configured arm records the candidate that actually resolved as **both** results: the
-value as it stands, or — only where the last-resort substitution above fired and was reported —
-the substituted local candidate. The aborting arm records nothing, and no consuming step runs.
-
-The pair therefore identifies its own arm, and a consuming step reads that arm off the two
-results rather than off which arm it watched run. This matters exactly where nothing ran: a
-delegated run handed both results resolved nothing itself and has no arm to remember. The
-remote-configured arm's two results always **differ**, because its resolved base ref carries the
-remote name in front of the branch while its resolved local base branch is that branch name
-alone. The remote-not-configured arm's two results are always **equal**, because it records one
-candidate as both — the value as it stands, or the substituted one. So equal results are the
-remote-not-configured arm and differing results are the remote-configured one. There is no third
-reading, and therefore no arm name any caller has to pass alongside the pair.
+The pair identifies its own arm, so a consuming step reads the arm off the two results, never off
+which arm it watched run (a delegated run handed both ran none). The remote-configured arm's results
+always **differ**, because its resolved base ref carries the remote name in front of the branch; the
+remote-not-configured arm's are always **equal**, because it records one candidate as both. So equal
+results are the remote-not-configured arm, and there is no arm name any caller passes alongside the
+pair. The aborting arm records nothing, and no consuming step runs.
 
 ## Inputs
 
@@ -286,9 +288,10 @@ reading, and therefore no arm name any caller has to pass alongside the pair.
    - Establish and verify the execution root per "Execution root" before any other step, and keep
      a direct invocation checkout separate from it. Every helper payload and every repository-wide
      `git` call below uses the execution root.
-   - Read the Effective Flow configuration through `node <skill-root>/scripts/config-resolve.mjs resolve` with
-     `{"cwd": "<execution root>", "tool": "pr"}` on standard input; a nonzero exit or no single parseable envelope
-     stops the run, reporting the cause. Use `delivery.baseBranch` from `data.values`, or the documented default
+   - Read the Effective Flow configuration through the literal call
+     `node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd": "<execution root>", "tool": "pr"}'`;
+     a nonzero exit or no single parseable envelope stops the run, reporting the cause.
+     Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Use `delivery.baseBranch` from `data.values`, or the documented default
      where it is unset. Record that configured value and resolve nothing from it here: step 4 applies "Base-branch
      resolution" to it, behind the step 2 preconditions, so a direct invocation reaches the network only once its
      checkout has been accepted. A retired `worktree.baseBranch` row is never read, on a direct invocation and a
@@ -386,7 +389,7 @@ reading, and therefore no arm name any caller has to pass alongside the pair.
    - **Commits found:** Continue with the unchanged delivery flow in step 5.
    - **No commits found:** Preserve the prepared branch, report that it has no commits against the
      resolved base, and stop without any remote mutation.
-5. **Resolve the provider:** Invoke the shipped `scripts/remote-tracker.mjs` helper's repository-resolution operation with the execution root as the payload's `cwd`. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
+5. **Resolve the provider:** Make the literal call `node <skill-root>/scripts/remote-tracker.mjs repository-resolve <<< '<json>'`, in the shape of step 1: the helper's repository-resolution operation with the execution root as the payload's `cwd`. Pass a configured or explicit provider override when present. On `AMBIGUOUS_HOST`, ask for `github` or `forgejo` and retry with that choice; do not infer a provider from an unknown hostname.
 6. **Check tool availability:** Invoke the helper probe once — again with the execution root as `cwd` — and use its normalized authentication, version, JSON, and capability result. On `CLI_MISSING`, `AUTH_FAILED`, or `UNSUPPORTED_CAPABILITY`, report the structured remediation and abort without side effects. A `tea` below the supported minimum surfaces here as `UNSUPPORTED_CAPABILITY` with its `installed` and `minimum` versions, which is the intended early gate. The branch is preserved for later manual PR creation; never discover flags or access credentials directly.
 7. **Push the branch:** Immediately before the push, require the exact head branch still resolves to
    the OID preserved in step 3. Push it to `origin` if it is not yet there or not up to date

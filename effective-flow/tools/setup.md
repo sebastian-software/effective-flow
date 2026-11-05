@@ -16,6 +16,7 @@ You prepare a target project for using Effective Flow: a `.gitignore` entry for 
   **Express** (adopt defaults) and **Guided** (go through every option explained) as explicit modes
 - after setup, apply a free-text request (**Targeted**) as changes to the named keys only, behind
   one confirmed before/after list, or answer a read-only question about the current configuration
+- in Claude Code, offer allow rules for the Effective Flow helpers' non-destructive or bounded and read-only operations in the untracked `.claude/settings.local.json`, behind a preview and an explicit confirmation (also alone as `setup allowlist`)
 - explain every option so that it is understandable even without prior knowledge of how Effective Flow works
 - for an existing config, show and pre-select the currently recorded value at every choice; on a scored choice, name it in the question or explanation only, never as a label marker or by moving its option
 - do not run project validation such as linting, tests, or build checks
@@ -70,11 +71,17 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker, or is about to write or delete the hidden local configuration, a Targeted run's hidden write included.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker's memory operation.
 
 **Load on demand:** Read `shared/setup-retired-login-migration.md`, when setup collapses configured bot spellings or migrates retired `prReview.bots.<login>.trigger` or `.check` rows.
 
@@ -282,20 +289,15 @@ source and its classified outcome.
 
 ### Observed evidence
 
-Observed evidence supplies **a convention** only when no declared source speaks. Independently of
-that, the file names in the detected ADR directory are always read for zero-pad width and number
-allocation once the resolved convention is numbered, no matter which tier resolved it. The evidence
-set is the `*.md` files at the top level of the detected ADR directory — the scan is not recursive —
-excluding `README.md`, `index.md`, and any file whose stem equals `effective-flow-project-setup` or
-the legacy slug `firmo-project-setup` after stripping an optional leading `^\d+[-_]` numeric prefix.
-That exclusion is deliberately syntactic and identical to the **stem** half of the config locator's
-scan predicate, deliberately without the locator's second half — its canonical configuration
-envelope test — so it holds before any step has resolved the project setup ADR:
-
-- An **empty** evidence set is no observed convention. Evidence has to exist before it classifies anything, and without this rule the two tests below are both vacuously true for an empty directory, which would make it numbered and numberless at once.
-- **numbered** when the set is non-empty and every file in it carries a `^\d+-` prefix at one and the same zero-pad width.
-- **numberless** when the set is non-empty and no file in it carries a numeric prefix.
-- Anything else — a mix of prefixed and unprefixed files, numbered files at differing widths, or a `^\d+_` separator — is no observed convention, and the run reports the evidence as inconclusive.
+Observed evidence supplies **a convention** only when no declared source speaks. The helper reads
+it: run `node <skill-root>/scripts/effective-flow-mechanics.mjs adr-observe` with exactly one JSON
+object on standard input, `cwd` the verified repository root and `adrDir` the detected ADR directory
+relative to it. **Fail closed** for this and every call below: a nonzero exit, an envelope that does
+not parse, or `ok: false` stops the run, naming the error code; never replay these rules by hand.
+`data.outcome` is `numbered` (one zero-pad width, `data.width`), `numberless`, `inconclusive` or
+`none` (an empty evidence set); the last two are no observed convention, and the run reports
+inconclusive evidence as such. `outside-repo-stop` is the hard stop under "Allocation and
+collision".
 
 ### Precedence
 
@@ -305,104 +307,49 @@ Where the observed evidence is unanimous and contradicts the speaking declared s
 declared source still wins and the disagreement is named in the completion report, so a silent
 override becomes a visible one without adding a gate.
 
-### Number and width allocation
+### Allocation and collision
 
-This applies only to a resolved numbered convention:
+Every **new** ADR — one that does not already exist — takes its file name from `adr-allocate`, with
+`cwd`, `adrDir`, `convention` (the resolved `numbered` or `numberless`; the Effective Flow default
+is `numberless`), `declaredWidth` (the width a speaking source states, as stated, else `null`),
+`text` (the ADR title) and `previousTarget`. An ADR resolved for update is written at its own path
+(see "No rename on the convention axis") and is never a collision with itself; that is the single
+exemption. Call once with `previousTarget: null`, and again immediately before the write with that
+target: this second call is the unconditional pre-write existence check, under either convention.
+Write only to the second call's `data.path`, by `data.outcome`:
 
-- The zero-pad width comes from the declaration when it states one, otherwise from the numbered
-  files of the **observed-evidence set** defined under "Observed evidence" when they all share one
-  width, otherwise four digits. Width is a classification property, so it reads that set and never
-  the wider allocation scan below; the two sets differ, and naming the wrong one would make a
-  directory holding `001-foo.md` beside `0002-effective-flow-project-setup.md` resolve to width 3
-  one way and to four digits the other. A non-uniform observed-evidence set states no width and
-  falls through to four digits.
-- A declared width outside 1–10 digits is unrecognized **on the width axis** only: the width falls
-  back to the observed-evidence width and then to four digits, while the rest of that declaration
-  keeps speaking.
-- Width is not on the classification axis, so two speaking sources can agree that the convention
-  carries numbers while stating different widths — `NNN-<slug>.md` in one and `NNNNN-<slug>.md` in
-  the other. Those sources agree, decide the convention between them, and never reach the ambiguity
-  fence. Where speaking sources agree on the classification axis but state different widths, the
-  **width axis** is unrecognized in the same way: the width falls back to the observed-evidence
-  width and then to four digits, and the divergence is reported with every speaking source and the
-  width it stated. Without that rule two runs on one repository could write `007-…` and `00007-…`.
-- The number is the next unused integer above the highest number present in the directory. A file
-  contributes a number when its name matches `^(\d+)[-_]`, and the captured digits are that number.
-  This read-side parse tolerates both separators deliberately, independently of the hyphen-only
-  write-side axis, so a file like `0007_legacy.md` cannot have its number silently reused.
-- The allocation scan reads **all** `*.md` files at the top level of the detected ADR directory —
-  non-recursive, like the evidence scan — including the ones the observed-evidence set excludes. The
-  two scan sets differ deliberately, so a file the classification ignores can still not have its
-  number reused.
-- Allocation starts at `0001`, rendered at the resolved width, when the directory holds no numbered file at all.
-- When the highest number present saturates the resolved width, widen the pad by one digit and report that. Numbering never wraps.
+- `allocated`: the target is free.
+- `reallocated`: under a numbered convention the target was taken, so the number was re-allocated
+  once; report the new path.
+- `collision-stop`: report `data.paths` and write nothing — a second numbered collision, or a taken
+  numberless target. Only an explicit, confirmed overwrite decision obtained by the calling tool —
+  its invalid-source decision, for instance — may then write over that file.
+- `symlink-stop` (an existing symlink at the target, dangling included) or `outside-repo-stop` (the
+  ADR directory resolves outside the repository, `data.resolvedPath`): a hard stop — report the path
+  and write nothing, never re-allocate or reroute to the default.
+- `unrecognized` (the name or its resolved parent fails containment): under `numbered` the
+  Effective Flow default applies; call again with `convention: "numberless"`. Under `numberless`
+  it is a hard stop like `symlink-stop`; never call again.
 
-### Containment
-
-Two tests guard the target path, and their **order** is part of the rule: the symlink hard stop is
-evaluated first, and it overrides the fallback of the containment test. Applied the other way round,
-a symlink pointing outside the repository would fail containment, be called an unrecognized name,
-send the run to the Effective Flow default, and get written after a reroute — and a dangling symlink
-would defeat the protection entirely, because the containment resolution itself fails on it.
-
-**First, the symlink hard stop.** Before the containment predicate is evaluated, test the target
-path itself for an existing symlink, with a test that does not follow the link so a dangling one is
-seen rather than reported absent. An existing symlink at the target path is a hard stop of its own:
-it is never a write target, never triggers a re-allocation, and never reroutes to the Effective Flow
-default — report the path and write nothing. This holds for a dangling symlink too, which a plain
-existence check reports as absent while a write through it lands outside the repository.
-
-**Then, containment.** The resolved file name must be a single path segment matching
-`^(?:\d+-)?[a-z0-9][a-z0-9-]*\.md$`. Containment is then checked **physically** rather than
-lexically, because the name pattern already forbids a separator and a lexical test would be
-trivially satisfied: resolve both the detected ADR directory and the target path through their
-symlinks, then require **two** things of the result — the resolved target's parent equals the
-resolved directory, **and** both of them lie beneath the verified repository root.
-
-**The second requirement is not implied by the first.** Equality proves only that the two resolve to
-the same place, never that the place is inside the repository. Where the ADR **directory itself** is
-a symlink pointing outside it, both sides resolve to that one external directory, the equality holds,
-and the write lands outside the repository. The symlink hard stop above does not catch it either: it
-tests the target path, not the directory it sits in.
-
-**Those two failures have different outcomes, and the difference is what makes the second one safe.**
-A name failing the segment pattern, or a target whose resolved parent is some other directory, is
-unrecognized: the Effective Flow default applies, and nothing outside the detected directory is ever
-written. A resolved directory lying outside the repository root is instead a **hard stop** of the
-same kind as the symlink stop — report the resolved path and write nothing. Rerouting to the default
-would be no protection at all there, because the default name resolves inside that same external
-directory. Both fallbacks are reachable only where the symlink hard stop did not already fire; no
-hard stop is ever softened into a reroute.
-
-### Collision at write time
-
-This applies to every **new** ADR — one that does not already exist — under either resolved
-convention. An ADR resolved for update is written at its own path (see "No rename on the convention
-axis") and is never a collision with itself; that is the single exemption, and it is the only one,
-because the pre-write existence check is what stands between a new ADR and an overwritten file.
-
-Re-scan the detected ADR directory immediately before writing and read the resolved target path.
-The existence check on that path is **unconditional**, not scoped to a convention that allocates
-numbers: a file sits at a numberless target just as easily as at a numbered one. A project setup ADR
-whose configuration envelope was deleted or never finished does not resolve through the config
-locator, so a run treats that project as unconfigured, the numberless convention resolves to that
-same path, and without an unconditional check the new-ADR envelope would be written straight over
-the existing file.
-
-- Under a convention that carries **numbers**, an existing file at the resolved target path
-  re-allocates the number once; read the new target path again. A second collision stops the run
-  and reports both paths rather than overwriting.
-- Under a **numberless** convention there is no second name to allocate. An existing file at the
-  resolved target path stops the run and reports that path. Only an explicit, confirmed overwrite
-  decision obtained by the calling tool — its invalid-source decision, for instance — may then
-  write over that file; the procedure itself never overwrites on its own.
+A true `data.widened` means the highest number saturated the width and the pad grew by one digit;
+report it. Width is not on the classification axis, so speaking sources that agree on numbers but
+state different widths decide the convention between them and never reach the ambiguity fence; the
+width axis is then unrecognized: pass `declaredWidth: null` and report the divergence with every
+speaking source and the width it stated.
 
 ### No rename on the convention axis
 
-An already-resolved ADR is written at the path where it was found, even when that path
-contradicts the resolved convention; the divergence is reported once. This rule covers the naming
-convention only and leaves the legacy-slug switch unaffected: an ADR found under a legacy slug is
-still written under the current slug.
+An already-resolved ADR is written at the path where it was found, even when that path contradicts
+the resolved convention; the divergence is reported once. This rule covers the naming convention
+only: an ADR found under a legacy slug is still written under the current slug. A target that is
+not newly allocated — an update in place, or setup's switched slug — calls no `adr-allocate` and is
+never re-allocated; checking it by hand is the single exception to "never replay these rules by
+hand". In order: the symlink hard stop (tested without following the link), then the physical
+containment check — its resolved parent must equal the resolved ADR directory, both beneath the
+verified repository root — then, for a switched slug, the existence check (an update in place is
+never a collision with itself). Any hit stops the write with the consequences of `symlink-stop`,
+`outside-repo-stop` or `unrecognized`, or of `collision-stop` naming both paths for an occupied
+switched target; nothing falls back to the default.
 
 ### Reporting
 
@@ -416,13 +363,13 @@ surface.
 
 ### Mechanical rules and judgment
 
-Mechanical, and executed identically on every run: the observed-evidence scan and its width test,
-number and width allocation, the containment predicate, the collision procedure, and the no-rename
-rule. Deliberately judgmental, and named as such so a later reader does not mistake them for
-mechanical rules: whether a source states an ADR naming rule at all, whether a stated scheme falls
-outside the recognized axis, and whether two or more speaking sources genuinely contradict rather
-than restate one another. Anything not clearly matching falls through to the default rather than being
-approximated, which is what bounds the cost of that judgment.
+Mechanical, and executed by the helper: the observed-evidence scan and its width test, number and
+width allocation, the containment predicate and the collision procedure. Deliberately judgmental,
+and named as such so a later reader does not mistake them for mechanical rules: whether a source
+states an ADR naming rule at all, whether a stated scheme falls outside the recognized axis, and
+whether two or more speaking sources genuinely contradict rather than restate one another. Anything
+not clearly matching falls through to the default rather than being approximated, which is what
+bounds the cost of that judgment.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -433,11 +380,11 @@ private, ignored runtime state, and no `config.json` is a configuration source.
 
 ### Config locator (resolution call)
 
-Before the first configuration-dependent step, run
-`node <skill-root>/scripts/config-resolve.mjs resolve` with one JSON object on standard input:
-`cwd` (the checkout this run works in), `tool` (this tool's own name, e.g. `refactor`; an internal
-source such as `apply-plan` passes its own), and `mode` for `iterate` (`local`/`pr`) and
-`apply-review` (`local`/`remote`). The script runs the whole config locator (steps 0–4), decodes
+Before the first configuration-dependent step, make the literal call
+`node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd":"<checkout>","tool":"<tool>"}'`:
+`cwd` the absolute checkout this run works in, `tool` this tool's own name (e.g. `refactor`; an
+internal source such as `apply-plan` passes its own), plus `mode` for `iterate` (`local`/`pr`) and
+`apply-review` (`local`/`remote`). Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The script runs the whole config locator (steps 0–4), decodes
 the table, forces the hidden-mode values, and classifies retired rows; never read the ADR by hand.
 Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line
 `{ ok, operation, data }` stops the run before that step, reporting the cause. Exit 3
@@ -517,9 +464,15 @@ review-in-flight guard. A missing line means the default, per the encoding rule 
 | `mergeGate.bots`                 | comma list of logins               | `(empty)` |
 | `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
 | `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
+| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
+
+**`mergeGate.botAccounts` is not `mergeGate.bots`.** It lists non-reviewer bots: automated accounts,
+possibly typed as users, whose top-level comments and review-thread items effective-flow merge-gate
+treats as bot comments. The gate never triggers or waits for them, and their changes-requested
+reviews still count. A record a `mergeGate.bots` entry matches is a reviewer either way.
 
 **`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
 row; one that exists anyway is retired like any other `prReview.<key>` row, with successor
@@ -621,7 +574,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
 - **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files; beside it `concept.dir` (source: `effective-flow concept`, string, default `docs/concept`) — directory of the concept files
 - **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default derived from `origin/HEAD`, else `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
-- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default), `botAccounts` (comma list of non-reviewer bot logins, default empty — automated accounts whose comments the gate does not count as human). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; in hidden mode the configuration resolver forces its fixed values (the hidden file's rows are listed under "Safe defaults").
@@ -697,7 +650,10 @@ keyword mode:
   Visibility question below is not asked;
 - `effective-flow setup status` selects **Status**: it follows the loaded `setup-status` fragment, whose
   status call replaces the configuration and chat-language reads, and ends after its report, never
-  reaching the Visibility question or Step 1.
+  reaching the Visibility question or Step 1;
+- `effective-flow setup allowlist` selects **Allowlist**: it needs no existing configuration, goes
+  straight to the "Allowlist step" section, and ends after that step's summary items, never
+  reaching the Visibility question or Steps 1–7.
 
 Any other non-empty argument selects **Targeted**, its original text kept verbatim
 (`effective-flow setup guided tracker github` is Targeted, not Guided); load and follow the Targeted
@@ -710,11 +666,11 @@ load it; they go on to the Visibility question and then to Step 1.
 
 **Load on demand:** Read `shared/setup-profiles.md`, when the normalized invocation has no argument or its single argument is `profile`.
 
-**Load on demand:** Read `shared/setup-targeted-change.md`, when the normalized invocation is non-empty and is not exactly one of the six keyword forms.
+**Load on demand:** Read `shared/setup-targeted-change.md`, when the normalized invocation is non-empty and is not exactly one of the seven keyword forms.
 
 **Load on demand:** Read `shared/setup-status.md`, when the normalized invocation is exactly `status`.
 
-**Visibility.** Every mode except Targeted and Status then resolves the visibility before Step 1, because
+**Visibility.** Every mode except Targeted, Status, and Allowlist then resolves the visibility before Step 1, because
 Step 1 already differs between the two values: Profile after its `Chat` and `Profile` asks, Express
 and Guided as their first question, `effective-flow setup hidden` not at all; Targeted keeps the
 visibility of the configuration it resolves. Pre-select `Hidden` when the locator's
@@ -729,7 +685,7 @@ concepts stay local under `.effective-flow/`, the tracker is pinned to `local`, 
 are posted on pull requests, delivery branches carry a neutral prefix, and no tracked file names
 Effective Flow. A run that cannot ask keeps the pre-selected value and reports it.
 
-If the invocation is not `hidden`, the mode is neither Targeted nor Status, and the setup mode's earlier questions are answered: Ask the user: **Should Effective Flow stay invisible in this repository's tracked files and on the forge?**
+If the invocation is not `hidden`, the mode is not Targeted, Status, or Allowlist, and the setup mode's earlier questions are answered: Ask the user: **Should Effective Flow stay invisible in this repository's tracked files and on the forge?**
 - Standard -- visibility = standard (default) — tracked project setup ADR, AGENTS.md marker, and a .gitignore entry
 - Hidden -- visibility = hidden — local configuration in .effective-flow/project-setup.md, ignored through info/exclude; no tracked file is written
 
@@ -814,23 +770,23 @@ If several ADR directories exist and none is clearly `docs/adr/`: Ask the user: 
    this source state to detect intervening changes without inventing an undefined handle. A
    several-match result is not one of those recorded values, because it ends the run instead of
    travelling forward as a state a later step has to interpret.
-3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup
-   ADR resolved, resolve the ADR file-name convention as defined in the building block above
-   (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved
-   form, the resolution tier (a declaring source, the observed evidence, or the Effective Flow
-   default), the zero-pad width where the form carries numbers, and the file path that established
-   it where that tier has one, plus any unanimous observed evidence that contradicted the
-   declaration, every speaking source with its classified outcome wherever more than one spoke, any
-   width divergence between speaking sources that agreed on the classification axis, and a flag
-   recording whether the ambiguity fence was reached but could not be posed. Step 6 item 4 writes
-   through this value and Step 8 reports it, that flag included — so the flag is a carried component
-   rather than something Step 8 has to reconstruct. If the resolution reaches its
-   ambiguity fence, answer the fence before continuing; nothing is written until it is answered.
-   A run that cannot ask does not stall there: an unanswered, skipped, or non-interactive run
-   resolves exactly as the fence's `Inconclusive` option does — every declaration set aside, the
-   observed evidence deciding next, and the Effective Flow default only where that is inconclusive
-   too — sets the not-posed flag, and carries every speaking source and its outcome forward for
-   Step 8.
+3. **Detect the ADR naming convention.** With the directory fixed and any existing project setup ADR
+   resolved, resolve the ADR file-name convention as defined in the building block above
+   (`project-adr-convention`) and carry the result forward as `<adr-convention>`: the resolved form,
+   the resolution tier (a declaring source, the observed evidence, or the Effective Flow default),
+   the zero-pad width where the form carries numbers (`adr-observe`'s or `adr-allocate`'s
+   `data.width`), and the file path that established it where that tier has one, plus any unanimous
+   observed evidence that contradicted the declaration, every speaking source with its classified
+   outcome wherever more than one spoke, any width divergence between speaking sources that agreed
+   on the classification axis, and a flag recording whether the ambiguity fence was reached but
+   could not be posed. Step 6 item 4 writes through this value and Step 8 reports it, that flag
+   included — so the flag is a carried component rather than something Step 8 has to reconstruct. If
+   the resolution reaches its ambiguity fence, answer the fence before continuing; nothing is
+   written until it is answered. A run that cannot ask does not stall there: an unanswered, skipped,
+   or non-interactive run resolves exactly as the fence's `Inconclusive` option does — every
+   declaration set aside, the observed evidence deciding next, and the Effective Flow default only
+   where that is inconclusive too — sets the not-posed flag, and carries every speaking source and
+   its outcome forward for Step 8.
 4. **Form the current values.** Take the "current values" overview (key → currently recorded
    `raw` value) from `data.values`, which keeps every known and unknown key, and retain
    `data.source.language` as the envelope language and `data.source.rows` (each table row's exact
@@ -1048,10 +1004,10 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      `docs/adr/effective-flow-project-setup.md`, a path this run did not resolve and where a
      different project setup ADR can already sit — one the locator passed over because its
      configuration envelope is missing, or one it never looked for because a marker pointed
-     straight at the legacy path. Run `project-adr-convention`'s unconditional pre-write existence
-     check on the switched target before writing it, and where a file already sits there, stop and
-     report both paths — the resolved legacy-slug ADR and the occupied current-slug target —
-     rather than overwriting a different project setup ADR. The no-rename rule
+     straight at the legacy path. Check the switched target per `project-adr-convention`, "No
+     rename on the convention axis", never through `adr-allocate`: where a file already sits there,
+     stop and report both paths — the resolved legacy-slug ADR and the occupied current-slug target
+     — rather than overwriting a different project setup ADR. The no-rename rule
      decides only which path is written, not whether writing it is safe: that existing path stays
      subject to `project-adr-convention`'s symlink hard stop and its physical containment check,
      evaluated in that order. A symlink at that path is never a write target — report the path and
@@ -1178,9 +1134,7 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      not write the marker.
    - Only after target-state validation passes, and only because the locator selected the
      retained transitional `<source-handle>`, invoke the loaded shared runtime-directory
-     migration prerequisite before writing `configMigration.adr`. Apply “Runtime-state write
-     safety” immediately to every exact runtime target as required by that shared contract; do
-     not duplicate its source precedence, inventory, copy, memory-merge, lock, or marker logic.
+     migration prerequisite before writing `configMigration.adr`; do not duplicate its logic.
      A normal fresh setup with no selected transitional JSON source does not invoke this
      prerequisite and creates no `.effective-flow/` runtime footprint.
    - If the shared runtime-directory migration fails or remains incomplete, do not write
@@ -1189,17 +1143,12 @@ selected profile overlay → explicit chat-language choice`; the last two overla
      convention-marker rollback used for failed untracking: roll back only this run's unchanged
      tracked writes and never overwrite a concurrent change. A later setup or cleanup run may
      resume the markerless runtime migration idempotently.
-   - After the shared runtime-directory migration succeeds, mark completion idempotently in
-     `.effective-flow/memory.json` under
-     `configMigration.adr` (`version` e.g. `config-to-adr-v1`, `appliedAt` timestamp) through the
-     loaded shared memory mutation contract: acquire its lock, re-read and validate memory,
-     deep-merge only `configMigration.adr`, preserve every unrelated top-level field, nested field, sibling
-     `configMigration` state, and unknown field, and atomically replace the file. If this marker is
-     already set, do not migrate again. A lock, validation, or replacement failure leaves the
-     prior memory file intact and is reported without claiming migration completion. Never write
-     or update the marker after invalid JSON, failed required untracking, or failed target-state
-     validation; the pre-write marker check above owns idempotency for an already-complete
-     migration.
+   - After the shared runtime-directory migration succeeds, set `configMigration.adr` with
+     `memory set-marker`, `"marker":"config-migration-adr"` and `"version":"config-to-adr-v1"`
+     (“Memory operations”). A blocked or failed call is reported without claiming migration
+     completion. Never set the marker after invalid JSON, failed required untracking, or failed
+     target-state validation; the pre-write marker check above owns idempotency for an
+     already-complete migration.
    - **Record this item's outcome and carry it forward**, the way item 5 carries its `CLAUDE.md`
      observation: `not applicable` where the locator selected no transitional source, `complete`
      only where every step above succeeded and `configMigration.adr` was written, and `incomplete`
@@ -1374,13 +1323,23 @@ runtime state. Never move local plans or concepts: list every file below `.effec
 `.effective-flow/concept/` by path so the user can decide whether to move them into the tracked
 `plan.dir` and `concept.dir`.
 
+### Allowlist step (Claude Code only)
+
+Runs after the Step 6 write in every mode but Targeted, and as the whole Allowlist mode. This
+installation is the `portable` build: `claude` always offers the step, `codex` never, and
+`portable` only when you judge from the running environment that this session runs in Claude Code.
+Otherwise say in one sentence that the step is specific to Claude Code and write nothing.
+
+**Load on demand:** Read `shared/setup-allowlist.md`, when the allowlist step is offered: the build is `claude`, or `portable` running in Claude Code.
+
 ### Step 7: Session rename capability (optional)
 
 Hosts derive a session title from the first message, so a run is listed under a name that predates
 its subject. Where the running harness has an established rename path, Effective Flow applies the
 better title itself instead of suggesting it; where it has none, every run keeps printing a
-suggestion the user applies by hand. Both harnesses that have such a path — the ChatGPT Desktop Codex
-tab and Claude Code — expose it directly, so neither needs anything installed or configured.
+suggestion the user applies by hand. T3 Code, the ChatGPT Desktop Codex tab, and Claude Code expose
+their paths directly, so none needs anything installed or configured. T3 Code applies regardless of
+whether its provider is Codex or Claude; plain Codex CLI remains suggestion-only.
 
 This step is **not** part of the configuration. It declares no key, belongs to none of the Step 5
 blocks, and adds nothing to the Step 6 write. It explains the detected path and proves it once; it
@@ -1389,20 +1348,22 @@ harness configuration. Its one announced side effect outside this repository is 
 probe's: with the user's go-ahead it renames the current session once, because a rename nobody can
 see proves nothing.
 
-If the configuration write completed, the mode is not Targeted, and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check this harness's established session-rename path and prove it once?**
+If the configuration write completed, the mode is not Targeted or Allowlist, and the run may prepare the harness's session-rename capability: Ask the user: **Should setup check this harness's established session-rename path and prove it once?**
 - Yes -- Detect the harness, explain its established path, and prove it once by renaming this session
 - No -- Skip only this visible capability check; later runs keep following their host's path
 
-For "No", note that setup skips only this visible check and continue with Step 8. On either harness
-with an established path, later eligible runs still attempt the native operation themselves and fall
-back independently from each call's result, so skipping the probe withholds the proof rather than
-the capability.
+For "No", note that setup skips only this visible check and continue with Step 8. On any identified
+host with an established path, later eligible runs still attempt the native operation themselves and
+fall back independently from each call's result, so skipping the probe withholds the proof rather than
+the capability. T3 Code may replace an existing title, including one chosen manually; do not claim a
+title-ownership check that the host did not report.
 
 **Load on demand:** Read `shared/setup-rename-probe.md`, when the Step 7 `Rename path` question was answered `Yes`.
 
 ### Step 8: Summary
 
-Report to the user (a Targeted run reports only the summary items of `setup-targeted-change`):
+Report to the user (a Targeted run reports only the summary items of `setup-targeted-change`, an
+Allowlist run only those of `setup-allowlist`):
 
 - the resolved visibility; in hidden mode, instead of the `.gitignore`, ADR, marker, convention, and
   `CLAUDE.md` bullets below: the absolute `info/exclude` path and whether its `.effective-flow/` line
@@ -1427,7 +1388,7 @@ Report to the user (a Targeted run reports only the summary items of `setup-targ
   `mergeGate.conflictResolution`,
   `mergeGate.requireAllChecks`, `mergeGate.checkWaitMinutes`, `mergeGate.maxRounds`,
   `mergeGate.botWaitMinutes`, `mergeGate.bots` with the trigger text and, where set, the check
-  context recorded per login, and `delivery.mergeMethod`. Name the gate keys separately from
+  context recorded per login, `mergeGate.botAccounts`, and `delivery.mergeMethod`. Name the gate keys separately from
   `delivery.prReview` so the two are not read as one setting
 - whether two `mergeGate.bots` entries were collapsed into one reviewer: which login was kept, which
   redundant list member and rows were removed, and, for every key the two disagreed about, both
@@ -1456,10 +1417,15 @@ Report to the user (a Targeted run reports only the summary items of `setup-targ
   from the flag carried in `<adr-convention>`, together with every speaking source and its outcome
   and the tier that then decided — or inconclusive evidence that made the Effective Flow default
   apply. Name file paths and classified outcomes only, never verbatim prose from a declaring source
-- for the capability step of Step 7: the detected harness, which path it followed, that its native
-  path was explained rather than installed, whether the verification ran and with which concrete
-  result, and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. State that no
-  file above the repository root and no configuration key was changed by the step
+- for the capability step of Step 7: the detected host, which path it followed, that its native path
+  was explained rather than installed, whether the verification ran and with which concrete result,
+  and — on ChatGPT Desktop — whether stale-hook removal guidance was relevant. For T3 Code, only
+  after an actual invocation state that the operation targeted this calling thread and omitted
+  `threadId` and `environmentId`; if declined or unavailable before invocation, report that no call
+  occurred. Explain that a call could replace an existing title, including one chosen manually.
+  State that no file above the repository root and no configuration key was changed by the step
+- for the allowlist step: the summary items of `setup-allowlist`, or the one sentence that the
+  step is specific to Claude Code
 - for Step 6 item 7: which `CLAUDE.md` state item 5 recorded and what followed from it — the file
   created with the single line `@AGENTS.md`, a pure prose pointer replaced by it with the replaced
   line named, the pointer left by an earlier half-completed conversion replaced by it with the
@@ -1490,7 +1456,8 @@ with nothing staged matches no row and emits nothing.
 ## Rules
 
 - In hidden mode, change only the `.effective-flow/` line in the Git common directory's
-  `info/exclude` and the local `.effective-flow/project-setup.md` (and, on a hidden → standard switch,
+  `info/exclude` (plus the allowlist step's `.claude/settings.local.json` line there, after its
+  explicit confirmation) and the local `.effective-flow/project-setup.md` (and, on a hidden → standard switch,
   delete that file only after its fence). Never write or edit `.gitignore`, a tracked ADR,
   `AGENTS.md`, or `CLAUDE.md` in hidden mode, and never write `visibility | hidden` into a tracked
   file.
@@ -1498,12 +1465,16 @@ with nothing staged matches no row and emits nothing.
   the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
   Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
-  runtime-directory migration; no further setup steps like deployment or Git hooks.
+  runtime-directory migration, plus `.claude/settings.local.json` and its ignore line, each written
+  only by the allowlist step after its own explicit confirmation; no further setup steps like deployment or
+  Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
-  configuration key. Both paths call their own host's native title operation directly — the Desktop
-  path its current-task title operation, the Claude Code path its session-title operation with the
-  sentinel `"self"`. Neither creates a runtime target or invokes a write-safety guard. Either probe
-  renames the current session once, with the user's go-ahead and its own fixed probe title.
+  configuration key. Each identified host calls its own native title operation directly — T3 Code
+  uses `mcp__t3_code.t3_thread_update` with `action: rename` and no `threadId` or `environmentId`, the
+  Desktop path its current-task operation, and Claude Code its session-title operation with the
+  sentinel `"self"`. None creates a runtime target or invokes a write-safety guard. Each probe
+  renames the current session once, with the user's go-ahead and its own fixed probe title; report
+  only the actual host result.
 - Never overwrite existing config values and unknown keys without asking.
 - A Targeted run writes only what `setup-targeted-change` allows.
 - Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge

@@ -68,9 +68,15 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker).
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
@@ -83,11 +89,11 @@ private, ignored runtime state, and no `config.json` is a configuration source.
 
 ### Config locator (resolution call)
 
-Before the first configuration-dependent step, run
-`node <skill-root>/scripts/config-resolve.mjs resolve` with one JSON object on standard input:
-`cwd` (the checkout this run works in), `tool` (this tool's own name, e.g. `refactor`; an internal
-source such as `apply-plan` passes its own), and `mode` for `iterate` (`local`/`pr`) and
-`apply-review` (`local`/`remote`). The script runs the whole config locator (steps 0–4), decodes
+Before the first configuration-dependent step, make the literal call
+`node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd":"<checkout>","tool":"<tool>"}'`:
+`cwd` the absolute checkout this run works in, `tool` this tool's own name (e.g. `refactor`; an
+internal source such as `apply-plan` passes its own), plus `mode` for `iterate` (`local`/`pr`) and
+`apply-review` (`local`/`remote`). Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The script runs the whole config locator (steps 0–4), decodes
 the table, forces the hidden-mode values, and classifies retired rows; never read the ADR by hand.
 Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line
 `{ ok, operation, data }` stops the run before that step, reporting the cause. Exit 3
@@ -192,11 +198,10 @@ Stage A needs no tracker I/O and is available to every skill. Determine the
 type in this order (first matching rule wins):
 
 1. **Empty/no argument** → `none`.
-2. **Plan reference** → `plan`, if the argument resolves to exactly one file under
-   `<plan.dir>/` or `<plan.dir>/archive/`. Permitted forms as in
-   `plan-reference-routing`: full path (`<plan.dir>/YYYY-MM-DD-…md`),
-   date-slug file name (`YYYY-MM-DD-…md`), legacy number without path (`NNNN`, resolved primarily
-   via the H1) or — as a fallback — the title slug.
+2. **Plan reference** → `plan`, if `node <skill-root>/scripts/effective-flow-mechanics.mjs
+plan-reference-resolve` (stdin JSON: `cwd` the root holding `<plan.dir>`, `planDir`, `reference`
+   the argument) returns `resolved`; `outside-plan-dir`, `not-found` or `ambiguous` → next rule. A
+   nonzero exit, unparsable envelope or `ok: false` (`UNSAFE_PATH` included) stops (fail closed).
 3. **Review report** → `review-report`, if the argument resolves to exactly one `*.md` file
    below absolute `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Resolve a filename-only
    argument directly below that directory; resolve a project-relative
@@ -543,3 +548,5 @@ The complete external contract — connection discovery with its fail-closed rul
 - Do not use a heuristic "newest source" when multiple candidates exist.
 - If the source type is unclear or ambiguous, ask instead of guessing.
 - Output paths relative to the project root.
+
+Apply keeps the existing overview through returning apply-issues/apply-review adapters; apply-plan transfers it to its target. Eligible cross-agent adapters use their own immediate-parent progress context under `shared/subagent-progress.md`; same-session adapters integrate directly. Never forward downstream headers or infer reporting support from an adapter name.

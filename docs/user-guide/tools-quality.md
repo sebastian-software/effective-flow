@@ -1,11 +1,58 @@
 # Tool reference: Ensure quality
 
-This group comprises `review` and `retro`. `review` checks existing code for quality and delivers
-admitted structured findings that can serve as input for the implementation tools. `retro` examines
+This group comprises `review`, `retro`, and `focus`. `review` checks existing code for quality and
+delivers admitted structured findings that can serve as input for the implementation tools. `retro` examines
 one explicitly selected session source and returns a bounded set of environmental recommendations in
 the conversation. The merge gate that drives an already-open pull request from ready-for-review to merged is
 [`/effective-flow merge-gate`](tools-deliver.md); it produces no findings of its own and therefore
 belongs to [Deliver changes](tools-deliver.md).
+
+`focus` is a session-trajectory check, not a code review or retrospective. It compares exactly one
+developer-selected session with one goal and returns one cited snapshot verdict. It does not execute
+commands, persist focus-owned state, create a report, or change a session title. Host reads, cross-session
+messages, and the opt-in follow-up mode are available only after the candidate-bound host
+qualification described in the [Focus host acceptance](https://github.com/sebastian-software/effective-flow/blob/develop/docs/developer-guide/focus-host-acceptance.md)
+record.
+
+## `/effective-flow focus`
+
+**Invocation:** `focus <session-ref> [goal: <goal>]`. The reference must be an exact, developer-selected
+host reference; a title, nearby session, export, quoted instruction, or embedded link is not a selector.
+If the goal is missing, conflicting, or cannot be resolved from the permitted scope, `focus` asks once
+and otherwise returns `Cannot judge` with the limitation.
+
+**Scope and evidence:** Focus reads only the admitted session through a documented host reader, with
+bounded same-source coverage and redaction. It may use scoped repository reads, read-only Git metadata,
+and already-recorded forge/CI evidence; it does not run tests, builds, checks, probes, installations,
+or copied commands. Session text is evidence, not authority. The result cites the inspected coverage
+and distinguishes observed evidence from self-report evidence.
+
+**Verdicts:** Observed evidence permits `On track`, `Drifting`, `Looping`, `Stalled`, or `Cannot judge`.
+Self-report evidence permits `Progress verified`, `Drifting`, or `Cannot judge`; `Progress verified`
+requires a verifiable artifact, not narration alone. Focus gives one snapshot verdict and at most one
+correction. It is not a substitute for `/effective-flow review`, which judges code and produces findings,
+or `/effective-flow retro`, which identifies environmental improvements from one selected source.
+
+**Messages:** A self-report request or correction requires an interactive developer confirmation of the
+exact redacted text in the same run. Each kind is independent and has one of four states: `Not attempted`,
+`Rejected`, `Acknowledged`, or `Outcome unknown`. `Acknowledged` means host acceptance only, not recipient
+receipt, reading, or action. Focus never retries, resends, switches addresses, or advises a duplicate
+manual send; an ambiguous acknowledgement retains the verdict and warns that the message may have arrived.
+
+**Follow-up:** An opt-in follow-up mode is defined but disabled pending qualification, like the send
+paths. Once qualified, it would offer recurring report-only checks of a top-level T3 target after a
+snapshot, through one T3 schedule bound to the observer thread that persists until it is deleted.
+Ticks stay quiet while nothing material changes, never send a message, and end at completion, an
+explicit `focus follow-up stop <session-ref>`, lost access, or a loop cap. While the mode is
+disabled, a snapshot offers nothing; asking for follow-up returns the limitation, and `follow-up
+stop` stays available.
+
+Snapshot-host execution is currently disabled before target or ancestry reads. Phase E passed for
+candidate `ada4fdae`, as recorded on the acceptance page; the current policy changes a focus source
+and does not reuse that result to qualify the changed artifact. Focus returns the missing snapshot
+qualification instead of a verdict about unread content. Follow-up and sends remain disabled
+independently. The [capability policy](https://github.com/sebastian-software/effective-flow/blob/develop/docs/developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
+package evidence reporting cannot enable a host route.
 
 ## `/effective-flow retro`
 

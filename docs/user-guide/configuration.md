@@ -226,6 +226,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | mergeGate.maxRounds                  | 10                         |
 | mergeGate.botWaitMinutes             | 10                         |
 | mergeGate.bots                       | (empty)                    |
+| mergeGate.botAccounts                | (empty)                    |
 | language.project                     | en                         |
 | language.source                      | en                         |
 | language.documentation.user          | en                         |
@@ -395,6 +396,7 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                    |
 | `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale              |
 | `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                         |
+| `botAccounts`          | Comma list of logins                | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block   |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
@@ -406,6 +408,25 @@ reported but does not block. A counted check passes when it completed as `SUCCES
 `NEUTRAL`, as GitHub counts it; any other conclusion blocks. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
+
+**`mergeGate.botAccounts` declares automated accounts that are not reviewers.** Some coverage and
+report bots are typed by the forge as ordinary users, for example Codecov's `codecov-commenter`. The
+human-comment guard then counts their top-level comment as a human one, and since such a comment has
+no resolved state, it blocks the merge until someone deletes it. List the login and the gate treats
+its top-level comments and review-thread items as bot comments:
+
+```md
+| mergeGate.botAccounts | codecov-commenter |
+```
+
+The gate never triggers or waits for these accounts, which is what separates the key from
+`mergeGate.bots`. The list is matched exactly against user-typed accounts, so list the bare login
+exactly as the run reports it; a `foo[bot]` entry never takes effect. The key does not cover a
+submitted review: a changes-requested review from a listed login still counts. Use it only for
+automated accounts, never to silence a person. When the human-comment guard blocks a run, its
+report names each login whose comment counted and offers
+`/effective-flow setup add <login> to mergeGate.botAccounts`, right only for an automated account; a
+person's comment must be answered or resolved instead.
 
 **`mergeGate.conflictResolution` decides what happens when the head branch conflicts with its base.**
 The gate already brings a branch that has merely fallen _behind_ its base forward with a merge

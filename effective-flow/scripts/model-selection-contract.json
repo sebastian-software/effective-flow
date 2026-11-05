@@ -93,7 +93,27 @@
       ]
     },
     {
-      "id": "build/initial-implementation",
+      "id": "build/delegated-run",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "build-delegated-run/nested-spawn-probe",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "build-delegated-run/initial-implementation",
       "downAllowed": false,
       "clauses": [
         {
@@ -119,7 +139,7 @@
       ]
     },
     {
-      "id": "build/unit-tests",
+      "id": "build-delegated-run/unit-tests",
       "downAllowed": false,
       "clauses": [
         {
@@ -129,7 +149,7 @@
       ]
     },
     {
-      "id": "build/e2e-tests",
+      "id": "build-delegated-run/e2e-tests",
       "downAllowed": false,
       "clauses": [
         {
@@ -139,7 +159,7 @@
       ]
     },
     {
-      "id": "build/validation",
+      "id": "build-delegated-run/validation",
       "downAllowed": false,
       "clauses": [
         {
@@ -149,7 +169,7 @@
       ]
     },
     {
-      "id": "build/review",
+      "id": "build-delegated-run/review",
       "downAllowed": false,
       "clauses": [
         {
@@ -171,7 +191,17 @@
       ]
     },
     {
-      "id": "build/final-validation",
+      "id": "build-delegated-run/final-validation",
+      "downAllowed": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "build-delegated-run/completion-transform-check",
       "downAllowed": false,
       "clauses": [
         {
@@ -556,6 +586,16 @@
     },
     {
       "id": "retro/session-analysis",
+      "downAllowed": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "focus/session-analysis",
       "downAllowed": true,
       "clauses": [
         {

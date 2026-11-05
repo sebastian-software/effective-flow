@@ -38,8 +38,8 @@ the common Step 6 confirmation succeeds.
 
 Directly before the Profile ask, classify the `origin` remote read-only as the evidence its scores
 rest on. Invoke the shipped remote helper's read-only `repository-resolve` operation as
-`node <skill-root>/scripts/remote-tracker.mjs repository-resolve` with `{}` on standard input, run
-from the invocation directory without a `cwd` field. This is a deliberate pre-verification exception
+the literal call `node <skill-root>/scripts/remote-tracker.mjs repository-resolve <<< '{}'`, run
+from the invocation directory without a `cwd` field. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. This is a deliberate pre-verification exception
 to the remote helper rule that `cwd` is the verified `RUNTIME_STATE_ROOT`: the operation is
 read-only and runs before that root is verified. Classify its result as no Git repository
 (`NOT_GIT_REPOSITORY`; every score reason then says setup will stop at the preflight), none

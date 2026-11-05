@@ -79,13 +79,19 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 ## Delegation mandate
 
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent; when it has confirmed a materially useful intermediate result for that parent and necessary domain work remains, it sends one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words). Keep at most one per logical handoff. Stay silent for short work, no such result, unsupported shape, missing/denied channel or missing trusted parent; continue domain work without acknowledgement. Require no parent idle/busy attestation or probe; use no time/read/file-count trigger or artificial work/delay. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
@@ -96,7 +102,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker).
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
@@ -109,11 +115,11 @@ private, ignored runtime state, and no `config.json` is a configuration source.
 
 ### Config locator (resolution call)
 
-Before the first configuration-dependent step, run
-`node <skill-root>/scripts/config-resolve.mjs resolve` with one JSON object on standard input:
-`cwd` (the checkout this run works in), `tool` (this tool's own name, e.g. `refactor`; an internal
-source such as `apply-plan` passes its own), and `mode` for `iterate` (`local`/`pr`) and
-`apply-review` (`local`/`remote`). The script runs the whole config locator (steps 0–4), decodes
+Before the first configuration-dependent step, make the literal call
+`node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd":"<checkout>","tool":"<tool>"}'`:
+`cwd` the absolute checkout this run works in, `tool` this tool's own name (e.g. `refactor`; an
+internal source such as `apply-plan` passes its own), plus `mode` for `iterate` (`local`/`pr`) and
+`apply-review` (`local`/`remote`). Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The script runs the whole config locator (steps 0–4), decodes
 the table, forces the hidden-mode values, and classifies retired rows; never read the ADR by hand.
 Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line
 `{ ok, operation, data }` stops the run before that step, reporting the cause. Exit 3
@@ -367,6 +373,10 @@ is never reassigned to another child slot. Every English child body carries exac
 
 ## Workflow
 
+Returning issue-plan review keeps this run's overview; eligible cross-agent context follows
+`shared/subagent-progress.md` and each hop's own parent. The canonical comment receipt, caller
+authority, body hash and same-artifact review rules remain unchanged.
+
 ### Phase 1: Tracker setup & collection
 
 1. Resolve the tracker target according to "Tracker target". On the forge target, determine the host and CLI and check availability/authentication according to "Remote helper contract"; precondition there is a Git repository with an `origin` remote. On an external target, establish exactly one connection per the loaded `tracker-target` contract and verify the capabilities this skill always needs — read issue and comments, list issues by classification, create a comment, update a comment by its ID, and add/remove a classification value. External decomposition additionally requires the complete native-container mechanism — native-child listing plus writable native sub-item completion — and atomic create-under-parent. Discover all three guarantees before proposing a split; when one is unavailable, keep ordinary comment-based planning available. If an always-required capability is missing: report clearly and abort without side effects.
@@ -541,6 +551,10 @@ escalation and user options follow. `ABORT` is terminal for the step.
 **Load on demand:** Read `shared/judgment-draft-snapshot.md`, when issue mode – the judged artifact is a remote planning comment.
 
 **Load on demand:** Read `shared/judgment-inline-fallback.md`, when the judgment spawn is unavailable, declined, aborted, or escalated past Retry 1, or the judged artifact already holds a `Record (` / `Vermerk (` line or a `not performed` / `nicht durchgeführt` open point.
+
+For eligible longer analysis, the orchestrator supplies the delegation mandate's compact progress
+handoff; the leaf never loads the detailed contract. Keep checkpoints on the separate parent
+channel and preserve this analysis's exact terminal output and read-only authority.
 
 ### Phase 2: Planning per issue (interactive)
 

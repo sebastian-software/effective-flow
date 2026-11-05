@@ -80,6 +80,12 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 **Load on demand:** Read `shared/runtime-state-safety.md`, when worktree lifecycle state will be read or mutated, a stale diff baseline will be discarded, or any confirmed legacy copy or removal, runtime migration, memory, or tracker-marker mutation is imminent.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
@@ -334,11 +340,11 @@ private, ignored runtime state, and no `config.json` is a configuration source.
 
 ### Config locator (resolution call)
 
-Before the first configuration-dependent step, run
-`node <skill-root>/scripts/config-resolve.mjs resolve` with one JSON object on standard input:
-`cwd` (the checkout this run works in), `tool` (this tool's own name, e.g. `refactor`; an internal
-source such as `apply-plan` passes its own), and `mode` for `iterate` (`local`/`pr`) and
-`apply-review` (`local`/`remote`). The script runs the whole config locator (steps 0–4), decodes
+Before the first configuration-dependent step, make the literal call
+`node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd":"<checkout>","tool":"<tool>"}'`:
+`cwd` the absolute checkout this run works in, `tool` this tool's own name (e.g. `refactor`; an
+internal source such as `apply-plan` passes its own), plus `mode` for `iterate` (`local`/`pr`) and
+`apply-review` (`local`/`remote`). Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The script runs the whole config locator (steps 0–4), decodes
 the table, forces the hidden-mode values, and classifies retired rows; never read the ADR by hand.
 Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line
 `{ ok, operation, data }` stops the run before that step, reporting the cause. Exit 3

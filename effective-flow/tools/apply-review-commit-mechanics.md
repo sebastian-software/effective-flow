@@ -44,22 +44,88 @@ If the commit strategy **Individually** was chosen, a global commit mutex applie
 
 Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
 
+**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
+
+```text
+node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
+```
+
+with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
+`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
+mutation.
+
+- Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
+  reached (a symlinked install path included, never resolved through `realpath`), and spell it out
+  literally as an absolute path. Never use a shell variable, `$PWD`, `~`, command substitution,
+  `cd … &&`, an `echo … |` or `printf … |` pipe, a heredoc, a loop or function, a compound
+  command joined by `;`, `&&` or `||`, a trailing `echo "exit=$?"` or any other trailing command,
+  or `| grep` or any other pipe on the output. Read the exit status and the envelope from the tool
+  result itself.
+- Every JSON value is literal too: `cwd`, where sent, is the literal absolute path its owning
+  contract names (`RUNTIME_STATE_ROOT` for `effective-flow-state.mjs`), never `$PWD`. Write a `'`
+  inside the JSON as `'\''`.
+- The Claude Code allow rule matches only this literal shape, so any other shape prompts for
+  permission on every call. The rule binds every harness, since it is also the auditable shape.
+
 Mutex convention:
 
-- Lock handle: absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock`. Every concurrent delegation
-  for the repository uses this one retained main-checkout handle, even when its
-  `EXECUTION_ROOT` is linked or native.
-- If the runtime directory is missing, from `RUNTIME_STATE_ROOT` apply “Runtime-state write
-  safety” to that exact parent directory immediately before its `mkdir`. Immediately before
-  every acquisition attempt, from the same root apply the guard again to the exact
-  repository-relative lock target `.effective-flow/apply-review-commit.lock`. Do not create or
-  remove a lock when the relevant guard blocks.
-- Lock acquisition: atomically via `mkdir <absolute-lock-handle>`.
-- Lock content: after a successful acquisition, write a short `owner` file below that absolute
-  lock handle, with finding ID, component and timestamp.
-- Lock release: delete only the lock you acquired yourself, after a commit success, commit abort or error handling.
-- If the lock already exists: wait and retry. If the lock clearly seems orphaned, ask the user before removing it.
+- Lock: the helper's `apply-review-commit` lock at the retained absolute
+  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle. Every concurrent
+  delegation for the repository uses this one main-checkout lock, even when its `EXECUTION_ROOT`
+  is linked or native. Each step is one call through the absolute helper path handed over by
+  `apply-review`, with `cwd` set to `RUNTIME_STATE_ROOT`, in the runtime-state helper call shape above; the helper
+  applies the runtime-state guard itself:
+
+  ```text
+  node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"apply-review-commit","owner":{"workflow":"apply-review","runId":"<runId>","purpose":"finding","findingId":"<finding ID>","component":"<component>"}}'
+  ```
+
+  A finding commit passes `purpose: "finding"` with its finding ID and component; the Phase 7
+  final-validation commit passes `purpose: "final-validation"`. Retain `result.owner.token`.
+  Exit 4 is an outcome handled below; any other nonzero exit or `error` envelope ends the finding
+  with `ABORT` without touching the index.
+
+**Commit-lock waiting and orphans** (`iterate-commit`, `apply-review-commit`). A unit is one
+`iterate` item or one `apply-review` finding; its delegation is the worker the orchestrator
+started for it, and an inline unit is its own delegation. For `iterate`, "re-invoke `lock acquire`"
+and "the commit critical section" mean the unchanged `commit create` call, whose `LOCK_HELD`
+carries the same owner and identity details as `lock acquire`.
+
+- **Ownership check:** immediately before `git commit`, run `lock inspect` and require a `valid`
+  owner whose token equals the retained token. Otherwise ownership is lost: do not commit,
+  unstage only this unit's own staging, and fail the unit closed. This bullet binds the prose
+  sequences only, `apply-review`'s and `iterate`'s `HOOKS_UNTRUSTED` fallback; `commit create`
+  performs both steps itself.
+- **Bounded worker wait:** on `LOCK_HELD` the worker re-invokes `lock acquire` unchanged. After
+  three consecutive `LOCK_HELD` results with an unchanged owner and identity it stops waiting,
+  leaves its edits unstaged, and returns the diagnostics (owner, identity, lock path) to the
+  orchestrator. A worker cannot know whether another delegation is still active, so it never
+  waits beyond that, never asks the user, and never breaks a lock.
+- **Sibling rule:** only the orchestrator knows which delegations are active. While the owner
+  `runId` equals this run's `runId` and the owning delegation is still active, it re-dispatches
+  the waiting unit's commit critical section only after that owning delegation has returned,
+  once per returned owner, and never takes the orphan path; a re-dispatch that meets another
+  active sibling owner waits for that one's return the same way, so the re-dispatches are bounded
+  by the run's delegations. A re-dispatched section keeps the unit's original `delegation` value
+  `<runId>/<n>`. Once the orchestrator holds that delegation's result and its lock remains, the lock
+  counts as foreign.
+- **Foreign owner:** the orchestrator only reports the owner to the user, with no break
+  suggestion. Age never counts. An apparent orphan is an owner `missing`, `invalid` or
+  `oversized`, or one the user identifies as stale; only then, in a gated run, it runs
+  `lock inspect`, obtains explicit user confirmation, and runs `lock break` with the observed
+  token, or the identity plus owner digest (`ownerSize` for an `oversized` owner). A relayed or
+  non-interactive run fails closed with the diagnostics.
+- **`BREAK_MISMATCH`** (`changed-before-removal` included) removed nothing. The orchestrator
+  re-reads the lock once with `lock inspect`: a sibling owner falls under the sibling rule, any
+  other is reported to the user as foreign. No second break runs without a fresh confirmation.
+- **After a confirmed break,** the orchestrator re-dispatches that unit's commit critical section
+  once; its edits are still unstaged in the tree.
+- **Tombstones:** a `leftoverTombstone` in a release or break result (the lock is free), or a
+  `WRITE_FAILED` naming a tombstone path, is reported to the user with that path.
+
+- Release on every commit success, commit abort, and error path with `lock release`
+  (`{cwd, lock, token}`). `NOT_HELD` or `NOT_OWNER` is reported as lost ownership, changes
+  nothing, and fails the finding closed.
 
 Critical section under the lock:
 

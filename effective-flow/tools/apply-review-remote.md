@@ -36,7 +36,7 @@ read and stay on the conversation language.
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker).
 
 ## Issue-tracker integration (remote mode)
 
@@ -372,3 +372,5 @@ incomplete until merge reconciliation. `wontfix` findings keep their existing de
 Final validation and summary as in local mode; the summary additionally names the resolved tracker
 target, direct finding references, created PRs, any optional legacy container mechanism/epic, and
 findings retained for post-merge reconciliation.
+
+Returning per-finding implementation, PR and review adapters retain the caller's overview. Eligible cross-agent progress uses each hop's own immediate-parent context under `shared/subagent-progress.md`; same-session calls integrate directly. Preserve failed/unassessed outcomes, roots, receipts and terminal joins.

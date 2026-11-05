@@ -220,6 +220,16 @@ says nothing once several runs are open at the same time. Two things help:
     titled `Effective Flow setup check`, but ordinary Desktop runs need no setup. The app does not
     expose a reliable manual-title ownership check, so a later Effective Flow run may replace a
     title you set manually.
+  - In **T3 Code**, the host is selected before the model provider or harness, so the same path
+    applies whether T3 Code is running Codex or Claude. Effective Flow renames the current thread
+    directly without supplying a thread or environment identifier; it does not list, search, or
+    discover another thread or alternate operation. A successful rename stays silent. If the host
+    denies, errors, or does not confirm the operation, the run prints the suggestion once and
+    continues without retrying or falling back to another host path. A reference that appears later
+    permits only the existing one further rename. Setup may run a consented visible probe titled
+    `Effective Flow setup check`; that result is not persisted, so ordinary T3 Code runs attempt
+    their own rename independently. The host does not provide a verified manual-title ownership
+    check, so a later run may replace an existing title, including one chosen manually.
   - On **Claude Code**, a run renames its own session directly, through the host's own
     session-management tool. It needs no second session, no hook and no setup step. The rename
     happens as soon as the title is fixed, so even a run you interrupt leaves the session renamed;
@@ -241,7 +251,7 @@ says nothing once several runs are open at the same time. Two things help:
 
 ## Choose a workflow topology
 
-Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex to choose one of
+Run `/effective-flow setup` in Claude Code or `$effective-flow setup` in Codex or T3 Code to choose one of
 three common topologies. The standard Profile flow asks only **Chat** and then **Profile** before
 its normal confirmation and any conditional safety questions:
 
@@ -305,7 +315,8 @@ For new functionality or a larger change, this is the usual three-step process:
    derived from the commits.
 
 In Codex the syntax is identical – only the prefix changes from `/effective-flow` to
-`$effective-flow`. The handoff there is thus `$effective-flow plan "<description of the task>"`
+`$effective-flow`. T3 Code uses `$effective-flow` too, regardless of the selected model or provider
+(including Claude). The handoff there is thus `$effective-flow plan "<description of the task>"`
 followed by `$effective-flow build docs/plan/2026-07-17-user-login.md`.
 
 Details on worktree, delivery branch, and the three completion types are in

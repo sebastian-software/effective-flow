@@ -1,8 +1,8 @@
 // Sender-side builder and validator for the message `merge-gate` hands to `iterate`.
 //
 // `build` turns structured input into the canonical envelope (six control lines, the optional
-// approval line, an optional CI-repair instruction, the boundary token, the manifest, the delimiter,
-// the body spans), checks
+// progress and approval lines, an optional CI-repair instruction, the boundary token, the manifest,
+// the delimiter, the body spans), checks
 // its own output with the same structural validator `validate` uses, and writes it to a fresh file
 // below `<cwd>/.effective-flow/merge-gate/` together with a snapshot of the expected structure.
 // `validate` re-reads that file, binds it to the digest `build` returned, and re-runs the text-only
@@ -18,7 +18,13 @@ import { constants as fsConstants } from 'node:fs';
 import { lstat, mkdir, open, realpath, stat, unlink } from 'node:fs/promises';
 import path from 'node:path';
 
-export const DELEGATION_ENVELOPE_VERSION = 1;
+// Snapshot versions, not wire headers. Context-free output retains the legacy version.
+export const DELEGATION_ENVELOPE_VERSION = 2;
+export const LEGACY_DELEGATION_ENVELOPE_VERSION = 1;
+export const PROGRESS_KEYWORD = 'Progress context';
+export const PROGRESS_RECEIVER_MARKER = '<!-- progress-context-receiver:1 -->';
+const PROGRESS_CONTEXT_KEYS = Object.freeze(['version', 'parent', 'channel', 'dispatch']);
+const UNSAFE_PROGRESS_CHARS = /[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
 
 export const DELEGATION_ENVELOPE_OPERATIONS = Object.freeze(['build', 'validate']);
 
@@ -75,6 +81,7 @@ export const INSTRUCTION_FORBIDDEN_PREFIXES = Object.freeze([
   'Next steps:',
   'Run state:',
   'Language context:',
+  'Progress context:',
   'Approved outcomes:',
   'Item:',
   'Thread item:',
@@ -96,7 +103,8 @@ const LANGUAGE_VALUES = new Set(['de', 'en']);
 // verbatim; no derived field or check branches on it, and `iterate.md` owns its meaning.
 export const RUN_STATES = Object.freeze(['gated', 'non-interactive', 'relayed']);
 // The approval line: written only into the round that consumes a relayed `iterate-approval`
-// answer, directly after the six control lines, and never a seventh control line. It names every
+// answer, after the six control lines and optional progress context, and never a seventh required
+// control line. It names every
 // delegated item's minted identifier, in manifest order, with the outcome the user approved for it;
 // `iterate.md` applies it as that round's Phase 2.5 approval.
 export const APPROVAL_KEYWORD = 'Approved outcomes';
@@ -152,6 +160,35 @@ function fail(code, message, position) {
 
 // ---------------------------------------------------------------------------------------------
 // Input validation
+
+// JSON.parse alone discards duplicate keys. Scan only already-valid JSON tokens, tracking each
+// object's decoded keys (including escaped equivalents); quoted punctuation never changes depth.
+// The same boundary protects stdin, persisted snapshots and the progress line's JSON value.
+export function parseEnvelopeJson(text, label = 'input', code = 'INVALID_PAYLOAD') {
+  let parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    fail(code, `${label} is not valid JSON`);
+  }
+  const stack = [];
+  for (const [token] of text.matchAll(/"(?:\\.|[^"\\])*"|[{}\[\],]/g)) {
+    const current = stack.at(-1);
+    if (token === '{' || token === '[') {
+      stack.push(token === '{' ? { keys: new Set(), expectsKey: true } : null);
+    } else if (token === '}' || token === ']') {
+      stack.pop();
+    } else if (token === ',') {
+      if (current) current.expectsKey = true;
+    } else if (current?.expectsKey) {
+      const key = JSON.parse(token);
+      if (current.keys.has(key)) fail(code, `${label} contains a duplicate JSON key`);
+      current.keys.add(key);
+      current.expectsKey = false;
+    }
+  }
+  return parsed;
+}
 
 function requireObject(value, label) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -243,6 +280,45 @@ function normalizeLanguageContext(value) {
   return Object.fromEntries(LANGUAGE_CONTEXT_KEYS.map((key) => [key, value[key]]));
 }
 
+function normalizeProgressContext(value) {
+  requireObject(value, 'progressContext');
+  const keys = Object.keys(value);
+  if (
+    keys.length !== PROGRESS_CONTEXT_KEYS.length ||
+    keys.some((key) => !PROGRESS_CONTEXT_KEYS.includes(key))
+  ) {
+    fail(
+      'INVALID_PAYLOAD',
+      'progressContext must contain exactly version, parent, channel, dispatch',
+    );
+  }
+  if (value.version !== 1) fail('INVALID_PAYLOAD', 'progressContext.version must be 1');
+  const context = { version: 1 };
+  for (const key of PROGRESS_CONTEXT_KEYS.slice(1)) {
+    const field = requireNonEmptyString(value[key], `progressContext.${key}`);
+    if (UNSAFE_PROGRESS_CHARS.test(field)) {
+      fail(
+        'INVALID_PAYLOAD',
+        `progressContext.${key} contains a control, line or invisible character`,
+      );
+    }
+    context[key] = field;
+  }
+  return context;
+}
+
+function normalizeProgressReceiver(value) {
+  requireObject(value, 'progressReceiver');
+  if (Object.keys(value).length !== 1 || !Object.hasOwn(value, 'skillRoot')) {
+    fail('INVALID_PAYLOAD', 'progressReceiver must contain exactly skillRoot');
+  }
+  const skillRoot = requireNonEmptyString(value.skillRoot, 'progressReceiver.skillRoot');
+  if (!path.isAbsolute(skillRoot) || UNSAFE_PROGRESS_CHARS.test(skillRoot)) {
+    fail('INVALID_PAYLOAD', 'progressReceiver.skillRoot must be a safe absolute path');
+  }
+  return { skillRoot };
+}
+
 // `approvedOutcomes` maps every delegated item's durable key to its approved outcome. It is legal
 // only beside `runState: non-interactive`, because only the approval round carries it, and it must
 // name exactly the durable keys of the thread and body items, so no item travels unapproved and no
@@ -285,6 +361,12 @@ export function normalizeBuildInput(input) {
     fail('INVALID_PAYLOAD', 'runState must be gated, non-interactive or relayed');
   }
   const languageContext = normalizeLanguageContext(input.languageContext);
+  // Validate requested metadata before receiver selection: unsupported receivers never excuse
+  // malformed context, and no untrusted item, instruction or approval supplies these fields.
+  const progressContext =
+    input.progressContext === undefined ? null : normalizeProgressContext(input.progressContext);
+  const progressReceiver =
+    input.progressReceiver === undefined ? null : normalizeProgressReceiver(input.progressReceiver);
 
   const rawThreads = input.threadItems ?? [];
   const rawBodies = input.bodyItems ?? [];
@@ -356,6 +438,8 @@ export function normalizeBuildInput(input) {
     nextSteps: input.nextSteps,
     runState: input.runState,
     languageContext,
+    progressContext,
+    progressReceiver,
     threadItems,
     bodyItems,
     instruction,
@@ -421,6 +505,7 @@ function drawDistinct(randomBytes, collides) {
 function callerValues(normalized) {
   const values = [];
   if (normalized.instruction !== null) values.push(normalized.instruction);
+  if (normalized.progressContext !== null) values.push(JSON.stringify(normalized.progressContext));
   for (const item of normalized.threadItems) values.push(item.durableKey, item.threadId);
   for (const item of normalized.bodyItems) {
     values.push(item.durableKey, item.reviewId, item.author, item.url, item.text);
@@ -470,11 +555,14 @@ export function bodyItemLine(identifier, { reviewId, author, url }) {
   return `Item: ${identifier} | review=${reviewId} | author=${author} | url=${url}`;
 }
 
-// The entries above the delimiter, in order: six control lines, the approval line when the control
-// values carry one, the instruction (one entry, which may itself span lines), the token line, the
-// manifest lines.
+// The entries above the delimiter, in order: six control lines, optional progress context, the
+// approval line when the control values carry one, the instruction (one entry, which may itself
+// span lines), the token line, the manifest lines.
 export function headerLines({ controlValues, instruction, token, manifestLines }) {
   const lines = CONTROL_KEYWORDS.map((keyword) => `${keyword}: ${controlValues[keyword]}`);
+  if (controlValues[PROGRESS_KEYWORD] !== undefined) {
+    lines.push(`${PROGRESS_KEYWORD}: ${controlValues[PROGRESS_KEYWORD]}`);
+  }
   if (controlValues[APPROVAL_KEYWORD] !== undefined) {
     lines.push(`${APPROVAL_KEYWORD}: ${controlValues[APPROVAL_KEYWORD]}`);
   }
@@ -498,13 +586,34 @@ function requireSnapshot(snapshot) {
   const invalid = (detail) => fail('SNAPSHOT_INVALID', `snapshot is invalid: ${detail}`);
   if (!snapshot || typeof snapshot !== 'object' || Array.isArray(snapshot))
     invalid('not an object');
-  if (snapshot.version !== DELEGATION_ENVELOPE_VERSION) invalid('unsupported version');
+  if (
+    ![LEGACY_DELEGATION_ENVELOPE_VERSION, DELEGATION_ENVELOPE_VERSION].includes(snapshot.version)
+  ) {
+    invalid('unsupported version');
+  }
   if (typeof snapshot.token !== 'string' || !/^[A-Z0-9]{32,}$/.test(snapshot.token)) {
     invalid('token');
   }
   const controls = snapshot.controlValues;
   if (!controls || typeof controls !== 'object' || Array.isArray(controls)) {
     invalid('controlValues');
+  }
+  const allowedControls = [...CONTROL_KEYWORDS, PROGRESS_KEYWORD, APPROVAL_KEYWORD];
+  if (Object.keys(controls).some((key) => !allowedControls.includes(key)))
+    invalid('unknown controlValues key');
+  const progress = controls[PROGRESS_KEYWORD];
+  const progressCount = progress === undefined ? 0 : 1;
+  if ((snapshot.version === DELEGATION_ENVELOPE_VERSION) !== (progressCount === 1)) {
+    invalid('progress context and snapshot version disagree');
+  }
+  if (progress !== undefined) {
+    try {
+      if (typeof progress !== 'string') invalid(`controlValues.${PROGRESS_KEYWORD}`);
+      const context = normalizeProgressContext(parseEnvelopeJson(progress, 'progress context'));
+      if (JSON.stringify(context) !== progress) invalid('progress context is not canonical');
+    } catch {
+      invalid(`controlValues.${PROGRESS_KEYWORD}`);
+    }
   }
   for (const keyword of CONTROL_KEYWORDS) {
     if (typeof controls[keyword] !== 'string') invalid(`controlValues.${keyword}`);
@@ -559,11 +668,19 @@ function requireSnapshot(snapshot) {
     invalid('headerLines');
   }
   const instructionCount =
-    header.length - CONTROL_KEYWORDS.length - approvalCount - 1 - snapshot.manifestLines.length;
+    header.length -
+    CONTROL_KEYWORDS.length -
+    progressCount -
+    approvalCount -
+    1 -
+    snapshot.manifestLines.length;
   if (instructionCount !== 0 && instructionCount !== 1) invalid('headerLines length');
   const expected = headerLines({
     controlValues: controls,
-    instruction: instructionCount === 1 ? header[CONTROL_KEYWORDS.length + approvalCount] : null,
+    instruction:
+      instructionCount === 1
+        ? header[CONTROL_KEYWORDS.length + progressCount + approvalCount]
+        : null,
     token: snapshot.token,
     manifestLines: snapshot.manifestLines,
   });
@@ -635,6 +752,43 @@ export function validateStructure(text, snapshotInput) {
     if (value !== snapshot.controlValues[keyword]) {
       fail('CONTROL_LINE_MISMATCH', `control line "${keyword}:" differs from the snapshot`, {
         line,
+      });
+    }
+  }
+
+  // Progress is optional and advisory. Parse it only above the delimiter, reject duplicate JSON
+  // keys and malformed values, then bind its exact serialization to the verified snapshot.
+  const progressLines = [];
+  aboveLines.forEach((line, index) => {
+    const trimmed = line.trimStart();
+    if (trimmed.startsWith(`${PROGRESS_KEYWORD}:`)) {
+      progressLines.push({
+        line: index + 1,
+        value: trimmed.slice(PROGRESS_KEYWORD.length + 1).trim(),
+      });
+    }
+  });
+  if (progressLines.length > 1) {
+    fail('CONTROL_LINE_DUPLICATED', `"${PROGRESS_KEYWORD}:" appears more than once`, {
+      line: progressLines[1].line,
+    });
+  }
+  const expectedProgress = snapshot.controlValues[PROGRESS_KEYWORD];
+  if (expectedProgress !== undefined && progressLines.length === 0) {
+    fail('CONTROL_LINE_MISSING', `"${PROGRESS_KEYWORD}:" is missing above the delimiter`, {
+      line: delimiterLine,
+    });
+  }
+  if (progressLines.length === 1) {
+    const entry = progressLines[0];
+    try {
+      normalizeProgressContext(parseEnvelopeJson(entry.value, 'progress context'));
+    } catch {
+      fail('CONTROL_LINE_MISMATCH', `"${PROGRESS_KEYWORD}:" is malformed`, { line: entry.line });
+    }
+    if (entry.value !== expectedProgress) {
+      fail('CONTROL_LINE_MISMATCH', `"${PROGRESS_KEYWORD}:" differs from the snapshot`, {
+        line: entry.line,
       });
     }
   }
@@ -801,6 +955,47 @@ async function resolveCwd(cwd) {
   return canonical;
 }
 
+// The caller selects the trusted bundle root. Read its actual receiver before dispatch, never a
+// manifest or caller body. The marker establishes parsing support only, not host transport support.
+async function receiverSupportsProgress(receiver) {
+  if (receiver === null) return false;
+  try {
+    const root = await realpath(receiver.skillRoot);
+    if (!(await stat(root)).isDirectory()) return false;
+    const target = await realpath(path.join(root, 'tools', 'iterate.md'));
+    const relative = path.relative(root, target);
+    if (relative.startsWith(`..${path.sep}`) || relative === '..' || path.isAbsolute(relative))
+      return false;
+    const text = await readRegularFile(target, () => false);
+    // Fenced examples cannot declare receiver support. Match only an unquoted standalone marker;
+    // keep the small fence state across lines, including longer fences and either delimiter type.
+    let fence = null;
+    for (const line of splitLines(text)) {
+      const delimiter = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
+      if (fence !== null) {
+        if (
+          delimiter &&
+          delimiter[1][0] === fence.character &&
+          delimiter[1].length >= fence.length &&
+          /^[ \t]*$/.test(delimiter[2])
+        ) {
+          fence = null;
+        }
+        continue;
+      }
+      if (delimiter && !(delimiter[1][0] === '`' && delimiter[2].includes('`'))) {
+        fence = { character: delimiter[1][0], length: delimiter[1].length };
+      } else if (line === PROGRESS_RECEIVER_MARKER) {
+        return true;
+      }
+    }
+    return false;
+  } catch {
+    // Missing, unreadable, unsafe or legacy receivers get only the original header-free format.
+    return false;
+  }
+}
+
 // Verifies one runtime directory level: absent (created when `create` is set, non-recursively),
 // or a real directory. A symlink or any other file type is an unsafe target.
 async function ensureDirectory(directory, create) {
@@ -917,6 +1112,11 @@ export async function buildEnvelope(input, deps = {}) {
   const write = deps.writeContent ?? writeContent;
   const normalized = normalizeBuildInput(input);
   const root = await resolveCwd(normalized.cwd);
+  const progressContext =
+    normalized.progressContext !== null &&
+    (await receiverSupportsProgress(normalized.progressReceiver))
+      ? normalized.progressContext
+      : null;
 
   const violation =
     normalized.instruction === null ? null : findInstructionViolation(normalized.instruction);
@@ -979,6 +1179,7 @@ export async function buildEnvelope(input, deps = {}) {
     'Run state': normalized.runState,
     'Language context': languageContextValue(normalized.languageContext),
   };
+  if (progressContext !== null) controlValues[PROGRESS_KEYWORD] = JSON.stringify(progressContext);
   // Every approved item `build` refused is undelegated, so an approval that leaves no identifier
   // writes no line, exactly as a round without approved items writes none.
   if (normalized.approvedOutcomes !== null && identifiers.length > 0) {
@@ -997,7 +1198,8 @@ export async function buildEnvelope(input, deps = {}) {
     spans: accepted.map((item) => item.text),
   });
   const snapshot = {
-    version: DELEGATION_ENVELOPE_VERSION,
+    version:
+      progressContext === null ? LEGACY_DELEGATION_ENVELOPE_VERSION : DELEGATION_ENVELOPE_VERSION,
     token,
     controlValues,
     headerLines: headerLines({
@@ -1091,12 +1293,7 @@ export async function validateEnvelope(input) {
   const snapshotText = await readRegularFile(snapshotPath, () =>
     fail('SNAPSHOT_INVALID', 'the snapshot file is missing'),
   );
-  let snapshot;
-  try {
-    snapshot = JSON.parse(snapshotText);
-  } catch {
-    fail('SNAPSHOT_INVALID', 'the snapshot file is not valid JSON');
-  }
+  const snapshot = parseEnvelopeJson(snapshotText, 'snapshot file', 'SNAPSHOT_INVALID');
   const summary = validateStructure(text, snapshot);
   return { path: messagePath, digest, ...summary };
 }

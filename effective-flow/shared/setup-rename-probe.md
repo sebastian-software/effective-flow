@@ -2,12 +2,27 @@
 
 This fragment is loaded only when the Step 7 `Rename path` question was answered `Yes`.
 
-**Detect the harness** from the running environment first. Two harnesses have an established
-rename path today: the **ChatGPT Desktop Codex tab** exposes a native current-task operation, while
-**Claude Code** renames the running session through its own session-title operation. Follow that
-harness's path below and no other. Codex CLI has no automatic path in this scope. On any other
-harness, say plainly that no path is established, that runs therefore keep suggesting a title, and
-end Step 7. Never invent a mechanism, and never probe a harness for one.
+**Detect the host** from explicit running-environment context first. Three hosts have an established
+rename path today: **T3 Code** exposes `mcp__t3_code.t3_thread_update`, the **ChatGPT Desktop Codex
+tab** exposes a native current-task operation, and **Claude Code** renames the running session through
+its own session-title operation. Follow only the identified host's path below; tool visibility alone
+is not host proof. Plain Codex CLI has no automatic path in this scope. On any other host, say plainly
+that no path is established, that runs therefore keep suggesting a title, and end Step 7. Never
+invent a mechanism, discover a substitute, or probe a host for one.
+
+### T3 Code: the current-thread capability needs no installation
+
+1. **Explain the direct path.** T3 Code supplies the current-thread operation regardless of whether
+   the provider is Codex or Claude. There is no hook, file, configuration key or one-time setup to
+   install. Ordinary Effective Flow runs use it directly when their subject is fixed.
+2. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
+   current thread once and may replace its existing title, including one chosen manually; the user
+   may rename it back or let the next run retitle it. Then call `mcp__t3_code.t3_thread_update` once
+   with `action: rename` and only the literal title `Effective Flow setup check`; omit both
+   `threadId` and `environmentId`, never list, search or read back a thread, and never retry. Report
+   the actual host result. A success proves the path for this run; an unavailable, denied, errored,
+   ambiguous or unconfirmed result means only that this probe failed. Later eligible runs still
+   attempt the operation and fall back independently. Never claim more than the host reported.
 
 ### ChatGPT Desktop, Codex tab: the native capability needs no installation
 

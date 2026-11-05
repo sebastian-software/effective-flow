@@ -166,6 +166,52 @@ const REMOTE_OPERATIONS = new Set([
   'review-thread-resolve',
 ]);
 
+// The operations `localOperation` dispatches, in its case order. A test compares this list with
+// the cases, so a new local operation fails until it is listed here and, through
+// REMOTE_TRACKER_OPERATIONS, classified for the allow rules.
+const LOCAL_OPERATIONS = Object.freeze([
+  'remote-parse',
+  'reference-parse',
+  'signature-parse',
+  'finding-build',
+  'follow-up-admission-build',
+  'follow-up-admission-parse',
+  'follow-up-admission-supersede',
+  'epic-build',
+  'planning-comment-build',
+  'decomposition-records-build',
+  'decomposition-records-parse',
+  'decomposition-key-build',
+  'decomposition-key-parse',
+  'decomposition-container-compare',
+  'decomposition-child-workflow-parse',
+  'apply-comment-build',
+  'pr-comment-build',
+  'pr-review-comment-build',
+  'finding-deduplicate',
+  'label-query-variants',
+  'sf-label-migration-plan',
+  'marker-patch',
+  'checklist-patch',
+  'body-hash',
+  'issue-lifecycle-receipt-build',
+  'issue-lifecycle-receipt-parse',
+  'thread-ledger-lookup',
+  'thread-ledger-record',
+]);
+
+// The classification the CLI's argv check and the allow-rule writer read: the forge mutations,
+// the only operations `--apply` is accepted for, and the local operations that write runtime state
+// without `--apply`. Every other operation reads or computes only.
+export const MUTATION_OPERATIONS = Object.freeze([...MUTATIONS]);
+export const LOCAL_WRITE_OPERATIONS = Object.freeze(['thread-ledger-record']);
+// Every operation `executeOperation` accepts: the remote ones, then the local ones.
+export const REMOTE_TRACKER_OPERATIONS = Object.freeze([...REMOTE_OPERATIONS, ...LOCAL_OPERATIONS]);
+
+export function isMutationOperation(operation) {
+  return MUTATIONS.has(operation);
+}
+
 const CAPABILITY_BY_OPERATION = Object.freeze({
   'viewer-read': 'viewerRead',
   'collaborator-permission-read': 'collaboratorPermissionRead',

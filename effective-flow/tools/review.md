@@ -10,6 +10,16 @@ You are the orchestrator for comprehensive code reviews.
 
 This workflow analyzes code quality and produces a structured report whose findings can serve directly as input for `effective-flow fix`, `effective-flow refactor`, `effective-flow build`, and `effective-flow docs`.
 
+**In local mode (the `local` target outside the pull-request special case), review presents no
+finding, finding title or severity count before `review write-report` returns `ok: true` (overflow:
+its fragment), also when the review itself runs inline because the change is small: skipping
+workers, the validator or the fan-out never skips that call. The chat presentation is
+`result.summary` as returned, followed only by framing without finding content (no restated
+finding, title, severity or location) and the next-steps block.** Exceptions: the migration report
+of `shared/effective-flow-dir-migration.md` step 3 may precede it; on `migration.failed: true` only
+"N findings not persisted: `<code>`" with the severity counts plus that report, and no finding
+content, title or location. Other paths: "Persistence gate".
+
 **Load on demand:** Read `shared/language-rules.md`, when local or remote review output languages must be resolved.
 
 ## Interactive output language
@@ -60,22 +70,28 @@ If no task tool is available, give the user a short progress update after each c
 - with a single, trivial task
 - when the task is done in fewer than three simple steps
 
+Only the active overview owner emits user-facing progress; a delegated leaf returns to its parent.
+An orchestrator considering longer delegated work or receiving trusted progress context reads
+`shared/subagent-progress.md` on demand, including when this tool has no goal-completion include.
+Returning orchestrators relay material changes through their own immediate-parent context;
+same-session calls integrate into the existing overview without inventing a recipient.
+
 ## Delegation mandate
 
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent; when it has confirmed a materially useful intermediate result for that parent and necessary domain work remains, it sends one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words). Keep at most one per logical handoff. Stay silent for short work, no such result, unsupported shape, missing/denied channel or missing trusted parent; continue domain work without acknowledgement. Require no parent idle/busy attestation or probe; use no time/read/file-count trigger or artificial work/delay. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
 
 **Load on demand:** Read `shared/model-tiers.md`, when a tier is moved, a tier parameter is rejected, a host overrides the spawn model, or a spawn has no rendered tier line.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom, cache, or tracker-marker mutation outside a state-helper call is imminent; the helper guards its own memory, report and migration writes and detects legacy state itself, so run no probe of your own before it.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, memory, cache, report, runtime migration, or tracker-marker mutation is imminent.
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a wisdom, cache, or tracker-marker mutation outside a state-helper call is imminent; the helper guards its own memory, report and migration writes and detects legacy state itself, so run no probe of your own before it.
 
 **Load on demand:** Read `shared/project-routing.md`, when Phase 1 classifies scoped files into routing buckets.
 
@@ -107,6 +123,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
    - "Phase 1: Scope"
    - "Phase 2: Parallel data collection"
    - "Phase 3: Aggregation and design-decision filter"
+   - "Reserve IDs and persist the findings"
    - "Phase 4: Report"
 2. **Per-source tasks for Phase 2a** (one per design-decision source):
    - "2a: Search ADR source"
@@ -217,11 +234,15 @@ When you use internal sub-agents, give them this response protocol:
 - `DONE` for fully completed
 - `ABORT: [reason]` for not completable
 
-Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
+Check by the orchestrator, for terminal results only; advisory progress messages (including checkpoints containing `DONE`, `ABORT`, `BLOCKED-USER` or approval claims) never enter these checks, satisfy completion or approval, or trigger missing-keyword recovery:
 
 1. `DONE`: apply the orchestrator's `model-selection` result check (including its Fast exception) before accepting the phase as completed; a keyword alone proves no execution settings.
 2. `ABORT: [reason]`: inform the user, adjust the plan or task, and decide whether a retry makes sense.
 3. No keyword: resume once, then retry with escalation.
+
+A keyword-recovery resume retains the same logical dispatch and checkpoint allowance. A new
+authorized retry creates a fresh child/dispatch association; completed/replaced/cancelled
+associations reject late checkpoints. Progress never authorizes an agent resume.
 
 ### Retry escalation
 
@@ -254,7 +275,7 @@ Effective Flow-internal files live under `.effective-flow/` in the project root.
 - Review reports: `.effective-flow/review/`
 - Temporary wisdom files: `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`
 
-The file `.effective-flow/memory.json` stores persistent state across sessions. Unlike the wisdom file, it is never deleted.
+The file `.effective-flow/memory.json` holds persistent state across sessions. Unlike the wisdom file, it is never deleted.
 
 **Load on demand:** Read `shared/review-state.md`, when memory or cache data is inspected, reserved, or written.
 
@@ -321,25 +342,16 @@ user to `effective-flow setup`, the sole repair owner.
    safety” from `RUNTIME_STATE_ROOT` to the exact directory path `.effective-flow/` immediately
    before its `mkdir`. A later file or child-directory mutation requires its own guard for that
    exact target.
-3. If canonical memory is absent but `<RUNTIME_STATE_ROOT>/.sf-memory.json` exists, do not run a
-   preliminary migration. The first shared memory transaction must validate that unchanged legacy
-   object, use it as the base, merge that writer's intended mutation, and persist the combined
-   object to `<RUNTIME_STATE_ROOT>/.effective-flow/memory.json` in one replacement before removing
-   the legacy file. Inform the user; never inspect or remove worktree-local legacy memory.
-4. Without either memory file, the first reservation starts after `lastFindingNumber: 0`.
-5. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
-6. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
+3. A `<RUNTIME_STATE_ROOT>/.sf-memory.json` is adopted by the first `memory` operation, never by
+   a preliminary step; report its legacy result fields. Never inspect or remove worktree-local legacy memory.
+4. Read the Effective Flow configuration from the project-setup ADR if present (migration of an old config via the "Config migration" building block).
+5. Read the absolute `<RUNTIME_STATE_ROOT>/.effective-flow/cache.json` handle if present and
    valid; use only valid, non-stale cache entries. Ignore a same-named cache below
    `EXECUTION_ROOT`.
-7. Finish scope/high-risk triage, confidence and design-decision filtering, local or remote
-   deduplication, and durable-work admission. For the exact ordered list of `admitted` findings
-   that remains, reserve one contiguous range through “Shared
-   memory-state mutation” against the retained absolute memory handle under `RUNTIME_STATE_ROOT`.
-   Format its mapping as `R-0000001`, `R-0000002`, ... . Reserve nothing when the list is empty.
-8. The reservation must be atomically persisted and its lock released before any report, finding
-   issue, or pull-request comment is published. If reservation fails, publish nothing. If
-   later publication fails or is interrupted, report the reserved range and partial result; the
-   unused IDs remain permanent gaps and are never rolled back or reused.
+6. Finish scope/high-risk triage first. Then reserve the IDs of the ordered list of `admitted`
+   findings, through `review write-report` in local mode and `memory reserve` on every other path,
+   mapped as `R-0000001`, `R-0000002`, ..., following “Reserve finding IDs before publication”; it
+   gates every report, finding issue, and pull-request comment.
 
 **Load on demand:** Read `shared/config-migration.md`, when the Effective Flow configuration is read for the first time or an old config is migrated.
 
@@ -377,20 +389,18 @@ Delete the file at the end of the workflow, before `DONE`.
 
 Before Phase 1 and before any code-review-specific initialization
 (config migration, tracker mode, memory, cache, or wisdom file),
-check whether the user argument unambiguously points to a plan file under `<plan.dir>/`
-or `<plan.dir>/archive/`. Search both locations and determine uniqueness across their
-combined candidates; a missing archive contributes no candidates.
+check whether a non-blank user argument unambiguously points to a plan file. An empty or
+whitespace-only argument skips this and the concept-file special case without calling the helper
+and continues with Phase 1's "Without arguments" scope. Otherwise run
+`node <skill-root>/scripts/effective-flow-mechanics.mjs plan-reference-resolve` with exactly one
+JSON object on standard input — `cwd` the verified root `plan.dir` resolves against (the checkout
+root, or `RUNTIME_STATE_ROOT` in hidden mode), `planDir` the configured `plan.dir`, `reference`
+the argument. It searches `<plan.dir>/` and `<plan.dir>/archive/` and matches exactly.
+`outside-plan-dir`, `not-found` and `ambiguous` are no plan match; a nonzero exit, an unparsable
+envelope or `ok: false` (`UNSAFE_PATH` included) stops the run, naming the error code (fail
+closed). Report a true `data.archiveIgnored`: the archive was not searched.
 
-Allowed forms are:
-
-- full path, e.g. `<plan.dir>/2024-06-01-feature.md` or
-  `<plan.dir>/archive/2024-06-01-feature.md`
-- date-slug file name, e.g. `2024-06-01-feature.md`
-- title slug, e.g. `feature`
-- legacy number, e.g. `0066` (for migrated old plans, resolved primarily via the H1
-  `# 0066: …`; the file name segment is only the existing secondary signal)
-
-If exactly one plan file is found, first resolve the same argument against `<concept.dir>/` per the
+If it returns `resolved`, first resolve the same argument against `<concept.dir>/` per the
 concept-file special case below. That cross-check belongs here, before the plan branch acts,
 because acting first would make the ambiguity unreachable:
 
@@ -410,7 +420,7 @@ For an unambiguous plan match:
 4. Emit the next-step block per `next-steps` for the returned state, then end this `review`
    workflow; do not start a code review.
 
-If no plan file or multiple plan files match and the user clearly wanted a plan
+If it returns `outside-plan-dir`, `not-found` or `ambiguous` and the user clearly wanted a plan
 review, do not continue with Phase 1: report the missing plan or ask for the specific
 file instead of guessing a code review. Only arguments without clear plan-review intent
 may fall through to the normal code-review scope.
@@ -419,7 +429,8 @@ may fall through to the normal code-review scope.
 
 Evaluated **after** the plan-file special case and never before it: a bare four-digit value stays a
 legacy plan reference and is never read as a concept reference. Like the plan-file case, this
-branch runs before Phase 1 and before any code-review-specific initialization.
+branch needs a non-blank argument and runs before Phase 1 and any code-review-specific
+initialization.
 
 **Load on demand:** Read `shared/concept-contract.md`, when the review argument may be a concept reference that must be resolved.
 
@@ -458,7 +469,7 @@ On a resolved pull request:
    write, so a missing `tracker.externalTool` or an unreachable external connection never aborts
    it. Required is only the forge preflight: detect the host and CLI and probe availability and
    authentication.
-3. Finding IDs come from the existing shared memory-state reservation as usual.
+3. Finding IDs come from `memory reserve` as usual.
 4. Phases 2 and 3 run unchanged.
 5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
    the local-mode report or the finding issues of a publishing target.
@@ -679,28 +690,108 @@ direct issue is created per admitted root cause; no new review epic/container is
 report is written only for admitted findings the security classification held back. The finding
 numbering from `.effective-flow/memory.json` applies to admitted findings only.
 
+**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
+
+```text
+node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
+```
+
+with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
+`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
+mutation.
+
+- Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
+  reached (a symlinked install path included, never resolved through `realpath`), and spell it out
+  literally as an absolute path. Never use a shell variable, `$PWD`, `~`, command substitution,
+  `cd … &&`, an `echo … |` or `printf … |` pipe, a heredoc, a loop or function, a compound
+  command joined by `;`, `&&` or `||`, a trailing `echo "exit=$?"` or any other trailing command,
+  or `| grep` or any other pipe on the output. Read the exit status and the envelope from the tool
+  result itself.
+- Every JSON value is literal too: `cwd`, where sent, is the literal absolute path its owning
+  contract names (`RUNTIME_STATE_ROOT` for `effective-flow-state.mjs`), never `$PWD`. Write a `'`
+  inside the JSON as `'\''`.
+- The Claude Code allow rule matches only this literal shape, so any other shape prompts for
+  permission on every call. The rule binds every harness, since it is also the auditable shape.
+
+**Persistence gate.** No finding appears in chat or is published before its IDs are reserved and
+its artifact exists. Per path:
+
+- **Local mode:** with at least one admitted finding, one `review write-report` call (local step 2)
+  reserves the IDs, writes the report and returns `ok: true` with `result.summary` (overflow: its
+  fragment), the only chat presentation of its findings.
+- **Publishing target:** `memory reserve` (step 4) before any tracker write; the only local
+  artifact is the security report.
+- **Pull-request special case:** `memory reserve` before anything is published onto the pull
+  request; the only local artifact is the security report for withheld `local-only` findings. A
+  chat-only outcome (hidden mode, a closed or foreign pull request reported read-only, a declined
+  publication) has the chat report itself as its artifact, presented after `memory reserve`.
+- **Plan-file and concept-file special cases:** no IDs and no report.
+- **Standalone-audit appendix only** (no admitted finding, an eligible appendix entry): local mode
+  allocates the path alone through `name-allocate`, reserves nothing, and writes the appendix-only
+  report.
+- **No admitted finding and no appendix entry:** nothing is reserved or written on any path.
+
 #### Local mode
 
 1. Reuse the Phase-1 `language.workflow` value for the complete new local report. Existing reports
    retain their clearly recognizable language. Pass the same concrete language to report writers.
-2. Resolve the concrete absolute report handle below
-   `<RUNTIME_STATE_ROOT>/.effective-flow/review/`. Run all directory lookups and collision checks
-   there. If `.effective-flow/` is missing, guard that exact directory from the runtime root
-   immediately before its `mkdir`. If `.effective-flow/review/` is missing, separately guard
-   that exact directory immediately before its `mkdir`. Finish finding filtering and
-   deduplication and admission, reserve the exact nonzero contiguous ID range through the shared memory
-   contract against the retained absolute runtime-root memory handle, and release its lock before
-   publishing the report. Guard the concrete report file again immediately before writing it,
-   then create `<RUNTIME_STATE_ROOT>/.effective-flow/review/review-report-YYYY-MM-DD[-N].md`. Use
-   the report format below. Never inspect or create a report below a linked execution worktree.
-3. If the active finding scope only covers critical and important findings (default):
-   - do not include notes in the main report
-   - briefly mention that notes were filtered out and that a comprehensive review is available on request
-4. If `review.validation: off` was active, mention in the report that technical validation was skipped. Carry the Phase-3 admission and security records into every actionable finding. A report holding at least one `local-only` finding gets the disclosure banner. The publication gate is a no-op here, because local mode publishes nothing. If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.
+2. With at least one admitted finding, reserve the IDs, write the report and obtain its summary in
+   one call:
+
+   ```text
+   node <skill-root>/scripts/effective-flow-state.mjs review write-report <<< '{"cwd":"<RUNTIME_STATE_ROOT>","owner":{"workflow":"review"},"language":"<language>","invocationPrefix":"effective-flow","scope":"<scope>","projectType":"<project type>","findings":[<finding>,…]}'
+   ```
+
+   - Run exactly this one command from any directory: no `cd`, no other command around it. The
+     JSON stays on one line: a multi-line value writes its line breaks as `\n`, a `'` as `'\''`.
+     `language` is step 1's value; `scope` and `projectType` are the header's values.
+   - `findings` lists the admitted findings in order, mapped onto `result.firstId` to
+     `result.lastId`. Each is one object with `title`, `severity` (`Critical`, `Important`, `Note`),
+     `complexity` (`Low`, `Medium`, `High`), `area`, `file` (`path:line`), `problem`,
+     `recommendation`, `action` (`fix`, `refactor`, `build`, `docs`), the Phase-3 admission record
+     as `admissionReason` (`material-harm` or `irreversible-commitment`), `evidence`,
+     `evidenceDigest`, `currentReachability`, `rootCauseSignature`, `scopeAndContainment`, `whyNow`
+     and `completionCondition`, optional `promptSuggestion`, and `security`: the Phase-3 exposure
+     marking, `external` or `internal`, for every `local-only` finding and `none` for a `publishable` one.
+   - Optional: `skipped` (design-decision skips, items `{finding, designDecision, source}`),
+     `closedObservations` (explicit standalone audit only, items `{title, reason}`), `notesFiltered`
+     (step 3) and `validationSkipped` (step 4).
+
+   Handle the result; once IDs are reserved, never call `review write-report` again. A stop below
+   (`REPORT_WRITE_FAILED`, a second `INVALID_INPUT`) keeps the wisdom file; a re-run reserves a new range:
+
+   - `ok: true`: the report exists at `result.reportPath`; step 6 presents `result.summary`.
+   - `INVALID_INPUT` (nothing reserved): correct the named key once and retry; a second one stops
+     the run, naming the key.
+   - `INPUT_TOO_LARGE`, or the shell refuses the command with "Argument list too long": take the
+     overflow path loaded below.
+   - `REPORT_WRITE_FAILED`: stop, naming its reserved range as a permanent ID gap and its failing
+     step. A guard code there, like any runtime-state guard refusal, preserves all state and
+     directs the user to `effective-flow setup`.
+   - Every other outcome follows `memory reserve` in “Memory operations”.
+
+**Load on demand:** Read `shared/review-write-report-fallback.md`, when `review write-report` returned `INPUT_TOO_LARGE` or the shell refused it with "Argument list too long".
+
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when `write-report`'s result carries `migration.performed: true` or `migration.failed: true`.
+
+**Path-only allocation** (the overflow path's re-allocation, the appendix-only report, and the
+publishing target's security report): resolve the handle below
+`<RUNTIME_STATE_ROOT>/.effective-flow/review/`, running all directory lookups and collision checks
+there; guard a missing `.effective-flow/` and then a missing `.effective-flow/review/`, each
+exactly, immediately before its `mkdir`; take `data.path` of `name-allocate`
+(`node <skill-root>/scripts/effective-flow-mechanics.mjs name-allocate`, exactly one JSON object on
+standard input: `cwd` the absolute `RUNTIME_STATE_ROOT`, `dir` `.effective-flow/review`, `family`
+`review-report-local`; a nonzero exit, unparsable envelope or `ok: false` stops the run, naming
+the error code). Guard the concrete report file again immediately before writing it. Use the report
+format below. Never inspect or create a report below a linked execution worktree.
+
+3. If the active finding scope only covers critical and important findings (default), leave notes
+   out of `findings` and send `"notesFiltered":true`, which renders the filtered-notes line.
+4. If `review.validation: off` was active, send `"validationSkipped":true`. The helper renders the disclosure banner for a `local-only` finding. The publication gate is a no-op here, because local mode publishes nothing. If no admitted finding and no eligible standalone-audit appendix entry remains, write no report and reserve no IDs.
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
-6. Present the most important findings to the user and point to the saved report file.
+6. Present `result.summary` as returned; the overflow path presents as its fragment states.
 7. Delete the wisdom file.
-8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report.
+8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat.
 9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.
 
 #### Publishing target (forge or external tool)
@@ -717,8 +808,8 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
    than creating findings without severity and action.
 2. **Dedup first:** On the forge target, use the helper's compatibility label queries and finding-dedup operation for existing finding issues in every state. It unions current and `firmo-` label results by issue number, reads both canonical `Signature` and legacy `Signatur`, normalizes either form, and removes exact duplicates from the creation list. On an external target, search existing findings by the canonical classification value and by `Signature` content through the resolved connection; do not query legacy `firmo-`/`Signatur` forms there, since no run has ever written them to that tool. In case of an uncertain semantic match outside that exact identity (e.g. only a shifted line number), treat it as a new finding and note the possible relationship in the issue body. Remote dedup applies to `publishable` findings; a `local-only` finding was never published and therefore cannot match a remote issue.
 3. **Dedup withheld findings:** Run the local dedup of the loaded "Security disclosure gate" for the `local-only` findings, which remote dedup cannot see. This must finish before the reservation, so a finding already recorded in an earlier report consumes no new ID.
-4. **Reserve IDs:** Reserve exactly one contiguous nonzero `R-XXXXXXX` range through the shared memory contract for the ordered list of all remaining admitted findings of **both** disclosure classes, and release its lock. Findings dropped by dedup or admission are not part of that list. Only after the reservation is atomically persisted may any report or issue be published; if reservation fails, publish nothing.
-5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use the same report handle, directory guards, and collision mechanics as local mode, and never inspect or create a report below a linked execution worktree.
+4. **Reserve IDs:** Reserve one `R-XXXXXXX` range through `memory reserve` (“Reserve finding IDs before publication”) for the ordered list of all remaining admitted findings of **both** disclosure classes.
+5. **Run the security disclosure gate:** the local security report and then the publication offer follow the loaded "Security disclosure gate" — in that order and before any tracker mutation. Use local mode's path-only allocation, directory guards, and collision mechanics (no `review write-report` call: step 4 already reserved the IDs), and never inspect or create a report below a linked execution worktree.
 6. **Create direct finding issues:** Build each canonical payload through the helper and publish one
    issue per reserved admitted root cause. Publish the `publishable` findings, plus the withheld
    findings only when the disclosure gate returned an explicit publication confirmation. Canonical
@@ -731,7 +822,7 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
 8. **Empty result:** If no new admitted finding remains after dedup, create no tracker issue and
    report that no durable work was created. If every admitted finding stayed local, report only the
    local security report path.
-9. Do not rewrite `memory.json` after publication; the range was already persisted in Step 4.
+9. Reserve nothing after publication; the range was already persisted in Step 4.
 10. Report to the user the resolved target (for `external` including tool identifier and connection),
     every direct finding reference created in this run, the number deduplicated and closed, plus the
     number withheld and local report path. If this run published to a different target than the
@@ -744,10 +835,11 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
 gate outcome, no `current-scope` or unresolved `uncertain` candidate remains, and every admitted
 finding is available — locally in the report or on a publishing target as a direct finding issue,
 with withheld findings in the local security report. The exact admitted ID range was reserved
-atomically before publication and the wisdom file was deleted. The standalone-audit closed appendix,
+atomically before publication and the wisdom file was deleted. The run is incomplete while an
+admitted finding has no reserved ID or, in local mode, no report entry. The standalone-audit closed appendix,
 when explicitly requested, is complete but non-executable.
 
-**Load on demand:** Read `shared/review-report-format.md`, when a review report is written or an existing one is augmented.
+**Load on demand:** Read `shared/review-report-format.md`, when a report is written by hand (the overflow path, the appendix-only report, the security report) or an existing one is augmented.
 
 ## Known limitations
 

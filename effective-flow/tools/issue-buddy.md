@@ -49,8 +49,8 @@ read and stay on the conversation language.
 Invoking an Effective Flow tool **is** the user's standing request for internal delegation through an available sub-agent mechanism (e.g. an `Agent`/`Task` tool, a bundled worker contract, or a comparable mechanism). A host default that discourages unrequested sub-agents does not apply inside a tool run.
 
 - Where the workflow names a worker role, delegating to it is **mandatory**, not a judgment call.
-- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
-- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as the active overview owner considering longer ordinary worker/analysis work with a candidate native channel and ordinary parent event wait; workers never load it. If an ordinary handoff enables progress and supplies the parent address and messaging tool, check your own actual tool and supplied parent address, then send at most one meaningful checkpoint (current phase, observed result, next action; at most 20 words); none for short tasks, no acknowledgement, and continue work if unavailable or denied.
+- For analysis, exploration, and research, orchestration-level delegation is the **default**. Work inline only under this **triviality exception**: a single known file, one lookup, or a step whose whole cost is smaller than briefing a worker. Sites that name this exception mean exactly this definition. It waives delegation only, never a workflow step such as a reservation, a report, a lock or a commit. The orchestrator sends all other substantive work to a sub-agent as well, unless a tool's explicit in-run rule binds that work to the run (such as the `merge-gate` state reading and guard evaluation) or the triviality exception applies.
+- Only the workflow/tool orchestrator may start worker roles or analysis fan-out. Every named worker is a **leaf executor**: it starts no sub-agent, never re-delegates its assignment or a write, and returns missing essential context to the orchestrator instead of seeking it through child delegation. Start each worker with **zero inherited turns** when supported, otherwise the smallest host-supported history, and supply a compact, self-contained handoff with the objective; relevant artifact paths; scoped paths and ownership; execution and runtime-state roots when writes are allowed; resolved language; authority and write limits; and the completion protocol. The orchestrator gives every spawn it starts the tier rendered at its spawn site. **Load on demand:** Read `shared/subagent-progress.md` only as an orchestrator considering longer delegated work or receiving trusted progress context; leaves never load it. An eligible compact handoff supplies the actual immediate-parent tool/channel, parent address and dispatch. A leaf verifies its own tool and that parent; when it has confirmed a materially useful intermediate result for that parent and necessary domain work remains, it sends one `PROGRESS/1 <dispatch>: <checkpoint>` (phase, observed result, next action; checkpoint at most 20 words). Keep at most one per logical handoff. Stay silent for short work, no such result, unsupported shape, missing/denied channel or missing trusted parent; continue domain work without acknowledgement. Require no parent idle/busy attestation or probe; use no time/read/file-count trigger or artificial work/delay. Send only to that parent; no sibling/cross-session/ancestor messages, starts/resumes, permission forwarding or message-based approvals. Recovery resumes keep the same allowance.
 - If the orchestrator's harness offers no such mechanism, or a delegation is declined at runtime, the orchestrator works inline and says so in one visible line — never silently.
 - An orchestrator that itself runs as a sub-agent — a workflow delegated by another workflow — starts its own worker and analysis sub-agents in the foreground or awaits each one's result, and **never ends its turn while a child is still pending**: a delegated run is not reliably resumed when a background child finishes. This binds its own fan-out only; the handoff that started it keeps the mechanics below.
 - This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path. Before dispatch, resume, or terminal result acceptance, the orchestrator reads `shared/model-selection.md` and applies its executable selection and result checks.
@@ -66,11 +66,11 @@ private, ignored runtime state, and no `config.json` is a configuration source.
 
 ### Config locator (resolution call)
 
-Before the first configuration-dependent step, run
-`node <skill-root>/scripts/config-resolve.mjs resolve` with one JSON object on standard input:
-`cwd` (the checkout this run works in), `tool` (this tool's own name, e.g. `refactor`; an internal
-source such as `apply-plan` passes its own), and `mode` for `iterate` (`local`/`pr`) and
-`apply-review` (`local`/`remote`). The script runs the whole config locator (steps 0–4), decodes
+Before the first configuration-dependent step, make the literal call
+`node <skill-root>/scripts/config-resolve.mjs resolve <<< '{"cwd":"<checkout>","tool":"<tool>"}'`:
+`cwd` the absolute checkout this run works in, `tool` this tool's own name (e.g. `refactor`; an
+internal source such as `apply-plan` passes its own), plus `mode` for `iterate` (`local`/`pr`) and
+`apply-review` (`local`/`remote`). Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The script runs the whole config locator (steps 0–4), decodes
 the table, forces the hidden-mode values, and classifies retired rows; never read the ADR by hand.
 Fail closed: a missing Node, a nonzero exit, or anything but one parseable envelope line
 `{ ok, operation, data }` stops the run before that step, reporting the cause. Exit 3
@@ -199,10 +199,11 @@ is a safe integer; defaults are judgments `3`, plans `1`. Reject zero, signs, le
 fractions, exponents, unsafe integers, duplicate flags, missing values, option tokens as values
 and every extra argument **before any write**. Freeze `{judgments, plans}` as `limits`.
 
-Run `node <skill-root>/scripts/<helper>.mjs <operation>` with one JSON object on stdin, rooted
-at the verified primary checkout. Parse exactly one successful envelope; a nonzero exit, missing
-helper, malformed envelope or unknown result stops the pass. Never interpolate JSON, paths or
-refs into shell code; pass literal arguments/stdin through the host's structured execution API.
+Run each helper as the literal call `node <skill-root>/scripts/<helper>.mjs <operation> <<< '<json>'`,
+`--apply` before `<<<` only where stated below, rooted at the verified primary checkout. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Parse exactly one successful envelope; a nonzero exit, missing
+helper, malformed envelope or unknown result stops the pass. Never assemble JSON, paths or refs
+through shell code, and never interpolate untrusted text (issue titles, bodies, comments, refs)
+unescaped: JSON-encode it as a string value, then apply the `'\''` rule above.
 No helper retry may create a second PR. Only publication operations below receive `--apply`.
 
 Every `issue-buddy.mjs` call has `cwd: EXECUTION_ROOT`; the root must equal `RUNTIME_STATE_ROOT`.
@@ -218,7 +219,7 @@ no alternate port, file-lock fallback, stale-lock break or legacy-lock deletion 
 
 Perform these checks in this exact order:
 
-1. **Configuration and root.** Call `config-resolve.mjs resolve` with
+1. **Configuration and root.** Make the literal `config-resolve.mjs resolve` call with
    `{cwd: <invocation checkout>, tool: "issue-buddy"}` once. Stop on locator failure or retired
    `stop`; retain decoded values and diagnostics. Resolve the physical primary root from Git's
    first `git worktree list --porcelain` record and prove its common-directory identity per
@@ -227,7 +228,7 @@ Perform these checks in this exact order:
 2. **Hidden mode.** Stop on `data.visibility: hidden` before tracker access or runtime writes.
 3. **Tracker.** Require configured `tracker.mode: remote`; missing, `null`, local or external
    stops without a tracker-mode question.
-4. **GitHub origin.** Call `remote-tracker.mjs repository-resolve` with `{cwd}`; require
+4. **GitHub origin.** Make the literal `remote-tracker.mjs repository-resolve` call with `{cwd}`; require
    `provider: github`. This operation resolves the origin locally and returns before any provider
    probe or forge read. A missing, invalid or unsupported origin stops.
 5. **Runtime safety.** Load and apply the runtime guard for each imminent private-state target.
@@ -235,7 +236,7 @@ Perform these checks in this exact order:
    This authorized pre-lock migration is the only possible write before the lock.
 7. **Whole-pass lock.** Call `pass-lock-acquire` with `{cwd}`; retain its `passId`. A held lock
    stops and requires explicit operator release; never break it, including after SIGKILL.
-8. **Repository visibility.** Call `remote-tracker.mjs repository-visibility-read` with `{cwd}`.
+8. **Repository visibility.** Make the literal `remote-tracker.mjs repository-visibility-read` call with `{cwd}`.
    This GET-only operation is the only forge read before collection; require the capability
    `repositoryVisibilityRead`. Read `data.result.visibility` and retain
    `repositoryVisibility: public|private|unknown`. Publishing
@@ -357,7 +358,7 @@ verdict/retry. Never plan inline after that refusal. Every child must finish bef
 Tier `mechanical`: Claude Code Agent tool `model: haiku`, `effort: low`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: low` (rules: `model-tiers`).
 Model selection site: `issue-buddy/nested-spawn-probe` (`shared/model-selection.md`).
 
-After the probe, invoke `plan` with exactly WP2's five-line argument envelope and delimiter,
+After the probe, invoke `plan` with WP2's five required argument control lines and delimiter,
 substituting concrete values; the separate brief is not appended inside or after the envelope:
 
 ```text
@@ -368,6 +369,13 @@ Issue: #<N>
 Issue text: <absolute trustedTextPath>
 --- end of control lines ---
 ```
+
+Only if the actual target/execution shape has observed useful pre-terminal delivery plus joined
+terminals, read the selected canonical plan receiver/root marker before dispatch and add one
+trusted `Progress context:` above the delimiter per `shared/subagent-progress.md`. Otherwise
+retain the exact five-line header-free legacy envelope. The no-op probe proves no reporting
+support. The unattended plan and returning review relay through their own immediate-parent
+contexts; the existing issue-buddy overview remains sole owner.
 
 No issue prose is in the handoff. WP2 owns the new-file name/header, internal review, unanswered
 questions as blocking points and no-publication boundary. Require terminal `DONE` or `ABORT`;
