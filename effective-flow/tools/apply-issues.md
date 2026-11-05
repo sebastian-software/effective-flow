@@ -839,10 +839,14 @@ directly through the pointer below rather than referenced through ``tools/apply-
 reference by analogy is not a contract, and a worktree created without its record can never be
 removed by `effective-flow cleanup`, which requires that record as its only proof of ownership. Before
 any such worktree is created, reading that fragment is mandatory, not a judgement call. Write the
-record immediately after the `effective-flow-created` receipt is verified, and transition it to
-`cleanup-ready` once the issue's work is durably secured on the pushed branch — for the default
-strategy that is after its pull request exists. A worktree reused from the harness or created by
-the user keeps its own ownership and never receives a record.
+record with `worktree record-init` immediately after the `effective-flow-created` receipt is
+verified, and withdraw it once the issue's work is durably secured on the pushed branch — for the
+default strategy that is after its pull request exists. Each issue worktree gets its own
+`sessionId` `<SESSION_ID>-issue-<n>` (`<n>` the issue number), path
+`BASE_DIR/REPO_NAME/<SESSION_ID>-issue-<n>` and purpose `delivery`, so parallel issues each meet the
+helper's purpose table; its record, transitions, withdrawal and the exit self-check use that
+`sessionId`. A worktree reused from the harness or
+created by the user keeps its own ownership and never receives a record.
 
 **Load on demand:** Read `shared/worktree-lifecycle.md`, when Phase 4 is about to create an Effective Flow-owned worktree, for an issue's delivery branch or for a target-PR checkout.
 
@@ -915,14 +919,13 @@ Issues with the same target PR run sequentially so that new commits are created 
    and do not tick a checklist entry. The receipt retains the optional container/mechanism until
    `effective-flow merge-gate` observes the linked issue as terminal. The pull request itself always stays
    on the forge behind `origin`.
-5. **Release the worktree for cleanup:** if this issue ran in a worktree this workflow created,
-   transition its lifecycle record from `active` to `cleanup-ready` under the record lock, per the
-   loaded `worktree-lifecycle` contract. The work is durably secured at this point — the branch is
-   pushed and its pull request exists — so the worktree itself is no longer needed. Skipping this
-   leaves a record stuck at `active`, which `effective-flow cleanup` must then retain forever. Every path out of this phase
-   ends in a status: a failed delegation, a rejected push and a failed pull-request creation all set
-   `failed`, a controlled stop sets `aborted`, and only a completed pull request sets
-   `cleanup-ready`. A record must never be left at `active` once the issue is done with.
+5. **Withdraw the worktree:** if this issue ran in a worktree this workflow created, call
+   `worktree remove` for its record per the loaded `worktree-lifecycle` contract (with its denial
+   fallback to `cleanup-ready`): the branch is pushed and its pull
+   request exists, so the work is durably secured. Every other path out of this phase ends in a
+   status through `worktree transition`: a failed delegation, a rejected push and a failed
+   pull-request creation all set `failed`, a controlled stop sets `aborted`. A record must never be
+   left at `active` once the issue is done with: `effective-flow cleanup` would retain it forever.
 6. Task to `completed`.
 
 This path creates its pull requests without the delivery completion action, so it invokes the
@@ -939,7 +942,7 @@ governs comment noise rather than disclosure.
 **Error cases:**
 
 - If the started transition, delegation (`ABORT`), push, PR creation, or guarded receipt write fails: do **not** mark the issue as done, do not set `effective-flow-issue-done`, do **not** complete the container, append a failed comment where a transition had already started the issue, and continue with the next issue. Preserve the in-progress/native state because resetting it would hide interrupted work. Task to `completed` with the addition `[failed]`.
-  If the issue ran in a worktree this workflow created, transition its lifecycle record to `failed`
+  If the issue ran in a worktree this workflow created, call `worktree transition` to `failed`
   with the exact reason, whether the failure happened during delegation or afterwards during push
   or pull-request creation. Retain the worktree and the branch so the work stays recoverable —
   `failed` is what makes that retention legible, where a record left at `active` would claim a run

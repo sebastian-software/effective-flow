@@ -29,10 +29,10 @@ create no worktree and no record, use no `--force` or detached workaround, merge
 which checkout holds the branch and that it must be cleaned or released first. Git refuses to attach
 a branch that is already checked out elsewhere without `--force`, which this workflow never uses.
 Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
-its version 1 lifecycle record, and close that record in the same run: after the push of Phase 2
-step 1 is confirmed, transition `active` to `cleanup-ready` and run the shared
-claim/remove/reconcile sequence; on a controlled stop before the push – including a conflict this run
+its lifecycle record (`worktree record-init`), and close that record in the same run: after the
+push of Phase 2 step 1 is confirmed, withdraw it with one `worktree remove` call, with the denial
+fallback of its outcome table; on a controlled stop before the push – including a conflict this run
 may not or cannot resolve – end the in-progress merge with `git merge --abort` so the checkout is
-left clean, then transition it to `aborted`; on an error transition it to `failed`. `aborted` and `failed` retain the worktree and the branch for
-inspection. Never end a run leaving an `active` record behind – `effective-flow cleanup` will correctly
+left clean, then call `worktree transition` to `aborted`; on an error, to `failed`. `aborted` and
+`failed` retain the worktree and the branch for inspection. Never end a run leaving an `active` record behind – `effective-flow cleanup` will correctly
 refuse to remove it.

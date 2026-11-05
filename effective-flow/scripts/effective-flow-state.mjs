@@ -6,6 +6,8 @@
 //   node effective-flow-state.mjs harness allow-rules <<< '<json>'
 //   node effective-flow-state.mjs commit create <<< '<json>'
 //   node effective-flow-state.mjs review <open-report|write-report> <<< '<json>'
+//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove> <<< '<json>'
+//   node effective-flow-state.mjs cleanup <plan|apply> <<< '<json>'
 // The operation is exactly these two argv tokens; any other argv, an extra token included, is
 // rejected before stdin is read, so an allowlisted command prefix cannot be widened by an extra
 // argument and `--help` never blocks on a tty. Stdin carries one JSON object of at most 64 KiB;
@@ -71,7 +73,9 @@ const OUTCOME_MESSAGES = Object.freeze({
   SETTINGS_TRACKED: (outcome) => `${outcome.path} is tracked; nothing was written`,
   SETTINGS_INVALID: (outcome) => `${outcome.target} is invalid; nothing was written`,
   PREVIEW_MISMATCH: (outcome) =>
-    `the settings changed since the preview (${outcome.reason}); nothing was written`,
+    outcome.itemId
+      ? `cleanup item ${outcome.itemId} changed since the dry run (${outcome.reason}); nothing was removed`
+      : `the settings changed since the preview (${outcome.reason}); nothing was written`,
   HOOKS_UNTRUSTED: (outcome) =>
     `the hooks of this head are not trusted (${outcome.reason}); nothing was staged or committed`,
   INDEX_NOT_CLEAN: () => 'the index already holds staged changes; nothing was staged or committed',
@@ -83,16 +87,52 @@ const OUTCOME_MESSAGES = Object.freeze({
   COMMIT_FAILED: () => 'the commit failed; the listed paths were unstaged',
   COMMIT_UNVERIFIED: (outcome) =>
     `commit ${outcome.commit} does not match the listed paths or left a staged index; nothing was amended`,
-  SANDBOX_DENIED: () => 'the sandbox denied a write below .git; the listed paths were unstaged',
+  SANDBOX_DENIED: (outcome) =>
+    outcome.directory
+      ? `the sandbox denied a write in ${outcome.directory}; nothing was touched`
+      : 'the sandbox denied a write below .git; the listed paths were unstaged',
   REPORT_WRITE_FAILED: (outcome) =>
     `the report could not be written at step ${outcome.step}${outcome.guardCode ? ` (${outcome.guardCode})` : ''}; ${outcome.firstId} to ${outcome.lastId} stay reserved and unused, and no report of this call was left${outcome.foreignPath ? `; ${outcome.foreignPath} holds a file this call did not write` : ''}`,
+  // `commit create` reports the commit it reached; a worktree item reports the record `status` it
+  // was left in (`cleanup-failed` once a claim had to be reconciled).
+  // A single-record write (`record-init`, `transition`) reports whether it landed (`written`).
   INTERRUPTED: (outcome) =>
-    `stopped by ${outcome.signal}${outcome.commit ? ` after commit ${outcome.commit}` : ' before a commit landed'}`,
+    typeof outcome.written === 'boolean'
+      ? `stopped by ${outcome.signal}; record ${outcome.recordId} ${outcome.written ? `was written as ${outcome.status}` : 'was not written'}, and its lock was released`
+      : outcome.status
+        ? `stopped by ${outcome.signal}; record status ${outcome.status}, no further item was started`
+        : `stopped by ${outcome.signal}${outcome.commit ? ` after commit ${outcome.commit}` : ' before a commit landed'}`,
+  NOT_OWNER: (outcome) =>
+    `record ${outcome.recordId} belongs to another session (${outcome.reason}); nothing was changed`,
+  RECORD_EXISTS: (outcome) =>
+    `record ${outcome.recordId} or its lock already exists; nothing was written`,
+  RECORD_NOT_FOUND: (outcome) => `record ${outcome.recordId} does not exist; nothing was written`,
+  TRANSITION_INVALID: (outcome) =>
+    `${outcome.from} -> ${outcome.to} is not a valid lifecycle transition; nothing was written`,
+  STATUS_MISMATCH: (outcome) =>
+    `record ${outcome.recordId} is ${outcome.status}, not ${outcome.expected}; nothing was written`,
+  NOT_ELIGIBLE: (outcome) =>
+    `record ${outcome.recordId} is not eligible (${[
+      ...(outcome.conditions ?? []).map((condition) => `condition ${condition}`),
+      ...(outcome.proofs ?? []),
+    ].join(', ')}); nothing was changed`,
+  LEGACY_TRACKED: () =>
+    'the legacy path holds tracked files; nothing was removed, remove them with git rm',
+  LEGACY_UNMIGRATED: () =>
+    'no runtime-migration marker certifies this legacy directory as its source; nothing was removed',
+  CARRY_OVER_OPEN: () =>
+    'carry-over is still open and no decision discards it; nothing was removed',
+  REMOVE_FAILED: (outcome) =>
+    `the worktree removal failed: ${outcome.reason}${outcome.removed ? '; the worktree itself was removed' : ''}`,
+  BRANCH_RETAINED: (outcome) =>
+    `branch ${outcome.branch?.branch ?? outcome.branch} was kept because its integration was not proven; the worktree and record were removed`,
+  DEADLINE_REACHED: () =>
+    'the deadline was reached before this item started; nothing was touched, rerun for the rest',
 });
 
 function outcomeLine({ outcome, error }) {
   if (!outcome) return `${error.code}: ${error.message}`;
-  if (LOCK_MESSAGES[outcome.code]) {
+  if (LOCK_MESSAGES[outcome.code] && outcome.lock) {
     return `${outcome.code}: ${outcome.lock} lock ${LOCK_MESSAGES[outcome.code]}`;
   }
   return `${outcome.code}: ${OUTCOME_MESSAGES[outcome.code](outcome)}`;

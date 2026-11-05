@@ -241,10 +241,11 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 54 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 58 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
-`review open-report`, `review write-report`), one for `config-resolve`, and 44 for the remote tracker's read-only
+`review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
+`worktree inspect`, `cleanup plan`), one for `config-resolve`, and 44 for the remote tracker's read-only
 operations: its forge reads, its pure local computations and `thread-ledger-lookup`. An earlier release's smaller set shows as stale, and the preview lists the missing
 rules. Every mode except
 Targeted and Status offers the step after the configuration write, and `/effective-flow setup allowlist` runs it
@@ -252,7 +253,7 @@ alone without an existing configuration. The rules go into the untracked
 `.claude/settings.local.json` of the main checkout and are bound to the absolute path of this
 installation. Setup shows a preview of the change and writes it only after your explicit
 confirmation; if the file is not ignored, it asks whether to add it to `.gitignore` (in hidden
-mode, to `info/exclude`) and adds the line only after your yes. Destructive operations such as `lock break` never get a rule.
+mode, to `info/exclude`) and adds the line only after your yes. Destructive operations such as `lock break`, `worktree remove` and `cleanup apply` never get a rule.
 
 The `commit create` rule lets `iterate` commit an item, running the repository's own hooks, without a
 prompt. It commits only the item's listed paths. When the head is a fork or the hook configuration
@@ -552,6 +553,14 @@ a finished Effective Flow run left a linked worktree behind. Migration itself re
 non-destructive, and a worktree's age alone never makes it safe to remove.
 
 **Typical call:** `/effective-flow cleanup`
+
+Cleanup asks once per deletion class and then applies every selected item in a single helper call,
+so Claude Code shows at most one permission prompt for it; in Codex the call asks for sandbox
+escalation up front. If an item changed since the preview, nothing is written and cleanup shows a
+new preview. Cleanup itself never force-deletes a branch: a temporary `apply-review` branch that
+`git branch -d` refuses is kept, the worktree and its record are removed, and the report lists the
+branch as `BRANCH_RETAINED` with the unproven commits. Only an `apply-review` run deletes such a
+branch, after it has proven every component commit on the integrated branch by patch-id.
 
 **Input/output:** No input beyond the confirmations. The skill first shows an inventory, then a
 dry-run preview of each deletion class. It removes tracked legacy files via `git rm` (recoverable

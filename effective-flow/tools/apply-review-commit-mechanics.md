@@ -38,110 +38,6 @@ read and stay on the conversation language.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the commit lock or a component worktree below `.effective-flow/` is about to be mutated.
 
-#### Git commit mutex for "Individually"
-
-If the commit strategy **Individually** was chosen, a global commit mutex applies to all delegation sub-agents. The mutex protects the entire critical git section, not just the final `git commit`.
-
-Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
-
-**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
-
-```text
-node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
-```
-
-with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
-`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
-mutation.
-
-- Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
-  reached (a symlinked install path included, never resolved through `realpath`), and spell it out
-  literally as an absolute path. Never use a shell variable, `$PWD`, `~`, command substitution,
-  `cd … &&`, an `echo … |` or `printf … |` pipe, a heredoc, a loop or function, a compound
-  command joined by `;`, `&&` or `||`, a trailing `echo "exit=$?"` or any other trailing command,
-  or `| grep` or any other pipe on the output. Read the exit status and the envelope from the tool
-  result itself.
-- Every JSON value is literal too: `cwd`, where sent, is the literal absolute path its owning
-  contract names (`RUNTIME_STATE_ROOT` for `effective-flow-state.mjs`), never `$PWD`. Write a `'`
-  inside the JSON as `'\''`.
-- The Claude Code allow rule matches only this literal shape, so any other shape prompts for
-  permission on every call. The rule binds every harness, since it is also the auditable shape.
-
-Mutex convention:
-
-- Lock: the helper's `apply-review-commit` lock at the retained absolute
-  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle. Every concurrent
-  delegation for the repository uses this one main-checkout lock, even when its `EXECUTION_ROOT`
-  is linked or native. Each step is one call through the absolute helper path handed over by
-  `apply-review`, with `cwd` set to `RUNTIME_STATE_ROOT`, in the runtime-state helper call shape above; the helper
-  applies the runtime-state guard itself:
-
-  ```text
-  node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"apply-review-commit","owner":{"workflow":"apply-review","runId":"<runId>","purpose":"finding","findingId":"<finding ID>","component":"<component>"}}'
-  ```
-
-  A finding commit passes `purpose: "finding"` with its finding ID and component; the Phase 7
-  final-validation commit passes `purpose: "final-validation"`. Retain `result.owner.token`.
-  Exit 4 is an outcome handled below; any other nonzero exit or `error` envelope ends the finding
-  with `ABORT` without touching the index.
-
-**Commit-lock waiting and orphans** (`iterate-commit`, `apply-review-commit`). A unit is one
-`iterate` item or one `apply-review` finding; its delegation is the worker the orchestrator
-started for it, and an inline unit is its own delegation. For `iterate`, "re-invoke `lock acquire`"
-and "the commit critical section" mean the unchanged `commit create` call, whose `LOCK_HELD`
-carries the same owner and identity details as `lock acquire`.
-
-- **Ownership check:** immediately before `git commit`, run `lock inspect` and require a `valid`
-  owner whose token equals the retained token. Otherwise ownership is lost: do not commit,
-  unstage only this unit's own staging, and fail the unit closed. This bullet binds the prose
-  sequences only, `apply-review`'s and `iterate`'s `HOOKS_UNTRUSTED` fallback; `commit create`
-  performs both steps itself.
-- **Bounded worker wait:** on `LOCK_HELD` the worker re-invokes `lock acquire` unchanged. After
-  three consecutive `LOCK_HELD` results with an unchanged owner and identity it stops waiting,
-  leaves its edits unstaged, and returns the diagnostics (owner, identity, lock path) to the
-  orchestrator. A worker cannot know whether another delegation is still active, so it never
-  waits beyond that, never asks the user, and never breaks a lock.
-- **Sibling rule:** only the orchestrator knows which delegations are active. While the owner
-  `runId` equals this run's `runId` and the owning delegation is still active, it re-dispatches
-  the waiting unit's commit critical section only after that owning delegation has returned,
-  once per returned owner, and never takes the orphan path; a re-dispatch that meets another
-  active sibling owner waits for that one's return the same way, so the re-dispatches are bounded
-  by the run's delegations. A re-dispatched section keeps the unit's original `delegation` value
-  `<runId>/<n>`. Once the orchestrator holds that delegation's result and its lock remains, the lock
-  counts as foreign.
-- **Foreign owner:** the orchestrator only reports the owner to the user, with no break
-  suggestion. Age never counts. An apparent orphan is an owner `missing`, `invalid` or
-  `oversized`, or one the user identifies as stale; only then, in a gated run, it runs
-  `lock inspect`, obtains explicit user confirmation, and runs `lock break` with the observed
-  token, or the identity plus owner digest (`ownerSize` for an `oversized` owner). A relayed or
-  non-interactive run fails closed with the diagnostics.
-- **`BREAK_MISMATCH`** (`changed-before-removal` included) removed nothing. The orchestrator
-  re-reads the lock once with `lock inspect`: a sibling owner falls under the sibling rule, any
-  other is reported to the user as foreign. No second break runs without a fresh confirmation.
-- **After a confirmed break,** the orchestrator re-dispatches that unit's commit critical section
-  once; its edits are still unstaged in the tree.
-- **Tombstones:** a `leftoverTombstone` in a release or break result (the lock is free), or a
-  `WRITE_FAILED` naming a tombstone path, is reported to the user with that path.
-
-- Release on every commit success, commit abort, and error path with `lock release`
-  (`{cwd, lock, token}`). `NOT_HELD` or `NOT_OWNER` is reported as lost ownership, changes
-  nothing, and fails the finding closed.
-
-Critical section under the lock:
-
-1. Run `git status --porcelain`.
-2. If staged changes are already present that do not clearly belong to this finding: **do not commit**, inform the user and end with `ABORT` for this finding. Foreign staged changes must not be taken over or cleaned up.
-3. Stage exclusively the files known from the pre-analysis and the actual implementation of this finding. Do not use blanket commands like `git add .`, `git add -A` or `git commit -a`.
-4. Check `git diff --cached --name-only`. The list may only contain files of this finding.
-5. Check `git diff --cached` whether the staged diff belongs content-wise to the current finding.
-6. Run the commit with the message fixed in Phase 2.
-   Its human-readable description uses the `language.git` value resolved by the orchestrator;
-   the Conventional Commit type and other machine tokens remain stable English/ASCII.
-7. Determine the commit hash directly afterwards with `git rev-parse HEAD` and log the `finding ID -> commit hash` mapping in the wisdom file.
-8. Run `git status --porcelain` directly afterwards and log in the wisdom file whether uncommitted changes of other parallel findings still lie in the working tree. These residual changes are allowed as long as they are not staged and not part of the current commit.
-
-If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABORT: [reason]`.
-
 ## Verified execution location
 
 Every write-capable phase and delegated worker uses an **execution-location receipt**. The
@@ -323,14 +219,14 @@ Only worktrees created by Effective Flow receive lifecycle records. Reused user-
 
 ### Runtime record
 
-Immediately after an `effective-flow-created` execution-location receipt has been issued and
-verified, create one record below the retained and freshly revalidated runtime root:
-
-`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json`
-
-`RECORD_ID` is an opaque, collision-resistant, filesystem-safe identifier generated once for the
-worktree. It is not derived as proof from the worktree path or branch. A version 1 record has this
-single field layout; strings below are illustrative values, not additional nesting choices:
+Each Effective Flow-created worktree is described by one file
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json`, and while a writer holds
+it, by the per-record lock `<RECORD_ID>.lock` beside it. Only the runtime-state helper operations below
+create, change, claim or delete a record or take its lock; never write, rename or delete either in
+prose. The helper resolves `RUNTIME_STATE_ROOT` from `cwd` and applies “Runtime-state write safety”
+to every record and lock handle itself, fail-closed. `RECORD_ID` is an opaque, collision-resistant identifier matching
+`^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$`, generated once and never derived from the path or branch. A
+version 1 record has exactly this key set; strings are illustrative:
 
 ```json
 {
@@ -368,60 +264,19 @@ single field layout; strings below are illustrative values, not additional nesti
 }
 ```
 
-`componentId` is always present and is either the component identifier or `null` for a
-non-component worktree. `branchPolicy` is exactly `retain` for delivery and partial-diff branches
-or `delete-after-integration` for temporary `apply-review` component branches. `reason` is `null`
-for the normal `active` or `cleanup-ready` state and otherwise contains the exact transition or
-failure reason. During `cleanup-in-progress`, add the top-level string fields `cleanupRunId` and
-`claimedAt`; they are absent in every other status.
-For a cleanup claim, `cleanupRunId` and `claimedAt` identify its owner and timestamp.
-The nested `receipt` is the immutable snapshot issued at creation; fresh receipts are compared
-with its repository, root, checkout, origin, workflow, and purpose identity fields but never
-overwrite it. Setup status may legitimately advance from the captured `pending` value after
-lifecycle creation and is not branch-identity evidence.
-
-`creationOid` is immutable evidence of the commit at which worktree and branch creation
-succeeded. Capture the full commit OID once at creation and never replace it with the later
-`HEAD`, current branch tip, base ref, or a moving remote tip. Normal commits after creation are
-expected to advance the recorded branch beyond this OID.
-
-Paths, IDs, status values, policy values, timestamps, and other machine-readable fields are not
-localized. Reject an unknown schema, missing field, duplicate `recordId`, invalid value, path
-alias, or record/filename mismatch. Never repair, reinterpret, overwrite, or delete such a record
-automatically.
-
-The record is runtime state, not configuration. Resolve its absolute handle below the verified
-`RUNTIME_STATE_ROOT`, and apply “Runtime-state write safety” immediately before every parent
-creation, lock acquisition, owner-file write, temporary-record write, rename, record deletion,
-or lock release. A guard for one handle authorizes no other handle. Create or replace a record by
-writing a complete sibling temporary file and atomically renaming it onto the expected record
-handle; never expose a partially written record. If initial record creation fails, retain the
-worktree and branch and do not run setup or delegate work there. This temporary-file-and-rename
-sequence is the required atomic write; use an actual atomic `rename`, not a truncate-and-rewrite
-operation on the live record.
-
-### Serialized mutations
-
-Every lifecycle writer, including the creating workflow and every later cleanup run, uses the
-same per-record lock:
-
-`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.lock`
-
-Acquire it atomically with `mkdir`. After successful acquisition, write an `owner` file containing
-the actor/run ID, workflow, process or session identity when available, and acquisition timestamp.
-Keep the lock for the entire read/validate/transition/operation/reconciliation sequence. Under the
-lock, freshly revalidate the runtime root, reread the record, Git worktree inventory and receipt,
-and reject any drift before writing.
-
-Release only the exact lock acquired by the current actor and only after its protected sequence
-has reached a persisted outcome. An existing lock with another owner, an ownerless lock, or a lock
-left by an interrupted process blocks fail-closed. Report its owner and timestamp when readable;
-never break it based on age. Likewise, never take over another `cleanup-in-progress` claim. There
-is no stale-lock timeout, lifecycle TTL, heartbeat, or age-based status transition.
+`componentId` is the component identifier or `null`. `purpose` and `branchPolicy` are bound
+together: `delivery` and `partial-diff` at exactly `BASE_DIR/REPO_NAME/SESSION_ID` and
+`plan-publication` at `BASE_DIR/REPO_NAME/SESSION_ID-plan-publication` carry `retain`;
+`apply-review` at a direct child of its session directory, on branch
+`apply-review/<SESSION_ID>/<GROUP_NAME>`, carries `delete-after-integration`. `reason` is `null` for
+`active` and `cleanup-ready` and the exact reason otherwise. `creationOid` is the full commit OID at
+which worktree and branch creation succeeded, captured once and never replaced. The `receipt` is the
+immutable creation snapshot; fresh receipts are compared with it, never written into it. During
+`cleanup-in-progress` a cleanup claim, `cleanupRunId` and `claimedAt`, names its owner and
+timestamp. The helper refuses an unknown schema, a missing or extra key or an invalid value and never
+repairs, rewrites or deletes such a record.
 
 ### State machine
-
-The complete status vocabulary is:
 
 - `active`: the worktree exists and its owning workflow may still use it
 - `cleanup-ready`: the intended work is durably secured on or integrated from the branch and the
@@ -432,123 +287,208 @@ The complete status vocabulary is:
 - `cleanup-failed`: an ordinary removal or required post-removal operation failed and may be
   retried only after all eligibility proofs pass again
 
-Only these transitions are valid:
+| From                                | To or terminal action                   | Operation                                                                |
+| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
+| newly created                       | `active`                                | `worktree record-init`                                                   |
+| `active`                            | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                              |
+| `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `plan-pr-continuation` only |
+| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                          |
+| `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                      |
 
-| From                                | To or terminal action                   | Required proof                                                          |
-| ----------------------------------- | --------------------------------------- | ----------------------------------------------------------------------- |
-| newly created                       | `active`                                | verified receipt and atomic initial record                              |
-| `active`                            | `cleanup-ready`, `aborted`, or `failed` | owning workflow, under the record lock                                  |
-| `aborted` or `failed`               | `active` (adoption)                     | only the adoption rule of `plan-pr-continuation`, under the record lock |
-| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | fresh eligibility checks plus cleanup run claim                         |
-| `cleanup-in-progress`               | `cleanup-failed`                        | claimed actor records the exact failure                                 |
-| `cleanup-in-progress`               | delete only this lifecycle record       | claimed actor proves complete cleanup                                   |
-
-Do not transition `active`, `aborted`, or `failed` into a cleanup claim. A controlled user or
-workflow stop becomes `aborted`; an implementation, integration, validation, ownership, or
-state-persistence error becomes `failed`. A sudden interruption naturally leaves `active`,
-`cleanup-in-progress`, or its lock in place. Report that uncertainty honestly; never infer a
-crash or successful completion from elapsed time.
+A controlled user or workflow stop becomes `aborted`; an implementation, integration, validation,
+ownership, or state-persistence error becomes `failed`. A sudden interruption leaves `active`,
+`cleanup-in-progress`, or a lock in place: report that uncertainty, and never infer a crash or
+completion from elapsed time. There is no TTL, heartbeat, stale-after threshold or age-based
+transition. A foreign, ownerless or interrupted lock or claim stays: never break or take it over.
 
 ### Removal eligibility
 
-Evaluate eligibility from fresh evidence immediately before the dry-run and again under the
-record lock immediately before claiming. A worktree is removable only when every condition is
-true:
+The helper evaluates these conditions from fresh evidence under the record lock and reports every
+failed one by number (`NOT_ELIGIBLE`, `conditions`):
 
-1. The lifecycle record is schema-valid, has ownership `effective-flow-created`, and has status
-   `cleanup-ready` or `cleanup-failed`.
-2. A fresh execution-location receipt matches the immutable identity fields of the `receipt`
-   snapshot and the top-level canonical repository identity, `RUNTIME_STATE_ROOT`, worktree path,
-   exact branch, workflow, purpose, and ownership. The snapshot is compared as creation evidence;
-   it is not rewritten with current checkout state.
-3. Exactly one matching linked-worktree record exists in
-   `git worktree list --porcelain -z`; parse NUL-delimited fields and records without
-   line-oriented or path-shape assumptions.
-4. The Git record is neither `locked` nor `prunable`, the canonical worktree directory exists,
-   and its common Git directory matches the recorded repository identity.
-5. The current `HEAD` and the Git worktree registration both identify the exact recorded branch,
-   and that local branch resolves to `CURRENT_BRANCH_TIP`. Detached, missing, or changed branch
-   identities do not qualify.
-6. The immutable `creationOid` resolves locally as a commit, and it is an ancestor of
-   `CURRENT_BRANCH_TIP`. Check with
-   `git merge-base --is-ancestor <CREATION_OID> <CURRENT_BRANCH_TIP>`: exit `0` passes, exit `1`
-   blocks, and every other exit code or command error also blocks. History rewriting that drops
-   `creationOid` therefore fails closed. Never compare this proof against a moving remote tip.
-7. `git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none`
-   is empty. Modified submodules and every unexpected tracked or untracked path make it dirty.
-8. The target is neither the main worktree/`RUNTIME_STATE_ROOT` nor the execution worktree from
-   which the cleanup run itself is operating.
-9. No foreign or ownerless lifecycle lock or cleanup claim exists.
+1. The record is schema-valid, `effective-flow-created`, and `cleanup-ready` or `cleanup-failed`
+   (`worktree remove` also accepts this session's `active` record).
+2. Repository identity, `RUNTIME_STATE_ROOT`, path, branch, workflow, purpose and receipt snapshot
+   match fresh evidence.
+3. Exactly one linked worktree in `git worktree list --porcelain -z` matches the path.
+4. That worktree is neither `locked` nor `prunable`, its directory exists, and its common Git
+   directory matches.
+5. Its `HEAD` and registration name the recorded branch; detached or changed branch identities fail.
+6. `creationOid` is a commit and an ancestor of the branch tip
+   (`git merge-base --is-ancestor <CREATION_OID> <CURRENT_BRANCH_TIP>` exits `0`), never compared
+   with a moving remote tip.
+7. `git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none` is
+   empty.
+8. It is neither the main worktree nor the calling run's own execution worktree.
+9. No foreign or ownerless lock or cleanup claim exists.
 
-Any failed, unavailable, contradictory, or ambiguous proof means retain. Worktrees created before
-this lifecycle existed have no record and therefore remain ineligible even if their path, branch,
-or contents look familiar.
+### Helper operations
 
-### Claim, remove, and reconcile
+**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
 
-After explicit user confirmation, process each selected candidate independently:
+```text
+node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
+```
 
-1. Acquire its record lock, rerun every eligibility check, generate a cleanup run ID, and
-   atomically transition `cleanup-ready` or `cleanup-failed` to `cleanup-in-progress` with
-   `cleanupRunId` and `claimedAt`. These fields are the cleanup run ID and claim timestamp that
-   identify the claim owner.
-2. While retaining the lock, require the freshly reread record and matching receipt to still
-   prove ownership `effective-flow-created`, then run only
-   `git worktree remove <WORKTREE_PATH>`. Never add `--force`, and never substitute
-   `git worktree prune`.
-3. If removal fails, atomically persist `cleanup-failed` with the exact command error, clear the
-   claim fields, release the owned lock, and continue only with independently verified
-   candidates.
-4. If removal succeeds, re-read Git registration, the claimed record, path state, and branch
-   policy. Do not reconstruct a removed worktree. A delivery or partial-diff branch with policy
-   `retain` remains. A temporary component branch with policy `delete-after-integration` may be
-   removed only after its integration is still proven, and only with
-   `git branch -d <BRANCH_NAME>`; never use `git branch -D`.
-5. Delete only the claimed lifecycle record after absence of the worktree is proven and the
-   branch policy is completely satisfied. Then release the owned lock. If worktree removal
-   succeeded but record or branch handling did not, preserve the record as `cleanup-failed` when
-   it can still be written by the claim owner and report partial cleanup. If persistence itself
-   fails, retain the lock/claim evidence and report manual reconciliation rather than claiming
-   success.
+with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
+`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
+mutation.
 
-A lifecycle record whose worktree is already absent is not a normal removal candidate. Reconcile
-it only while the current actor still owns the matching lock and `cleanup-in-progress` claim and
-can prove the exact successful removal plus branch outcome. Otherwise retain the record and report
-the missing/mismatched worktree or interrupted claim for manual reconciliation.
+- Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
+  reached (a symlinked install path included, never resolved through `realpath`), and spell it out
+  literally as an absolute path. Never use a shell variable, `$PWD`, `~`, command substitution,
+  `cd … &&`, an `echo … |` or `printf … |` pipe, a heredoc, a loop or function, a compound
+  command joined by `;`, `&&` or `||`, a trailing `echo "exit=$?"` or any other trailing command,
+  or `| grep` or any other pipe on the output. Read the exit status and the envelope from the tool
+  result itself.
+- Every JSON value is literal too: `cwd`, where sent, is the literal absolute path its owning
+  contract names (`RUNTIME_STATE_ROOT` for `effective-flow-state.mjs`), never `$PWD`. Write a `'`
+  inside the JSON as `'\''`.
+- The Claude Code allow rule matches only this literal shape, so any other shape prompts for
+  permission on every call. The rule binds every harness, since it is also the auditable shape.
 
-### Retention reasons and final reporting
+`cwd` is `RUNTIME_STATE_ROOT`; `executionRoot` is the registered checkout the calling run operates
+from, and `RUNTIME_STATE_ROOT` for `worktree inspect`, the exit self-check and every call after the
+run's own worktree was withdrawn, since that path no longer exists. `sessionId` proves ownership:
+the record's own, or on adoption the new owner (`build` passes its build-run ID).
 
-Classify every linked worktree other than the main worktree deterministically. At minimum retain
-and distinguish:
+```text
+node <skill-root>/scripts/effective-flow-state.mjs worktree record-init <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","record":<complete version 1 record, status active>}'
+node <skill-root>/scripts/effective-flow-state.mjs worktree transition <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","from":"active","to":"<cleanup-ready|aborted|failed>","reason":<null or "<reason>">,"sessionId":"<SESSION_ID>"}'
+node <skill-root>/scripts/effective-flow-state.mjs worktree inspect <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<RUNTIME_STATE_ROOT>","sessionId":"<SESSION_ID>"}'
+node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<RUNTIME_STATE_ROOT>","sessionId":"<SESSION_ID>","recordIds":["<RECORD_ID>"]}'
+```
 
-- the current cleanup execution worktree: cleanup is running in this worktree
-- `active`: an Effective Flow run is registered as active and may still be running or may have
-  been interrupted unexpectedly
-- `aborted`: the owning run stopped in a controlled way
-- `failed`: the owning run failed before safe cleanup readiness
-- `cleanup-in-progress` or an existing lock: cleanup is claimed, active, or may have been
-  interrupted; include known owner and timestamp
-- dirty, locked, prunable, missing, detached, branch/OID-mismatched, receipt-mismatched, or
-  repository-mismatched worktrees: name the failed proof
-- reused, user-managed, foreign, or `harness-managed` worktrees: not Effective Flow-owned
-- no lifecycle record or an unknown/invalid schema: ownership or lifecycle cannot be proven
-- `cleanup-failed`: include the recorded or current removal failure when it is not selected or
-  no longer eligible for retry
+- **`worktree record-init`** runs immediately after the verified `effective-flow-created` receipt
+  and before setup or delegation. It writes the record no-clobber only for a newly registered,
+  unlocked linked worktree at the purpose's path whose branch tip is `creationOid`.
+- **`worktree transition`** runs under the record lock; a `from` that differs from the stored
+  status writes nothing.
+- **`worktree inspect`** is read-only: the session's records with their failed conditions, plus
+  registered worktrees under its session paths that no record names (`unrecorded`). Omitting
+  `sessionId` covers every session.
+- **`worktree remove`** lists every record of one session to withdraw in one call. Under one lock
+  hold per record it moves `active` to `cleanup-ready`, claims it, runs only
+  `git worktree remove <WORKTREE_PATH>` without force and never `git worktree prune`, applies the
+  branch policy and deletes the record; a failed removal persists `cleanup-failed` with Git's error,
+  and an already absent worktree is reconciled only under the call's own claim. Give the call an
+  explicit Bash timeout of 120000 ms, above its 90 s deadline; in Codex, request sandbox escalation
+  for it up front. `executionRoot` is never one of the listed worktrees.
 
-Pair each reason with a conservative next step: let the named owner finish an active run or
-claim; inspect and recover work from `aborted` or `failed`; clean a still-eligible dirty checkout
-before rerunning cleanup; ask the known owner before unlocking a Git-locked worktree; let the
-harness or user manage external worktrees; and manually reconcile recordless, prunable, missing,
-invalid-schema, foreign-lock, or partial-cleanup state. Cleanup itself never breaks a lock or
-upgrades a retained lifecycle status to make it eligible.
+**Branch policy.** `retain` leaves the branch. `delete-after-integration` runs
+`git branch -d <BRANCH_NAME>`; when Git refuses, only an `apply-review` call carrying
+`integrationRoot` lets the helper prove every component commit by exact patch-id against the branch
+checked out there and then compare-and-delete the ref. Prose never runs `git branch -D`, and a
+forced deletion outside that proof never happens.
 
-The completion report is mandatory even when no removal candidate or migration remnant exists.
-List removed worktrees, failed or partial cleanup attempts, and every remaining linked worktree
-other than the main worktree. For each remaining worktree show a project-relative path when it is
-inside the runtime root (otherwise its canonical path), checkout identity, lifecycle/verification
-status, one concrete retention reason, and one safe next step. Never collapse several worktrees
-behind a shared reason. State explicitly when no linked worktrees remain. Report unmatched
-lifecycle records separately so partial cleanup evidence is not hidden.
+**Outcomes.** Exit 0 carries `result`, exit 4 an `outcome.code`; any other exit, an unparsable
+envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `result.items[]`, one
+`{recordId, ok, code?}` per record.
+
+| Result                                                                                       | Handling                                                                                                                                         |
+| -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                              |
+| `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                          |
+| `inspect` lists an orphan record lock                                                        | A lock with no record, or no owner: report it; never break it.                                                                                   |
+| item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                             |
+| item `BRANCH_RETAINED`                                                                       | Worktree and record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven`.                                            |
+| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions, owner or reason; the record keeps its status.                                                     |
+| item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                               |
+| item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                 |
+| item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows. |
+| item `SANDBOX_DENIED`                                                                        | Nothing touched: rerun once with sandbox escalation, listing only the denied `recordIds`; otherwise report.                                      |
+| item `DEADLINE_REACHED`, `INTERRUPTED`                                                       | Not started (also when under 15 s of the deadline remain; a record may already be `cleanup-ready`) or reconciled to `cleanup-failed`: report.    |
+| harness denial, auto-mode refusal, another exit, an unparsable envelope or an `error`        | Nothing beyond the reported items changed: report the call.                                                                                      |
+
+**Denial fallback.** After `worktree remove` returns any item that is not `ok` (`BRANCH_RETAINED`
+aside) or fails as a whole call, and after the one `SANDBOX_DENIED` rerun, call `worktree
+transition` `active` → `cleanup-ready` with `"reason":null` for every listed record not reported
+removed (`STATUS_MISMATCH` means it already left `active`), because `effective-flow cleanup` collects only
+`cleanup-ready` and `cleanup-failed`; report each retained worktree for `effective-flow cleanup`.
+
+A final report names every retained worktree and every `BRANCH_RETAINED` branch, because no record
+points at that branch any more.
+
+#### Git commit mutex for "Individually"
+
+If the commit strategy **Individually** was chosen, a global commit mutex applies to all delegation sub-agents. The mutex protects the entire critical git section, not just the final `git commit`.
+
+Goal: parallel sub-agents may edit files at the same time, but must never perform staging or commit at the same time. This ensures a finding commit contains only changes of that finding.
+
+Mutex convention:
+
+- Lock: the helper's `apply-review-commit` lock at the retained absolute
+  `<RUNTIME_STATE_ROOT>/.effective-flow/apply-review-commit.lock` handle. Every concurrent
+  delegation for the repository uses this one main-checkout lock, even when its `EXECUTION_ROOT`
+  is linked or native. Each step is one call through the absolute helper path handed over by
+  `apply-review`, with `cwd` set to `RUNTIME_STATE_ROOT`, in the runtime-state helper call shape above; the helper
+  applies the runtime-state guard itself:
+
+  ```text
+  node <skill-root>/scripts/effective-flow-state.mjs lock acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","lock":"apply-review-commit","owner":{"workflow":"apply-review","runId":"<runId>","purpose":"finding","findingId":"<finding ID>","component":"<component>"}}'
+  ```
+
+  A finding commit passes `purpose: "finding"` with its finding ID and component; the Phase 7
+  final-validation commit passes `purpose: "final-validation"`. Retain `result.owner.token`.
+  Exit 4 is an outcome handled below; any other nonzero exit or `error` envelope ends the finding
+  with `ABORT` without touching the index.
+
+**Commit-lock waiting and orphans** (`iterate-commit`, `apply-review-commit`). A unit is one
+`iterate` item or one `apply-review` finding; its delegation is the worker the orchestrator
+started for it, and an inline unit is its own delegation. For `iterate`, "re-invoke `lock acquire`"
+and "the commit critical section" mean the unchanged `commit create` call, whose `LOCK_HELD`
+carries the same owner and identity details as `lock acquire`.
+
+- **Ownership check:** immediately before `git commit`, run `lock inspect` and require a `valid`
+  owner whose token equals the retained token. Otherwise ownership is lost: do not commit,
+  unstage only this unit's own staging, and fail the unit closed. This bullet binds the prose
+  sequences only, `apply-review`'s and `iterate`'s `HOOKS_UNTRUSTED` fallback; `commit create`
+  performs both steps itself.
+- **Bounded worker wait:** on `LOCK_HELD` the worker re-invokes `lock acquire` unchanged. After
+  three consecutive `LOCK_HELD` results with an unchanged owner and identity it stops waiting,
+  leaves its edits unstaged, and returns the diagnostics (owner, identity, lock path) to the
+  orchestrator. A worker cannot know whether another delegation is still active, so it never
+  waits beyond that, never asks the user, and never breaks a lock.
+- **Sibling rule:** only the orchestrator knows which delegations are active. While the owner
+  `runId` equals this run's `runId` and the owning delegation is still active, it re-dispatches
+  the waiting unit's commit critical section only after that owning delegation has returned,
+  once per returned owner, and never takes the orphan path; a re-dispatch that meets another
+  active sibling owner waits for that one's return the same way, so the re-dispatches are bounded
+  by the run's delegations. A re-dispatched section keeps the unit's original `delegation` value
+  `<runId>/<n>`. Once the orchestrator holds that delegation's result and its lock remains, the lock
+  counts as foreign.
+- **Foreign owner:** the orchestrator only reports the owner to the user, with no break
+  suggestion. Age never counts. An apparent orphan is an owner `missing`, `invalid` or
+  `oversized`, or one the user identifies as stale; only then, in a gated run, it runs
+  `lock inspect`, obtains explicit user confirmation, and runs `lock break` with the observed
+  token, or the identity plus owner digest (`ownerSize` for an `oversized` owner). A relayed or
+  non-interactive run fails closed with the diagnostics.
+- **`BREAK_MISMATCH`** (`changed-before-removal` included) removed nothing. The orchestrator
+  re-reads the lock once with `lock inspect`: a sibling owner falls under the sibling rule, any
+  other is reported to the user as foreign. No second break runs without a fresh confirmation.
+- **After a confirmed break,** the orchestrator re-dispatches that unit's commit critical section
+  once; its edits are still unstaged in the tree.
+- **Tombstones:** a `leftoverTombstone` in a release or break result (the lock is free), or a
+  `WRITE_FAILED` naming a tombstone path, is reported to the user with that path.
+
+- Release on every commit success, commit abort, and error path with `lock release`
+  (`{cwd, lock, token}`). `NOT_HELD` or `NOT_OWNER` is reported as lost ownership, changes
+  nothing, and fails the finding closed.
+
+Critical section under the lock:
+
+1. Run `git status --porcelain`.
+2. If staged changes are already present that do not clearly belong to this finding: **do not commit**, inform the user and end with `ABORT` for this finding. Foreign staged changes must not be taken over or cleaned up.
+3. Stage exclusively the files known from the pre-analysis and the actual implementation of this finding. Do not use blanket commands like `git add .`, `git add -A` or `git commit -a`.
+4. Check `git diff --cached --name-only`. The list may only contain files of this finding.
+5. Check `git diff --cached` whether the staged diff belongs content-wise to the current finding.
+6. Run the commit with the message fixed in Phase 2.
+   Its human-readable description uses the `language.git` value resolved by the orchestrator;
+   the Conventional Commit type and other machine tokens remain stable English/ASCII.
+7. Determine the commit hash directly afterwards with `git rev-parse HEAD` and log the `finding ID -> commit hash` mapping in the wisdom file.
+8. Run `git status --porcelain` directly afterwards and log in the wisdom file whether uncommitted changes of other parallel findings still lie in the working tree. These residual changes are allowed as long as they are not staged and not part of the current commit.
+
+If a check in the critical section fails, the sub-agent must unstage its own staged changes as far as clearly possible, release the lock and report `ABORT: [reason]`.
 
 #### Git worktree isolation for "Individually with worktrees"
 
@@ -566,7 +506,7 @@ Preconditions:
 
 Worktree paths:
 
-1. Determine the repo name from `basename "$(git rev-parse --show-toplevel)"`.
+1. `REPO_NAME` is the basename of the verified `RUNTIME_STATE_ROOT`, never of a linked checkout.
 2. Use `applyReview.worktree.baseDir` from the Effective Flow configuration (project-setup ADR) as the BaseDir, or the default `.effective-flow/.worktrees`.
    Resolve a relative BaseDir against `RUNTIME_STATE_ROOT`; an explicitly configured absolute
    external BaseDir remains absolute and must still pass the environment and ownership checks.
@@ -587,12 +527,11 @@ Branch convention:
 - Immediately issue and verify a separate `effective-flow-created` execution-location receipt
   for the component path, branch, repository, component owner and `apply-review` purpose. Keep
   the original integration root under its own receipt and the main checkout under the unchanged
-  runtime-state handle. Immediately after the receipt succeeds, initialize a version 1
-  lifecycle record for this component as `active`, with branch policy
-  `delete-after-integration`, below the verified `RUNTIME_STATE_ROOT`. Create it before setup or
-  delegation and retain its record ID and absolute handle with the component receipt. If receipt
-  or lifecycle-record creation fails, retain the new worktree and branch for reconciliation and
-  do not delegate.
+  runtime-state handle. Immediately after the receipt succeeds, and before setup or delegation,
+  write the component's lifecycle record (purpose `apply-review`, branch policy
+  `delete-after-integration`) with `worktree record-init` and retain its record ID with the
+  component receipt. If the receipt or the record fails, retain the new worktree and branch for
+  reconciliation and do not delegate.
 
 Setup detection in the worktree:
 
@@ -626,9 +565,9 @@ Delegation in the worktree:
 - Log in the wisdom file per finding: execution-location receipt, commit hash and commit message.
 
 The component lifecycle remains `active` after a successful delegation because its commits are
-not yet proven integrated. Under the per-record lock, transition it to `failed` when the
-component implementation, commit, integration, or validation fails, or to `aborted` when the
-workflow deliberately stops that component before integration. Retain the worktree and branch in
+not yet proven integrated. Call `worktree transition` to `failed` when the component
+implementation, commit, integration, or validation fails, or to `aborted` when the workflow
+deliberately stops that component before integration. Retain the worktree and branch in
 both states. An unexpected interruption leaves `active`; never infer an outcome from age.
 
 Integration back into the original branch:
@@ -638,21 +577,24 @@ Integration back into the original branch:
 3. Revalidate the original integration receipt, then integrate the commits back into that
    verified root sequentially with `git -C <ORIGINAL_ROOT> cherry-pick <commit>`.
 4. On a cherry-pick conflict: first run the cherry-pick conflict assessment. Resolve low-risk conflicts directly; ask the user only on high-risk or unclear conflicts.
-5. After successful integration and validation, acquire the component lifecycle lock and
-   reverify that its receipt and lifecycle record still prove `effective-flow-created`, Git
-   registration, exact checkout identity, clean state, and proof that every component commit was
-   integrated. Transition `active` to `cleanup-ready`, claim it as `cleanup-in-progress`, and
-   run only `git worktree remove <WORKTREE_PATH>` without force while retaining the lock.
-   Reconcile the absence of the worktree, then apply the recorded `delete-after-integration`
-   policy only when integration is still proven, using exclusively
-   `git branch -d <BRANCH_NAME>`. Delete only the fully reconciled lifecycle record. A remove or
-   branch-cleanup refusal becomes `cleanup-failed` with the exact error and retains the remaining
-   record, branch, or partial state. Never use `git worktree prune`, `git branch -D`, or alter
-   `RUNTIME_STATE_ROOT` and its local review state.
-6. On a failed component, transition an `active` lifecycle record to `failed` under its lock,
-   keep the worktree and branch, name both paths and the record in the summary, and obtain a user
-   decision only for manual reconciliation. On a controlled cancellation, use `aborted` instead.
-   Neither status is eligible for automatic cleanup.
+5. After every successful component is integrated and validated, withdraw all of their
+   `effective-flow-created` worktrees with one call (Bash timeout 120000 ms; in Codex, request sandbox escalation up front):
+
+   ```text
+   node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<ORIGINAL_ROOT>","sessionId":"<SESSION_ID>","recordIds":["<RECORD_ID>"],"integrationRoot":"<ORIGINAL_ROOT>"}'
+   ```
+
+   The call moves each `active` record through `cleanup-ready` and removes its worktree without
+   force. `integrationRoot` lets the helper delete a branch `git branch -d <BRANCH_NAME>` refuses
+   after the cherry-picks once its exact patch-id proof against `ORIGINAL_ROOT` passes. That in-run
+   proof is the only forced branch deletion; prose never runs `git branch -D` or `git worktree prune`.
+   Handle each item by the lifecycle outcome table, with its denial fallback; name every
+   `BRANCH_RETAINED` branch with its unproven commits in the summary.
+
+6. On a failed component, call `worktree transition` `active` → `failed`, keep the worktree and
+   branch, name both paths and the record in the summary, and obtain a user decision only for
+   manual reconciliation. On a controlled cancellation, use `aborted` instead. Neither status is
+   eligible for automatic cleanup.
 
 Cherry-pick conflict assessment:
 

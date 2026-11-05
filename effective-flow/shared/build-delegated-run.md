@@ -150,23 +150,22 @@ in-place checkout creates no record, and this self-check stays silent for it. Be
 `git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
 judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
 or delegation, write the lifecycle record
-`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
-`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
-every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
-handling" in `worktree-integration` assigns to it.
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` with `worktree record-init`
+as `worktree-lifecycle` specifies; if that call is not `ok`, retain the worktree and branch and
+stop. On every exit path – completion, failure or abort – apply the transition that "Lifecycle
+outcome handling" in `worktree-integration` assigns to it.
 
 **Worktree-record exit self-check.** Run it after the exit path's own transition and before the
 final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
-set from durable state, never from memory: the linked worktrees at this run's
-`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
-`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+set from durable state, never from memory: `worktree inspect` with this run's `sessionId` returns its records and, as `unrecorded`, the registered worktrees under its session paths that no record
+names; keep the records whose `workflow` is this run's. Every worktree this run created must end with its
 record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
-registered worktree no record names by `worktreePath` as its own entry with path and branch:
-`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
-`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
-and the runtime-state write-safety guard, and report only a failed write. The self-check never
-removes or claims a worktree and never creates or backfills a record.
+`unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
+and manual reconciliation is required. Set a record left `active` once with `worktree transition`
+– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
+`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 **Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
 
@@ -212,7 +211,7 @@ The invocation receipt remains immutable. During Phase 2 step 0, after the exist
 
 For the existing `plan-pr-continuation` exception, first complete that owner’s Discovery, Verification checks 1–5, completion-mode decision, local/published comparison and Provisioning or Resumption-by-adoption proofs. `authorize-execution` then accepts `planContinuation:{discovery,number,resolvedBaseRef,resolvedLocalBaseBranch,fetchedHead,provisioning,ownership}`: `discovery` references the actual successful body-free normalized `remote-tracker pr-list` envelope, not a caller-created approval. Provisioning is `dedicated`, `in-place` or `adopt`; only adoption supplies the prior failed/aborted lifecycle ref. The helper checks the owner’s normalized marker/open/draft/same-repository/base facts, independently proves the fetched immutable head, branch state, plan-only Git diff and exact source-plan blob, and binds the existing owner’s result. Forge authentication, publication authority and its existing decisions remain with that owner. This permits its clean existing plan branch, sibling provisioning from an external harness checkout and narrowly authorized failed-run adoption, never general checkout adoption.
 
-After actual setup, use `transition-execution` once with that authorization, the fresh verified execution receipt, and ownership proof. An ordinarily created delivery worktree must have been absent at authorization, match its predeclared root/branch/base, and have an actual active version-1 record at `.effective-flow/worktree-runs/<record-id>.json`. For the explicit plan-PR adoption exception, preserve creation OID/receipt, prove the prior failed/aborted record and allow only the owner’s status/reason/session/timestamp update; the helper retains both identities. Use the build-run ID as that existing record's `sessionId`; its creation OID, workflow, purpose, repository, runtime root, receipt and ownership must match. Release the lifecycle lock before transport. Existing harness worktrees remain external, are never claimed by a lifecycle record, and a detached-to-branch transition must follow the owning harness flow. The helper preserves the original receipt, appends the transition and extends allowed roots only to that verified execution root. All later product snapshots use the active receipt; unrelated worktrees cannot be adopted.
+After actual setup, use `transition-execution` once with that authorization, the fresh verified execution receipt, and ownership proof. An ordinarily created delivery worktree must have been absent at authorization, match its predeclared root/branch/base, and have an actual active version-1 record at `.effective-flow/worktree-runs/<record-id>.json`, written by `worktree record-init`. For the explicit plan-PR adoption exception, the `worktree transition` adoption preserves creation OID/receipt, proves the prior failed/aborted record and changes only status/reason/session/timestamp; the build-run helper retains both identities. Use the build-run ID as the record's `sessionId` in both operations; its creation OID, workflow, purpose, repository, runtime root, receipt and ownership must match. The record lock must be absent before transport; only the helper takes it, and it releases it as its call returns. Existing harness worktrees remain external, are never claimed by a lifecycle record, and a detached-to-branch transition must follow the owning harness flow. The helper preserves the original receipt, appends the transition and extends allowed roots only to that verified execution root. All later product snapshots use the active receipt; unrelated worktrees cannot be adopted.
 
 ## Questions and same-agent continuation
 
@@ -258,7 +257,7 @@ Immediately after the existing verified commit handoff and **before** withdrawin
 
 `handoff` irreversibly ends product authority. After it, only runtime relay and remaining `delivery`, `plan-archival`, `cleanup`, `pilot-finalization`, `completion` outcomes are admitted. Every call verifies immutable final HEAD/plan, retained acceptance chain, delivery-branch tip and any still-live checkout contents; a removed owned worktree must be absent both physically and in Git registration. Record cleanup only after the real outcome. After the owning pilot actually finalizes at its existing lifecycle point, its receipt requires the **original agent handle** and succeeds once; never persist or reconstruct transient capabilities. A missing/unproven finalization cannot become success.
 
-A still-live owned execution checkout requires sealed execution-root retention, fresh handoff/content checks and the actual canonical lifecycle record matching the captured immutable creation identity. Only `cleanup-ready` with a null reason or `cleanup-failed` with a nonempty reason is accepted, with valid ordered timestamps and released lifecycle locks. The cleanup helper generates `retainedOwnership` binding that exact record and retention reason into its receipt; DONE rechecks it and requires the same reason in `retainedWorktree`, with `worktreeRemoved:false`. Empty or ignored-only retained directories can leave Git clean but still require this truthful retained-checkout report. This grants no lifecycle transition or cleanup waiver; ordinary removal and pre-handoff active ownership remain required on their respective paths.
+A still-live owned execution checkout requires sealed execution-root retention, fresh handoff/content checks and the actual canonical lifecycle record matching the captured immutable creation identity. Only `cleanup-ready` with a null reason (also the `worktree remove` denial fallback) or `cleanup-failed` with a nonempty reason is accepted, with valid ordered timestamps and released lifecycle locks. The cleanup helper generates `retainedOwnership` binding that exact record and retention reason into its receipt; DONE rechecks it and requires the same reason in `retainedWorktree`, with `worktreeRemoved:false`. Empty or ignored-only retained directories can leave Git clean but still require this truthful retained-checkout report. This grants no lifecycle transition or cleanup waiver; ordinary removal and pre-handoff active ownership remain required on their respective paths.
 
 If the existing in-place handback restores the checkout, call `record-return` after that actual clean restore with its completed delivery receipt. It verifies the predeclared original/configured return branch and head or proven merge ancestry, records the actual returned checkout, and grants no product authority. A random branch switch remains drift. The terminal result includes this explicit checkout-return evidence alongside the immutable delivered checkout/head identity.
 

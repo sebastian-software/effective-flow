@@ -367,23 +367,22 @@ in-place checkout creates no record, and this self-check stays silent for it. Be
 `git worktree add`, reading the deferred `worktree-integration` fragment is mandatory, not a
 judgement call. Immediately after its verified `effective-flow-created` receipt, and before setup
 or delegation, write the lifecycle record
-`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` exactly as
-`worktree-lifecycle` specifies; if that write fails, retain the worktree and branch and stop. On
-every exit path – completion, failure or abort – apply the transition that "Lifecycle outcome
-handling" in `worktree-integration` assigns to it.
+`<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json` with `worktree record-init`
+as `worktree-lifecycle` specifies; if that call is not `ok`, retain the worktree and branch and
+stop. On every exit path – completion, failure or abort – apply the transition that "Lifecycle
+outcome handling" in `worktree-integration` assigns to it.
 
 **Worktree-record exit self-check.** Run it after the exit path's own transition and before the
 final report whenever this run executed `git worktree add`, with or without a receipt. Derive the
-set from durable state, never from memory: the linked worktrees at this run's
-`BASE_DIR/REPO_NAME/SESSION_ID` path in `git worktree list --porcelain`, and every record whose
-`sessionId` and `workflow` match this run. Every worktree this run created must end with its
+set from durable state, never from memory: `worktree inspect` with this run's `sessionId` returns its records and, as `unrecorded`, the registered worktrees under its session paths that no record
+names; keep the records whose `workflow` is this run's. Every worktree this run created must end with its
 record deleted and the worktree unregistered, or with its record in cleanup-ready, aborted, failed
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
-registered worktree no record names by `worktreePath` as its own entry with path and branch:
-`effective-flow cleanup` cannot remove it, and manual reconciliation is required. Set a record left
-`active` once – to `aborted` after a controlled stop, otherwise to `failed` – under the record lock
-and the runtime-state write-safety guard, and report only a failed write. The self-check never
-removes or claims a worktree and never creates or backfills a record.
+`unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
+and manual reconciliation is required. Set a record left `active` once with `worktree transition`
+– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
+`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 This workflow keeps no plan file — it feeds review notes back into an existing pull request — so
 it carries no deferred pointer to `plan-archival` and performs no plan-file status switch and no
@@ -1223,9 +1222,10 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
   worktree is created – and create one Effective Flow-owned worktree for the existing head branch
   without `-b`: never create a branch, never rebase or force. Issue its `effective-flow-created`
   receipt with purpose `delivery`, set `creationOid` to the fetched head OID, and write its record
-  immediately per the worktree record obligation. Phase 5's handback closes it after the push
-  (`active` → `cleanup-ready` → claim → remove → reconcile); a controlled stop sets `aborted`, an
-  error `failed`, both retaining worktree and branch. If the PR is already merged/closed, report that and optionally
+  immediately per the worktree record obligation. Phase 5's handback withdraws it after the push
+  with one `worktree remove` call (denial fallback: `cleanup-ready`); a controlled stop sets
+  `aborted`, an error `failed`, both through `worktree transition` and retaining worktree and
+  branch. If the PR is already merged/closed, report that and optionally
   offer local mode.
 
 - **Local mode:** Take the complete open diff of the current branch against
