@@ -80,6 +80,50 @@ async function rejected(operation, input, code) {
   return envelope;
 }
 
+const ENCODED_IDS = {
+  parentId: 'thread:delegated-task:command%3Amcp%3Asynthetic-parent',
+  childId: 'thread:delegated-task:command%3Amcp%3Asynthetic-child',
+};
+const SIMPLE_IDS = { parentId: 'synthetic-parent', childId: 'synthetic-child' };
+
+function rolloutIdentity({ parentId, childId }) {
+  return {
+    type: 'session_meta',
+    payload: {
+      id: childId,
+      source: { subagent: { thread_spawn: { parent_thread_id: parentId } } },
+    },
+  };
+}
+
+function rolloutTurn(overrides = {}) {
+  return {
+    type: 'turn_context',
+    payload: { turn_id: 'turn-1', model: 'gpt-5.6-luna', effort: 'medium', ...overrides },
+  };
+}
+
+async function syntheticRollout(t, records) {
+  const root = await mkdtemp(join(tmpdir(), 'model-selection-host-ids-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const fixture = join(root, 'rollout.jsonl');
+  await writeFile(fixture, `${records.map((record) => JSON.stringify(record)).join('\n')}\n`);
+  return { kind: 'codex-rollout', path: fixture };
+}
+
+async function rejectedVerificationCli(input, code, status) {
+  const result = await cli(['verify'], JSON.stringify(input));
+  assert.equal(result.envelope.ok, false);
+  assert.equal(result.envelope.operation, 'verify');
+  assert.equal(result.exitCode, code === 'INVALID_INPUT' ? 2 : 1);
+  assert.equal(result.envelope.error.code, code);
+  assert.equal(result.stdout, `${JSON.stringify(result.envelope)}\n`);
+  assert.ok(result.envelope.error.message.length > 0);
+  assert.equal(result.stderr, `${code}: ${result.envelope.error.message}\n`);
+  if (status) assert.deepEqual(result.envelope.data, { status });
+  return result.envelope;
+}
+
 test('selects the standard Codex tier and emits provider-native spawn parameters', async () => {
   const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
 
@@ -589,4 +633,237 @@ test('CLI reports model mismatch and rejects conflicting top-level parent identi
   assert.equal(parentResult.envelope.ok, false);
   assert.equal(parentResult.envelope.error.code, 'UNVERIFIED');
   assert.equal(parentResult.envelope.data.status, 'unverified');
+});
+
+test('distinct simple and encoded T3 host IDs without evidence retain the UNVERIFIED envelope and CLI exit 1', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  for (const [name, ids] of [
+    ['simple', SIMPLE_IDS],
+    ['encoded issue 624 pair', ENCODED_IDS],
+  ]) {
+    const input = { selection, ...ids, evidence: null };
+    const expected = {
+      ok: false,
+      operation: 'verify',
+      error: { code: 'UNVERIFIED', message: 'No supported runtime evidence was supplied' },
+      data: { status: 'unverified' },
+    };
+    await t.test(`${name}: API`, async () => {
+      assert.deepEqual(await executeOperation('verify', input, CONTRACT_OPTIONS), expected);
+    });
+    await t.test(`${name}: CLI`, async () => {
+      assert.deepEqual(await rejectedVerificationCli(input, 'UNVERIFIED', 'unverified'), expected);
+    });
+  }
+});
+
+test('host ID bounds count raw characters and percent triplets stay opaque', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  const cases = [
+    ['one character', 'A', true],
+    ['plain 200 characters', 'A'.repeat(200), true],
+    ['plain 201 characters', 'A'.repeat(201), false],
+    ['encoded 200 characters', `A${'%3A'.repeat(66)}a`, true],
+    ['encoded 201 characters', `A${'%3A'.repeat(66)}ab`, false],
+    ['existing ASCII alphabet', 'aZ09._:/-', true],
+    ['encoded controls, whitespace and invalid UTF-8', 'A%00%0A%20%7f%FF%C3%28', true],
+  ];
+  for (const [name, id, valid] of cases) {
+    await t.test(name, async () => {
+      for (const field of ['parentId', 'childId']) {
+        await rejectedVerificationCli(
+          { selection, ...SIMPLE_IDS, [field]: id, evidence: null },
+          valid ? 'UNVERIFIED' : 'INVALID_INPUT',
+          valid ? 'unverified' : undefined,
+        );
+      }
+    });
+  }
+});
+
+test('host IDs reject malformed encoding, invalid initials, equal IDs and unsupported raw characters with CLI exit 2', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  const invalid = [
+    ['empty', ''],
+    ['null', null],
+    ['number', 7],
+    ['boolean', true],
+    ['object', {}],
+    ['array', []],
+    ['bare percent', 'A%'],
+    ['short triplet', 'A%0'],
+    ['nonhex triplet', 'A%G0'],
+    ['non-ASCII hex digit', 'A%３A'],
+    ['trailing percent after valid encoding', 'A%3A%'],
+    ['initial percent', '%41'],
+    ['initial punctuation', '_A'],
+    ['leading whitespace', ' A'],
+    ['embedded whitespace', 'A B'],
+    ['raw tab', 'A\tB'],
+    ['trailing newline', 'A\n'],
+    ['raw NUL', 'A\u0000B'],
+    ['raw DEL', 'A\u007fB'],
+    ['Unicode whitespace', 'A\u00a0B'],
+    ['Unicode letter', 'Aé'],
+    ['Unicode punctuation', 'A—B'],
+    ['unsupported ASCII punctuation', 'A+B'],
+  ];
+  for (const [name, id] of invalid) {
+    await t.test(name, async () => {
+      for (const field of ['parentId', 'childId']) {
+        await rejectedVerificationCli(
+          { selection, ...SIMPLE_IDS, [field]: id, evidence: null },
+          'INVALID_INPUT',
+        );
+      }
+    });
+  }
+  for (const id of [SIMPLE_IDS.parentId, ENCODED_IDS.parentId]) {
+    await t.test(`equal IDs: ${id}`, async () => {
+      await rejectedVerificationCli(
+        { selection, parentId: id, childId: id, evidence: null },
+        'INVALID_INPUT',
+      );
+    });
+  }
+});
+
+test('matching synthetic rollouts verify literal host IDs without decoding or case folding', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  const cases = [
+    ['encoded issue 624 pair', ENCODED_IDS],
+    ['percent hex case remains distinct', { parentId: 'task%3A1', childId: 'task%3a1' }],
+    ['encoded and literal remain distinct', { parentId: 'task%3A1', childId: 'task:1' }],
+    ['opaque octets remain literal', { parentId: 'task%00%20', childId: 'task%FF%C3%28' }],
+  ];
+  for (const [name, ids] of cases) {
+    await t.test(name, async (t) => {
+      const evidence = await syntheticRollout(t, [rolloutIdentity(ids), rolloutTurn()]);
+      const result = await cli(['verify'], JSON.stringify({ selection, ...ids, evidence }));
+      assert.equal(result.envelope.ok, true);
+      assert.equal(result.exitCode, 0);
+      assert.equal(result.stderr, '');
+      assert.equal(result.stdout, `${JSON.stringify(result.envelope)}\n`);
+      assert.equal(result.envelope.data.status, 'verified');
+      assert.deepEqual(result.envelope.data.observed, { ...ids, ...selection.expected });
+      assert.deepEqual(result.envelope.data.observedTurnIds, ['turn-1']);
+    });
+  }
+});
+
+test('encoded host IDs preserve exact identity binding and conflicting-context rejection', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  const contradiction = rolloutIdentity(ENCODED_IDS);
+  contradiction.payload.parent_thread_id = 'stale-parent';
+  const cases = [
+    [
+      'stale parent',
+      [rolloutIdentity({ ...ENCODED_IDS, parentId: 'stale-parent' }), rolloutTurn()],
+    ],
+    [
+      'parent percent case differs',
+      [
+        rolloutIdentity({
+          ...ENCODED_IDS,
+          parentId: ENCODED_IDS.parentId.replaceAll('%3A', '%3a'),
+        }),
+        rolloutTurn(),
+      ],
+    ],
+    [
+      'child percent case differs',
+      [
+        rolloutIdentity({ ...ENCODED_IDS, childId: ENCODED_IDS.childId.replaceAll('%3A', '%3a') }),
+        rolloutTurn(),
+      ],
+    ],
+    [
+      'parent uses literal delimiters',
+      [
+        rolloutIdentity({ ...ENCODED_IDS, parentId: ENCODED_IDS.parentId.replaceAll('%3A', ':') }),
+        rolloutTurn(),
+      ],
+    ],
+    [
+      'child uses literal delimiters',
+      [
+        rolloutIdentity({ ...ENCODED_IDS, childId: ENCODED_IDS.childId.replaceAll('%3A', ':') }),
+        rolloutTurn(),
+      ],
+    ],
+    ['contradictory top-level parent', [contradiction, rolloutTurn()]],
+    [
+      'conflicting duplicate context',
+      [rolloutIdentity(ENCODED_IDS), rolloutTurn(), rolloutTurn({ model: 'gpt-6.1-sol' })],
+    ],
+  ];
+  for (const [name, records] of cases) {
+    await t.test(name, async (t) => {
+      const evidence = await syntheticRollout(t, records);
+      await rejectedVerificationCli(
+        { selection, ...ENCODED_IDS, evidence },
+        'UNVERIFIED',
+        'unverified',
+      );
+    });
+  }
+});
+
+test('matching encoded identity with wrong model or effort remains MODEL_MISMATCH with CLI exit 1', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  for (const overrides of [{ model: 'gpt-6.1-sol' }, { effort: 'high' }]) {
+    await t.test(Object.keys(overrides)[0], async (t) => {
+      const evidence = await syntheticRollout(t, [
+        rolloutIdentity(ENCODED_IDS),
+        rolloutTurn(overrides),
+      ]);
+      const result = await cli(['verify'], JSON.stringify({ selection, ...ENCODED_IDS, evidence }));
+      assert.equal(result.envelope.ok, false);
+      assert.equal(result.envelope.error.code, 'MODEL_MISMATCH');
+      assert.equal(result.envelope.data.status, 'mismatch');
+      assert.deepEqual(result.envelope.data.observed, {
+        ...ENCODED_IDS,
+        ...selection.expected,
+        ...overrides,
+      });
+      assert.equal(result.exitCode, 1);
+      assert.equal(result.stdout, `${JSON.stringify(result.envelope)}\n`);
+      assert.match(result.stderr, /^MODEL_MISMATCH: .+\n$/);
+    });
+  }
+});
+
+test('percent evidence fields remain structurally UNVERIFIED ahead of an earlier model mismatch', async (t) => {
+  const selection = await select({ harness: 'codex', site: 'apply-issues/issue-analysis' });
+  const contextMessage = 'A turn context lacks verified identity, turn ID, model, or effort';
+  const cases = [
+    ['rollout turn ID', rolloutTurn({ turn_id: 'turn%3A2' }), contextMessage],
+    ['model', rolloutTurn({ turn_id: 'turn-2', model: 'gpt%2D5.6-luna' }), contextMessage],
+    ['effort', rolloutTurn({ turn_id: 'turn-2', effort: 'med%69um' }), contextMessage],
+    ...['task_started', 'task_complete'].map((type) => [
+      type,
+      { type: 'event_msg', payload: { type, turn_id: 'turn%3A2' } },
+      'A task event lacks a verified turn ID',
+    ]),
+  ];
+  for (const [host, ids] of [
+    ['simple', SIMPLE_IDS],
+    ['encoded', ENCODED_IDS],
+  ]) {
+    for (const [name, record, message] of cases) {
+      await t.test(`${host} host IDs: ${name}`, async (t) => {
+        const evidence = await syntheticRollout(t, [
+          rolloutIdentity(ids),
+          rolloutTurn({ model: 'gpt-6.1-sol' }),
+          record,
+        ]);
+        const envelope = await rejectedVerificationCli(
+          { selection, ...ids, evidence },
+          'UNVERIFIED',
+          'unverified',
+        );
+        assert.equal(envelope.error.message, message);
+      });
+    }
+  }
 });
