@@ -63,17 +63,23 @@ snapshot row by policy, so E is history and qualifies no current artifact.
 
 No new tool, worker, script or focus-owned runtime state.
 
-**Continuation decision:** Continue within authority (owner decisions of 2026-11-05):
+**Continuation decision:** Continue within authority (owner decisions of 2026-11-05 and 2026-11-06,
+recorded in the #613 planning comment, which governs where this plan differs):
 
 - both rows are enabled on the candidate;
 - the stricter binding-drift rule from `23ea36e3` governs;
-- after WP2b, a behavioural focus-source change brings a passing candidate record or disables both
-  rows again before integration (ADR-strict);
+- after WP2b, any focus-source change, and any built focus change not documented as demonstrably
+  nonbehavioral, brings a passing candidate record or disables both rows before integration
+  (ADR-strict);
 - the focus host acceptance record is the applicable acceptance, and the `focus` eval round stays
   post-merge debt as decided in #613;
 - `catalogHint` stays unchanged;
 - WP2b-2 adds dated status notes to the two focus-related ADRs;
-- a digest guard makes the ADR-strict rule fail visibly;
+- a digest guard over the four focus sources and the three built focus files makes the ADR-strict
+  rule fail visibly, with a third, documented-nonbehavioral path for built-only changes;
+- scenarios carry over between WP2b candidates only with byte-identical focus sources and built
+  focus files;
+- only the portable artifact is qualified; native maintainer builds are a documented residual risk;
 - the published plan pull request becomes the single WP2b pull request.
 
 Next observable proof: the WP2b-2 record of all 16 items on this candidate. Stop condition: the
@@ -92,19 +98,34 @@ Next observable proof: the WP2b-2 record of all 16 items on this candidate. Stop
   merged without its record. Contract `:66–69` ("Changing availability requires review … does not
   unlock a disabled path") is reworded to say exactly this (step 5).
 - **After WP2b: ADR-strict** (owner decision). The enabled rows check no record at runtime. A later
-  pull request that changes a focus source, or the built focus artifact, in a way that is not a
-  documented, demonstrably nonbehavioral difference must do one of two things before it merges:
-  - bring a passing candidate record for its own head;
+  pull request that changes a focus source, or changes the built focus files in a way the maintainer
+  does not document as demonstrably nonbehavioral, must do one of two things before it merges:
+  - bring a passing record for a candidate whose four focus-source and three built-file digests
+    equal the pull request's merge head (later commits touching only record files and the digest
+    file), together with the updated digest file;
   - return both rows to disabled, as `23ea36e3` did.
+
+  A focus-source change is never exempt; the documented-nonbehavioral path exists only for
+  built-file and other digest-bound changes (the drift rule on `develop`).
 
   This replaces #613's "carry-over stays, requalify before the next release". The rule is stated in
   the reworded contract sentence (step 5) and, by WP2b-2, in the acceptance page's closing
   paragraph.
-- **A digest guard triggers the ADR-strict rule** (owner decision). While the contract's report-only
-  row is enabled, a test compares the SHA-256 digests of the built portable `tools/focus.md` and
-  `shared/focus-follow-up.md` with a tracked digest file. On a mismatch it fails and names the two
-  ADR-strict paths. This catches eager-fragment and `build.mjs` rendering changes that no author
-  would otherwise connect to focus. When both rows are disabled again, the guard is inert.
+- **A digest guard triggers the ADR-strict rule** (owner decisions). A test compares the SHA-256
+  digests of the four focus sources (`src/tools/focus.md`, `src/shared/focus-session-contract.md`,
+  `src/shared/focus-follow-up.md` and `src/shared/retro-native-sources.md`) and of the built portable
+  `tools/focus.md`, `shared/focus-follow-up.md` and `shared/retro-native-sources.md` with a tracked
+  digest file. It is inert only when both gate rows carry the explicit disabled form; one disabled
+  row alone fails with its own message, and a reworded enabled row cannot switch it off. A source
+  mismatch fails naming the two ADR-strict paths; a built-only mismatch adds a third path: the
+  maintainer documents the difference as demonstrably nonbehavioral on the acceptance page (record
+  relied on, changed files, cause) and updates the digest file in the same pull request. This
+  catches eager-fragment and `build.mjs` rendering changes that no author would otherwise connect
+  to focus.
+- **Only the portable artifact is qualified** (owner decision, 2026-11-06). Records and the guard
+  bind the portable build that DALO and Skills CLI deliver. A native build installed by a maintainer
+  (`local-link.sh`, `install-skill.sh local`) renders focus differently and is not qualified;
+  running the enabled rows from it is an accepted residual risk that WP2b-2 documents.
 - **Enabled rows state only their runtime match.** The model cannot check a record at runtime, and
   `docs/developer-guide/` is repository-only and never shipped. Each enabled row therefore states its
   runtime match condition and that no record lookup happens at runtime. The binding requirement
@@ -116,8 +137,12 @@ Next observable proof: the WP2b-2 record of all 16 items on this candidate. Stop
   `focus-host-acceptance.md` and is guarded by the test `Focus acceptance requires requalification
   for material shared-fragment and rendered changes`. This run does not touch it. #613's looser
   "outside the focus sources is drift" rule is superseded. A `develop` update of the candidate branch
-  is drift only when it is a documented, demonstrably nonbehavioral difference; anything else makes a
-  new candidate under the #613 failure rule.
+  that touches a focus source makes a new candidate; one that changes only built focus files or other
+  digest-bound files (such as the `focus` budget line) is drift only when the maintainer documents it
+  as demonstrably nonbehavioral; an undocumented one makes a new candidate under the #613 failure
+  rule. A change to no digest-bound file affects nothing.
+  Scenarios carry over to a new candidate only when the four focus sources and three built focus
+  files are byte-identical (owner decision, 2026-11-06); item 1 is always re-recorded.
 - **Applicable acceptance is the host record only** (owner decision). The ADR names the Focus host
   acceptance record as the re-entry owner. Stale eval suites stay visible debt in CI report mode. The
   maintainer re-records the `focus` round after the merge and before the next release, as #613
@@ -203,8 +228,9 @@ Deliberately unchanged in this run:
      states the maintainer and integration duty:
      - enabled rows reach `develop` only with a candidate record in the operator acceptance record
        whose differences from the current source are only binding drift;
-     - a focus-source or rendered change that is not demonstrably nonbehavioral brings a passing
-       record or returns both rows to disabled;
+     - a focus-source change, or a change to the rendered focus artifact that is not documented
+       as demonstrably nonbehavioral, brings a passing record or returns both rows to disabled;
+       a focus-source change is never exempt;
      - a user confirmation, passing build, primitive rerun or historical spike still unlocks
        nothing.
    - Replace "No snapshot execution route is currently qualified; ordinary configuration or developer
@@ -253,18 +279,35 @@ Deliberately unchanged in this run:
 9. **Budget.** Run `node build.mjs`, take the `focus` count from the "Always-loaded core
    (lines/budget)" report, and set the budget entry within ten lines of headroom.
 9a. **Digest guard.** Add a `node:test` test that runs in `pnpm test`:
-    - It renders the portable target through the cheapest existing test build path.
-    - It computes the SHA-256 of `effective-flow/tools/focus.md` and
-      `effective-flow/shared/focus-follow-up.md`.
-    - While the contract's report-only row carries the enabled wording, it compares both digests
-      with the tracked digest file.
-    - On a mismatch, it fails with a message naming the two ADR-strict paths: record a passing
-      candidate and update the digest file in the same pull request, or return both rows to
-      disabled.
+    - It builds all targets into a temporary output root (`EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT`, as in
+      `test/execution-profile-rendering.test.mjs`, or a `copyRepository` copy for mutations) and
+      reads only `portable/effective-flow/`, never the repository's `dist/`. The build sets
+      `EFFECTIVE_FLOW_BUILD_GIT_HASH` to a unique marker.
+    - It computes the SHA-256, over exact bytes, of the four focus sources and of the built
+      `effective-flow/tools/focus.md`, `effective-flow/shared/focus-follow-up.md` and
+      `effective-flow/shared/retro-native-sources.md`.
+    - It is inert only when both gate rows carry the explicit disabled form: the row whose first
+      cell is exactly `T3 observed, report-only` (respectively `T3 observed follow-up
+      (schedule_task, T3/Codex)`) has a second cell starting with `Disabled`. With exactly one row
+      disabled it fails with its own message. A missing or renamed row and a missing digest file
+      fail closed with their own messages. Otherwise it compares all seven digests with the tracked
+      digest file.
+    - A source mismatch fails naming the two ADR-strict paths: a passing record for a candidate
+      matching the merge head plus the updated digest file, or both rows disabled. A built-only
+      mismatch also names the third path: document the difference as demonstrably nonbehavioral on
+      the acceptance page and update the digest file in the same pull request.
+    - It asserts that neither the package version nor the git-hash marker appears in the three
+      built files, so a future version or hash stamp cannot make every release fail the guard.
+    - On a mismatch it prints the seven actual digests in the digest file's exact format; the file
+      is updated by copying that output, so later pull requests regenerate it byte-identically.
+    - The decision logic (row states, seven digests, expected digests → verdict and message) is a
+      pure function, tested with synthetic inputs for each case: both rows disabled (inert), one
+      row disabled, missing or renamed row, missing digest file, source mismatch, built-only
+      mismatch, match. One real portable build proves the passing path.
     - A test comment names the invariant.
 
     The digest file is written last, after review incorporation, from the final candidate build.
-    WP2b-2 checks that it equals the record's built-file digests.
+    WP2b-2 checks that its seven entries equal the record's digests.
 10. **Consistency sweep.** Before review, `git grep -n -i -E "disabled|enable|pending qualification|currently qualified"`
     over the files of the Affected files table and `focus-host-acceptance.md`. Every hit about the
     snapshot or follow-up path is either rewritten here or belongs to a WP2b-2 obligation listed
@@ -288,15 +331,21 @@ immediately after the build run ends:
 3. Confirm with `gh pr view <number> --json isDraft,body`.
 4. Ignore any `merge-gate` next-step suggestion until WP2b-2.
 
+Operator check (outside the build's completion condition, mirroring the #613 WP2b-1 criterion):
+
+- [ ] #625 is a draft with `Refs #613`, the line "Recording (WP2b-2) pending: do not merge" and no
+  `Closes`.
+
 ### Edge cases
 
 - **`develop` moves before or during the build.** The candidate sits on the plan branch's merge
   base, not on current `develop`. Step 1's precondition covers the start. Any update of the branch
   from `develop` happens before WP2b-2's first recorded item. A later update follows the drift rule
-  and the #613 failure rule, and the digest guard flags a rendered change. Line numbers above are
+  and the #613 failure rule, and the digest guard flags every source or built-file change. Line numbers above are
   orientation only.
-- **A review, iterate or CI fix after the candidate is final.** Any change to a focus source or the
-  `focus` budget line after WP2b-2 has started recording makes a new candidate (#613 failure rule).
+- **A review, iterate or CI fix after the candidate is final.** Any change to a focus source after
+  WP2b-2 has started recording makes a new candidate (#613 failure rule); so does a change to the
+  built focus files or the `focus` budget line unless documented as demonstrably nonbehavioral.
   This includes fixes prompted by the PR review the handback publishes and by CI on the pull
   request. WP2b-2 therefore starts recording only after that review is published and CI is green,
   or every failure is reproduced on the base and explained.
@@ -352,9 +401,15 @@ Not relevant: no user interface.
   - all other-row, send-path and drift-rule assertions pass unchanged.
 - [ ] The `focus` `CONTEXT_BUDGET_LINES` entry equals the measured count plus at most ten lines.
 - [ ] The digest guard exists in `pnpm test`:
-  - it passes on the final candidate build;
-  - it fails, naming the two ADR-strict paths, when either built file's digest differs while the
-    report-only row is enabled.
+  - it passes on the final candidate build, with the tracked file holding all seven digests;
+  - it fails naming the two ADR-strict paths on a focus-source mismatch, and additionally the
+    documented-nonbehavioral path on a built-only mismatch;
+  - it fails with its own message when exactly one gate row is disabled, and is inert only when
+    both carry the explicit disabled form;
+  - fails closed on a missing or renamed row or a missing digest file;
+  - each verdict and message is covered by a synthetic-input test of the pure decision function;
+  - it builds into a temporary output root, never `dist/`, and rejects the package version and the
+    git-hash marker in the three built files.
 - [ ] The gate section names no repository-only file, and each enabled row states that no record
   lookup happens at runtime.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass. If
@@ -408,10 +463,12 @@ Not relevant: no user interface.
   - the user-guide sentence naming the WP2b item-1 record (now a SHA-free pointer to the acceptance
     page).
 
-  The canonical planning comment still states the old details. `effective-flow plan-issue 613`
-  brings it in line before WP2b-2 records. This does not block WP2b-1.
+  The canonical planning comment was brought in line on 2026-11-06 and also records the later
+  decisions this revision incorporates (guard scope and paths, carry-over, portable only). Where
+  the two differ, the comment governs.
 - **WP2b-2 obligations** (separate plan, after this run): record the 16 items on this branch head
-  with the seven-entry digest table, then update `focus-host-acceptance.md`:
+  with an eight-entry digest table (the WP2a seven plus the built `shared/retro-native-sources.md`),
+  then update `focus-host-acceptance.md`:
   - the status line (`:3`);
   - the recorded-bindings note (`:56`);
   - both T3 observed matrix rows;
@@ -423,11 +480,18 @@ Not relevant: no user interface.
     candidate, then record), `catalogHint` unchanged and the eval round as post-merge debt, and it
     gains the ADR-strict rule and the digest guard;
   - the evidence-relationship paragraph (`:347–350`, "only a completed candidate-bound row can
-    enable a host path in the source"), reworded to "integrate an enabled host path".
+    enable a host path in the source"), reworded to "integrate an enabled host path";
+  - the portable-only scope and the native-build residual risk;
+  - for any new candidate: carry-over only with the seven digests listed byte-identical for both
+    candidates, otherwise every item re-recorded; item 1 always.
 
-  WP2b-2 runs in a worktree on this branch, without plan-PR continuation. It checks that the
-  digest-guard file matches the record's built-file digests, and also adds dated status notes to `docs/adr/pragmatic-test-release-policy.md` and
-  `docs/adr/focus-cross-session-messages.md`, posts the deferred-steering comment on #613, switches
+  WP2b-2 runs in a worktree on this branch, without plan-PR continuation. It checks that the seven
+  guard entries equal the record's digests, or those of a documented nonbehavioral note made after
+  the record; a mismatch without such a note is a new candidate. It adds dated status notes: the
+  `pragmatic-test-release-policy` note records that for focus the applicable acceptance is the host
+  record alone, with the eval rounds as post-merge debt, and names the WP2b record; the
+  `focus-cross-session-messages` note records the enabled report-only snapshot and follow-up paths,
+  that sends stay disabled, and the portable-only scope and native-build residual risk. It posts the deferred-steering comment on #613, switches
   the body to `Closes #613` and marks the pull request ready.
 
 ## Plan review
@@ -511,6 +575,50 @@ Not relevant: no user interface.
   precondition.
 - **Note, Testability.** The `:135` negative regex is sensitive to line breaks. *Incorporated* in
   steps 3 and 7.
+
+### Revision (2026-11-06)
+
+**Result:** Approved
+
+Revision in place to the #613 planning comment's decisions of 2026-11-06 (its baseline and deep
+reviews, all incorporated or resolved by owner decision):
+
+- **Important, Architecture.** The plan let a focus-source change escape as "demonstrably
+  nonbehavioral". *Incorporated:* sources are never exempt (decisions, step 5, edge cases).
+- **Important, Testability.** The guard missed `retro-native-sources.md` and the sources.
+  *Resolution by owner decision:* seven digests (step 9a, criterion).
+- **Important, Maintainability.** A documented nonbehavioral built-file change had no path past the
+  guard. *Resolution by owner decision:* the third path.
+- **Important, Architecture.** "A record for its own head" was unsatisfiable. *Incorporated:* a
+  candidate matching the merge head plus the updated digest file.
+- **Important, Error cases.** A reworded enabled row would switch the guard off. *Incorporated:*
+  inert only with both rows in the explicit disabled form.
+- **Important, Architecture.** Section-level carry-over conflicted with the strict rule.
+  *Resolution by owner decision:* byte-identical sources and built files only.
+- **Note, Testability.** Guard feasibility constraints. *Incorporated:* temporary copy, exact
+  bytes, no version string.
+- **Note, Architecture.** Native builds run enabled rows unrecorded. *Resolution by owner
+  decision:* portable only, documented residual risk (WP2b-2).
+- **Note, Testability.** WP2b-2's digest table and equality check did not match the guard.
+  *Incorporated:* eight-entry table and defined mismatch path.
+
+Review of this revision (2026-11-06): 2 important, 6 notes, all incorporated.
+
+- **Important, Testability.** The guard's failure branches were untestable on the real build.
+  *Incorporated:* a pure decision function with synthetic-input tests per verdict.
+- **Important, Error cases.** The disabled-row detection was ambiguous and missing inputs were
+  unhandled. *Incorporated:* exact first-cell match; missing row or digest file fails closed.
+- **Note, Testability.** A hash-only stamp would evade the version check. *Incorporated:* git-hash
+  marker.
+- **Note, Maintainability.** The digest file had no reproducible producer. *Incorporated:* the guard
+  prints the file content on mismatch.
+- **Note, Feasibility.** The cited test builds into a temporary output root, not a copy.
+  *Incorporated:* either form.
+- **Note, Scope.** The WP2b-2 obligations missed the ADR residual-risk wording and the carry-over
+  duty. *Incorporated.*
+- **Note, Maintainability.** "Anything else" covered unrelated files. *Incorporated.*
+- **Note, Testability.** The comment's #625 draft criterion had no checkbox. *Incorporated* as an
+  operator check.
 
 ## Open points
 
