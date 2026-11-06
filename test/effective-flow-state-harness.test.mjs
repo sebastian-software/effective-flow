@@ -157,9 +157,18 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['worktree remove'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['cleanup apply'], 'not-allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['ledger init'], 'not-allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['ledger append'], 'not-allowlisted');
   assert.deepEqual(
     [...NEVER_ALLOWLISTED_OPERATIONS],
-    ['lock break', 'harness allow-rules', 'worktree remove', 'cleanup apply'],
+    [
+      'lock break',
+      'harness allow-rules',
+      'worktree remove',
+      'cleanup apply',
+      'ledger init',
+      'ledger append',
+    ],
   );
   assert.deepEqual(
     STATE_OPERATIONS.filter((operation) => STATE_OPERATION_CLASSES[operation] !== 'allowlisted'),

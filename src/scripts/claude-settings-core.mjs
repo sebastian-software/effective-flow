@@ -59,20 +59,29 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'review write-report',
   // The worktree-lifecycle housekeeping: `record-init` writes one new `active` record no-clobber,
   // `transition` rewrites one record's status under its lock, and `inspect` and `cleanup plan` only
-  // read. None of them removes a worktree, a branch, a record or a legacy path.
+  // read. With `release: "partial-diff"`, `transition` also restores, in that record's own proven
+  // worktree, exactly the proven residual paths to their HEAD state: paths whose bytes and mode it
+  // proved equal to the record's ledger descriptors (re-checked immediately before each discard)
+  // and whose selected source content it proved still present through `verifySourceManifest`;
+  // otherwise it, too, only rewrites the one record. None of them removes a worktree, a branch, a
+  // record or a legacy path.
   'worktree record-init',
   'worktree transition',
   'worktree inspect',
   'cleanup plan',
 ]);
 // The runtime-state helper operations that never get a rule: destructive (`lock break`, the
-// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`), or
-// the writer of the rules itself. A rule that would also admit one of them is widened.
+// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`), the
+// writer of the rules itself, or the delivery-progress ledger writes (`ledger init`, `ledger
+// append`), whose unprompted bound the allowlist contract does not state yet. A rule that would
+// also admit one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock break',
   'harness allow-rules',
   'worktree remove',
   'cleanup apply',
+  'ledger init',
+  'ledger append',
 ]);
 
 // `config-resolve.mjs` has one operation, and it reads only.

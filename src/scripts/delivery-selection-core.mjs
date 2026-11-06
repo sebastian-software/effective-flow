@@ -1268,7 +1268,9 @@ async function applyActions(root, actions, topology) {
   }
 }
 
-function expectedEndpoints(manifest, actions) {
+// The expected working-tree descriptor of every manifest endpoint, rename sources included as
+// tombstones: the confirmed selection, or the planned bytes and mode of `actions` when given.
+export function expectedEndpoints(manifest, actions) {
   const endpoints = new Map();
   for (let index = 0; index < manifest.entries.length; index += 1) {
     const entry = manifest.entries[index];
@@ -1284,6 +1286,17 @@ function expectedEndpoints(manifest, actions) {
       endpoints.set(entry.renameFrom, { kind: 'tombstone', mode: null });
   }
   return endpoints;
+}
+
+// The transfer action of every manifest entry against the delivery checkout's current HEAD.
+async function planActions(manifest, sourceRoot, deliveryRoot, runner) {
+  return await Promise.all(
+    manifest.entries.map((entry) =>
+      entry.renameFrom === null
+        ? planOrdinaryEntry(entry, sourceRoot, deliveryRoot, runner)
+        : planRenameEntry(entry, sourceRoot, deliveryRoot, runner),
+    ),
+  );
 }
 
 async function actualWorkingDescriptor(root, repoPath, runner) {
@@ -1303,14 +1316,7 @@ export async function reconcileDelivery(input, options = {}) {
   const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
   const source = await verifySourceManifest({ manifest, sourceRoot }, { runner: options.runner });
   const actions =
-    options.actions ??
-    (await Promise.all(
-      manifest.entries.map((entry) =>
-        entry.renameFrom === null
-          ? planOrdinaryEntry(entry, sourceRoot, deliveryRoot, options.runner)
-          : planRenameEntry(entry, sourceRoot, deliveryRoot, options.runner),
-      ),
-    ));
+    options.actions ?? (await planActions(manifest, sourceRoot, deliveryRoot, options.runner));
   const inventory = await statusInventory(deliveryRoot, options.runner, false);
   const actualPaths = new Set(
     inventory.entries.flatMap((entry) =>
@@ -1339,6 +1345,225 @@ export async function reconcileDelivery(input, options = {}) {
       mode.length === 0 &&
       source.exact,
     mismatches: { missing: missing.sort(), extra, content, mode, sourceDrift: source.drift },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Endpoint descriptors and the residual comparison
+//
+// These functions only read. The runtime-state helper reuses them with `validateSelectionManifest`,
+// `verifySourceManifest` and `expectedEndpoints` for its private delivery-progress ledger, and
+// injects its own guarded runner through `options.runner` (see `scopedGitRunner`).
+
+const OBJECT_ID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+// The Git runner seam of the selection functions. Every Git call they make reaches
+// `options.runner` as `{executable: 'git', args: ['-C', <root>, ...]}`, except `merge-file`, which
+// runs on temporary files without `-C`. `scopedGitRunner` turns `gitRunner(cwd, args, {stdin})`
+// into such a runner: it admits only calls into one of `roots` (a `-C`-less `merge-file` runs in
+// `defaultRoot`), puts `-c <entry>` before the arguments for every entry of `config`, and answers
+// any other call, or one that brings its own environment, with a spawn error that the functions
+// report as COMMAND_FAILED, so a call outside the proven roots never starts.
+export function scopedGitRunner(gitRunner, { roots, defaultRoot = null, config = [] }) {
+  const allowed = new Set(roots);
+  const prefix = config.flatMap((entry) => ['-c', entry]);
+  const refuse = (message) => ({
+    status: null,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    error: { code: 'EGITSCOPE', message },
+  });
+  return async (call) => {
+    if (call?.executable !== 'git' || !Array.isArray(call.args) || call.env !== undefined) {
+      return refuse('only a plain git call is admitted');
+    }
+    const options = call.stdin === undefined ? {} : { stdin: call.stdin };
+    if (call.args[0] === '-C') {
+      if (!allowed.has(call.args[1])) return refuse('git -C names a root outside the proven roots');
+      return await gitRunner(call.args[1], [...prefix, ...call.args.slice(2)], options);
+    }
+    if (call.args[0] !== 'merge-file' || typeof defaultRoot !== 'string') {
+      return refuse('a git call without -C is admitted only for merge-file');
+    }
+    return await gitRunner(defaultRoot, [...prefix, ...call.args], options);
+  };
+}
+
+// The descriptor of one endpoint as the delivery working tree holds it; nothing is written. An
+// absent path is `{path, kind: 'tombstone', mode: null, digest: null, oid: null}`; a file or a
+// tracked symbolic link is `{path, kind: 'blob', mode, digest, oid}` with the SHA-256 of the bytes on
+// disk and the blob OID Git would store for exactly these bytes at this path: `hash-object --stdin
+// --path=<path>`, with the path's filters and attributes, never `-w`. A symbolic link's target text
+// is hashed without filters, as Git stores it.
+export async function describeWorkingEndpoint(root, repoPath, options = {}) {
+  validateLiteralPath(repoPath, 'endpoint');
+  const tracked = await treeState(root, 'HEAD', repoPath, options.runner);
+  const state = await workingState(root, repoPath, tracked, { directoryMeansAbsent: true });
+  if (state.mode === null) {
+    return { path: repoPath, kind: 'tombstone', mode: null, digest: null, oid: null };
+  }
+  const descriptor = selectedDescriptor(state);
+  const oid = await gitText(
+    options.runner,
+    root,
+    ['hash-object', '--stdin', ...(state.mode === '120000' ? [] : [`--path=${repoPath}`])],
+    { stdin: state.bytes },
+  );
+  if (!OBJECT_ID_PATTERN.test(oid)) {
+    fail('COMMAND_FAILED', 'git hash-object returned an invalid object id', { path: repoPath });
+  }
+  return { path: repoPath, kind: 'blob', mode: descriptor.mode, digest: descriptor.digest, oid };
+}
+
+// The exact reconcile of `reconcileDelivery` followed by the descriptor of every manifest endpoint
+// in manifest order (rename sources included), read from the delivery working tree itself. The
+// descriptors exist only when the reconcile is exact and every endpoint still holds exactly the
+// planned bytes and mode: `{exact: true, mismatches, endpoints}`, otherwise `{exact: false,
+// mismatches, endpoints: null}`. Nothing is written.
+export async function describeDeliveryEndpoints(input, options = {}) {
+  requireObject(input);
+  const manifest = validateSelectionManifest(input.manifest);
+  const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
+  const context = await repositoryContext(deliveryRoot, options.runner);
+  if (context.repositoryIdentity !== manifest.source.repositoryIdentity) {
+    fail('UNSAFE_DELIVERY_CHECKOUT', 'delivery checkout belongs to a different repository');
+  }
+  const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
+  const actions = await planActions(manifest, sourceRoot, deliveryRoot, options.runner);
+  const reconciliation = await reconcileDelivery(
+    { manifest, sourceRoot, deliveryRoot },
+    { runner: options.runner, actions },
+  );
+  if (!reconciliation.exact) {
+    return { exact: false, mismatches: reconciliation.mismatches, endpoints: null };
+  }
+  const endpoints = [];
+  const content = [];
+  for (const [repoPath, expected] of expectedEndpoints(manifest, actions)) {
+    const actual = await describeWorkingEndpoint(deliveryRoot, repoPath, options);
+    if (
+      actual.kind !== expected.kind ||
+      actual.mode !== expected.mode ||
+      (expected.kind === 'blob' && actual.digest !== expected.digest)
+    ) {
+      content.push({ path: repoPath, expected: expected.kind, actual: actual.kind });
+    }
+    endpoints.push(actual);
+  }
+  const mismatches = { ...reconciliation.mismatches, content };
+  return content.length === 0
+    ? { exact: true, mismatches, endpoints }
+    : { exact: false, mismatches, endpoints: null };
+}
+
+function requireEndpointDescriptors(value) {
+  const endpoints = requireArray(value, 'endpoints');
+  const seen = new Set();
+  return endpoints.map((endpoint, index) => {
+    const label = `endpoints[${index}]`;
+    exactKeys(endpoint, ['path', 'kind', 'mode', 'digest', 'oid'], label);
+    const repoPath = validateLiteralPath(endpoint.path, `${label}.path`);
+    if (seen.has(repoPath)) fail('INVALID_PAYLOAD', 'endpoints contain a duplicate path');
+    seen.add(repoPath);
+    if (endpoint.kind === 'tombstone') {
+      if (endpoint.mode !== null || endpoint.digest !== null || endpoint.oid !== null) {
+        fail('INVALID_PAYLOAD', `${label} must be an empty tombstone`);
+      }
+    } else if (
+      endpoint.kind !== 'blob' ||
+      !FILE_MODES.has(endpoint.mode) ||
+      !/^[0-9a-f]{64}$/.test(endpoint.digest) ||
+      !OBJECT_ID_PATTERN.test(endpoint.oid)
+    ) {
+      fail('INVALID_PAYLOAD', `${label} must be a blob or tombstone descriptor`);
+    }
+    return endpoint;
+  });
+}
+
+// Whether a working-tree descriptor `actual` holds `endpoint`'s kind, mode and, for a blob, bytes.
+function holdsDescriptor(actual, endpoint) {
+  return (
+    actual.kind === endpoint.kind &&
+    actual.mode === endpoint.mode &&
+    (endpoint.kind !== 'blob' || actual.digest === endpoint.digest)
+  );
+}
+
+function indexMatchesDescriptor(index, descriptor) {
+  if (descriptor.kind === 'tombstone') return index.oid === null;
+  return index.oid === descriptor.oid && index.mode === descriptor.mode;
+}
+
+// Whether the delivery checkout at `root` still holds the descriptor of `endpoint` (one entry of
+// `inspectResidual`'s `endpoints`): the working tree its kind, mode and, for a blob, the SHA-256
+// of its bytes, and the index entry HEAD's state or the descriptor's blob and mode (the `index`
+// rule of `inspectResidual`), so no staged content the proofs did not cover is discarded.
+// Read-only; the release re-checks every residual path with it immediately before discarding it.
+export async function workingEndpointMatches(root, endpoint, options = {}) {
+  const [descriptor] = requireEndpointDescriptors([endpoint]);
+  const actual = await actualWorkingDescriptor(root, descriptor.path, options.runner);
+  if (!holdsDescriptor(actual, descriptor)) return false;
+  const head = await treeState(root, 'HEAD', descriptor.path, options.runner);
+  const entry = await indexState(root, descriptor.path, options.runner);
+  return statesEqual(entry, head) || indexMatchesDescriptor(entry, descriptor);
+}
+
+// Compares the delivery checkout with the descriptors of `endpoints` (the uncommitted residual of a
+// delivery) without writing anything. Returns sorted path lists:
+//   dirty     every path whose index or working tree differs from HEAD, untracked ones included
+//   extra     the dirty paths outside `endpoints`
+//   content   the endpoints whose working-tree kind, mode or bytes differ from their descriptor
+//   staged    the endpoints whose index entry differs from HEAD
+//   index     the endpoints whose index entry is neither HEAD's nor the descriptor's blob and mode
+//   tracked   the dirty endpoints HEAD tracks (the rest are absent from HEAD)
+//   atHead    the endpoints that are not dirty and hold HEAD's state in index and working tree:
+//             HEAD's mode for a path HEAD tracks, absent for one it does not (an ignored file
+//             left at a path HEAD lacks is not at HEAD); an endpoint a release already restored
+// An unmerged index entry is UNSUPPORTED_PATH.
+export async function inspectResidual(input, options = {}) {
+  requireObject(input);
+  const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
+  const endpoints = requireEndpointDescriptors(input.endpoints);
+  const inventory = await statusInventory(deliveryRoot, options.runner, false);
+  const dirty = new Set(
+    inventory.entries.flatMap((entry) =>
+      entry.renameFrom ? [entry.renameFrom, entry.path] : [entry.path],
+    ),
+  );
+  const named = new Set(endpoints.map((endpoint) => endpoint.path));
+  const content = [];
+  const staged = [];
+  const index = [];
+  const tracked = [];
+  const atHead = [];
+  for (const endpoint of endpoints) {
+    const actual = await actualWorkingDescriptor(deliveryRoot, endpoint.path, options.runner);
+    if (!holdsDescriptor(actual, endpoint)) content.push(endpoint.path);
+    const head = await treeState(deliveryRoot, 'HEAD', endpoint.path, options.runner);
+    const entry = await indexState(deliveryRoot, endpoint.path, options.runner);
+    if (!statesEqual(entry, head)) {
+      staged.push(endpoint.path);
+      if (!indexMatchesDescriptor(entry, endpoint)) index.push(endpoint.path);
+    }
+    if (dirty.has(endpoint.path) && head.oid !== null) tracked.push(endpoint.path);
+    if (
+      !dirty.has(endpoint.path) &&
+      statesEqual(entry, head) &&
+      (head.oid === null ? actual.kind === 'tombstone' : actual.mode === head.mode)
+    ) {
+      atHead.push(endpoint.path);
+    }
+  }
+  const sorted = (values) => [...values].sort();
+  return {
+    dirty: sorted(dirty),
+    extra: sorted([...dirty].filter((repoPath) => !named.has(repoPath))),
+    content: sorted(content),
+    staged: sorted(staged),
+    index: sorted(index),
+    tracked: sorted(tracked),
+    atHead: sorted(atHead),
   };
 }
 

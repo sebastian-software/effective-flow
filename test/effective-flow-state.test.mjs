@@ -207,6 +207,8 @@ test('operations, locks and codes are frozen closed sets', () => {
       'worktree remove',
       'cleanup plan',
       'cleanup apply',
+      'ledger init',
+      'ledger append',
     ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
@@ -248,6 +250,7 @@ test('operations, locks and codes are frozen closed sets', () => {
       'REMOVE_FAILED',
       'BRANCH_RETAINED',
       'DEADLINE_REACHED',
+      'LEDGER_EXISTS',
     ],
   );
   assert.deepEqual(
