@@ -102,7 +102,8 @@ test('Focus acceptance requires requalification for material shared-fragment and
 
 test('Focus binds runtime host qualification and fails closed for unqualified paths', () => {
   // Invariant: host capability is determined by the actual candidate-bound runtime path, never by
-  // the build target or a primitive spike, and every currently unqualified path returns a limitation.
+  // the build target or a primitive spike; the enabled T3 observed report-only row states only its
+  // runtime match, and every unmatched or unqualified path returns a limitation.
   const contract = source('src/shared/focus-session-contract.md');
   const qualification = boundedSlice(
     contract,
@@ -115,15 +116,37 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
   assert.match(qualification, /throwaway target/);
   assert.match(qualification, /T3 observed, report-only/);
   assert.match(qualification, /candidate-bound observed\/report-only acceptance/);
-  // Invariant: package report mode and confirmation cannot activate an unqualified snapshot.
+  // Invariant: the enabled report-only row matches only the admitted T3 observed path, checks no
+  // record at runtime, and an unmatched path still returns the missing qualification before reads.
   assert.match(
     qualification,
-    /T3 observed, report-only\s*\| Disabled pending snapshot-host requalification/,
+    /T3 observed, report-only\s*\| Matches only on a T3 observed path admitted from trusted host context, for report-only use; no record lookup at runtime\./,
   );
   assert.match(qualification, /Before any target or ancestry read/);
   assert.match(qualification, /no content access, analysis leaf or verdict about unread content/);
-  assert.match(qualification, /No snapshot execution route is currently qualified/);
-  assert.match(qualification, /configuration or developer confirmation cannot enable one/);
+  // Invariant: only the named non-sending paths execute, configuration or confirmation cannot enable
+  // another, and enabled rows integrate only with a passing candidate record (ADR-strict).
+  const gate = flat(qualification);
+  assert.match(
+    gate,
+    /The only executable paths are the T3 observed report-only snapshot, opted-in schedule creation and update, follow-up ticks, and the cleanup deletions \(`follow-up stop`, a tick's own-handle deletion, the failed-update cleanup\); none sends a message, and ordinary configuration or developer confirmation cannot enable any other path\./,
+  );
+  assert.match(gate, /all sends stay disabled/);
+  assert.match(
+    gate,
+    /Enabled rows reach `develop` only with a candidate record in the operator acceptance record whose differences from the current source are only binding drift\./,
+  );
+  assert.match(
+    gate,
+    /A focus-source change, or a rendered focus artifact change not documented as demonstrably nonbehavioral, brings a passing record or returns both T3 observed rows to disabled; a focus-source change is never exempt\./,
+  );
+  assert.match(
+    gate,
+    /A user confirmation, passing build, primitive rerun or historical spike unlocks nothing\./,
+  );
+  // Invariant: the shipped gate names no repository-only acceptance file, digest or SHA.
+  assert.doesNotMatch(qualification, /focus-host-acceptance/);
+  assert.doesNotMatch(qualification, /\b(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b/);
   assert.match(qualification, /T3 delegated correction[\s\S]*?Disabled/);
   assert.match(qualification, /T3 idle top-level correction[\s\S]*?Disabled/);
   assert.match(qualification, /Codex desktop observed[\s\S]*?Disabled/);
@@ -358,9 +381,9 @@ test('Focus follow-up loads lazily behind one pointer and stays mode-gated', () 
 });
 
 test('Focus follow-up offer requires the qualified follow-up gate row', () => {
-  // Invariant: gate stays closed — the offer exists only when the disabled-by-default gate row is
-  // qualified and matched from trusted host context; while disabled a snapshot gains nothing and
-  // only stop and a tick's own-handle deletion remain available.
+  // Invariant: the enabled follow-up gate row matches only from trusted host context with no runtime
+  // record lookup; when it does not match a snapshot gains nothing and only stop and a tick's
+  // own-handle deletion remain available.
   const contract = source('src/shared/focus-session-contract.md');
   const gate = flat(
     boundedSlice(
@@ -371,11 +394,11 @@ test('Focus follow-up offer requires the qualified follow-up gate row', () => {
   );
   assert.match(
     gate,
-    /\| T3 observed follow-up \(schedule_task, T3\/Codex\) \| Disabled until a candidate-bound row exists/,
+    /\| T3 observed follow-up \(schedule_task, T3\/Codex\) \| Matches only when trusted host context/,
   );
   assertPhrases(gate, [
-    'names provider instance `codex` for the observer thread, never a self-report',
-    "While disabled: no offer, resume or tick target read; `follow-up stop` and a tick's deletion of its own handle stay available.",
+    'names provider instance `codex` for the observer thread, never a self-report, on an admitted T3 observed path; no record lookup at runtime.',
+    "When the row does not match: no offer, resume or tick target read; `follow-up stop` and a tick's deletion of its own handle stay available.",
   ]);
   const focus = flat(source('src/tools/focus.md'));
   ordered(

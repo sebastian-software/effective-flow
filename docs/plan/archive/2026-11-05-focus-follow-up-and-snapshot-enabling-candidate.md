@@ -1,6 +1,6 @@
 # Focus follow-up and snapshot enabling candidate
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -111,6 +111,7 @@ Next observable proof: the WP2b-2 record of all 16 items on this candidate. Stop
   This replaces #613's "carry-over stays, requalify before the next release". The rule is stated in
   the reworded contract sentence (step 5) and, by WP2b-2, in the acceptance page's closing
   paragraph.
+
 - **A digest guard triggers the ADR-strict rule** (owner decisions). A test compares the SHA-256
   digests of the four focus sources (`src/tools/focus.md`, `src/shared/focus-session-contract.md`,
   `src/shared/focus-follow-up.md` and `src/shared/retro-native-sources.md`) and of the built portable
@@ -135,7 +136,7 @@ Next observable proof: the WP2b-2 record of all 16 items on this candidate. Stop
   change its own binding, as #613 requires.
 - **The binding-drift rule stays as `23ea36e3` wrote it** (owner decision). It already sits in
   `focus-host-acceptance.md` and is guarded by the test `Focus acceptance requires requalification
-  for material shared-fragment and rendered changes`. This run does not touch it. #613's looser
+for material shared-fragment and rendered changes`. This run does not touch it. #613's looser
   "outside the focus sources is drift" rule is superseded. A `develop` update of the candidate branch
   that touches a focus source makes a new candidate; one that changes only built focus files or other
   digest-bound files (such as the `focus` budget line) is drift only when the maintainer documents it
@@ -167,18 +168,18 @@ Next observable proof: the WP2b-2 record of all 16 items on this candidate. Stop
 
 All line numbers refer to `origin/develop` at `87b7bfc0`. The build re-reads them on its base.
 
-| File | Description |
-|---|---|
-| `src/shared/focus-session-contract.md` | Section `## Current qualification gate`: binding paragraph (`:50`), report-only row (`:58`), follow-up row (`:64`), availability sentences (`:66–71`). |
-| `src/tools/focus.md` | Frontmatter `description` (`:2`) only. `catalogHint` (`:3`) and the eager offer condition (`:25–30`) stay. |
-| `src/shared/focus-follow-up.md` | Expected unchanged; verify that `## Gate and grammar` and the tick gate re-check (`:99–101`) read correctly with an enabled row. |
-| `build.mjs` | Only the `focus` entry of `CONTEXT_BUDGET_LINES` (`:2485`, now `404`), set to the measured count. |
-| `test/focus-contracts.test.mjs` | Test `Focus binds runtime host qualification and fails closed for unqualified paths` (`:103–136`); test `Focus follow-up offer requires the qualified follow-up gate row` (`:360–394`); new assertions for the reworded availability sentences. |
-| `test/` (new test) and a new tracked digest file under `test/fixtures/` | The digest guard of step 9a. File names are the build's choice; neither file is digest-bound. |
-| `docs/user-guide/tools-quality.md` | Focus "Follow-up" paragraph (`:42–48`) and qualification paragraph (`:50–55`, including the `ada4fdae` sentence). |
-| `docs/concept/2026-11-02-focus-session-check.md` | `:141`: the follow-up mode is no longer "defined but disabled pending candidate-bound qualification". |
-| `docs/developer-guide/release-and-installation.md` | `:88–89`: focus snapshot execution and follow-up are no longer listed as disabled; sends stay disabled. |
-| `evals/focus/README.md` | `:160–161`: same correction. This README is no suite seed, so editing it stales nothing. |
+| File                                                                    | Description                                                                                                                                                                                                                                     |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/focus-session-contract.md`                                  | Section `## Current qualification gate`: binding paragraph (`:50`), report-only row (`:58`), follow-up row (`:64`), availability sentences (`:66–71`).                                                                                          |
+| `src/tools/focus.md`                                                    | Frontmatter `description` (`:2`) only. `catalogHint` (`:3`) and the eager offer condition (`:25–30`) stay.                                                                                                                                      |
+| `src/shared/focus-follow-up.md`                                         | Expected unchanged; verify that `## Gate and grammar` and the tick gate re-check (`:99–101`) read correctly with an enabled row.                                                                                                                |
+| `build.mjs`                                                             | Only the `focus` entry of `CONTEXT_BUDGET_LINES` (`:2485`, now `404`), set to the measured count.                                                                                                                                               |
+| `test/focus-contracts.test.mjs`                                         | Test `Focus binds runtime host qualification and fails closed for unqualified paths` (`:103–136`); test `Focus follow-up offer requires the qualified follow-up gate row` (`:360–394`); new assertions for the reworded availability sentences. |
+| `test/` (new test) and a new tracked digest file under `test/fixtures/` | The digest guard of step 9a. File names are the build's choice; neither file is digest-bound.                                                                                                                                                   |
+| `docs/user-guide/tools-quality.md`                                      | Focus "Follow-up" paragraph (`:42–48`) and qualification paragraph (`:50–55`, including the `ada4fdae` sentence).                                                                                                                               |
+| `docs/concept/2026-11-02-focus-session-check.md`                        | `:141`: the follow-up mode is no longer "defined but disabled pending candidate-bound qualification".                                                                                                                                           |
+| `docs/developer-guide/release-and-installation.md`                      | `:88–89`: focus snapshot execution and follow-up are no longer listed as disabled; sends stay disabled.                                                                                                                                         |
+| `evals/focus/README.md`                                                 | `:160–161`: same correction. This README is no suite seed, so editing it stales nothing.                                                                                                                                                        |
 
 Deliberately unchanged in this run:
 
@@ -209,6 +210,7 @@ Deliberately unchanged in this run:
 
    The row names no SHA and no repository-only file. Historical acceptance alone still does not
    qualify.
+
 3. **Binding paragraph (`:50`).** Reword "The T3 observed/report-only snapshot route is disabled
    pending candidate-bound observed/report-only acceptance" so that the route is enabled in this
    source through a reviewed activation backed by candidate-bound observed/report-only acceptance.
@@ -223,6 +225,7 @@ Deliberately unchanged in this run:
 
    Reword "While disabled:" to "When the row does not match:" and keep its content: no offer, resume
    or tick target read; `follow-up stop` and a tick's deletion of its own handle stay available.
+
 5. **Availability sentences (`:66–71`).**
    - Reword "Changing availability requires review … does not unlock a disabled path" so that it
      states the maintainer and integration duty:
@@ -249,10 +252,11 @@ Deliberately unchanged in this run:
    - no focus-owned persistent state.
 
    `catalogHint` stays byte-identical.
+
 7. **Tests.**
    - In `Focus binds runtime host qualification …`, the report-only regex (`:120–122`) follows the
      enabled row wording. The phrase regexes `:117` (`candidate-bound observed\/report-only
-     acceptance`), `:123` and `:124` keep matching. They now refer to the binding paragraph and the
+acceptance`), `:123` and `:124` keep matching. They now refer to the binding paragraph and the
      unmatched case.
    - Replace the `:125` and `:126` regexes with assertions on the reworded sentences: the executable
      paths, "sends" excluded, the "cannot enable any other path" clause, and the ADR-strict
@@ -278,36 +282,37 @@ Deliberately unchanged in this run:
      `evals/focus/README.md:160–161`.
 9. **Budget.** Run `node build.mjs`, take the `focus` count from the "Always-loaded core
    (lines/budget)" report, and set the budget entry within ten lines of headroom.
-9a. **Digest guard.** Add a `node:test` test that runs in `pnpm test`:
-    - It builds all targets into a temporary output root (`EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT`, as in
-      `test/execution-profile-rendering.test.mjs`, or a `copyRepository` copy for mutations) and
-      reads only `portable/effective-flow/`, never the repository's `dist/`. The build sets
-      `EFFECTIVE_FLOW_BUILD_GIT_HASH` to a unique marker.
-    - It computes the SHA-256, over exact bytes, of the four focus sources and of the built
-      `effective-flow/tools/focus.md`, `effective-flow/shared/focus-follow-up.md` and
-      `effective-flow/shared/retro-native-sources.md`.
-    - It is inert only when both gate rows carry the explicit disabled form: the row whose first
-      cell is exactly `T3 observed, report-only` (respectively `T3 observed follow-up
-      (schedule_task, T3/Codex)`) has a second cell starting with `Disabled`. With exactly one row
-      disabled it fails with its own message. A missing or renamed row and a missing digest file
-      fail closed with their own messages. Otherwise it compares all seven digests with the tracked
-      digest file.
-    - A source mismatch fails naming the two ADR-strict paths: a passing record for a candidate
-      matching the merge head plus the updated digest file, or both rows disabled. A built-only
-      mismatch also names the third path: document the difference as demonstrably nonbehavioral on
-      the acceptance page and update the digest file in the same pull request.
-    - It asserts that neither the package version nor the git-hash marker appears in the three
-      built files, so a future version or hash stamp cannot make every release fail the guard.
-    - On a mismatch it prints the seven actual digests in the digest file's exact format; the file
-      is updated by copying that output, so later pull requests regenerate it byte-identically.
-    - The decision logic (row states, seven digests, expected digests → verdict and message) is a
-      pure function, tested with synthetic inputs for each case: both rows disabled (inert), one
-      row disabled, missing or renamed row, missing digest file, source mismatch, built-only
-      mismatch, match. One real portable build proves the passing path.
-    - A test comment names the invariant.
+   9a. **Digest guard.** Add a `node:test` test that runs in `pnpm test`:
+   - It builds all targets into a temporary output root (`EFFECTIVE_FLOW_BUILD_OUTPUT_ROOT`, as in
+     `test/execution-profile-rendering.test.mjs`, or a `copyRepository` copy for mutations) and
+     reads only `portable/effective-flow/`, never the repository's `dist/`. The build sets
+     `EFFECTIVE_FLOW_BUILD_GIT_HASH` to a unique marker.
+   - It computes the SHA-256, over exact bytes, of the four focus sources and of the built
+     `effective-flow/tools/focus.md`, `effective-flow/shared/focus-follow-up.md` and
+     `effective-flow/shared/retro-native-sources.md`.
+   - It is inert only when both gate rows carry the explicit disabled form: the row whose first
+     cell is exactly `T3 observed, report-only` (respectively `T3 observed follow-up
+(schedule_task, T3/Codex)`) has a second cell starting with `Disabled`. With exactly one row
+     disabled it fails with its own message. A missing or renamed row and a missing digest file
+     fail closed with their own messages. Otherwise it compares all seven digests with the tracked
+     digest file.
+   - A source mismatch fails naming the two ADR-strict paths: a passing record for a candidate
+     matching the merge head plus the updated digest file, or both rows disabled. A built-only
+     mismatch also names the third path: document the difference as demonstrably nonbehavioral on
+     the acceptance page and update the digest file in the same pull request.
+   - It asserts that neither the package version nor the git-hash marker appears in the three
+     built files, so a future version or hash stamp cannot make every release fail the guard.
+   - On a mismatch it prints the seven actual digests in the digest file's exact format; the file
+     is updated by copying that output, so later pull requests regenerate it byte-identically.
+   - The decision logic (row states, seven digests, expected digests → verdict and message) is a
+     pure function, tested with synthetic inputs for each case: both rows disabled (inert), one
+     row disabled, missing or renamed row, missing digest file, source mismatch, built-only
+     mismatch, match. One real portable build proves the passing path.
+   - A test comment names the invariant.
 
-    The digest file is written last, after review incorporation, from the final candidate build.
-    WP2b-2 checks that its seven entries equal the record's digests.
+   The digest file is written last, after review incorporation, from the final candidate build.
+   WP2b-2 checks that its seven entries equal the record's digests.
+
 10. **Consistency sweep.** Before review, `git grep -n -i -E "disabled|enable|pending qualification|currently qualified"`
     over the files of the Affected files table and `focus-host-acceptance.md`. Every hit about the
     snapshot or follow-up path is either rewritten here or belongs to a WP2b-2 obligation listed
@@ -334,7 +339,7 @@ immediately after the build run ends:
 Operator check (outside the build's completion condition, mirroring the #613 WP2b-1 criterion):
 
 - [ ] #625 is a draft with `Refs #613`, the line "Recording (WP2b-2) pending: do not merge" and no
-  `Closes`.
+      `Closes`.
 
 ### Edge cases
 
@@ -383,18 +388,18 @@ Not relevant: no user interface.
 ## Acceptance criteria
 
 - [ ] The rows "T3 observed, report-only" and "T3 observed follow-up (schedule_task, T3/Codex)" in
-  `src/shared/focus-session-contract.md` state qualified availability as in steps 2 and 4. Neither
-  names a SHA or digest. The unmatched case still returns the missing capability before any target
-  or ancestry read, and `follow-up stop` and own-handle deletion stay available.
+      `src/shared/focus-session-contract.md` state qualified availability as in steps 2 and 4. Neither
+      names a SHA or digest. The unmatched case still returns the missing capability before any target
+      or ancestry read, and `follow-up stop` and own-handle deletion stay available.
 - [ ] The binding paragraph and the availability sentences read as in steps 3 and 5, including the
-  ADR-strict integration rule. Every send row and the Local Claude section stay disabled.
+      ADR-strict integration rule. Every send row and the Local Claude section stay disabled.
 - [ ] The `focus` `description` names report-only snapshots and opt-in report-only follow-up checks;
-  `catalogHint` is byte-identical to `origin/develop`.
+      `catalogHint` is byte-identical to `origin/develop`.
 - [ ] The four non-record documents of step 8 no longer call snapshot or follow-up disabled, and none
-  of them names a candidate SHA. The step 10 sweep leaves no unassigned hit.
+      of them names a candidate SHA. The step 10 sweep leaves no unassigned hit.
 - [ ] `focus-host-acceptance.md`, the binding-drift rule and both ADRs are unchanged:
-  `git diff --name-only origin/develop...HEAD` lists neither the acceptance page nor any file under
-  `docs/adr/`.
+      `git diff --name-only origin/develop...HEAD` lists neither the acceptance page nor any file under
+      `docs/adr/`.
 - [ ] In `test/focus-contracts.test.mjs`:
   - both gate tests assert the enabled wording;
   - assertions cover the reworded availability sentences;
@@ -411,11 +416,11 @@ Not relevant: no user interface.
   - it builds into a temporary output root, never `dist/`, and rejects the package version and the
     git-hash marker in the three built files.
 - [ ] The gate section names no repository-only file, and each enabled row states that no record
-  lookup happens at runtime.
+      lookup happens at runtime.
 - [ ] `pnpm agent:check`, `pnpm test`, `node build.mjs` and `pnpm test:distribution` pass. If
-  `pnpm test` fails, every failure must also reproduce on the unmodified base and be listed in the
-  pull request. `pnpm eval <suite> verify` runs for all five suites, and the pull request names every
-  stale suite as owed before the next release.
+      `pnpm test` fails, every failure must also reproduce on the unmodified base and be listed in the
+      pull request. `pnpm eval <suite> verify` runs for all five suites, and the pull request names every
+      stale suite as owed before the next release.
 - [ ] The run ends with:
   - the plan archived as Implemented on the branch;
   - the plan pull request finalized by the handback;
@@ -466,6 +471,7 @@ Not relevant: no user interface.
   The canonical planning comment was brought in line on 2026-11-06 and also records the later
   decisions this revision incorporates (guard scope and paths, carry-over, portable only). Where
   the two differ, the comment governs.
+
 - **WP2b-2 obligations** (separate plan, after this run): record the 16 items on this branch head
   with an eight-entry digest table (the WP2a seven plus the built `shared/retro-native-sources.md`),
   then update `focus-host-acceptance.md`:
@@ -500,80 +506,80 @@ Not relevant: no user interface.
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 1 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 1 | 1 |
-| Testability | 0 | 0 | 3 |
-| Scope | 0 | 1 | 2 |
-| Maintainability | 0 | 1 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    1 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         1 |    1 |
+| Testability     |        0 |         0 |    3 |
+| Scope           |        0 |         1 |    2 |
+| Maintainability |        0 |         1 |    1 |
 
 ### Findings
 
 - **Important, Architecture.** What happened to the enabled rows after the merge was undefined, and
-  #613's carry-over contradicted the ADR's "remain disabled until … acceptance passes". *Resolution
-  by owner decision:* ADR-strict. Stated in "Architecture decisions" and step 5.
+  #613's carry-over contradicted the ADR's "remain disabled until … acceptance passes". _Resolution
+  by owner decision:_ ADR-strict. Stated in "Architecture decisions" and step 5.
 - **Important, Maintainability.** The candidate contradicted the acceptance page and contract
-  `:66–69`, and the plan never defined "activation". *Incorporated:* activation means integration
+  `:66–69`, and the plan never defined "activation". _Incorporated:_ activation means integration
   into `develop`; contract `:66–69` reworded (step 5); WP2b-2's acceptance-page obligations are
   listed by line.
-- **Important, Scope.** A `catalogHint` change stales all five eval suites. *Resolution by owner
-  decision:* `catalogHint` stays unchanged; only `focus` and `build-context` go stale.
+- **Important, Scope.** A `catalogHint` change stales all five eval suites. _Resolution by owner
+  decision:_ `catalogHint` stays unchanged; only `focus` and `build-context` go stale.
 - **Important, Error cases.** Nothing made the finalized body carry `Refs #613` and the recording
-  notice. *Incorporated:* the handback passes `#613`; the operator re-drafts and corrects the body;
+  notice. _Incorporated:_ the handback passes `#613`; the operator re-drafts and corrects the body;
   the final report forbids `merge-gate` (step 11).
-- **Note, Scope.** The list of superseded #613 details was incomplete. *Incorporated.*
+- **Note, Scope.** The list of superseded #613 details was incomplete. _Incorporated._
 - **Note, Architecture.** The executable-path sentence omitted schedule creation and update.
-  *Incorporated* in step 5.
-- **Note, Testability.** Step 8 did not name the `ada4fdae` sentence. *Incorporated.*
-- **Note, Testability.** Step 7 did not name the affected regexes `:117` and `:126`. *Incorporated.*
-- **Note, Maintainability.** Both ADRs would state a false present-tense status. *Resolution by
-  owner decision:* WP2b-2 adds dated status notes.
+  _Incorporated_ in step 5.
+- **Note, Testability.** Step 8 did not name the `ada4fdae` sentence. _Incorporated._
+- **Note, Testability.** Step 7 did not name the affected regexes `:117` and `:126`. _Incorporated._
+- **Note, Maintainability.** Both ADRs would state a false present-tense status. _Resolution by
+  owner decision:_ WP2b-2 adds dated status notes.
 - **Note, Error cases.** Fixes prompted by the published PR review or CI were not covered.
-  *Incorporated:* recording starts only after both; later fixes make a new candidate.
-- **Note, Testability.** The base failure count came from an older base. *Incorporated:*
+  _Incorporated:_ recording starts only after both; later fixes make a new candidate.
+- **Note, Testability.** The base failure count came from an older base. _Incorporated:_
   re-measured.
-- **Note, Scope.** No test guards wording consistency across the docs. *Incorporated* as the step 10
+- **Note, Scope.** No test guards wording consistency across the docs. _Incorporated_ as the step 10
   sweep; no new test.
 
 ### Deep review (2026-11-06)
 
 **Result:** Approved
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 1 | 0 |
-| Security | 0 | 0 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 3 | 1 |
-| Testability | 0 | 0 | 1 |
-| Scope | 0 | 1 | 1 |
-| Maintainability | 0 | 1 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         1 |    0 |
+| Security        |        0 |         0 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         3 |    1 |
+| Testability     |        0 |         0 |    1 |
+| Scope           |        0 |         1 |    1 |
+| Maintainability |        0 |         1 |    1 |
 
 - **Important, Architecture.** The enabled rows read as a runtime record check the model cannot
-  perform, against a repository-only file. *Incorporated:* rows state only their runtime match; the
+  perform, against a repository-only file. _Incorporated:_ rows state only their runtime match; the
   binding duty moves into the step 5 sentence as "the operator acceptance record"; a test asserts
   that no repository-only file is named.
 - **Important, Error cases.** The "only executable paths" sentence omitted the cleanup deletions.
-  *Incorporated* in steps 5 and 7.
+  _Incorporated_ in steps 5 and 7.
 - **Important, Error cases.** Plan-PR continuation neither rebases nor merges, so the candidate sits
-  on the plan branch's merge base. *Incorporated:* step 1 precondition and the revised edge case.
+  on the plan branch's merge base. _Incorporated:_ step 1 precondition and the revised edge case.
 - **Important, Scope.** The completion condition depended on manual steps after the build.
-  *Incorporated:* the build criteria end at the finalized pull request and the report; the
+  _Incorporated:_ the build criteria end at the finalized pull request and the report; the
   re-draft and body correction moved to "Post-run operator steps".
 - **Important, Error cases.** The `pr` handback carries no issue references and strips foreign
-  keywords. *Incorporated:* the operator restores `Refs #613`.
+  keywords. _Incorporated:_ the operator restores `Refs #613`.
 - **Important, Maintainability.** The ADR-strict rule had no trigger for eager-fragment or rendering
-  changes. *Resolution by owner decision:* the digest guard (step 9a).
+  changes. _Resolution by owner decision:_ the digest guard (step 9a).
 - **Note, Maintainability.** The WP2b-2 obligations missed the acceptance page `:311–316` and
-  `:347–350`, and the sweep pattern could not find them. *Incorporated.*
+  `:347–350`, and the sweep pattern could not find them. _Incorporated._
 - **Note, Scope.** WP2b-2 cannot reach this branch through plan-PR continuation and also edits the
-  ADRs. *Incorporated* in the Requirement and the WP2b-2 obligations.
-- **Note, Error cases.** A missing plan pull request was unhandled. *Incorporated* as a step 1
+  ADRs. _Incorporated_ in the Requirement and the WP2b-2 obligations.
+- **Note, Error cases.** A missing plan pull request was unhandled. _Incorporated_ as a step 1
   precondition.
-- **Note, Testability.** The `:135` negative regex is sensitive to line breaks. *Incorporated* in
+- **Note, Testability.** The `:135` negative regex is sensitive to line breaks. _Incorporated_ in
   steps 3 and 7.
 
 ### Revision (2026-11-06)
@@ -584,42 +590,127 @@ Revision in place to the #613 planning comment's decisions of 2026-11-06 (its ba
 reviews, all incorporated or resolved by owner decision):
 
 - **Important, Architecture.** The plan let a focus-source change escape as "demonstrably
-  nonbehavioral". *Incorporated:* sources are never exempt (decisions, step 5, edge cases).
+  nonbehavioral". _Incorporated:_ sources are never exempt (decisions, step 5, edge cases).
 - **Important, Testability.** The guard missed `retro-native-sources.md` and the sources.
-  *Resolution by owner decision:* seven digests (step 9a, criterion).
+  _Resolution by owner decision:_ seven digests (step 9a, criterion).
 - **Important, Maintainability.** A documented nonbehavioral built-file change had no path past the
-  guard. *Resolution by owner decision:* the third path.
-- **Important, Architecture.** "A record for its own head" was unsatisfiable. *Incorporated:* a
+  guard. _Resolution by owner decision:_ the third path.
+- **Important, Architecture.** "A record for its own head" was unsatisfiable. _Incorporated:_ a
   candidate matching the merge head plus the updated digest file.
-- **Important, Error cases.** A reworded enabled row would switch the guard off. *Incorporated:*
+- **Important, Error cases.** A reworded enabled row would switch the guard off. _Incorporated:_
   inert only with both rows in the explicit disabled form.
 - **Important, Architecture.** Section-level carry-over conflicted with the strict rule.
-  *Resolution by owner decision:* byte-identical sources and built files only.
-- **Note, Testability.** Guard feasibility constraints. *Incorporated:* temporary copy, exact
+  _Resolution by owner decision:_ byte-identical sources and built files only.
+- **Note, Testability.** Guard feasibility constraints. _Incorporated:_ temporary copy, exact
   bytes, no version string.
-- **Note, Architecture.** Native builds run enabled rows unrecorded. *Resolution by owner
-  decision:* portable only, documented residual risk (WP2b-2).
+- **Note, Architecture.** Native builds run enabled rows unrecorded. _Resolution by owner
+  decision:_ portable only, documented residual risk (WP2b-2).
 - **Note, Testability.** WP2b-2's digest table and equality check did not match the guard.
-  *Incorporated:* eight-entry table and defined mismatch path.
+  _Incorporated:_ eight-entry table and defined mismatch path.
 
 Review of this revision (2026-11-06): 2 important, 6 notes, all incorporated.
 
 - **Important, Testability.** The guard's failure branches were untestable on the real build.
-  *Incorporated:* a pure decision function with synthetic-input tests per verdict.
+  _Incorporated:_ a pure decision function with synthetic-input tests per verdict.
 - **Important, Error cases.** The disabled-row detection was ambiguous and missing inputs were
-  unhandled. *Incorporated:* exact first-cell match; missing row or digest file fails closed.
-- **Note, Testability.** A hash-only stamp would evade the version check. *Incorporated:* git-hash
+  unhandled. _Incorporated:_ exact first-cell match; missing row or digest file fails closed.
+- **Note, Testability.** A hash-only stamp would evade the version check. _Incorporated:_ git-hash
   marker.
-- **Note, Maintainability.** The digest file had no reproducible producer. *Incorporated:* the guard
+- **Note, Maintainability.** The digest file had no reproducible producer. _Incorporated:_ the guard
   prints the file content on mismatch.
 - **Note, Feasibility.** The cited test builds into a temporary output root, not a copy.
-  *Incorporated:* either form.
+  _Incorporated:_ either form.
 - **Note, Scope.** The WP2b-2 obligations missed the ADR residual-risk wording and the carry-over
-  duty. *Incorporated.*
-- **Note, Maintainability.** "Anything else" covered unrelated files. *Incorporated.*
-- **Note, Testability.** The comment's #625 draft criterion had no checkbox. *Incorporated* as an
+  duty. _Incorporated._
+- **Note, Maintainability.** "Anything else" covered unrelated files. _Incorporated._
+- **Note, Testability.** The comment's #625 draft criterion had no checkbox. _Incorporated_ as an
   operator check.
 
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Requirement.** WP2b-1 of #613 is implemented on the plan pull request's branch: the enabling
+candidate, with both T3 observed rows enabled and every send row disabled. WP2b-2 records the 16
+checklist items against this candidate before the pull request may merge.
+
+**Architecture decisions.** These are as planned, together with the decisions of 2026-11-06:
+
+- the seven-digest guard with three failure paths;
+- focus sources never exempt;
+- carry-over only with byte-identical files;
+- portable artifact only.
+
+The build added two details:
+
+- an `invalid-digest-file` verdict, so a malformed digest file fails closed and prints the actual
+  digests;
+- a gate-section check that rejects SHA-like hex strings containing at least one digit.
+
+**Affected files.**
+
+- `src/shared/focus-session-contract.md`: binding paragraph, both T3 observed rows, availability
+  sentences;
+- `src/tools/focus.md`: `description` only, with `catalogHint` byte-identical;
+- `build.mjs`: `focus` budget 404 → 414, measured 410;
+- `test/focus-contracts.test.mjs`;
+- new `test/support/focus-digest-guard.mjs`, `test/focus-digest-guard.test.mjs` and
+  `test/fixtures/focus-digests.sha256`;
+- `docs/user-guide/tools-quality.md`, `docs/concept/2026-11-02-focus-session-check.md`,
+  `docs/developer-guide/release-and-installation.md`, `evals/focus/README.md`;
+- `evals/eval.mjs`: the `focus` capability line now names only sends as disabled. This is a review
+  finding from the step 10 sweep; the file is outside every suite instrument.
+
+`src/shared/focus-follow-up.md` is unchanged, because its gate references already read "disabled or
+unmatched" or "qualified". `focus-host-acceptance.md` and both ADRs are unchanged; they belong to
+WP2b-2.
+
+**Implementation details.** The candidate's digests, as recorded in the fixture:
+
+- `src/tools/focus.md`: `d5b2c8cb…`;
+- `src/shared/focus-session-contract.md`: `405a7742…`;
+- `src/shared/focus-follow-up.md`: `aabd8f1e…`;
+- `src/shared/retro-native-sources.md`: `bc41608b…`;
+- built `tools/focus.md`: `08e39a78…`;
+- built `shared/focus-follow-up.md`: `b6eb38f3…`;
+- built `shared/retro-native-sources.md`: `bc41608b…`.
+
+The binding candidate for WP2b-2 is the branch head after this run's commit.
+
+**Test results.** All commands ran through the T3 project runner, in the `ef-policy-node24-git`
+environment.
+
+- `pnpm agent:check`: passed.
+- `node build.mjs`: passed, with no budget overrun.
+- `node --test test/focus-contracts.test.mjs test/focus-digest-guard.test.mjs`: 33/33 passed.
+- `sha256sum -c test/fixtures/focus-digests.sha256`: 7/7 OK.
+- `pnpm test`: 1037 failures in 4650 tests. The failing test names are identical to the unmodified
+  base `87b7bfc0`, so there are no new failures and the 10 new tests pass. Every failure comes from
+  the runner container's read-only Git mount, where `git init` and branch creation fail.
+- `pnpm test:distribution`: failed at its first fixture on the same read-only Git mount. This is an
+  environmental failure; CI on the pull request is authoritative.
+- `pnpm eval <suite> verify` (report mode) found no integrity blockers in any of the five suites.
+  The stale or absent suites are:
+  - `merge-gate`, `iterate` and `next-steps`: stale from earlier changes on `develop`;
+  - `build-context`: absent;
+  - `focus`: stale because `SKILL.md` and `tools/focus.md` changed in this run.
+
+  The `focus` and `build-context` rounds are owed after the merge and before the next release, per
+  #613.
+
+**Review result.** One Node.js reviewer, all severities: 0 critical, 1 important, 4 notes. All
+were fixed in one incorporation pass (see Review findings). Final validation passed.
+
+## Review findings
+
+**Date:** 2026-11-06
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     5 |
+| Open / Not implemented |     0 |

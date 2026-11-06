@@ -1,5 +1,5 @@
 ---
-description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. Host paths require candidate-bound qualification; T3 observed use is report-only, and unqualified reads and all sends stay disabled. No focus-owned persistent state; an opt-in follow-up mode is defined but disabled pending qualification."
+description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. On the qualified T3 observed path snapshots are report-only, and an opt-in follow-up mode runs recurring report-only checks there. Unqualified host paths and all sends stay disabled. No focus-owned persistent state."
 catalogHint: "Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict."
 ---
 
