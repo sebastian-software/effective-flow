@@ -305,9 +305,10 @@ the portable build after checking that no other Codex work was active. The share
 was stopped after installation; its old binary was confirmed absent and the new binary's start
 was later. The installed tree matched `diff -r` and the three installed focus-file digests both
 before and after that restart. The restore baseline also preserves the local #626 additions made
-to the original DALO target during the earlier waiting period. At the failure checkpoint, restore
-and its verification were still pending; the separately authorized cap loop had not been stopped.
-No digest-bound file changed while collecting these observations.
+to the original DALO target during the earlier waiting period. After F2 failed, the owner explicitly
+authorized early termination of the cap loop and restoration. Both follow-up schedules were deleted,
+the original link and target tree were restored, and the post-restore app-server restart was verified
+as recorded below. No digest-bound file changed while collecting these observations.
 
 ### F1 snapshot and admission checks — partial
 
@@ -363,9 +364,9 @@ passing rerun.
 - F3–F9, F11, F14 and F15 have no passing record. Further acceptance scenarios stopped at F2.
 - F10 reached actual human approval gates during the initial snapshot; it did not complete the
   scheduled approval/queueing case. No approval was supplied by the coordinator.
-- F12's first five-minute cap loop remained active at this checkpoint. Its nominal 48th tick was
-  due around 20:32 UTC; it was not restarted, manually ticked or shortened. Cap completion and
-  compaction behavior remain unrecorded.
+- F12's first five-minute cap loop was explicitly stopped after four ticks with owner approval
+  following F2's failure. It was not restarted or manually ticked. The planned 48-tick cap was not
+  reached; cap completion and compaction behavior remain unrecorded.
 - F13's scheduled prompts carried the `$effective-flow focus follow-up tick` prefix and executed
   the follow-up path. This is a partial loading observation, not acceptance of the failed loop.
 - F16 captured growth for unchanged ticks, but no conforming quiet tick: O2's second tick added
@@ -376,9 +377,29 @@ passing rerun.
 - UI-specific evidence remains missing. The coordinator's browser reached T3's pairing screen
   without an authenticated session, and the tab was closed without supplying credentials. API
   schedule listings do not substitute for the planned UI observations.
-- The original DALO slot has not yet been declared restored. Cleanup and restore evidence must be
-  added after the remaining cap-loop authority is resolved; this partial record makes no clean
-  host-state claim.
+- Schedule cleanup was verified through the documented T3 API, not the UI. Both qualification
+  schedules were absent after stopping and remained absent after restoration.
+
+### F cleanup after the failed attempt
+
+O's explicit stop deleted its schedule at `ticks=2`; O2's explicit stop deleted the cap-loop
+schedule at `ticks=4`. Both returned `state=stopped`. The approval-required observer was interrupted
+without supplying its pending approval. The qualification project's schedule listing was empty
+after the stops and after restoration. No additional acceptance scenarios were started.
+
+The installed candidate still matched the portable build in the final `diff -r`, and all eight
+binding digests were unchanged. After confirming no other Codex work was active, the candidate
+copy was moved aside and the original DALO link restored. All 188 entries in the saved target-tree
+manifest, including file contents, modes, directories and symlinks, matched the pre-install
+baseline, including the local #626 additions. `dalo status --check` matched the pre-install JSON
+report and `dalo doctor` exited successfully.
+
+The shared Codex app-server was stopped again after restoration. The old binary was confirmed
+absent; the replacement binary started later. A fresh post-restart verification confirmed the
+original link, all 188 target-tree entries and the matching DALO status. The restored skill is the
+original local DALO target, not the qualification candidate. These cleanup results do not change
+F2's failed result or qualify any remaining scenario. #625 stays a draft, and the recording plan
+remains unimplemented.
 
 Raw evidence stays in the ignored local recording directory. Only these evidence-file digests and
 sanitized excerpts are published:
@@ -397,6 +418,15 @@ sanitized excerpts are published:
 | `O2-quiet-ticks-full.json`        | `357efc67e61ade985979880900e9ff339809c7772024ab5e9c01f59d2dc6919e` |
 | `F2-tick-metrics.json`            | `a93f79ae4607c3acff222c3c460ff5ff11a42f83972caa8d1300d68877a83896` |
 | `schedules-at-F2-failure.json`    | `de6a24b217ed05342d640719a9f5611eaf9c2de8dbc15a258376ab1e8d668869` |
+| `O-stop-messages.json`            | `06f3d4b8d5d5edb13e2cdb7dc0af38537d15067fd6c2dc312e4ad2004b80f4d3` |
+| `O2-stop-messages.json`           | `85df14a8937d8a10667bd8b033abd454caadd9ed948dffdcdd51036c9db28e88` |
+| `schedules-after-stop.json`       | `2e0037521461ed23f4269712d6deac75619d38bedeeeafd0f6d518d3a002de5a` |
+| `installed-diff-after-run.log`    | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `restore-slot-manifest.json`      | `48dea621dc1ce3961f9fff2013b4cf40090dc092b6d69bf42fed51a2cbd3a60f` |
+| `restore-restart.json`            | `9f6a4c8537a546c5d8fcc6861a681e41ce92babd9155743318eadf5879f29673` |
+| `restore-verification.json`       | `0cec5cfeaf59152601a06fb574a9e997614fc7243139514bd1261eb90ca39e71` |
+| `dalo-after-restart.json`         | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
+| `schedules-after-restore.json`    | `2e0037521461ed23f4269712d6deac75619d38bedeeeafd0f6d518d3a002de5a` |
 
 ## Acceptance matrix
 
