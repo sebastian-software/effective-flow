@@ -159,15 +159,20 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
   assert.equal(STATE_OPERATION_CLASSES['cleanup apply'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['ledger init'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['ledger append'], 'not-allowlisted');
+  // The read-only resume operations get no rule until the allowlist contract names them.
+  assert.equal(STATE_OPERATION_CLASSES['worktree resume-check'], 'not-allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['ledger reconcile'], 'not-allowlisted');
   assert.deepEqual(
     [...NEVER_ALLOWLISTED_OPERATIONS],
     [
       'lock break',
       'harness allow-rules',
       'worktree remove',
+      'worktree resume-check',
       'cleanup apply',
       'ledger init',
       'ledger append',
+      'ledger reconcile',
     ],
   );
   assert.deepEqual(

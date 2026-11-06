@@ -1,7 +1,8 @@
 // Runtime-state helper: the private delivery-progress ledger of a `partial-diff` delivery, its
-// schema, its file under the runtime-state guard, and the comparisons the ledger operations and
-// the release transition of `effective-flow-state-recovery-core.mjs` run against Git. It imports
-// neither that module nor `effective-flow-state-worktree-core.mjs`, which both import it.
+// schema, its file under the runtime-state guard, and the comparisons the ledger operations, the
+// release transition and the resume adoption of `effective-flow-state-recovery-core.mjs` run
+// against Git (`commitGroupProblems`, `branchHistory`, `stagedGroupState`). It imports neither that
+// module nor `effective-flow-state-worktree-core.mjs`, which both import it.
 //
 // Location: `<cwd>/.effective-flow/worktree-runs/ledgers/<RECORD_ID>.ledger`, addressed only by the
 // record ID. The subdirectory and the `.ledger` suffix keep it out of everything that scans
@@ -34,6 +35,7 @@
 
 import { readdir as fsReaddir } from 'node:fs/promises';
 import path from 'node:path';
+import { isDeepStrictEqual } from 'node:util';
 import { validateLiteralPath, validateSelectionManifest } from './delivery-selection-core.mjs';
 import {
   RUNTIME_STATE_DIR,
@@ -68,9 +70,9 @@ export const LEDGER_KEYS = Object.freeze([
   'groups',
   'commits',
 ]);
-// The keys `ledger append` never changes: everything but `commits`. Nothing in this group reads
-// it; it is the key set resume adoption compares to prove that the ledger's immutable part is
-// unchanged since `ledger init`.
+// The keys `ledger append` never changes: everything but `commits`. The resume adoption compares
+// them (`sameImmutablePart`) to prove the ledger's immutable part unchanged since its proof before
+// it appends a recovered commit.
 export const LEDGER_IMMUTABLE_KEYS = Object.freeze(LEDGER_KEYS.filter((key) => key !== 'commits'));
 export const LEDGER_BASE_KEYS = Object.freeze(['branch', 'oid']);
 export const LEDGER_LANGUAGE_KEYS = Object.freeze(['git', 'forge']);
@@ -86,6 +88,8 @@ const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const FILE_MODES = Object.freeze(['100644', '100755', '120000']);
 const ABSENT_MODE = '000000';
+// The `diff-index --raw` statuses of a plain staged change; `U` (unmerged) and the rest never match.
+const STAGED_CHANGE_STATUSES = Object.freeze(['A', 'M', 'D', 'T']);
 
 // ---------------------------------------------------------------------------------------------
 // Paths
@@ -327,6 +331,12 @@ export function residualEndpoints(ledger) {
   return ledgerProgress(ledger).residualGroups.flatMap((group) => group.endpoints);
 }
 
+// Whether `left` and `right` hold the same immutable part (every key of LEDGER_IMMUTABLE_KEYS):
+// the identity a resume adoption proves before it appends a recovered commit.
+export function sameImmutablePart(left, right) {
+  return LEDGER_IMMUTABLE_KEYS.every((key) => isDeepStrictEqual(left?.[key], right?.[key]));
+}
+
 // ---------------------------------------------------------------------------------------------
 // File access (all through the runtime-state guard)
 
@@ -460,6 +470,59 @@ export async function commitGroupProblems(git, { commitOid, parentOid, group }) 
   });
   if (!matches) problems.push('blobs');
   return problems;
+}
+
+// The commits from `creationOid` (exclusive) to `tip` (inclusive), oldest first, as `rev-list`
+// lists them, or null when Git cannot list them. At most `limit` of the newest are read, so a
+// history longer than `limit` comes back with exactly `limit` entries and never equals a shorter
+// expected list.
+export async function branchHistory(git, { creationOid, tip, limit }) {
+  const listed = await git(['rev-list', `--max-count=${limit}`, `${creationOid}..${tip}`, '--']);
+  if (!gitOk(listed)) return null;
+  const oids = asBuffer(listed.stdout)
+    .toString('utf8')
+    .split('\n')
+    .filter((line) => line !== '');
+  if (!oids.every((oid) => OID_PATTERN.test(oid))) return null;
+  return oids.reverse();
+}
+
+// The staged state of the worktree `git` runs in against its HEAD: `{clean: true}` when the index
+// holds HEAD's tree, else `{clean: false, paths, matches}` with the staged paths (sorted) and
+// whether they are exactly the endpoints of `group` (when given), each holding its descriptor's
+// blob OID and mode or, for a tombstone, absent: the staged tree is then exactly HEAD's tree with
+// that group applied. Renames are never detected. Only a plain staged change (status A, M, D or T)
+// can match: an unmerged entry (status U, listed with the absent mode `000000`, which would
+// otherwise pass for a staged tombstone) or any other status is never the group's. Null when Git
+// cannot compare.
+export async function stagedGroupState(git, group) {
+  const diff = await git([
+    'diff-index',
+    '--cached',
+    '-r',
+    '-z',
+    '--raw',
+    '--no-renames',
+    '--ignore-submodules=none',
+    'HEAD',
+    '--',
+  ]);
+  const changes = gitOk(diff) ? parseRawDiff(diff.stdout) : null;
+  if (changes === null) return null;
+  if (changes.size === 0) return { clean: true, paths: [], matches: false };
+  const paths = [...changes.keys()].sort();
+  const matches =
+    group !== null &&
+    group !== undefined &&
+    changes.size === group.endpoints.length &&
+    [...changes.values()].every((change) => STAGED_CHANGE_STATUSES.includes(change.status)) &&
+    group.endpoints.every((endpoint) => {
+      const change = changes.get(endpoint.path);
+      if (!change) return false;
+      if (endpoint.kind === 'tombstone') return change.dstMode === ABSENT_MODE;
+      return change.dstMode === endpoint.mode && change.dstOid === endpoint.oid;
+    });
+  return { clean: false, paths, matches };
 }
 
 // `paths` as the NUL-terminated stdin of `--pathspec-from-file=- --pathspec-file-nul`.

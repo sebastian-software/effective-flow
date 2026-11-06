@@ -1567,6 +1567,90 @@ export async function inspectResidual(input, options = {}) {
   };
 }
 
+// The resume-mode reconcile of a delivery checkout against the persisted descriptors of its
+// ledger, without writing anything and without re-planning: no committed rename or three-way entry
+// is planned again, every comparison uses the descriptors `ledger init` computed. Input:
+//   manifest     the bound selection manifest (`validateSelectionManifest`)
+//   deliveryRoot the delivery checkout, at `commitOid`
+//   commitOid    the branch tip the committed groups end in
+//   committed    the endpoint descriptors of the committed groups
+//   residual     the endpoint descriptors of the uncommitted groups
+//   sourceRoot   optional, defaults to `manifest.source.root`
+// `committed` and `residual` must together be exactly the manifest's endpoints
+// (`expectedEndpoints`, rename sources included) with the manifest's kinds, else INVALID_PAYLOAD.
+// Returns `{exact, mismatches, staged}` with sorted path lists:
+//   head       true when the checkout's HEAD is not `commitOid`
+//   committed  the committed endpoints whose entry in `commitOid`'s tree is not the descriptor's
+//              blob OID and mode (or present for a tombstone): compared by blob OID, so clean and
+//              smudge filters, LFS and EOL attributes keep a committed path exact
+//   residual   the residual endpoints whose working tree differs from the descriptor's kind, mode
+//              or byte digest (`inspectResidual`'s `content`)
+//   index      the residual endpoints whose index entry is neither HEAD's nor the descriptor's
+//   extra      the dirty or untracked paths outside the residual endpoints
+//   sourceDrift  the drift entries of `verifySourceManifest` (exact only without any)
+// and, beside them, `staged`: the residual endpoints whose index entry differs from HEAD
+// (`inspectResidual`'s `staged`). A staged entry holding its descriptor is no mismatch (a
+// hook-rejected group stays staged and exact), so a caller that unstaged such a group proves the
+// unstaging by an empty `staged`.
+export async function reconcileResume(input, options = {}) {
+  requireObject(input);
+  const manifest = validateSelectionManifest(input.manifest);
+  const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
+  if (typeof input.commitOid !== 'string' || !OBJECT_ID_PATTERN.test(input.commitOid)) {
+    fail('INVALID_PAYLOAD', 'commitOid must be a full commit object id');
+  }
+  const committed = requireEndpointDescriptors(input.committed);
+  const residual = requireEndpointDescriptors(input.residual);
+  const expected = expectedEndpoints(manifest);
+  const described = [...committed, ...residual];
+  const named = new Set(described.map((endpoint) => endpoint.path));
+  if (
+    named.size !== described.length ||
+    named.size !== expected.size ||
+    described.some((endpoint) => expected.get(endpoint.path)?.kind !== endpoint.kind)
+  ) {
+    fail('INVALID_PAYLOAD', 'committed and residual must be exactly the manifest endpoints');
+  }
+  const context = await repositoryContext(deliveryRoot, options.runner);
+  if (context.repositoryIdentity !== manifest.source.repositoryIdentity) {
+    fail('UNSAFE_DELIVERY_CHECKOUT', 'delivery checkout belongs to a different repository');
+  }
+  const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
+  const committedMismatches = [];
+  for (const endpoint of committed) {
+    const state = await treeState(deliveryRoot, input.commitOid, endpoint.path, options.runner);
+    const holds =
+      endpoint.kind === 'tombstone'
+        ? state.oid === null
+        : state.oid === endpoint.oid && state.mode === endpoint.mode;
+    if (!holds) committedMismatches.push(endpoint.path);
+  }
+  const inspected = await inspectResidual(
+    { deliveryRoot, endpoints: residual },
+    { runner: options.runner },
+  );
+  const source = await verifySourceManifest({ manifest, sourceRoot }, { runner: options.runner });
+  const mismatches = {
+    head: context.headOid !== input.commitOid,
+    committed: committedMismatches.sort(),
+    residual: inspected.content,
+    index: inspected.index,
+    extra: inspected.extra,
+    sourceDrift: source.drift,
+  };
+  return {
+    exact:
+      !mismatches.head &&
+      mismatches.committed.length === 0 &&
+      mismatches.residual.length === 0 &&
+      mismatches.index.length === 0 &&
+      mismatches.extra.length === 0 &&
+      source.exact,
+    mismatches,
+    staged: inspected.staged,
+  };
+}
+
 export async function transferSelection(input, options = {}) {
   requireObject(input);
   const plan = await buildTransferPlan(input, options);

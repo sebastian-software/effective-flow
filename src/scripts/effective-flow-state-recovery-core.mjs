@@ -1,16 +1,23 @@
-// Runtime-state helper: the delivery-progress ledger operations and the release transition of a
-// retained `partial-diff` record.
+// Runtime-state helper: the delivery-progress ledger operations, the release transition and the
+// resume adoption of a retained `partial-diff` record, and the read-only resume operations.
 //
 //   ledger init           {cwd, executionRoot, recordId, sessionId, manifest, groups, base,
 //                          visibility, language}
 //   ledger append         {cwd, executionRoot, recordId, sessionId, commitOid}
-//   worktree transition   with `release: "partial-diff"` (`releaseTransition`)
+//   ledger reconcile      {cwd, executionRoot, recordId, sessionId}
+//   worktree resume-check {cwd, executionRoot, recordId, visibility}
+//   worktree transition   with `release: "partial-diff"` or `adoption: "partial-diff-resume"`
+//                         (`recoveryTransition`)
 //
 // `ledger init` writes the private ledger of an `active` `partial-diff` record once, no-clobber,
 // under the record lock, from descriptors the helper computes itself; `ledger append` adds one
 // verified commit. The release moves a retained `partial-diff` record from `aborted` or `failed`
-// to `cleanup-ready` under its own proofs (`releaseProofs`), through the record lock, record
-// reading and writing of `transition` in `effective-flow-state-worktree-core.mjs`.
+// to `cleanup-ready` under its own proofs (`releaseProofs`); the resume adoption moves it back to
+// `active` for a new session under its own proofs (`resumeProofs`), recording at most one proven
+// tip commit the failed run had not recorded. Both run through the record lock, record reading
+// and writing of `transition` in `effective-flow-state-worktree-core.mjs`. `worktree resume-check`
+// evaluates both proof sets without taking the lock or writing anything, and `ledger reconcile`
+// compares the resumed worktree with the ledger's descriptors (`reconcileResume`), read-only too.
 //
 // Layering: this module imports `effective-flow-state-worktree-core.mjs` (the record, lock, fact
 // and guarded-Git internals it exports) and `effective-flow-state-ledger-core.mjs` (the ledger's
@@ -19,12 +26,14 @@
 // `release` here. Every Git call inside the recorded worktree or the selection's source root runs
 // only after the common-directory proof of that root, and with `core.fsmonitor=false`.
 
+import { isDeepStrictEqual } from 'node:util';
 import { asBuffer } from './runtime-state-guard.mjs';
 import { StateOutcome, fail, requireObject } from './effective-flow-state-core.mjs';
 import {
   DeliverySelectionError,
   describeDeliveryEndpoints,
   inspectResidual,
+  reconcileResume,
   validateSelectionManifest,
   verifySourceManifest,
   workingEndpointMatches,
@@ -33,6 +42,7 @@ import {
   LEDGER_LANGUAGES,
   LEDGER_MAX_BYTES,
   LEDGER_VISIBILITIES,
+  branchHistory,
   commitGroupProblems,
   createLedger,
   groupPlanProblem,
@@ -46,11 +56,14 @@ import {
   reportedPaths,
   residualEndpoints,
   restoreResidual,
+  sameImmutablePart,
   serializeLedger,
+  stagedGroupState,
   worstCaseLedgerBytes,
 } from './effective-flow-state-ledger-core.mjs';
 import {
   OID_PATTERN,
+  VISIBILITIES,
   deferSignals,
   evaluateEligibility,
   gatherFacts,
@@ -60,6 +73,7 @@ import {
   itemDigest,
   listWorktrees,
   lockStillOwned,
+  observedLock,
   openRoots,
   phase,
   prepare,
@@ -86,6 +100,23 @@ async function selectionCall(fn) {
     if (error instanceof DeliverySelectionError) return null;
     throw error;
   }
+}
+
+// The memo of the read-only checks `worktree resume-check` evaluates for both proof sets
+// (`checkMemo`): `once(key, compute)` runs `compute` for the first call of `key` and hands every
+// later call the same result, so the resume and the release evaluation share one `inspectResidual`
+// of the unrecorded endpoints and one source proof and `verifySourceManifest`. The transitions
+// evaluate under their own lock without a memo (`unmemoized`): every check runs where it is called.
+function checkMemo() {
+  const results = new Map();
+  return (key, compute) => {
+    if (!results.has(key)) results.set(key, compute());
+    return results.get(key);
+  };
+}
+
+function unmemoized(_key, compute) {
+  return compute();
 }
 
 // The removal conditions of `facts` for `statuses`, without those in `skip`, as the stable proof
@@ -141,77 +172,18 @@ export function ledgerBinding(record) {
 // restore that stops part-way is an error that names the paths already restored and the index
 // entries already removed, with the record unchanged; the retry releases the rest.
 async function releaseProofs({ context, roots, paths, record, held, signals, deps }) {
-  const refuse = (proofs, details = {}) =>
-    new StateOutcome('NOT_ELIGIBLE', { recordId: record.recordId, proofs, ...details });
-  const purpose = record.purpose === 'partial-diff' ? [] : ['purpose'];
   const worktrees = await listWorktrees(context);
   const facts = await gatherFacts(context, roots, worktrees, record, { ownLock: held.token });
-  const statuses = ['aborted', 'failed'];
-  if (facts.registrationCount === 0 || !facts.directoryExists) {
-    const proofs = [
-      ...purpose,
-      ...(facts.gone ? [] : ['half-gone']),
-      ...conditionProofs(facts, statuses, [2, 3, 4, 5, 7, 8]),
-      ...(facts.receiptFieldsMatch ? [] : ['condition-2']),
-    ].sort(proofOrder);
-    if (!facts.gone) {
-      return refuse(proofs, {
-        route: 'gone',
-        shape:
-          facts.registrationCount > 0 ? 'registered-missing-directory' : 'unregistered-directory',
-      });
-    }
-    return proofs.length > 0 ? refuse(proofs, { route: 'gone' }) : { route: 'gone', restored: [] };
-  }
-  const proofs = [...purpose, ...conditionProofs(facts, statuses, [7, 8])];
-  if (proofs.length > 0) return refuse(proofs);
-  if (facts.clean) return { route: 'clean', restored: [] };
-  // Conditions 3 and 4 hold: the worktree is registered and its common directory proven ours.
-  const worktreeRunner = selectionRunner(context, roots, [record.worktreePath]);
-  const read = await readLedger(context, roots.cwd, ledgerBinding(record));
-  if (read.state !== 'ok') {
-    const dirty = await dirtyPaths(record.worktreePath, worktreeRunner);
-    return refuse(['residual'], {
-      route: 'no-ledger',
-      ledger: read.state === 'missing' ? 'missing' : `invalid:${read.reason}`,
-      ...(dirty ? { residualPaths: dirty.paths, residualPathCount: dirty.count } : {}),
+  const evaluation = await evaluateRelease({ context, roots, record, facts });
+  if (evaluation.refusal) {
+    return new StateOutcome('NOT_ELIGIBLE', {
+      recordId: record.recordId,
+      proofs: evaluation.refusal.proofs,
+      ...evaluation.refusal.details,
     });
   }
-  const ledger = read.ledger;
-  const descriptors = residualEndpoints(ledger);
-  const source = await proveSourceRoot(context, roots, ledger.manifest);
-  const runner = selectionRunner(context, roots, [
-    record.worktreePath,
-    ...(source && source !== record.worktreePath ? [source] : []),
-  ]);
-  const sourceExact = async () =>
-    source !== null &&
-    (
-      await selectionCall(() =>
-        verifySourceManifest({ manifest: ledger.manifest, sourceRoot: source }, { runner }),
-      )
-    )?.exact === true;
-  const residual = await selectionCall(() =>
-    inspectResidual({ deliveryRoot: record.worktreePath, endpoints: descriptors }, { runner }),
-  );
-  const content = residual ? unreleasedContent(residual) : [];
-  const failed = [];
-  if (!residual || residual.extra.length > 0 || content.length > 0) failed.push('residual');
-  if (residual && residual.index.length > 0) failed.push('index');
-  if (!(await sourceExact())) failed.push('source');
-  if (failed.length > 0) {
-    return refuse(failed, {
-      route: 'ledger',
-      ...(residual
-        ? {
-            residualPaths: reportedPaths(residual.dirty).paths,
-            residualPathCount: residual.dirty.length,
-            extra: reportedPaths(residual.extra).paths,
-            content: reportedPaths(content).paths,
-          }
-        : {}),
-    });
-  }
+  if (evaluation.route !== 'ledger') return { route: evaluation.route, restored: [] };
+  const { ledger, descriptors, source, runner, residual } = evaluation;
   await phase(deps, 'releaseProven', { recordId: record.recordId });
   if (signals.signal) return interruptedUnderLock(signals, record.recordId, record.status);
   if (!(await lockStillOwned(context, paths, held))) {
@@ -219,7 +191,13 @@ async function releaseProofs({ context, roots, paths, record, held, signals, dep
   }
   // The source again, after the last lock check and before the first discard: what the release
   // discards must still be in the source when it is discarded.
-  if (!(await sourceExact())) return refuse(['source'], { route: 'ledger' });
+  if (!(await sourceIsExact(ledger.manifest, source, runner))) {
+    return new StateOutcome('NOT_ELIGIBLE', {
+      recordId: record.recordId,
+      proofs: ['source'],
+      route: 'ledger',
+    });
+  }
   const inWorktree = guardedGit(context, record.worktreePath);
   const restored = await restoreResidual({
     git: inWorktree,
@@ -245,6 +223,90 @@ async function releaseProofs({ context, roots, paths, record, held, signals, dep
     );
   }
   return { route: 'ledger', restored };
+}
+
+// Whether `verifySourceManifest` of `manifest` is exact at the proven `source` (null: not proven).
+async function sourceIsExact(manifest, source, runner) {
+  return (
+    source !== null &&
+    (await selectionCall(() => verifySourceManifest({ manifest, sourceRoot: source }, { runner })))
+      ?.exact === true
+  );
+}
+
+// The read-only part of the release proofs over `facts` (`gatherFacts` of the record): every
+// proof and the route, without the restore. Returns `{refusal: {proofs, details}}`, `{route:
+// 'gone' | 'clean'}`, or for the ledger route `{route: 'ledger', ledger, descriptors, source,
+// runner, residual}` with what the restore needs. Every Git call inside the worktree runs only
+// once conditions 3 and 4 hold (its registration and its common directory proven ours). `once` is
+// the memo `worktree resume-check` shares with `evaluateResume` (see `checkMemo`).
+async function evaluateRelease({ context, roots, record, facts, once = unmemoized }) {
+  const refuse = (proofs, details = {}) => ({ refusal: { proofs, details } });
+  const purpose = record.purpose === 'partial-diff' ? [] : ['purpose'];
+  const statuses = ['aborted', 'failed'];
+  if (facts.registrationCount === 0 || !facts.directoryExists) {
+    const proofs = [
+      ...purpose,
+      ...(facts.gone ? [] : ['half-gone']),
+      ...conditionProofs(facts, statuses, [2, 3, 4, 5, 7, 8]),
+      ...(facts.receiptFieldsMatch ? [] : ['condition-2']),
+    ].sort(proofOrder);
+    if (!facts.gone) {
+      return refuse(proofs, {
+        route: 'gone',
+        shape:
+          facts.registrationCount > 0 ? 'registered-missing-directory' : 'unregistered-directory',
+      });
+    }
+    return proofs.length > 0 ? refuse(proofs, { route: 'gone' }) : { route: 'gone' };
+  }
+  const proofs = [...purpose, ...conditionProofs(facts, statuses, [7, 8])];
+  if (proofs.length > 0) return refuse(proofs);
+  if (facts.clean) return { route: 'clean' };
+  // Conditions 3 and 4 hold: the worktree is registered and its common directory proven ours.
+  const worktreeRunner = selectionRunner(context, roots, [record.worktreePath]);
+  const read = await readLedger(context, roots.cwd, ledgerBinding(record));
+  if (read.state !== 'ok') {
+    const dirty = await dirtyPaths(record.worktreePath, worktreeRunner);
+    return refuse(['residual'], {
+      route: 'no-ledger',
+      ledger: read.state === 'missing' ? 'missing' : `invalid:${read.reason}`,
+      ...(dirty ? { residualPaths: dirty.paths, residualPathCount: dirty.count } : {}),
+    });
+  }
+  const ledger = read.ledger;
+  const descriptors = residualEndpoints(ledger);
+  const source = await once('source-root', () => proveSourceRoot(context, roots, ledger.manifest));
+  const runner = selectionRunner(context, roots, [
+    record.worktreePath,
+    ...(source && source !== record.worktreePath ? [source] : []),
+  ]);
+  const residual = await once('residual', () =>
+    selectionCall(() =>
+      inspectResidual({ deliveryRoot: record.worktreePath, endpoints: descriptors }, { runner }),
+    ),
+  );
+  const content = residual ? unreleasedContent(residual) : [];
+  const failed = [];
+  if (!residual || residual.extra.length > 0 || content.length > 0) failed.push('residual');
+  if (residual && residual.index.length > 0) failed.push('index');
+  if (!(await once('source', () => sourceIsExact(ledger.manifest, source, runner)))) {
+    failed.push('source');
+  }
+  if (failed.length > 0) {
+    return refuse(failed, {
+      route: 'ledger',
+      ...(residual
+        ? {
+            residualPaths: reportedPaths(residual.dirty).paths,
+            residualPathCount: residual.dirty.length,
+            extra: reportedPaths(residual.extra).paths,
+            content: reportedPaths(content).paths,
+          }
+        : {}),
+    });
+  }
+  return { route: 'ledger', ledger, descriptors, source, runner, residual };
 }
 
 // The residual endpoints whose content refuses the ledger route: a dirty endpoint that does not
@@ -575,10 +637,557 @@ export async function ledgerAppend(input, deps) {
 }
 
 // ---------------------------------------------------------------------------------------------
-// The release transition
+// The release transition and the resume adoption
 
-// `worktree transition` with `release: "partial-diff"`: the transition of
-// `effective-flow-state-worktree-core.mjs` with the release proofs of this module.
-export async function releaseTransition(input, deps) {
-  return transition(input, deps, { releaseProofs });
+// `worktree transition` with `release: "partial-diff"` or `adoption: "partial-diff-resume"`: the
+// transition of `effective-flow-state-worktree-core.mjs` with the release and resume proofs of
+// this module. Any other input runs the plain transition unchanged.
+export async function recoveryTransition(input, deps) {
+  return transition(input, deps, { releaseProofs, resumeProofs });
+}
+
+// ---------------------------------------------------------------------------------------------
+// Resume proofs
+
+// The stable identifiers of the resume proofs, in the order a refusal reports them:
+//   condition-1      schema-valid, `effective-flow-created`, `aborted` or `failed`
+//   purpose          the record is a `partial-diff` record
+//   workflow         the record's workflow is `deliver` and equals the input's
+//   branch           the input's branch equals the record's
+//   condition-2 … condition-6, condition-9   the removal conditions of the record (7, the clean
+//                    status, is replaced by `index` and `residual`; 8 is skipped, as in adoption)
+//   visibility       the ledger's visibility is not weaker than the current one: a ledger written
+//                    `visible` refuses a current `hidden`
+//   ledger           a valid ledger is bound to the record (`readLedger` with `ledgerBinding`)
+//   history          the commits from `creationOid` to the branch tip are exactly the ledger's
+//                    commits, or those plus one tip that passes the tip-recovery subset of the
+//                    `ledger append` checks (its only parent is the previous commit, it changes
+//                    exactly the next group's endpoints, each with its descriptor's blob and mode)
+//   committed-count  the ledger's commits plus a recovered tip are at least one
+//   index            the index holds HEAD's tree, or stages exactly the first uncommitted group
+//                    (its endpoints, each with its descriptor's blob and mode, and nothing else);
+//                    a recovered tip with anything staged is refused
+//   residual         no dirty or untracked path outside the uncommitted endpoints, and each of them
+//                    holds its descriptor's kind, mode and byte digest in the working tree
+//   source           `verifySourceManifest` of the ledger's manifest is exact at its proven source
+//                    root: source HEAD and every selected entry unchanged
+export const RESUME_PROOFS = Object.freeze([
+  'condition-1',
+  'purpose',
+  'workflow',
+  'branch',
+  'condition-2',
+  'condition-3',
+  'condition-4',
+  'condition-5',
+  'condition-6',
+  'condition-9',
+  'visibility',
+  'ledger',
+  'history',
+  'committed-count',
+  'index',
+  'residual',
+  'source',
+]);
+// The identifiers outside RESUME_PROOFS that the resume operations report besides them, each a
+// refusal of its own that no single resume proof stands for:
+//   repository   the record belongs to another repository or runtime-state root (`worktree
+//                resume-check`, the resume adoption, `ledger reconcile`): nothing else is evaluated
+//                and nothing runs in its worktree
+//   source-root  `ledger reconcile`: the ledger manifest's source root is not proven this
+//                repository's (`proveSourceRoot`), so nothing runs in it
+//   reconcile    `ledger reconcile`: `reconcileResume` could not read the worktree or the source
+//                (with the `selectionError` code)
+export const RESUME_OPERATION_PROOFS = Object.freeze(['repository', 'source-root', 'reconcile']);
+const RESUME_STATUSES = Object.freeze(['aborted', 'failed']);
+// The proofs that need a valid ledger.
+const LEDGER_PROOFS = Object.freeze([
+  'visibility',
+  'history',
+  'committed-count',
+  'index',
+  'residual',
+  'source',
+]);
+
+function inResumeOrder(proofs) {
+  return RESUME_PROOFS.filter((proof) => proofs.has(proof));
+}
+
+// The `history` proof of `ledger` against the branch `tip`, through Git in the main checkout:
+// `{ok: true, recovered: null}` when the commits from `creationOid` to `tip` are exactly the
+// ledger's, `{ok: true, recovered: tip}` when they are those plus the tip and the tip passes the
+// tip-recovery subset of the append checks, otherwise `{ok: false}` (with the failed subset as
+// `recovery` when only that check refused).
+async function historyProof(context, roots, ledger, tip) {
+  const git = guardedGit(context, roots.cwd);
+  const recorded = ledger.commits.map((commit) => commit.oid);
+  const listed = await branchHistory(git, {
+    creationOid: ledger.creationOid,
+    tip,
+    limit: recorded.length + 2,
+  });
+  if (listed === null) return { ok: false };
+  const prefix = recorded.every((oid, index) => listed[index] === oid);
+  if (prefix && listed.length === recorded.length) return { ok: true, recovered: null };
+  const progress = ledgerProgress(ledger);
+  if (!prefix || listed.length !== recorded.length + 1 || progress.complete) return { ok: false };
+  const candidate = listed.at(-1);
+  if (candidate !== tip) return { ok: false };
+  const problems = await commitGroupProblems(git, {
+    commitOid: candidate,
+    parentOid: progress.parent,
+    group: ledger.groups[progress.next],
+  });
+  return problems.length === 0
+    ? { ok: true, recovered: candidate }
+    : { ok: false, recovery: problems };
+}
+
+// Evaluates every resume proof over `facts` (`gatherFacts` of the record, with the lock this
+// actor holds, if any) without writing anything. `request` carries the current `visibility` and,
+// for an adoption, the input's `branch` and `workflow` (the `branch` proof and the input half of
+// `workflow` apply only when given). Returns `{proofs, unevaluated, details, ledgerState, ledger,
+// recovered, next, hookStaged, source, tip}`: the failed proofs in RESUME_PROOFS order, the proofs
+// that a failed prerequisite left unevaluated (the ledger proofs without a valid ledger; `index`
+// and `residual` unless conditions 3 and 4 prove the worktree ours; `history` without a branch tip
+// that descends from `creationOid`), bounded refusal details, and what the adoption continues
+// from. Every Git call inside the worktree runs only after that proof, with
+// `core.fsmonitor=false`; the history runs in the main checkout, the source check only after
+// `proveSourceRoot`. `inspectResidual` runs over every endpoint the ledger has not recorded (the
+// set the release inspects, so `worktree resume-check` shares the one result through `once`, see
+// `checkMemo`); a recovered tip's group is then committed and no residual (`resumeResidual`).
+async function evaluateResume({ context, roots, record, facts, request, once = unmemoized }) {
+  const failed = new Set();
+  const unevaluated = new Set();
+  const details = {};
+  const result = {
+    ledgerState: null,
+    ledger: null,
+    recovered: null,
+    next: null,
+    hookStaged: false,
+    source: null,
+    tip: facts.branchTip,
+  };
+  const finish = () => ({
+    ...result,
+    proofs: inResumeOrder(failed),
+    unevaluated: inResumeOrder(new Set([...unevaluated].filter((proof) => !failed.has(proof)))),
+    details,
+  });
+  if (record.purpose !== 'partial-diff') failed.add('purpose');
+  if (
+    record.workflow !== 'deliver' ||
+    (request.workflow !== undefined && request.workflow !== record.workflow)
+  ) {
+    failed.add('workflow');
+  }
+  if (request.branch !== undefined && request.branch !== record.branch) failed.add('branch');
+  for (const proof of conditionProofs(facts, RESUME_STATUSES, [7, 8])) failed.add(proof);
+  const worktreeProven = !failed.has('condition-3') && !failed.has('condition-4');
+  const read = await readLedger(context, roots.cwd, ledgerBinding(record));
+  result.ledgerState =
+    read.state === 'ok' ? 'ok' : read.state === 'missing' ? 'missing' : `invalid:${read.reason}`;
+  if (read.state !== 'ok') {
+    failed.add('ledger');
+    details.ledger = result.ledgerState;
+    for (const proof of LEDGER_PROOFS) unevaluated.add(proof);
+    return finish();
+  }
+  const ledger = read.ledger;
+  result.ledger = ledger;
+  if (ledger.visibility === 'visible' && request.visibility === 'hidden') failed.add('visibility');
+  let recovered = null;
+  if (facts.branchTip && facts.creationIsCommit && facts.creationAncestor) {
+    const history = await historyProof(context, roots, ledger, facts.branchTip);
+    if (history.ok) recovered = history.recovered;
+    else {
+      failed.add('history');
+      if (history.recovery) details.recovery = history.recovery;
+    }
+  } else {
+    unevaluated.add('history');
+  }
+  const next = ledger.commits.length + (recovered === null ? 0 : 1);
+  if (next < 1) {
+    if (unevaluated.has('history')) unevaluated.add('committed-count');
+    else failed.add('committed-count');
+  }
+  result.recovered = recovered;
+  result.next = next;
+  if (worktreeProven) {
+    const staged = await stagedGroupState(
+      guardedGit(context, record.worktreePath),
+      ledger.groups[next] ?? null,
+    );
+    if (staged === null) failed.add('index');
+    else if (!staged.clean) {
+      if (recovered !== null || !staged.matches) {
+        failed.add('index');
+        const reported = reportedPaths(staged.paths);
+        details.stagedPaths = reported.paths;
+        details.stagedPathCount = reported.count;
+      } else {
+        result.hookStaged = true;
+      }
+    }
+    const runner = selectionRunner(context, roots, [record.worktreePath]);
+    const descriptors = residualEndpoints(ledger);
+    const inspected = await once('residual', () =>
+      selectionCall(() =>
+        inspectResidual({ deliveryRoot: record.worktreePath, endpoints: descriptors }, { runner }),
+      ),
+    );
+    const recoveredGroup = recovered === null ? null : ledger.groups[ledger.commits.length];
+    const residual = inspected && resumeResidual(inspected, recoveredGroup);
+    if (!residual || residual.extra.length > 0 || residual.content.length > 0) {
+      failed.add('residual');
+      if (residual) {
+        details.extra = reportedPaths(residual.extra).paths;
+        details.extraCount = residual.extra.length;
+        details.content = reportedPaths(residual.content).paths;
+        details.contentCount = residual.content.length;
+      }
+    }
+  } else {
+    unevaluated.add('index');
+    unevaluated.add('residual');
+  }
+  const source = await once('source-root', () => proveSourceRoot(context, roots, ledger.manifest));
+  result.source = source;
+  const sourceRunner = source === null ? null : selectionRunner(context, roots, [source]);
+  if (!(await once('source', () => sourceIsExact(ledger.manifest, source, sourceRunner)))) {
+    failed.add('source');
+  }
+  return finish();
+}
+
+// The resume's view of `inspected` (`inspectResidual` over every unrecorded endpoint): with a
+// recovered tip, the endpoints of its `recoveredGroup` are committed, not residual, so a dirty one
+// is `extra` and their working-tree content is not compared; without one (null) it is unchanged.
+// Each per-endpoint result of `inspectResidual` is independent of the other endpoints, so this is
+// exactly the inspection of the remaining groups alone.
+function resumeResidual(inspected, recoveredGroup) {
+  if (recoveredGroup === null) return { extra: inspected.extra, content: inspected.content };
+  const committed = new Set(recoveredGroup.endpoints.map((endpoint) => endpoint.path));
+  return {
+    extra: [
+      ...inspected.extra,
+      ...inspected.dirty.filter((repoPath) => committed.has(repoPath)),
+    ].sort(),
+    content: inspected.content.filter((repoPath) => !committed.has(repoPath)),
+  };
+}
+
+// What `deliver` continues from after a resume adoption, from the (appended) ledger: content-free
+// and bounded by the ledger itself (paths, OIDs, selection origins and counts, no descriptor and no
+// file content). Besides the progress, it carries what the final report of a new session needs
+// without reading the ledger: `groups`, every group of the plan in order with its endpoint paths
+// and its commit OID (null while uncommitted), and `selection`, the confirmed selection as the
+// manifest entries' `path`, `selectionOrigin` (`staged` or `working`) and `renameFrom`.
+function resumeSummary(ledger, evaluation) {
+  const progress = ledgerProgress(ledger);
+  const commits = new Map(ledger.commits.map((commit) => [commit.group, commit.oid]));
+  return {
+    recovered: evaluation.recovered,
+    committed: ledger.commits.map((commit) => ({ group: commit.group, oid: commit.oid })),
+    next: progress.next,
+    remaining: ledger.groups.length - ledger.commits.length,
+    remainingGroups: progress.residualGroups.map((group) => ({
+      group: group.index,
+      paths: group.endpoints.map((endpoint) => endpoint.path),
+    })),
+    tip: evaluation.tip,
+    hookStaged: evaluation.hookStaged,
+    base: { branch: ledger.base.branch, oid: ledger.base.oid },
+    language: { git: ledger.language.git, forge: ledger.language.forge },
+    visibility: ledger.visibility,
+    sourceRoot: ledger.manifest.source.root,
+    groups: ledger.groups.map((group) => ({
+      group: group.index,
+      paths: group.endpoints.map((endpoint) => endpoint.path),
+      oid: commits.get(group.index) ?? null,
+    })),
+    selection: ledger.manifest.entries.map((entry) => ({
+      path: entry.path,
+      selectionOrigin: entry.selectionOrigin,
+      renameFrom: entry.renameFrom,
+    })),
+  };
+}
+
+// The proofs and writes of the resume adoption (`adoption: "partial-diff-resume"`), under the
+// record lock `transition` holds. Every proof of RESUME_PROOFS must pass; a refusal is
+// NOT_ELIGIBLE with the failed `proofs` (and `unevaluated` when a failed prerequisite left others
+// open) and writes nothing. On success, a recovered tip is appended to the ledger first, after the
+// re-read ledger proved its immutable part (LEDGER_IMMUTABLE_KEYS) and commits unchanged and the
+// lock still ours (checked again before the rename); `transition` then writes the record, checking
+// the lock again, and rewrites only `status`, `reason`, `updatedAt` and `sessionId`. A recovered
+// entry whose record write then failed is the ledger's own commit on the next resume, which finds
+// the history equal to the ledger and recovers nothing. The phase `resumeLedgerAppended` follows a
+// landed append; a signal from there on is reported by `transition` with `ledgerAppended: true`
+// (before the record write) or with the `resume` summary (after it). Returns `resumeSummary` or
+// the outcome.
+async function resumeProofs({ context, roots, paths, record, request, held, signals, deps }) {
+  const worktrees = await listWorktrees(context);
+  const facts = await gatherFacts(context, roots, worktrees, record, { ownLock: held.token });
+  const evaluation = await evaluateResume({
+    context,
+    roots,
+    record,
+    facts,
+    request: {
+      branch: request.branch,
+      workflow: request.workflow,
+      visibility: request.visibility,
+    },
+  });
+  if (evaluation.proofs.length > 0 || evaluation.unevaluated.length > 0) {
+    return new StateOutcome('NOT_ELIGIBLE', {
+      recordId: record.recordId,
+      proofs: evaluation.proofs,
+      ...(evaluation.unevaluated.length > 0 ? { unevaluated: evaluation.unevaluated } : {}),
+      ...evaluation.details,
+    });
+  }
+  await phase(deps, 'resumeProven', { recordId: record.recordId });
+  if (signals.signal) return interruptedUnderLock(signals, record.recordId, record.status);
+  let ledger = evaluation.ledger;
+  if (evaluation.recovered !== null) {
+    const reread = await readLedger(context, roots.cwd, ledgerBinding(record));
+    if (
+      reread.state !== 'ok' ||
+      !sameImmutablePart(reread.ledger, ledger) ||
+      !isDeepStrictEqual(reread.ledger.commits, ledger.commits)
+    ) {
+      fail('WRITE_FAILED', `the ledger of ${record.recordId} changed since its proof`);
+    }
+    const appended = {
+      ...ledger,
+      commits: [...ledger.commits, { group: ledger.commits.length, oid: evaluation.recovered }],
+    };
+    if (!(await lockStillOwned(context, paths, held))) {
+      fail('WRITE_FAILED', `the lock of ${paths.record} was lost before the ledger write`);
+    }
+    const written = await replaceLedger(context, roots.cwd, appended, {
+      beforeRename: async () => ((await lockStillOwned(context, paths, held)) ? null : 'lock-lost'),
+    });
+    if (!written.written) {
+      fail('WRITE_FAILED', `the lock of ${paths.record} was lost before the ledger write`);
+    }
+    ledger = appended;
+    await phase(deps, 'resumeLedgerAppended', {
+      recordId: record.recordId,
+      oid: evaluation.recovered,
+    });
+  }
+  return resumeSummary(ledger, evaluation);
+}
+
+// ---------------------------------------------------------------------------------------------
+// worktree resume-check
+
+// `worktree resume-check`: evaluates every resume proof (with tip recovery) and every release
+// proof of one record for the current `visibility`, read-only: it takes no lock, writes nothing,
+// and observes the record lock only, so a lock or claim another actor holds is condition-9 of both
+// (never broken). Returns:
+//   recordId, valid, status, purpose, workflow
+//   resumable, resumeProofs, unevaluated   the failed and the unevaluated resume proofs
+//   releasable, releaseRoute, releaseProofs   the release route (`gone`, `clean`, `ledger`,
+//                                          `no-ledger`, or null when a condition refused first)
+//   hasLedger, ledger                      whether a valid ledger is bound, and its read state
+//   source                                 `{root}`: the ledger manifest's source root, or null
+//   committed, remaining, next             counts after tip recovery (null without a ledger)
+//   recoveredTip, hookStaged               the tip a resume would record, a staged next group
+//   lock                                   the observed record lock
+//   details                                `{resume, release}`: the bounded refusal details
+// A record that is not a valid version 1 record is `valid: false` with condition-1 for both and
+// every other resume proof in `unevaluated`; a record of another repository or runtime-state root
+// is `repository` (RESUME_OPERATION_PROOFS) for both, with every resume proof in `unevaluated` and
+// nothing run in its worktree. A missing record is RECORD_NOT_FOUND. The resume and the release
+// evaluation share one residual inspection and one source check (`checkMemo`).
+export async function resumeCheck(input, deps) {
+  const context = prepare('worktree resume-check', input, deps);
+  const recordId = requireRecordId(input.recordId);
+  if (!VISIBILITIES.includes(input.visibility)) {
+    fail('INVALID_INPUT', `visibility must be one of ${VISIBILITIES.join(', ')}`);
+  }
+  const roots = await openRoots(context, input);
+  const paths = recordPaths(roots.cwd, recordId);
+  const read = await readRecord(context, paths, recordId);
+  if (read.state === 'missing') return new StateOutcome('RECORD_NOT_FOUND', { recordId });
+  const empty = {
+    hasLedger: false,
+    ledger: null,
+    source: null,
+    committed: null,
+    remaining: null,
+    next: null,
+    recoveredTip: null,
+    hookStaged: false,
+  };
+  if (read.state === 'invalid') {
+    return {
+      recordId,
+      valid: false,
+      reason: read.reason,
+      status: null,
+      purpose: null,
+      workflow: null,
+      resumable: false,
+      resumeProofs: ['condition-1'],
+      unevaluated: RESUME_PROOFS.filter((proof) => proof !== 'condition-1'),
+      releasable: false,
+      releaseRoute: null,
+      releaseProofs: ['condition-1'],
+      ...empty,
+      lock: await observedLock(context, paths),
+      details: { resume: {}, release: {} },
+    };
+  }
+  const record = read.record;
+  const identity = {
+    recordId,
+    valid: true,
+    status: record.status,
+    purpose: record.purpose,
+    workflow: record.workflow,
+  };
+  if (record.repositoryIdentity !== roots.common || record.runtimeStateRoot !== roots.cwd) {
+    return {
+      ...identity,
+      resumable: false,
+      resumeProofs: ['repository'],
+      unevaluated: [...RESUME_PROOFS],
+      releasable: false,
+      releaseRoute: null,
+      releaseProofs: ['repository'],
+      ...empty,
+      lock: await observedLock(context, paths),
+      details: { resume: {}, release: {} },
+    };
+  }
+  const worktrees = await listWorktrees(context);
+  const facts = await gatherFacts(context, roots, worktrees, record, {});
+  const once = checkMemo();
+  const resume = await evaluateResume({
+    context,
+    roots,
+    record,
+    facts,
+    request: { visibility: input.visibility },
+    once,
+  });
+  const release = await evaluateRelease({ context, roots, record, facts, once });
+  const { route: refusedRoute = null, ...releaseDetails } = release.refusal?.details ?? {};
+  const ledger = resume.ledger;
+  return {
+    ...identity,
+    resumable: resume.proofs.length === 0 && resume.unevaluated.length === 0,
+    resumeProofs: resume.proofs,
+    unevaluated: resume.unevaluated,
+    releasable: !release.refusal,
+    releaseRoute: release.refusal ? refusedRoute : release.route,
+    releaseProofs: release.refusal ? release.refusal.proofs : [],
+    hasLedger: ledger !== null,
+    ledger: resume.ledgerState,
+    source: ledger ? { root: ledger.manifest.source.root } : null,
+    committed: ledger ? resume.next : null,
+    remaining: ledger ? ledger.groups.length - resume.next : null,
+    next: ledger ? resume.next : null,
+    recoveredTip: resume.recovered,
+    hookStaged: resume.hookStaged,
+    lock: facts.lock,
+    details: { resume: resume.details, release: releaseDetails },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// ledger reconcile
+
+// `ledger reconcile`: the resume-mode reconcile of an adopted `partial-diff` record, read-only
+// (no lock taken, nothing written). The caller's session must own the `active` record (NOT_OWNER,
+// STATUS_MISMATCH otherwise); then `purpose`, conditions 2 to 6 and 9 of the record (a lock any
+// actor holds is condition-9), `ledger` (a valid ledger bound to it, read here and never taken as
+// input), `history` (the commits from `creationOid` to the branch tip are exactly the ledger's: a
+// tip is recovered only by the adoption) and `source-root` (the manifest's source is proven this
+// repository's) are NOT_ELIGIBLE refusals. The comparison itself is `reconcileResume` of
+// `delivery-selection-core.mjs` through the guarded runner: committed endpoints against the tip's
+// tree by blob OID and mode, residual endpoints against the working tree by byte digest and the
+// index (HEAD's or the descriptor's entry), no dirty path outside the residual, and
+// `verifySourceManifest`; nothing is re-planned. Returns `{recordId, exact, mismatches: {head,
+// committed, residual, index, extra, sourceDrift}, staged, next, remaining, tip, status}` with each
+// path list `{paths, count}` and `sourceDrift` a count. `staged` lists the residual endpoints whose
+// index entry differs from HEAD; a staged descriptor is no mismatch, so after unstaging a proven
+// hook-staged group the caller requires `staged.count` to be 0.
+export async function ledgerReconcile(input, deps) {
+  const context = prepare('ledger reconcile', input, deps);
+  const recordId = requireRecordId(input.recordId);
+  const sessionId = requireSessionId(input.sessionId);
+  const roots = await openRoots(context, input);
+  const paths = recordPaths(roots.cwd, recordId);
+  const record = await ownedActiveRecord(context, roots, paths, recordId, sessionId);
+  if (record instanceof StateOutcome) return record;
+  const refuse = (proofs, details = {}) =>
+    new StateOutcome('NOT_ELIGIBLE', { recordId, proofs, ...details });
+  const worktrees = await listWorktrees(context);
+  const facts = await gatherFacts(context, roots, worktrees, record, {});
+  const proofs = [
+    ...(record.purpose === 'partial-diff' ? [] : ['purpose']),
+    ...conditionProofs(facts, ['active'], [7, 8]),
+  ];
+  if (proofs.length > 0) return refuse(proofs);
+  const read = await readLedger(context, roots.cwd, ledgerBinding(record));
+  if (read.state !== 'ok') {
+    return refuse(['ledger'], {
+      ledger: read.state === 'missing' ? 'missing' : `invalid:${read.reason}`,
+    });
+  }
+  const ledger = read.ledger;
+  const history = await historyProof(context, roots, ledger, facts.branchTip);
+  if (!history.ok || history.recovered !== null) return refuse(['history']);
+  const source = await proveSourceRoot(context, roots, ledger.manifest);
+  if (source === null) return refuse(['source-root']);
+  const runner = selectionRunner(context, roots, [
+    record.worktreePath,
+    ...(source !== record.worktreePath ? [source] : []),
+  ]);
+  const progress = ledgerProgress(ledger);
+  let compared;
+  try {
+    compared = await reconcileResume(
+      {
+        manifest: ledger.manifest,
+        deliveryRoot: record.worktreePath,
+        commitOid: facts.branchTip,
+        committed: ledger.groups.slice(0, progress.next).flatMap((group) => group.endpoints),
+        residual: residualEndpoints(ledger),
+        sourceRoot: source,
+      },
+      { runner },
+    );
+  } catch (error) {
+    if (!(error instanceof DeliverySelectionError)) throw error;
+    return refuse(['reconcile'], { selectionError: error.code });
+  }
+  const { mismatches } = compared;
+  return {
+    recordId,
+    exact: compared.exact,
+    mismatches: {
+      head: mismatches.head,
+      committed: reportedPaths(mismatches.committed),
+      residual: reportedPaths(mismatches.residual),
+      index: reportedPaths(mismatches.index),
+      extra: reportedPaths(mismatches.extra),
+      sourceDrift: mismatches.sourceDrift.length,
+    },
+    staged: reportedPaths(compared.staged),
+    next: progress.next,
+    remaining: ledger.groups.length - progress.next,
+    tip: facts.branchTip,
+    status: record.status,
+  };
 }

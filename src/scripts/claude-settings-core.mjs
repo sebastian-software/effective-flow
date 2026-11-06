@@ -63,8 +63,10 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   // worktree, exactly the proven residual paths to their HEAD state: paths whose bytes and mode it
   // proved equal to the record's ledger descriptors (re-checked immediately before each discard)
   // and whose selected source content it proved still present through `verifySourceManifest`;
-  // otherwise it, too, only rewrites the one record. None of them removes a worktree, a branch, a
-  // record or a legacy path.
+  // otherwise it, too, only rewrites the one record. With `adoption: "partial-diff-resume"`, it
+  // also appends at most one commit to that record's ledger first: the branch tip, proven the next
+  // group's exact commit (parent, paths, blobs and modes) with the ledger's immutable part
+  // unchanged. None of them removes a worktree, a branch, a record or a legacy path.
   'worktree record-init',
   'worktree transition',
   'worktree inspect',
@@ -72,16 +74,19 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
 ]);
 // The runtime-state helper operations that never get a rule: destructive (`lock break`, the
 // worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`), the
-// writer of the rules itself, or the delivery-progress ledger writes (`ledger init`, `ledger
-// append`), whose unprompted bound the allowlist contract does not state yet. A rule that would
-// also admit one of them is widened.
+// writer of the rules itself, the delivery-progress ledger writes (`ledger init`, `ledger
+// append`), whose unprompted bound the allowlist contract does not state yet, or the read-only
+// resume operations (`worktree resume-check`, `ledger reconcile`), which the allowlist contract
+// and its rule count do not name yet. A rule that would also admit one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock break',
   'harness allow-rules',
   'worktree remove',
+  'worktree resume-check',
   'cleanup apply',
   'ledger init',
   'ledger append',
+  'ledger reconcile',
 ]);
 
 // `config-resolve.mjs` has one operation, and it reads only.

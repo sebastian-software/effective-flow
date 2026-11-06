@@ -6,9 +6,10 @@
 //   node effective-flow-state.mjs harness allow-rules <<< '<json>'
 //   node effective-flow-state.mjs commit create <<< '<json>'
 //   node effective-flow-state.mjs review <open-report|write-report> <<< '<json>'
-//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove> <<< '<json>'
+//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove|resume-check> \
+//     <<< '<json>'
 //   node effective-flow-state.mjs cleanup <plan|apply> <<< '<json>'
-//   node effective-flow-state.mjs ledger <init|append> <<< '<json>'
+//   node effective-flow-state.mjs ledger <init|append|reconcile> <<< '<json>'
 // The operation is exactly these two argv tokens; any other argv, an extra token included, is
 // rejected before stdin is read, so an allowlisted command prefix cannot be widened by an extra
 // argument and `--help` never blocks on a tty. Stdin carries one JSON object within the bound

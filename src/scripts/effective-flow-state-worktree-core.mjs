@@ -3,7 +3,7 @@
 //
 //   worktree record-init  {cwd, executionRoot, record}
 //   worktree transition   {cwd, executionRoot, recordId, from, to, reason, sessionId, branch?,
-//                          workflow?, fetchedHeadOid?, release?}
+//                          workflow?, fetchedHeadOid?, release?, adoption?, visibility?}
 //   worktree inspect      {cwd, executionRoot, sessionId?}
 //   worktree remove       {cwd, executionRoot, sessionId, recordIds, integrationRoot?}
 //   cleanup plan          {cwd, executionRoot, decisions?}
@@ -11,9 +11,12 @@
 //   ledger init           {cwd, executionRoot, recordId, sessionId, manifest, groups, base,
 //                          visibility, language}
 //   ledger append         {cwd, executionRoot, recordId, sessionId, commitOid}
+//   worktree resume-check {cwd, executionRoot, recordId, visibility}
+//   ledger reconcile      {cwd, executionRoot, recordId, sessionId}
 //
-// The `ledger` operations and the proofs of the release transition (`release: "partial-diff"`)
-// live in `effective-flow-state-recovery-core.mjs`, which builds on the internals this module
+// The `ledger` operations, `worktree resume-check`, and the proofs of the release transition
+// (`release: "partial-diff"`) and of the resume adoption (`adoption: "partial-diff-resume"`) live
+// in `effective-flow-state-recovery-core.mjs`, which builds on the internals this module
 // exports and is reached only through the dispatch of `effective-flow-state-core.mjs`; this module
 // never imports it. The ledger's schema, path and comparisons live in
 // `effective-flow-state-ledger-core.mjs`. Here, a ledger is deleted under the same lock and claim
@@ -197,6 +200,14 @@ export const RELEASE_TRANSITIONS = Object.freeze({
   failed: Object.freeze(['cleanup-ready']),
 });
 export const RELEASE_DISCRIMINATOR = 'partial-diff';
+// The adoption discriminator of `worktree transition` with `to: "active"`: `plan-pr-continuation`
+// (the default when `adoption` is absent) or `partial-diff-resume`, whose proofs live in
+// `effective-flow-state-recovery-core.mjs`.
+export const PLAN_PR_ADOPTION = 'plan-pr-continuation';
+export const RESUME_ADOPTION = 'partial-diff-resume';
+export const ADOPTIONS = Object.freeze([PLAN_PR_ADOPTION, RESUME_ADOPTION]);
+// The visibility values a resume adoption states for the current run.
+export const VISIBILITIES = Object.freeze(['visible', 'hidden']);
 // The `core.fsmonitor=false` configuration of every Git call inside a proven worktree or source.
 const IN_WORKTREE_GIT_CONFIG = Object.freeze(['core.fsmonitor=false']);
 export const ELIGIBILITY_CONDITIONS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -688,6 +699,11 @@ function publicLock(observed, paths) {
   return { present: true, path: paths.lock, owner };
 }
 
+// The reportable state of the record lock at `paths`, observed without taking or touching it.
+export async function observedLock(context, paths) {
+  return publicLock(await observeRecordLock(context, paths), paths);
+}
+
 // Takes the record lock: `{token, identity}` or a LOCK_HELD outcome. Never waits and never breaks.
 async function acquireRecordLock(context, paths, fields, deps) {
   await ensureGuardedDirectory(context, paths.stateDir);
@@ -812,7 +828,11 @@ export function interruptedUnderLock(signals, recordId, status) {
 // the lock is released on every path by `withRecordLock`, and only then is the result returned as
 // INTERRUPTED. A write that had already landed is reported with `written: true` and its status;
 // a release transition whose restore ran before the signal was seen completes its write and is
-// reported so, with the `release` (`{route, restored}`) it carried out.
+// reported so, with the `release` (`{route, restored}`) it carried out, and a resume adoption whose
+// record write landed carries its `resume` summary the same way. A resume adoption that appended a
+// recovered tip to the ledger and then saw the signal before the record write skips that write
+// and reports `written: false` with `ledgerAppended: true` and the appended `appendedOid` (the next
+// resume finds that entry already recorded); without `ledgerAppended`, nothing was appended.
 export async function deferSignals(deps, recordId, fn) {
   const signals = watchSignals(deps);
   try {
@@ -834,6 +854,7 @@ export async function deferSignals(deps, recordId, fn) {
       written: true,
       status: value.status,
       ...(value.release ? { release: value.release } : {}),
+      ...(value.resume ? { resume: value.resume } : {}),
       ...(value.lockRelease ? { lockRelease: value.lockRelease } : {}),
     });
   } finally {
@@ -1304,12 +1325,38 @@ function requireTransition(input) {
       fail('INVALID_INPUT', `${key} is invalid`);
     }
   }
+  // The adoption discriminator: absent means `plan-pr-continuation`; outside an adoption it is
+  // forbidden. The resume adoption forbids `fetchedHeadOid` and requires `visibility`.
+  let adoptionKind = null;
   if (adoption) {
+    adoptionKind = input.adoption ?? PLAN_PR_ADOPTION;
+    if (!ADOPTIONS.includes(adoptionKind)) {
+      fail('INVALID_INPUT', `adoption must be one of ${ADOPTIONS.join(', ')}`);
+    }
+  } else if (input.adoption !== undefined) {
+    fail('INVALID_INPUT', 'adoption is only valid for an adoption (to: active)');
+  }
+  if (adoptionKind === PLAN_PR_ADOPTION) {
     if (typeof input.fetchedHeadOid !== 'string' || !OID_PATTERN.test(input.fetchedHeadOid)) {
       fail('INVALID_INPUT', 'fetchedHeadOid must be a full commit OID for an adoption');
     }
   } else if (input.fetchedHeadOid !== undefined) {
-    fail('INVALID_INPUT', 'fetchedHeadOid is only valid for an adoption');
+    fail(
+      'INVALID_INPUT',
+      adoptionKind === RESUME_ADOPTION
+        ? 'fetchedHeadOid is not valid for a partial-diff-resume adoption'
+        : 'fetchedHeadOid is only valid for an adoption',
+    );
+  }
+  if (adoptionKind === RESUME_ADOPTION) {
+    if (!VISIBILITIES.includes(input.visibility)) {
+      fail(
+        'INVALID_INPUT',
+        `visibility must be one of ${VISIBILITIES.join(', ')} for a partial-diff-resume adoption`,
+      );
+    }
+  } else if (input.visibility !== undefined) {
+    fail('INVALID_INPUT', 'visibility is only valid for a partial-diff-resume adoption');
   }
   let release = false;
   if (input.release !== undefined) {
@@ -1328,7 +1375,11 @@ function requireTransition(input) {
     to: input.to,
     reason: input.reason,
     adoption,
+    adoptionKind,
     release,
+    branch: input.branch,
+    workflow: input.workflow,
+    visibility: input.visibility,
   };
 }
 
@@ -1337,11 +1388,13 @@ function reasonProblem(to, reason) {
   return isText(reason, MAX_REASON_CHARS) ? null : 'must be a non-empty string';
 }
 
-// `releaseProofs` is the proof set of the release transition, supplied only by
-// `effective-flow-state-recovery-core.mjs` (the dispatch sends every input with `release` there):
-// `releaseProofs({context, roots, paths, record, held, signals, deps})` runs under the record lock
-// and returns the `release` result or a StateOutcome refusal.
-export async function transition(input, deps, { releaseProofs = null } = {}) {
+// `releaseProofs` and `resumeProofs` are the proof sets of the release transition and of the
+// resume adoption, supplied only by `effective-flow-state-recovery-core.mjs` (the dispatch sends
+// every input with `release` or `adoption: "partial-diff-resume"` there). Each is called as
+// `fn({context, roots, paths, record, request, held, signals, deps})` under the record lock and
+// returns its result (`release` or `resume`) or a StateOutcome refusal; `resumeProofs` also writes
+// the recovered ledger entry, if any, before the record is written here.
+export async function transition(input, deps, { releaseProofs = null, resumeProofs = null } = {}) {
   const context = prepare('worktree transition', input, deps);
   const request = requireTransition(input);
   if (request.release && typeof releaseProofs !== 'function') {
@@ -1349,6 +1402,10 @@ export async function transition(input, deps, { releaseProofs = null } = {}) {
       'INTERNAL_ERROR',
       'the release transition runs through effective-flow-state-recovery-core',
     );
+  }
+  const resume = request.adoptionKind === RESUME_ADOPTION;
+  if (resume && typeof resumeProofs !== 'function') {
+    fail('INTERNAL_ERROR', 'the resume adoption runs through effective-flow-state-recovery-core');
   }
   const allowed = request.release ? RELEASE_TRANSITIONS : TRANSITIONS;
   if (!allowed[request.from]?.includes(request.to)) {
@@ -1402,13 +1459,35 @@ export async function transition(input, deps, { releaseProofs = null } = {}) {
             proofs: ['repository'],
           });
         }
-        if (request.adoption) {
+        let resumed = null;
+        if (resume) {
+          resumed = await resumeProofs({
+            context,
+            roots,
+            paths,
+            record,
+            request,
+            held,
+            signals,
+            deps,
+          });
+          if (resumed instanceof StateOutcome) return resumed;
+        } else if (request.adoption) {
           const refused = await adoptionProofs(context, roots, record, input, held);
           if (refused) return refused;
         }
         let released = null;
         if (request.release) {
-          released = await releaseProofs({ context, roots, paths, record, held, signals, deps });
+          released = await releaseProofs({
+            context,
+            roots,
+            paths,
+            record,
+            request,
+            held,
+            signals,
+            deps,
+          });
           if (released instanceof StateOutcome) return released;
         }
         const next = {
@@ -1420,9 +1499,18 @@ export async function transition(input, deps, { releaseProofs = null } = {}) {
         };
         // A signal skips the write, except after a release that restored residual paths: those
         // were discarded already, so the record write completes and `deferSignals` reports it
-        // as INTERRUPTED with `written: true` and the `release` that landed.
+        // as INTERRUPTED with `written: true` and the `release` that landed. A resume adoption
+        // that already appended its recovered tip to the ledger reports that append.
         if (signals.signal && !(released?.restored.length > 0)) {
-          return interruptedUnderLock(signals, record.recordId, record.status);
+          const interrupted = interruptedUnderLock(signals, record.recordId, record.status);
+          if (resumed?.recovered) {
+            return new StateOutcome('INTERRUPTED', {
+              ...interrupted.details,
+              ledgerAppended: true,
+              appendedOid: resumed.recovered,
+            });
+          }
+          return interrupted;
         }
         await writeRecord(context, paths, next, held);
         return {
@@ -1431,6 +1519,7 @@ export async function transition(input, deps, { releaseProofs = null } = {}) {
           status: request.to,
           sessionId: next.sessionId,
           ...(released ? { release: released } : {}),
+          ...(resumed ? { resume: resumed } : {}),
         };
       },
     );

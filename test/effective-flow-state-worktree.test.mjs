@@ -120,6 +120,8 @@ test('the six operations have the planned closed key sets and refuse unknown key
         'workflow',
         'fetchedHeadOid',
         'release',
+        'adoption',
+        'visibility',
       ],
       'worktree inspect': ['cwd', 'executionRoot', 'sessionId'],
       'worktree remove': ['cwd', 'executionRoot', 'sessionId', 'recordIds', 'integrationRoot'],
