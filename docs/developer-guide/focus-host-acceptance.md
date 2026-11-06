@@ -428,6 +428,69 @@ sanitized excerpts are published:
 | `dalo-after-restart.json`         | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
 | `schedules-after-restore.json`    | `2e0037521461ed23f4269712d6deac75619d38bedeeeafd0f6d518d3a002de5a` |
 
+### Experimental host prerequisite: conditional quiet-tick probe
+
+**Dated result, November 6, 2026 — EXPERIMENTAL HOST PREREQUISITE, not activation.** A
+short probe tested the same portable candidate `a11beb70` on T3/Codex with `gpt-6.1-sol` at
+medium reasoning effort. It used a temporary conditional `developer_instructions` entry in the
+shared Codex configuration. This is a host prerequisite for a future qualification attempt only;
+it is not a source change, a model-instruction-file replacement, a production recommendation, or
+proof of universal instruction precedence.
+
+The probe first observed the actual idle report. It then observed two genuine unchanged
+five-minute scheduled ticks at 18:18 and 18:23 UTC. The target stayed at position 3 with no
+backlog or evidence changes. Each entire visible turn contained exactly one assistant message:
+the required checkpoint. A normal non-tick control turn retained opening commentary. The
+coordinator authored scenario turns through the API under user supervision; no UI proof or
+approval-case result is claimed.
+
+The tested configuration was exactly:
+
+```toml
+developer_instructions = """
+For effective-flow focus follow-up tick turns only: apply the focus contract's output rules to
+all visible assistant messages in the turn. When the tick is quiet, emit exactly its required
+checkpoint line as the final response and no opening commentary, progress update, acknowledgement,
+heading or other visible prose. For reportable events, emit only the report and checkpoint required
+by the focus contract. This specific exception overrides generic progress-commentary requirements
+for these tick turns only. Keep all tool, admission, read-budget, authority and safety rules.
+For every other turn, retain the normal communication requirements.
+"""
+```
+
+This entry affects shared Codex configuration and therefore requires owner authorization, a free
+restart window, and a backed-up current state. A future attempt must verify the candidate digest,
+start fresh sessions, and qualify the exact host configuration in use. Configuration semantics are
+documented in the [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+and [Codex app-server documentation](https://developers.openai.com/codex/app-server/).
+
+The probe records observed host behavior only. Exact child-rollout execution compliance was not
+available from the evidence, so it is unverified; this record does not claim that proof. Operators
+must treat the instruction as conditional and host-specific, preserve the normal non-tick contract,
+and remove it again unless the full qualification owner explicitly authorizes its use.
+
+The tested entry was removed. The original DALO link and all 188 baseline entries were restored;
+final restart verification confirmed the restored link, complete tree, absent temporary
+configuration, and matching DALO status. Both the probe and coordinator project had no remaining
+schedules. The short probe is not F2 full acceptance, does not revise F2's historical FAILED
+language, and does not activate the candidate. Full WP2b-2 remains required, including the 48-tick
+(approximately four-hour) cap, UI observations, and approval-required cases.
+
+Private evidence digests (paths are relative to the recording root):
+
+| Evidence file                                 | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `quiet-probe/report.md`                       | `61e3545ec2d6c6260e2af4299d52a21dda402cb391fd0728845ce79d6ef9c760` |
+| `quiet-probe/short-probe-result.json`         | `f94dee6b8ad27a610e016b771140f5546f6e5ed0940a5ba4cfc7a59a05fb4ed8` |
+| `quiet-probe/temporary-config.toml`           | `38c613f62f0a91c64d53158770827bc6b6aec26bae4574eac695ba4a37682d64` |
+| `quiet-probe/first-idle-tick-messages.json`   | `c959e2144e047f4b4d4a000eb98b06f5006c43f0d92c306976caf8399cd58624` |
+| `quiet-probe/quiet-tick-1-messages.json`      | `78c05911c3bc251a3418812f7f97bad3e4be748a03055f8b770302c36522a1a2` |
+| `quiet-probe/quiet-tick-2-messages.json`      | `f7783578640baf64b8f7919ef5208043e18b397c9b36a0949045e4bcd12fde03` |
+| `quiet-probe/non-tick-control.json`           | `329b41a64678626df5a77c3f2401212096501f27ec540c785e18a158d690890d` |
+| `quiet-probe/final-restore-verification.json` | `701d1379cc7839263e4a83fc9826e884543706f8dde4a991edabc41dda0de4a5` |
+| `quiet-probe/final-schedules.json`            | `7987d6757966273e2d88ba9bdc1f3923716a88a48c0f989950c205e7abccd1c2` |
+| `quiet-probe/config-ownership.json`           | `78366fd5c337ac2b056ae4895fab2f8714eac613e4b0b629ee184b2909613443` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
