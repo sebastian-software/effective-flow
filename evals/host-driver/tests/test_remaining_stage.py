@@ -12,7 +12,6 @@ from unittest import (
     mock,
 )
 from test_first_stage import (
-    OriginalSealFixture,
     SUITES,
     digest,
     independent_remainder,
@@ -119,35 +118,41 @@ class RemainingStageCohortContracts(RemainingStageFixtureMixin, unittest.TestCas
         self.assertTrue(all(row['chargedRoots'] == 0 and row['state'] == 'not-submitted'
                             for row in summary['results'][6:]))
 
-    def test_findings_native_errors_exceptions_and_interrupts_stop_after_current_batch(self):
-        first_fixture, first_context = self.f, self.context
-        for index, failure in enumerate(('finding', 'native-error', 'exception', 'interrupt')):
-            with self.subTest(failure=failure):
-                self.f = first_fixture if index == 0 else OriginalSealFixture(first_fixture.root / ('batch-' + failure))
-                self.context = first_context if index == 0 else self.f.prerequisites()
-                driver = self.start()
-                first = independent_remainder([r['task'] for r in self.f.records])[0]
-                def fault(task, outcome, result):
-                    if task != first:
-                        return outcome
-                    if failure == 'finding':
-                        outcome['findings'] = ['synthetic behavioural finding']
-                    elif failure == 'native-error':
-                        outcome['nativeErrors'] = [{'type': 'error', 'message': 'synthetic native error'}]
-                    elif failure == 'exception':
-                        raise RuntimeError('synthetic current-batch future exception')
-                    else:
-                        driver.interrupted_signal = signal.SIGINT
-                    return outcome
-                state = self.install_batch_fixture(driver, fault)
-                summary = self.f.stage.run_remaining_stage(driver.remaining_stage, driver)
-                self.assertEqual((len(state['calls']), len(state['batches'])), (6, 1))
-                self.assertFalse(summary['stageCompleted'])
-                self.assertTrue(summary['blocked'])
-                self.assertEqual(summary['chargedRoots'], 11)
-                self.assertTrue(all(row['chargedRoots'] == 0 for row in summary['results'][6:]))
-                driver.close()
-        self.f, self.context = first_fixture, first_context
+    def test_findings_stop_after_current_batch(self):
+        self.assert_failure_stops_after_current_batch('finding')
+
+    def test_native_errors_stop_after_current_batch(self):
+        self.assert_failure_stops_after_current_batch('native-error')
+
+    def test_exceptions_stop_after_current_batch(self):
+        self.assert_failure_stops_after_current_batch('exception')
+
+    def test_interrupts_stop_after_current_batch(self):
+        self.assert_failure_stops_after_current_batch('interrupt')
+
+    def assert_failure_stops_after_current_batch(self, failure):
+        driver = self.start()
+        first = independent_remainder([r['task'] for r in self.f.records])[0]
+        def fault(task, outcome, result):
+            if task != first:
+                return outcome
+            if failure == 'finding':
+                outcome['findings'] = ['synthetic behavioural finding']
+            elif failure == 'native-error':
+                outcome['nativeErrors'] = [{'type': 'error', 'message': 'synthetic native error'}]
+            elif failure == 'exception':
+                raise RuntimeError('synthetic current-batch future exception')
+            else:
+                driver.interrupted_signal = signal.SIGINT
+            return outcome
+        state = self.install_batch_fixture(driver, fault)
+        summary = self.f.stage.run_remaining_stage(driver.remaining_stage, driver)
+        self.assertEqual((len(state['calls']), len(state['batches'])), (6, 1))
+        self.assertFalse(summary['stageCompleted'])
+        self.assertTrue(summary['blocked'])
+        self.assertEqual(summary['chargedRoots'], 11)
+        self.assertTrue(all(row['chargedRoots'] == 0 for row in summary['results'][6:]))
+        driver.close()
 
 
 if __name__ == '__main__':

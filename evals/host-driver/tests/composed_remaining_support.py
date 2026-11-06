@@ -11,6 +11,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import time
 
 from test_first_stage import (
     OriginalSealFixture, canonical_digest, digest, ref, write_json,
@@ -24,12 +25,15 @@ directory = pathlib.Path(args[args.index('--output-last-message') + 1]).parent
 job = json.loads((directory / 'worker-job.json').read_text())
 control = pathlib.Path(json.loads(pathlib.Path(job['configFile']).read_text())['fixtureControls'])
 ordinal = job['remainingStage']['ordinal']
-(control / ('ready-' + str(ordinal))).write_text('local fixture, no provider\n')
+ready = control / ('ready-' + str(ordinal))
+pending = ready.with_suffix('.tmp')
+pending.write_text(json.dumps({'ordinal': ordinal, 'readyNs': time.monotonic_ns()}) + '\n')
+pending.replace(ready)
 deadline = time.monotonic() + 35
 while not (control / ('release-' + str(ordinal))).exists():
     if time.monotonic() >= deadline: raise RuntimeError('fixture release barrier timed out')
     time.sleep(.01)
-if (control / 'unknown').exists() and ordinal == 1:
+if (control / 'unknown').exists() and ordinal == int((control / 'unknown').read_text()):
     # Actual reservation remains charged; an unbound start is deliberately unknown.
     (directory / 'process-start.json').write_text('{}\n')
 (directory / 'last-message.txt').write_text('offline native fixture\n')
@@ -88,6 +92,54 @@ def copy_fixture_executable(source, destination):
         shutil.copyfile(source, destination)
         shutil.copymode(source, destination)
     return destination
+
+
+def wait_for_ready_batch(control, stopped, *, clock=time.monotonic, sleep=time.sleep):
+    deadline = clock() + 35
+    seen = set()
+    while True:
+        if stopped():
+            return None
+        if clock() >= deadline:
+            raise AssertionError('fixture barrier timed out: six real fixture workers running')
+        ready = {}
+        for ordinal in range(1, 7):
+            path = control / ('ready-' + str(ordinal))
+            try:
+                content = path.read_text()
+            except FileNotFoundError:
+                continue
+            try:
+                record = json.loads(content)
+            except ValueError as error:
+                raise ValueError('invalid native ready record: ' + str(path)) from error
+            if (type(record) is not dict or type(record.get('ordinal')) is not int
+                    or record['ordinal'] != ordinal or type(record.get('readyNs')) is not int
+                    or record['readyNs'] <= 0):
+                raise ValueError('invalid native ready record: ' + str(path))
+            ready[ordinal] = record
+        observed = clock()
+        if observed >= deadline:
+            raise AssertionError('fixture barrier timed out: six real fixture workers running')
+        if len(ready) == 6:
+            return ready
+        if ready.keys() - seen:
+            seen.update(ready)
+            deadline = observed + 35
+        sleep(.01)
+
+
+def complete_ready_batch(ready, *, unknown, set_unknown, release, check_context, check_closures):
+    held = max(ready, key=lambda ordinal: ready[ordinal]['readyNs'])
+    if unknown:
+        set_unknown(held)
+    for ordinal in ready:
+        if ordinal != held:
+            release(ordinal)
+    check_context()
+    check_closures(held)
+    release(held)
+    return held
 
 
 class ComposedRemainingFixture(OriginalSealFixture):
