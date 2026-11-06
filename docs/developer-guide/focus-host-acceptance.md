@@ -267,6 +267,230 @@ delivery was **Not attempted**.
   release obligation: stale evidence remains visible package debt, while snapshot activation still
   requires applicable candidate-bound acceptance. E does not qualify the current source.
 
+## F follow-up qualification (#613)
+
+**Attempt F, November 6, 2026: failed at F2.** This partial record does not qualify the
+candidate for activation. The remaining scenarios are not accepted, and #625 remains a draft.
+
+### F candidate binding
+
+The candidate was `a11beb707840075790434ff9690eacbc13598e4c`, without uncommitted
+implementation changes, built as `portable` through `t3-project`. The format check, build and
+33 focused contract/digest tests passed before recording. All seven digest-guard entries matched;
+the eighth binding entry records `build.mjs`.
+
+The host was T3 Code server 0.1.7 through the Codex harness, with `gpt-6.1-sol`, reasoning effort
+medium, default interaction mode and `full-access` in the two active observers. A separate
+`approval-required` observer was started but did not finish its initial snapshot. Trusted
+`orchestrator_capabilities` results named provider instance `codex` and each observer's identity.
+The Codex harness version was not recorded. Targets and observers were fresh top-level threads in
+one dedicated throwaway project outside the repository; the coordinator was a separate session.
+The owner authorized coordinator-authored scenario turns under human supervision, superseding the
+earlier requirement for manually typed deciding turns. No UI observation is inferred from an API
+result.
+
+| Path                                                          | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `d5b2c8cb7e5099a35dd2d2a461767c78e980d6aa407ba7af444507aaee7fa912` |
+| `src/shared/focus-session-contract.md`                        | `405a7742145d41141a0b5026b32ac04bc88f3330a659989b0f7103518cb2a68a` |
+| `src/shared/focus-follow-up.md`                               | `aabd8f1ee06630b68f46e8ff66c4887cda489f0d91da66129597913f55f52d61` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `184fa19352ec436a21b09eca19a863201ca311a0d8c69d690d23068b2e217a0a` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `08e39a78b07603577156fd75af662ee900963134f86c95f98dc60ce81372aa5e` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `b6eb38f378c7c3f57fdfc1f4bacc0881ca7e13fe5c7a5bd709fd916c9ad31a7c` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+The existing DALO link at `~/.agents/skills/effective-flow` was saved and replaced with a copy of
+the portable build after checking that no other Codex work was active. The shared Codex app-server
+was stopped after installation; its old binary was confirmed absent and the new binary's start
+was later. The installed tree matched `diff -r` and the three installed focus-file digests both
+before and after that restart. The restore baseline also preserves the local #626 additions made
+to the original DALO target during the earlier waiting period. After F2 failed, the owner explicitly
+authorized early termination of the cap loop and restoration. Both follow-up schedules were deleted,
+the original link and target tree were restored, and the post-restore app-server restart was verified
+as recorded below. No digest-bound file changed while collecting these observations.
+
+### F1 snapshot and admission checks — partial
+
+Target T was a synthetic three-stage receipt: ALPHA was prepared, while BETA and GAMMA remained
+unfinished pending explicit releases. O's initial snapshot returned On track, cited the opening
+request and response, redacted the synthetic contact/token before analysis handoff, reported
+Not attempted for correction delivery, and offered the fixed follow-up intervals. A single
+analysis leaf completed; its requested execution settings were disclosed as unverified. The next
+turn declined follow-up and O acknowledged that no checks would be scheduled. O subsequently
+refused its own reference without another history read or analysis leaf.
+
+A separate parent P launched an observer child. The first driver brief mistakenly imposed
+supplied-evidence-only analysis restrictions, so the child aborted before focus admission; that
+setup did not exercise ancestor refusal. The corrected workflow-entrypoint brief permitted normal
+admission metadata reads. The new child refused its immediate parent after one self metadata read,
+without reading target history or returning a trajectory verdict. No UI schedule-state observation
+was obtained, so F1 remains partial.
+
+| Call group                 | Native selection                           | Charged upper bound        | Result                                                   |
+| -------------------------- | ------------------------------------------ | -------------------------- | -------------------------------------------------------- |
+| O initial snapshot         | self state, target state, one message page | 3 reads; 15,512 characters | Positions 0 and 2 covered, no further messages reported  |
+| O2 initial snapshot        | self state, target state, one message page | 3 reads; 15,512 characters | Release gate visible; overall completion not established |
+| Corrected ancestor refusal | observer self state only                   | 1 read; 256 characters     | Immediate parent refused before target history           |
+
+### F2 quiet unchanged tick — failed
+
+O created a five-minute loop after a new explicit follow-up invocation and opt-in. T remained idle
+and unfinished, with no pending request or new events. Tick 1 reported the once-only idle-target
+decision. Tick 2 kept `last=2`, `ticks=2`, `backlog=no`, `lag=0` and `state=active`, without an
+analysis leaf or repeated idle-target report. Its final message contained only the checkpoint.
+However, the same tick first published this additional assistant message:
+
+> I’ll check for events after the last recorded position.
+
+The unchanged second and third ticks in O2 independently included:
+
+> I’ll check for new events in the selected thread.
+
+This violates `src/shared/focus-follow-up.md`, “Quiet tick budget”: the tick must emit only the
+checkpoint line when no new event or report is due. A checkpoint-only final message does not erase
+an earlier visible progress message from that turn. The three native reads in each of these ticks
+reserved 15,512 characters, within the 16-read/64,000-character limits; the failure concerns
+visible output, not a repeated verdict or an exceeded read budget.
+
+The current host instruction requires an opening commentary message before tool calls. That
+higher-priority instruction conflicts with the quiet-output contract. This attempt does not claim
+that a skill-only edit can override the host instruction, and it does not relax the acceptance
+criterion to cover only the final message. Resolve the host-policy conflict before claiming a
+passing rerun.
+
+### F remaining scenarios and limitations
+
+- F3–F9, F11, F14 and F15 have no passing record. Further acceptance scenarios stopped at F2.
+- F10 reached actual human approval gates during the initial snapshot; it did not complete the
+  scheduled approval/queueing case. No approval was supplied by the coordinator.
+- F12's first five-minute cap loop was explicitly stopped after four ticks with owner approval
+  following F2's failure. It was not restarted or manually ticked. The planned 48-tick cap was not
+  reached; cap completion and compaction behavior remain unrecorded.
+- F13's scheduled prompts carried the `$effective-flow focus follow-up tick` prefix and executed
+  the follow-up path. This is a partial loading observation, not acceptance of the failed loop.
+- F16 captured growth for unchanged ticks, but no conforming quiet tick: O2's second tick added
+  eight activity items and three message items, including the unwanted progress message. The full
+  activity texts totaled 21,772 characters and the message texts 696 characters for that tick,
+  with no truncation in the saved extraction. These are extracted text lengths, not token counts
+  or a calibration claim.
+- UI-specific evidence remains missing. The coordinator's browser reached T3's pairing screen
+  without an authenticated session, and the tab was closed without supplying credentials. API
+  schedule listings do not substitute for the planned UI observations.
+- Schedule cleanup was verified through the documented T3 API, not the UI. Both qualification
+  schedules were absent after stopping and remained absent after restoration.
+
+### F cleanup after the failed attempt
+
+O's explicit stop deleted its schedule at `ticks=2`; O2's explicit stop deleted the cap-loop
+schedule at `ticks=4`. Both returned `state=stopped`. The approval-required observer was interrupted
+without supplying its pending approval. The qualification project's schedule listing was empty
+after the stops and after restoration. No additional acceptance scenarios were started.
+
+The installed candidate still matched the portable build in the final `diff -r`, and all eight
+binding digests were unchanged. After confirming no other Codex work was active, the candidate
+copy was moved aside and the original DALO link restored. All 188 entries in the saved target-tree
+manifest, including file contents, modes, directories and symlinks, matched the pre-install
+baseline, including the local #626 additions. `dalo status --check` matched the pre-install JSON
+report and `dalo doctor` exited successfully.
+
+The shared Codex app-server was stopped again after restoration. The old binary was confirmed
+absent; the replacement binary started later. A fresh post-restart verification confirmed the
+original link, all 188 target-tree entries and the matching DALO status. The restored skill is the
+original local DALO target, not the qualification candidate. These cleanup results do not change
+F2's failed result or qualify any remaining scenario. #625 stays a draft, and the recording plan
+remains unimplemented.
+
+Raw evidence stays in the ignored local recording directory. Only these evidence-file digests and
+sanitized excerpts are published:
+
+| Evidence file                     | SHA-256                                                            |
+| --------------------------------- | ------------------------------------------------------------------ |
+| `candidate-digests.json`          | `a605d4e73c0583573aac36a8d785f81d837a31eab478764d870f7a8f7118ce24` |
+| `install-restart.json`            | `39a14c597414405b04f613f4086d4e9ad11da93a2d8770f43345b332fc80ca3a` |
+| `postrestart-app-servers.json`    | `1dd5b5e5b0ca7946bfeed2d92ce894928ea977992838d2701c61fdd62385dd54` |
+| `O-host-context.json`             | `2f8a9e00eeaa9e4b82ef541358f2f16cd0fdc333dc7c7ae01b4e234eb924cdf8` |
+| `O2-host-context.json`            | `dca9f0bc604559589bbe95acd53924d5827a20fb16d569dd42374fbd90dc1c01` |
+| `O-snapshot-read-ledger.json`     | `a7562c77034e10cc8f1f27be864e5a2d1c0371eeec0335a6791040119b866ee0` |
+| `O2-snapshot-read-ledger.json`    | `6eb5f351b489faebb3f434f64e2dcf1ff269113f93e84d14cdf845f96dd748a6` |
+| `F1-ancestor-retry-activity.json` | `0fd0c2d7d028b1453af37be7de37a5dacf4b929fb3ee9a65aa64d97dadb55dea` |
+| `O-quiet-ticks-full.json`         | `953aee3eb6e0d1aa2cbb424723c08d83640bfce256e5b3841c8a7dbf3b60ba80` |
+| `O2-quiet-ticks-full.json`        | `357efc67e61ade985979880900e9ff339809c7772024ab5e9c01f59d2dc6919e` |
+| `F2-tick-metrics.json`            | `a93f79ae4607c3acff222c3c460ff5ff11a42f83972caa8d1300d68877a83896` |
+| `schedules-at-F2-failure.json`    | `de6a24b217ed05342d640719a9f5611eaf9c2de8dbc15a258376ab1e8d668869` |
+| `O-stop-messages.json`            | `06f3d4b8d5d5edb13e2cdb7dc0af38537d15067fd6c2dc312e4ad2004b80f4d3` |
+| `O2-stop-messages.json`           | `85df14a8937d8a10667bd8b033abd454caadd9ed948dffdcdd51036c9db28e88` |
+| `schedules-after-stop.json`       | `2e0037521461ed23f4269712d6deac75619d38bedeeeafd0f6d518d3a002de5a` |
+| `installed-diff-after-run.log`    | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `restore-slot-manifest.json`      | `48dea621dc1ce3961f9fff2013b4cf40090dc092b6d69bf42fed51a2cbd3a60f` |
+| `restore-restart.json`            | `9f6a4c8537a546c5d8fcc6861a681e41ce92babd9155743318eadf5879f29673` |
+| `restore-verification.json`       | `0cec5cfeaf59152601a06fb574a9e997614fc7243139514bd1261eb90ca39e71` |
+| `dalo-after-restart.json`         | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
+| `schedules-after-restore.json`    | `2e0037521461ed23f4269712d6deac75619d38bedeeeafd0f6d518d3a002de5a` |
+
+### Experimental host prerequisite: conditional quiet-tick probe
+
+**Dated result, November 6, 2026 — EXPERIMENTAL HOST PREREQUISITE, not activation.** A
+short probe tested the same portable candidate `a11beb70` on T3/Codex with `gpt-6.1-sol` at
+medium reasoning effort. It used a temporary conditional `developer_instructions` entry in the
+shared Codex configuration. This is a host prerequisite for a future qualification attempt only;
+it is not a source change, a model-instruction-file replacement, a production recommendation, or
+proof of universal instruction precedence.
+
+The probe first observed the actual idle report. It then observed two genuine unchanged
+five-minute scheduled ticks at 18:18 and 18:23 UTC. The target stayed at position 3 with no
+backlog or evidence changes. Each entire visible turn contained exactly one assistant message:
+the required checkpoint. A normal non-tick control turn retained opening commentary. The
+coordinator authored scenario turns through the API under user supervision; no UI proof or
+approval-case result is claimed.
+
+The tested configuration was exactly:
+
+```toml
+developer_instructions = """
+For effective-flow focus follow-up tick turns only: apply the focus contract's output rules to
+all visible assistant messages in the turn. When the tick is quiet, emit exactly its required
+checkpoint line as the final response and no opening commentary, progress update, acknowledgement,
+heading or other visible prose. For reportable events, emit only the report and checkpoint required
+by the focus contract. This specific exception overrides generic progress-commentary requirements
+for these tick turns only. Keep all tool, admission, read-budget, authority and safety rules.
+For every other turn, retain the normal communication requirements.
+"""
+```
+
+This entry affects shared Codex configuration and therefore requires owner authorization, a free
+restart window, and a backed-up current state. A future attempt must verify the candidate digest,
+start fresh sessions, and qualify the exact host configuration in use. Configuration semantics are
+documented in the [Codex configuration reference](https://developers.openai.com/codex/config-reference/)
+and [Codex app-server documentation](https://developers.openai.com/codex/app-server/).
+
+The probe records observed host behavior only. Exact child-rollout execution compliance was not
+available from the evidence, so it is unverified; this record does not claim that proof. Operators
+must treat the instruction as conditional and host-specific, preserve the normal non-tick contract,
+and remove it again unless the full qualification owner explicitly authorizes its use.
+
+The tested entry was removed. The original DALO link and all 188 baseline entries were restored;
+final restart verification confirmed the restored link, complete tree, absent temporary
+configuration, and matching DALO status. Both the probe and coordinator project had no remaining
+schedules. The short probe is not F2 full acceptance, does not revise F2's historical FAILED
+language, and does not activate the candidate. Full WP2b-2 remains required, including the 48-tick
+(approximately four-hour) cap, UI observations, and approval-required cases.
+
+Private evidence digests (paths are relative to the recording root):
+
+| Evidence file                                 | SHA-256                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------ |
+| `quiet-probe/report.md`                       | `61e3545ec2d6c6260e2af4299d52a21dda402cb391fd0728845ce79d6ef9c760` |
+| `quiet-probe/short-probe-result.json`         | `f94dee6b8ad27a610e016b771140f5546f6e5ed0940a5ba4cfc7a59a05fb4ed8` |
+| `quiet-probe/temporary-config.toml`           | `38c613f62f0a91c64d53158770827bc6b6aec26bae4574eac695ba4a37682d64` |
+| `quiet-probe/first-idle-tick-messages.json`   | `c959e2144e047f4b4d4a000eb98b06f5006c43f0d92c306976caf8399cd58624` |
+| `quiet-probe/quiet-tick-1-messages.json`      | `78c05911c3bc251a3418812f7f97bad3e4be748a03055f8b770302c36522a1a2` |
+| `quiet-probe/quiet-tick-2-messages.json`      | `f7783578640baf64b8f7919ef5208043e18b397c9b36a0949045e4bcd12fde03` |
+| `quiet-probe/non-tick-control.json`           | `329b41a64678626df5a77c3f2401212096501f27ec540c785e18a158d690890d` |
+| `quiet-probe/final-restore-verification.json` | `701d1379cc7839263e4a83fc9826e884543706f8dde4a991edabc41dda0de4a5` |
+| `quiet-probe/final-schedules.json`            | `7987d6757966273e2d88ba9bdc1f3923716a88a48c0f989950c205e7abccd1c2` |
+| `quiet-probe/config-ownership.json`           | `78366fd5c337ac2b056ae4895fab2f8714eac613e4b0b629ee184b2909613443` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |

@@ -211,7 +211,7 @@ function printFreshness(report) {
     process.stdout.write(`recorded negative (applicability requires triage): ${finding}\n`);
   if (['build-context', 'focus'].includes(report.suite))
     process.stdout.write(
-      `disabled capability: ${report.suite === 'build-context' ? 'automatic planned-build delegation (inline Quality available)' : 'snapshot-host execution, follow-up and sends'}; activation requires current applicable acceptance\n`,
+      `disabled capability: ${report.suite === 'build-context' ? 'automatic planned-build delegation (inline Quality available)' : 'sends (snapshot and follow-up paths are bound by the host acceptance record)'}; activation requires current applicable acceptance\n`,
     );
 }
 

@@ -39,19 +39,19 @@ exact redacted text in the same run. Each kind is independent and has one of fou
 receipt, reading, or action. Focus never retries, resends, switches addresses, or advises a duplicate
 manual send; an ambiguous acknowledgement retains the verdict and warns that the message may have arrived.
 
-**Follow-up:** An opt-in follow-up mode is defined but disabled pending qualification, like the send
-paths. Once qualified, it would offer recurring report-only checks of a top-level T3 target after a
-snapshot, through one T3 schedule bound to the observer thread that persists until it is deleted.
-Ticks stay quiet while nothing material changes, never send a message, and end at completion, an
-explicit `focus follow-up stop <session-ref>`, lost access, or a loop cap. While the mode is
-disabled, a snapshot offers nothing; asking for follow-up returns the limitation, and `follow-up
-stop` stays available.
+**Follow-up:** An opt-in follow-up mode offers recurring report-only checks of a top-level T3
+target after a snapshot on the T3 observed path, but only from a Codex observer thread, when the
+follow-up gate qualifies the actual host; not every T3 observed snapshot shows the offer. It runs
+through one T3 schedule bound to the observer thread that persists until it is deleted. Ticks stay quiet while nothing material changes, never
+send a message, and end at completion, an explicit `focus follow-up stop <session-ref>`, lost
+access, or a loop cap. On any other host path a snapshot offers nothing; asking for follow-up
+returns the limitation, and `follow-up stop` stays available. Sends stay disabled.
 
-Snapshot-host execution is currently disabled before target or ancestry reads. Phase E passed for
-candidate `ada4fdae`, as recorded on the acceptance page; the current policy changes a focus source
-and does not reuse that result to qualify the changed artifact. Focus returns the missing snapshot
-qualification instead of a verdict about unread content. Follow-up and sends remain disabled
-independently. The [capability policy](../developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
+Snapshot-host execution on the T3 observed path, for report-only use, is enabled in the shipped
+source; the [focus host acceptance page](../developer-guide/focus-host-acceptance.md) names the
+candidate record that binds it. On every other host path focus returns the missing snapshot
+qualification before target or ancestry reads instead of a verdict about unread content. Sends
+remain disabled. The [capability policy](../developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
 package evidence reporting cannot enable a host route.
 
 ## `/effective-flow retro`
