@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.72.1](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.72.0...effective-flow-v1.72.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* accept percent-encoded host identifiers ([#627](https://github.com/sebastian-software/effective-flow/issues/627)) ([a46c9a8](https://github.com/sebastian-software/effective-flow/commit/a46c9a84e4607a78bcb69d9c184076f6c3517f66))
+
 ## [1.72.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.71.0...effective-flow-v1.72.0) (2026-11-05)
 
 
