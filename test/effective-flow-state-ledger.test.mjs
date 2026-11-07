@@ -19,6 +19,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
+import { lstat, rmdir, unlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -41,6 +42,7 @@ import {
   groupPlanProblem,
   ledgerPaths,
   makeLedger,
+  restoreResidual,
   serializeLedger,
   worstCaseLedgerBytes,
 } from '../src/scripts/effective-flow-state-ledger-core.mjs';
@@ -2025,6 +2027,100 @@ test('release ledger route: a residual path restaged between proof and restore i
   assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n');
   assert.equal(readFileSync(recordFile(fixture.root), 'utf8'), record);
   assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), ledger);
+});
+
+// A checkout with `a.txt` and `b.txt` committed, both changed, and the new files `new/x.txt` and
+// `new/y.txt` staged; `run` drives `restoreResidual` there with `recheck` and returns the call
+// order of the re-checks.
+function restoreUnit(t) {
+  const root = repository(t, 'effective-flow-ledger-');
+  for (const name of ['a.txt', 'b.txt']) write(root, name, `${name} base\n`);
+  git(root, 'add', 'a.txt', 'b.txt');
+  git(root, 'commit', '-q', '-m', 'files');
+  write(root, 'a.txt', 'a residual\n');
+  write(root, 'b.txt', 'b residual\n');
+  mkdirSync(join(root, 'new'));
+  write(root, 'new/x.txt', 'x residual\n');
+  write(root, 'new/y.txt', 'y residual\n');
+  git(root, 'add', '--', 'new/x.txt', 'new/y.txt');
+  const inRoot = async (args, { stdin } = {}) =>
+    spawnSync('git', ['-C', root, ...args], { env: GIT_ENV, input: stdin });
+  const run = async (residual, recheck) => {
+    const checked = [];
+    const result = await restoreResidual({
+      git: inRoot,
+      fs: { lstat, unlink, rmdir },
+      root,
+      residual,
+      descriptors: residual.dirty.map((path) => ({ path })),
+      recheck: async (descriptor) => {
+        checked.push(descriptor.path);
+        return recheck(descriptor.path);
+      },
+    });
+    return { result, checked };
+  };
+  return { root, run };
+}
+
+// Invariant (proof-to-restore window, per path): each residual path is discarded immediately
+// after its own re-check, never in one batch after the re-checks of later paths. An edit to an
+// already re-checked tracked path made while a later path is re-checked is never overwritten by a
+// later `git restore`, and an index entry restaged for an already unstaged path while a later
+// path is re-checked is never dropped by a later `git rm --cached`: such newer content is not
+// covered by the ledger or the source proof.
+test('restoreResidual discards each residual path right after its own re-check', async (t) => {
+  const tracked = restoreUnit(t);
+  const { result, checked } = await tracked.run(
+    { tracked: ['a.txt', 'b.txt'], staged: [], dirty: ['a.txt', 'b.txt'] },
+    (path) => {
+      if (path === 'b.txt') write(tracked.root, 'a.txt', 'a newer\n');
+      return true;
+    },
+  );
+  assert.deepEqual(result, ['a.txt', 'b.txt']);
+  assert.deepEqual(checked, ['a.txt', 'b.txt']);
+  assert.equal(
+    readFileSync(join(tracked.root, 'a.txt'), 'utf8'),
+    'a newer\n',
+    'the newer edit survives',
+  );
+  assert.equal(readFileSync(join(tracked.root, 'b.txt'), 'utf8'), 'b.txt base\n');
+
+  // The unstage set: `new/y.txt` is unstaged first; restaged with newer bytes while `new/x.txt` is
+  // re-checked, it keeps that index entry, and its own re-check before the file removal stops the
+  // restore with both index removals named.
+  const staged = restoreUnit(t);
+  const changed = new Set();
+  const failed = await staged
+    .run(
+      {
+        tracked: [],
+        staged: ['new/x.txt', 'new/y.txt'],
+        dirty: ['new/x.txt', 'new/y.txt'],
+      },
+      (path) => {
+        if (path === 'new/x.txt' && changed.size === 0) {
+          write(staged.root, 'new/y.txt', 'y newer\n');
+          git(staged.root, 'add', '--', 'new/y.txt');
+          changed.add('new/y.txt');
+        }
+        return !changed.has(path);
+      },
+    )
+    .then(
+      () => assert.fail('the restore stops at the changed path'),
+      (error) => error,
+    );
+  assert.equal(failed.code, 'WRITE_FAILED');
+  assert.match(failed.message, /the residual path new\/y\.txt changed after its proof/);
+  assert.deepEqual(failed.envelopeDetails, {
+    restored: [],
+    unstaged: ['new/x.txt', 'new/y.txt'],
+  });
+  assert.equal(git(staged.root, 'show', ':new/y.txt'), 'y newer', 'the restaged entry survives');
+  assert.equal(readFileSync(join(staged.root, 'new', 'y.txt'), 'utf8'), 'y newer\n');
+  assert.equal(git(staged.root, 'ls-files', '--', 'new/x.txt'), '');
 });
 
 // Invariant (deferred signal, before the restore): a signal that arrives once the proofs passed

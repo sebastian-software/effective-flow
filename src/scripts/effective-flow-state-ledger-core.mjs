@@ -628,20 +628,20 @@ export async function restoreResidual({ git, fs, root, residual, descriptors, re
   const unstage = absent.filter((repoPath) => staged.has(repoPath));
   const restored = [];
   const unstaged = [];
-  const confirm = async (paths) => {
-    for (const repoPath of paths) {
-      const descriptor = byPath.get(repoPath);
-      if (!descriptor || !(await recheck(descriptor))) {
-        fail(
-          'WRITE_FAILED',
-          `the residual path ${repoPath} changed after its proof (working tree or index); the release stopped before discarding it`,
-        );
-      }
+  const confirm = async (repoPath) => {
+    const descriptor = byPath.get(repoPath);
+    if (!descriptor || !(await recheck(descriptor))) {
+      fail(
+        'WRITE_FAILED',
+        `the residual path ${repoPath} changed after its proof (working tree or index); the release stopped before discarding it`,
+      );
     }
   };
+  // Each discard is its own call right after its own re-check, never batched after later ones: a
+  // change to an already re-checked path made while a later path is re-checked is never discarded.
   try {
-    if (unstage.length > 0) {
-      await confirm(unstage);
+    for (const repoPath of unstage) {
+      await confirm(repoPath);
       await runOrFail(
         git,
         [
@@ -653,20 +653,19 @@ export async function restoreResidual({ git, fs, root, residual, descriptors, re
           '--pathspec-from-file=-',
           '--pathspec-file-nul',
         ],
-        pathspecInput(unstage),
+        pathspecInput([repoPath]),
       );
-      unstaged.push(...unstage);
+      unstaged.push(repoPath);
     }
     for (const repoPath of absent) {
-      await confirm([repoPath]);
+      await confirm(repoPath);
       if (await removeResidualFile(fs, root, repoPath)) {
         await removeEmptiedParents(fs, root, repoPath);
       }
       restored.push(repoPath);
     }
-    if (tracked.size > 0) {
-      const paths = [...tracked].sort();
-      await confirm(paths);
+    for (const repoPath of [...tracked].sort()) {
+      await confirm(repoPath);
       await runOrFail(
         git,
         [
@@ -678,9 +677,9 @@ export async function restoreResidual({ git, fs, root, residual, descriptors, re
           '--pathspec-from-file=-',
           '--pathspec-file-nul',
         ],
-        pathspecInput(paths),
+        pathspecInput([repoPath]),
       );
-      restored.push(...paths);
+      restored.push(repoPath);
     }
   } catch (error) {
     throw partialRestoreError(error, restored, unstaged);
