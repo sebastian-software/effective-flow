@@ -161,9 +161,10 @@ export function ledgerBinding(record) {
 //            `index` (each staged residual entry is HEAD's or its descriptor's blob) and `source`
 //            (`verifySourceManifest` is exact, so every discarded byte is still in the source).
 //            Then, after the last lock check, the source is verified once more, each dirty
-//            residual path is re-checked against its descriptor (working tree, and the index
-//            entry HEAD's or the descriptor's) immediately before it is discarded, exactly the dirty residual paths are restored (`restoreResidual`) and the
-//            worktree is proven clean
+//            residual path is re-checked against its descriptor (working tree, the index entry
+//            HEAD's or the descriptor's, and for a tracked path no index entry at a parent or
+//            below it) immediately before it is discarded, exactly the dirty residual paths are
+//            restored (`restoreResidual`) and the worktree is proven clean
 // A dirty worktree without a valid ledger is `residual`, with the exact dirty paths listed.
 // Returns `{route, restored}` or the NOT_ELIGIBLE outcome. A signal seen at the last check before
 // the restore is INTERRUPTED with nothing written and nothing restored; once the restore has

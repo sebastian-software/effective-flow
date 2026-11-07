@@ -71,9 +71,10 @@ ledger's immutable part never change. A refusal writes nothing; a failed prerequ
 proofs it left open in `unevaluated`, and a record of another repository is `repository`. The resume
 appends a recovered tip to the ledger first, then writes the record; an entry whose record write
 then fails is the ledger's own commit on the next resume, which recovers nothing. The ledger route
-re-checks the source and each path immediately before restoring exactly the dirty residual paths to
-`HEAD`, removing a residual file `HEAD` does not hold, and proves the worktree clean; a restore that
-stops part-way names the paths already restored, and a retry releases the rest. A tracked path whose
+re-checks the source and each path, its index entry and any entry staged at a parent of a tracked
+path or below it included, immediately before restoring exactly the dirty residual paths to `HEAD`,
+removing a residual file `HEAD` does not hold, and proves the worktree clean; a restore that stops
+part-way names the paths already restored, and a retry releases the rest. A tracked path whose
 restore would delete a file outside the residual, such as an ignored file in a directory that
 replaced it or a file standing at one of its parents, stops the release with `UNSAFE_TARGET`
 before that path is discarded, on every retry too. The branch and its

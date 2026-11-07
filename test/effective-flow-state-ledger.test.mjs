@@ -2162,6 +2162,76 @@ test('release ledger route: an ignored file below a directory replacing a delete
   assert.equal(status(worktree), '');
 });
 
+// Invariant (release restore, staged parent or descendant): restoring a tracked residual path
+// never drops an index entry at one of its parents or below it. HEAD holds none there, the
+// residual's own are unstaged first, and `git restore` would remove such an entry along with the
+// working file the index-only check never sees. Staged after the proofs with its working file
+// removed, a file below deleted tracked `gone.txt` or a file at the parent of deleted tracked
+// `dir/c.txt` stops the release with WRITE_FAILED before that path is discarded, the staged entry,
+// the record and the ledger unchanged, and the retry refuses the extra dirt. A residual file
+// staged below a deleted tracked path is still released.
+test('release ledger route: an entry staged at a parent or below a deleted tracked path survives', async (t) => {
+  for (const [endpoint, occupant] of [
+    ['gone.txt', 'gone.txt/new.txt'],
+    ['dir/c.txt', 'dir'],
+  ]) {
+    const fixture = await delivery(t, { deleted: [endpoint] });
+    expectOk(
+      await call('ledger init', initInput(fixture, { groups: [['a.txt'], ['b.txt', endpoint]] })),
+    );
+    expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+    await failRecord(fixture);
+    const worktree = fixture.worktree.worktreePath;
+    const ledger = readFileSync(ledgerFile(fixture), 'utf8');
+    const top = join(worktree, occupant.split('/')[0]);
+    const onPhase = (name) => {
+      if (name !== 'releaseProven') return;
+      rmSync(top, { recursive: true, force: true });
+      mkdirSync(dirname(join(worktree, occupant)), { recursive: true });
+      write(worktree, occupant, 'staged late\n');
+      git(worktree, 'add', '--', occupant);
+      rmSync(top, { recursive: true });
+    };
+    const failed = expectError(
+      await call('worktree transition', releaseInput(fixture), { onPhase }),
+      'WRITE_FAILED',
+    );
+    assert.ok(
+      failed.message.includes(`the residual path ${endpoint} changed after its proof`),
+      failed.message,
+    );
+    assert.match(failed.message, /already restored: b\.txt; already unstaged: none;/);
+    assert.equal(git(worktree, 'show', `:${occupant}`), 'staged late', 'the staged entry survives');
+    assert.equal(readRecord(fixture.root).status, 'failed', `${endpoint}: the record is unchanged`);
+    assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), ledger);
+    const retry = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+    assert.ok(retry.proofs.includes('residual'), endpoint);
+    assert.equal(git(worktree, 'show', `:${occupant}`), 'staged late');
+  }
+
+  const fixture = await delivery(t, {
+    deleted: ['gone.txt'],
+    added: { 'gone.txt/new.txt': 'new residual\n' },
+  });
+  expectOk(
+    await call(
+      'ledger init',
+      initInput(fixture, { groups: [['a.txt'], ['b.txt', 'gone.txt', 'gone.txt/new.txt']] }),
+    ),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  const worktree = fixture.worktree.worktreePath;
+  git(worktree, 'add', '--', 'gone.txt/new.txt');
+  await failRecord(fixture);
+  const released = expectOk(await release(fixture));
+  assert.deepEqual(released.release, {
+    route: 'ledger',
+    restored: ['b.txt', 'gone.txt', 'gone.txt/new.txt'],
+  });
+  assert.equal(readFileSync(join(worktree, 'gone.txt'), 'utf8'), 'gone.txt base\n');
+  assert.equal(status(worktree), '');
+});
+
 // Invariant (restore, unproven content): before the first discard, a tracked residual path whose
 // restore would delete a file no residual path names (one below a directory standing at the path,
 // or a file standing at a parent) refuses with UNSAFE_TARGET and nothing touched; a residual file

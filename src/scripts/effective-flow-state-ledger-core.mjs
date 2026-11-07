@@ -660,10 +660,12 @@ function partialRestoreError(error, restored, unstaged) {
 // and its file removed, with the directories this left empty. Nothing else is touched. `git` runs
 // in that worktree. Immediately before each discard, `recheck(descriptor)` must confirm that the
 // path still holds its descriptor (`descriptors`, the residual endpoints of the ledger) in working
-// tree and index: a path changed since its proof stops the restore with WRITE_FAILED before it is
-// touched. A tracked path whose restore would
-// delete content outside the residual (a directory standing at the path with any file below it, a
-// non-directory parent; see `assertRestoreDeletesNothingUnproven`) stops it with UNSAFE_TARGET:
+// tree and index and, for a tracked path, that the index holds no entry at a parent of it or below
+// it (by then the residual's own are unstaged, so `git restore` would drop a newer one): a path
+// changed since its proof stops the restore with WRITE_FAILED before it is touched. A tracked path
+// whose restore would delete content outside the residual (a directory standing at the path with
+// any file below it, a non-directory parent; see `assertRestoreDeletesNothingUnproven`) stops it
+// with UNSAFE_TARGET:
 // once before the first discard, where the dirty residual paths absent from HEAD count as proven,
 // and again right before that path's own restore, where nothing does. A restore that stops
 // part-way names the paths it already restored and the index entries it already removed
