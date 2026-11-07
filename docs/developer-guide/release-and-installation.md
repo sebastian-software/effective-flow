@@ -443,7 +443,7 @@ out a pull-request head or merge ref. Pull-request text is passed as data throug
 JavaScript context, not interpolated into shell code. Its token permissions are limited to
 reading repository contents and writing issues.
 
-Every target's minimal skill payload includes 46 dependency-free runtime scripts. The Issue Buddy
+Every target's minimal skill payload includes 49 dependency-free runtime scripts. The Issue Buddy
 pair is shipped as `scripts/issue-buddy.mjs` and `scripts/issue-buddy-core.mjs`; the thin CLI
 entry point accepts one JSON object on standard input and delegates deterministic collection,
 trust filtering, fingerprinting and pass-state operations to its core. The remaining named

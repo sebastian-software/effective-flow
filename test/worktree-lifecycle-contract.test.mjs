@@ -14,6 +14,18 @@ import {
   resolveLazyIncludes,
 } from '../build-lib.mjs';
 import { AGENT_PROFILE_MAPPINGS, FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
+import { LEDGER_MAX_BYTES, OPERATION_KEYS } from '../src/scripts/effective-flow-state-core.mjs';
+import {
+  LEDGER_COMMIT_KEYS,
+  LEDGER_ENDPOINT_KEYS,
+  LEDGER_KEYS,
+  LEDGER_SUFFIX,
+  LEDGERS_DIR,
+} from '../src/scripts/effective-flow-state-ledger-core.mjs';
+import {
+  RESUME_OPERATION_PROOFS,
+  RESUME_PROOFS,
+} from '../src/scripts/effective-flow-state-recovery-core.mjs';
 import { spliceDelegatedRun } from './support/merge-gate-source.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -663,5 +675,245 @@ test('no prose owns a lifecycle record lock', () => {
   assert.doesNotMatch(readShared('merge-gate-delegated-run'), /lifecycle\s+record handle/);
   for (const line of readShared('plan-publication').split('\n')) {
     if (line.startsWith('when:')) assert.doesNotMatch(line, /record lock|lifecycle record/);
+  }
+});
+
+// --- Partial-diff recovery (#626) ---
+
+const recovery = readShared('worktree-partial-diff-recovery');
+const flatRecovery = recovery.replace(/\s+/g, ' ');
+
+// Invariant: the state machine lists exactly two ways out of `aborted` or `failed`, each selected by
+// its explicit discriminator: the adoption (`plan-pr-continuation` or `partial-diff-resume`) and
+// the partial-diff release to `cleanup-ready`.
+test('the state machine names the resume adoption and the partial-diff release', () => {
+  const rows = lifecycle.split('\n').filter((line) => line.startsWith('| `aborted` or `failed`'));
+  assert.equal(rows.length, 2, 'aborted or failed has exactly the adoption and the release row');
+  assert.match(
+    rows[0],
+    /`active` \(adoption\)[^\n]*`adoption` `plan-pr-continuation` or `partial-diff-resume`/,
+    'the adoption row names both adoption modes',
+  );
+  assert.match(
+    rows[1],
+    /`cleanup-ready` \(release\)[^\n]*`release: "partial-diff"`/,
+    'the release row names its discriminator',
+  );
+  assert.doesNotMatch(
+    lifecycle,
+    /`plan-pr-continuation` only/,
+    'adoption is no longer plan-PR only',
+  );
+});
+
+// Invariant: the recovery contract is the deferred half of `worktree-lifecycle`: never eager
+// anywhere, loaded only through the lifecycle contract, at a trigger naming every operation and
+// discriminator it owns, so hosts that never recover a partial-diff delivery do not pay for it.
+test('worktree-lifecycle defers the partial-diff recovery contract and names what it owns', () => {
+  const sources = [
+    ...[...toolNames].map((name) => readSource('tools', `${name}.md`)),
+    ...readdirSync(join(SOURCE_DIR, 'shared'))
+      .filter((name) => name.endsWith('.md'))
+      .map((name) => readSource('shared', name)),
+  ];
+  const loaders = sources.filter((text) =>
+    collectIncludeNames(text).lazy.has('worktree-partial-diff-recovery'),
+  );
+  assert.deepEqual(loaders, [lifecycle], 'only worktree-lifecycle loads the recovery contract');
+  assert.ok(
+    sources.every((text) => !collectIncludeNames(text).eager.has('worktree-partial-diff-recovery')),
+    'the recovery contract is never included eagerly',
+  );
+  const trigger = [...lifecycle.matchAll(LAZY_INCLUDE_RE)].find(
+    (match) => match[1].trim() === 'worktree-partial-diff-recovery',
+  )?.[2];
+  for (const owned of [
+    '`ledger init`',
+    '`ledger append`',
+    '`ledger reconcile`',
+    '`worktree resume-check`',
+    '`adoption`',
+    '`visibility`',
+    '`release`',
+  ]) {
+    assert.ok(trigger?.includes(owned), `the recovery pointer names ${owned}`);
+  }
+});
+
+// Invariant: a released partial-diff record whose worktree vanished completely can still be
+// removed (only the conditions that need the worktree are waived), while a half-gone worktree
+// keeps every condition, so cleanup never prunes.
+test('a released partial-diff record with a fully gone worktree stays removable', () => {
+  const flat = lifecycle.replace(/\s+/g, ' ');
+  const from = flat.indexOf('A released `partial-diff` record');
+  assert.notEqual(from, -1, 'the gone-removal exception is stated');
+  const rule = flat.slice(from, flat.indexOf('###', from));
+  for (const token of [
+    '`cleanup-ready` or `cleanup-failed`',
+    'fully gone, unregistered and its path absent',
+    'without conditions 3, 4, 5 and 7 and the toplevel part of 2',
+    'no Git call runs in the vanished path',
+    'A half-gone worktree keeps every condition',
+  ]) {
+    assert.ok(rule.includes(token), `the gone-removal exception states: ${token}`);
+  }
+});
+
+// Invariant: the ledger never outlives its record unnoticed: removal deletes it first under the
+// same lock or claim, and `inspect` reports one without a record but never deletes it.
+test('the ledger is deleted before its record and an orphan ledger is only reported', () => {
+  const flat = lifecycle.replace(/\s+/g, ' ');
+  assert.match(
+    flat,
+    /deletes the record, its ledger first/,
+    'worktree remove deletes the ledger first',
+  );
+  assert.match(
+    flat,
+    /ledgers without a record \(`orphanLedgers`\)/,
+    'inspect lists orphan ledgers',
+  );
+  assert.match(flat, /a ledger with no record: report it; never break or delete it/);
+  assert.match(
+    flatRecovery,
+    /`worktree remove` and `cleanup apply` delete it under the same lock or claim immediately before its record\. `worktree inspect` lists a ledger without a record in `orphanLedgers` and never deletes it/,
+  );
+});
+
+// Invariant: the ledger contract states its location outside every record and lock scan, every
+// key the helper writes at every level, its content-free bound with the helper's own byte limit,
+// and what `ledger init` trusts from its caller.
+test('the delivery ledger contract states its location, exact schema, bound and trust assumption', () => {
+  assert.ok(
+    recovery.includes(
+      `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/${LEDGERS_DIR}/<RECORD_ID>${LEDGER_SUFFIX}`,
+    ),
+    'the ledger location matches the helper',
+  );
+  assert.match(
+    flatRecovery,
+    /keep it out of every scan for `\*\.json` records and `\*\.lock` locks/,
+  );
+  for (const key of [...LEDGER_KEYS, ...LEDGER_ENDPOINT_KEYS, ...LEDGER_COMMIT_KEYS]) {
+    assert.match(recovery, new RegExp(`\\b${key}\\b`), `the ledger schema names ${key}`);
+  }
+  assert.match(flatRecovery, /exactly these keys at every level/);
+  assert.match(flatRecovery, /holds no file content, credential or session token/);
+  assert.equal(LEDGER_MAX_BYTES, 256 * 1024);
+  assert.match(
+    flatRecovery,
+    /Its bound is 256 KiB \(`LEDGER_MAX_BYTES`\), checked once by `ledger init` against the worst case/,
+    'the stated bound is the helper limit, checked against the worst case',
+  );
+  assert.match(
+    flatRecovery,
+    /The manifest is accepted only when the helper's own reconcile of it against the delivery worktree and the source is exact; the visibility is the caller's assertion\. Descriptors and digests are never caller input/,
+    'the trust assumption of ledger init is explicit',
+  );
+});
+
+// Invariant: every stable proof identifier the resume and release can report is named in the
+// contract, so a refusal is never improvised, and the interrupted shapes are documented.
+test('the recovery contract names every resume and release proof and the interrupted shapes', () => {
+  for (const proof of [...RESUME_PROOFS, ...RESUME_OPERATION_PROOFS]) {
+    const name = /^condition-[2-6]$/.test(proof)
+      ? /`condition-2` … `condition-6`/
+      : new RegExp(`\`${proof}\``);
+    assert.match(recovery, name, `the recovery contract names the proof ${proof}`);
+  }
+  for (const route of ['gone', 'clean', 'ledger', 'no-ledger', 'half-gone']) {
+    assert.match(recovery, new RegExp(`\`(?:route: ")?${route}"?\``), `release route ${route}`);
+  }
+  assert.match(
+    flatRecovery,
+    /`INTERRUPTED` after the resume's recovered-tip append and before its record write carries `written: false`, `ledgerAppended: true` and `appendedOid`/,
+  );
+  assert.match(
+    flatRecovery,
+    /an entry whose record write then fails is the ledger's own commit on the next resume/,
+  );
+});
+
+// Invariant: every call line the recovery contract shows passes only keys the helper accepts for
+// that operation, and every key the ledger operations and `resume-check` take.
+test('the recovery call lines use exactly the helper operation keys', () => {
+  const nested = new Set(['branch', 'oid', 'git', 'forge']);
+  const calls = [
+    ...recovery.matchAll(
+      /^node <skill-root>\/scripts\/effective-flow-state\.mjs ([a-z]+ [a-z-]+) <<< '(.*)'$/gm,
+    ),
+  ];
+  const operations = calls.map((match) => match[1]);
+  for (const operation of [
+    'ledger init',
+    'ledger append',
+    'ledger reconcile',
+    'worktree resume-check',
+  ]) {
+    assert.ok(operations.includes(operation), `the recovery contract shows ${operation}`);
+  }
+  assert.equal(operations.filter((operation) => operation === 'worktree transition').length, 2);
+  for (const [, operation, json] of calls) {
+    const keys = [...json.matchAll(/"([A-Za-z]+)":/g)].map((match) => match[1]);
+    const accepted = new Set([...OPERATION_KEYS[operation], ...nested]);
+    for (const key of keys) assert.ok(accepted.has(key), `${operation} accepts ${key}`);
+    if (operation !== 'worktree transition') {
+      for (const key of OPERATION_KEYS[operation]) {
+        assert.ok(keys.includes(key), `${operation} shows ${key}`);
+      }
+    }
+  }
+  assert.match(recovery, /"adoption":"partial-diff-resume","visibility":"<visible\|hidden>"/);
+  assert.match(recovery, /"to":"cleanup-ready","reason":null,[^']*"release":"partial-diff"/);
+});
+
+// Invariant: the helper's visibility vocabulary differs from the resolved configuration's, so the
+// recovery contract states the mapping once; and `resume-check` names exactly the paths an eligible
+// ledger release discards, so the caller never derives them from its own `git status`.
+test('the recovery contract maps the visibility and names the paths a ledger release discards', () => {
+  for (const token of [
+    'Every `visibility` input is `visible` or `hidden`',
+    '`config-resolve` `standard` or `hidden`',
+    'with `standard` as `visible`',
+  ]) {
+    assert.ok(flatRecovery.includes(token), `the visibility mapping states: ${token}`);
+  }
+  assert.match(
+    flatRecovery,
+    /`releasePaths` and `releasePathCount` \(for an eligible `ledger` route the bounded dirty residual paths a release discards/,
+  );
+});
+
+// Invariant: only `deliver` writes a ledger, so the implementation handback's partial-diff worktree
+// is never resumed and plan-PR continuation never adopts a partial-diff record; release stays open.
+test('worktree-integration keeps partial-diff resume to deliver and plan-PR adoption to delivery', () => {
+  const flat = delivery.replace(/\s+/g, ' ');
+  const from = flat.indexOf('Only `{{SKILL:deliver}}` writes a delivery ledger');
+  assert.notEqual(from, -1, 'the partial-diff resume scope is stated');
+  const scope = flat.slice(from, flat.indexOf('###', from));
+  for (const token of [
+    'only its retained `partial-diff` records can be resumed',
+    "this handback's failed worktree never is",
+    '`plan-pr-continuation` adopts only purpose `delivery`',
+    'release proofs of the partial-diff recovery contract',
+  ]) {
+    assert.ok(scope.includes(token), `worktree-integration states: ${token}`);
+  }
+});
+
+// Invariant: cleanup's next step for a retained partial-diff record is the deliver resume or release
+// route, the only supported way to make such a record removable.
+test('cleanup routes a retained partial-diff record to the deliver release route', () => {
+  const flat = cleanup.replace(/\s+/g, ' ');
+  const from = flat.indexOf('- `aborted` or `failed`:');
+  assert.notEqual(from, -1, 'cleanup names the aborted or failed retention reason');
+  const hint = flat.slice(from, flat.indexOf(' - ', from + 2));
+  for (const token of [
+    'For a `partial-diff` record',
+    '`{{SKILL:deliver}}` in its source checkout',
+    'resume it or release it for cleanup',
+    'also when its worktree is fully gone',
+  ]) {
+    assert.ok(hint.includes(token), `the cleanup hint states: ${token}`);
   }
 });

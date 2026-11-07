@@ -151,29 +151,25 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
     'worktree record-init',
     'worktree transition',
     'worktree inspect',
+    'worktree resume-check',
     'cleanup plan',
+    'ledger init',
+    'ledger append',
+    'ledger reconcile',
   ]);
   assert.equal(STATE_OPERATION_CLASSES['lock break'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['worktree remove'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['cleanup apply'], 'not-allowlisted');
-  assert.equal(STATE_OPERATION_CLASSES['ledger init'], 'not-allowlisted');
-  assert.equal(STATE_OPERATION_CLASSES['ledger append'], 'not-allowlisted');
-  // The read-only resume operations get no rule until the allowlist contract names them.
-  assert.equal(STATE_OPERATION_CLASSES['worktree resume-check'], 'not-allowlisted');
-  assert.equal(STATE_OPERATION_CLASSES['ledger reconcile'], 'not-allowlisted');
+  // The ledger housekeeping is allowlisted under its stated bound: the two writes touch only the
+  // private ledger of the caller's own `active` record, and the two resume operations only read.
+  assert.equal(STATE_OPERATION_CLASSES['ledger init'], 'allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['ledger append'], 'allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['worktree resume-check'], 'allowlisted');
+  assert.equal(STATE_OPERATION_CLASSES['ledger reconcile'], 'allowlisted');
   assert.deepEqual(
     [...NEVER_ALLOWLISTED_OPERATIONS],
-    [
-      'lock break',
-      'harness allow-rules',
-      'worktree remove',
-      'worktree resume-check',
-      'cleanup apply',
-      'ledger init',
-      'ledger append',
-      'ledger reconcile',
-    ],
+    ['lock break', 'harness allow-rules', 'worktree remove', 'cleanup apply'],
   );
   assert.deepEqual(
     STATE_OPERATIONS.filter((operation) => STATE_OPERATION_CLASSES[operation] !== 'allowlisted'),
@@ -1108,10 +1104,11 @@ test('apply maps a write-path settings refusal to its outcome and guards twice',
   }
 });
 
-// Invariant: `harness allow-rules` writes a rule for each of the four non-destructive worktree and
-// cleanup operations and for neither destructive one (`worktree remove`, `cleanup apply`), and the
-// written rule count is exactly the pinned entry list.
-test('apply writes the four new worktree and cleanup rules and none for the destructive two', async (t) => {
+// Invariant: `harness allow-rules` writes a rule for each of the non-destructive worktree and
+// cleanup operations and the bounded ledger housekeeping, and for neither destructive one
+// (`worktree remove`, `cleanup apply`), and the written rule count is exactly the pinned entry
+// list.
+test('apply writes the worktree, cleanup and ledger rules and none for the destructive two', async (t) => {
   const root = fakeRoot(t);
   const installed = install(t);
   await previewAndApply(root, installed);
@@ -1121,7 +1118,11 @@ test('apply writes the four new worktree and cleanup rules and none for the dest
     'worktree record-init',
     'worktree transition',
     'worktree inspect',
+    'worktree resume-check',
     'cleanup plan',
+    'ledger init',
+    'ledger append',
+    'ledger reconcile',
   ]) {
     assert.ok(allow.includes(helperRule(installed.skillRoot, operation)), operation);
   }

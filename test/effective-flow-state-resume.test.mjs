@@ -1331,7 +1331,31 @@ test('resume-check of a clean ledger-less record offers the clean release route 
   assert.deepEqual(check.resumeProofs, ['ledger']);
   assert.equal(check.releasable, true);
   assert.equal(check.releaseRoute, 'clean');
+  assert.deepEqual([check.releasePaths, check.releasePathCount], [[], 0]);
   assert.deepEqual(stateBytes(fixture), before);
+});
+
+// Invariant (release paths): an eligible `ledger` release route names exactly the residual dirty
+// paths a release would discard, read-only; the `gone` route and a refused route name none.
+test('resume-check names the paths an eligible ledger release discards', async (t) => {
+  const fixture = await failedAfterGroupOne(t);
+  const before = stateBytes(fixture);
+  const check = expectOk(await resumeCheck(fixture));
+  assert.equal(check.releaseRoute, 'ledger');
+  assert.equal(check.releasable, true);
+  assert.deepEqual([check.releasePaths, check.releasePathCount], [['b.txt'], 1]);
+  assert.deepEqual(stateBytes(fixture), before, 'resume-check changed nothing');
+
+  write(fixture.worktree.worktreePath, 'extra.txt', 'not selected\n');
+  const refused = expectOk(await resumeCheck(fixture));
+  assert.equal(refused.releasable, false);
+  assert.deepEqual([refused.releasePaths, refused.releasePathCount], [[], 0]);
+
+  git(fixture.root, 'worktree', 'remove', '--force', fixture.worktree.worktreePath);
+  const gone = expectOk(await resumeCheck(fixture));
+  assert.equal(gone.releaseRoute, 'gone');
+  assert.equal(gone.releasable, true);
+  assert.deepEqual([gone.releasePaths, gone.releasePathCount], [[], 0]);
 });
 
 // Invariant: `source.root` is the ledger manifest's source root, here a linked worktree that is

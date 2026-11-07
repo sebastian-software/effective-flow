@@ -997,6 +997,9 @@ async function resumeProofs({ context, roots, paths, record, request, held, sign
 //   resumable, resumeProofs, unevaluated   the failed and the unevaluated resume proofs
 //   releasable, releaseRoute, releaseProofs   the release route (`gone`, `clean`, `ledger`,
 //                                          `no-ledger`, or null when a condition refused first)
+//   releasePaths, releasePathCount         what an eligible `ledger` release discards: the
+//                                          residual's dirty paths (bounded) and their count;
+//                                          `[]` and 0 for every other result
 //   hasLedger, ledger                      whether a valid ledger is bound, and its read state
 //   source                                 `{root}`: the ledger manifest's source root, or null
 //   committed, remaining, next             counts after tip recovery (null without a ledger)
@@ -1028,6 +1031,7 @@ export async function resumeCheck(input, deps) {
     recoveredTip: null,
     hookStaged: false,
   };
+  const noRelease = { releasePaths: [], releasePathCount: 0 };
   if (read.state === 'invalid') {
     return {
       recordId,
@@ -1042,6 +1046,7 @@ export async function resumeCheck(input, deps) {
       releasable: false,
       releaseRoute: null,
       releaseProofs: ['condition-1'],
+      ...noRelease,
       ...empty,
       lock: await observedLock(context, paths),
       details: { resume: {}, release: {} },
@@ -1064,6 +1069,7 @@ export async function resumeCheck(input, deps) {
       releasable: false,
       releaseRoute: null,
       releaseProofs: ['repository'],
+      ...noRelease,
       ...empty,
       lock: await observedLock(context, paths),
       details: { resume: {}, release: {} },
@@ -1083,6 +1089,8 @@ export async function resumeCheck(input, deps) {
   const release = await evaluateRelease({ context, roots, record, facts, once });
   const { route: refusedRoute = null, ...releaseDetails } = release.refusal?.details ?? {};
   const ledger = resume.ledger;
+  const discarded =
+    !release.refusal && release.route === 'ledger' ? reportedPaths(release.residual.dirty) : null;
   return {
     ...identity,
     resumable: resume.proofs.length === 0 && resume.unevaluated.length === 0,
@@ -1091,6 +1099,9 @@ export async function resumeCheck(input, deps) {
     releasable: !release.refusal,
     releaseRoute: release.refusal ? refusedRoute : release.route,
     releaseProofs: release.refusal ? release.refusal.proofs : [],
+    ...(discarded
+      ? { releasePaths: discarded.paths, releasePathCount: discarded.count }
+      : noRelease),
     hasLedger: ledger !== null,
     ledger: resume.ledgerState,
     source: ledger ? { root: ledger.manifest.source.root } : null,

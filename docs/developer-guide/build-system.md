@@ -455,7 +455,7 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Fourteen subsystems and 46 runtime scripts carry this today: the pairs
+  misread as one. Fourteen subsystems and 49 runtime scripts carry this today: the pairs
   `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
   `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
@@ -464,10 +464,11 @@ The build aborts with an error message if any of these guards is violated:
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
   `setup-status.mjs`/`setup-status-core.mjs`; the
-  runtime-state helper, a nine-file family whose entry point `effective-flow-state.mjs` sits over
+  runtime-state helper, a twelve-file family whose entry point `effective-flow-state.mjs` sits over
   `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
   `effective-flow-state-harness-core.mjs`, `effective-flow-state-commit-core.mjs`,
-  `effective-flow-state-review-core.mjs`, its pure report renderer `review-report-render.mjs`, the shared `claude-settings-core.mjs` and
+  `effective-flow-state-review-core.mjs`, `effective-flow-state-worktree-core.mjs`,
+  `effective-flow-state-ledger-core.mjs`, `effective-flow-state-recovery-core.mjs`, its pure report renderer `review-report-render.mjs`, the shared `claude-settings-core.mjs` and
   `runtime-file-primitives.mjs` (the bounded-read and JSON-object primitives the memory and
   settings cores share), with `dated-name-allocation.mjs`, the dated-name allocation that
   `effective-flow-mechanics-core.mjs` and the review core both import; the
@@ -783,7 +784,7 @@ snapshot and execution commits parented directly to that source HEAD, and immuta
 identity through completion; changed history or closure requires a fresh attempt.
 
 Fourteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 46 files: eleven two-file subsystems, the runtime-state helper's nine-file family,
+allowlist contains 49 files: eleven two-file subsystems, the runtime-state helper's twelve-file family,
 the remote tracker's seven-file family, the pilot measurement three-file family, the two
 protected-validation helper modules, and the shared `process-runner.mjs`,
 `runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
@@ -1114,11 +1115,13 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   argv is rejected before stdin is read, so an allowlisted prefix cannot be widened by an extra
   argument. The operations are `lock acquire|release|inspect|break`, `memory
 reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report`, `harness
-allow-rules`, `worktree record-init|transition|inspect|remove` and `cleanup plan|apply`. The
-  thirteen allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+allow-rules`, `worktree record-init|transition|inspect|resume-check|remove`, `ledger
+init|append|reconcile` and `cleanup plan|apply`. The
+  seventeen allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
 reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`, `review
 open-report`, `review write-report`, `worktree record-init`, `worktree transition`, `worktree
-inspect` and `cleanup plan`, are non-destructive or read-only (`commit create` writes Git history; see below).
+inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append` and `ledger reconcile`, are non-destructive,
+  bounded or read-only (`commit create` writes Git history; see below).
   `lock break`, `worktree remove` and `cleanup apply` are destructive and
   `harness allow-rules` writes the settings file that holds the rules; none is ever
   allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
@@ -1227,9 +1230,26 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   directory as `source`; a legacy directory is certified for removal only by a marker naming it,
   or, for a marker without `source`, by a carry-over proof with no open entry.
 
+  The partial-diff recovery operations (contract in `src/shared/worktree-partial-diff-recovery.md`,
+  lazy from `worktree-lifecycle`) split across two modules so `effective-flow-state-worktree-core.mjs`
+  never imports them. `effective-flow-state-ledger-core.mjs` owns the delivery ledger of a `deliver`
+  run: a versioned exact-key file at `worktree-runs/ledgers/<RECORD_ID>.ledger` (never `.json` or
+  `.lock`, so no record or lock scan sees it), an immutable part (selection manifest, group plan,
+  helper-computed per-endpoint descriptors, base, visibility, languages) plus an append-only commit
+  list, bounded at 256 KiB by a worst-case check at `ledger init`. `effective-flow-state-recovery-core.mjs`
+  imports the worktree core's internals and implements `ledger init|append|reconcile`, the
+  `worktree resume-check` evaluation, the `adoption: "partial-diff-resume"` transition with its
+  stable proof identifiers, and the `release: "partial-diff"` transition (`gone`, `clean` or `ledger`
+  route); the state-core dispatch routes those calls there. Only the entry point reads or writes the
+  ledger, by record ID through the runtime-state guard, and `worktree remove` and `cleanup apply`
+  delete it under the record's lock before the record. `resume-check` and `ledger reconcile` take no
+  lock and write nothing. Every Git call in a recorded worktree runs after the own-worktree and
+  common-directory proof with `core.fsmonitor=false`, including the reused `delivery-selection-core.mjs`
+  functions, which take an injected runner.
+
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 58 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 62 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1442,6 +1462,12 @@ and directive syntax").
   states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
   fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
   the merge-gate eval identity.
+  `deliver-partial-diff-resume` (the resume and release entry with its step map) is the single-consumer
+  `deliver` fragment lazy from step 1.1, loaded only when `worktree inspect` lists a retained
+  `partial-diff` record. `worktree-partial-diff-recovery` (ledger schema, size bound, proofs and call
+  shapes) is lazy from `worktree-lifecycle`, so the always-loaded lifecycle contract keeps only the
+  state-machine rows and a pointer. Both widen the eval identity of every suite whose tool reaches
+  `worktree-lifecycle`.
   `config-migration` is the live proof that a fragment may be eager in one file and lazy in another:
   twelve tools that read configuration on every run inline its always-read core, while seven others
   defer the whole fragment behind their own first configuration read. `worktree-lifecycle`,

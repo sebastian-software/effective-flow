@@ -110,12 +110,12 @@ export const STATE_OPERATIONS = Object.freeze([
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
 // STATE_OPERATIONS is classified here; a destructive operation (`lock break`, `worktree remove`,
-// `cleanup apply`), the rule writer itself and the ledger writes are never allowlisted, and neither
-// are the read-only resume operations (`worktree resume-check`, `ledger reconcile`) until the
-// allowlist contract names them. The allowlisted `worktree transition` with `release:
-// "partial-diff"` restores exactly the proven residual paths of its record's worktree, and with
-// `adoption: "partial-diff-resume"` appends at most one proven tip commit to its record's ledger
-// (see ALLOWLISTED_OPERATIONS). The allowlisted ones equal ALLOWLISTED_OPERATIONS of the shared
+// `cleanup apply`) and the rule writer itself are never allowlisted. The allowlisted `worktree
+// transition` with `release: "partial-diff"` restores exactly the proven residual paths of its
+// record's worktree, and with `adoption: "partial-diff-resume"` appends at most one proven tip
+// commit to its record's ledger; the allowlisted `ledger init` and `ledger append` write only that
+// private ledger, and `worktree resume-check` and `ledger reconcile` only read (see
+// ALLOWLISTED_OPERATIONS for each bound). The allowlisted ones equal ALLOWLISTED_OPERATIONS of the shared
 // settings module, which a unit test pins.
 export const STATE_OPERATION_CLASSES = Object.freeze({
   'lock acquire': 'allowlisted',
@@ -133,16 +133,15 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'worktree transition': 'allowlisted',
   'worktree inspect': 'allowlisted',
   'worktree remove': 'not-allowlisted',
-  // Read-only, but no unprompted rule until the allowlist contract (`setup-allowlist.md`, its rule
-  // count included) names it.
-  'worktree resume-check': 'not-allowlisted',
+  // Read-only: no lock, no write.
+  'worktree resume-check': 'allowlisted',
   'cleanup plan': 'allowlisted',
   'cleanup apply': 'not-allowlisted',
-  // The ledger writes get no unprompted rule until the allowlist contract states their bound.
-  'ledger init': 'not-allowlisted',
-  'ledger append': 'not-allowlisted',
+  // The ledger writes, bounded to the private ledger of the caller's own `active` record.
+  'ledger init': 'allowlisted',
+  'ledger append': 'allowlisted',
   // Read-only, like `worktree resume-check`.
-  'ledger reconcile': 'not-allowlisted',
+  'ledger reconcile': 'allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);

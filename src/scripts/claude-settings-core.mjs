@@ -70,23 +70,29 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'worktree record-init',
   'worktree transition',
   'worktree inspect',
+  // `resume-check` only reads: it takes no lock, writes nothing, and runs Git with
+  // `GIT_OPTIONAL_LOCKS=0`.
+  'worktree resume-check',
   'cleanup plan',
+  // The delivery-progress ledger housekeeping. `ledger init` writes one private ledger file below
+  // `.effective-flow/worktree-runs/ledgers/`, no-clobber and under the record lock, only for the
+  // calling session's own `active` `partial-diff` record, from descriptors the helper computes
+  // itself, and only when its worst case (every group committed) fits LEDGER_MAX_BYTES (256 KiB).
+  // `ledger append` adds one commit entry to that ledger, only for the branch tip it proved the
+  // next group's exact commit (parent, paths, blobs and modes). Neither touches a worktree, a
+  // branch or a record. `ledger reconcile` only reads, like `worktree resume-check`.
+  'ledger init',
+  'ledger append',
+  'ledger reconcile',
 ]);
 // The runtime-state helper operations that never get a rule: destructive (`lock break`, the
-// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`), the
-// writer of the rules itself, the delivery-progress ledger writes (`ledger init`, `ledger
-// append`), whose unprompted bound the allowlist contract does not state yet, or the read-only
-// resume operations (`worktree resume-check`, `ledger reconcile`), which the allowlist contract
-// and its rule count do not name yet. A rule that would also admit one of them is widened.
+// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`) or
+// the writer of the rules itself. A rule that would also admit one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock break',
   'harness allow-rules',
   'worktree remove',
-  'worktree resume-check',
   'cleanup apply',
-  'ledger init',
-  'ledger append',
-  'ledger reconcile',
 ]);
 
 // `config-resolve.mjs` has one operation, and it reads only.
