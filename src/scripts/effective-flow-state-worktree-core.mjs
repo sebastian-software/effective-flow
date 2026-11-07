@@ -984,11 +984,14 @@ export function selectionRunner(context, roots, provenRoots) {
 }
 
 // The canonical source root of `manifest` once its common Git directory is proven this
-// repository's, else null. Nothing else runs in it before this proof.
-export async function proveSourceRoot(context, roots, manifest) {
+// repository's and it is not `deliveryRoot` (the record's worktree), else null. Nothing else runs
+// in it before this proof. A delivery worktree as its own source would prove every source check
+// against itself, so a release would discard the only copy of its residual.
+export async function proveSourceRoot(context, roots, manifest, deliveryRoot) {
   const root = manifest.source.root;
   if (manifest.source.repositoryIdentity !== roots.common || !isAbsolutePath(root)) return null;
   if ((await canonical(context.fs, root)) !== root) return null;
+  if (root === (await canonicalOrSelf(context.fs, deliveryRoot))) return null;
   const proof = await proveRepositoryDirectory(context, roots, root, roots.common);
   return proof.commonDirMatches ? root : null;
 }

@@ -300,10 +300,12 @@ async function evaluateRelease({ context, roots, record, facts, once = unmemoize
   }
   const ledger = read.ledger;
   const descriptors = residualEndpoints(ledger);
-  const source = await once('source-root', () => proveSourceRoot(context, roots, ledger.manifest));
+  const source = await once('source-root', () =>
+    proveSourceRoot(context, roots, ledger.manifest, record.worktreePath),
+  );
   const runner = selectionRunner(context, roots, [
     record.worktreePath,
-    ...(source && source !== record.worktreePath ? [source] : []),
+    ...(source ? [source] : []),
   ]);
   const residual = await once('residual', () =>
     selectionCall(() =>
@@ -453,11 +455,12 @@ async function ledgerWriteProofs(context, roots, record, held) {
 // reconcile against the bound manifest (`describeDeliveryEndpoints`), which must be exact; nothing
 // in the input is a descriptor. Proofs beyond the record's: `creation-tip` (the branch is still at
 // `creationOid`: nothing is committed yet), `base` (`base.oid` is `creationOid`), `source-root`
-// (the manifest's source is this repository's) and `reconcile`. A ledger whose worst case
-// (`worstCaseLedgerBytes`: every group committed with a 64-hex OID) would serialize above
-// LEDGER_MAX_BYTES is not written: `{recordId, written: false, reason: "size-bound", bytes,
-// limitBytes, status}` with that worst case as `bytes`, never an error. A written ledger reports
-// its size as `bytes` and its worst case as `maxBytes`, so every later append stays readable.
+// (the manifest's source is this repository's and not the delivery worktree) and `reconcile`. A
+// ledger whose worst case (`worstCaseLedgerBytes`: every group committed with a 64-hex OID) would
+// serialize above LEDGER_MAX_BYTES is not written: `{recordId, written: false, reason:
+// "size-bound", bytes, limitBytes, status}` with that worst case as `bytes`, never an error. A
+// written ledger reports its size as `bytes` and its worst case as `maxBytes`, so every later
+// append stays readable.
 export async function ledgerInit(input, deps) {
   const context = prepare('ledger init', input, deps);
   const request = requireLedgerInit(input);
@@ -489,17 +492,14 @@ export async function ledgerInit(input, deps) {
         if (proofs.length > 0) {
           return new StateOutcome('NOT_ELIGIBLE', { recordId: record.recordId, proofs });
         }
-        const source = await proveSourceRoot(context, roots, request.manifest);
+        const source = await proveSourceRoot(context, roots, request.manifest, record.worktreePath);
         if (!source) {
           return new StateOutcome('NOT_ELIGIBLE', {
             recordId: record.recordId,
             proofs: ['source-root'],
           });
         }
-        const runner = selectionRunner(context, roots, [
-          record.worktreePath,
-          ...(source !== record.worktreePath ? [source] : []),
-        ]);
+        const runner = selectionRunner(context, roots, [record.worktreePath, source]);
         let described;
         try {
           described = await describeDeliveryEndpoints(
@@ -720,7 +720,8 @@ export const RESUME_PROOFS = Object.freeze([
 //                resume-check`, the resume adoption, `ledger reconcile`): nothing else is evaluated
 //                and nothing runs in its worktree
 //   source-root  `ledger reconcile`: the ledger manifest's source root is not proven this
-//                repository's (`proveSourceRoot`), so nothing runs in it
+//                repository's or is the delivery worktree (`proveSourceRoot`), so nothing runs
+//                in it
 //   reconcile    `ledger reconcile`: `reconcileResume` could not read the worktree or the source
 //                (with the `selectionError` code)
 export const RESUME_OPERATION_PROOFS = Object.freeze(['repository', 'source-root', 'reconcile']);
@@ -879,7 +880,9 @@ async function evaluateResume({ context, roots, record, facts, request, once = u
     unevaluated.add('index');
     unevaluated.add('residual');
   }
-  const source = await once('source-root', () => proveSourceRoot(context, roots, ledger.manifest));
+  const source = await once('source-root', () =>
+    proveSourceRoot(context, roots, ledger.manifest, record.worktreePath),
+  );
   result.source = source;
   const sourceRunner = source === null ? null : selectionRunner(context, roots, [source]);
   if (!(await once('source', () => sourceIsExact(ledger.manifest, source, sourceRunner)))) {
@@ -1148,15 +1151,15 @@ export async function resumeCheck(input, deps) {
 // actor holds is condition-9), `ledger` (a valid ledger bound to it, read here and never taken as
 // input), `history` (the commits from `creationOid` to the branch tip are exactly the ledger's: a
 // tip is recovered only by the adoption) and `source-root` (the manifest's source is proven this
-// repository's) are NOT_ELIGIBLE refusals. The comparison itself is `reconcileResume` of
-// `delivery-selection-core.mjs` through the guarded runner: committed endpoints against the tip's
-// tree by blob OID and mode, residual endpoints against the working tree by byte digest and the
-// index (HEAD's or the descriptor's entry), no dirty path outside the residual, and
-// `verifySourceManifest`; nothing is re-planned. Returns `{recordId, exact, mismatches: {head,
-// committed, residual, index, extra, sourceDrift}, staged, next, remaining, tip, status}` with each
-// path list `{paths, count}` and `sourceDrift` a count. `staged` lists the residual endpoints whose
-// index entry differs from HEAD; a staged descriptor is no mismatch, so after unstaging a proven
-// hook-staged group the caller requires `staged.count` to be 0.
+// repository's and is not the delivery worktree) are NOT_ELIGIBLE refusals. The comparison itself
+// is `reconcileResume` of `delivery-selection-core.mjs` through the guarded runner: committed
+// endpoints against the tip's tree by blob OID and mode, residual endpoints against the working
+// tree by byte digest and the index (HEAD's or the descriptor's entry), no dirty path outside the
+// residual, and `verifySourceManifest`; nothing is re-planned. Returns `{recordId, exact,
+// mismatches: {head, committed, residual, index, extra, sourceDrift}, staged, next, remaining, tip,
+// status}` with each path list `{paths, count}` and `sourceDrift` a count. `staged` lists the
+// residual endpoints whose index entry differs from HEAD; a staged descriptor is no mismatch, so
+// after unstaging a proven hook-staged group the caller requires `staged.count` to be 0.
 export async function ledgerReconcile(input, deps) {
   const context = prepare('ledger reconcile', input, deps);
   const recordId = requireRecordId(input.recordId);
@@ -1183,12 +1186,9 @@ export async function ledgerReconcile(input, deps) {
   const ledger = read.ledger;
   const history = await historyProof(context, roots, ledger, facts.branchTip);
   if (!history.ok || history.recovered !== null) return refuse(['history']);
-  const source = await proveSourceRoot(context, roots, ledger.manifest);
+  const source = await proveSourceRoot(context, roots, ledger.manifest, record.worktreePath);
   if (source === null) return refuse(['source-root']);
-  const runner = selectionRunner(context, roots, [
-    record.worktreePath,
-    ...(source !== record.worktreePath ? [source] : []),
-  ]);
+  const runner = selectionRunner(context, roots, [record.worktreePath, source]);
   const progress = ledgerProgress(ledger);
   let compared;
   try {

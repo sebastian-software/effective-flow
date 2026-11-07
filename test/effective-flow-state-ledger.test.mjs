@@ -437,6 +437,82 @@ test('release: source drift and extra dirt refuse the ledger route without chang
   assert.equal(readFileSync(join(fixture.worktree.worktreePath, 'b.txt'), 'utf8'), 'b changed\n');
 });
 
+// The bound manifest of the delivery worktree's own residual (`a.txt`, `b.txt` and the untracked
+// `new/c.txt`) with that worktree as its source root.
+function selfSourcedManifest(fixture) {
+  return bindSelectionManifest(
+    {
+      sourceRoot: fixture.worktree.worktreePath,
+      selection: ['a.txt', 'b.txt', 'new/c.txt'].map((path) => ({ path, state: 'working' })),
+    },
+    { runner: selectionRunner },
+  );
+}
+
+const SELF_SOURCED_GROUPS = [['a.txt'], ['b.txt', 'new/c.txt']];
+
+// Invariant: `ledger init` never binds a manifest whose source root is the delivery worktree
+// itself, whose reconcile would compare that worktree with itself: it is `source-root` and writes
+// nothing.
+test('ledger init refuses a manifest sourced from its own delivery worktree', async (t) => {
+  const fixture = await delivery(t, { added: { 'new/c.txt': 'c added\n' } });
+  const manifest = await selfSourcedManifest(fixture);
+  const before = snapshot(fixture);
+  const refused = expectOutcome(
+    await call('ledger init', initInput(fixture, { manifest, groups: SELF_SOURCED_GROUPS })),
+    'NOT_ELIGIBLE',
+  );
+  assert.deepEqual(refused.proofs, ['source-root']);
+  assertUnchanged(fixture, before);
+});
+
+// Invariant: a ledger written before that refusal, whose manifest names the delivery worktree as
+// its source, never proves its source. A run that failed before its first commit keeps its
+// residual, the only copy of those edits and untracked files: the release is `source` before any
+// discard, `ledger reconcile` is `source-root`, and `worktree resume-check` offers neither route.
+test('a ledger sourced from its own delivery worktree refuses release, reconcile and resume', async (t) => {
+  const fixture = await delivery(t, { added: { 'new/c.txt': 'c added\n' } });
+  expectOk(await call('ledger init', initInput(fixture, { groups: SELF_SOURCED_GROUPS })));
+  const manifest = await selfSourcedManifest(fixture);
+  writeFileSync(
+    ledgerFile(fixture),
+    `${JSON.stringify({ ...readLedgerFile(fixture), manifest })}\n`,
+  );
+  git(fixture.root, 'checkout', '--', 'a.txt', 'b.txt');
+  rmSync(join(fixture.root, 'new'), { recursive: true });
+  const reconciled = expectOutcome(
+    await call('ledger reconcile', {
+      cwd: fixture.root,
+      executionRoot: fixture.root,
+      recordId: fixture.record.recordId,
+      sessionId: SESSION,
+    }),
+    'NOT_ELIGIBLE',
+  );
+  assert.deepEqual(reconciled.proofs, ['source-root']);
+  await failRecord(fixture);
+  const before = snapshot(fixture);
+  const check = expectOk(
+    await call('worktree resume-check', {
+      cwd: fixture.root,
+      executionRoot: fixture.root,
+      recordId: fixture.record.recordId,
+      visibility: 'visible',
+    }),
+  );
+  assert.equal(check.releasable, false, JSON.stringify(check));
+  assert.deepEqual(check.releaseProofs, ['source']);
+  assert.equal(check.resumable, false);
+  assert.ok(check.resumeProofs.includes('source'), JSON.stringify(check));
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['source']);
+  assertUnchanged(fixture, before);
+  const worktree = fixture.worktree.worktreePath;
+  assert.equal(readFileSync(join(worktree, 'a.txt'), 'utf8'), 'a changed\n');
+  assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n');
+  assert.equal(readFileSync(join(worktree, 'new', 'c.txt'), 'utf8'), 'c added\n');
+});
+
 // Invariant: the release is selected only by `release: "partial-diff"` on `aborted`/`failed` →
 // `cleanup-ready`; anywhere else the discriminator is INVALID_INPUT, without it the transition is
 // TRANSITION_INVALID, and another purpose is refused with `purpose`.
