@@ -3,11 +3,27 @@
 //
 //   worktree record-init  {cwd, executionRoot, record}
 //   worktree transition   {cwd, executionRoot, recordId, from, to, reason, sessionId, branch?,
-//                          workflow?, fetchedHeadOid?}
+//                          workflow?, fetchedHeadOid?, release?, adoption?, visibility?}
 //   worktree inspect      {cwd, executionRoot, sessionId?}
 //   worktree remove       {cwd, executionRoot, sessionId, recordIds, integrationRoot?}
 //   cleanup plan          {cwd, executionRoot, decisions?}
 //   cleanup apply         {cwd, executionRoot, decisions?, items}
+//   ledger init           {cwd, executionRoot, recordId, sessionId, manifest, groups, base,
+//                          visibility, language}
+//   ledger append         {cwd, executionRoot, recordId, sessionId, commitOid}
+//   worktree resume-check {cwd, executionRoot, recordId, visibility}
+//   ledger reconcile      {cwd, executionRoot, recordId, sessionId}
+//
+// The `ledger` operations, `worktree resume-check`, and the proofs of the release transition
+// (`release: "partial-diff"`) and of the resume adoption (`adoption: "partial-diff-resume"`) live
+// in `effective-flow-state-recovery-core.mjs`, which builds on the internals this module
+// exports and is reached only through the dispatch of `effective-flow-state-core.mjs`; this module
+// never imports it. The ledger's schema, path and comparisons live in
+// `effective-flow-state-ledger-core.mjs`. Here, a ledger is deleted under the same lock and claim
+// right before its record (`worktree remove`, `cleanup apply`), and `worktree inspect` reports one
+// without a record as an orphan and never removes it. Every Git call inside a recorded worktree or
+// the selection's source root runs only after the common-directory proof of that root, and with
+// `core.fsmonitor=false`.
 //
 // Every input is untrusted. The helper derives every fact it relies on itself: `cwd` must be the
 // main checkout (RUNTIME_STATE_ROOT) and yields the repository identity (the common Git directory);
@@ -102,6 +118,14 @@ import {
   resolveRoot,
 } from './effective-flow-state-core.mjs';
 import { isObject, readBoundedFile } from './runtime-file-primitives.mjs';
+import { scopedGitRunner } from './delivery-selection-core.mjs';
+import {
+  deleteLedger,
+  ledgerExists,
+  ledgerPaths,
+  ledgersDir,
+  listLedgerIds,
+} from './effective-flow-state-ledger-core.mjs';
 
 export const RECORDS_DIR = 'worktree-runs';
 export const RECORD_SCHEMA_VERSION = 1;
@@ -170,6 +194,22 @@ export const TRANSITIONS = Object.freeze({
   aborted: Object.freeze(['active']),
   failed: Object.freeze(['active']),
 });
+// `from` → allowed `to` of the release transition, selected only by `release: "partial-diff"`.
+export const RELEASE_TRANSITIONS = Object.freeze({
+  aborted: Object.freeze(['cleanup-ready']),
+  failed: Object.freeze(['cleanup-ready']),
+});
+export const RELEASE_DISCRIMINATOR = 'partial-diff';
+// The adoption discriminator of `worktree transition` with `to: "active"`: `plan-pr-continuation`
+// (the default when `adoption` is absent) or `partial-diff-resume`, whose proofs live in
+// `effective-flow-state-recovery-core.mjs`.
+export const PLAN_PR_ADOPTION = 'plan-pr-continuation';
+export const RESUME_ADOPTION = 'partial-diff-resume';
+export const ADOPTIONS = Object.freeze([PLAN_PR_ADOPTION, RESUME_ADOPTION]);
+// The visibility values a resume adoption states for the current run.
+export const VISIBILITIES = Object.freeze(['visible', 'hidden']);
+// The `core.fsmonitor=false` configuration of every Git call inside a proven worktree or source.
+const IN_WORKTREE_GIT_CONFIG = Object.freeze(['core.fsmonitor=false']);
 export const ELIGIBILITY_CONDITIONS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 
 export const DEFAULT_BASE_DIR = '.effective-flow/.worktrees';
@@ -196,7 +236,7 @@ const MAX_REASON_CHARS = 2000;
 export const RECORD_ID_PATTERN = /^[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}$/;
 // A session ID becomes a path segment of the worktree path.
 export const SESSION_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/;
-const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+export const OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$/;
 // A conservative subset of `git check-ref-format --branch`: no whitespace, control character,
@@ -274,7 +314,7 @@ export function itemDigest(value) {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
 }
 
-async function phase(deps, name, detail) {
+export async function phase(deps, name, detail) {
   await deps.onPhase?.(name, detail);
 }
 
@@ -438,7 +478,7 @@ export function parseWorktreeList(buffer) {
   return entries;
 }
 
-async function listWorktrees(context) {
+export async function listWorktrees(context) {
   const result = await runGit(context, context.cwd, ['worktree', 'list', '--porcelain', '-z']);
   if (!gitOk(result)) {
     const detail = result?.timedOut
@@ -466,7 +506,7 @@ async function requireRegistered(context, worktrees, value, label) {
   return entry;
 }
 
-function prepare(operation, input, deps) {
+export function prepare(operation, input, deps) {
   requireObject(input, 'input');
   requireClosedKeys(input, OPERATION_KEYS[operation], 'input');
   const context = makeContext(deps);
@@ -474,7 +514,7 @@ function prepare(operation, input, deps) {
   return context;
 }
 
-async function openRoots(context, input) {
+export async function openRoots(context, input) {
   await requireRootSyntax(input.cwd);
   const { cwd, common } = await resolveRoot(context, input.cwd);
   const worktrees = await listWorktrees(context);
@@ -540,7 +580,7 @@ async function requiredLocation(context, bases, record) {
 // Record reading and writing
 
 // Reads one record: `{state: 'missing'}`, `{state: 'invalid', reason}` or `{state: 'ok', record}`.
-async function readRecord(context, paths, recordId) {
+export async function readRecord(context, paths, recordId) {
   const read = await readBoundedFile(context.fs, paths.record, MAX_RECORD_BYTES);
   if (read.state === 'missing') return { state: 'missing' };
   if (read.state !== 'ok') return { state: 'invalid', reason: read.state };
@@ -587,7 +627,7 @@ async function listOrphanLocks(context) {
     .sort();
 }
 
-async function lockStillOwned(context, paths, held) {
+export async function lockStillOwned(context, paths, held) {
   const observed = await observeRecordLock(context, paths);
   return (
     observed.present && observed.owner.state === 'valid' && observed.owner.token === held.token
@@ -657,6 +697,11 @@ function publicLock(observed, paths) {
       ? { state: 'valid', ...observed.owner.fields }
       : { state: observed.owner.state };
   return { present: true, path: paths.lock, owner };
+}
+
+// The reportable state of the record lock at `paths`, observed without taking or touching it.
+export async function observedLock(context, paths) {
+  return publicLock(await observeRecordLock(context, paths), paths);
 }
 
 // Takes the record lock: `{token, identity}` or a LOCK_HELD outcome. Never waits and never breaks.
@@ -741,7 +786,7 @@ async function releaseRecordLock(context, paths, held) {
 
 // Runs `fn(held)` under the record lock and releases it on every path. A LOCK_HELD outcome is
 // returned unchanged; a failed release is attached as `lockRelease` to an object result.
-async function withRecordLock(context, paths, fields, deps, fn) {
+export async function withRecordLock(context, paths, fields, deps, fn) {
   const held = await acquireRecordLock(context, paths, fields, deps);
   if (held instanceof StateOutcome) return held;
   let value;
@@ -767,7 +812,7 @@ async function withRecordLock(context, paths, fields, deps, fn) {
 
 // The INTERRUPTED outcome of a single-record write that a signal reached before the write:
 // nothing was written and `status` is the record's unchanged status (null when none exists yet).
-function interruptedUnderLock(signals, recordId, status) {
+export function interruptedUnderLock(signals, recordId, status) {
   return new StateOutcome('INTERRUPTED', {
     recordId,
     signal: signals.signal,
@@ -781,8 +826,14 @@ function interruptedUnderLock(signals, recordId, status) {
 // default termination, so a signal can no longer end the process while the record lock is held: it
 // is recorded, the operation skips its write when the signal came first (`interruptedUnderLock`),
 // the lock is released on every path by `withRecordLock`, and only then is the result returned as
-// INTERRUPTED. A write that had already landed is reported with `written: true` and its status.
-async function deferSignals(deps, recordId, fn) {
+// INTERRUPTED. A write that had already landed is reported with `written: true` and its status;
+// a release transition whose restore ran before the signal was seen completes its write and is
+// reported so, with the `release` (`{route, restored}`) it carried out, and a resume adoption whose
+// record write landed carries its `resume` summary the same way. A resume adoption that appended a
+// recovered tip to the ledger and then saw the signal before the record write skips that write
+// and reports `written: false` with `ledgerAppended: true` and the appended `appendedOid` (the next
+// resume finds that entry already recorded); without `ledgerAppended`, nothing was appended.
+export async function deferSignals(deps, recordId, fn) {
   const signals = watchSignals(deps);
   try {
     const value = await fn(signals);
@@ -802,6 +853,8 @@ async function deferSignals(deps, recordId, fn) {
       signal: signals.signal,
       written: true,
       status: value.status,
+      ...(value.release ? { release: value.release } : {}),
+      ...(value.resume ? { resume: value.resume } : {}),
       ...(value.lockRelease ? { lockRelease: value.lockRelease } : {}),
     });
   } finally {
@@ -814,30 +867,56 @@ async function deferSignals(deps, recordId, fn) {
 
 // The nine removal conditions of `worktree-lifecycle.md` over facts the helper derived itself.
 // Returns every failed condition number, ascending. `statuses` are the statuses condition 1
-// accepts (`cleanup-ready` and `cleanup-failed`; `worktree remove` adds `active`).
-export function evaluateEligibility(facts, { statuses = CLAIMABLE_STATUSES } = {}) {
+// accepts (`cleanup-ready` and `cleanup-failed`; `worktree remove` adds `active`). `removal` marks
+// the callers that remove (`worktree remove`, `cleanup plan`/`apply`, `worktree inspect`), the
+// only ones where a fully gone `partial-diff` worktree counts (see `goneRemovable`).
+export function evaluateEligibility(
+  facts,
+  { statuses = CLAIMABLE_STATUSES, removal = false } = {},
+) {
   const failed = [];
+  const gone = removal && goneRemovable(facts);
   if (!facts.schemaValid || !facts.ownershipCreated || !statuses.includes(facts.status)) {
     failed.push(1);
   }
-  if (!facts.receiptMatches) failed.push(2);
-  if (facts.registrationCount !== 1 || !facts.linked) failed.push(3);
-  if (facts.locked || facts.prunable || !facts.directoryExists || !facts.commonDirMatches) {
+  if (!(gone ? facts.receiptFieldsMatch : facts.receiptMatches)) failed.push(2);
+  if (!gone && (facts.registrationCount !== 1 || !facts.linked)) failed.push(3);
+  if (
+    !gone &&
+    (facts.locked || facts.prunable || !facts.directoryExists || !facts.commonDirMatches)
+  ) {
     failed.push(4);
   }
   if (
-    !facts.headOnBranch ||
-    !facts.registrationOnBranch ||
-    !facts.branchTip ||
-    facts.registeredHead !== facts.branchTip
+    !gone &&
+    (!facts.headOnBranch ||
+      !facts.registrationOnBranch ||
+      !facts.branchTip ||
+      facts.registeredHead !== facts.branchTip)
   ) {
     failed.push(5);
   }
   if (!facts.creationIsCommit || !facts.creationAncestor) failed.push(6);
-  if (!facts.clean) failed.push(7);
+  if (!gone && !facts.clean) failed.push(7);
   if (facts.isMain || facts.isExecutionRoot) failed.push(8);
   if (facts.foreignLock || facts.foreignClaim) failed.push(9);
   return failed;
+}
+
+// Invariant: a released `partial-diff` record (`cleanup-ready` or `cleanup-failed`) whose worktree
+// is fully gone (no registration in `git worktree list --porcelain` and `lstat` of its path is
+// ENOENT) is removable. That proof, the same the release's `gone` route takes, replaces conditions
+// 3, 4, 5 and 7 and the toplevel half of condition 2; conditions 1, the receipt fields of 2, 6, 8
+// and 9 stay required, no Git call runs inside the vanished path, and the claim and removal
+// sequence is unchanged (the post-claim reconcile of an absent worktree). A half-gone worktree
+// (registered without its directory, or present without its registration) and every other purpose
+// keep the full conditions: cleanup never prunes.
+function goneRemovable(facts) {
+  return (
+    facts.gone === true &&
+    facts.purpose === 'partial-diff' &&
+    CLAIMABLE_STATUSES.includes(facts.status)
+  );
 }
 
 async function branchTip(context, branch) {
@@ -855,8 +934,13 @@ async function branchTip(context, branch) {
 // single `rev-parse --git-common-dir` probe is the only Git call any operation runs inside a
 // recorded path before this proof; every other in-worktree call, probe or write waits for it.
 async function proveOwnWorktree(context, roots, record) {
+  return proveRepositoryDirectory(context, roots, record.worktreePath, record.repositoryIdentity);
+}
+
+// The proof of `proveOwnWorktree` for any `target`: an existing canonical directory whose common
+// Git directory is this repository's (`roots.common`) and equals `identity`.
+async function proveRepositoryDirectory(context, roots, target, identity) {
   const { fs } = context;
-  const target = record.worktreePath;
   const proof = { directoryExists: false, commonDirMatches: false };
   try {
     const info = await fs.lstat(target);
@@ -873,15 +957,51 @@ async function proveOwnWorktree(context, roots, record) {
   ]);
   const canonicalCommon = common === null ? null : await canonical(fs, common);
   proof.commonDirMatches =
-    canonicalCommon !== null &&
-    canonicalCommon === roots.common &&
-    canonicalCommon === record.repositoryIdentity;
+    canonicalCommon !== null && canonicalCommon === roots.common && canonicalCommon === identity;
   return proof;
+}
+
+// Runs Git in `root` with `core.fsmonitor=false`; only for a root proven this repository's.
+export function guardedGit(context, root) {
+  return (args, options = {}) =>
+    runGit(
+      context,
+      root,
+      [...IN_WORKTREE_GIT_CONFIG.flatMap((entry) => ['-c', entry]), ...args],
+      options,
+    );
+}
+
+// The runner the reused `delivery-selection-core.mjs` functions get: Git only in `provenRoots`
+// (a `merge-file` on temporary files runs in the main checkout), always with
+// `core.fsmonitor=false`, with the environment `runGit` gives every helper call.
+export function selectionRunner(context, roots, provenRoots) {
+  return scopedGitRunner((cwd, args, options) => runGit(context, cwd, args, options), {
+    roots: provenRoots,
+    defaultRoot: roots.cwd,
+    config: IN_WORKTREE_GIT_CONFIG,
+  });
+}
+
+// The canonical source root of `manifest` once its common Git directory is proven this
+// repository's, else null. Nothing else runs in it before this proof.
+export async function proveSourceRoot(context, roots, manifest) {
+  const root = manifest.source.root;
+  if (manifest.source.repositoryIdentity !== roots.common || !isAbsolutePath(root)) return null;
+  if ((await canonical(context.fs, root)) !== root) return null;
+  const proof = await proveRepositoryDirectory(context, roots, root, roots.common);
+  return proof.commonDirMatches ? root : null;
 }
 
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
 // token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID.
-async function gatherFacts(context, roots, worktrees, record, { ownLock = null, ownClaim = null }) {
+export async function gatherFacts(
+  context,
+  roots,
+  worktrees,
+  record,
+  { ownLock = null, ownClaim = null },
+) {
   const { fs } = context;
   const target = record.worktreePath;
   const registrations = worktrees.filter((entry) => matches(entry, target));
@@ -890,6 +1010,7 @@ async function gatherFacts(context, roots, worktrees, record, { ownLock = null, 
     schemaValid: true,
     ownershipCreated: record.ownership === OWNERSHIP,
     status: record.status,
+    purpose: record.purpose,
     registrationCount: registrations.length,
     linked: Boolean(entry) && entry !== worktrees[0] && !entry.bare,
     locked: Boolean(entry?.locked),
@@ -908,21 +1029,27 @@ async function gatherFacts(context, roots, worktrees, record, { ownLock = null, 
     foreignLock: false,
     foreignClaim: false,
     receiptMatches: false,
+    gone: false,
   };
   let toplevel = null;
   Object.assign(facts, await proveOwnWorktree(context, roots, record));
+  // Fully gone: unregistered and the path itself absent (ENOENT), proven without Git in it.
+  facts.gone =
+    registrations.length === 0 && !facts.directoryExists && (await pathAbsent(fs, target));
   // Every further in-worktree Git call reads the worktree's configuration, which a foreign
   // repository controls (`core.fsmonitor` runs a command on `status`). They run only once the
   // common directory proved the worktree this repository's; otherwise the facts stay false.
   if (facts.commonDirMatches) {
-    const top = await gitLine(context, target, ['rev-parse', '--show-toplevel']);
+    const inWorktree = guardedGit(context, target);
+    const line = async (args) => {
+      const result = await inWorktree(args);
+      return gitOk(result) ? gitStdout(result).trim() : null;
+    };
+    const top = await line(['rev-parse', '--show-toplevel']);
     toplevel = top === null ? null : await canonical(fs, top);
     facts.headOnBranch =
-      (await gitLine(context, target, ['symbolic-ref', '-q', 'HEAD'])) ===
-      `refs/heads/${record.branch}`;
-    const status = await runGit(context, target, [
-      '-c',
-      'core.fsmonitor=false',
+      (await line(['symbolic-ref', '-q', 'HEAD'])) === `refs/heads/${record.branch}`;
+    const status = await inWorktree([
       'status',
       '--porcelain',
       '--untracked-files=all',
@@ -947,7 +1074,7 @@ async function gatherFacts(context, roots, worktrees, record, { ownLock = null, 
     facts.creationAncestor = gitOk(ancestor);
   }
   const receipt = record.receipt;
-  facts.receiptMatches =
+  facts.receiptFieldsMatch =
     record.repositoryIdentity === roots.common &&
     record.runtimeStateRoot === roots.cwd &&
     receipt.repositoryIdentity === roots.common &&
@@ -957,8 +1084,10 @@ async function gatherFacts(context, roots, worktrees, record, { ownLock = null, 
     receipt.checkout.branch === record.branch &&
     receipt.origin === record.ownership &&
     receipt.workflow === record.workflow &&
-    receipt.purpose === record.purpose &&
-    toplevel === target;
+    receipt.purpose === record.purpose;
+  // The toplevel half of condition 2 needs the worktree itself; the release of a gone worktree
+  // checks only the fields (`receiptFieldsMatch`).
+  facts.receiptMatches = facts.receiptFieldsMatch && toplevel === target;
   const paths = recordPaths(roots.cwd, record.recordId);
   const lock = await observeRecordLock(context, paths);
   facts.lock = publicLock(lock, paths);
@@ -972,14 +1101,14 @@ async function gatherFacts(context, roots, worktrees, record, { ownLock = null, 
 // ---------------------------------------------------------------------------------------------
 // Input validation
 
-function requireRecordId(value, label = 'recordId') {
+export function requireRecordId(value, label = 'recordId') {
   if (typeof value !== 'string' || !RECORD_ID_PATTERN.test(value)) {
     fail('INVALID_INPUT', `${label} must match ${RECORD_ID_PATTERN.source}`);
   }
   return value;
 }
 
-function requireSessionId(value) {
+export function requireSessionId(value) {
   if (typeof value !== 'string' || !SESSION_ID_PATTERN.test(value)) {
     fail('INVALID_INPUT', `sessionId must match ${SESSION_ID_PATTERN.source}`);
   }
@@ -1196,14 +1325,62 @@ function requireTransition(input) {
       fail('INVALID_INPUT', `${key} is invalid`);
     }
   }
+  // The adoption discriminator: absent means `plan-pr-continuation`; outside an adoption it is
+  // forbidden. The resume adoption forbids `fetchedHeadOid` and requires `visibility`.
+  let adoptionKind = null;
   if (adoption) {
+    adoptionKind = input.adoption ?? PLAN_PR_ADOPTION;
+    if (!ADOPTIONS.includes(adoptionKind)) {
+      fail('INVALID_INPUT', `adoption must be one of ${ADOPTIONS.join(', ')}`);
+    }
+  } else if (input.adoption !== undefined) {
+    fail('INVALID_INPUT', 'adoption is only valid for an adoption (to: active)');
+  }
+  if (adoptionKind === PLAN_PR_ADOPTION) {
     if (typeof input.fetchedHeadOid !== 'string' || !OID_PATTERN.test(input.fetchedHeadOid)) {
       fail('INVALID_INPUT', 'fetchedHeadOid must be a full commit OID for an adoption');
     }
   } else if (input.fetchedHeadOid !== undefined) {
-    fail('INVALID_INPUT', 'fetchedHeadOid is only valid for an adoption');
+    fail(
+      'INVALID_INPUT',
+      adoptionKind === RESUME_ADOPTION
+        ? 'fetchedHeadOid is not valid for a partial-diff-resume adoption'
+        : 'fetchedHeadOid is only valid for an adoption',
+    );
   }
-  return { recordId, sessionId, from: input.from, to: input.to, reason: input.reason, adoption };
+  if (adoptionKind === RESUME_ADOPTION) {
+    if (!VISIBILITIES.includes(input.visibility)) {
+      fail(
+        'INVALID_INPUT',
+        `visibility must be one of ${VISIBILITIES.join(', ')} for a partial-diff-resume adoption`,
+      );
+    }
+  } else if (input.visibility !== undefined) {
+    fail('INVALID_INPUT', 'visibility is only valid for a partial-diff-resume adoption');
+  }
+  let release = false;
+  if (input.release !== undefined) {
+    if (input.release !== RELEASE_DISCRIMINATOR) {
+      fail('INVALID_INPUT', `release must be "${RELEASE_DISCRIMINATOR}"`);
+    }
+    if (!RELEASE_TRANSITIONS[input.from]?.includes(input.to)) {
+      fail('INVALID_INPUT', 'release is only valid for aborted or failed -> cleanup-ready');
+    }
+    release = true;
+  }
+  return {
+    recordId,
+    sessionId,
+    from: input.from,
+    to: input.to,
+    reason: input.reason,
+    adoption,
+    adoptionKind,
+    release,
+    branch: input.branch,
+    workflow: input.workflow,
+    visibility: input.visibility,
+  };
 }
 
 function reasonProblem(to, reason) {
@@ -1211,10 +1388,27 @@ function reasonProblem(to, reason) {
   return isText(reason, MAX_REASON_CHARS) ? null : 'must be a non-empty string';
 }
 
-export async function transition(input, deps) {
+// `releaseProofs` and `resumeProofs` are the proof sets of the release transition and of the
+// resume adoption, supplied only by `effective-flow-state-recovery-core.mjs` (the dispatch sends
+// every input with `release` or `adoption: "partial-diff-resume"` there). Each is called as
+// `fn({context, roots, paths, record, request, held, signals, deps})` under the record lock and
+// returns its result (`release` or `resume`) or a StateOutcome refusal; `resumeProofs` also writes
+// the recovered ledger entry, if any, before the record is written here.
+export async function transition(input, deps, { releaseProofs = null, resumeProofs = null } = {}) {
   const context = prepare('worktree transition', input, deps);
   const request = requireTransition(input);
-  if (!TRANSITIONS[request.from]?.includes(request.to)) {
+  if (request.release && typeof releaseProofs !== 'function') {
+    fail(
+      'INTERNAL_ERROR',
+      'the release transition runs through effective-flow-state-recovery-core',
+    );
+  }
+  const resume = request.adoptionKind === RESUME_ADOPTION;
+  if (resume && typeof resumeProofs !== 'function') {
+    fail('INTERNAL_ERROR', 'the resume adoption runs through effective-flow-state-recovery-core');
+  }
+  const allowed = request.release ? RELEASE_TRANSITIONS : TRANSITIONS;
+  if (!allowed[request.from]?.includes(request.to)) {
     return new StateOutcome('TRANSITION_INVALID', { from: request.from, to: request.to });
   }
   const problem = reasonProblem(request.to, request.reason);
@@ -1247,7 +1441,8 @@ export async function transition(input, deps) {
             status: record.status,
           });
         }
-        if (!request.adoption && record.sessionId !== request.sessionId) {
+        // An adoption and a release replace the session-ownership check by their own proofs.
+        if (!request.adoption && !request.release && record.sessionId !== request.sessionId) {
           return new StateOutcome('NOT_OWNER', {
             recordId: record.recordId,
             reason: 'session-mismatch',
@@ -1264,24 +1459,67 @@ export async function transition(input, deps) {
             proofs: ['repository'],
           });
         }
-        if (request.adoption) {
+        let resumed = null;
+        if (resume) {
+          resumed = await resumeProofs({
+            context,
+            roots,
+            paths,
+            record,
+            request,
+            held,
+            signals,
+            deps,
+          });
+          if (resumed instanceof StateOutcome) return resumed;
+        } else if (request.adoption) {
           const refused = await adoptionProofs(context, roots, record, input, held);
           if (refused) return refused;
+        }
+        let released = null;
+        if (request.release) {
+          released = await releaseProofs({
+            context,
+            roots,
+            paths,
+            record,
+            request,
+            held,
+            signals,
+            deps,
+          });
+          if (released instanceof StateOutcome) return released;
         }
         const next = {
           ...record,
           status: request.to,
           reason: request.reason,
           updatedAt: timestamp(deps),
-          ...(request.adoption ? { sessionId: request.sessionId } : {}),
+          ...(request.adoption || request.release ? { sessionId: request.sessionId } : {}),
         };
-        if (signals.signal) return interruptedUnderLock(signals, record.recordId, record.status);
+        // A signal skips the write, except after a release that restored residual paths: those
+        // were discarded already, so the record write completes and `deferSignals` reports it
+        // as INTERRUPTED with `written: true` and the `release` that landed. A resume adoption
+        // that already appended its recovered tip to the ledger reports that append.
+        if (signals.signal && !(released?.restored.length > 0)) {
+          const interrupted = interruptedUnderLock(signals, record.recordId, record.status);
+          if (resumed?.recovered) {
+            return new StateOutcome('INTERRUPTED', {
+              ...interrupted.details,
+              ledgerAppended: true,
+              appendedOid: resumed.recovered,
+            });
+          }
+          return interrupted;
+        }
         await writeRecord(context, paths, next, held);
         return {
           recordId: record.recordId,
           from: request.from,
           status: request.to,
           sessionId: next.sessionId,
+          ...(released ? { release: released } : {}),
+          ...(resumed ? { resume: resumed } : {}),
         };
       },
     );
@@ -1350,8 +1588,19 @@ async function inspectRecords(context, roots, { sessionId = null } = {}) {
         ? { cleanupRunId: record.cleanupRunId, claimedAt: record.claimedAt }
         : {}),
       tip: facts.branchTip,
-      conditions: evaluateEligibility(facts),
+      conditions: evaluateEligibility(facts, { removal: true }),
       lock: facts.lock,
+    });
+  }
+  const orphanLedgers = [];
+  const recordIds = new Set(await listRecordIds(context));
+  const ledgers = await listLedgerIdsOrUnsafe(context, roots.cwd);
+  for (const id of ledgers.ids) {
+    if (!RECORD_ID_PATTERN.test(id) || recordIds.has(id)) continue;
+    orphanLedgers.push({
+      recordId: id,
+      reason: 'orphan-ledger',
+      path: ledgerPaths(roots.cwd, id).ledger,
     });
   }
   const orphanLocks = [];
@@ -1363,7 +1612,28 @@ async function inspectRecords(context, roots, { sessionId = null } = {}) {
       lock: publicLock(await observeRecordLock(context, paths), paths),
     });
   }
-  return { worktrees, records, sources, named, orphanLocks };
+  return {
+    worktrees,
+    records,
+    sources,
+    named,
+    orphanLocks,
+    orphanLedgers,
+    ledgerDirectory: ledgers.finding,
+  };
+}
+
+// The ledger IDs of `listLedgerIds` and no finding, or, when the guard refuses the `ledgers/`
+// entry itself (a symbolic link, a file), no IDs and the one finding `{reason: 'unsafe', path}`:
+// an unsafe ledger directory is reported, never read or deleted through, and never stops the
+// listing of the records. Any other failure still ends the call.
+async function listLedgerIdsOrUnsafe(context, cwd) {
+  try {
+    return { ids: await listLedgerIds(context, cwd), finding: null };
+  } catch (error) {
+    if (!(error instanceof RuntimeStateError) || error.code !== 'UNSAFE_TARGET') throw error;
+    return { ids: [], finding: { reason: 'unsafe', path: ledgersDir(cwd) } };
+  }
 }
 
 function isBelow(parent, target) {
@@ -1411,15 +1681,18 @@ export async function inspect(input, deps) {
   const context = prepare('worktree inspect', input, deps);
   const sessionId = input.sessionId === undefined ? null : requireSessionId(input.sessionId);
   const roots = await openRoots(context, input);
-  const { worktrees, records, named, orphanLocks } = await inspectRecords(context, roots, {
-    sessionId,
-  });
+  const { worktrees, records, named, orphanLocks, orphanLedgers, ledgerDirectory } =
+    await inspectRecords(context, roots, { sessionId });
   return {
     runtimeStateRoot: roots.cwd,
     executionRoot: roots.executionRoot,
     sessionId,
     records,
     orphanLocks,
+    // A ledger without its record, reported and never removed.
+    orphanLedgers,
+    // Only when the `ledgers/` entry is unsafe: `{reason: 'unsafe', path}`, and no ledger listed.
+    ...(ledgerDirectory ? { ledgerDirectory } : {}),
     unrecorded: await unrecordedWorktrees(context, roots, worktrees, named, sessionId, deps),
   };
 }
@@ -1522,15 +1795,18 @@ async function nearestDirectory(fs, target, stop) {
 }
 
 // The directories Git writes to when removing `record`'s worktree and, for a temporary branch,
-// deleting its ref.
-async function preflightDirectories(context, roots, record) {
+// deleting its ref. For a `gone` worktree no Git call runs in its vanished path: it has no
+// administrative directory left to probe.
+async function preflightDirectories(context, roots, record, { gone = false } = {}) {
   const { fs } = context;
   const directories = [];
-  const gitDir = await gitLine(context, record.worktreePath, [
-    'rev-parse',
-    '--path-format=absolute',
-    '--git-dir',
-  ]);
+  const gitDir = gone
+    ? null
+    : await gitLine(context, record.worktreePath, [
+        'rev-parse',
+        '--path-format=absolute',
+        '--git-dir',
+      ]);
   const canonicalGitDir = gitDir === null ? null : await canonical(fs, gitDir);
   if (canonicalGitDir && isBelow(path.join(roots.common, 'worktrees'), canonicalGitDir)) {
     directories.push(canonicalGitDir);
@@ -1556,8 +1832,8 @@ async function preflightDirectories(context, roots, record) {
 }
 
 // Creates and removes one probe file per directory. Returns null, or the first denied directory.
-async function preflight(context, roots, record, deps) {
-  for (const directory of await preflightDirectories(context, roots, record)) {
+async function preflight(context, roots, record, deps, { gone = false } = {}) {
+  for (const directory of await preflightDirectories(context, roots, record, { gone })) {
     const probe = path.join(directory, `.effective-flow-probe-${randomHex(deps, 8)}`);
     let handle;
     try {
@@ -1767,15 +2043,20 @@ async function markCleanupFailed(context, paths, record, reason, held, deps) {
   }
 }
 
+// Whether `lstat` of `target` fails with ENOENT; any other error counts as present.
+async function pathAbsent(fs, target) {
+  try {
+    await fs.lstat(target);
+    return false;
+  } catch (error) {
+    return error?.code === 'ENOENT';
+  }
+}
+
 async function worktreeGone(context, record) {
   const worktrees = await listWorktrees(context);
   const registered = worktrees.some((entry) => matches(entry, record.worktreePath));
-  let present = true;
-  try {
-    await context.fs.lstat(record.worktreePath);
-  } catch (error) {
-    present = error?.code !== 'ENOENT';
-  }
+  const present = !(await pathAbsent(context.fs, record.worktreePath));
   return { registered, present, gone: !registered && !present };
 }
 
@@ -1799,15 +2080,19 @@ async function removeOne(context, roots, recordId, options, deps) {
     return itemFailure(recordId, 'NOT_OWNER', { reason: 'session-mismatch' });
   }
   const proof = await proveOwnWorktree(context, roots, first.record);
+  let gone = false;
   if (!proof.commonDirMatches) {
+    // Only a fully gone `partial-diff` worktree (`goneRemovable`) passes without the proof; it is
+    // removed by the post-claim reconcile of an absent worktree, with no Git call in its path.
     const facts = await gatherFacts(context, roots, await listWorktrees(context), first.record, {});
     const statuses = options.allowActive ? ['active', ...CLAIMABLE_STATUSES] : CLAIMABLE_STATUSES;
-    return itemFailure(recordId, 'NOT_ELIGIBLE', {
-      status: first.record.status,
-      conditions: evaluateEligibility(facts, { statuses }),
-    });
+    const conditions = evaluateEligibility(facts, { statuses, removal: true });
+    if (conditions.length > 0 || !facts.gone) {
+      return itemFailure(recordId, 'NOT_ELIGIBLE', { status: first.record.status, conditions });
+    }
+    gone = true;
   }
-  const denied = await preflight(context, roots, first.record, deps);
+  const denied = await preflight(context, roots, first.record, deps, { gone });
   if (denied) return itemFailure(recordId, 'SANDBOX_DENIED', denied);
   const cleanupRunId = `cleanup-${randomHex(deps)}`;
   const outcome = await withRecordLock(
@@ -1848,10 +2133,13 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
     }
   }
   const statuses = options.allowActive ? ['active', ...CLAIMABLE_STATUSES] : CLAIMABLE_STATUSES;
-  const conditions = evaluateEligibility(facts, { statuses });
+  const conditions = evaluateEligibility(facts, { statuses, removal: true });
   if (conditions.length > 0) {
     return itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, conditions });
   }
+  // The ledger is deleted right before the record, so a `ledgers/` entry the guard refuses fails
+  // the item here, before any write or removal (UNSAFE_TARGET): nothing is deleted through it.
+  await ledgerExists(context, roots.cwd, recordId);
   if (record.status === 'active') {
     record = { ...record, status: 'cleanup-ready', reason: null, updatedAt: timestamp(deps) };
     await writeRecord(context, paths, record, held);
@@ -1942,6 +2230,8 @@ async function removeClaimed(context, roots, paths, recordId, record, held, opti
     branch = await deleteTemporaryBranch(context, record, options.integration, deps);
   }
   try {
+    // The ledger goes under the same lock and claim, immediately before its record.
+    await deleteLedger(context, roots.cwd, recordId);
     await guardedUnlink(context, paths.record);
   } catch (error) {
     const reason = `the worktree was removed but the record could not be deleted: ${error?.message}`;
@@ -2359,7 +2649,10 @@ export async function cleanupPlan(input, deps) {
   const context = prepare('cleanup plan', input, deps);
   const decisions = requireDecisions(input.decisions);
   const roots = await openRoots(context, input);
-  const { worktrees, records, sources, named, orphanLocks } = await inspectRecords(context, roots);
+  const { worktrees, records, sources, named, orphanLocks, ledgerDirectory } = await inspectRecords(
+    context,
+    roots,
+  );
   const items = [];
   const blocked = [];
   for (const record of records) {
@@ -2398,6 +2691,8 @@ export async function cleanupPlan(input, deps) {
     blocked,
     unrecorded: await unrecordedWorktrees(context, roots, worktrees, named, null, deps),
     runs: await runInventory(context),
+    // Only when the `ledgers/` entry is unsafe; `cleanup apply` then refuses every worktree item.
+    ...(ledgerDirectory ? { ledgerDirectory } : {}),
   };
 }
 
@@ -2418,7 +2713,7 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
     shared.worktrees ??= await listWorktrees(context);
     const facts = await gatherFacts(context, roots, shared.worktrees, read.record, {});
     const digest = itemDigest(worktreeDigestInput(read.record, facts.branchTip));
-    const conditions = evaluateEligibility(facts);
+    const conditions = evaluateEligibility(facts, { removal: true });
     // An item `cleanup plan` would list as blocked is never selectable, whatever digest it carries.
     if (conditions.length > 0) return { reason: 'not-actionable', conditions, digest };
     return { digest, recordId: key };

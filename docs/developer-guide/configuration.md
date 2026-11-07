@@ -117,10 +117,11 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive or bounded helper operation, 58 rules in all: thirteen runtime-state helper operations
+each non-destructive or bounded helper operation, 62 rules in all: seventeen runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
 `memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
-`worktree record-init`, `worktree transition`, `worktree inspect`, `cleanup plan`), `config-resolve.mjs resolve`,
+`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
+`ledger init`, `ledger append`, `ledger reconcile`), `config-resolve.mjs resolve`,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
@@ -171,8 +172,11 @@ project-setup ADR.
 Records and locks change only through the `worktree` and `cleanup` operations of the
 runtime-state helper; prose never writes or deletes them
 ([Build system](build-system.md#guards)). `worktree record-init`, `transition`, `inspect` and
-`cleanup plan` are allowlisted. The destructive `worktree remove` and `cleanup apply` are not, so
-the user confirms once and the whole selection runs as one call.
+`resume-check`, `cleanup plan` and the `ledger` operations are allowlisted. The destructive
+`worktree remove` and `cleanup apply` are not, so the user confirms once and the whole selection runs
+as one call. The delivery ledger of a `deliver` run is part of the same runtime state: a private file
+below `worktree-runs/ledgers/`, at most 256 KiB, deleted with its record
+([Build system](build-system.md#runtime-scripts)). It adds no configuration key.
 
 ## Resolution order and ownership
 

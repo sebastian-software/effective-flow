@@ -4565,6 +4565,58 @@ test('only the existing owner failed-run adoption may rebind a pre-existing owne
   assert.notEqual(live.head, live.fetchedHead);
 });
 
+// Invariant (ledger location): the adoption proof scans `worktree-runs/` for exactly one lifecycle
+// record naming the worktree, reading only `*.json` entries; the `ledgers/` directory of the
+// delivery-progress ledgers and ledger files that name the very same worktree never count as a
+// second record, and a scan that read them would fail the adoption.
+test('the owner adoption scan of worktree-runs ignores the ledgers directory and ledger files', async (t) => {
+  const live = await publishedPlanFixture(t, true);
+  const authorization = await authorizePlan(live);
+  const runs = path.join(live.root, '.effective-flow', 'worktree-runs');
+  const ownerFile = path.join(live.root, live.planContinuation.ownership.path);
+  const before = JSON.parse(readFileSync(ownerFile));
+  writeFileSync(
+    ownerFile,
+    JSON.stringify({
+      ...before,
+      sessionId: live.input.runId,
+      status: 'active',
+      reason: null,
+      updatedAt: '2026-10-20T11:00:00Z',
+    }),
+  );
+  // Ledgers of other records, one of them a byte copy of the matching lifecycle record, plus a
+  // non-JSON name that is not a directory.
+  const ledgers = path.join(runs, 'ledgers');
+  mkdirSync(ledgers, { recursive: true });
+  writeFileSync(path.join(ledgers, 'plan-delivery.ledger'), readFileSync(ownerFile));
+  writeFileSync(path.join(ledgers, 'other-record.ledger'), readFileSync(ownerFile));
+  writeFileSync(path.join(runs, 'stray.ledger'), readFileSync(ownerFile));
+  const execution = {
+    executionRoot: live.target,
+    branch: 'published-plan',
+    head: live.head,
+    origin: 'effective-flow-created',
+    owner: 'build',
+  };
+  await live.call('transition-execution', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    authorization,
+    execution,
+    ownership: live.ref(live.root, live.planContinuation.ownership.path),
+  });
+  const cp = await live.call('checkpoint', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    checkpointId: 'adopted-with-ledgers',
+    completed: [],
+    pending: REQUIRED_GATES,
+    evidence: [],
+  });
+  assert.equal(JSON.parse(readFileSync(path.join(cp.root, cp.path))).snapshot.head, live.head);
+});
+
 test('plan continuation refuses foreign/ready candidates and independently rejects non-plan fetched changes', async (t) => {
   const live = await publishedPlanFixture(t);
   const envelopePath = path.join(

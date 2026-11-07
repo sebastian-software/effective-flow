@@ -1,13 +1,14 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 58
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 62
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
 - one per non-destructive or bounded runtime-state helper operation: `lock acquire`, `lock release`,
   `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`,
   `commit create`, `review open-report`, `review write-report`, `worktree record-init`,
-  `worktree transition`, `worktree inspect` and `cleanup plan`;
+  `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
+  `ledger init`, `ledger append` and `ledger reconcile`;
 - one for the `config-resolve` helper's `resolve` operation;
 - one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
   and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`.
@@ -21,10 +22,20 @@ overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a
 reservation. Separately, and only without the migration marker, it first runs the legacy-directory
 migration under that operation's own bound (no-clobber copy into `.effective-flow/`, memory merge,
 marker, adopting and removing a root `.sf-memory.json` through its own guard class). The
-`worktree` and `cleanup plan` rules write only lifecycle records and their locks, never remove a
-worktree, branch or file. `lock break`, `harness allow-rules` and the destructive `worktree remove`
-and `cleanup apply` never get a rule. Only the helper writes the settings file; never edit it in
-prose.
+`worktree` and `cleanup plan` rules write only lifecycle records and their locks and never remove a
+worktree or branch, with two bounded exceptions in `worktree transition`: `release: "partial-diff"`
+restores exactly the residual paths it proved equal to the delivery ledger and still in the source,
+removing such a file `HEAD` lacks, and a `partial-diff-resume` adoption appends at most one proven
+tip commit to that ledger. That ledger is one private file of the record below
+`.effective-flow/worktree-runs/ledgers/`, at most 256 KiB even with every group committed.
+`ledger init` writes it once, no-clobber and under the record lock, only for the calling session's
+own `active` `partial-diff` record, from descriptors the helper computes itself, and not at all
+when that worst case exceeds the bound; `ledger append` adds one commit entry to it, only for a
+branch tip it proved the next group's exact commit (parent, paths, blobs and modes). Neither
+touches a worktree, branch or record. `worktree resume-check` and `ledger reconcile` only
+read: they take no lock and write nothing. `lock break`, `harness allow-rules` and the destructive
+`worktree remove` and `cleanup apply` never get a rule. Only the helper writes the settings file;
+never edit it in prose.
 
 ### `setup allowlist`
 
@@ -50,7 +61,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 58 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 62 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

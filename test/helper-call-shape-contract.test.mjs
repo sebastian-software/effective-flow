@@ -112,6 +112,7 @@ test('every source showing a state-helper call has the call-shape fragment loade
     'src/shared/review-write-report-fallback.md',
     'src/shared/setup-allowlist.md',
     'src/shared/worktree-lifecycle.md',
+    'src/shared/worktree-partial-diff-recovery.md',
     'src/tools/apply-review-commit-mechanics.md',
     'src/tools/cleanup.md',
     'src/tools/iterate.md',

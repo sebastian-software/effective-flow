@@ -241,13 +241,18 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 58 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 62 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
-`worktree inspect`, `cleanup plan`), one for `config-resolve`, and 44 for the remote tracker's read-only
-operations: its forge reads, its pure local computations and `thread-ledger-lookup`. An earlier release's smaller set shows as stale, and the preview lists the missing
-rules. Every mode except
+`worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
+`ledger reconcile`), one for `config-resolve`, and 44 for the remote tracker's read-only operations:
+its forge reads, its pure local computations and `thread-ledger-lookup`. `worktree resume-check` and
+`ledger reconcile` only read. `ledger init` writes the delivery ledger once during an active
+`deliver` run, for that run's own record, and only within a size bound of 256 KiB; `ledger append`
+adds one proven commit to it. `worktree transition` stays within its bounds: its release restores
+only the changes it proved equal to that ledger. An earlier release's smaller set shows as stale,
+and the preview lists the missing rules. Every mode except
 Targeted and Status offers the step after the configuration write, and `/effective-flow setup allowlist` runs it
 alone without an existing configuration. The rules go into the untracked
 `.claude/settings.local.json` of the main checkout and are bound to the absolute path of this

@@ -204,6 +204,15 @@ left behind can be resumed instead of recovered by hand: run the implementing to
 again, and it adopts that worktree when exactly one lifecycle record matches and every fresh check
 passes. Otherwise it stops and names the retained worktree.
 
+A `deliver` run that failed after its first commit keeps its branch, its verified commits and the
+remaining uncommitted groups. Run `/effective-flow deliver` again in the same checkout: it offers to
+resume that delivery without asking for the selection again, or, when it cannot be resumed (for
+example because the visibility is weaker or the branch history differs), to release it for cleanup.
+A release keeps the branch; run `/effective-flow cleanup` afterwards to remove the worktree. A
+failure before the first commit can only be released. If the source checkout or the worktree changed
+and the worktree still holds changes, release is refused too: restore the source checkout or clean
+the worktree by hand, then run `deliver` again. Details: [Resuming or releasing a failed delivery](./worktree-and-delivery.md#resuming-or-releasing-a-failed-delivery).
+
 If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-failed` with the
 reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git
 registration, branch, status, lock, and lifecycle before retrying. If the worktree was removed but
