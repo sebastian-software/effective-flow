@@ -801,8 +801,30 @@ async function refreshSelectedSnapshot(manifestEntry, sourceRoot, runner) {
 export async function verifySourceManifest(input, options = {}) {
   requireObject(input);
   const manifest = validateSelectionManifest(input.manifest);
-  const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
-  const current = await repositoryContext(sourceRoot, options.runner);
+  return await verifySourceEntries(manifest, manifest.entries, input.sourceRoot, options.runner);
+}
+
+// `verifySourceManifest` restricted to the manifest entry covering the endpoint `path` (the entry
+// at it or renamed from it), beside the source's repository, root and HEAD, with the same `{exact,
+// drift}`. A path that is no manifest endpoint is INVALID_PAYLOAD. Read-only; the release re-checks
+// the source of every residual path with it immediately before discarding the path.
+export async function verifySourceEndpoint(input, options = {}) {
+  requireObject(input);
+  const manifest = validateSelectionManifest(input.manifest);
+  const repoPath = validateLiteralPath(input.path, 'path');
+  const entries = manifest.entries.filter(
+    (entry) => entry.path === repoPath || entry.renameFrom === repoPath,
+  );
+  if (entries.length === 0) {
+    fail('INVALID_PAYLOAD', 'path is not a manifest endpoint', { path: repoPath });
+  }
+  return await verifySourceEntries(manifest, entries, input.sourceRoot, options.runner);
+}
+
+// The `{exact, drift}` of the source's identity and of `entries` (manifest entries) at the source.
+async function verifySourceEntries(manifest, entries, sourceRootInput, runner) {
+  const sourceRoot = normalizeAbsolute(sourceRootInput ?? manifest.source.root, 'sourceRoot');
+  const current = await repositoryContext(sourceRoot, runner);
   const drift = [];
   if (current.repositoryIdentity !== manifest.source.repositoryIdentity) {
     drift.push({ kind: 'repository', expected: manifest.source.repositoryIdentity });
@@ -813,9 +835,9 @@ export async function verifySourceManifest(input, options = {}) {
   if (current.headOid !== manifest.source.headOid) {
     drift.push({ kind: 'head', expected: manifest.source.headOid, actual: current.headOid });
   }
-  for (const entry of manifest.entries) {
-    await checkIgnored(sourceRoot, entry.path, options.runner);
-    const refreshed = await refreshSelectedSnapshot(entry, sourceRoot, options.runner);
+  for (const entry of entries) {
+    await checkIgnored(sourceRoot, entry.path, runner);
+    const refreshed = await refreshSelectedSnapshot(entry, sourceRoot, runner);
     if (!sameDescriptor(refreshed.descriptor, entry.selected)) {
       drift.push({
         kind: 'selected-state',
@@ -829,7 +851,7 @@ export async function verifySourceManifest(input, options = {}) {
         sourceRoot,
         entry.renameFrom,
         entry.selectionOrigin,
-        options.runner,
+        runner,
       );
       if (prior.mode !== null) {
         drift.push({ kind: 'rename-source', path: entry.renameFrom, expected: 'tombstone' });

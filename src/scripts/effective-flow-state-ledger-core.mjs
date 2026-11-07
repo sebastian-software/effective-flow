@@ -661,8 +661,10 @@ function partialRestoreError(error, restored, unstaged) {
 // in that worktree. Immediately before each discard, `recheck(descriptor)` must confirm that the
 // path still holds its descriptor (`descriptors`, the residual endpoints of the ledger) in working
 // tree and index and, for a tracked path, that the index holds no entry at a parent of it or below
-// it (by then the residual's own are unstaged, so `git restore` would drop a newer one): a path
-// changed since its proof stops the restore with WRITE_FAILED before it is touched. A tracked path
+// it (by then the residual's own are unstaged, so `git restore` would drop a newer one), and then
+// `sourceRecheck(descriptor)` that the source still holds the selection covering the path, so the
+// bytes about to be discarded are still there: a path changed since its proof, or whose source
+// changed or cannot be read, stops the restore with WRITE_FAILED before it is touched. A tracked path
 // whose restore would delete content outside the residual (a directory standing at the path with
 // any file below it, a non-directory parent; see `assertRestoreDeletesNothingUnproven`) stops it
 // with UNSAFE_TARGET:
@@ -671,7 +673,15 @@ function partialRestoreError(error, restored, unstaged) {
 // part-way names the paths it already restored and the index entries it already removed
 // (`partialRestoreError`). `fs` provides `lstat`, `unlink`, `rmdir` and optionally `readdir`.
 // Returns the restored paths (sorted).
-export async function restoreResidual({ git, fs, root, residual, descriptors, recheck }) {
+export async function restoreResidual({
+  git,
+  fs,
+  root,
+  residual,
+  descriptors,
+  recheck,
+  sourceRecheck,
+}) {
   const byPath = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor]));
   const tracked = new Set(residual.tracked);
   const staged = new Set(residual.staged);
@@ -688,6 +698,12 @@ export async function restoreResidual({ git, fs, root, residual, descriptors, re
       fail(
         'WRITE_FAILED',
         `the residual path ${repoPath} changed after its proof (working tree or index); the release stopped before discarding it`,
+      );
+    }
+    if (!(await sourceRecheck(descriptor))) {
+      fail(
+        'WRITE_FAILED',
+        `the source of the residual path ${repoPath} changed after its proof or cannot be read; the release stopped before discarding it`,
       );
     }
   };

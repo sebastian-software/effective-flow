@@ -35,6 +35,7 @@ import {
   inspectResidual,
   reconcileResume,
   validateSelectionManifest,
+  verifySourceEndpoint,
   verifySourceManifest,
   workingEndpointMatches,
 } from './delivery-selection-core.mjs';
@@ -163,8 +164,10 @@ export function ledgerBinding(record) {
 //            Then, after the last lock check, the source is verified once more, each dirty
 //            residual path is re-checked against its descriptor (working tree, the index entry
 //            HEAD's or the descriptor's, and for a tracked path no index entry at a parent or
-//            below it) immediately before it is discarded, exactly the dirty residual paths are
-//            restored (`restoreResidual`) and the worktree is proven clean
+//            below it) and its source (`verifySourceEndpoint`: the source's repository, root and
+//            HEAD and the manifest entry covering the path) immediately before it is discarded,
+//            exactly the dirty residual paths are restored (`restoreResidual`) and the worktree
+//            is proven clean
 // A dirty worktree without a valid ledger is `residual`, with the exact dirty paths listed.
 // Returns `{route, restored}` or the NOT_ELIGIBLE outcome. A signal seen at the last check before
 // the restore is INTERRUPTED with nothing written and nothing restored; once the restore has
@@ -190,8 +193,9 @@ async function releaseProofs({ context, roots, paths, record, held, signals, dep
   if (!(await lockStillOwned(context, paths, held))) {
     fail('WRITE_FAILED', `the lock of ${paths.record} was lost before the release restore`);
   }
-  // The source again, after the last lock check and before the first discard: what the release
-  // discards must still be in the source when it is discarded.
+  // The source again, after the last lock check and before the first discard, and each path's
+  // source right before its own discard: what the release discards must still be in the source
+  // when it is discarded.
   if (!(await sourceIsExact(ledger.manifest, source, runner))) {
     return new StateOutcome('NOT_ELIGIBLE', {
       recordId: record.recordId,
@@ -206,10 +210,16 @@ async function releaseProofs({ context, roots, paths, record, held, signals, dep
     root: record.worktreePath,
     residual,
     descriptors,
-    recheck: async (descriptor) =>
-      (await selectionCall(() =>
-        workingEndpointMatches(record.worktreePath, descriptor, { runner }),
-      )) === true,
+    recheck: async (descriptor) => {
+      await phase(deps, 'releaseRecheck', { recordId: record.recordId, path: descriptor.path });
+      return (
+        (await selectionCall(() =>
+          workingEndpointMatches(record.worktreePath, descriptor, { runner }),
+        )) === true
+      );
+    },
+    sourceRecheck: (descriptor) =>
+      sourceEndpointIsExact(ledger.manifest, source, descriptor.path, runner),
   });
   const status = await inWorktree([
     'status',
@@ -232,6 +242,19 @@ async function sourceIsExact(manifest, source, runner) {
     source !== null &&
     (await selectionCall(() => verifySourceManifest({ manifest, sourceRoot: source }, { runner })))
       ?.exact === true
+  );
+}
+
+// Whether `verifySourceEndpoint` of `manifest` for `repoPath` is exact at the proven `source`
+// (null: not proven).
+async function sourceEndpointIsExact(manifest, source, repoPath, runner) {
+  return (
+    source !== null &&
+    (
+      await selectionCall(() =>
+        verifySourceEndpoint({ manifest, sourceRoot: source, path: repoPath }, { runner }),
+      )
+    )?.exact === true
   );
 }
 

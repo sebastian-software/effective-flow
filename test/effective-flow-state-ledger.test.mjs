@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import {
   bindSelectionManifest,
   transferSelection,
+  verifySourceEndpoint,
 } from '../src/scripts/delivery-selection-core.mjs';
 import {
   LEDGER_MAX_BYTES,
@@ -2030,8 +2031,8 @@ test('release ledger route: a residual path restaged between proof and restore i
 });
 
 // A checkout with `a.txt` and `b.txt` committed, both changed, and the new files `new/x.txt` and
-// `new/y.txt` staged; `run` drives `restoreResidual` there with `recheck` and returns the call
-// order of the re-checks.
+// `new/y.txt` staged; `run` drives `restoreResidual` there with `recheck` (and a source re-check
+// that always holds) and returns the call order of the re-checks.
 function restoreUnit(t) {
   const root = repository(t, 'effective-flow-ledger-');
   for (const name of ['a.txt', 'b.txt']) write(root, name, `${name} base\n`);
@@ -2057,6 +2058,7 @@ function restoreUnit(t) {
         checked.push(descriptor.path);
         return recheck(descriptor.path);
       },
+      sourceRecheck: async () => true,
     });
     return { result, checked };
   };
@@ -2369,6 +2371,98 @@ test('release ledger route: source drift between proof and restore refuses befor
   assert.deepEqual(refused.proofs, ['source']);
   assert.equal(refused.route, 'ledger');
   assertUnchanged(fixture, before);
+});
+
+// Invariant (proof-to-restore window, source per path): the source of each residual path is
+// re-checked immediately before that path is discarded, not only once before the first discard,
+// so the residual bytes are never the only copy of the selection left. A source path replaced or
+// deleted after that single check stops the release with a WRITE_FAILED naming the source (not a
+// working-tree or index change) before the residual path is touched: staged new `new/c.txt`,
+// replaced in the source, keeps its index entry and file; tracked `b.txt`, deleted in the source
+// while `new/c.txt` is re-checked, keeps its residual bytes once `new/c.txt` is released. The
+// record and ledger stay unchanged, and the retry refuses with `source`.
+test('release ledger route: a source path changed after the source check stops its own discard', async (t) => {
+  const cases = [
+    {
+      label: 'new file replaced in the source',
+      drift: (root) => write(root, 'new/c.txt', 'c replaced\n'),
+      stopped: 'new/c.txt',
+      done: 'already restored: none; already unstaged: none;',
+    },
+    {
+      label: 'tracked file deleted in the source',
+      drift: (root) => rmSync(join(root, 'b.txt')),
+      stopped: 'b.txt',
+      done: 'already restored: new/c.txt; already unstaged: new/c.txt;',
+    },
+  ];
+  for (const { label, drift, stopped, done } of cases) {
+    const fixture = await retainedWithNewFile(t);
+    const worktree = fixture.worktree.worktreePath;
+    const ledger = readFileSync(ledgerFile(fixture), 'utf8');
+    const record = readFileSync(recordFile(fixture.root), 'utf8');
+    const rechecked = [];
+    const onPhase = (name, detail) => {
+      if (name !== 'releaseRecheck') return;
+      if (rechecked.length === 0) drift(fixture.root);
+      rechecked.push(detail.path);
+    };
+    const failed = expectError(
+      await call('worktree transition', releaseInput(fixture), { onPhase }),
+      'WRITE_FAILED',
+    );
+    assert.ok(
+      failed.message.includes(
+        `the source of the residual path ${stopped} changed after its proof or cannot be read`,
+      ),
+      `${label}: ${failed.message}`,
+    );
+    assert.doesNotMatch(failed.message, /working tree or index/, label);
+    assert.ok(failed.message.includes(done), `${label}: ${failed.message}`);
+    assert.equal(rechecked.at(-1), stopped, label);
+    if (stopped === 'new/c.txt') {
+      assert.equal(git(worktree, 'show', ':new/c.txt'), 'c added', `${label}: entry survives`);
+      assert.equal(readFileSync(join(worktree, 'new', 'c.txt'), 'utf8'), 'c added\n', label);
+    } else {
+      assert.equal(existsSync(join(worktree, 'new', 'c.txt')), false, label);
+    }
+    assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n', label);
+    assert.equal(readFileSync(recordFile(fixture.root), 'utf8'), record, label);
+    assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), ledger, label);
+    const retry = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+    assert.deepEqual(retry.proofs, ['source'], label);
+    assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n', label);
+  }
+});
+
+// Invariant (source per path, rename endpoints): `verifySourceEndpoint` checks the source's
+// identity and only the manifest entry covering the path, the rename destination and the rename
+// source alike: a file reappearing at the renamed-away path drifts both endpoints of that rename
+// while an unrelated endpoint stays exact, and a path no entry covers is INVALID_PAYLOAD.
+test('verifySourceEndpoint covers both endpoints of a rename and nothing else', async (t) => {
+  const fixture = await delivery(t, {
+    rename: { from: 'old.txt', to: 'new.txt', base: RENAME_BASE, content: `${RENAME_BASE}five\n` },
+  });
+  const verify = (path) =>
+    verifySourceEndpoint(
+      { manifest: fixture.manifest, sourceRoot: fixture.root, path },
+      { runner: selectionRunner },
+    );
+  for (const path of ['new.txt', 'old.txt', 'a.txt']) {
+    assert.deepEqual(await verify(path), { exact: true, drift: [] }, path);
+  }
+  write(fixture.root, 'old.txt', RENAME_BASE);
+  for (const path of ['new.txt', 'old.txt']) {
+    const verification = await verify(path);
+    assert.equal(verification.exact, false, path);
+    assert.deepEqual(
+      verification.drift.map((entry) => [entry.kind, entry.path]),
+      [['rename-source', 'old.txt']],
+      path,
+    );
+  }
+  assert.deepEqual(await verify('a.txt'), { exact: true, drift: [] });
+  await assert.rejects(verify('unselected.txt'), { code: 'INVALID_PAYLOAD' });
 });
 
 // Invariant (availability): an unsafe `worktree-runs/ledgers` entry (a symbolic link or a file)
