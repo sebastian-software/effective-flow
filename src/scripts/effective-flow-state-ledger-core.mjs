@@ -574,6 +574,53 @@ async function removeResidualFile(fs, root, repoPath) {
   return true;
 }
 
+async function lstatOrNull(fs, target) {
+  try {
+    return await fs.lstat(target);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return null;
+    throw error;
+  }
+}
+
+// Fails with UNSAFE_TARGET when restoring the tracked residual path `repoPath` below `root` would
+// delete content no proof covers. `git restore` replaces a directory standing at the path and a
+// non-directory standing at one of its parents together with everything below them, while the
+// residual proofs count such a directory as the path's tombstone and never see its ignored
+// descendants. A parent or descendant that is not a directory passes only when `proven` holds its
+// repository path; a directory tree holding nothing but directories passes. `fs` provides `lstat`
+// and optionally `readdir`.
+async function assertRestoreDeletesNothingUnproven(fs, root, repoPath, proven) {
+  const refuse = (occupant) =>
+    fail(
+      'UNSAFE_TARGET',
+      `restoring the tracked residual path ${repoPath} would delete ${occupant}, which the residual does not cover; the release stopped before discarding it`,
+    );
+  const parts = repoPath.split('/');
+  for (let depth = 1; depth < parts.length; depth += 1) {
+    const info = await lstatOrNull(fs, path.join(root, ...parts.slice(0, depth)));
+    if (info === null) return;
+    if (info.isDirectory()) continue;
+    const parent = parts.slice(0, depth).join('/');
+    if (proven.has(parent)) return;
+    refuse(parent);
+  }
+  const info = await lstatOrNull(fs, path.join(root, ...parts));
+  if (info === null || !info.isDirectory()) return;
+  const readdir = fs.readdir ?? fsReaddir;
+  const pending = [repoPath];
+  while (pending.length > 0) {
+    const directory = pending.pop();
+    for (const name of await readdir(path.join(root, ...directory.split('/')))) {
+      const entry = `${directory}/${name}`;
+      const entryInfo = await lstatOrNull(fs, path.join(root, ...entry.split('/')));
+      if (entryInfo === null) continue;
+      if (entryInfo.isDirectory()) pending.push(entry);
+      else if (!proven.has(entry)) refuse(entry);
+    }
+  }
+}
+
 // Removes the directories below `root` that the removal of `repoPath` left empty, deepest first,
 // through `fs.rmdir`; stops at the first directory that is not empty.
 async function removeEmptiedParents(fs, root, repoPath) {
@@ -611,11 +658,16 @@ function partialRestoreError(error, restored, unstaged) {
 // is proven to be the ledger's residual) in the worktree at `root`: a path HEAD tracks is restored
 // in index and working tree from HEAD; a path absent from HEAD is unstaged when the index holds it
 // and its file removed, with the directories this left empty. Nothing else is touched. `git` runs
-// in that worktree, `fs` provides `lstat`, `unlink` and `rmdir`. Immediately before each discard,
-// `recheck(descriptor)` must confirm that the path still holds its descriptor (`descriptors`, the
-// residual endpoints of the ledger) in working tree and index: a path changed since its proof
-// stops the restore with WRITE_FAILED before it is touched. A restore that stops part-way names
-// the paths it already restored and the index entries it already removed (`partialRestoreError`).
+// in that worktree. Immediately before each discard, `recheck(descriptor)` must confirm that the
+// path still holds its descriptor (`descriptors`, the residual endpoints of the ledger) in working
+// tree and index: a path changed since its proof stops the restore with WRITE_FAILED before it is
+// touched. A tracked path whose restore would
+// delete content outside the residual (a directory standing at the path with any file below it, a
+// non-directory parent; see `assertRestoreDeletesNothingUnproven`) stops it with UNSAFE_TARGET:
+// once before the first discard, where the dirty residual paths absent from HEAD count as proven,
+// and again right before that path's own restore, where nothing does. A restore that stops
+// part-way names the paths it already restored and the index entries it already removed
+// (`partialRestoreError`). `fs` provides `lstat`, `unlink`, `rmdir` and optionally `readdir`.
 // Returns the restored paths (sorted).
 export async function restoreResidual({ git, fs, root, residual, descriptors, recheck }) {
   const byPath = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor]));
@@ -637,9 +689,15 @@ export async function restoreResidual({ git, fs, root, residual, descriptors, re
       );
     }
   };
+  const trackedOrder = [...tracked].sort();
+  const proven = new Set(absent);
+  const nothingProven = new Set();
   // Each discard is its own call right after its own re-check, never batched after later ones: a
   // change to an already re-checked path made while a later path is re-checked is never discarded.
   try {
+    for (const repoPath of trackedOrder) {
+      await assertRestoreDeletesNothingUnproven(fs, root, repoPath, proven);
+    }
     for (const repoPath of unstage) {
       await confirm(repoPath);
       await runOrFail(
@@ -664,8 +722,9 @@ export async function restoreResidual({ git, fs, root, residual, descriptors, re
       }
       restored.push(repoPath);
     }
-    for (const repoPath of [...tracked].sort()) {
+    for (const repoPath of trackedOrder) {
       await confirm(repoPath);
+      await assertRestoreDeletesNothingUnproven(fs, root, repoPath, nothingProven);
       await runOrFail(
         git,
         [

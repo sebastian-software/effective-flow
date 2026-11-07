@@ -2123,6 +2123,114 @@ test('restoreResidual discards each residual path right after its own re-check',
   assert.equal(git(staged.root, 'ls-files', '--', 'new/x.txt'), '');
 });
 
+// Invariant (release restore, unproven content): restoring a deleted tracked residual path never
+// deletes content outside the residual. A directory replacing the deleted file counts as its
+// tombstone in the residual proofs, which never see the directory's ignored descendants, while
+// `git restore` would delete that directory recursively. Holding an ignored file, it stops the
+// release with UNSAFE_TARGET before any discard, on the first attempt and on the retry, with the
+// ignored file, the residual, the record and the ledger unchanged; emptied, it is released.
+test('release ledger route: an ignored file below a directory replacing a deleted tracked path survives', async (t) => {
+  const fixture = await delivery(t, { deleted: ['gone.txt'] });
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt'], ['b.txt', 'gone.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  const worktree = fixture.worktree.worktreePath;
+  write(fixture.root, '.git/info/exclude', '*.local\n');
+  mkdirSync(join(worktree, 'gone.txt'));
+  write(worktree, 'gone.txt/private.local', 'private\n');
+  const ledger = readFileSync(ledgerFile(fixture), 'utf8');
+  const residual = status(worktree);
+  for (const attempt of ['first', 'retry']) {
+    const failed = expectError(await release(fixture), 'UNSAFE_TARGET');
+    assert.match(
+      failed.message,
+      /restoring the tracked residual path gone\.txt would delete gone\.txt\/private\.local/,
+      attempt,
+    );
+    assert.match(failed.message, /already restored: none; already unstaged: none;/, attempt);
+    assert.equal(readFileSync(join(worktree, 'gone.txt', 'private.local'), 'utf8'), 'private\n');
+    assert.equal(status(worktree), residual, `${attempt}: nothing is discarded`);
+    assert.equal(readRecord(fixture.root).status, 'failed', `${attempt}: the record is unchanged`);
+    assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), ledger);
+  }
+  rmSync(join(worktree, 'gone.txt', 'private.local'));
+  const released = expectOk(await release(fixture));
+  assert.deepEqual(released.release, { route: 'ledger', restored: ['b.txt', 'gone.txt'] });
+  assert.equal(readFileSync(join(worktree, 'gone.txt'), 'utf8'), 'gone.txt base\n');
+  assert.equal(status(worktree), '');
+});
+
+// Invariant (restore, unproven content): before the first discard, a tracked residual path whose
+// restore would delete a file no residual path names (one below a directory standing at the path,
+// or a file standing at a parent) refuses with UNSAFE_TARGET and nothing touched; a residual file
+// absent from HEAD there is proven and removed first. Right before each tracked restore nothing
+// counts as proven, so a file added there after the first check stops that restore too.
+test('restoreResidual never deletes a file outside the residual to restore a tracked path', async (t) => {
+  const refusal = (promise) =>
+    promise.then(
+      () => assert.fail('the restore refuses'),
+      (error) => error,
+    );
+  const below = restoreUnit(t);
+  rmSync(join(below.root, 'a.txt'));
+  mkdirSync(join(below.root, 'a.txt', 'deep'), { recursive: true });
+  write(below.root, 'a.txt/deep/private.local', 'private\n');
+  const failed = await refusal(
+    below.run({ tracked: ['a.txt', 'b.txt'], staged: [], dirty: ['a.txt', 'b.txt'] }, () => true),
+  );
+  assert.equal(failed.code, 'UNSAFE_TARGET');
+  assert.match(failed.message, /would delete a\.txt\/deep\/private\.local/);
+  assert.deepEqual(failed.envelopeDetails, { restored: [], unstaged: [] });
+  assert.equal(readFileSync(join(below.root, 'b.txt'), 'utf8'), 'b residual\n');
+  assert.equal(
+    readFileSync(join(below.root, 'a.txt', 'deep', 'private.local'), 'utf8'),
+    'private\n',
+  );
+
+  const parent = restoreUnit(t);
+  mkdirSync(join(parent.root, 'sub'));
+  write(parent.root, 'sub/c.txt', 'c base\n');
+  git(parent.root, 'add', '--', 'sub/c.txt');
+  git(parent.root, 'commit', '-q', '-m', 'sub');
+  rmSync(join(parent.root, 'sub'), { recursive: true });
+  write(parent.root, 'sub', 'ignored occupant\n');
+  const blocked = await refusal(
+    parent.run({ tracked: ['sub/c.txt'], staged: [], dirty: ['sub/c.txt'] }, () => true),
+  );
+  assert.equal(blocked.code, 'UNSAFE_TARGET');
+  assert.match(blocked.message, /would delete sub,/);
+  assert.equal(readFileSync(join(parent.root, 'sub'), 'utf8'), 'ignored occupant\n');
+
+  // The residual's own file below the directory is removed first; the directory goes with it.
+  const proven = restoreUnit(t);
+  rmSync(join(proven.root, 'a.txt'));
+  mkdirSync(join(proven.root, 'a.txt'));
+  write(proven.root, 'a.txt/x.txt', 'x residual\n');
+  const { result } = await proven.run(
+    { tracked: ['a.txt'], staged: [], dirty: ['a.txt', 'a.txt/x.txt'] },
+    () => true,
+  );
+  assert.deepEqual(result, ['a.txt', 'a.txt/x.txt']);
+  assert.equal(readFileSync(join(proven.root, 'a.txt'), 'utf8'), 'a.txt base\n');
+
+  // A file added below the directory after the first check stops that path's own restore.
+  const late = restoreUnit(t);
+  rmSync(join(late.root, 'a.txt'));
+  mkdirSync(join(late.root, 'a.txt'));
+  const stopped = await refusal(
+    late.run({ tracked: ['a.txt', 'b.txt'], staged: [], dirty: ['a.txt', 'b.txt'] }, (path) => {
+      if (path === 'a.txt') write(late.root, 'a.txt/late.local', 'late\n');
+      return true;
+    }),
+  );
+  assert.equal(stopped.code, 'UNSAFE_TARGET');
+  assert.match(stopped.message, /would delete a\.txt\/late\.local/);
+  assert.deepEqual(stopped.envelopeDetails, { restored: [], unstaged: [] });
+  assert.equal(readFileSync(join(late.root, 'a.txt', 'late.local'), 'utf8'), 'late\n');
+});
+
 // Invariant (deferred signal, before the restore): a signal that arrives once the proofs passed
 // (phase `releaseProven`) is seen at the last check before the restore: INTERRUPTED with
 // `written: false` and the unchanged status, no `release`, nothing restored, the lock released and

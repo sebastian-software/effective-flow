@@ -5,7 +5,7 @@
 
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { dirname, isAbsolute, join } from 'node:path';
 
 import {
@@ -44,6 +44,7 @@ export function write(root, relative, content) {
 //   attributes  the content of a committed `.gitattributes` (a path with a filter or eol attribute)
 //   rename      `{from, to, base, content}`: `from` (holding `base`) is committed and renamed to
 //               `to` (holding `content`, similar enough for rename detection) in the source
+//   deleted     paths committed beside `files` and deleted in the source, selected as tombstones
 export async function delivery(
   t,
   {
@@ -51,21 +52,23 @@ export async function delivery(
     added = {},
     attributes = null,
     rename = null,
+    deleted = [],
   } = {},
 ) {
   const root = repository(t, 'effective-flow-ledger-');
-  for (const name of Object.keys(files)) {
+  for (const name of [...Object.keys(files), ...deleted]) {
     mkdirSync(dirname(join(root, name)), { recursive: true });
     write(root, name, `${name} base\n`);
   }
   if (attributes !== null) write(root, '.gitattributes', attributes);
   if (rename) write(root, rename.from, rename.base);
-  git(root, 'add', ...Object.keys(files));
+  git(root, 'add', ...Object.keys(files), ...deleted);
   if (attributes !== null) git(root, 'add', '.gitattributes');
   if (rename) git(root, 'add', rename.from);
   git(root, 'commit', '-q', '-m', 'files');
   const worktree = addWorktree(root, { purpose: 'partial-diff' });
   for (const [name, content] of Object.entries(files)) write(root, name, content);
+  for (const name of deleted) rmSync(join(root, name));
   if (rename) {
     git(root, 'config', 'status.renames', 'true');
     renameSync(join(root, rename.from), join(root, rename.to));
@@ -81,7 +84,7 @@ export async function delivery(
   const manifest = await bindSelectionManifest(
     {
       sourceRoot: root,
-      selection: Object.keys(files).map((path) => ({ path, state: 'working' })),
+      selection: [...Object.keys(files), ...deleted].map((path) => ({ path, state: 'working' })),
     },
     { runner: selectionRunner },
   );
