@@ -491,6 +491,120 @@ Private evidence digests (paths are relative to the recording root):
 | `quiet-probe/final-schedules.json`            | `7987d6757966273e2d88ba9bdc1f3923716a88a48c0f989950c205e7abccd1c2` |
 | `quiet-probe/config-ownership.json`           | `78366fd5c337ac2b056ae4895fab2f8714eac613e4b0b629ee184b2909613443` |
 
+### November 8 rerun — failed stopped-checkpoint output
+
+**Result: failed; overall WP2b-2 qualification remains incomplete.** This rerun used the
+experimental conditional host instruction above. It observed a genuine compaction stop, but a
+later scheduled turn emitted a malformed stopped checkpoint. The historical November 6 F2
+failure, acceptance matrix, activation status and ADRs remain unchanged. #625 remains a draft.
+
+#### Rerun binding and observations
+
+The candidate remained `a11beb707840075790434ff9690eacbc13598e4c`. The recording branch was at
+`9c22a704cc9457b14f3e409cdd8013dfb8784a2b`, with documentation-only drift: all eight digests in
+“F candidate binding” matched before installation and after the final scenario. The installed
+portable tree matched its complete 185-entry manifest and the owned temporary configuration
+matched its recorded SHA-256. The preparatory format check, fresh build and 33 focused tests
+passed. No digest-bound file changed while recording.
+
+The host was T3 Code 0.1.7 through Codex, using `gpt-6.1-sol` at medium reasoning effort.
+Observers and targets were fresh top-level threads in a dedicated throwaway project; the
+coordinator stayed separate. Scenario turns were coordinator-authored API calls under the
+owner's supervision. UI observations came from the authenticated browser; actual human approval
+requests were answered by the owner, never by the coordinator. Analysis requests named
+`gpt-5.6-luna` at medium effort; compliance of the executed child settings remains unverified.
+
+These observations preserve the completed scenarios without declaring an all-16 pass:
+
+| Item | Observed result in this rerun                                                                                                                                                                                                                                                              |
+| ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| F1   | Snapshot, redaction, declined follow-up, self refusal and ancestor refusal observed; supplemental observer UI showed no schedule after declining. Primary snapshot: 3 reads, 15,512 charged characters; ancestor refusal: 2 ancestry reads, 512 charged characters, no target history.     |
+| F2   | After the actual first idle-target report, the entire unchanged second tick contained exactly one checkpoint and no other visible prose.                                                                                                                                                   |
+| F3   | A disclosed faulty controller repeated identical failing validation across two real tick windows. Looping was reported once; the next unchanged tick contained only its checkpoint. An earlier coordinator-directed negative control did not provoke Looping and is not counted as a pass. |
+| F4   | A real six-minute silent command crossed a scheduled tick; that tick remained checkpoint-only On track.                                                                                                                                                                                    |
+| F5   | Actual target completion caused a completion report, successful own-schedule deletion and a stopped checkpoint; UI schedule absence was observed.                                                                                                                                          |
+| F6   | The target was deleted through UI Delete and Confirm. The next real tick returned `thread_not_found`, deleted its own schedule and stopped; API and UI absence were confirmed.                                                                                                             |
+| F7   | A fresh observer without a valid checkpoint made no host calls or deletion; the original schedule remained visible in the UI until operator cleanup.                                                                                                                                       |
+| F8   | After actual target completion and UI schedule deletion, the authorized manual tick surfaced `task_not_found` on deletion and ended stopped.                                                                                                                                               |
+| F9   | A scheduled tick queued behind an ordinary busy turn. Early UI delivery steered the exact tick prompt into that turn; the next grid run started within a minute of its completion.                                                                                                         |
+| F10  | A real read approval waited from 18:02:49 to 18:52:51 UTC while subsequent ticks queued. After human approval, the delayed tick and the next queued tick completed sequentially with checkpoint-only output.                                                                               |
+| F11  | Genuine command and background-analysis completion notifications produced ordinary acknowledgements without advancing the focus checkpoint.                                                                                                                                                |
+| F12  | Actual compaction during the third first-loop attempt produced the required invalid-checkpoint stop. The later stopped-tick output failed the exact checkpoint format; details below.                                                                                                      |
+| F13  | Actual scheduled prompts carried the `$effective-flow focus follow-up tick` prefix and loaded the follow-up path.                                                                                                                                                                          |
+| F14  | Explicit stop deleted the old handle; resume performed fresh admission, offered follow-up, and created a distinct handle only after next-turn opt-in. UI absence and the new active card were observed.                                                                                    |
+| F15  | The actual queued-message Send now button was used for the observed tick; no Run now API substitute was used.                                                                                                                                                                              |
+| F16  | A real quiet tick added 7 activity items / 21,756 extracted text characters and 2 message items / 642 characters, with one visible assistant message. These are text sizes, not token counts. Compaction occurred during nominal tick 23 after 22 normal ticks.                            |
+
+In F3's first window, the analysis leaf returned Drifting while the observer checkpoint said
+Cannot judge. That discrepancy remains unresolved; the later Looping/nonrepeat observation does
+not explain it.
+
+The first two long-loop attempts ended at ticks 19 and 11 after MCP HTTP-send transport failures.
+Both observers deleted their own schedules. Those attempts established neither cap completion nor
+compaction. Scoped server traces did not establish a root cause; absence of matching failed-read
+handler spans was not proof of complete trace coverage. The owner explicitly authorized a third
+fresh observer's first five-minute loop on the unchanged candidate.
+
+#### Compaction stop and failed tail
+
+The third loop started at 17:53:50 UTC. After 22 normal ticks, an actual native Context compacted
+item appeared at 19:49:51 UTC during nominal tick 23. At 19:50:19 the observer reported that no
+valid checkpoint survived, performed no target reads or deletion, and emitted the required stopped
+line with unavailable fields and `ticks=1`. This meets the plan's compaction alternative to the
+48-tick cap; the cap itself was not reached.
+
+Later real fires remained stopped. Their checkpoint counters were 2, 3, 4 and 4. The 20:04:23
+output ended with this literal suffix:
+
+```text
+ticks=4 | backlog=- | lag=- | state=stopped>
+```
+
+The extra `>` violates the exact `state=<active|stopped>` checkpoint format. The 20:09:30 output
+ended `state=stopped` and again used `ticks=4`; the record does not invent a cause for that repeated
+counter. No source fix, acceptance exception or successful re-recording is claimed. This output
+defect is recorded under the plan's failure rule, so qualification remains failed despite the
+observed compaction stop.
+
+The coordinator first observed the compaction outcome at 20:10 UTC. Before cleanup, the actual UI
+still showed the five-minute automation, and the API reported it enabled. After capturing that
+state, the coordinator deleted the schedule. The API then returned no qualification schedules;
+the authenticated UI showed no Automations section or manage button with messages fully loaded.
+The four later stopped fires above occurred before cleanup; the record does not claim immediate
+cleanup at the time compaction happened.
+
+#### Rerun restoration and evidence
+
+After final candidate verification and checking all active project threads, including children,
+for foreign Codex work, the guarded restore reinstated the original DALO symlink and all 188
+baseline entries. It removed the temporary configuration only because the original file was
+absent and the installed digest still matched its ownership record. The candidate copy was
+retained privately. A delayed restart revalidated the current app-server executable and process
+start identity before signaling it. The old process was absent and its replacement started later.
+Post-restart checks confirmed the original link, all 188 entries, configuration absence and
+semantic equality with the pre-install `dalo --json status --check` report (exit 0).
+
+No qualification schedule remains active. All 41 finished qualification sessions were archived;
+the F6 target was actually deleted. The recording plan remains unimplemented and unarchived.
+The next qualifying attempt must follow the failure rule; this record changes no source,
+acceptance status, ADR or PR readiness.
+
+Evidence remains private in the ignored recording directory. These digests bind the selected
+native-payload/visible-text observations and restoration proof; they do not assert a complete raw
+API transcript. Historical extraction gaps remain disclosed in the private evidence state.
+
+| Evidence file                                                       | SHA-256                                                            |
+| ------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `qualification-2026-11-08/O9-compaction-outcome.json`               | `12fb28ca290137f3093005efad0827676ef7a7513ce70918cfb989ea8987c24d` |
+| `qualification-2026-11-08/F16-quiet-growth.json`                    | `d03bb31dc66dc7e1ec5032fdd6399a43f5812a311a86535de14b9d5821418504` |
+| `qualification-2026-11-08/F10-late-approval-completion-result.json` | `2a6ce41e3c73afbaa077c34efe005957275081779556dc15c39d9d2d0a76c4c4` |
+| `qualification-2026-11-08/F6-completion-result.json`                | `6ade41b9b37087b712864d4c9bf892c8ede50adde1f0b39f2df41b5b749f3ca9` |
+| `qualification-2026-11-08/final-candidate-verification.json`        | `98290dbd70cd870fb724e195a1d50aa7553f5c7fb9984589c6b45546e7317b2b` |
+| `qualification-2026-11-08/baseline.json`                            | `be7c48976d7c627782f274ca6533e55b09beda41451487226740efbe78eb61e5` |
+| `qualification-2026-11-08/restore-restart.json`                     | `b0e4030478d7dec392809b9890868e6b21299bf2f2e5a8d8655828aafdb3ea70` |
+| `qualification-2026-11-08/restore-restart-verification.json`        | `c0e470b83af2a7a012853ff61a028ea89dc9b7083831d33e5388c07a04c865e1` |
+| `qualification-2026-11-08/dalo-postrestart.json`                    | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
