@@ -658,21 +658,23 @@ function partialRestoreError(error, restored, unstaged) {
 // is proven to be the ledger's residual) in the worktree at `root`: a path HEAD tracks is restored
 // in index and working tree from HEAD; a path absent from HEAD is unstaged when the index holds it
 // and its file removed, with the directories this left empty. Nothing else is touched. `git` runs
-// in that worktree. Immediately before each discard, `recheck(descriptor)` must confirm that the
-// path still holds its descriptor (`descriptors`, the residual endpoints of the ledger) in working
-// tree and index and, for a tracked path, that the index holds no entry at a parent of it or below
-// it (by then the residual's own are unstaged, so `git restore` would drop a newer one), and then
-// `sourceRecheck(descriptor)` that the source still holds the selection covering the path, so the
-// bytes about to be discarded are still there: a path changed since its proof, or whose source
-// changed or cannot be read, stops the restore with WRITE_FAILED before it is touched. A tracked path
-// whose restore would delete content outside the residual (a directory standing at the path with
-// any file below it, a non-directory parent; see `assertRestoreDeletesNothingUnproven`) stops it
-// with UNSAFE_TARGET:
-// once before the first discard, where the dirty residual paths absent from HEAD count as proven,
-// and again right before that path's own restore, where nothing does. A restore that stops
-// part-way names the paths it already restored and the index entries it already removed
-// (`partialRestoreError`). `fs` provides `lstat`, `unlink`, `rmdir` and optionally `readdir`.
-// Returns the restored paths (sorted).
+// in that worktree. Before each discard, `sourceRecheck(descriptor)` must confirm that the source
+// still holds the selection covering the path, so the bytes about to be discarded are still there,
+// and then, as the last read before the discard, `recheck(descriptor)` that the path still holds
+// its descriptor (`descriptors`, the residual endpoints of the ledger) in working tree and index
+// and, for a tracked path, that the index holds no entry at a parent of it or below it (by then the
+// residual's own are unstaged, so `git restore` would drop a newer one): the source re-check reads
+// Git in another checkout, so a working-tree edit or a newly staged entry made during those reads
+// is seen by the delivery re-check after them, never discarded unseen. A path changed since its
+// proof, or whose source changed or cannot be read, stops the restore with WRITE_FAILED before it
+// is touched. A tracked path whose restore would delete content outside the residual (a directory
+// standing at the path with any file below it, a non-directory parent; see
+// `assertRestoreDeletesNothingUnproven`) stops it with UNSAFE_TARGET: once before the first
+// discard, where the dirty residual paths absent from HEAD count as proven, and again for that
+// path's own restore, between its source re-check and its delivery re-check, where nothing does.
+// A restore that stops part-way names the paths it already restored and the index entries it
+// already removed (`partialRestoreError`). `fs` provides `lstat`, `unlink`, `rmdir` and optionally
+// `readdir`. Returns the restored paths (sorted).
 export async function restoreResidual({
   git,
   fs,
@@ -692,20 +694,24 @@ export async function restoreResidual({
   const unstage = absent.filter((repoPath) => staged.has(repoPath));
   const restored = [];
   const unstaged = [];
-  const confirm = async (repoPath) => {
-    const descriptor = byPath.get(repoPath);
-    if (!descriptor || !(await recheck(descriptor))) {
+  // The source first and the delivery checkout last: the delivery re-check is the last read before
+  // the discard, and `beforeRecheck` (a read of the delivery working tree alone) runs before it.
+  const confirm = async (repoPath, beforeRecheck = async () => {}) => {
+    const changed = () =>
       fail(
         'WRITE_FAILED',
         `the residual path ${repoPath} changed after its proof (working tree or index); the release stopped before discarding it`,
       );
-    }
+    const descriptor = byPath.get(repoPath);
+    if (!descriptor) changed();
     if (!(await sourceRecheck(descriptor))) {
       fail(
         'WRITE_FAILED',
         `the source of the residual path ${repoPath} changed after its proof or cannot be read; the release stopped before discarding it`,
       );
     }
+    await beforeRecheck();
+    if (!(await recheck(descriptor))) changed();
   };
   const trackedOrder = [...tracked].sort();
   const proven = new Set(absent);
@@ -741,8 +747,9 @@ export async function restoreResidual({
       restored.push(repoPath);
     }
     for (const repoPath of trackedOrder) {
-      await confirm(repoPath);
-      await assertRestoreDeletesNothingUnproven(fs, root, repoPath, nothingProven);
+      await confirm(repoPath, () =>
+        assertRestoreDeletesNothingUnproven(fs, root, repoPath, nothingProven),
+      );
       await runOrFail(
         git,
         [

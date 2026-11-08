@@ -1543,19 +1543,23 @@ async function indexHoldsParentOrDescendant(root, repoPath, runner) {
 // of its bytes, and the index entry HEAD's state or the descriptor's blob and mode (the `index`
 // rule of `inspectResidual`), so no staged content the proofs did not cover is discarded. For a
 // path HEAD tracks, the index must also hold no entry at a parent of the path or below it:
-// restoring the path would drop it. Read-only; the release re-checks every residual path with it
-// immediately before discarding it, after unstaging the residual's own such entries.
+// restoring the path would drop it. Every Git read runs first and the working file is read last,
+// so an edit made during the Git reads is seen, not passed over by an earlier working-tree read.
+// Read-only; the release re-checks every residual path with it as the last read before discarding
+// it, after unstaging the residual's own such entries.
 export async function workingEndpointMatches(root, endpoint, options = {}) {
   const [descriptor] = requireEndpointDescriptors([endpoint]);
-  const actual = await actualWorkingDescriptor(root, descriptor.path, options.runner);
-  if (!holdsDescriptor(actual, descriptor)) return false;
   const head = await treeState(root, 'HEAD', descriptor.path, options.runner);
   const entry = await indexState(root, descriptor.path, options.runner);
   if (!statesEqual(entry, head) && !indexMatchesDescriptor(entry, descriptor)) return false;
-  return (
-    head.oid === null ||
-    !(await indexHoldsParentOrDescendant(root, descriptor.path, options.runner))
-  );
+  if (
+    head.oid !== null &&
+    (await indexHoldsParentOrDescendant(root, descriptor.path, options.runner))
+  ) {
+    return false;
+  }
+  const actual = await workingState(root, descriptor.path, head, { directoryMeansAbsent: true });
+  return holdsDescriptor(selectedDescriptor(actual), descriptor);
 }
 
 // Compares the delivery checkout with the descriptors of `endpoints` (the uncommitted residual of a

@@ -17369,6 +17369,28 @@ test('the resume entry resolves visibility first, spares foreign locks and cover
   assert.match(text, /A new failure follows step 5's failure clause/);
 });
 
+// Invariant: a resumed run unstages the hook-staged group one path at a time, each only while its
+// index entry is still the one the adoption proved (`resume.hookStagedEntries`), read immediately
+// before that path's own unstage; any other entry stops the run with the artifacts retained, so a
+// blob staged after the adoption is never unstaged into a clean index the reconcile would accept.
+test('the resume unstages a hook-staged path only while it holds the proven index entry', () => {
+  const text = prose(source('src/shared/deliver-partial-diff-resume.md'));
+  ordered(
+    boundedSlice(text, '4. With `resume.hookStaged`', '5. Step 4.3.'),
+    'one path at a time in the order of `resume.hookStagedEntries`',
+    "Immediately before each path's own unstage, read its index entry",
+    "git -C <delivery root> -c core.fsmonitor=false ls-files -s -z -- ':(literal)<path>'",
+    "exactly one stage-0 entry at that path with the entry's `mode` and `oid`, or nothing when both are `null`",
+    "restore --staged -- ':(literal)<path>'` for that path alone",
+    'A different entry or a failed read is a failure that retains the artifacts: unstage nothing more',
+  );
+  assert.match(
+    prose(source('src/shared/worktree-partial-diff-recovery.md')),
+    /`hookStagedEntries` lists each path of `remainingGroups\[0\]` with the index `mode` and blob `oid` the resume proved staged/,
+    'the recovery contract names the proven entries the guard compares against',
+  );
+});
+
 // The commit groups must cover the confirmed manifest exactly and be committed one by one; a
 // failure preserves everything already verified and never rewrites, pushes, or opens a PR.
 test('deliver commits derived groups in order and stops after a later-group failure', () => {

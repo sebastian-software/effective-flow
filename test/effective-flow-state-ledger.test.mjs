@@ -2107,8 +2107,10 @@ test('release ledger route: a residual path restaged between proof and restore i
 });
 
 // A checkout with `a.txt` and `b.txt` committed, both changed, and the new files `new/x.txt` and
-// `new/y.txt` staged; `run` drives `restoreResidual` there with `recheck` (and a source re-check
-// that always holds) and returns the call order of the re-checks.
+// `new/y.txt` staged; `run` drives `restoreResidual` there with `recheck` and `sourceRecheck`
+// (by default one that always holds) and returns the call order of the re-checks. `events` lists
+// every re-check and discard in call order (`source <path>`, `recheck <path>`, `rm <path>`,
+// `unlink <path>`, `restore <path>`).
 function restoreUnit(t) {
   const root = repository(t, 'effective-flow-ledger-');
   for (const name of ['a.txt', 'b.txt']) write(root, name, `${name} base\n`);
@@ -2120,26 +2122,96 @@ function restoreUnit(t) {
   write(root, 'new/x.txt', 'x residual\n');
   write(root, 'new/y.txt', 'y residual\n');
   git(root, 'add', '--', 'new/x.txt', 'new/y.txt');
-  const inRoot = async (args, { stdin } = {}) =>
-    spawnSync('git', ['-C', root, ...args], { env: GIT_ENV, input: stdin });
-  const run = async (residual, recheck) => {
+  const events = [];
+  const inRoot = async (args, { stdin } = {}) => {
+    const command = args.find((arg) => !arg.startsWith('-'));
+    if (stdin !== undefined) events.push(`${command} ${String(stdin).replace(/\0$/, '')}`);
+    return spawnSync('git', ['-C', root, ...args], { env: GIT_ENV, input: stdin });
+  };
+  const unlinkLogged = async (target) => {
+    events.push(`unlink ${target.slice(root.length + 1)}`);
+    return unlink(target);
+  };
+  const run = async (residual, recheck, sourceRecheck = () => true) => {
     const checked = [];
     const result = await restoreResidual({
       git: inRoot,
-      fs: { lstat, unlink, rmdir },
+      fs: { lstat, unlink: unlinkLogged, rmdir },
       root,
       residual,
       descriptors: residual.dirty.map((path) => ({ path })),
       recheck: async (descriptor) => {
         checked.push(descriptor.path);
+        events.push(`recheck ${descriptor.path}`);
         return recheck(descriptor.path);
       },
-      sourceRecheck: async () => true,
+      sourceRecheck: async (descriptor) => {
+        events.push(`source ${descriptor.path}`);
+        return sourceRecheck(descriptor.path);
+      },
     });
     return { result, checked };
   };
-  return { root, run };
+  return { root, run, events };
 }
+
+// Invariant (re-check order, per path): each residual path's source re-check runs first and its
+// delivery re-check (working tree and index) last, immediately before that path's own discard
+// (`git rm --cached`, the file removal, `git restore`). The source re-check reads Git in another
+// checkout, so a delivery change made during those reads is seen by the delivery re-check after
+// them instead of being discarded unseen.
+test('restoreResidual re-checks the delivery checkout last, right before each discard', async (t) => {
+  const unit = restoreUnit(t);
+  const { result } = await unit.run(
+    {
+      tracked: ['a.txt', 'b.txt'],
+      staged: ['new/x.txt', 'new/y.txt'],
+      dirty: ['a.txt', 'b.txt', 'new/x.txt', 'new/y.txt'],
+    },
+    () => true,
+  );
+  assert.deepEqual(result, ['a.txt', 'b.txt', 'new/x.txt', 'new/y.txt']);
+  assert.deepEqual(unit.events, [
+    ...['new/y.txt', 'new/x.txt'].flatMap((path) => [
+      `source ${path}`,
+      `recheck ${path}`,
+      `rm ${path}`,
+    ]),
+    ...['new/y.txt', 'new/x.txt'].flatMap((path) => [
+      `source ${path}`,
+      `recheck ${path}`,
+      `unlink ${path}`,
+    ]),
+    ...['a.txt', 'b.txt'].flatMap((path) => [
+      `source ${path}`,
+      `recheck ${path}`,
+      `restore ${path}`,
+    ]),
+  ]);
+
+  // An edit made while the path's source is re-checked is seen by its delivery re-check: a real
+  // re-check there (the bytes still the residual's) refuses, and the edit survives.
+  const edited = restoreUnit(t);
+  const failed = await edited
+    .run(
+      { tracked: ['a.txt'], staged: [], dirty: ['a.txt'] },
+      (path) => readFileSync(join(edited.root, path), 'utf8') === 'a residual\n',
+      (path) => {
+        write(edited.root, path, 'a edited during the source re-check\n');
+        return true;
+      },
+    )
+    .then(
+      () => assert.fail('the restore stops at the edited path'),
+      (error) => error,
+    );
+  assert.equal(failed.code, 'WRITE_FAILED');
+  assert.match(failed.message, /the residual path a\.txt changed after its proof/);
+  assert.equal(
+    readFileSync(join(edited.root, 'a.txt'), 'utf8'),
+    'a edited during the source re-check\n',
+  );
+});
 
 // Invariant (proof-to-restore window, per path): each residual path is discarded immediately
 // after its own re-check, never in one batch after the re-checks of later paths. An edit to an
@@ -2310,6 +2382,92 @@ test('release ledger route: an entry staged at a parent or below a deleted track
   assert.equal(status(worktree), '');
 });
 
+// Invariant (release restore, delivery re-check last): a residual path's source re-check runs Git
+// in the source checkout before its delivery re-check, never between that re-check and the
+// discard. A working-tree edit to a residual path, or an entry staged below deleted tracked
+// `gone.txt` or at the parent of deleted tracked `dir/c.txt` with its working file removed, made
+// while that path's source is re-checked, stops the release with WRITE_FAILED before the path is
+// discarded; the edit or the staged entry, the record and the ledger stay unchanged.
+test("release ledger route: a change made during a path's source re-check is never discarded", async (t) => {
+  // Runs `change` during the source re-check of `target` right before its discard: its second
+  // source `check-ignore` after the proofs (the first is the source check before the restore).
+  const duringSourceRecheck = (target, change) => {
+    let armed = false;
+    let seen = 0;
+    return {
+      onPhase: (name) => {
+        if (name === 'releaseProven') armed = true;
+      },
+      runner: async (request) => {
+        if (armed && request.args.includes('check-ignore') && request.args.at(-1) === target) {
+          seen += 1;
+          if (seen === 2) change();
+        }
+        return processRunner(request);
+      },
+    };
+  };
+
+  const edited = await retained(t);
+  const editedTree = edited.worktree.worktreePath;
+  const editedLedger = readFileSync(ledgerFile(edited), 'utf8');
+  const editedRecord = readFileSync(recordFile(edited.root), 'utf8');
+  const editFailed = expectError(
+    await call(
+      'worktree transition',
+      releaseInput(edited),
+      duringSourceRecheck('b.txt', () => write(editedTree, 'b.txt', 'edited late\n')),
+    ),
+    'WRITE_FAILED',
+  );
+  assert.match(
+    editFailed.message,
+    /the residual path b\.txt changed after its proof \(working tree or index\)/,
+  );
+  assert.match(editFailed.message, /already restored: none; already unstaged: none;/);
+  assert.equal(readFileSync(join(editedTree, 'b.txt'), 'utf8'), 'edited late\n');
+  assert.equal(readFileSync(recordFile(edited.root), 'utf8'), editedRecord);
+  assert.equal(readFileSync(ledgerFile(edited), 'utf8'), editedLedger);
+
+  for (const [endpoint, occupant] of [
+    ['gone.txt', 'gone.txt/new.txt'],
+    ['dir/c.txt', 'dir'],
+  ]) {
+    const fixture = await delivery(t, { deleted: [endpoint] });
+    expectOk(
+      await call('ledger init', initInput(fixture, { groups: [['a.txt'], ['b.txt', endpoint]] })),
+    );
+    expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+    await failRecord(fixture);
+    const worktree = fixture.worktree.worktreePath;
+    const ledger = readFileSync(ledgerFile(fixture), 'utf8');
+    const top = join(worktree, occupant.split('/')[0]);
+    const stageLate = () => {
+      rmSync(top, { recursive: true, force: true });
+      mkdirSync(dirname(join(worktree, occupant)), { recursive: true });
+      write(worktree, occupant, 'staged late\n');
+      git(worktree, 'add', '--', occupant);
+      rmSync(top, { recursive: true });
+    };
+    const failed = expectError(
+      await call(
+        'worktree transition',
+        releaseInput(fixture),
+        duringSourceRecheck(endpoint, stageLate),
+      ),
+      'WRITE_FAILED',
+    );
+    assert.ok(
+      failed.message.includes(`the residual path ${endpoint} changed after its proof`),
+      failed.message,
+    );
+    assert.match(failed.message, /already restored: b\.txt; already unstaged: none;/);
+    assert.equal(git(worktree, 'show', `:${occupant}`), 'staged late', 'the staged entry survives');
+    assert.equal(readRecord(fixture.root).status, 'failed', `${endpoint}: the record is unchanged`);
+    assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), ledger);
+  }
+});
+
 // Invariant (restore, unproven content): before the first discard, a tracked residual path whose
 // restore would delete a file no residual path names (one below a directory standing at the path,
 // or a file standing at a parent) refuses with UNSAFE_TARGET and nothing touched; a residual file
@@ -2363,15 +2521,20 @@ test('restoreResidual never deletes a file outside the residual to restore a tra
   assert.deepEqual(result, ['a.txt', 'a.txt/x.txt']);
   assert.equal(readFileSync(join(proven.root, 'a.txt'), 'utf8'), 'a.txt base\n');
 
-  // A file added below the directory after the first check stops that path's own restore.
+  // A file added below the directory after the first check (here while the path's source is
+  // re-checked) stops that path's own restore.
   const late = restoreUnit(t);
   rmSync(join(late.root, 'a.txt'));
   mkdirSync(join(late.root, 'a.txt'));
   const stopped = await refusal(
-    late.run({ tracked: ['a.txt', 'b.txt'], staged: [], dirty: ['a.txt', 'b.txt'] }, (path) => {
-      if (path === 'a.txt') write(late.root, 'a.txt/late.local', 'late\n');
-      return true;
-    }),
+    late.run(
+      { tracked: ['a.txt', 'b.txt'], staged: [], dirty: ['a.txt', 'b.txt'] },
+      () => true,
+      (path) => {
+        if (path === 'a.txt') write(late.root, 'a.txt/late.local', 'late\n');
+        return true;
+      },
+    ),
   );
   assert.equal(stopped.code, 'UNSAFE_TARGET');
   assert.match(stopped.message, /would delete a\.txt\/late\.local/);

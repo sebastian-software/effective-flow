@@ -87,9 +87,14 @@ From the `resume` result the run continues without asking for the selection agai
      `resume.base.oid` (the record's `creationOid`), setup status `externally managed` (the
      original run finished setup; this run never repeats it), and expected `HEAD` `resume.tip`.
   4. With `resume.hookStaged`, before validation: unstage exactly the paths of
-     `resume.remainingGroups[0]` in that run-owned worktree with
-     `git -C <delivery root> -c core.fsmonitor=false restore --staged -- ':(literal)<path>' …`, one
-     pathspec per path.
+     `resume.remainingGroups[0]` in that run-owned worktree, one path at a time in the order of
+     `resume.hookStagedEntries`. Immediately before each path's own unstage, read its index entry
+     with `git -C <delivery root> -c core.fsmonitor=false ls-files -s -z -- ':(literal)<path>'`: it
+     must be exactly one stage-0 entry at that path with the entry's `mode` and `oid`, or nothing
+     when both are `null`. Only then run
+     `git -C <delivery root> -c core.fsmonitor=false restore --staged -- ':(literal)<path>'` for that
+     path alone. A different entry or a failed read is a failure that retains the artifacts: unstage
+     nothing more and report the paths already unstaged.
      The "never unstage" rule binds `{{SKILL:commit}}`, not this run.
   5. Step 4.3.
   6. `ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0;

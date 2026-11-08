@@ -162,12 +162,12 @@ export function ledgerBinding(record) {
 //            `index` (each staged residual entry is HEAD's or its descriptor's blob) and `source`
 //            (`verifySourceManifest` is exact, so every discarded byte is still in the source).
 //            Then, after the last lock check, the source is verified once more, each dirty
-//            residual path is re-checked against its descriptor (working tree, the index entry
-//            HEAD's or the descriptor's, and for a tracked path no index entry at a parent or
-//            below it) and its source (`verifySourceEndpoint`: the source's repository, root and
-//            HEAD and the manifest entry covering the path) immediately before it is discarded,
-//            exactly the dirty residual paths are restored (`restoreResidual`) and the worktree
-//            is proven clean
+//            residual path is re-checked against its source (`verifySourceEndpoint`: the source's
+//            repository, root and HEAD and the manifest entry covering the path) and then, as the
+//            last read immediately before it is discarded, against its descriptor (working tree,
+//            the index entry HEAD's or the descriptor's, and for a tracked path no index entry at
+//            a parent or below it), exactly the dirty residual paths are restored
+//            (`restoreResidual`) and the worktree is proven clean
 // A dirty worktree without a valid ledger is `residual`, with the exact dirty paths listed.
 // Returns `{route, restored}` or the NOT_ELIGIBLE outcome. A signal seen at the last check before
 // the restore is INTERRUPTED with nothing written and nothing restored; once the restore has
@@ -210,16 +210,15 @@ async function releaseProofs({ context, roots, paths, record, held, signals, dep
     root: record.worktreePath,
     residual,
     descriptors,
-    recheck: async (descriptor) => {
+    // The phase opens each path's re-checks: its source first, its delivery checkout last.
+    sourceRecheck: async (descriptor) => {
       await phase(deps, 'releaseRecheck', { recordId: record.recordId, path: descriptor.path });
-      return (
-        (await selectionCall(() =>
-          workingEndpointMatches(record.worktreePath, descriptor, { runner }),
-        )) === true
-      );
+      return await sourceEndpointIsExact(ledger.manifest, source, descriptor.path, runner);
     },
-    sourceRecheck: (descriptor) =>
-      sourceEndpointIsExact(ledger.manifest, source, descriptor.path, runner),
+    recheck: async (descriptor) =>
+      (await selectionCall(() =>
+        workingEndpointMatches(record.worktreePath, descriptor, { runner }),
+      )) === true,
   });
   const status = await inWorktree([
     'status',
@@ -909,13 +908,18 @@ function resumeResidual(inspected, recoveredGroup) {
 }
 
 // What `deliver` continues from after a resume adoption, from the (appended) ledger: content-free
-// and bounded by the ledger itself (paths, OIDs, selection origins and counts, no descriptor and no
-// file content). Besides the progress, it carries what the final report of a new session needs
+// and bounded by the ledger itself (paths, modes, OIDs, selection origins and counts, no digest and
+// no file content). Besides the progress, it carries what the final report of a new session needs
 // without reading the ledger: `groups`, every group of the plan in order with its endpoint paths
 // and its commit OID (null while uncommitted), and `selection`, the confirmed selection as the
-// manifest entries' `path`, `selectionOrigin` (`staged` or `working`) and `renameFrom`.
+// manifest entries' `path`, `selectionOrigin` (`staged` or `working`) and `renameFrom`. With
+// `hookStaged`, `hookStagedEntries` lists the index entry each endpoint of the staged group (the
+// first of `remainingGroups`) was proven to hold, as its `path`, `mode` and blob `oid` (both null
+// for a tombstone, whose path the index lacks), so `deliver` unstages a path only while it still
+// holds that entry; otherwise it is empty.
 function resumeSummary(ledger, evaluation) {
   const progress = ledgerProgress(ledger);
+  const stagedGroup = evaluation.hookStaged ? progress.residualGroups[0] : null;
   const commits = new Map(ledger.commits.map((commit) => [commit.group, commit.oid]));
   return {
     recovered: evaluation.recovered,
@@ -928,6 +932,11 @@ function resumeSummary(ledger, evaluation) {
     })),
     tip: evaluation.tip,
     hookStaged: evaluation.hookStaged,
+    hookStagedEntries: (stagedGroup?.endpoints ?? []).map((endpoint) => ({
+      path: endpoint.path,
+      mode: endpoint.mode,
+      oid: endpoint.oid,
+    })),
     base: { branch: ledger.base.branch, oid: ledger.base.oid },
     language: { git: ledger.language.git, forge: ledger.language.forge },
     visibility: ledger.visibility,

@@ -250,6 +250,7 @@ test('resume after a failure following group 1 of 2, reconcile, and group 2', as
     remainingGroups: [{ group: 1, paths: ['b.txt'] }],
     tip: fixture.first,
     hookStaged: false,
+    hookStagedEntries: [],
     base: { branch: 'main', oid: fixture.worktree.head },
     language: { git: 'en', forge: 'de' },
     visibility: 'visible',
@@ -1630,7 +1631,9 @@ test('end to end: three-way base drift resumes and stays exact', async (t) => {
 });
 
 // Invariant (c): a commit rejected by a hook leaves exactly the first uncommitted group staged;
-// the resume accepts it as `hookStaged`, the reconcile is exact with it staged, and the group
+// the resume accepts it as `hookStaged`, names the index entry each staged path was proven to hold
+// (`hookStagedEntries`, exactly what `ls-files -s` reports, so the run's unstage guard can tell a
+// blob staged after the adoption from it), the reconcile is exact with it staged, and the group
 // commits and records. Any other staged content refuses, and so does a recovered tip with the next
 // group staged.
 test('end to end: a hook-rejected staged group resumes; other staged content is refused', async (t) => {
@@ -1642,6 +1645,9 @@ test('end to end: a hook-rejected staged group resumes; other staged content is 
   const resumed = expectOk(await resume(fixture));
   assert.equal(resumed.resume.hookStaged, true);
   assert.equal(resumed.resume.recovered, null);
+  const [mode, oid] = git(worktree, 'ls-files', '-s', '--', 'b.txt').split(/\s+/);
+  assert.deepEqual(resumed.resume.hookStagedEntries, [{ path: 'b.txt', mode, oid }]);
+  assert.deepEqual(resumed.resume.remainingGroups, [{ group: 1, paths: ['b.txt'] }]);
   assert.equal(expectOk(await reconcile(fixture)).exact, true);
   await completeAndRemove(fixture, 'group 2');
 

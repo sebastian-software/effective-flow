@@ -71,14 +71,14 @@ ledger's immutable part never change. A refusal writes nothing; a failed prerequ
 proofs it left open in `unevaluated`, and a record of another repository is `repository`. The resume
 appends a recovered tip to the ledger first, then writes the record; an entry whose record write
 then fails is the ledger's own commit on the next resume, which recovers nothing. The ledger route
-re-checks the source, then each path immediately before discarding it: its working tree, its index
-entry, any entry staged at a parent of a tracked path or below it, and its selected source entry
-with the source `HEAD`. It restores exactly the dirty residual paths to `HEAD`,
-removing a residual file `HEAD` does not hold, and proves the worktree clean; a restore that stops
-part-way names the paths already restored, and a retry releases the rest. A tracked path whose
-restore would delete a file outside the residual, such as an ignored file in a directory that
-replaced it or a file standing at one of its parents, stops the release with `UNSAFE_TARGET`
-before that path is discarded, on every retry too. The branch and its
+re-checks the source, then each path before discarding it: first its selected source entry with the
+source `HEAD`, then, as the last read immediately before the discard, its index entry, any entry
+staged at a parent of a tracked path or below it, and its working tree. It restores exactly the
+dirty residual paths to `HEAD`, removing a residual file `HEAD` does not hold, and proves the
+worktree clean; a restore that stops part-way names the paths already restored, and a retry
+releases the rest. A tracked path whose restore would delete a file outside the residual, such as
+an ignored file in a directory that replaced it or a file standing at one of its parents, stops the
+release with `UNSAFE_TARGET` before that path is discarded, on every retry too. The branch and its
 commits stay. A released record whose worktree is fully gone stays removable (removal condition
 exception above).
 
@@ -126,11 +126,13 @@ resolved visibility (`config-resolve` `standard` or `hidden`) with `standard` as
   manifest, or `null`), `committed`, `remaining`, `next`, `recoveredTip`, `hookStaged`, `lock` and
   the bounded refusal `details`.
 - **Resume adoption** returns `resume` with `recovered`, `committed`, `next`, `remaining`,
-  `remainingGroups`, `tip`, `hookStaged`, `base`, `language`, `visibility`, `sourceRoot`, `groups`
-  and `selection`: `groups`, every group with its `paths` and commit `oid` (`null` while open), is
-  canonical, `committed` and
-  `remainingGroups` are views of it, and `selection` lists each manifest entry's `path`,
-  `selectionOrigin` and `renameFrom`. No file content or descriptor.
+  `remainingGroups`, `tip`, `hookStaged`, `hookStagedEntries`, `base`, `language`, `visibility`,
+  `sourceRoot`, `groups` and `selection`: `groups`, every group with its `paths` and commit `oid`
+  (`null` while open), is canonical, `committed` and `remainingGroups` are views of it, and
+  `selection` lists each manifest entry's `path`, `selectionOrigin` and `renameFrom`. With
+  `hookStaged`, `hookStagedEntries` lists each path of `remainingGroups[0]` with the index `mode`
+  and blob `oid` the resume proved staged (both `null` for a staged deletion); otherwise it is
+  empty. No file content or digest.
 - **Release** returns `release` `{route, restored}`.
 
 `INTERRUPTED` after the resume's recovered-tip append and before its record write carries

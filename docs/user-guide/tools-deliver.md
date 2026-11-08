@@ -83,8 +83,10 @@ counts, and a record that another run still holds is reported and left alone.
   first uncommitted one and continues with the pull request and report as usual. Base branch and
   languages come from the recorded progress. A commit that was created but never recorded, for
   example after a helper failure, is accepted once the same proofs hold. A group that a failing commit
-  hook left staged is unstaged in the delivery worktree and committed again. If the resume fails
-  again, the record returns to its failed state and can be resumed the same way.
+  hook left staged is unstaged in the delivery worktree, each file only while its staged content is
+  still the one the resume proved, and committed again; staged content that changed since then stops
+  the resume and stays staged. If the resume fails again, the record returns to its failed state
+  and can be resumed the same way.
 - **Release.** A candidate that cannot be resumed, for example because the visibility is weaker or
   its branch history no longer matches the recorded progress, is listed with the way it can be
   released and, with recorded progress, the exact paths a release discards. A separate **Release**
