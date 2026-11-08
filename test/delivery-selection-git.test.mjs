@@ -22,7 +22,9 @@ import { test } from 'node:test';
 
 import {
   bindSelectionManifest,
+  describeWorkingEndpoint,
   fastForwardUpstream,
+  inspectResidual,
   inventoryRepository,
   nonInteractiveFetchEnv,
   reconcileDelivery,
@@ -646,6 +648,51 @@ test('mixed already-applied file-to-directory selection reconciles after an acti
   );
   assert.equal(reconciled.exact, true);
   assert.deepEqual(sourceSnapshot(sourceRoot), sourceBefore);
+});
+
+// Invariant (`inspectResidual` atHead is byte-exact): an endpoint counts as at HEAD only when its
+// working bytes are exactly what a checkout of HEAD's blob writes there, eol attributes included,
+// and never while its index entry carries the skip-worktree or assume-unchanged bit. Such a hidden
+// endpoint is in `content` even when it holds its descriptor, since `git status` never compares it.
+test('inspectResidual counts only byte-exact HEAD endpoints as atHead and hides none', async (t) => {
+  const { deliveryRoot } = createRepository(t);
+  write(deliveryRoot, '.gitattributes', 'crlf.txt text eol=crlf\n');
+  write(deliveryRoot, 'crlf.txt', 'one\r\ntwo\r\n');
+  git(deliveryRoot, 'add', '--', '.gitattributes', 'crlf.txt');
+  git(deliveryRoot, 'commit', '-m', 'eol fixture');
+  const changed = {
+    path: 'partial.txt',
+    kind: 'blob',
+    mode: '100644',
+    digest: '0'.repeat(64),
+    oid: '0'.repeat(40),
+  };
+  const filtered = { ...changed, path: 'crlf.txt' };
+  const inspect = async (endpoints) =>
+    await inspectResidual({ deliveryRoot, endpoints }, { runner: processRunner });
+
+  // At HEAD: a plain file and a filtered one whose CRLF bytes differ from the LF blob.
+  const clean = await inspect([changed, filtered]);
+  assert.deepEqual(clean.dirty, []);
+  assert.deepEqual(clean.content, ['crlf.txt', 'partial.txt']);
+  assert.deepEqual(clean.atHead, ['crlf.txt', 'partial.txt']);
+
+  // Newer bytes hidden from `git status` by either bit: not at HEAD, still in `content`.
+  for (const flag of ['--skip-worktree', '--assume-unchanged']) {
+    git(deliveryRoot, 'update-index', flag, '--', 'partial.txt');
+    write(deliveryRoot, 'partial.txt', 'newer\n');
+    const hidden = await inspect([changed, filtered]);
+    assert.deepEqual(hidden.dirty, [], flag);
+    assert.deepEqual(hidden.content, ['crlf.txt', 'partial.txt'], flag);
+    assert.deepEqual(hidden.atHead, ['crlf.txt'], flag);
+    // Holding its descriptor does not take a hidden endpoint out of `content`.
+    const held = await describeWorkingEndpoint(deliveryRoot, 'partial.txt', {
+      runner: processRunner,
+    });
+    assert.deepEqual((await inspect([held])).content, ['partial.txt'], flag);
+    git(deliveryRoot, 'update-index', flag.replace('--', '--no-'), '--', 'partial.txt');
+    git(deliveryRoot, 'checkout', '--', 'partial.txt');
+  }
 });
 
 // Invariant (source re-check, selected bytes last): for a working rename, `verifySourceManifest`

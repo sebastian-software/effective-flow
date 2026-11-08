@@ -126,6 +126,7 @@ import {
   ledgerPaths,
   ledgersDir,
   listLedgerIds,
+  readLedger,
 } from './effective-flow-state-ledger-core.mjs';
 
 export const RECORDS_DIR = 'worktree-runs';
@@ -313,6 +314,17 @@ export function canonicalJson(value) {
 
 export function itemDigest(value) {
   return createHash('sha256').update(canonicalJson(value)).digest('hex');
+}
+
+// The ledger binding of `record`: the fields a ledger must repeat exactly.
+export function ledgerBinding(record) {
+  return {
+    recordId: record.recordId,
+    creationOid: record.creationOid,
+    worktreePath: record.worktreePath,
+    branch: record.branch,
+    receiptDigest: itemDigest(record.receipt),
+  };
 }
 
 export async function phase(deps, name, detail) {
@@ -872,7 +884,9 @@ export async function deferSignals(deps, recordId, fn) {
 // the callers that remove (`worktree remove`, `cleanup plan`/`apply`, `worktree inspect`), the
 // only ones where a fully gone `partial-diff` worktree counts (see `goneRemovable`) and where a
 // retained release quarantine fails condition 7 as well (`quarantineRetained`): `git worktree
-// remove` deletes an ignored quarantine with the only copy of the bytes it holds.
+// remove` deletes an ignored quarantine with the only copy of the bytes it holds. For the same
+// reason a ledger endpoint standing as an ignored untracked file, or ledger endpoints that cannot
+// be established, fail condition 7 of those callers too (`ignoredEndpoints`).
 export function evaluateEligibility(
   facts,
   { statuses = CLAIMABLE_STATUSES, removal = false } = {},
@@ -900,7 +914,16 @@ export function evaluateEligibility(
     failed.push(5);
   }
   if (!facts.creationIsCommit || !facts.creationAncestor) failed.push(6);
-  if (!gone && (!facts.clean || (removal && facts.quarantineRetained))) failed.push(7);
+  if (
+    !gone &&
+    (!facts.clean ||
+      (removal &&
+        (facts.quarantineRetained ||
+          facts.ignoredEndpoints === null ||
+          facts.ignoredEndpoints.length > 0)))
+  ) {
+    failed.push(7);
+  }
   if (facts.isMain || facts.isExecutionRoot) failed.push(8);
   if (facts.foreignLock || facts.foreignClaim) failed.push(9);
   return failed;
@@ -1013,6 +1036,46 @@ async function retainsQuarantine(fs, root) {
   }
 }
 
+// The ledger endpoints of a `partial-diff` `record` that stand in its proven worktree as ignored
+// untracked files (`ls-files --others --ignored --exclude-standard`, exact endpoint paths only),
+// sorted. `git status` never lists them, so the worktree looks clean while they hold delivery
+// bytes a removal would delete. Every endpoint of every group counts. There are none, and no Git
+// call runs, without a ledger and when the guard refuses the `ledgers/` entry itself (that entry
+// stops every removal on its own, see `claimAndRemove`). Null when they cannot be established: an
+// invalid ledger, or a listing Git fails. Only for a worktree whose common directory is proven ours.
+async function ignoredLedgerEndpoints(context, roots, record) {
+  if (record.purpose !== 'partial-diff') return [];
+  let read;
+  try {
+    read = await readLedger(context, roots.cwd, ledgerBinding(record));
+  } catch (error) {
+    if (!(error instanceof RuntimeStateError) || error.code !== 'UNSAFE_TARGET') throw error;
+    return [];
+  }
+  if (read.state === 'missing') return [];
+  if (read.state !== 'ok') return null;
+  const endpoints = new Set(
+    read.ledger.groups.flatMap((group) => group.endpoints.map((endpoint) => endpoint.path)),
+  );
+  if (endpoints.size === 0) return [];
+  const inWorktree = guardedGit(context, record.worktreePath);
+  const listed = await inWorktree([
+    'ls-files',
+    '-z',
+    '--others',
+    '--ignored',
+    '--exclude-standard',
+    '--',
+    ...[...endpoints].map((repoPath) => `:(literal)${repoPath}`),
+  ]);
+  if (!gitOk(listed)) return null;
+  return asBuffer(listed.stdout)
+    .toString('utf8')
+    .split('\0')
+    .filter((repoPath) => endpoints.has(repoPath))
+    .sort();
+}
+
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
 // token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID.
 export async function gatherFacts(
@@ -1045,6 +1108,7 @@ export async function gatherFacts(
     creationAncestor: false,
     clean: false,
     quarantineRetained: false,
+    ignoredEndpoints: [],
     isMain: target === roots.cwd || (worktrees[0] ? matches(worktrees[0], target) : false),
     isExecutionRoot: target === roots.executionRoot,
     foreignLock: false,
@@ -1078,6 +1142,7 @@ export async function gatherFacts(
     ]);
     facts.clean = gitOk(status) && asBuffer(status.stdout).length === 0;
     facts.quarantineRetained = await retainsQuarantine(fs, target);
+    facts.ignoredEndpoints = await ignoredLedgerEndpoints(context, roots, record);
   }
   facts.branchTip = await branchTip(context, record.branch);
   const commit = await runGit(context, context.cwd, [

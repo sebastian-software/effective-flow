@@ -72,7 +72,7 @@ import {
   guardedGit,
   interruptedUnderLock,
   isBranchName,
-  itemDigest,
+  ledgerBinding,
   listWorktrees,
   lockStillOwned,
   observedLock,
@@ -141,17 +141,6 @@ function conditionProofs(facts, statuses, skip) {
     .map((condition) => `condition-${condition}`);
 }
 
-// The ledger binding of `record`: the fields a ledger must repeat exactly.
-export function ledgerBinding(record) {
-  return {
-    recordId: record.recordId,
-    creationOid: record.creationOid,
-    worktreePath: record.worktreePath,
-    branch: record.branch,
-    receiptDigest: itemDigest(record.receipt),
-  };
-}
-
 // The proofs of the release transition, which replace the session-ownership check. Each failed
 // proof is reported by its stable identifier in `proofs` of NOT_ELIGIBLE, and a refusal changes
 // nothing:
@@ -164,6 +153,13 @@ export function ledgerBinding(record) {
 //                 so an ignored one counts too); checked once the worktree is proven ours, before
 //                 the `clean` and `ledger` routes, since either would end in a removal that
 //                 deletes the only copy of the bytes it holds
+//   ignored       no ledger endpoint stands in the worktree as an ignored untracked file
+//                 (`ignoredEndpoints` of `gatherFacts`): `git status` never lists it, so the
+//                 worktree looks clean, yet the removal would delete its bytes; checked right after
+//                 `quarantine`, before both routes. When the endpoints cannot be established (an
+//                 invalid ledger, a failed listing), the `clean` route and the `ledger` route
+//                 refuse with `ignored` too; a dirty worktree without a valid ledger keeps its
+//                 `residual` refusal
 // and one route:
 //   gone     the worktree is fully gone (unregistered and `lstat` ENOENT, the proof cleanup's
 //            `goneRemovable` takes): only condition-1, condition-6, condition-9 and the receipt
@@ -302,6 +298,15 @@ async function evaluateRelease({ context, roots, record, facts, once = unmemoize
   if (proofs.length > 0) return refuse(proofs);
   // Conditions 3 and 4 hold: the worktree is registered and its common directory proven ours.
   if (facts.quarantineRetained) return refuse(['quarantine']);
+  const ignored = facts.ignoredEndpoints;
+  if (ignored === null ? facts.clean : ignored.length > 0) {
+    return refuse(
+      ['ignored'],
+      ignored === null
+        ? {}
+        : { ignoredPaths: reportedPaths(ignored).paths, ignoredPathCount: ignored.length },
+    );
+  }
   if (facts.clean) return { route: 'clean' };
   const worktreeRunner = selectionRunner(context, roots, [record.worktreePath]);
   const read = await readLedger(context, roots.cwd, ledgerBinding(record));
@@ -313,6 +318,7 @@ async function evaluateRelease({ context, roots, record, facts, once = unmemoize
       ...(dirty ? { residualPaths: dirty.paths, residualPathCount: dirty.count } : {}),
     });
   }
+  if (ignored === null) return refuse(['ignored']);
   const ledger = read.ledger;
   const descriptors = residualEndpoints(ledger);
   const source = await once('source-root', () =>
@@ -351,8 +357,11 @@ async function evaluateRelease({ context, roots, record, facts, once = unmemoize
 }
 
 // The residual endpoints whose content refuses the ledger route: a dirty endpoint that does not
-// hold its descriptor, or a clean one that holds neither its descriptor nor HEAD's state. A clean
-// endpoint at HEAD counts as released (a release that stopped part-way restored it already).
+// hold its descriptor, an endpoint hidden by the skip-worktree or assume-unchanged bit, or a clean
+// one that holds neither its descriptor nor HEAD's state. Only a clean endpoint byte-exactly at
+// HEAD (`inspectResidual`'s `atHead`: HEAD's index entry and mode and exactly the bytes a checkout
+// of HEAD writes, never a hidden one) counts as released, as a release that stopped part-way
+// restored it already.
 function unreleasedContent(residual) {
   const dirty = new Set(residual.dirty);
   const atHead = new Set(residual.atHead);

@@ -1544,23 +1544,78 @@ function indexMatchesDescriptor(index, descriptor) {
   return index.oid === descriptor.oid && index.mode === descriptor.mode;
 }
 
+// The paths among `repoPaths` whose index entry carries the skip-worktree or the assume-unchanged
+// bit, as `ls-files -v` tags them (`S`, or any lowercase tag). `git status` takes such an entry's
+// working tree as unchanged, whatever bytes it holds. Nothing runs for no path, since `ls-files`
+// without a pathspec would list the whole index; a failed listing is COMMAND_FAILED.
+async function hiddenIndexEntries(root, repoPaths, runner) {
+  const hidden = new Set();
+  if (repoPaths.length === 0) return hidden;
+  const result = await git(runner, root, [
+    'ls-files',
+    '-v',
+    '-z',
+    '--',
+    ...repoPaths.map(literalPathspec),
+  ]);
+  for (const record of asText(result.stdout).split('\0').filter(Boolean)) {
+    if (record.length < 3 || record[1] !== ' ') {
+      fail('COMMAND_FAILED', 'git returned an invalid ls-files -v entry');
+    }
+    const tag = record[0];
+    if (tag === 'S' || tag !== tag.toUpperCase()) hidden.add(record.slice(2));
+  }
+  return hidden;
+}
+
+// Whether the working-tree descriptor `actual` of `repoPath` holds exactly the bytes a checkout of
+// HEAD's blob `head` writes there: the blob after the path's smudge filters and eol attributes
+// (`cat-file --filters --path=<path>`), compared by SHA-256 with the bytes on disk, or for a
+// symbolic link the target text Git stores, unfiltered. A blob Git cannot read or filter is no
+// match, so equality that cannot be established never counts as HEAD's state.
+async function holdsCheckoutBytes(root, repoPath, actual, head, runner) {
+  try {
+    const result = await git(
+      runner,
+      root,
+      head.mode === '120000'
+        ? ['cat-file', 'blob', head.oid]
+        : ['cat-file', '--filters', `--path=${repoPath}`, head.oid],
+    );
+    return sha256(asBuffer(result.stdout)) === actual.digest;
+  } catch (error) {
+    if (error instanceof DeliverySelectionError) return false;
+    throw error;
+  }
+}
+
 // Compares the delivery checkout with the descriptors of `endpoints` (the uncommitted residual of a
 // delivery) without writing anything. Returns sorted path lists:
 //   dirty     every path whose index or working tree differs from HEAD, untracked ones included
 //   extra     the dirty paths outside `endpoints`
-//   content   the endpoints whose working-tree kind, mode or bytes differ from their descriptor
+//   content   the endpoints whose working-tree kind, mode or bytes differ from their descriptor,
+//             and every endpoint whose index entry carries the skip-worktree or assume-unchanged
+//             bit (`hiddenIndexEntries`): `git status` never compares its working tree, so newer
+//             bytes there would pass as clean
 //   staged    the endpoints whose index entry differs from HEAD
 //   index     the endpoints whose index entry is neither HEAD's nor the descriptor's blob and mode
 //   tracked   the dirty endpoints HEAD tracks (the rest are absent from HEAD)
-//   atHead    the endpoints that are not dirty and hold HEAD's state in index and working tree:
-//             HEAD's mode for a path HEAD tracks, absent for one it does not (an ignored file
-//             left at a path HEAD lacks is not at HEAD); an endpoint a release already restored
+//   atHead    the endpoints that are not dirty, carry neither bit, and hold HEAD's state in index
+//             and working tree: for a path HEAD tracks, HEAD's mode and exactly the bytes a
+//             checkout of HEAD's blob writes there (`holdsCheckoutBytes`); absent for one HEAD
+//             does not track (an ignored file left at a path HEAD lacks is not at HEAD); an
+//             endpoint a release already restored
 // An unmerged index entry is UNSUPPORTED_PATH.
 export async function inspectResidual(input, options = {}) {
   requireObject(input);
   const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
   const endpoints = requireEndpointDescriptors(input.endpoints);
   const inventory = await statusInventory(deliveryRoot, options.runner, false);
+  const hidden = await hiddenIndexEntries(
+    deliveryRoot,
+    endpoints.map((endpoint) => endpoint.path),
+    options.runner,
+  );
   const dirty = new Set(
     inventory.entries.flatMap((entry) =>
       entry.renameFrom ? [entry.renameFrom, entry.path] : [entry.path],
@@ -1574,7 +1629,8 @@ export async function inspectResidual(input, options = {}) {
   const atHead = [];
   for (const endpoint of endpoints) {
     const actual = await actualWorkingDescriptor(deliveryRoot, endpoint.path, options.runner);
-    if (!holdsDescriptor(actual, endpoint)) content.push(endpoint.path);
+    const isHidden = hidden.has(endpoint.path);
+    if (isHidden || !holdsDescriptor(actual, endpoint)) content.push(endpoint.path);
     const head = await treeState(deliveryRoot, 'HEAD', endpoint.path, options.runner);
     const entry = await indexState(deliveryRoot, endpoint.path, options.runner);
     if (!statesEqual(entry, head)) {
@@ -1583,9 +1639,13 @@ export async function inspectResidual(input, options = {}) {
     }
     if (dirty.has(endpoint.path) && head.oid !== null) tracked.push(endpoint.path);
     if (
+      !isHidden &&
       !dirty.has(endpoint.path) &&
       statesEqual(entry, head) &&
-      (head.oid === null ? actual.kind === 'tombstone' : actual.mode === head.mode)
+      (head.oid === null
+        ? actual.kind === 'tombstone'
+        : actual.mode === head.mode &&
+          (await holdsCheckoutBytes(deliveryRoot, endpoint.path, actual, head, options.runner)))
     ) {
       atHead.push(endpoint.path);
     }
@@ -1619,7 +1679,8 @@ export async function inspectResidual(input, options = {}) {
 //              blob OID and mode (or present for a tombstone): compared by blob OID, so clean and
 //              smudge filters, LFS and EOL attributes keep a committed path exact
 //   residual   the residual endpoints whose working tree differs from the descriptor's kind, mode
-//              or byte digest (`inspectResidual`'s `content`)
+//              or byte digest, or whose index entry carries the skip-worktree or assume-unchanged
+//              bit (`inspectResidual`'s `content`)
 //   index      the residual endpoints whose index entry is neither HEAD's nor the descriptor's
 //   extra      the dirty or untracked paths outside the residual endpoints
 //   sourceDrift  the drift entries of `verifySourceManifest` (exact only without any)

@@ -2457,6 +2457,109 @@ test('release, worktree remove and cleanup apply refuse a worktree with a kept i
   assert.deepEqual(quarantined(), ['c added\n'], 'the quarantined bytes survive');
 });
 
+// Invariant (a hidden residual endpoint is never released): a residual endpoint whose index entry
+// matches HEAD only counts as released when its working bytes match HEAD too. An endpoint hidden
+// from `git status` by skip-worktree or assume-unchanged that holds newer bytes refuses the
+// release with the `residual` proof and a content mismatch, with the bytes, record and ledger
+// untouched.
+for (const flag of ['--skip-worktree', '--assume-unchanged']) {
+  test(`release ledger route: a residual endpoint hidden by ${flag} with newer bytes refuses`, async (t) => {
+    const fixture = await delivery(t, {
+      files: { 'a.txt': 'a changed\n', 'b.txt': 'b changed\n', 'c.txt': 'c changed\n' },
+    });
+    const worktree = fixture.worktree.worktreePath;
+    expectOk(
+      await call('ledger init', initInput(fixture, { groups: [['a.txt'], ['b.txt', 'c.txt']] })),
+    );
+    expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+    await failRecord(fixture);
+    // As a part-way restore leaves `c.txt`, then hidden from Git and holding newer bytes.
+    git(worktree, 'checkout', '--', 'c.txt');
+    git(worktree, 'update-index', flag, 'c.txt');
+    write(worktree, 'c.txt', 'c NEWER\n');
+    assert.equal(status(worktree), 'M b.txt');
+
+    const before = snapshot(fixture);
+    const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+    assert.ok(refused.proofs.includes('residual'), JSON.stringify(refused));
+    assert.deepEqual(refused.content, ['c.txt'], JSON.stringify(refused));
+    assertUnchanged(fixture, before);
+    assert.equal(readFileSync(join(worktree, 'c.txt'), 'utf8'), 'c NEWER\n');
+    assert.equal(readRecord(fixture.root).status, 'failed');
+  });
+}
+
+// Invariant (an ignored ledger endpoint is never released or removed): a residual endpoint that
+// Git ignores keeps the worktree's status clean, yet it still holds delivery bytes. The release
+// refuses with the `ignored` proof instead of taking the clean route, and `worktree remove` and
+// `cleanup plan` refuse with condition 7; the worktree, record and bytes survive.
+test('release, worktree remove and cleanup plan refuse a worktree with an ignored ledger endpoint', async (t) => {
+  const fixture = await delivery(t, { added: { 'new/c.txt': 'c added\n' } });
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt', 'b.txt'], ['new/c.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt', 'b.txt'])));
+  await failRecord(fixture);
+  mkdirSync(join(commonDir(fixture.root), 'info'), { recursive: true });
+  writeFileSync(join(commonDir(fixture.root), 'info', 'exclude'), 'new/c.txt\n');
+  rmSync(join(fixture.root, 'new', 'c.txt'));
+  assert.equal(status(worktree), '', 'Git sees a clean worktree');
+  assert.equal(existsSync(join(worktree, 'new', 'c.txt')), true);
+
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['ignored'], JSON.stringify(refused));
+  assertUnchanged(fixture, before);
+  assert.equal(readFileSync(join(worktree, 'new', 'c.txt'), 'utf8'), 'c added\n');
+
+  // A record released before this check existed: `cleanup-ready` with the endpoint ignored.
+  const record = readRecord(fixture.root);
+  writeFileSync(
+    recordFile(fixture.root),
+    `${JSON.stringify({ ...record, status: 'cleanup-ready', reason: null, sessionId: OTHER_SESSION })}\n`,
+  );
+  const input = { cwd: fixture.root, executionRoot: fixture.root };
+  const removed = expectOk(
+    await call('worktree remove', {
+      ...input,
+      sessionId: OTHER_SESSION,
+      recordIds: ['record-1'],
+    }),
+  );
+  assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+  assert.deepEqual(removed.items[0].conditions, [7]);
+  const plan = expectOk(await call('cleanup plan', input));
+  const blocked = plan.blocked.find((entry) => entry.itemId === 'worktree:record-1');
+  assert.deepEqual(blocked?.conditions, [7], JSON.stringify(plan));
+  assert.equal(existsSync(worktree), true, 'the worktree stays');
+  assert.equal(existsSync(recordFile(fixture.root)), true, 'the record stays');
+  assert.equal(readFileSync(join(worktree, 'new', 'c.txt'), 'utf8'), 'c added\n');
+});
+
+// Invariant (an ignored ledger endpoint refuses the ledger route too): with a dirty worktree whose
+// other residual endpoint is valid, an ignored endpoint still refuses the release with `ignored`,
+// and its bytes, the record and the ledger stay.
+test('release ledger route: an ignored ledger endpoint refuses beside a dirty residual endpoint', async (t) => {
+  const fixture = await delivery(t, { added: { 'new/c.txt': 'c added\n' } });
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt'], ['b.txt', 'new/c.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  mkdirSync(join(commonDir(fixture.root), 'info'), { recursive: true });
+  writeFileSync(join(commonDir(fixture.root), 'info', 'exclude'), 'new/c.txt\n');
+  assert.equal(status(worktree), 'M b.txt', 'Git sees only the dirty endpoint');
+
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.ok(refused.proofs.includes('ignored'), JSON.stringify(refused));
+  assertUnchanged(fixture, before);
+  assert.equal(readFileSync(join(worktree, 'new', 'c.txt'), 'utf8'), 'c added\n');
+  assert.equal(readRecord(fixture.root).status, 'failed');
+});
+
 // Invariant (locked index, per path): from the snapshot to the last discard the worktree's index
 // is locked, so a concurrent `git add` fails instead of staging content a later discard would
 // drop: an entry restaged for an already unstaged path, or for a tracked path after its index
