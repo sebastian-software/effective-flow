@@ -810,14 +810,17 @@ async function removeEmptiedParents(fs, root, repoPath) {
 // rename into it never crosses a file system) that holds every file the restore took from a
 // residual path until its bytes are preserved. `take` moves one file or symbolic link in and
 // returns where it is held; `putBack` returns a held entry to its path without replacing anything
-// that stands there now; `clear` removes the preserved entries and the directory, and `keep`
-// leaves the directory for a held entry that could not be put back or preserved.
+// that stands there now and reports whether it did (it never throws; an entry it cannot return
+// keeps the whole quarantine, so the error can name where it is); `clear(anchored)` removes
+// only the held entries listed in `anchored` (those whose own bytes are anchored under the
+// preserve ref) and then the directory, unless an entry is still held that was neither put back
+// nor anchored: that entry and the directory are kept. `keep` leaves the directory and every entry.
 function makeQuarantine(io, root) {
   const directory = path.join(root, `.effective-flow-release-${randomBytes(8).toString('hex')}`);
   let created = false;
   let kept = false;
   let count = 0;
-  const taken = [];
+  const held = new Set();
   return {
     directory,
     async take(target) {
@@ -825,26 +828,28 @@ function makeQuarantine(io, root) {
         await io.mkdir(directory, { mode: 0o700 });
         created = true;
       }
-      const held = path.join(directory, String(count));
+      const entry = path.join(directory, String(count));
       count += 1;
-      await io.rename(target, held);
-      taken.push(held);
-      return held;
+      await io.rename(target, entry);
+      held.add(entry);
+      return entry;
     },
-    async putBack(held, target) {
-      const info = await io.lstat(held);
+    async putBack(entry, target) {
       try {
-        if (info.isSymbolicLink()) await io.symlink(await io.readlink(held), target);
+        const info = await io.lstat(entry);
+        if (info.isSymbolicLink()) await io.symlink(await io.readlink(entry), target);
         else if (info.isDirectory()) {
           if ((await lstatOrNull(io, target)) !== null) throw new Error('occupied');
-          await io.rename(held, target);
+          await io.rename(entry, target);
+          held.delete(entry);
           return true;
-        } else await io.link(held, target);
+        } else await io.link(entry, target);
+        await io.unlink(entry);
       } catch {
         kept = true;
         return false;
       }
-      await io.unlink(held);
+      held.delete(entry);
       return true;
     },
     keep() {
@@ -853,13 +858,17 @@ function makeQuarantine(io, root) {
     get kept() {
       return kept;
     },
-    async clear() {
+    async clear(anchored) {
       if (kept || !created) return;
-      for (const held of taken)
-        await io.unlink(held).catch((error) => {
+      for (const entry of anchored) {
+        if (!held.has(entry)) continue;
+        await io.unlink(entry).catch((error) => {
           if (error?.code !== 'ENOENT') throw error;
         });
-      await io.rmdir(directory);
+        held.delete(entry);
+      }
+      if (held.size > 0) kept = true;
+      else await io.rmdir(directory);
     },
   };
 }
@@ -919,7 +928,10 @@ function partialRestoreError(error, restored, unstaged, notes = []) {
 // The proven bytes are written to the object database (`hash-object -w`) before anything else
 // happens to them, and once the loop ends they are anchored as one tree at
 // `<preserveRef>/<tree OID>` before the quarantine is cleared, so every discarded byte stays
-// recoverable whatever happened to the source meanwhile. A tracked path then gets HEAD's index
+// recoverable whatever happened to the source meanwhile. A taken file whose proof or blob write
+// fails is put back to its path, or else kept in the quarantine (named in the error); the
+// quarantine drops only entries whose own bytes are anchored, so a file neither put back nor
+// anchored keeps the quarantine and itself. A tracked path then gets HEAD's index
 // entry and HEAD's file through `checkout-index` without `--force`, which never replaces anything
 // that stands at the path.
 //
@@ -985,28 +997,36 @@ export async function restoreResidual({
     }
     if (descriptor.kind !== 'blob') changed(repoPath);
     const held = await quarantine.take(target);
-    const heldInfo = await io.lstat(held);
-    const link = heldInfo.isSymbolicLink();
-    let bytes = null;
-    if (link) bytes = Buffer.from(await io.readlink(held), 'utf8');
-    else if (heldInfo.isFile()) bytes = await io.readFile(held);
-    const mode = link ? '120000' : heldInfo.mode & 0o111 ? '100755' : '100644';
-    if (
-      bytes === null ||
-      mode !== descriptor.mode ||
-      createHash('sha256').update(bytes).digest('hex') !== descriptor.digest
-    ) {
-      if (!(await quarantine.putBack(held, target))) {
-        notes.push(`the changed content of ${repoPath} is kept at ${held}`);
+    let mismatch = false;
+    try {
+      const heldInfo = await io.lstat(held);
+      const link = heldInfo.isSymbolicLink();
+      let bytes = null;
+      if (link) bytes = Buffer.from(await io.readlink(held), 'utf8');
+      else if (heldInfo.isFile()) bytes = await io.readFile(held);
+      const mode = link ? '120000' : heldInfo.mode & 0o111 ? '100755' : '100644';
+      if (
+        bytes === null ||
+        mode !== descriptor.mode ||
+        createHash('sha256').update(bytes).digest('hex') !== descriptor.digest
+      ) {
+        mismatch = true;
+        changed(repoPath);
       }
-      changed(repoPath);
+      const oid = outputText(
+        await runOrFail(git, ['hash-object', '-w', '--no-filters', '--stdin'], { stdin: bytes }),
+      );
+      if (!OID_PATTERN.test(oid)) {
+        fail('GIT_FAILED', 'git hash-object returned an invalid object id');
+      }
+      preserved.push({ path: repoPath, mode, oid, held });
+      return held;
+    } catch (error) {
+      if (!(await quarantine.putBack(held, target))) {
+        notes.push(`the ${mismatch ? 'changed ' : ''}content of ${repoPath} is kept at ${held}`);
+      }
+      throw error;
     }
-    const oid = outputText(
-      await runOrFail(git, ['hash-object', '-w', '--no-filters', '--stdin'], { stdin: bytes }),
-    );
-    if (!OID_PATTERN.test(oid)) fail('GIT_FAILED', 'git hash-object returned an invalid object id');
-    preserved.push({ path: repoPath, mode, oid });
-    return held;
   };
   // Runs the discard `step` of a path whose content `held` (a capture result) took; a failing step
   // puts the taken content back.
@@ -1071,7 +1091,8 @@ export async function restoreResidual({
         failure = error;
       }
       // What was taken is preserved and the index written, also after a failure, so the index
-      // matches what the worktree holds and every taken byte stays recoverable.
+      // matches what the worktree holds and every taken byte stays recoverable; the quarantine
+      // drops only the entries anchored here.
       let anchored = preserved.length === 0;
       try {
         if (!anchored) {
@@ -1089,7 +1110,7 @@ export async function restoreResidual({
       }
       if (anchored) {
         try {
-          await quarantine.clear();
+          await quarantine.clear(preserved.map((entry) => entry.held));
         } catch (error) {
           quarantine.keep();
           failure ??= error;

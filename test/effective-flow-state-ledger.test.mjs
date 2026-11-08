@@ -20,7 +20,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { rename } from 'node:fs/promises';
+import { readFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -2128,8 +2128,10 @@ test('release ledger route: a residual path restaged between proof and restore i
 // and returns its result. `events` lists the source re-checks, the content taken into the
 // quarantine and the index and checkout calls in call order (`source <path>`, `take <path>`, `rm
 // <path>`, `restore <path>`, `checkout-index <path>`); `onGit(command, path)` runs before each
-// such call. `attempt(...args)` runs one Git call in the checkout, as a concurrent actor would,
-// and returns its exit status; `preserved(path)` lists what the preserve ref's trees hold there.
+// such call. `hooks.git(args)` may return a result that replaces any Git call, and `hooks.fs`
+// overrides file system calls. `attempt(...args)` runs one Git call in the checkout, as a
+// concurrent actor would, and returns its exit status; `preserved(path)` lists what the preserve
+// ref's trees hold there; `quarantined()` lists the bytes left in quarantine directories.
 function restoreUnit(t) {
   const root = repository(t, 'effective-flow-ledger-');
   for (const name of ['a.txt', 'b.txt']) write(root, name, `${name} base\n`);
@@ -2143,7 +2145,10 @@ function restoreUnit(t) {
   git(root, 'add', '--', 'new/x.txt', 'new/y.txt');
   const events = [];
   let onGit = () => {};
+  let gitOverride = () => undefined;
   const inRoot = async (args, { stdin, indexFile } = {}) => {
+    const replaced = gitOverride(args);
+    if (replaced !== undefined) return replaced;
     const command = args.find((arg) => !arg.startsWith('-'));
     if (stdin !== undefined && ['rm', 'restore', 'checkout-index'].includes(command)) {
       const target = String(stdin).replace(/\0$/, '');
@@ -2184,9 +2189,10 @@ function restoreUnit(t) {
       if (!residual.staged.includes(path)) git(root, 'rm', '--cached', '-q', '--', path);
     }
     onGit = hooks.onGit ?? (() => {});
+    gitOverride = hooks.git ?? (() => undefined);
     const result = await restoreResidual({
       git: inRoot,
-      fs: { rename: renameLogged },
+      fs: { rename: renameLogged, ...hooks.fs },
       root,
       residual,
       descriptors: residual.dirty.map(describe),
@@ -2206,7 +2212,13 @@ function restoreUnit(t) {
       .split('\n')
       .filter(Boolean)
       .map((tree) => git(root, 'cat-file', '-p', `${tree}:${path}`));
-  return { root, run, events, attempt, preserved };
+  const quarantined = () =>
+    readdirSync(root)
+      .filter((name) => name.startsWith('.effective-flow-release-'))
+      .flatMap((name) =>
+        readdirSync(join(root, name)).map((entry) => readFileSync(join(root, name, entry), 'utf8')),
+      );
+  return { root, run, events, attempt, preserved, quarantined };
 }
 
 // Invariant (restore order and one locked index, per path): the index is proven once, from one
@@ -2275,6 +2287,86 @@ test('restoreResidual puts back and keeps a path edited during its source re-che
     'a edited during the source re-check\n',
   );
   assert.equal(edited.events.includes('restore a.txt'), false, 'nothing is restored');
+});
+
+// Invariant (a failed capture never costs taken bytes): a file whose proof read or blob write
+// fails after it was taken into the quarantine is put back to its path, or, when that fails too,
+// kept in the quarantine and named; the restore fails with the original error. Only entries whose
+// own bytes were anchored under the preserve ref leave the quarantine, so an earlier anchored path
+// never clears a later failing one.
+test('restoreResidual keeps a taken file whose capture fails', async (t) => {
+  const refusal = (promise) =>
+    promise.then(
+      () => assert.fail('the restore fails'),
+      (error) => error,
+    );
+  const failing = (message) => async () => {
+    throw Object.assign(new Error(message), { code: 'EIO' });
+  };
+  const failingHeldRead = async (file, ...rest) =>
+    String(file).includes('.effective-flow-release-')
+      ? failing('read failed')()
+      : readFile(file, ...rest);
+
+  // The first taken path's content read fails: it is put back and nothing is cleared away.
+  const first = restoreUnit(t);
+  const readFailed = await refusal(
+    first.run({ tracked: [], staged: [], dirty: ['new/x.txt', 'new/y.txt'] }, () => true, {
+      fs: { readFile: failingHeldRead },
+    }),
+  );
+  assert.equal(readFailed.code, 'WRITE_FAILED');
+  assert.match(readFailed.message, /read failed/);
+  assert.deepEqual(readFailed.envelopeDetails, { restored: [], unstaged: [] });
+  assert.equal(readFileSync(join(first.root, 'new/y.txt'), 'utf8'), 'y residual\n');
+  assert.equal(readFileSync(join(first.root, 'new/x.txt'), 'utf8'), 'x residual\n');
+  assert.deepEqual(first.quarantined(), [], 'the put-back file left the quarantine');
+
+  // The same failure with the put-back refused: the bytes stay in the kept quarantine.
+  const stuck = restoreUnit(t);
+  const keptFailed = await refusal(
+    stuck.run({ tracked: [], staged: [], dirty: ['new/x.txt', 'new/y.txt'] }, () => true, {
+      fs: {
+        readFile: failingHeldRead,
+        link: failing('link failed'),
+      },
+    }),
+  );
+  assert.equal(keptFailed.code, 'WRITE_FAILED');
+  assert.match(keptFailed.message, /read failed/);
+  assert.match(keptFailed.message, /the content of new\/y\.txt is kept at /);
+  assert.match(keptFailed.message, /the quarantine .* is kept/);
+  assert.deepEqual(stuck.quarantined(), ['y residual\n']);
+
+  // A later path's blob write fails after an earlier path was preserved: the earlier one is
+  // anchored, the later one's bytes are put back, or kept in the quarantine when that fails.
+  for (const putBack of [true, false]) {
+    const later = restoreUnit(t);
+    let writes = 0;
+    const failed = await refusal(
+      later.run({ tracked: [], staged: [], dirty: ['new/x.txt', 'new/y.txt'] }, () => true, {
+        git: (args) => {
+          if (!args.includes('hash-object')) return undefined;
+          writes += 1;
+          return writes === 2 ? { status: 1, stdout: '', stderr: 'hash-object failed' } : undefined;
+        },
+        ...(putBack ? {} : { fs: { link: failing('link failed') } }),
+      }),
+    );
+    assert.equal(failed.code, 'GIT_FAILED');
+    assert.match(failed.message, /git hash-object failed: hash-object failed/);
+    assert.deepEqual(failed.envelopeDetails, { restored: ['new/y.txt'], unstaged: [] });
+    assert.deepEqual(later.preserved('new/y.txt'), ['y residual'], 'the earlier path is anchored');
+    assert.equal(existsSync(join(later.root, 'new/y.txt')), false);
+    if (putBack) {
+      assert.equal(readFileSync(join(later.root, 'new/x.txt'), 'utf8'), 'x residual\n');
+      assert.deepEqual(later.quarantined(), []);
+    } else {
+      assert.match(failed.message, /the content of new\/x\.txt is kept at /);
+      assert.match(failed.message, /the quarantine .* is kept/);
+      assert.ok(later.quarantined().includes('x residual\n'), 'the failing bytes are kept');
+    }
+  }
 });
 
 // Invariant (locked index, per path): from the snapshot to the last discard the worktree's index
