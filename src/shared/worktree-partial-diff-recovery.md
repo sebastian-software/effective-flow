@@ -72,15 +72,16 @@ proofs it left open in `unevaluated`, and a record of another repository is `rep
 appends a recovered tip to the ledger first, then writes the record; an entry whose record write
 then fails is the ledger's own commit on the next resume, which recovers nothing. The ledger route
 re-checks the source, then each path before discarding it: first its selected source entry with the
-source `HEAD`, then, as the last read immediately before the discard, its index entry, any entry
-staged at a parent of a tracked path or below it, and its working tree. It restores exactly the
-dirty residual paths to `HEAD`, removing a residual file `HEAD` does not hold, and proves the
-worktree clean; a restore that stops part-way names the paths already restored, and a retry
-releases the rest. A tracked path whose restore would delete a file outside the residual, such as
-an ignored file in a directory that replaced it or a file standing at one of its parents, stops the
-release with `UNSAFE_TARGET` before that path is discarded, on every retry too. The branch and its
-commits stay. A released record whose worktree is fully gone stays removable (removal condition
-exception above).
+source `HEAD`, then, with no Git read between it and the discard, its index entry, any entry staged
+at a parent of a tracked path or below it, and its working tree. It restores exactly the dirty
+residual paths to `HEAD`, removing a residual file `HEAD` does not hold, and proves the worktree
+clean; a restore that stops part-way names the paths already restored, and a retry releases the
+rest. A tracked path whose restore would delete a file outside the residual, such as an ignored file
+in a directory that replaced it or a file standing at one of its parents, stops the release with
+`UNSAFE_TARGET` before that path is discarded, on every retry too. That check runs before the first
+discard and again right before the path's own restore, after its last Git read, so a file added
+there during those reads is never deleted. The branch and its commits stay. A released record whose
+worktree is fully gone stays removable (removal condition exception above).
 
 Every Git call these operations make inside the recorded worktree or the selection's source root
 follows the proof that its common directory is this repository's, with `core.fsmonitor=false`.

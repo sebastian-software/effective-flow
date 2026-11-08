@@ -2312,6 +2312,52 @@ test('release ledger route: an ignored file below a directory replacing a delete
   assert.equal(status(worktree), '');
 });
 
+// Invariant (release restore, unproven content after the delivery re-check): the check that a
+// tracked path's restore deletes nothing unproven runs after that path's delivery re-check, right
+// before `git restore`. An ignored file added below an empty directory standing at deleted tracked
+// `gone.txt` while its delivery re-check runs its Git reads (where the directory counts as the
+// tombstone) stops the release with UNSAFE_TARGET before `gone.txt` is discarded; the file, the
+// record and the ledger stay unchanged.
+test('release ledger route: a file added below a directory at a deleted tracked path during its delivery re-check survives', async (t) => {
+  const fixture = await delivery(t, { deleted: ['gone.txt'] });
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt'], ['b.txt', 'gone.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  const worktree = fixture.worktree.worktreePath;
+  write(fixture.root, '.git/info/exclude', '*.local\n');
+  mkdirSync(join(worktree, 'gone.txt'));
+  const ledger = readFileSync(ledgerFile(fixture), 'utf8');
+  let armed = false;
+  let added = false;
+  const failed = expectError(
+    await call('worktree transition', releaseInput(fixture), {
+      onPhase: (name, detail) => {
+        if (name === 'releaseRecheck' && detail.path === 'gone.txt') armed = true;
+      },
+      // The delivery re-check's first Git read below the path's top directory (`diff-index`).
+      runner: async (request) => {
+        if (armed && !added && request.args.includes('diff-index')) {
+          added = true;
+          write(worktree, 'gone.txt/late.local', 'late\n');
+        }
+        return processRunner(request);
+      },
+    }),
+    'UNSAFE_TARGET',
+  );
+  assert.equal(added, true, 'the file is added during the delivery re-check');
+  assert.match(
+    failed.message,
+    /restoring the tracked residual path gone\.txt would delete gone\.txt\/late\.local/,
+  );
+  assert.match(failed.message, /already restored: b\.txt; already unstaged: none;/);
+  assert.equal(readFileSync(join(worktree, 'gone.txt', 'late.local'), 'utf8'), 'late\n');
+  assert.equal(readRecord(fixture.root).status, 'failed', 'the record is unchanged');
+  assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), ledger);
+});
+
 // Invariant (release restore, staged parent or descendant): restoring a tracked residual path
 // never drops an index entry at one of its parents or below it. HEAD holds none there, the
 // residual's own are unstaged first, and `git restore` would remove such an entry along with the
@@ -2471,8 +2517,9 @@ test("release ledger route: a change made during a path's source re-check is nev
 // Invariant (restore, unproven content): before the first discard, a tracked residual path whose
 // restore would delete a file no residual path names (one below a directory standing at the path,
 // or a file standing at a parent) refuses with UNSAFE_TARGET and nothing touched; a residual file
-// absent from HEAD there is proven and removed first. Right before each tracked restore nothing
-// counts as proven, so a file added there after the first check stops that restore too.
+// absent from HEAD there is proven and removed first. Right before each tracked restore, after its
+// delivery re-check, nothing counts as proven, so a file added there after the first check, during
+// the source or the delivery re-check, stops that restore too.
 test('restoreResidual never deletes a file outside the residual to restore a tracked path', async (t) => {
   const refusal = (promise) =>
     promise.then(
@@ -2540,6 +2587,31 @@ test('restoreResidual never deletes a file outside the residual to restore a tra
   assert.match(stopped.message, /would delete a\.txt\/late\.local/);
   assert.deepEqual(stopped.envelopeDetails, { restored: [], unstaged: [] });
   assert.equal(readFileSync(join(late.root, 'a.txt', 'late.local'), 'utf8'), 'late\n');
+
+  // A file added below the directory while the path's delivery re-check runs (its Git reads, where
+  // the directory still counts as the tombstone) stops that path's own restore too: the check runs
+  // after the delivery re-check, right before `git restore`.
+  const duringRecheck = restoreUnit(t);
+  rmSync(join(duringRecheck.root, 'a.txt'));
+  mkdirSync(join(duringRecheck.root, 'a.txt'));
+  const recheckStopped = await refusal(
+    duringRecheck.run(
+      { tracked: ['a.txt', 'b.txt'], staged: [], dirty: ['a.txt', 'b.txt'] },
+      (path) => {
+        if (path === 'a.txt') write(duringRecheck.root, 'a.txt/late.local', 'late\n');
+        return true;
+      },
+    ),
+  );
+  assert.equal(recheckStopped.code, 'UNSAFE_TARGET');
+  assert.match(recheckStopped.message, /would delete a\.txt\/late\.local/);
+  assert.deepEqual(recheckStopped.envelopeDetails, { restored: [], unstaged: [] });
+  assert.equal(readFileSync(join(duringRecheck.root, 'a.txt', 'late.local'), 'utf8'), 'late\n');
+  assert.deepEqual(
+    duringRecheck.events.filter((event) => event.startsWith('restore')),
+    [],
+    'nothing is restored',
+  );
 });
 
 // Invariant (deferred signal, before the restore): a signal that arrives once the proofs passed
