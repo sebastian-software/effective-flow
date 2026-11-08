@@ -164,7 +164,7 @@ export function ledgerBinding(record) {
 //            Then, after the last lock check, the source is verified once more, each dirty
 //            residual path is re-checked against its source (`verifySourceEndpoint`: the source's
 //            repository, root and HEAD and the manifest entry covering the path) and then, as the
-//            last read immediately before it is discarded, against its descriptor (working tree,
+//            last Git read right before it is discarded, against its descriptor (working tree,
 //            the index entry HEAD's or the descriptor's, and for a tracked path no index entry at
 //            a parent or below it), exactly the dirty residual paths are restored
 //            (`restoreResidual`) and the worktree is proven clean

@@ -688,6 +688,106 @@ test('workingEndpointMatches reads the working file after every Git read', async
   }
 });
 
+// Invariant (source re-check, selected bytes last): for a working rename, `verifySourceManifest`
+// runs every source Git read of the entry (the rename source's index entry and HEAD, the ignore
+// check of the destination, the destination's index entry and HEAD) before it reads the
+// destination's bytes, so the destination deleted or replaced during any of those reads is
+// `selected-state` drift, never passed on an earlier read of it; an unchanged rename stays exact.
+test('verifySourceManifest reads a working rename destination after every source Git read', async (t) => {
+  const { sourceRoot } = createRepository(t);
+  git(sourceRoot, 'config', 'status.renames', 'true');
+  renameSync(join(sourceRoot, 'rename.txt'), join(sourceRoot, 'renamed.txt'));
+  git(sourceRoot, 'add', '--intent-to-add', '--', 'renamed.txt');
+  const manifest = await bind(sourceRoot, [{ path: 'renamed.txt', state: 'working' }]);
+  assert.equal(manifest.entries[0].renameFrom, 'rename.txt');
+  const bytes = readFileSync(join(sourceRoot, 'renamed.txt'));
+  let gitReads = 0;
+  let renameSourceReads = 0;
+  const counting = (call) => {
+    gitReads += 1;
+    if (call.args.includes(':(literal)rename.txt')) renameSourceReads += 1;
+    return processRunner(call);
+  };
+  assert.deepEqual(await verifySourceManifest({ manifest, sourceRoot }, { runner: counting }), {
+    exact: true,
+    drift: [],
+  });
+  assert.ok(
+    renameSourceReads >= 2,
+    `index and HEAD reads of the rename source: ${renameSourceReads}`,
+  );
+  const mutations = {
+    deleted: () => rmSync(join(sourceRoot, 'renamed.txt')),
+    replaced: () => write(sourceRoot, 'renamed.txt', 'replaced during a Git read\n'),
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    for (let read = 1; read <= gitReads; read += 1) {
+      write(sourceRoot, 'renamed.txt', bytes);
+      let seen = 0;
+      const racing = (call) => {
+        seen += 1;
+        if (seen === read) mutate();
+        return processRunner(call);
+      };
+      const verification = await verifySourceManifest({ manifest, sourceRoot }, { runner: racing });
+      assert.equal(verification.exact, false, `${label} during Git read ${read} of ${gitReads}`);
+      assert.deepEqual(
+        verification.drift.map(({ kind, path }) => [kind, path]),
+        [['selected-state', 'renamed.txt']],
+        `${label} during Git read ${read} of ${gitReads}`,
+      );
+    }
+  }
+});
+
+// Invariant (staged source stable across its blob read): a staged entry is read again after
+// `cat-file` returns, so a path restaged while its blob is read is never accepted on the blob the
+// index no longer names: verification reports `selected-state` drift without an actual state and
+// a selection being bound fails closed with SOURCE_DRIFT.
+test('a staged source restaged during its blob read is drift, never an exact source', async (t) => {
+  const { sourceRoot } = createRepository(t);
+  write(sourceRoot, 'partial.txt', 'staged\n');
+  git(sourceRoot, 'add', '--', 'partial.txt');
+  const selection = [{ path: 'partial.txt', state: 'staged' }];
+  const manifest = await bind(sourceRoot, selection);
+  assert.deepEqual(
+    await verifySourceManifest({ manifest, sourceRoot }, { runner: processRunner }),
+    { exact: true, drift: [] },
+  );
+  const restaging = () => {
+    let restaged = false;
+    return (call) => {
+      const result = processRunner(call);
+      if (!restaged && call.args.includes('cat-file')) {
+        restaged = true;
+        write(sourceRoot, 'partial.txt', 'restaged during cat-file\n');
+        git(sourceRoot, 'add', '--', 'partial.txt');
+      }
+      return result;
+    };
+  };
+  const verification = await verifySourceManifest(
+    { manifest, sourceRoot },
+    { runner: restaging() },
+  );
+  assert.equal(verification.exact, false);
+  assert.deepEqual(verification.drift, [
+    {
+      kind: 'selected-state',
+      path: 'partial.txt',
+      expected: manifest.entries[0].selected,
+      actual: null,
+    },
+  ]);
+
+  write(sourceRoot, 'partial.txt', 'staged\n');
+  git(sourceRoot, 'add', '--', 'partial.txt');
+  await assert.rejects(
+    bindSelectionManifest({ sourceRoot, selection }, { runner: restaging() }),
+    (error) => error.code === 'SOURCE_DRIFT',
+  );
+});
+
 // --- Pre-selection upstream status and fast-forward ---
 //
 // These fixtures run with no global or XDG Git configuration, so a developer's global

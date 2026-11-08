@@ -2776,6 +2776,53 @@ test('verifySourceEndpoint covers both endpoints of a rename and nothing else', 
   await assert.rejects(verify('unselected.txt'), { code: 'INVALID_PAYLOAD' });
 });
 
+// Invariant (release, rename destination read last at the source): the per-path source re-check of
+// a residual rename destination reads the destination's source bytes after the source Git reads of
+// the rename source, so a source destination deleted during those reads stops the release with
+// WRITE_FAILED before the delivery destination is discarded, and the selected edits survive in it.
+test('release ledger route: a rename destination deleted at the source during its re-check survives', async (t) => {
+  const content = `${RENAME_BASE}five\n`;
+  const fixture = await delivery(t, {
+    rename: { from: 'old.txt', to: 'new.txt', base: RENAME_BASE, content },
+  });
+  expectOk(
+    await call(
+      'ledger init',
+      initInput(fixture, { groups: [['a.txt'], ['b.txt'], ['new.txt', 'old.txt']] }),
+    ),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  const worktree = fixture.worktree.worktreePath;
+  const record = readFileSync(recordFile(fixture.root), 'utf8');
+  let armed = false;
+  let deleted = false;
+  const onPhase = (name, detail) => {
+    if (name === 'releaseRecheck' && detail.path === 'new.txt') armed = true;
+  };
+  const runner = async (request) => {
+    const result = await processRunner(request);
+    if (armed && !deleted && request.args.includes(':(literal)old.txt')) {
+      deleted = true;
+      rmSync(join(fixture.root, 'new.txt'));
+    }
+    return result;
+  };
+  const failed = expectError(
+    await call('worktree transition', releaseInput(fixture), { onPhase, runner }),
+    'WRITE_FAILED',
+  );
+  assert.equal(deleted, true, 'the source destination was deleted during a rename-source read');
+  assert.ok(
+    failed.message.includes(
+      'the source of the residual path new.txt changed after its proof or cannot be read',
+    ),
+    failed.message,
+  );
+  assert.equal(readFileSync(join(worktree, 'new.txt'), 'utf8'), content, 'the delivery copy stays');
+  assert.equal(readFileSync(recordFile(fixture.root), 'utf8'), record, 'the record is unchanged');
+});
+
 // Invariant (availability): an unsafe `worktree-runs/ledgers` entry (a symbolic link or a file)
 // does not stop `worktree inspect` or `cleanup plan` for any record: it is one finding
 // `ledgerDirectory: {reason: 'unsafe', path}` and no ledger is listed through it. `cleanup apply`

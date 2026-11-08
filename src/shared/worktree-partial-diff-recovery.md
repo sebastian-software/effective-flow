@@ -72,7 +72,9 @@ proofs it left open in `unevaluated`, and a record of another repository is `rep
 appends a recovered tip to the ledger first, then writes the record; an entry whose record write
 then fails is the ledger's own commit on the next resume, which recovers nothing. The ledger route
 re-checks the source, then each path before discarding it: first its selected source entry with the
-source `HEAD`, then, with no Git read between it and the discard, its index entry, any entry staged
+source `HEAD`, the entry's selected bytes read after every other source Git read for it (a rename
+source included) and a staged entry accepted only while its index entry stays the same across its
+blob read, then, with no Git read between it and the discard, its index entry, any entry staged
 at a parent of a tracked path or below it, and its working tree. It restores exactly the dirty
 residual paths to `HEAD`, removing a residual file `HEAD` does not hold, and proves the worktree
 clean; a restore that stops part-way names the paths already restored, and a retry releases the

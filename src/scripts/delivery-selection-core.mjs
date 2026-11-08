@@ -537,16 +537,35 @@ function sameDescriptor(left, right) {
   return left.digest === right.digest;
 }
 
-async function selectedState(root, repoPath, origin, runner) {
+// One read of the `origin` state of `repoPath` at `root`, as `{state, stable}`. A working state's
+// Git reads (index entry, HEAD) run before its working file is read. A staged state is the index
+// entry's blob, and the entry is read again after `cat-file` returns: `stable` is false when it
+// changed in between (a restage), since the bytes are then those of a blob the index no longer
+// names.
+async function readSelectedState(root, repoPath, origin, runner) {
   const index = await indexState(root, repoPath, runner);
   if (origin === 'staged') {
-    return {
-      ...index,
-      bytes: await blobBytes(root, index.oid, runner),
-    };
+    const bytes = await blobBytes(root, index.oid, runner);
+    const after = await indexState(root, repoPath, runner);
+    return { state: { ...index, bytes }, stable: statesEqual(index, after) };
   }
   const head = await treeState(root, 'HEAD', repoPath, runner);
-  return await workingState(root, repoPath, index.oid === null ? head : index);
+  return {
+    state: await workingState(root, repoPath, index.oid === null ? head : index),
+    stable: true,
+  };
+}
+
+// `readSelectedState`'s state; a staged entry restaged while its blob was read fails closed with
+// SOURCE_DRIFT, so selection and transfer never bind or apply a blob the index no longer names.
+async function selectedState(root, repoPath, origin, runner) {
+  const { state, stable } = await readSelectedState(root, repoPath, origin, runner);
+  if (!stable) {
+    fail('SOURCE_DRIFT', 'staged source entry changed while its blob was read', {
+      path: repoPath,
+    });
+  }
+  return state;
 }
 
 function normalizeSelection(value) {
@@ -806,8 +825,9 @@ export async function verifySourceManifest(input, options = {}) {
 
 // `verifySourceManifest` restricted to the manifest entry covering the endpoint `path` (the entry
 // at it or renamed from it), beside the source's repository, root and HEAD, with the same `{exact,
-// drift}`. A path that is no manifest endpoint is INVALID_PAYLOAD. Read-only; the release re-checks
-// the source of every residual path with it immediately before discarding the path.
+// drift}` and read order (see `verifySourceEntries`). A path that is no manifest endpoint is
+// INVALID_PAYLOAD. Read-only; the release re-checks the source of every residual path with it
+// immediately before its delivery re-check and the discard.
 export async function verifySourceEndpoint(input, options = {}) {
   requireObject(input);
   const manifest = validateSelectionManifest(input.manifest);
@@ -822,6 +842,12 @@ export async function verifySourceEndpoint(input, options = {}) {
 }
 
 // The `{exact, drift}` of the source's identity and of `entries` (manifest entries) at the source.
+// Per entry, the rename source (which must be a tombstone) and the ignore check run first and the
+// entry's own selected state is read last, so no source Git read for the entry follows the read of
+// the bytes it compares: a selected file deleted or replaced during the earlier reads is drift,
+// never passed on an earlier read. A staged state restaged while its blob was read (`stable` false
+// in `readSelectedState`) is drift too (`selected-state` with `actual: null`, or `rename-source`),
+// never a blob the index no longer names.
 async function verifySourceEntries(manifest, entries, sourceRootInput, runner) {
   const sourceRoot = normalizeAbsolute(sourceRootInput ?? manifest.source.root, 'sourceRoot');
   const current = await repositoryContext(sourceRoot, runner);
@@ -836,26 +862,27 @@ async function verifySourceEntries(manifest, entries, sourceRootInput, runner) {
     drift.push({ kind: 'head', expected: manifest.source.headOid, actual: current.headOid });
   }
   for (const entry of entries) {
-    await checkIgnored(sourceRoot, entry.path, runner);
-    const refreshed = await refreshSelectedSnapshot(entry, sourceRoot, runner);
-    if (!sameDescriptor(refreshed.descriptor, entry.selected)) {
-      drift.push({
-        kind: 'selected-state',
-        path: entry.path,
-        expected: entry.selected,
-        actual: refreshed.descriptor,
-      });
-    }
     if (entry.renameFrom !== null) {
-      const prior = await selectedState(
+      const prior = await readSelectedState(
         sourceRoot,
         entry.renameFrom,
         entry.selectionOrigin,
         runner,
       );
-      if (prior.mode !== null) {
+      if (!prior.stable || prior.state.mode !== null) {
         drift.push({ kind: 'rename-source', path: entry.renameFrom, expected: 'tombstone' });
       }
+    }
+    await checkIgnored(sourceRoot, entry.path, runner);
+    const refreshed = await readSelectedState(
+      sourceRoot,
+      entry.path,
+      entry.selectionOrigin,
+      runner,
+    );
+    const actual = refreshed.stable ? selectedDescriptor(refreshed.state) : null;
+    if (actual === null || !sameDescriptor(actual, entry.selected)) {
+      drift.push({ kind: 'selected-state', path: entry.path, expected: entry.selected, actual });
     }
   }
   return { exact: drift.length === 0, drift };
@@ -1545,8 +1572,8 @@ async function indexHoldsParentOrDescendant(root, repoPath, runner) {
 // path HEAD tracks, the index must also hold no entry at a parent of the path or below it:
 // restoring the path would drop it. Every Git read runs first and the working file is read last,
 // so an edit made during the Git reads is seen, not passed over by an earlier working-tree read.
-// Read-only; the release re-checks every residual path with it as the last read before discarding
-// it, after unstaging the residual's own such entries.
+// Read-only; the release re-checks every residual path with it as the last Git read before
+// discarding it, after unstaging the residual's own such entries.
 export async function workingEndpointMatches(root, endpoint, options = {}) {
   const [descriptor] = requireEndpointDescriptors([endpoint]);
   const head = await treeState(root, 'HEAD', descriptor.path, options.runner);
