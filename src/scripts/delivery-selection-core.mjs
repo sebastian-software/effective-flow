@@ -827,7 +827,7 @@ export async function verifySourceManifest(input, options = {}) {
 // at it or renamed from it), beside the source's repository, root and HEAD, with the same `{exact,
 // drift}` and read order (see `verifySourceEntries`). A path that is no manifest endpoint is
 // INVALID_PAYLOAD. Read-only; the release re-checks the source of every residual path with it
-// immediately before its delivery re-check and the discard.
+// immediately before it takes that path's content.
 export async function verifySourceEndpoint(input, options = {}) {
   requireObject(input);
   const manifest = validateSelectionManifest(input.manifest);
@@ -1542,51 +1542,6 @@ function holdsDescriptor(actual, endpoint) {
 function indexMatchesDescriptor(index, descriptor) {
   if (descriptor.kind === 'tombstone') return index.oid === null;
   return index.oid === descriptor.oid && index.mode === descriptor.mode;
-}
-
-// Whether the index at `root` holds an entry at a parent of `repoPath`, a path HEAD tracks as a
-// file, or below it. HEAD holds none there, so `diff-index` against HEAD below the path's first
-// component lists every such entry without listing the unchanged subtree.
-async function indexHoldsParentOrDescendant(root, repoPath, runner) {
-  const parts = repoPath.split('/');
-  const parents = new Set(parts.slice(1).map((_, depth) => parts.slice(0, depth + 1).join('/')));
-  const result = await git(runner, root, [
-    'diff-index',
-    '--cached',
-    '--no-renames',
-    '--name-only',
-    '-z',
-    'HEAD',
-    '--',
-    literalPathspec(parts[0]),
-  ]);
-  return asText(result.stdout)
-    .split('\0')
-    .some((changed) => parents.has(changed) || changed.startsWith(`${repoPath}/`));
-}
-
-// Whether the delivery checkout at `root` still holds the descriptor of `endpoint` (one entry of
-// `inspectResidual`'s `endpoints`): the working tree its kind, mode and, for a blob, the SHA-256
-// of its bytes, and the index entry HEAD's state or the descriptor's blob and mode (the `index`
-// rule of `inspectResidual`), so no staged content the proofs did not cover is discarded. For a
-// path HEAD tracks, the index must also hold no entry at a parent of the path or below it:
-// restoring the path would drop it. Every Git read runs first and the working file is read last,
-// so an edit made during the Git reads is seen, not passed over by an earlier working-tree read.
-// Read-only; the release re-checks every residual path with it as the last Git read before
-// discarding it, after unstaging the residual's own such entries.
-export async function workingEndpointMatches(root, endpoint, options = {}) {
-  const [descriptor] = requireEndpointDescriptors([endpoint]);
-  const head = await treeState(root, 'HEAD', descriptor.path, options.runner);
-  const entry = await indexState(root, descriptor.path, options.runner);
-  if (!statesEqual(entry, head) && !indexMatchesDescriptor(entry, descriptor)) return false;
-  if (
-    head.oid !== null &&
-    (await indexHoldsParentOrDescendant(root, descriptor.path, options.runner))
-  ) {
-    return false;
-  }
-  const actual = await workingState(root, descriptor.path, head, { directoryMeansAbsent: true });
-  return holdsDescriptor(selectedDescriptor(actual), descriptor);
 }
 
 // Compares the delivery checkout with the descriptors of `endpoints` (the uncommitted residual of a

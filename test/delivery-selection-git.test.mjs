@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
 import {
   chmodSync,
   existsSync,
@@ -31,7 +30,6 @@ import {
   UPSTREAM_FETCH_TIMEOUT_MS,
   upstreamStatus,
   verifySourceManifest,
-  workingEndpointMatches,
 } from '../src/scripts/delivery-selection-core.mjs';
 
 const GIT_ENV = {
@@ -648,44 +646,6 @@ test('mixed already-applied file-to-directory selection reconciles after an acti
   );
   assert.equal(reconciled.exact, true);
   assert.deepEqual(sourceSnapshot(sourceRoot), sourceBefore);
-});
-
-// Invariant (release re-check, working file last): `workingEndpointMatches` runs every Git read
-// (HEAD, the index entry, an index entry at a parent or below) before it reads the working file, so
-// a working-tree edit made during any of those reads is seen and the endpoint no longer matches,
-// instead of passing on an earlier read of the file; an unchanged endpoint still matches.
-test('workingEndpointMatches reads the working file after every Git read', async (t) => {
-  const { deliveryRoot } = createRepository(t);
-  const bytes = Buffer.from('residual bytes\n');
-  write(deliveryRoot, 'working.txt', bytes);
-  const endpoint = {
-    path: 'working.txt',
-    kind: 'blob',
-    mode: '100644',
-    digest: createHash('sha256').update(bytes).digest('hex'),
-    oid: git(deliveryRoot, 'hash-object', '--', 'working.txt'),
-  };
-  let gitReads = 0;
-  const counting = (call) => {
-    gitReads += 1;
-    return processRunner(call);
-  };
-  assert.equal(await workingEndpointMatches(deliveryRoot, endpoint, { runner: counting }), true);
-  assert.ok(gitReads >= 3, `HEAD, index and parent reads run through the runner: ${gitReads}`);
-  for (let read = 1; read <= gitReads; read += 1) {
-    write(deliveryRoot, 'working.txt', bytes);
-    let seen = 0;
-    const editing = (call) => {
-      seen += 1;
-      if (seen === read) write(deliveryRoot, 'working.txt', 'edited during a Git read\n');
-      return processRunner(call);
-    };
-    assert.equal(
-      await workingEndpointMatches(deliveryRoot, endpoint, { runner: editing }),
-      false,
-      `an edit during Git read ${read} of ${gitReads} is seen`,
-    );
-  }
 });
 
 // Invariant (source re-check, selected bytes last): for a working rename, `verifySourceManifest`

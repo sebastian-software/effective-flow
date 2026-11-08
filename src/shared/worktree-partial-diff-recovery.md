@@ -70,20 +70,38 @@ Both replace the session-ownership check by their proofs, run under the record l
 ledger's immutable part never change. A refusal writes nothing; a failed prerequisite lists the
 proofs it left open in `unevaluated`, and a record of another repository is `repository`. The resume
 appends a recovered tip to the ledger first, then writes the record; an entry whose record write
-then fails is the ledger's own commit on the next resume, which recovers nothing. The ledger route
-re-checks the source, then each path before discarding it: first its selected source entry with the
-source `HEAD`, the entry's selected bytes read after every other source Git read for it (a rename
-source included) and a staged entry accepted only while its index entry stays the same across its
-blob read, then, with no Git read between it and the discard, its index entry, any entry staged
-at a parent of a tracked path or below it, and its working tree. It restores exactly the dirty
-residual paths to `HEAD`, removing a residual file `HEAD` does not hold, and proves the worktree
-clean; a restore that stops part-way names the paths already restored, and a retry releases the
-rest. A tracked path whose restore would delete a file outside the residual, such as an ignored file
-in a directory that replaced it or a file standing at one of its parents, stops the release with
-`UNSAFE_TARGET` before that path is discarded, on every retry too. That check runs before the first
-discard and again right before the path's own restore, after its last Git read, so a file added
-there during those reads is never deleted. The branch and its commits stay. A released record whose
-worktree is fully gone stays removable (removal condition exception above).
+then fails is the ledger's own commit on the next resume, which recovers nothing.
+
+Both write the worktree's index only while holding its `index.lock`, Git's own lock, so every
+other Git command that would change that index fails meanwhile; a lock another process holds
+refuses with `WRITE_FAILED` and nothing changed. Every index read and write goes to one private
+snapshot taken under the lock, which replaces the index at the end. A resume that found the next
+group staged (`hookStaged`) unstages exactly that group this way, only while the snapshot still
+stages exactly that group: an entry staged since the proof, beside it or at a parent of a staged
+deletion, refuses with `WRITE_FAILED` and the index unchanged. The working tree keeps the group's
+bytes.
+
+The ledger route re-checks the source, then proves the snapshot once: it may differ from `HEAD`
+only at dirty residual paths, each holding its descriptor's entry, so a newer staged entry anywhere,
+at a parent of a residual path or below it included, stops the release before anything is
+discarded. Per path it then re-checks the selected source entry with the source `HEAD` (the
+entry's selected bytes read after every other source Git read for it, a rename source included, and
+a staged entry accepted only while its index entry stays the same across its blob read), moves the
+path's file into a private quarantine directory in the worktree and proves it there against its
+descriptor, so what is proven is what left the worktree; a changed file is put back and stops the
+release. The proven bytes go to the object database, and every discarded file is kept as one tree
+at `refs/effective-flow/released/<RECORD_ID>/<tree>` before the quarantine is cleared, so a source
+changed after its check never costs the only copy; the ref stays until the user deletes it. A path
+`HEAD` tracks then gets `HEAD`'s entry and file through `checkout-index` without `--force`, which
+never replaces what stands at the path; a residual file `HEAD` does not hold loses its entry and
+file. The worktree is then proven clean. A restore that stops part-way keeps what it took, writes
+the index of what it did and names the paths already restored, and a retry releases the rest. A
+tracked path whose restore would delete a file outside the residual, such as an ignored file in a
+directory that replaced it or a file standing at one of its parents, stops the release with
+`UNSAFE_TARGET` before that path is discarded, on every retry too: the check runs before the first
+discard and again right before the path's file is taken, and such a directory goes only through
+`rmdir`, so a file added below it meanwhile is never deleted. The branch and its commits stay. A
+released record whose worktree is fully gone stays removable (removal condition exception above).
 
 Every Git call these operations make inside the recorded worktree or the selection's source root
 follows the proof that its common directory is this repository's, with `core.fsmonitor=false`.
@@ -134,8 +152,8 @@ resolved visibility (`config-resolve` `standard` or `hidden`) with `standard` as
   (`null` while open), is canonical, `committed` and `remainingGroups` are views of it, and
   `selection` lists each manifest entry's `path`, `selectionOrigin` and `renameFrom`. With
   `hookStaged`, `hookStagedEntries` lists each path of `remainingGroups[0]` with the index `mode`
-  and blob `oid` the resume proved staged (both `null` for a staged deletion); otherwise it is
-  empty. No file content or digest.
+  and blob `oid` the resume proved staged and then unstaged (both `null` for a staged deletion);
+  otherwise it is empty. No file content or digest.
 - **Release** returns `release` `{route, restored}`.
 
 `INTERRUPTED` after the resume's recovered-tip append and before its record write carries

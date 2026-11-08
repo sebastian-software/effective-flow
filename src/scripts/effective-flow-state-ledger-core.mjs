@@ -33,7 +33,22 @@
 // Everything but `commits` is immutable after `ledger init`; `ledger append` only adds one entry
 // to `commits`. The ledger holds no file content, credential or session token.
 
-import { readdir as fsReaddir } from 'node:fs/promises';
+import { createHash, randomBytes } from 'node:crypto';
+import {
+  link as fsLink,
+  lstat as fsLstat,
+  mkdir as fsMkdir,
+  open as fsOpen,
+  readFile as fsReadFile,
+  readdir as fsReaddir,
+  readlink as fsReadlink,
+  rename as fsRename,
+  rmdir as fsRmdir,
+  symlink as fsSymlink,
+  unlink as fsUnlink,
+  utimes as fsUtimes,
+  writeFile as fsWriteFile,
+} from 'node:fs/promises';
 import path from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { validateLiteralPath, validateSelectionManifest } from './delivery-selection-core.mjs';
@@ -530,8 +545,10 @@ function pathspecInput(paths) {
   return Buffer.from(paths.map((repoPath) => `${repoPath}\0`).join(''), 'utf8');
 }
 
-async function runOrFail(git, args, stdin) {
-  const result = await git(args, stdin === undefined ? {} : { stdin });
+// Runs one Git call through `git(args, {stdin, indexFile})` and fails with GIT_FAILED unless it
+// succeeds. `indexFile` names a private index the call reads and writes instead of the worktree's.
+async function runOrFail(git, args, options = {}) {
+  const result = await git(args, options);
   if (!gitOk(result)) {
     const command = args.find((arg) => !arg.startsWith('-'));
     fail(
@@ -542,35 +559,166 @@ async function runOrFail(git, args, stdin) {
   return result;
 }
 
-// Removes one residual file absent from HEAD below `root` through `fs` (`lstat`, `unlink`), never
-// through a symbolic-link parent and never a directory; an already missing path is left alone.
-// Returns whether it was removed.
-async function removeResidualFile(fs, root, repoPath) {
+function outputText(result) {
+  return asBuffer(result.stdout).toString('utf8').replace(/\n$/, '');
+}
+
+// The filesystem calls of the restore and the unstage; a caller's `fs` overrides any of them.
+const NODE_FS = Object.freeze({
+  link: fsLink,
+  lstat: fsLstat,
+  mkdir: fsMkdir,
+  open: fsOpen,
+  readFile: fsReadFile,
+  readdir: fsReaddir,
+  readlink: fsReadlink,
+  rename: fsRename,
+  rmdir: fsRmdir,
+  symlink: fsSymlink,
+  unlink: fsUnlink,
+  utimes: fsUtimes,
+  writeFile: fsWriteFile,
+});
+
+const RESTORE_STAGED = Object.freeze([
+  '--literal-pathspecs',
+  'restore',
+  '--source=HEAD',
+  '--staged',
+  '--pathspec-from-file=-',
+  '--pathspec-file-nul',
+]);
+const RM_CACHED = Object.freeze([
+  '--literal-pathspecs',
+  'rm',
+  '--cached',
+  '-q',
+  '--ignore-unmatch',
+  '--pathspec-from-file=-',
+  '--pathspec-file-nul',
+]);
+
+// The prefix of the refs that keep what a release discarded: one tree per restore, at
+// `<prefix>/<RECORD_ID>/<tree OID>`.
+export const RELEASE_PRESERVE_REF_PREFIX = 'refs/effective-flow/released';
+
+// Runs `fn` while the index of the worktree `git` runs in is locked by Git's own protocol: its
+// `index.lock`, created exclusively, makes every Git process that would write this index fail
+// until it is gone, so the snapshot `fn` works on cannot change underneath it. `fn({indexFile,
+// scratch, commit})` reads and writes only `indexFile`, a private copy of the index taken after the
+// lock; `scratch(name)` names a further private file beside it; `commit()` replaces the index with
+// the copy through the lock, once the index still holds the snapshot's bytes (a writer that
+// bypasses the lock fails it, with the index left as it is). Without `commit()` the index stays as
+// it was. The copy starts with the index's own times and the index ends with the copy's, as if Git
+// had written the index in place: Git trusts an entry's stat data only when it is older than the
+// index file, so a later time would hide a same-second edit from the clean check. A lock another
+// process holds is WRITE_FAILED before anything is read. The lock and every private file are
+// removed when `fn` ends.
+async function withLockedIndex(git, io, fn) {
+  const gitDir = outputText(await runOrFail(git, ['rev-parse', '--absolute-git-dir']));
+  if (!path.isAbsolute(gitDir))
+    fail('GIT_FAILED', 'git rev-parse returned no absolute Git directory');
+  const index = path.join(gitDir, 'index');
+  const lock = `${index}.lock`;
+  let handle = null;
+  try {
+    handle = await io.open(lock, 'wx', 0o644);
+  } catch (error) {
+    if (error?.code === 'EEXIST') {
+      fail(
+        'WRITE_FAILED',
+        `the index of the delivery worktree is locked by another Git process (${lock} exists); nothing was changed`,
+      );
+    }
+    throw error;
+  }
+  const token = randomBytes(8).toString('hex');
+  const scratchFiles = [];
+  const scratch = (name) => {
+    const file = `${index}.effective-flow-${token}-${name}`;
+    scratchFiles.push(file);
+    return file;
+  };
+  const indexFile = scratch('index');
+  let committed = false;
+  try {
+    const snapshot = await io.readFile(index);
+    const times = await io.lstat(index);
+    await io.writeFile(indexFile, snapshot, { flag: 'wx', mode: 0o600 });
+    await io.utimes(indexFile, times.atime, times.mtime);
+    const commit = async () => {
+      if (!(await io.readFile(index)).equals(snapshot)) {
+        fail(
+          'WRITE_FAILED',
+          'the index of the delivery worktree changed while it was locked; it was left as it is',
+        );
+      }
+      const written = await io.lstat(indexFile);
+      await handle.writeFile(await io.readFile(indexFile));
+      await handle.utimes(written.atime, written.mtime);
+      await handle.sync();
+      await handle.close();
+      handle = null;
+      await io.rename(lock, index);
+      committed = true;
+    };
+    return await fn({ indexFile, scratch, commit });
+  } finally {
+    if (handle !== null) await handle.close().catch(() => {});
+    if (!committed) await io.unlink(lock).catch(() => {});
+    for (const file of scratchFiles) await io.unlink(file).catch(() => {});
+  }
+}
+
+// `git` bound to the private index `indexFile`.
+function onIndex(git, indexFile) {
+  return (args, options = {}) => git(args, { ...options, indexFile });
+}
+
+// The paths at which the index `git` reads differs from HEAD other than as the dirty residual
+// endpoint at that path allows: an entry outside `dirty`, one that is not its descriptor's blob
+// and mode (or present for a tombstone), and any entry that is no plain staged change (unmerged
+// included). One `diff-index` over the whole index proves the endpoints and every path that
+// collides with them (an entry at a parent of a path or below it) from the same snapshot. Null
+// when Git cannot compare.
+async function indexSnapshotProblems(git, byPath, dirty) {
+  const diff = await git([
+    'diff-index',
+    '--cached',
+    '-r',
+    '-z',
+    '--raw',
+    '--no-renames',
+    '--ignore-submodules=none',
+    'HEAD',
+    '--',
+  ]);
+  const changes = gitOk(diff) ? parseRawDiff(diff.stdout) : null;
+  if (changes === null) return null;
+  return [...changes]
+    .filter(([repoPath, change]) => {
+      const descriptor = dirty.has(repoPath) ? byPath.get(repoPath) : undefined;
+      if (descriptor === undefined || !STAGED_CHANGE_STATUSES.includes(change.status)) return true;
+      if (descriptor.kind === 'tombstone') return change.dstMode !== ABSENT_MODE;
+      return change.dstMode !== descriptor.mode || change.dstOid !== descriptor.oid;
+    })
+    .map(([repoPath]) => repoPath)
+    .sort();
+}
+
+// Whether every parent of `repoPath` below `root` is a real directory: false once one is missing
+// (the path is then absent); a symbolic link or a non-directory parent is UNSAFE_TARGET.
+async function realParents(io, root, repoPath) {
   const parts = repoPath.split('/');
   let current = root;
   for (const part of parts.slice(0, -1)) {
     current = path.join(current, part);
-    let info;
-    try {
-      info = await fs.lstat(current);
-    } catch (error) {
-      if (error?.code === 'ENOENT') return false;
-      throw error;
-    }
+    const info = await lstatOrNull(io, current);
+    if (info === null) return false;
     if (info.isSymbolicLink() || !info.isDirectory()) {
       fail('UNSAFE_TARGET', `${repoPath} has a parent that is not a real directory`);
     }
   }
-  const target = path.join(root, ...parts);
-  let info;
-  try {
-    info = await fs.lstat(target);
-  } catch (error) {
-    if (error?.code === 'ENOENT') return false;
-    throw error;
-  }
-  if (info.isDirectory()) fail('UNSAFE_TARGET', `${repoPath} is a directory`);
-  await fs.unlink(target);
   return true;
 }
 
@@ -578,18 +726,17 @@ async function lstatOrNull(fs, target) {
   try {
     return await fs.lstat(target);
   } catch (error) {
-    if (error?.code === 'ENOENT') return null;
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTDIR') return null;
     throw error;
   }
 }
 
 // Fails with UNSAFE_TARGET when restoring the tracked residual path `repoPath` below `root` would
-// delete content no proof covers. `git restore` replaces a directory standing at the path and a
-// non-directory standing at one of its parents together with everything below them, while the
-// residual proofs count such a directory as the path's tombstone and never see its ignored
-// descendants. A parent or descendant that is not a directory passes only when `proven` holds its
-// repository path; a directory tree holding nothing but directories passes. `fs` provides `lstat`
-// and optionally `readdir`.
+// delete content no proof covers. Checking out HEAD's entry needs a directory standing at the path
+// and a non-directory standing at one of its parents gone, while the residual proofs count such a
+// directory as the path's tombstone and never see its ignored descendants. A parent or descendant
+// that is not a directory passes only when `proven` holds its repository path; a directory tree
+// holding nothing but directories passes. `fs` provides `lstat` and `readdir`.
 async function assertRestoreDeletesNothingUnproven(fs, root, repoPath, proven) {
   const refuse = (occupant) =>
     fail(
@@ -607,11 +754,10 @@ async function assertRestoreDeletesNothingUnproven(fs, root, repoPath, proven) {
   }
   const info = await lstatOrNull(fs, path.join(root, ...parts));
   if (info === null || !info.isDirectory()) return;
-  const readdir = fs.readdir ?? fsReaddir;
   const pending = [repoPath];
   while (pending.length > 0) {
     const directory = pending.pop();
-    for (const name of await readdir(path.join(root, ...directory.split('/')))) {
+    for (const name of await fs.readdir(path.join(root, ...directory.split('/')))) {
       const entry = `${directory}/${name}`;
       const entryInfo = await lstatOrNull(fs, path.join(root, ...entry.split('/')));
       if (entryInfo === null) continue;
@@ -621,8 +767,33 @@ async function assertRestoreDeletesNothingUnproven(fs, root, repoPath, proven) {
   }
 }
 
+// Removes the directory tree standing at the tracked residual path `repoPath` below `root`,
+// deepest first, through `rmdir` alone, which never removes a directory that still holds
+// anything: a file added below it meanwhile stops the restore with UNSAFE_TARGET (naming it, see
+// `assertRestoreDeletesNothingUnproven`) instead of being deleted.
+async function removeEmptyTree(io, root, repoPath) {
+  const remove = async (relative) => {
+    const absolute = path.join(root, ...relative.split('/'));
+    for (const name of await io.readdir(absolute)) {
+      const child = `${relative}/${name}`;
+      if ((await lstatOrNull(io, path.join(absolute, name)))?.isDirectory()) await remove(child);
+    }
+    await io.rmdir(absolute);
+  };
+  try {
+    await remove(repoPath);
+  } catch (error) {
+    if (error?.code !== 'ENOTEMPTY' && error?.code !== 'EEXIST') throw error;
+    await assertRestoreDeletesNothingUnproven(io, root, repoPath, new Set());
+    fail(
+      'UNSAFE_TARGET',
+      `restoring the tracked residual path ${repoPath} would delete content below it; the release stopped before discarding it`,
+    );
+  }
+}
+
 // Removes the directories below `root` that the removal of `repoPath` left empty, deepest first,
-// through `fs.rmdir`; stops at the first directory that is not empty.
+// through `rmdir`; stops at the first directory that is not empty.
 async function removeEmptiedParents(fs, root, repoPath) {
   const parts = repoPath.split('/').slice(0, -1);
   while (parts.length > 0) {
@@ -635,19 +806,92 @@ async function removeEmptiedParents(fs, root, repoPath) {
   }
 }
 
+// The quarantine of one restore: a private directory directly below the worktree `root` (so a
+// rename into it never crosses a file system) that holds every file the restore took from a
+// residual path until its bytes are preserved. `take` moves one file or symbolic link in and
+// returns where it is held; `putBack` returns a held entry to its path without replacing anything
+// that stands there now; `clear` removes the preserved entries and the directory, and `keep`
+// leaves the directory for a held entry that could not be put back or preserved.
+function makeQuarantine(io, root) {
+  const directory = path.join(root, `.effective-flow-release-${randomBytes(8).toString('hex')}`);
+  let created = false;
+  let kept = false;
+  let count = 0;
+  const taken = [];
+  return {
+    directory,
+    async take(target) {
+      if (!created) {
+        await io.mkdir(directory, { mode: 0o700 });
+        created = true;
+      }
+      const held = path.join(directory, String(count));
+      count += 1;
+      await io.rename(target, held);
+      taken.push(held);
+      return held;
+    },
+    async putBack(held, target) {
+      const info = await io.lstat(held);
+      try {
+        if (info.isSymbolicLink()) await io.symlink(await io.readlink(held), target);
+        else if (info.isDirectory()) {
+          if ((await lstatOrNull(io, target)) !== null) throw new Error('occupied');
+          await io.rename(held, target);
+          return true;
+        } else await io.link(held, target);
+      } catch {
+        kept = true;
+        return false;
+      }
+      await io.unlink(held);
+      return true;
+    },
+    keep() {
+      kept = true;
+    },
+    get kept() {
+      return kept;
+    },
+    async clear() {
+      if (kept || !created) return;
+      for (const held of taken)
+        await io.unlink(held).catch((error) => {
+          if (error?.code !== 'ENOENT') throw error;
+        });
+      await io.rmdir(directory);
+    },
+  };
+}
+
+// Anchors the preserved blobs (`entries`, each `{path, mode, oid}`) as one tree, built in the
+// private index `scratchIndex`, at `<refPrefix>/<tree OID>`. Returns the ref.
+async function preserveTree(git, scratchIndex, entries, refPrefix) {
+  const inScratch = onIndex(git, scratchIndex);
+  const info = entries.map((entry) => `${entry.mode} ${entry.oid}\t${entry.path}\0`).join('');
+  await runOrFail(inScratch, ['update-index', '--add', '-z', '--index-info'], {
+    stdin: Buffer.from(info, 'utf8'),
+  });
+  const tree = outputText(await runOrFail(inScratch, ['write-tree']));
+  if (!OID_PATTERN.test(tree)) fail('GIT_FAILED', 'git write-tree returned an invalid object id');
+  const ref = `${refPrefix}/${tree}`;
+  await runOrFail(git, ['update-ref', ref, tree]);
+  return ref;
+}
+
 // The error of a restore that stopped part-way: the code of `error` (WRITE_FAILED for one that is
 // not the helper's), its message, the residual paths this call had already restored and the
-// index entries it had already removed (`git rm --cached`, which precedes the removal of their
-// files), in the message and as `envelopeDetails.restored` and `envelopeDetails.unstaged`. An
-// unstaged path whose file removal had not yet run keeps its file, untracked. The record is still
-// unchanged; a retry of the release counts the restored paths as released (they hold HEAD's state
-// again) and restores the rest.
-function partialRestoreError(error, restored, unstaged) {
+// index entries it had already removed, in the message and as `envelopeDetails.restored` and
+// `envelopeDetails.unstaged`, and where the discarded bytes are kept (`preserved`, the ref, and a
+// quarantine directory that could not be cleared). The record is still unchanged; a retry of the
+// release counts the restored paths as released (they hold HEAD's state again) and restores the
+// rest.
+function partialRestoreError(error, restored, unstaged, notes = []) {
   const code = error instanceof RuntimeStateError ? error.code : 'WRITE_FAILED';
   const list = (paths) => (paths.length > 0 ? [...paths].sort().join(', ') : 'none');
   const wrapped = new StateError(
     code,
-    `${error?.message ?? String(error)}; already restored: ${list(restored)}; already unstaged: ${list(unstaged)}; the record is unchanged`,
+    `${error?.message ?? String(error)}; already restored: ${list(restored)}; already unstaged: ${list(unstaged)}${notes.map((note) => `; ${note}`).join('')}; the record is unchanged`,
     { cause: error },
   );
   wrapped.envelopeDetails = { restored: [...restored].sort(), unstaged: [...unstaged].sort() };
@@ -655,122 +899,243 @@ function partialRestoreError(error, restored, unstaged) {
 }
 
 // Restores exactly the dirty residual paths of `residual` (an `inspectResidual` result whose dirt
-// is proven to be the ledger's residual) in the worktree at `root`: a path HEAD tracks is restored
-// in index and working tree from HEAD; a path absent from HEAD is unstaged when the index holds it
-// and its file removed, with the directories this left empty. Nothing else is touched. `git` runs
-// in that worktree. Before each discard, `sourceRecheck(descriptor)` must confirm that the source
-// still holds the selection covering the path, so the bytes about to be discarded are still there,
-// and then, as the last Git read before the discard, `recheck(descriptor)` that the path still
-// holds its descriptor (`descriptors`, the residual endpoints of the ledger) in working tree and
-// index and, for a tracked path, that the index holds no entry at a parent of it or below it (by
-// then the residual's own are unstaged, so `git restore` would drop a newer one): the source
-// re-check reads Git in another checkout, so a working-tree edit or a newly staged entry made
-// during those reads is seen by the delivery re-check after them, never discarded unseen. A path
-// changed since its proof, or whose source changed or cannot be read, stops the restore with
-// WRITE_FAILED before it is touched. A tracked path whose restore would delete content outside the
-// residual (a directory standing at the path with any file below it, a non-directory parent; see
+// is proven to be the ledger's residual) in the worktree at `root`: a path HEAD tracks gets HEAD's
+// entry in index and working tree; a path absent from HEAD loses its index entry and its file, and
+// the directories this left empty go too. Nothing else is touched. `git(args, {stdin,
+// indexFile})` runs in that worktree.
+//
+// The index is locked for the whole restore (`withLockedIndex`), so no Git process changes it in
+// between, and every index read and write goes to one private snapshot of it, which replaces the
+// index at the end. Before the first discard that snapshot must differ from HEAD only at dirty
+// residual paths, each with its descriptor's entry (`indexSnapshotProblems`): a newer staged entry
+// at any path, a parent of a residual path or below it included, stops the restore with
+// WRITE_FAILED before anything is discarded.
+//
+// Per path, in order (paths absent from HEAD deepest first, then tracked paths): `sourceRecheck`
+// must confirm that the source still holds the selection covering the path; the file or symbolic
+// link at the path is then moved into a private quarantine directory below `root` and proven
+// there to be its descriptor's kind, mode and bytes, so what is proven is exactly what left the
+// worktree. A path changed since its proof is put back and stops the restore with WRITE_FAILED.
+// The proven bytes are written to the object database (`hash-object -w`) before anything else
+// happens to them, and once the loop ends they are anchored as one tree at
+// `<preserveRef>/<tree OID>` before the quarantine is cleared, so every discarded byte stays
+// recoverable whatever happened to the source meanwhile. A tracked path then gets HEAD's index
+// entry and HEAD's file through `checkout-index` without `--force`, which never replaces anything
+// that stands at the path.
+//
+// A tracked path whose restore would delete content outside the residual (a directory standing
+// at the path with any file below it, a non-directory parent; see
 // `assertRestoreDeletesNothingUnproven`) stops it with UNSAFE_TARGET: once before the first
-// discard, where the dirty residual paths absent from HEAD count as proven, and again for that
-// path's own restore, after its delivery re-check and immediately before `git restore`, where
-// nothing does. That check reads the delivery working tree alone, so no Git read runs between the
-// delivery re-check and the discard, and a file added below a directory standing at the path
-// while the delivery re-check runs its Git reads is seen, never deleted unseen. A restore that
-// stops part-way names the paths it already restored and the index entries it already removed
-// (`partialRestoreError`). `fs` provides `lstat`, `unlink`, `rmdir` and optionally `readdir`.
-// Returns the restored paths (sorted).
+// discard, where the dirty residual paths absent from HEAD count as proven, and again right before
+// that path's own discard, where nothing does; the directory itself goes only through `rmdir`,
+// which never deletes a file added below it meanwhile. A restore that stops part-way still
+// preserves what it took and writes the index of what it did, and names the paths it already
+// restored and the index entries it already removed (`partialRestoreError`). `fs` overrides any of
+// NODE_FS. Returns the restored paths (sorted).
 export async function restoreResidual({
   git,
   fs,
   root,
   residual,
   descriptors,
-  recheck,
   sourceRecheck,
+  preserveRef,
 }) {
+  const io = { ...NODE_FS, ...fs };
   const byPath = new Map(descriptors.map((descriptor) => [descriptor.path, descriptor]));
+  const dirty = new Set(residual.dirty);
   const tracked = new Set(residual.tracked);
   const staged = new Set(residual.staged);
   const absent = residual.dirty
     .filter((repoPath) => !tracked.has(repoPath))
     .sort()
     .reverse();
-  const unstage = absent.filter((repoPath) => staged.has(repoPath));
+  const trackedOrder = [...tracked].sort();
   const restored = [];
   const unstaged = [];
-  // The source first and the delivery checkout last: the delivery re-check is the last Git read
-  // before the discard.
-  const confirm = async (repoPath) => {
-    const changed = () =>
-      fail(
-        'WRITE_FAILED',
-        `the residual path ${repoPath} changed after its proof (working tree or index); the release stopped before discarding it`,
-      );
+  const preserved = [];
+  const notes = [];
+  const quarantine = makeQuarantine(io, root);
+  let indexWritten = false;
+  const changed = (repoPath) =>
+    fail(
+      'WRITE_FAILED',
+      `the residual path ${repoPath} changed after its proof (working tree or index); the release stopped before discarding it`,
+    );
+  const confirmSource = async (repoPath) => {
     const descriptor = byPath.get(repoPath);
-    if (!descriptor) changed();
+    if (!descriptor) changed(repoPath);
     if (!(await sourceRecheck(descriptor))) {
       fail(
         'WRITE_FAILED',
         `the source of the residual path ${repoPath} changed after its proof or cannot be read; the release stopped before discarding it`,
       );
     }
-    if (!(await recheck(descriptor))) changed();
+    return descriptor;
   };
-  const trackedOrder = [...tracked].sort();
+  // What stands at `repoPath` against `descriptor`: 'absent' or 'directory' (which only a
+  // tombstone allows; a directory counts as one), else the quarantine path of the file or symbolic
+  // link taken from it, proven and written as a blob.
+  const capture = async (repoPath, descriptor) => {
+    const target = path.join(root, ...repoPath.split('/'));
+    const info = (await realParents(io, root, repoPath)) ? await lstatOrNull(io, target) : null;
+    if (info === null || info.isDirectory()) {
+      if (descriptor.kind !== 'tombstone') changed(repoPath);
+      return info === null ? 'absent' : 'directory';
+    }
+    if (descriptor.kind !== 'blob') changed(repoPath);
+    const held = await quarantine.take(target);
+    const heldInfo = await io.lstat(held);
+    const link = heldInfo.isSymbolicLink();
+    let bytes = null;
+    if (link) bytes = Buffer.from(await io.readlink(held), 'utf8');
+    else if (heldInfo.isFile()) bytes = await io.readFile(held);
+    const mode = link ? '120000' : heldInfo.mode & 0o111 ? '100755' : '100644';
+    if (
+      bytes === null ||
+      mode !== descriptor.mode ||
+      createHash('sha256').update(bytes).digest('hex') !== descriptor.digest
+    ) {
+      if (!(await quarantine.putBack(held, target))) {
+        notes.push(`the changed content of ${repoPath} is kept at ${held}`);
+      }
+      changed(repoPath);
+    }
+    const oid = outputText(
+      await runOrFail(git, ['hash-object', '-w', '--no-filters', '--stdin'], { stdin: bytes }),
+    );
+    if (!OID_PATTERN.test(oid)) fail('GIT_FAILED', 'git hash-object returned an invalid object id');
+    preserved.push({ path: repoPath, mode, oid });
+    return held;
+  };
+  // Runs the discard `step` of a path whose content `held` (a capture result) took; a failing step
+  // puts the taken content back.
+  const discard = async (repoPath, held, step) => {
+    try {
+      await step();
+    } catch (error) {
+      if (held !== 'absent' && held !== 'directory') {
+        if (!(await quarantine.putBack(held, path.join(root, ...repoPath.split('/'))))) {
+          notes.push(`the content of ${repoPath} is kept at ${held}`);
+        }
+      }
+      throw error;
+    }
+  };
   const proven = new Set(absent);
   const nothingProven = new Set();
-  // Each discard is its own call right after its own re-check, never batched after later ones: a
-  // change to an already re-checked path made while a later path is re-checked is never discarded.
   try {
     for (const repoPath of trackedOrder) {
-      await assertRestoreDeletesNothingUnproven(fs, root, repoPath, proven);
+      await assertRestoreDeletesNothingUnproven(io, root, repoPath, proven);
     }
-    for (const repoPath of unstage) {
-      await confirm(repoPath);
-      await runOrFail(
-        git,
-        [
-          '--literal-pathspecs',
-          'rm',
-          '--cached',
-          '-q',
-          '--ignore-unmatch',
-          '--pathspec-from-file=-',
-          '--pathspec-file-nul',
-        ],
-        pathspecInput([repoPath]),
-      );
-      unstaged.push(repoPath);
-    }
-    for (const repoPath of absent) {
-      await confirm(repoPath);
-      if (await removeResidualFile(fs, root, repoPath)) {
-        await removeEmptiedParents(fs, root, repoPath);
+    await withLockedIndex(git, io, async ({ indexFile, scratch, commit }) => {
+      const inIndex = onIndex(git, indexFile);
+      const problems = await indexSnapshotProblems(inIndex, byPath, dirty);
+      if (problems === null) fail('GIT_FAILED', 'git diff-index failed on the locked index');
+      if (problems.length > 0) {
+        fail(
+          'WRITE_FAILED',
+          `the index of the delivery worktree changed after the residual proof at ${reportedPaths(problems).paths.join(', ')}; the release stopped before discarding anything`,
+        );
       }
-      restored.push(repoPath);
-    }
-    for (const repoPath of trackedOrder) {
-      await confirm(repoPath);
-      // A read of the delivery working tree alone, after the delivery re-check's Git reads.
-      await assertRestoreDeletesNothingUnproven(fs, root, repoPath, nothingProven);
-      await runOrFail(
-        git,
-        [
-          '--literal-pathspecs',
-          'restore',
-          '--source=HEAD',
-          '--staged',
-          '--worktree',
-          '--pathspec-from-file=-',
-          '--pathspec-file-nul',
-        ],
-        pathspecInput([repoPath]),
-      );
-      restored.push(repoPath);
-    }
+      let failure = null;
+      try {
+        for (const repoPath of absent) {
+          const descriptor = await confirmSource(repoPath);
+          const held = await capture(repoPath, descriptor);
+          await discard(repoPath, held, async () => {
+            if (staged.has(repoPath)) {
+              await runOrFail(inIndex, RM_CACHED, { stdin: pathspecInput([repoPath]) });
+              unstaged.push(repoPath);
+            }
+          });
+          if (held !== 'absent' && held !== 'directory') {
+            await removeEmptiedParents(io, root, repoPath);
+          }
+          restored.push(repoPath);
+        }
+        for (const repoPath of trackedOrder) {
+          const descriptor = await confirmSource(repoPath);
+          await assertRestoreDeletesNothingUnproven(io, root, repoPath, nothingProven);
+          const held = await capture(repoPath, descriptor);
+          await discard(repoPath, held, async () => {
+            await runOrFail(inIndex, RESTORE_STAGED, { stdin: pathspecInput([repoPath]) });
+            if (held === 'directory') await removeEmptyTree(io, root, repoPath);
+            await runOrFail(inIndex, ['checkout-index', '-u', '-z', '--stdin'], {
+              stdin: pathspecInput([repoPath]),
+            });
+          });
+          restored.push(repoPath);
+        }
+      } catch (error) {
+        failure = error;
+      }
+      // What was taken is preserved and the index written, also after a failure, so the index
+      // matches what the worktree holds and every taken byte stays recoverable.
+      let anchored = preserved.length === 0;
+      try {
+        if (!anchored) {
+          await preserveTree(git, scratch('preserved'), preserved, preserveRef);
+          anchored = true;
+        }
+      } catch (error) {
+        failure ??= error;
+      }
+      try {
+        await commit();
+        indexWritten = true;
+      } catch (error) {
+        failure ??= error;
+      }
+      if (anchored) {
+        try {
+          await quarantine.clear();
+        } catch (error) {
+          quarantine.keep();
+          failure ??= error;
+        }
+      } else quarantine.keep();
+      if (quarantine.kept) notes.push(`the quarantine ${quarantine.directory} is kept`);
+      if (failure) throw failure;
+    });
   } catch (error) {
-    throw partialRestoreError(error, restored, unstaged);
+    throw partialRestoreError(error, restored, indexWritten ? unstaged : [], notes);
   }
   return [...residual.dirty].sort();
+}
+
+// Unstages exactly the hook-staged `group` (a ledger group the resume proved staged by path, blob
+// and mode: `stagedGroupState` matches) in the worktree `git(args, {stdin, indexFile})` runs in,
+// on one locked index snapshot (`withLockedIndex`). The snapshot must still stage exactly that
+// group and nothing else, so an entry staged since the proof (at another path, or at a parent of
+// an endpoint or below it, which restoring the endpoint would drop) refuses with WRITE_FAILED and
+// the index unchanged. Every endpoint then gets HEAD's entry in the copy, which must then hold
+// HEAD's tree, and the copy replaces the index. The working tree is never touched. `fs` overrides
+// any of NODE_FS. Returns the unstaged paths (sorted).
+export async function unstageGroup({ git, fs, group }) {
+  const io = { ...NODE_FS, ...fs };
+  const repoPaths = group.endpoints.map((endpoint) => endpoint.path).sort();
+  await withLockedIndex(git, io, async ({ indexFile, commit }) => {
+    const inIndex = onIndex(git, indexFile);
+    const staged = await stagedGroupState(inIndex, group);
+    if (staged === null) fail('GIT_FAILED', 'git diff-index failed on the locked index');
+    if (staged.clean || !staged.matches) {
+      fail(
+        'WRITE_FAILED',
+        `the index of the delivery worktree no longer stages exactly the next group (staged: ${reportedPaths(staged.paths).paths.join(', ') || 'none'}); nothing was unstaged`,
+      );
+    }
+    await runOrFail(inIndex, RESTORE_STAGED, { stdin: pathspecInput(repoPaths) });
+    const after = await stagedGroupState(inIndex, null);
+    if (after === null || !after.clean) {
+      fail(
+        'GIT_FAILED',
+        'unstaging the hook-staged group left staged entries; nothing was unstaged',
+      );
+    }
+    await commit();
+  });
+  return repoPaths;
 }
 
 // The first MAX_REPORTED_PATHS of `paths` with their count, for a refusal.

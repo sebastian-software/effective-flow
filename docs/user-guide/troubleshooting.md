@@ -211,7 +211,11 @@ example because the visibility is weaker or the branch history differs), to rele
 A release keeps the branch; run `/effective-flow cleanup` afterwards to remove the worktree. A
 failure before the first commit can only be released. If the source checkout or the worktree changed
 and the worktree still holds changes, release is refused too: restore the source checkout or clean
-the worktree by hand, then run `deliver` again. Details: [Resuming or releasing a failed delivery](./worktree-and-delivery.md#resuming-or-releasing-a-failed-delivery).
+the worktree by hand, then run `deliver` again. While a release or resume runs, it holds the delivery
+worktree's Git index lock, so a Git command there that stages content fails with `index.lock: File
+exists`; run it again once `deliver` has finished. A lock left behind by a killed run makes the next
+release or resume refuse with nothing changed: remove that `index.lock` by hand once no Git process
+runs there. Details: [Resuming or releasing a failed delivery](./worktree-and-delivery.md#resuming-or-releasing-a-failed-delivery).
 
 If normal `git worktree remove <path>` fails, the lifecycle remains `cleanup-failed` with the
 reported error. Fix the concrete cause and rerun cleanup; it rechecks ownership, the receipt, Git

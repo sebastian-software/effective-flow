@@ -1631,24 +1631,28 @@ test('end to end: three-way base drift resumes and stays exact', async (t) => {
 });
 
 // Invariant (c): a commit rejected by a hook leaves exactly the first uncommitted group staged;
-// the resume accepts it as `hookStaged`, names the index entry each staged path was proven to hold
-// (`hookStagedEntries`, exactly what `ls-files -s` reports, so the run's unstage guard can tell a
-// blob staged after the adoption from it), the reconcile is exact with it staged, and the group
-// commits and records. Any other staged content refuses, and so does a recovered tip with the next
-// group staged.
+// the resume accepts it as `hookStaged`, unstages exactly that group itself and names the index
+// entry each path was proven to hold (`hookStagedEntries`, exactly what `ls-files -s` reported),
+// the working tree keeps the group's bytes, the reconcile is exact with nothing staged, and the
+// group commits and records. Any other staged content refuses, and so does a recovered tip with
+// the next group staged.
 test('end to end: a hook-rejected staged group resumes; other staged content is refused', async (t) => {
   const fixture = await failedAfterGroupOne(t);
   const worktree = fixture.worktree.worktreePath;
   git(worktree, 'add', '--', 'b.txt');
   rejectedCommit(t, worktree);
   assert.equal(readRecord(fixture.root).status, 'failed', "the record is the failed run's");
+  const [mode, oid] = git(worktree, 'ls-files', '-s', '--', 'b.txt').split(/\s+/);
   const resumed = expectOk(await resume(fixture));
   assert.equal(resumed.resume.hookStaged, true);
   assert.equal(resumed.resume.recovered, null);
-  const [mode, oid] = git(worktree, 'ls-files', '-s', '--', 'b.txt').split(/\s+/);
   assert.deepEqual(resumed.resume.hookStagedEntries, [{ path: 'b.txt', mode, oid }]);
+  assert.equal(git(worktree, 'diff', '--cached', '--name-only'), '', 'the group is unstaged');
+  assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n');
   assert.deepEqual(resumed.resume.remainingGroups, [{ group: 1, paths: ['b.txt'] }]);
-  assert.equal(expectOk(await reconcile(fixture)).exact, true);
+  const reconciled = expectOk(await reconcile(fixture));
+  assert.equal(reconciled.exact, true);
+  assert.deepEqual(reconciled.staged, { paths: [], count: 0 });
   await completeAndRemove(fixture, 'group 2');
 
   // Anything else staged next to the group.
@@ -1673,6 +1677,94 @@ test('end to end: a hook-rejected staged group resumes; other staged content is 
   const both = expectOutcome(await resume(recovered), 'NOT_ELIGIBLE');
   assert.deepEqual(both.proofs, ['index']);
   assertUntouched(recovered, beforeRecovered);
+});
+
+// Invariant (resume unstage on one locked index snapshot): the adoption unstages the hook-staged
+// group on the locked index, and only while that snapshot still stages exactly the group. With
+// the staged deletion of `dir/c.txt` in the group, a newer `dir` file staged after the proof (and
+// removed from disk), which restoring `dir/c.txt` would drop, refuses the adoption with
+// WRITE_FAILED: the newer entry, the record and the ledger stay unchanged. A staging attempted
+// while the adoption holds the index lock is refused by Git, and the adoption unstages the group.
+test('resume adoption: a parent entry staged beside a staged deletion survives the unstage', async (t) => {
+  const staged = async () => {
+    const fixture = await delivery(t, { deleted: ['dir/c.txt'] });
+    expectOk(
+      await call(
+        'ledger init',
+        initInput(fixture, { groups: [['a.txt'], ['b.txt', 'dir/c.txt']] }),
+      ),
+    );
+    expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+    const worktree = fixture.worktree.worktreePath;
+    git(worktree, 'add', '-A', '--', 'b.txt', 'dir/c.txt');
+    await failRecord(fixture);
+    return { fixture, worktree };
+  };
+  const stageDir = (worktree) => {
+    rmSync(join(worktree, 'dir'), { recursive: true, force: true });
+    write(worktree, 'dir', 'newer dir\n');
+    const added = spawnSync('git', ['-C', worktree, 'add', '--', 'dir'], {
+      env: GIT_ENV,
+      encoding: 'utf8',
+    });
+    rmSync(join(worktree, 'dir'));
+    return added;
+  };
+
+  const late = await staged();
+  const ledger = readFileSync(ledgerFile(late.fixture), 'utf8');
+  const record = readFileSync(recordFile(late.fixture.root), 'utf8');
+  let added = null;
+  const failed = expectError(
+    await resume(
+      late.fixture,
+      {},
+      {
+        onPhase: (name) => {
+          if (name === 'resumeProven') added = stageDir(late.worktree);
+        },
+      },
+    ),
+    'WRITE_FAILED',
+  );
+  assert.equal(added?.status, 0, 'the newer entry is staged after the proof');
+  assert.match(failed.message, /no longer stages exactly the next group/);
+  assert.equal(git(late.worktree, 'show', ':dir'), 'newer dir', 'the newer entry survives');
+  assert.equal(readFileSync(recordFile(late.fixture.root), 'utf8'), record);
+  assert.equal(readFileSync(ledgerFile(late.fixture), 'utf8'), ledger);
+
+  const locked = await staged();
+  let refused = null;
+  const resumed = expectOk(
+    await resume(
+      locked.fixture,
+      {},
+      {
+        runner: async (request) => {
+          if (
+            refused === null &&
+            request.args[1] === locked.worktree &&
+            request.args.includes('restore')
+          ) {
+            refused = stageDir(locked.worktree);
+          }
+          return processRunner(request);
+        },
+      },
+    ),
+  );
+  assert.equal(refused?.status, 128, 'Git refuses the staging under the index lock');
+  assert.match(refused.stderr, /index\.lock/);
+  assert.equal(resumed.resume.hookStaged, true);
+  assert.deepEqual(resumed.resume.hookStagedEntries, [
+    { path: 'b.txt', mode: '100644', oid: resumed.resume.hookStagedEntries[0].oid },
+    { path: 'dir/c.txt', mode: null, oid: null },
+  ]);
+  assert.equal(git(locked.worktree, 'diff', '--cached', '--name-only'), '');
+  assert.equal(git(locked.worktree, 'ls-files', '--', 'dir'), 'dir/c.txt');
+  const reconciled = expectOk(await reconcile(locked.fixture));
+  assert.equal(reconciled.exact, true, JSON.stringify(reconciled));
+  assert.deepEqual(reconciled.staged, { paths: [], count: 0 });
 });
 
 // Invariant (d): one unrecorded tip commit with zero ledger entries is recovered and appended,
@@ -2212,14 +2304,13 @@ test('resume-check shares one residual inspection and one source check', async (
 // ledger reconcile reports the staged residual
 
 // Invariant (provable unstaging): `ledger reconcile` reports the staged residual endpoints as
-// `staged` ({paths, count}); a hook-staged group is exact and listed there, and once the caller
-// unstaged exactly that group, `staged` is empty and the reconcile is still exact.
+// `staged` ({paths, count}); a residual group staged exactly is exact and listed there, and once
+// it is unstaged again, `staged` is empty and the reconcile is still exact.
 test('ledger reconcile reports the staged residual so unstaging is provable', async (t) => {
   const fixture = await failedAfterGroupOne(t);
   const worktree = fixture.worktree.worktreePath;
-  git(worktree, 'add', '--', 'b.txt');
-  rejectedCommit(t, worktree);
   expectOk(await resume(fixture));
+  git(worktree, 'add', '--', 'b.txt');
   const staged = expectOk(await reconcile(fixture));
   assert.equal(staged.exact, true, JSON.stringify(staged));
   assert.deepEqual(staged.staged, { paths: ['b.txt'], count: 1 });

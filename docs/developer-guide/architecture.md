@@ -660,8 +660,10 @@ record, the ledger, the commit history (the ledger's commits plus at most one pr
 tip), a clean or exactly-next-group index, the residual worktree content, the source manifest and a
 visibility not weaker than the ledger's; it rewrites only `status`, `reason`, `updatedAt` and
 `sessionId`. A `release: "partial-diff"` transition moves a record that cannot be resumed to
-`cleanup-ready` under a replacement proof set, discarding the proven residual on the ledger route,
-and `cleanup` then removes the worktree and ledger and keeps the branch. The lifecycle helper stays
+`cleanup-ready` under a replacement proof set, discarding the proven residual on the ledger route
+under the worktree's Git index lock while keeping every discarded file under
+`refs/effective-flow/released/<RECORD_ID>/`, and `cleanup` then removes the worktree and ledger and
+keeps the branch. The lifecycle helper stays
 in `effective-flow-state-worktree-core.mjs`; the ledger lives in `effective-flow-state-ledger-core.mjs`
 and the recovery proofs and operations in `effective-flow-state-recovery-core.mjs`, which imports the
 former's internals and is never imported by it ([Build system](build-system.md#runtime-scripts)). The

@@ -59,8 +59,9 @@ options:
 ```
 
 Release only on an explicit answer, with one `worktree transition` per chosen record,
-`release: "partial-diff"` and this run's `SESSION_ID`, and report each result; a refusal changes
-nothing and ends no run. An unanswered question releases nothing.
+`release: "partial-diff"` and this run's `SESSION_ID`, and report each result; a `ledger` release
+also names `refs/effective-flow/released/<RECORD_ID>/`, where it kept every file it discarded. A
+refusal changes nothing and ends no run. An unanswered question releases nothing.
 
 Without a Resume answer, continue step 1.1 with `upstream-status` as a new delivery; every record
 not released stays retained.
@@ -72,7 +73,9 @@ stored status as `from`, this run's `SESSION_ID`, its branch, `workflow` `delive
 visibility. A result that is not `ok` stops the run: report the code, `proofs` and `unevaluated`.
 The record keeps its status; a recovered tip the adoption already appended, reported by
 `INTERRUPTED` with `ledgerAppended: true`, is found recorded by the next resume. `INTERRUPTED` with
-`written: true` left the record `active` for this run: stop as a controlled stop (`aborted`).
+`written: true` left the record `active` for this run: stop as a controlled stop (`aborted`). With
+`resume.hookStaged`, the adoption itself already unstaged exactly `resume.remainingGroups[0]`
+(`resume.hookStagedEntries`), the working tree keeping its bytes; this run never unstages.
 
 From the `resume` result the run continues without asking for the selection again:
 
@@ -86,25 +89,15 @@ From the `resume` result the run continues without asking for the selection agai
      `effective-flow-created`, workflow `deliver`, purpose `partial-diff`, creation OID
      `resume.base.oid` (the record's `creationOid`), setup status `externally managed` (the
      original run finished setup; this run never repeats it), and expected `HEAD` `resume.tip`.
-  4. With `resume.hookStaged`, before validation: unstage exactly the paths of
-     `resume.remainingGroups[0]` in that run-owned worktree, one path at a time in the order of
-     `resume.hookStagedEntries`. Immediately before each path's own unstage, read its index entry
-     with `git -C <delivery root> -c core.fsmonitor=false ls-files -s -z -- ':(literal)<path>'`: it
-     must be exactly one stage-0 entry at that path with the entry's `mode` and `oid`, or nothing
-     when both are `null`. Only then run
-     `git -C <delivery root> -c core.fsmonitor=false restore --staged -- ':(literal)<path>'` for that
-     path alone. A different entry or a failed read is a failure that retains the artifacts: unstage
-     nothing more and report the paths already unstaged.
-     The "never unstage" rule binds `{{SKILL:commit}}`, not this run.
-  5. Step 4.3.
-  6. `ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0;
+  4. Step 4.3.
+  5. `ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0;
      anything else is a failure that retains the artifacts.
-  7. Step 4.5.
-  8. Step 5 from group `resume.next` over `resume.remainingGroups` in order, with `ledger append`
+  6. Step 4.5.
+  7. Step 5 from group `resume.next` over `resume.remainingGroups` in order, with `ledger append`
      after each verified commit.
-  9. Step 6, its committed-handoff evidence covering every group: the ledger's commits and this
+  8. Step 6, its committed-handoff evidence covering every group: the ledger's commits and this
      run's.
-  10. Step 7, naming the resumed record.
+  9. Step 7, naming the resumed record.
 - **From the ledger:** `resume.language` for both languages, `resume.base` for the base, and for
   step 7 the selection from `resume.selection` and the commit list: `resume.groups` with this run's
   commit OIDs filled in (`committed` and `remainingGroups` are views of it).

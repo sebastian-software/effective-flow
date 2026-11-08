@@ -37,12 +37,12 @@ import {
   validateSelectionManifest,
   verifySourceEndpoint,
   verifySourceManifest,
-  workingEndpointMatches,
 } from './delivery-selection-core.mjs';
 import {
   LEDGER_LANGUAGES,
   LEDGER_MAX_BYTES,
   LEDGER_VISIBILITIES,
+  RELEASE_PRESERVE_REF_PREFIX,
   branchHistory,
   commitGroupProblems,
   createLedger,
@@ -60,6 +60,7 @@ import {
   sameImmutablePart,
   serializeLedger,
   stagedGroupState,
+  unstageGroup,
   worstCaseLedgerBytes,
 } from './effective-flow-state-ledger-core.mjs';
 import {
@@ -90,6 +91,18 @@ import {
 
 function gitOk(result) {
   return !result?.error && result?.status === 0;
+}
+
+// The guarded Git of the proven worktree `root` (`guardedGit`) as the ledger core's restore and
+// unstage call it: `git(args, {stdin, indexFile})`, where `indexFile` points the call at a private
+// index through `GIT_INDEX_FILE` instead of the worktree's own.
+function worktreeGit(context, root) {
+  const inWorktree = guardedGit(context, root);
+  return (args, { stdin, indexFile } = {}) =>
+    inWorktree(args, {
+      ...(stdin === undefined ? {} : { stdin }),
+      ...(indexFile === undefined ? {} : { env: { ...context.env, GIT_INDEX_FILE: indexFile } }),
+    });
 }
 
 // Runs one reused selection function; a DeliverySelectionError (the function could not prove or
@@ -161,13 +174,13 @@ export function ledgerBinding(record) {
 //            descriptor or HEAD's state again, as a release that stopped part-way left it),
 //            `index` (each staged residual entry is HEAD's or its descriptor's blob) and `source`
 //            (`verifySourceManifest` is exact, so every discarded byte is still in the source).
-//            Then, after the last lock check, the source is verified once more, each dirty
-//            residual path is re-checked against its source (`verifySourceEndpoint`: the source's
-//            repository, root and HEAD and the manifest entry covering the path) and then, as the
-//            last Git read right before it is discarded, against its descriptor (working tree,
-//            the index entry HEAD's or the descriptor's, and for a tracked path no index entry at
-//            a parent or below it), exactly the dirty residual paths are restored
-//            (`restoreResidual`) and the worktree is proven clean
+//            Then, after the last lock check, the source is verified once more and exactly the
+//            dirty residual paths are restored (`restoreResidual`): under the worktree's locked
+//            index, proven once from that one snapshot, each path re-checked against its source
+//            (`verifySourceEndpoint`: the source's repository, root and HEAD and the manifest entry
+//            covering the path), its content taken into a quarantine and proven there, and every
+//            discarded byte kept as a tree at `refs/effective-flow/released/<RECORD_ID>/<tree>`;
+//            the worktree is then proven clean
 // A dirty worktree without a valid ledger is `residual`, with the exact dirty paths listed.
 // Returns `{route, restored}` or the NOT_ELIGIBLE outcome. A signal seen at the last check before
 // the restore is INTERRUPTED with nothing written and nothing restored; once the restore has
@@ -205,20 +218,17 @@ async function releaseProofs({ context, roots, paths, record, held, signals, dep
   }
   const inWorktree = guardedGit(context, record.worktreePath);
   const restored = await restoreResidual({
-    git: inWorktree,
+    git: worktreeGit(context, record.worktreePath),
     fs: context.fs,
     root: record.worktreePath,
     residual,
     descriptors,
-    // The phase opens each path's re-checks: its source first, its delivery checkout last.
+    // The phase opens each path's source re-check, right before its content is taken.
     sourceRecheck: async (descriptor) => {
       await phase(deps, 'releaseRecheck', { recordId: record.recordId, path: descriptor.path });
       return await sourceEndpointIsExact(ledger.manifest, source, descriptor.path, runner);
     },
-    recheck: async (descriptor) =>
-      (await selectionCall(() =>
-        workingEndpointMatches(record.worktreePath, descriptor, { runner }),
-      )) === true,
+    preserveRef: `${RELEASE_PRESERVE_REF_PREFIX}/${record.recordId}`,
   });
   const status = await inWorktree([
     'status',
@@ -914,9 +924,8 @@ function resumeResidual(inspected, recoveredGroup) {
 // and its commit OID (null while uncommitted), and `selection`, the confirmed selection as the
 // manifest entries' `path`, `selectionOrigin` (`staged` or `working`) and `renameFrom`. With
 // `hookStaged`, `hookStagedEntries` lists the index entry each endpoint of the staged group (the
-// first of `remainingGroups`) was proven to hold, as its `path`, `mode` and blob `oid` (both null
-// for a tombstone, whose path the index lacks), so `deliver` unstages a path only while it still
-// holds that entry; otherwise it is empty.
+// first of `remainingGroups`) was proven to hold and the adoption unstaged, as its `path`, `mode`
+// and blob `oid` (both null for a tombstone, whose path the index lacks); otherwise it is empty.
 function resumeSummary(ledger, evaluation) {
   const progress = ledgerProgress(ledger);
   const stagedGroup = evaluation.hookStaged ? progress.residualGroups[0] : null;
@@ -957,9 +966,14 @@ function resumeSummary(ledger, evaluation) {
 // The proofs and writes of the resume adoption (`adoption: "partial-diff-resume"`), under the
 // record lock `transition` holds. Every proof of RESUME_PROOFS must pass; a refusal is
 // NOT_ELIGIBLE with the failed `proofs` (and `unevaluated` when a failed prerequisite left others
-// open) and writes nothing. On success, a recovered tip is appended to the ledger first, after the
-// re-read ledger proved its immutable part (LEDGER_IMMUTABLE_KEYS) and commits unchanged and the
-// lock still ours (checked again before the rename); `transition` then writes the record, checking
+// open) and writes nothing. On success, a hook-staged next group (`hookStaged`) is unstaged first,
+// after the lock check, on the worktree's locked index (`unstageGroup`: the snapshot must still
+// stage exactly that group, so an entry staged since the proof, at a parent of an endpoint or
+// below it included, refuses with WRITE_FAILED and the index unchanged); the working tree keeps
+// the group's bytes, and the phase `resumeUnstaged` follows. A recovered tip (never beside a
+// staged group) is appended to the ledger, after the re-read ledger proved its immutable part
+// (LEDGER_IMMUTABLE_KEYS) and commits unchanged and the lock still ours (checked again before the
+// rename); `transition` then writes the record, checking
 // the lock again, and rewrites only `status`, `reason`, `updatedAt` and `sessionId`. A recovered
 // entry whose record write then failed is the ledger's own commit on the next resume, which finds
 // the history equal to the ledger and recovers nothing. The phase `resumeLedgerAppended` follows a
@@ -991,6 +1005,17 @@ async function resumeProofs({ context, roots, paths, record, request, held, sign
   await phase(deps, 'resumeProven', { recordId: record.recordId });
   if (signals.signal) return interruptedUnderLock(signals, record.recordId, record.status);
   let ledger = evaluation.ledger;
+  if (evaluation.hookStaged) {
+    if (!(await lockStillOwned(context, paths, held))) {
+      fail('WRITE_FAILED', `the lock of ${paths.record} was lost before the unstage`);
+    }
+    await unstageGroup({
+      git: worktreeGit(context, record.worktreePath),
+      fs: context.fs,
+      group: ledger.groups[evaluation.next],
+    });
+    await phase(deps, 'resumeUnstaged', { recordId: record.recordId });
+  }
   if (evaluation.recovered !== null) {
     const reread = await readLedger(context, roots.cwd, ledgerBinding(record));
     if (

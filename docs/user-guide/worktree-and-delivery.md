@@ -135,9 +135,11 @@ the retained delivery.
   reruns is described in [Deliver](./tools-deliver.md#resuming-or-releasing-a-failed-delivery).
 - **Release.** A record that cannot be resumed can go from `aborted` or `failed` to `cleanup-ready`
   after you confirm it. With a ledger, the remaining changes are discarded from the worktree only
-  when they equal the recorded content and the source still holds it. Without one, the worktree
-  must be clean or already gone; otherwise the exact blocking paths are listed. Release keeps the
-  branch and its commits.
+  when they equal the recorded content and the source still holds it, while Git's index lock of the
+  worktree keeps other Git commands from changing its index, and every discarded file stays as a
+  tree under `refs/effective-flow/released/<RECORD_ID>/` until you delete that ref. Without one, the
+  worktree must be clean or already gone; otherwise the exact blocking paths are listed. Release
+  keeps the branch and its commits.
 - **Cleanup.** `cleanup` then removes the released worktree like any `cleanup-ready` one and deletes
   the ledger before the record. A released record whose worktree is already fully gone, unregistered
   and without a directory, is removed as well; a half-gone worktree stays retained for manual

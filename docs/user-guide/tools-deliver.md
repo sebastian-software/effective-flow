@@ -83,16 +83,18 @@ counts, and a record that another run still holds is reported and left alone.
   first uncommitted one and continues with the pull request and report as usual. Base branch and
   languages come from the recorded progress. A commit that was created but never recorded, for
   example after a helper failure, is accepted once the same proofs hold. A group that a failing commit
-  hook left staged is unstaged in the delivery worktree, each file only while its staged content is
-  still the one the resume proved, and committed again; staged content that changed since then stops
-  the resume and stays staged. If the resume fails again, the record returns to its failed state
-  and can be resumed the same way.
+  hook left staged is unstaged by the resume itself while it holds the worktree's Git index lock,
+  only while the index still stages exactly that group, and committed again; staged content that
+  changed since then, a newer entry beside the group included, stops the resume and stays staged. If
+  the resume fails again, the record returns to its failed state and can be resumed the same way.
 - **Release.** A candidate that cannot be resumed, for example because the visibility is weaker or
   its branch history no longer matches the recorded progress, is listed with the way it can be
   released and, with recorded progress, the exact paths a release discards. A separate **Release**
   question (**Release all listed**, **Select individually** or **Keep all**) asks for explicit
   confirmation; nothing is released otherwise. Releasing a record with recorded progress discards its
-  remaining changes from the worktree only when they provably equal what is still in your checkout;
+  remaining changes from the worktree only when they provably equal what is still in your checkout,
+  and keeps every discarded file as a tree under `refs/effective-flow/released/<RECORD_ID>/`
+  (`git ls-tree -r <ref>` lists it; `git update-ref -d <ref>` drops it once you no longer need it);
   without recorded progress it requires a clean or already vanished worktree. When the source
   checkout or the worktree changed and the worktree still holds changes, release is refused and the
   blocking paths are listed: restore the source checkout or clean the worktree by hand first. The

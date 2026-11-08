@@ -17271,7 +17271,6 @@ test('deliver lazily loads a resume entry that maps the steps of a resumed deliv
     'Step 1.2, with hidden mode when the current visibility or `resume.visibility` is hidden',
     'A fresh delivery execution-location receipt',
     'expected `HEAD` `resume.tip`',
-    "git -C <delivery root> -c core.fsmonitor=false restore --staged -- ':(literal)<path>'",
     'Step 4.3.',
     '`ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0',
     'Step 4.5.',
@@ -17369,25 +17368,53 @@ test('the resume entry resolves visibility first, spares foreign locks and cover
   assert.match(text, /A new failure follows step 5's failure clause/);
 });
 
-// Invariant: a resumed run unstages the hook-staged group one path at a time, each only while its
-// index entry is still the one the adoption proved (`resume.hookStagedEntries`), read immediately
-// before that path's own unstage; any other entry stops the run with the artifacts retained, so a
-// blob staged after the adoption is never unstaged into a clean index the reconcile would accept.
-test('the resume unstages a hook-staged path only while it holds the proven index entry', () => {
+// Invariant: a hook-staged group is unstaged by the adoption itself, on one locked index snapshot
+// that must still stage exactly that group, so the resumed run never unstages anything: a
+// per-path read before its own unstage could not see an entry staged at a parent of a staged
+// deletion, which that unstage would drop. The recovery contract names the lock, the snapshot and
+// the entries the adoption unstaged.
+test('the adoption unstages a hook-staged group and the resumed run never unstages', () => {
   const text = prose(source('src/shared/deliver-partial-diff-resume.md'));
-  ordered(
-    boundedSlice(text, '4. With `resume.hookStaged`', '5. Step 4.3.'),
-    'one path at a time in the order of `resume.hookStagedEntries`',
-    "Immediately before each path's own unstage, read its index entry",
-    "git -C <delivery root> -c core.fsmonitor=false ls-files -s -z -- ':(literal)<path>'",
-    "exactly one stage-0 entry at that path with the entry's `mode` and `oid`, or nothing when both are `null`",
-    "restore --staged -- ':(literal)<path>'` for that path alone",
-    'A different entry or a failed read is a failure that retains the artifacts: unstage nothing more',
-  );
   assert.match(
-    prose(source('src/shared/worktree-partial-diff-recovery.md')),
-    /`hookStagedEntries` lists each path of `remainingGroups\[0\]` with the index `mode` and blob `oid` the resume proved staged/,
-    'the recovery contract names the proven entries the guard compares against',
+    text,
+    /With `resume\.hookStaged`, the adoption itself already unstaged exactly `resume\.remainingGroups\[0\]` \(`resume\.hookStagedEntries`\), the working tree keeping its bytes; this run never unstages/,
+  );
+  assert.doesNotMatch(text, /restore --staged/, 'the resumed run runs no unstage of its own');
+  const recovery = prose(source('src/shared/worktree-partial-diff-recovery.md'));
+  for (const token of [
+    "only while holding its `index.lock`, Git's own lock",
+    'Every index read and write goes to one private snapshot taken under the lock',
+    'only while the snapshot still stages exactly that group',
+    'an entry staged since the proof, beside it or at a parent of a staged deletion, refuses with `WRITE_FAILED` and the index unchanged',
+  ]) {
+    assert.ok(recovery.includes(token), `the recovery contract states: ${token}`);
+  }
+  assert.match(
+    recovery,
+    /`hookStagedEntries` lists each path of `remainingGroups\[0\]` with the index `mode` and blob `oid` the resume proved staged and then unstaged/,
+    'the recovery contract names the entries the adoption unstaged',
+  );
+});
+
+// Invariant: a ledger release keeps every byte it discards: the contract states the locked
+// snapshot proof before the first discard, the quarantine proof of what left the worktree, the
+// preserve ref, and the no-clobber checkout; `deliver` reports where the discarded files are kept.
+test('a ledger release proves one locked snapshot and keeps every discarded file', () => {
+  const recovery = prose(source('src/shared/worktree-partial-diff-recovery.md'));
+  for (const token of [
+    'proves the snapshot once',
+    'stops the release before anything is discarded',
+    "moves the path's file into a private quarantine directory in the worktree and proves it there against its descriptor",
+    'a changed file is put back and stops the release',
+    'kept as one tree at `refs/effective-flow/released/<RECORD_ID>/<tree>` before the quarantine is cleared',
+    'through `checkout-index` without `--force`, which never replaces what stands at the path',
+    'such a directory goes only through `rmdir`',
+  ]) {
+    assert.ok(recovery.includes(token), `the recovery contract states: ${token}`);
+  }
+  assert.match(
+    prose(source('src/shared/deliver-partial-diff-resume.md')),
+    /a `ledger` release also names `refs\/effective-flow\/released\/<RECORD_ID>\/`, where it kept every file it discarded/,
   );
 });
 
