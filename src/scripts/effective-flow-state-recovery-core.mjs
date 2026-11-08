@@ -159,6 +159,11 @@ export function ledgerBinding(record) {
 //   condition-1   schema-valid, `effective-flow-created`, `aborted` or `failed`
 //   condition-2 … condition-6, condition-9   registration, receipt, branch and tip, creation
 //                 ancestry, no foreign lock or claim (7, the clean status, is the route below)
+//   quarantine    no release quarantine a failed restore kept is left directly below the
+//                 worktree root (`quarantineRetained` of `gatherFacts`, read from the file system,
+//                 so an ignored one counts too); checked once the worktree is proven ours, before
+//                 the `clean` and `ledger` routes, since either would end in a removal that
+//                 deletes the only copy of the bytes it holds
 // and one route:
 //   gone     the worktree is fully gone (unregistered and `lstat` ENOENT, the proof cleanup's
 //            `goneRemovable` takes): only condition-1, condition-6, condition-9 and the receipt
@@ -295,8 +300,9 @@ async function evaluateRelease({ context, roots, record, facts, once = unmemoize
   }
   const proofs = [...purpose, ...conditionProofs(facts, statuses, [7, 8])];
   if (proofs.length > 0) return refuse(proofs);
-  if (facts.clean) return { route: 'clean' };
   // Conditions 3 and 4 hold: the worktree is registered and its common directory proven ours.
+  if (facts.quarantineRetained) return refuse(['quarantine']);
+  if (facts.clean) return { route: 'clean' };
   const worktreeRunner = selectionRunner(context, roots, [record.worktreePath]);
   const read = await readLedger(context, roots.cwd, ledgerBinding(record));
   if (read.state !== 'ok') {

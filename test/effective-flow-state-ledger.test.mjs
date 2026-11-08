@@ -20,7 +20,7 @@ import {
   symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { readFile, rename } from 'node:fs/promises';
+import { link, readFile, rename } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { test } from 'node:test';
@@ -2367,6 +2367,94 @@ test('restoreResidual keeps a taken file whose capture fails', async (t) => {
       assert.ok(later.quarantined().includes('x residual\n'), 'the failing bytes are kept');
     }
   }
+});
+
+// Invariant (a kept quarantine is never removed): when a new residual file's blob write and its
+// put-back both fail, its only copy stays in the quarantine while its path is absent. Even with
+// the quarantine ignored by Git, so the worktree's status is clean, the release retry refuses with
+// the `quarantine` proof, and `worktree remove` and `cleanup apply` refuse with condition 7; the
+// worktree and the quarantined bytes survive every call.
+test('release, worktree remove and cleanup apply refuse a worktree with a kept ignored quarantine', async (t) => {
+  const fixture = await delivery(t, { added: { 'new/c.txt': 'c added\n' } });
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt', 'b.txt'], ['new/c.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt', 'b.txt'])));
+  await failRecord(fixture);
+  mkdirSync(join(commonDir(fixture.root), 'info'), { recursive: true });
+  writeFileSync(join(commonDir(fixture.root), 'info', 'exclude'), '.effective-flow-release-*\n');
+  const failingWrite = async (request) =>
+    request.args.includes('hash-object') && request.args.includes('-w')
+      ? { status: 128, stdout: Buffer.alloc(0), stderr: Buffer.from('fatal: injected') }
+      : processRunner(request);
+  const failingPutBack = async (from, to) => {
+    if (String(from).includes('.effective-flow-release-')) {
+      throw Object.assign(new Error('link failed'), { code: 'EIO' });
+    }
+    return link(from, to);
+  };
+  const failed = expectError(
+    await call('worktree transition', releaseInput(fixture), {
+      runner: failingWrite,
+      fs: { link: failingPutBack },
+    }),
+    'GIT_FAILED',
+  );
+  assert.match(failed.message, /the content of new\/c\.txt is kept at /);
+  assert.match(failed.message, /the quarantine .* is kept/);
+  const quarantined = () =>
+    readdirSync(worktree)
+      .filter((name) => name.startsWith('.effective-flow-release-'))
+      .flatMap((name) =>
+        readdirSync(join(worktree, name)).map((entry) =>
+          readFileSync(join(worktree, name, entry), 'utf8'),
+        ),
+      );
+  assert.deepEqual(quarantined(), ['c added\n']);
+  assert.equal(existsSync(join(worktree, 'new', 'c.txt')), false);
+  assert.equal(status(worktree), '', 'Git sees a clean worktree');
+
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['quarantine']);
+  assert.equal(readRecord(fixture.root).status, 'failed', 'the record is unchanged');
+
+  // A record released before this check existed: `cleanup-ready` with the quarantine kept.
+  const record = readRecord(fixture.root);
+  writeFileSync(
+    recordFile(fixture.root),
+    `${JSON.stringify({ ...record, status: 'cleanup-ready', reason: null, sessionId: OTHER_SESSION })}\n`,
+  );
+  const input = { cwd: fixture.root, executionRoot: fixture.root };
+  const removed = expectOk(
+    await call('worktree remove', {
+      ...input,
+      sessionId: OTHER_SESSION,
+      recordIds: ['record-1'],
+    }),
+  );
+  assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+  assert.deepEqual(removed.items[0].conditions, [7]);
+  const plan = expectOk(await call('cleanup plan', input));
+  const blocked = plan.blocked.find((entry) => entry.itemId === 'worktree:record-1');
+  assert.deepEqual(blocked?.conditions, [7], JSON.stringify(plan));
+  // An item planned while the quarantine was moved aside is refused once it is back.
+  const [name] = readdirSync(worktree).filter((entry) =>
+    entry.startsWith('.effective-flow-release-'),
+  );
+  await rename(join(worktree, name), join(fixture.root, name));
+  const aside = expectOk(await call('cleanup plan', input));
+  const item = aside.items.find((entry) => entry.itemId === 'worktree:record-1');
+  assert.ok(item, JSON.stringify(aside.blocked));
+  await rename(join(fixture.root, name), join(worktree, name));
+  const applied = expectOutcome(
+    await call('cleanup apply', { ...input, items: { [item.itemId]: item.itemDigest } }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.deepEqual([applied.reason, applied.conditions], ['not-actionable', [7]]);
+  assert.equal(existsSync(worktree), true, 'the worktree stays');
+  assert.equal(existsSync(recordFile(fixture.root)), true, 'the record stays');
+  assert.deepEqual(quarantined(), ['c added\n'], 'the quarantined bytes survive');
 });
 
 // Invariant (locked index, per path): from the snapshot to the last discard the worktree's index

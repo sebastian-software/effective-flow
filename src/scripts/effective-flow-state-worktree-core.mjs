@@ -120,6 +120,7 @@ import {
 import { isObject, readBoundedFile } from './runtime-file-primitives.mjs';
 import { scopedGitRunner } from './delivery-selection-core.mjs';
 import {
+  RELEASE_QUARANTINE_PREFIX,
   deleteLedger,
   ledgerExists,
   ledgerPaths,
@@ -869,7 +870,9 @@ export async function deferSignals(deps, recordId, fn) {
 // Returns every failed condition number, ascending. `statuses` are the statuses condition 1
 // accepts (`cleanup-ready` and `cleanup-failed`; `worktree remove` adds `active`). `removal` marks
 // the callers that remove (`worktree remove`, `cleanup plan`/`apply`, `worktree inspect`), the
-// only ones where a fully gone `partial-diff` worktree counts (see `goneRemovable`).
+// only ones where a fully gone `partial-diff` worktree counts (see `goneRemovable`) and where a
+// retained release quarantine fails condition 7 as well (`quarantineRetained`): `git worktree
+// remove` deletes an ignored quarantine with the only copy of the bytes it holds.
 export function evaluateEligibility(
   facts,
   { statuses = CLAIMABLE_STATUSES, removal = false } = {},
@@ -897,7 +900,7 @@ export function evaluateEligibility(
     failed.push(5);
   }
   if (!facts.creationIsCommit || !facts.creationAncestor) failed.push(6);
-  if (!gone && !facts.clean) failed.push(7);
+  if (!gone && (!facts.clean || (removal && facts.quarantineRetained))) failed.push(7);
   if (facts.isMain || facts.isExecutionRoot) failed.push(8);
   if (facts.foreignLock || facts.foreignClaim) failed.push(9);
   return failed;
@@ -996,6 +999,20 @@ export async function proveSourceRoot(context, roots, manifest, deliveryRoot) {
   return proof.commonDirMatches ? root : null;
 }
 
+// Whether the proven worktree `root` holds a release quarantine a failed restore kept: an entry
+// named with RELEASE_QUARANTINE_PREFIX directly below the root, of any type. Read from the file
+// system, since `git status` never lists an ignored one; only the root's own listing is read and
+// no entry is followed. A root that cannot be listed counts as holding one (fail closed).
+async function retainsQuarantine(fs, root) {
+  try {
+    return (await fs.readdir(root)).some((name) =>
+      String(name).startsWith(RELEASE_QUARANTINE_PREFIX),
+    );
+  } catch {
+    return true;
+  }
+}
+
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
 // token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID.
 export async function gatherFacts(
@@ -1027,6 +1044,7 @@ export async function gatherFacts(
     creationIsCommit: false,
     creationAncestor: false,
     clean: false,
+    quarantineRetained: false,
     isMain: target === roots.cwd || (worktrees[0] ? matches(worktrees[0], target) : false),
     isExecutionRoot: target === roots.executionRoot,
     foreignLock: false,
@@ -1059,6 +1077,7 @@ export async function gatherFacts(
       '--ignore-submodules=none',
     ]);
     facts.clean = gitOk(status) && asBuffer(status.stdout).length === 0;
+    facts.quarantineRetained = await retainsQuarantine(fs, target);
   }
   facts.branchTip = await branchTip(context, record.branch);
   const commit = await runGit(context, context.cwd, [

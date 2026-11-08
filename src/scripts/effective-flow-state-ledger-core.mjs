@@ -602,6 +602,11 @@ const RM_CACHED = Object.freeze([
 // `<prefix>/<RECORD_ID>/<tree OID>`.
 export const RELEASE_PRESERVE_REF_PREFIX = 'refs/effective-flow/released';
 
+// The name prefix of a restore's quarantine directly below the worktree root (`makeQuarantine`).
+// A kept quarantine may be ignored by Git, so the release and the removal check for it on the file
+// system (`gatherFacts` of `effective-flow-state-worktree-core.mjs`).
+export const RELEASE_QUARANTINE_PREFIX = '.effective-flow-release-';
+
 // Runs `fn` while the index of the worktree `git` runs in is locked by Git's own protocol: its
 // `index.lock`, created exclusively, makes every Git process that would write this index fail
 // until it is gone, so the snapshot `fn` works on cannot change underneath it. `fn({indexFile,
@@ -815,8 +820,13 @@ async function removeEmptiedParents(fs, root, repoPath) {
 // only the held entries listed in `anchored` (those whose own bytes are anchored under the
 // preserve ref) and then the directory, unless an entry is still held that was neither put back
 // nor anchored: that entry and the directory are kept. `keep` leaves the directory and every entry.
+// A kept quarantine, ignored by Git or not, refuses every later release (proof `quarantine`) and
+// removal (condition 7) of the worktree until it is gone.
 function makeQuarantine(io, root) {
-  const directory = path.join(root, `.effective-flow-release-${randomBytes(8).toString('hex')}`);
+  const directory = path.join(
+    root,
+    `${RELEASE_QUARANTINE_PREFIX}${randomBytes(8).toString('hex')}`,
+  );
   let created = false;
   let kept = false;
   let count = 0;
