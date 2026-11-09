@@ -23818,7 +23818,10 @@ test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', ()
 });
 
 // Invariant: a run on any other host stops reading at the dispatch table, so the fragment opens with
-// a host table whose T3 Code row precedes an "any other host: read no further" row.
+// a host table whose T3 Code row precedes an "any other host: read no further" row. The T3 row also
+// routes a delegated `merge-gate` run that received `Host: t3-code`, and the prose between the table
+// and the T3 heading makes that input line its only host identity; without both, a delegated gate
+// run on T3 would read no further and wait through its non-T3 path.
 test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending other hosts at read no further', () => {
   const text = hostPrWatchSource();
   const rows = text.split('\n').filter((line) => /^\|/.test(line));
@@ -23831,6 +23834,17 @@ test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending 
     'dispatch table needs an "any other host" row ending in "read no further"',
   );
   assert.ok(t3Row < otherRow, 'the T3 Code row precedes the any-other-host row');
+  assert.match(
+    rows[t3Row],
+    /T3 Code[^|]*delegated `merge-gate` run[^|]*`Host: t3-code`/,
+    'the T3 Code row also routes a delegated `merge-gate` run that received `Host: t3-code`',
+  );
+  const tableEnd = text.indexOf(rows[otherRow]) + rows[otherRow].length;
+  assert.match(
+    prose(text.slice(tableEnd, text.search(/^#{1,6}[^\n]*T3 Code[^\n]*$/m))),
+    near('delegated `merge-gate` run', 'host identity is the `Host: t3-code` input line alone', 80),
+    'before the T3 Code heading, the delegated `merge-gate` run takes its host identity from the `Host: t3-code` input line alone',
+  );
   const tableStart = text.indexOf(rows[0]);
   assert.equal(
     text.slice(0, tableStart).includes('## T3 Code'),
