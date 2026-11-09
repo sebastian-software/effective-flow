@@ -18,7 +18,7 @@ content as input. Schema version 1 is compact JSON with exactly these keys at ev
 - `schemaVersion` `1`; `recordId`, `creationOid`, `worktreePath` and `branch` from the record;
   `receiptDigest`, the SHA-256 of the record's receipt;
 - `base` `{branch, oid}`, the resolved delivery base, `oid` equal to `creationOid`; `visibility`
-  `visible` or `hidden`; `language` `{git, forge}`, each `de` or `en`;
+  `standard` or `hidden`; `language` `{git, forge}`, each `de` or `en`;
 - `manifest`, the bound selection manifest;
 - `groups` `[{index, endpoints: [{path, kind, mode, digest, oid}]}]`, the ordered group plan: an
   exact, non-overlapping partition of the manifest endpoints with both endpoints of a rename in one
@@ -50,7 +50,7 @@ Each proof below is reported by its identifier in `proofs` of `NOT_ELIGIBLE`.
 
 - **Resume adoption** (`adoption: "partial-diff-resume"`, `to` `active`): `condition-1` (status
   `aborted` or `failed`), `purpose` (`partial-diff`), `workflow` (`deliver`), `branch`,
-  `condition-2` … `condition-6`, `condition-9`, `visibility` (a ledger written `visible` refuses a
+  `condition-2` … `condition-6`, `condition-9`, `visibility` (a ledger written `standard` refuses a
   current `hidden`), `ledger` (valid and bound to the record), `history` (the commits since
   `creationOid` are the ledger's, plus at most one recovered tip whose parent, changed paths, blobs
   and modes match the next group), `committed-count` (at least one, after recovery), `index` (clean,
@@ -109,19 +109,19 @@ follows the proof that its common directory is this repository's, with `core.fsm
 ### Operations
 
 ```text
-node <skill-root>/scripts/effective-flow-state.mjs ledger init <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","sessionId":"<SESSION_ID>","manifest":<bound manifest>,"groups":[["<endpoint>",…],…],"base":{"branch":"<BASE_BRANCH>","oid":"<CREATION_OID>"},"visibility":"<visible|hidden>","language":{"git":"<de|en>","forge":"<de|en>"}}'
+node <skill-root>/scripts/effective-flow-state.mjs ledger init <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","sessionId":"<SESSION_ID>","manifest":<bound manifest>,"groups":[["<endpoint>",…],…],"base":{"branch":"<BASE_BRANCH>","oid":"<CREATION_OID>"},"visibility":"<standard|hidden>","language":{"git":"<de|en>","forge":"<de|en>"}}'
 node <skill-root>/scripts/effective-flow-state.mjs ledger append <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","sessionId":"<SESSION_ID>","commitOid":"<COMMIT_OID>"}'
 node <skill-root>/scripts/effective-flow-state.mjs ledger reconcile <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","sessionId":"<SESSION_ID>"}'
-node <skill-root>/scripts/effective-flow-state.mjs worktree resume-check <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","visibility":"<visible|hidden>"}'
-node <skill-root>/scripts/effective-flow-state.mjs worktree transition <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","from":"<aborted|failed>","to":"active","reason":null,"sessionId":"<SESSION_ID>","branch":"<BRANCH>","workflow":"deliver","adoption":"partial-diff-resume","visibility":"<visible|hidden>"}'
+node <skill-root>/scripts/effective-flow-state.mjs worktree resume-check <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","visibility":"<standard|hidden>"}'
+node <skill-root>/scripts/effective-flow-state.mjs worktree transition <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","from":"<aborted|failed>","to":"active","reason":null,"sessionId":"<SESSION_ID>","branch":"<BRANCH>","workflow":"deliver","adoption":"partial-diff-resume","visibility":"<standard|hidden>"}'
 node <skill-root>/scripts/effective-flow-state.mjs worktree transition <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","recordId":"<RECORD_ID>","from":"<aborted|failed>","to":"cleanup-ready","reason":null,"sessionId":"<SESSION_ID>","release":"partial-diff"}'
 ```
 
 `adoption` (`plan-pr-continuation`, the default, or `partial-diff-resume`) is valid only with
 `to: "active"`; the resume requires `branch`, `workflow` and `visibility` and forbids
 `fetchedHeadOid`. `visibility` is valid only for the resume, `release` only from `aborted` or
-`failed` to `cleanup-ready`. Every `visibility` input is `visible` or `hidden`: a run passes its
-resolved visibility (`config-resolve` `standard` or `hidden`) with `standard` as `visible`.
+`failed` to `cleanup-ready`. Every `visibility` input is `standard` or `hidden`: the resolver's
+`data.visibility`, passed verbatim.
 
 - **`ledger init`**, by the session owning the `active` record, writes once, no-clobber, under the
   record lock. Beyond the record's proofs it refuses `creation-tip` (the branch moved),

@@ -1074,11 +1074,11 @@ with nothing staged matches no row and emits nothing.
   Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
   configuration key. Each identified host calls its own native title operation directly — T3 Code
-  uses `mcp__t3_code.t3_thread_update` with `action: rename` and no `threadId` or `environmentId`, the
-  Desktop path its current-task operation, and Claude Code its session-title operation with the
-  sentinel `"self"`. None creates a runtime target or invokes a write-safety guard. Each probe
-  renames the current session once, with the user's go-ahead and its own fixed probe title; report
-  only the actual host result.
+  uses the host's `t3_thread_update` operation (via its `t3-code` MCP server) with `action: rename`
+  and no `threadId` or `environmentId`, the Desktop path its current-task operation, and Claude Code
+  its session-title operation with the sentinel `"self"`. None creates a runtime target or invokes a
+  write-safety guard. Each probe renames the current session once, with the user's go-ahead and its
+  own fixed probe title; report only the actual host result.
 - Never overwrite existing config values and unknown keys without asking.
 - A Targeted run writes only what `setup-targeted-change` allows.
 - Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge
