@@ -341,6 +341,19 @@ test('evaluateEligibility: each of the nine conditions fails alone', () => {
   );
 });
 
+// Invariant: for the removing callers only, condition 7 also fails on a skip-worktree or
+// assume-unchanged index entry hiding bytes neither its index nor HEAD holds, and on such entries
+// that cannot be established (`hiddenChanges` null); the other callers keep the clean status alone.
+test('evaluateEligibility: hidden changes fail condition 7 of the removing callers only', () => {
+  const passing = { ...PASSING_FACTS, quarantineRetained: false, ignoredEndpoints: [] };
+  assert.deepEqual(evaluateEligibility({ ...passing, hiddenChanges: [] }, { removal: true }), []);
+  for (const hiddenChanges of [['a.txt'], null]) {
+    const facts = { ...passing, hiddenChanges };
+    assert.deepEqual(evaluateEligibility(facts, { removal: true }), [7], String(hiddenChanges));
+    assert.deepEqual(evaluateEligibility(facts), [], String(hiddenChanges));
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // Digests and decisions
 
@@ -1114,6 +1127,70 @@ test('remove: a foreign lock is per-item LOCK_HELD; a bad root is a whole-call e
   );
   assert.match(error.message, /executionRoot/);
 });
+
+// Invariant (a hidden edit is never removed): a tracked file whose skip-worktree or
+// assume-unchanged bit hides newer bytes keeps `git status` clean, yet `git worktree remove` would
+// delete the only copy of them. `worktree remove` and `cleanup plan` refuse with condition 7, and an
+// item planned before the edit is refused by `cleanup apply`, which re-checks under the lock; the
+// worktree, record and bytes survive. Content is compared, not the bit: entries holding their
+// index bytes or absent (a sparse-checkout entry) remove normally.
+for (const flag of ['--skip-worktree', '--assume-unchanged']) {
+  test(`removal condition 7 refuses newer bytes hidden by ${flag}`, async (t) => {
+    const root = repository(t);
+    const { worktree, record } = await initialized(root);
+    await moveTo(root, record, 'cleanup-ready');
+    const planned = await plan(root);
+    assert.ok(planned.items.some((item) => item.itemId === 'worktree:record-1'));
+    const file = join(worktree.worktreePath, 'base.txt');
+    git(worktree.worktreePath, 'update-index', flag, '--', 'base.txt');
+    writeFileSync(file, 'hidden edit\n');
+    assert.equal(git(worktree.worktreePath, 'status', '--porcelain', '--untracked-files=all'), '');
+
+    const applied = expectOutcome(
+      await call('cleanup apply', {
+        cwd: root,
+        executionRoot: root,
+        items: selection(planned, ['worktree:record-1']),
+      }),
+      'PREVIEW_MISMATCH',
+    );
+    assert.deepEqual([applied.reason, applied.conditions], ['not-actionable', [7]]);
+    const blocked = (await plan(root)).blocked.find(
+      (entry) => entry.itemId === 'worktree:record-1',
+    );
+    assert.deepEqual(blocked?.conditions, [7]);
+    const removed = expectOk(
+      await call('worktree remove', {
+        cwd: root,
+        executionRoot: root,
+        sessionId: SESSION,
+        recordIds: ['record-1'],
+      }),
+    );
+    assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+    assert.deepEqual(removed.items[0].conditions, [7]);
+    assert.equal(readFileSync(file, 'utf8'), 'hidden edit\n', 'the hidden bytes survive');
+    assert.equal(readRecord(root).status, 'cleanup-ready');
+
+    // The same entry holding its index bytes, beside a hidden entry absent from the worktree.
+    writeFileSync(file, 'base\n');
+    writeFileSync(join(worktree.worktreePath, 'sparse.txt'), 'sparse\n');
+    git(worktree.worktreePath, 'add', '--', 'sparse.txt');
+    git(worktree.worktreePath, 'commit', '-q', '-m', 'sparse');
+    git(worktree.worktreePath, 'update-index', '--skip-worktree', '--', 'sparse.txt');
+    rmSync(join(worktree.worktreePath, 'sparse.txt'));
+    const passed = expectOk(
+      await call('worktree remove', {
+        cwd: root,
+        executionRoot: root,
+        sessionId: SESSION,
+        recordIds: ['record-1'],
+      }),
+    );
+    assert.equal(passed.items[0].ok, true, JSON.stringify(passed));
+    assert.equal(existsSync(worktree.worktreePath), false);
+  });
+}
 
 // ---------------------------------------------------------------------------------------------
 // worktree inspect

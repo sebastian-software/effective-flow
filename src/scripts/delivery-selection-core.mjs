@@ -1589,6 +1589,61 @@ async function holdsCheckoutBytes(root, repoPath, actual, head, runner) {
   }
 }
 
+// The paths of the worktree `root` whose index entry carries the skip-worktree or the
+// assume-unchanged bit (`ls-files -v`: `S`, or any lowercase tag) and whose working tree holds
+// bytes only it holds: a file or symbolic link that holds neither the bytes a checkout of its index
+// blob writes there nor those of HEAD's blob (`holdsCheckoutBytes`). `git status` never compares
+// such an entry's working tree, so a clean status proves nothing about it, while a discard or a
+// `git worktree remove` deletes those bytes. Every index entry counts, not only selected ones.
+// Content is compared, never the bit alone: an absent path (a sparse-checkout entry) or one that
+// holds its index or HEAD bytes passes, as does a directory in its place (an untracked file below
+// it is listed by `git status`); a gitlink or an unmerged stage is left to `git status`. Returns
+// the sorted paths. A listing or read that cannot be made fails (COMMAND_FAILED or
+// UNSUPPORTED_PATH), never passes. Nothing is written.
+export async function hiddenWorktreeChanges(input, options = {}) {
+  requireObject(input);
+  const root = await canonicalDirectory(input.root, 'root');
+  const listed = await git(options.runner, root, ['ls-files', '-v', '-s', '-z']);
+  const changed = [];
+  for (const record of asText(listed.stdout).split('\0').filter(Boolean)) {
+    const tab = record.indexOf('\t');
+    const fields = tab === -1 ? [] : record.slice(0, tab).split(' ');
+    const repoPath = tab === -1 ? '' : record.slice(tab + 1);
+    if (fields.length !== 4 || fields[0].length !== 1 || repoPath === '') {
+      fail('COMMAND_FAILED', 'git returned an invalid ls-files -v -s entry');
+    }
+    const [tag, mode, oid, stage] = fields;
+    if (tag !== 'S' && tag === tag.toUpperCase()) continue;
+    if (stage !== '0' || !FILE_MODES.has(mode)) continue;
+    if (!OBJECT_ID_PATTERN.test(oid)) {
+      fail('COMMAND_FAILED', 'git returned an invalid index object id', { path: repoPath });
+    }
+    const index = { path: repoPath, mode, oid };
+    let state;
+    try {
+      state = await workingState(root, repoPath, index, { directoryMeansAbsent: true });
+    } catch (error) {
+      if (error instanceof DeliverySelectionError) throw error;
+      fail('UNSUPPORTED_PATH', 'a hidden index entry cannot be read from the working tree', {
+        path: repoPath,
+        code: error?.code ?? null,
+      });
+    }
+    if (state.mode === null) continue;
+    const actual = selectedDescriptor(state);
+    if (await holdsCheckoutBytes(root, repoPath, actual, index, options.runner)) continue;
+    const head = await treeState(root, 'HEAD', repoPath, options.runner);
+    if (
+      head.oid !== null &&
+      (await holdsCheckoutBytes(root, repoPath, actual, head, options.runner))
+    ) {
+      continue;
+    }
+    changed.push(repoPath);
+  }
+  return changed.sort();
+}
+
 // Compares the delivery checkout with the descriptors of `endpoints` (the uncommitted residual of a
 // delivery) without writing anything. Returns sorted path lists:
 //   dirty     every path whose index or working tree differs from HEAD, untracked ones included
@@ -1683,6 +1738,9 @@ export async function inspectResidual(input, options = {}) {
 //              bit (`inspectResidual`'s `content`)
 //   index      the residual endpoints whose index entry is neither HEAD's nor the descriptor's
 //   extra      the dirty or untracked paths outside the residual endpoints
+//   hidden     every path of the checkout, committed endpoints included, whose skip-worktree or
+//              assume-unchanged entry hides bytes that neither its index nor HEAD holds
+//              (`hiddenWorktreeChanges`)
 //   sourceDrift  the drift entries of `verifySourceManifest` (exact only without any)
 // and, beside them, `staged`: the residual endpoints whose index entry differs from HEAD
 // (`inspectResidual`'s `staged`). A staged entry holding its descriptor is no mismatch (a
@@ -1725,6 +1783,7 @@ export async function reconcileResume(input, options = {}) {
     { deliveryRoot, endpoints: residual },
     { runner: options.runner },
   );
+  const hidden = await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: options.runner });
   const source = await verifySourceManifest({ manifest, sourceRoot }, { runner: options.runner });
   const mismatches = {
     head: context.headOid !== input.commitOid,
@@ -1732,6 +1791,7 @@ export async function reconcileResume(input, options = {}) {
     residual: inspected.content,
     index: inspected.index,
     extra: inspected.extra,
+    hidden,
     sourceDrift: source.drift,
   };
   return {
@@ -1741,6 +1801,7 @@ export async function reconcileResume(input, options = {}) {
       mismatches.residual.length === 0 &&
       mismatches.index.length === 0 &&
       mismatches.extra.length === 0 &&
+      mismatches.hidden.length === 0 &&
       source.exact,
     mismatches,
     staged: inspected.staged,

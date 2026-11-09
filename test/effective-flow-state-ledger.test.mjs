@@ -2489,6 +2489,206 @@ for (const flag of ['--skip-worktree', '--assume-unchanged']) {
   });
 }
 
+// The read-only `worktree resume-check` and the resume adoption of the fixture's `failed` record,
+// as another session, and that session's `ledger reconcile`.
+function resumeCheckOf(fixture) {
+  return call('worktree resume-check', {
+    cwd: fixture.root,
+    executionRoot: fixture.root,
+    recordId: fixture.record.recordId,
+    visibility: 'visible',
+  });
+}
+
+function resumeOf(fixture) {
+  return call('worktree transition', {
+    cwd: fixture.root,
+    executionRoot: fixture.root,
+    recordId: fixture.record.recordId,
+    from: 'failed',
+    to: 'active',
+    reason: null,
+    sessionId: OTHER_SESSION,
+    branch: fixture.worktree.branch,
+    workflow: 'deliver',
+    adoption: 'partial-diff-resume',
+    visibility: 'visible',
+  });
+}
+
+function reconcileOf(fixture) {
+  return call('ledger reconcile', {
+    cwd: fixture.root,
+    executionRoot: fixture.root,
+    recordId: fixture.record.recordId,
+    sessionId: OTHER_SESSION,
+  });
+}
+
+// Hides `paths` of the delivery worktree from `git status` by `flag` and writes `content` there.
+function hideEdit(fixture, flag, paths, content = null) {
+  const worktree = fixture.worktree.worktreePath;
+  git(worktree, 'update-index', flag, '--', ...paths);
+  if (content !== null) for (const repoPath of paths) write(worktree, repoPath, content);
+}
+
+// Asserts a release of `fixture` refused with the `hidden` proof (beside `others`) and
+// `hiddenPaths`, that `resume-check` reports the same release refusal, and that neither wrote
+// anything.
+async function assertReleaseHidden(fixture, hiddenPaths, others = []) {
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, [...others, 'hidden'], JSON.stringify(refused));
+  assert.deepEqual(refused.hiddenPaths, hiddenPaths, JSON.stringify(refused));
+  assert.equal(refused.hiddenPathCount, hiddenPaths.length);
+  const check = expectOk(await resumeCheckOf(fixture));
+  assert.equal(check.releasable, false, JSON.stringify(check));
+  assert.deepEqual(check.releaseProofs, refused.proofs);
+  assert.deepEqual(check.details.release.hiddenPaths, hiddenPaths);
+  assertUnchanged(fixture, before);
+  assert.equal(readRecord(fixture.root).status, 'failed', 'the record is unchanged');
+}
+
+// Invariant (a release never takes the clean route over hidden edits): when every remaining change
+// is hidden from `git status` by skip-worktree or assume-unchanged, the worktree looks clean, yet
+// a removal would delete those bytes. Without a ledger and with one, the release refuses with
+// `hidden` instead of taking the clean route, `worktree remove` and `cleanup plan` refuse with
+// condition 7, and the bytes, record and ledger stay.
+for (const flag of ['--skip-worktree', '--assume-unchanged']) {
+  for (const withLedger of [false, true]) {
+    const label = withLedger ? 'with a ledger' : 'without a ledger';
+    test(`release clean route: every change hidden by ${flag} refuses ${label}`, async (t) => {
+      const fixture = await delivery(t);
+      const worktree = fixture.worktree.worktreePath;
+      if (withLedger) {
+        expectOk(await call('ledger init', initInput(fixture)));
+        expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+      }
+      await failRecord(fixture);
+      const hidden = withLedger ? ['b.txt'] : ['a.txt', 'b.txt'];
+      hideEdit(fixture, flag, hidden);
+      assert.equal(status(worktree), '', 'Git sees a clean worktree');
+
+      await assertReleaseHidden(fixture, hidden);
+      assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n');
+
+      const record = readRecord(fixture.root);
+      writeFileSync(
+        recordFile(fixture.root),
+        `${JSON.stringify({ ...record, status: 'cleanup-ready', reason: null, sessionId: OTHER_SESSION })}\n`,
+      );
+      const input = { cwd: fixture.root, executionRoot: fixture.root };
+      const removed = expectOk(
+        await call('worktree remove', {
+          ...input,
+          sessionId: OTHER_SESSION,
+          recordIds: ['record-1'],
+        }),
+      );
+      assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+      assert.deepEqual(removed.items[0].conditions, [7]);
+      const plan = expectOk(await call('cleanup plan', input));
+      const blocked = plan.blocked.find((entry) => entry.itemId === 'worktree:record-1');
+      assert.deepEqual(blocked?.conditions, [7], JSON.stringify(plan));
+      assert.equal(existsSync(worktree), true, 'the worktree stays');
+      assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n');
+    });
+  }
+}
+
+// Invariant (a hidden edit on a recorded endpoint refuses the ledger route and the resume): the
+// endpoints of a recorded group are no residual, so neither the residual inspection nor `git
+// status` compares them. Newer bytes hidden there refuse the dirty ledger-route release with
+// `hidden` and the resume with `residual` (its `hidden` detail), and both write nothing.
+test('a hidden edit on a recorded endpoint refuses the ledger-route release and the resume', async (t) => {
+  const fixture = await delivery(t);
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(await call('ledger init', initInput(fixture)));
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  hideEdit(fixture, '--skip-worktree', ['a.txt'], 'a NEWER\n');
+  assert.equal(status(worktree), 'M b.txt', 'Git sees only the residual endpoint');
+
+  await assertReleaseHidden(fixture, ['a.txt']);
+  const check = expectOk(await resumeCheckOf(fixture));
+  assert.equal(check.resumable, false, JSON.stringify(check));
+  assert.deepEqual(check.resumeProofs, ['residual']);
+  assert.deepEqual(check.details.resume.hidden, ['a.txt']);
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await resumeOf(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['residual'], JSON.stringify(refused));
+  assert.deepEqual([refused.hidden, refused.hiddenCount], [['a.txt'], 1]);
+  assertUnchanged(fixture, before);
+  assert.equal(readFileSync(join(worktree, 'a.txt'), 'utf8'), 'a NEWER\n');
+});
+
+// Invariant (a hidden edit on a recovered endpoint refuses the resume and the reconcile): a tip the
+// failed run committed but never recorded takes its group out of the residual. Newer bytes hidden
+// on its endpoint refuse the resume with `residual`; once resumed, the same edit makes `ledger
+// reconcile` inexact with the path in `hidden`, committed endpoints included.
+test('a hidden edit on a recovered endpoint refuses the resume and the ledger reconcile', async (t) => {
+  const fixture = await delivery(t);
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(await call('ledger init', initInput(fixture)));
+  const first = commitGroup(fixture, ['a.txt']);
+  await failRecord(fixture);
+  hideEdit(fixture, '--assume-unchanged', ['a.txt'], 'a NEWER\n');
+  const check = expectOk(await resumeCheckOf(fixture));
+  assert.equal(check.recoveredTip, first);
+  assert.equal(check.resumable, false, JSON.stringify(check));
+  assert.deepEqual(check.resumeProofs, ['residual']);
+  assert.deepEqual(check.details.resume.hidden, ['a.txt']);
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await resumeOf(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['residual'], JSON.stringify(refused));
+  assert.deepEqual(refused.hidden, ['a.txt']);
+  assertUnchanged(fixture, before);
+  assert.equal(readLedgerFile(fixture).commits.length, 0, 'nothing was recovered');
+
+  // The committed bytes back, still hidden: the resume recovers the tip and reconciles exactly.
+  write(worktree, 'a.txt', 'a changed\n');
+  const resumed = expectOk(await resumeOf(fixture));
+  assert.equal(resumed.resume.recovered, first);
+  const exact = expectOk(await reconcileOf(fixture));
+  assert.equal(exact.exact, true, JSON.stringify(exact));
+  assert.deepEqual(exact.mismatches.hidden, { paths: [], count: 0 });
+  write(worktree, 'a.txt', 'a NEWER\n');
+  const reconciled = expectOk(await reconcileOf(fixture));
+  assert.equal(reconciled.exact, false, JSON.stringify(reconciled));
+  assert.deepEqual(reconciled.mismatches.hidden, { paths: ['a.txt'], count: 1 });
+  assert.deepEqual(reconciled.mismatches.residual, { paths: [], count: 0 });
+  assert.deepEqual(reconciled.mismatches.extra, { paths: [], count: 0 });
+});
+
+// Invariant (content, not the bit): hidden entries that hold their index or HEAD bytes, or are
+// absent like a sparse-checkout entry, lose nothing, so they never refuse: the clean route
+// releases and the release is removed by cleanup.
+test('hidden entries holding their bytes or absent still take the clean release route', async (t) => {
+  const fixture = await delivery(t);
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(await call('ledger init', initInput(fixture)));
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  expectOk(await append(fixture, commitGroup(fixture, ['b.txt'])));
+  await failRecord(fixture);
+  hideEdit(fixture, '--assume-unchanged', ['a.txt']);
+  hideEdit(fixture, '--skip-worktree', ['b.txt']);
+  rmSync(join(worktree, 'b.txt'));
+  assert.equal(status(worktree), '');
+  const check = expectOk(await resumeCheckOf(fixture));
+  assert.deepEqual([check.releasable, check.releaseRoute], [true, 'clean'], JSON.stringify(check));
+  const released = expectOk(await release(fixture));
+  assert.deepEqual(released.release, { route: 'clean', restored: [] });
+  const input = { cwd: fixture.root, executionRoot: fixture.root };
+  const plan = expectOk(await call('cleanup plan', input));
+  const item = plan.items.find((entry) => entry.itemId === 'worktree:record-1');
+  assert.ok(item, JSON.stringify(plan.blocked));
+  const applied = expectOk(
+    await call('cleanup apply', { ...input, items: { [item.itemId]: item.itemDigest } }),
+  );
+  assert.equal(applied.items[0].ok, true, JSON.stringify(applied));
+  assert.equal(existsSync(worktree), false);
+});
+
 // Invariant (an ignored ledger endpoint is never released or removed): a residual endpoint that
 // Git ignores keeps the worktree's status clean, yet it still holds delivery bytes. The release
 // refuses with the `ignored` proof instead of taking the clean route, and `worktree remove` and

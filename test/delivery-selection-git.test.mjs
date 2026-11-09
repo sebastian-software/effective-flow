@@ -24,6 +24,7 @@ import {
   bindSelectionManifest,
   describeWorkingEndpoint,
   fastForwardUpstream,
+  hiddenWorktreeChanges,
   inspectResidual,
   inventoryRepository,
   nonInteractiveFetchEnv,
@@ -693,6 +694,53 @@ test('inspectResidual counts only byte-exact HEAD endpoints as atHead and hides 
     git(deliveryRoot, 'update-index', flag.replace('--', '--no-'), '--', 'partial.txt');
     git(deliveryRoot, 'checkout', '--', 'partial.txt');
   }
+});
+
+// Invariant (`hiddenWorktreeChanges` compares content, worktree-wide): every index entry carrying
+// the skip-worktree or assume-unchanged bit is checked, selected or not, and only one whose working
+// tree holds bytes neither its index blob nor HEAD's blob checks out there is listed. An absent
+// entry (sparse checkout), a directory in its place, the index or HEAD bytes (eol attributes
+// applied), a changed mode alone, and a symbolic link's own target pass; an unflagged edit is left
+// to `git status`.
+test('hiddenWorktreeChanges lists only hidden entries whose bytes neither index nor HEAD hold', async (t) => {
+  const { deliveryRoot } = createRepository(t);
+  write(deliveryRoot, '.gitattributes', 'crlf.txt text eol=crlf\n');
+  write(deliveryRoot, 'crlf.txt', 'one\r\ntwo\r\n');
+  git(deliveryRoot, 'add', '--', '.gitattributes', 'crlf.txt');
+  git(deliveryRoot, 'commit', '-m', 'eol fixture');
+  const hidden = async () =>
+    await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: processRunner });
+  assert.deepEqual(await hidden(), []);
+
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'delete.txt', 'dir-shape/child.txt');
+  git(deliveryRoot, 'update-index', '--assume-unchanged', '--', 'crlf.txt', 'link.txt', 'gone.txt');
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'mode.txt', 'rename.txt');
+  rmSync(join(deliveryRoot, 'delete.txt'));
+  rmSync(join(deliveryRoot, 'dir-shape'), { recursive: true });
+  mkdirSync(join(deliveryRoot, 'dir-shape', 'child.txt'), { recursive: true });
+  chmodSync(join(deliveryRoot, 'mode.txt'), 0o755);
+  // `rename.txt` stages newer bytes and keeps them in the working tree; `gone.txt` stages them and
+  // keeps HEAD's bytes in the working tree: each holds its index or HEAD bytes.
+  write(deliveryRoot, 'rename.txt', 'staged\n');
+  git(deliveryRoot, 'update-index', '--no-skip-worktree', '--', 'rename.txt');
+  git(deliveryRoot, 'add', '--', 'rename.txt');
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'rename.txt');
+  const goneBlob = runGit(deliveryRoot, ['hash-object', '-w', '--stdin', '--path=gone.txt'], {
+    input: 'staged gone\n',
+  })
+    .stdout.toString('utf8')
+    .trim();
+  git(deliveryRoot, 'update-index', '--cacheinfo', `100644,${goneBlob},gone.txt`);
+  git(deliveryRoot, 'update-index', '--assume-unchanged', '--', 'gone.txt');
+  write(deliveryRoot, 'working.txt', 'unflagged edit\n');
+  assert.deepEqual(await hidden(), [], 'held bytes, absent paths and unflagged edits pass');
+
+  write(deliveryRoot, 'crlf.txt', 'one\ntwo\n');
+  write(deliveryRoot, 'rename.txt', 'newer than index and HEAD\n');
+  write(deliveryRoot, 'gone.txt', 'newer than index and HEAD\n');
+  rmSync(join(deliveryRoot, 'link.txt'));
+  symlinkSync('working.txt', join(deliveryRoot, 'link.txt'));
+  assert.deepEqual(await hidden(), ['crlf.txt', 'gone.txt', 'link.txt', 'rename.txt']);
 });
 
 // Invariant (source re-check, selected bytes last): for a working rename, `verifySourceManifest`

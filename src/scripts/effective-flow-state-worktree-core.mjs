@@ -118,7 +118,11 @@ import {
   resolveRoot,
 } from './effective-flow-state-core.mjs';
 import { isObject, readBoundedFile } from './runtime-file-primitives.mjs';
-import { scopedGitRunner } from './delivery-selection-core.mjs';
+import {
+  DeliverySelectionError,
+  hiddenWorktreeChanges,
+  scopedGitRunner,
+} from './delivery-selection-core.mjs';
 import {
   RELEASE_QUARANTINE_PREFIX,
   deleteLedger,
@@ -886,7 +890,10 @@ export async function deferSignals(deps, recordId, fn) {
 // retained release quarantine fails condition 7 as well (`quarantineRetained`): `git worktree
 // remove` deletes an ignored quarantine with the only copy of the bytes it holds. For the same
 // reason a ledger endpoint standing as an ignored untracked file, or ledger endpoints that cannot
-// be established, fail condition 7 of those callers too (`ignoredEndpoints`).
+// be established, fail condition 7 of those callers too (`ignoredEndpoints`), and so does an index
+// entry of the worktree, of any purpose, whose skip-worktree or assume-unchanged bit hides bytes
+// that neither its index nor HEAD holds, or such entries that cannot be established
+// (`hiddenChanges`): `git status` never compares their working tree.
 export function evaluateEligibility(
   facts,
   { statuses = CLAIMABLE_STATUSES, removal = false } = {},
@@ -920,7 +927,9 @@ export function evaluateEligibility(
       (removal &&
         (facts.quarantineRetained ||
           facts.ignoredEndpoints === null ||
-          facts.ignoredEndpoints.length > 0)))
+          facts.ignoredEndpoints.length > 0 ||
+          facts.hiddenChanges === null ||
+          facts.hiddenChanges.length > 0)))
   ) {
     failed.push(7);
   }
@@ -1076,6 +1085,21 @@ async function ignoredLedgerEndpoints(context, roots, record) {
     .sort();
 }
 
+// The paths of the proven worktree `root` whose skip-worktree or assume-unchanged index entry hides
+// bytes that neither its index nor HEAD holds (`hiddenWorktreeChanges`), sorted; null when Git or
+// the file system cannot establish them. Only for a worktree whose common directory is proven ours.
+async function hiddenWorktreeEntries(context, roots, root) {
+  try {
+    return await hiddenWorktreeChanges(
+      { root },
+      { runner: selectionRunner(context, roots, [root]) },
+    );
+  } catch (error) {
+    if (error instanceof DeliverySelectionError) return null;
+    throw error;
+  }
+}
+
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
 // token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID.
 export async function gatherFacts(
@@ -1109,6 +1133,7 @@ export async function gatherFacts(
     clean: false,
     quarantineRetained: false,
     ignoredEndpoints: [],
+    hiddenChanges: [],
     isMain: target === roots.cwd || (worktrees[0] ? matches(worktrees[0], target) : false),
     isExecutionRoot: target === roots.executionRoot,
     foreignLock: false,
@@ -1143,6 +1168,7 @@ export async function gatherFacts(
     facts.clean = gitOk(status) && asBuffer(status.stdout).length === 0;
     facts.quarantineRetained = await retainsQuarantine(fs, target);
     facts.ignoredEndpoints = await ignoredLedgerEndpoints(context, roots, record);
+    facts.hiddenChanges = await hiddenWorktreeEntries(context, roots, target);
   }
   facts.branchTip = await branchTip(context, record.branch);
   const commit = await runGit(context, context.cwd, [
