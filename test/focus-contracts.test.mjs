@@ -477,9 +477,13 @@ test('Focus follow-up grammar has three forms and a tick never offers', () => {
 test('Focus follow-up checkpoint is one exact v1 line with strict validity', () => {
   // Invariant: checkpoint v1 — the single-line format is exact, carries no evidence content, keeps
   // a numeric last served position, and is valid only in this observer's own assistant messages.
+  // Concrete endings exclude the observed stopped> suffix; this guards instructions, not model output.
   const text = followUp();
   assertPhrases(text, [
-    '`focus-follow-up v1 | target=<ref> | goal=<source>@<locator> | verdict=<v> | last=<position> | pattern=<loc>,<loc> | correction=<verdict>+<category>+<loc>,<loc> | mechanism=t3-schedule | interval=<minutes> | handle=<id> | started=<time> | ticks=<n> | backlog=<yes|no> | lag=<n> | state=<active|stopped>`',
+    '`focus-follow-up v1 | target=<ref> | goal=<source>@<locator> | verdict=<v> | last=<position> | pattern=<loc>,<loc> | correction=<verdict>+<category>+<loc>,<loc> | mechanism=t3-schedule | interval=<minutes> | handle=<id> | started=<time> | ticks=<n> | backlog=<yes|no> | lag=<n> | state=STATE`',
+    '`STATE` is literal `active` or `stopped`: the line ends exactly with `state=active` or `state=stopped`.',
+    'Emit no suffix, closing `>`, Markdown marker or trailing whitespace.',
+    'Reject any line with trailing characters as malformed; never trim it or accept only a valid prefix.',
     '`pattern=` holds at most two sorted locators or `none`; `correction=` is `none` when no correction stands. An explicit `goal:` argument is written `goal=arg@snapshot`.',
     "`started=` is the ISO-8601 UTC time of the creation result's next run time minus the interval and is informational only. `lag=` counts consecutive `backlog=yes` ticks.",
     'An invalid-path stopped line takes `target` and `handle` from the prompt and writes `-` for unknown fields, except `ticks=1` when no earlier count exists; later stopped ticks increment it, and with `interval=-` the cap is 48 ticks.',

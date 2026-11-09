@@ -61,7 +61,11 @@ position any snapshot history page served, and `backlog=` the final page's `hasM
 
 State between ticks is exactly one line:
 
-`focus-follow-up v1 | target=<ref> | goal=<source>@<locator> | verdict=<v> | last=<position> | pattern=<loc>,<loc> | correction=<verdict>+<category>+<loc>,<loc> | mechanism=t3-schedule | interval=<minutes> | handle=<id> | started=<time> | ticks=<n> | backlog=<yes|no> | lag=<n> | state=<active|stopped>`
+`focus-follow-up v1 | target=<ref> | goal=<source>@<locator> | verdict=<v> | last=<position> | pattern=<loc>,<loc> | correction=<verdict>+<category>+<loc>,<loc> | mechanism=t3-schedule | interval=<minutes> | handle=<id> | started=<time> | ticks=<n> | backlog=<yes|no> | lag=<n> | state=STATE`
+
+`STATE` is literal `active` or `stopped`: the line ends exactly with `state=active` or
+`state=stopped`. Emit no suffix, closing `>`, Markdown marker or trailing whitespace. Reject any
+line with trailing characters as malformed; never trim it or accept only a valid prefix.
 
 - `pattern=` holds at most two sorted locators or `none`; `correction=` is `none` when no correction
   stands. An explicit `goal:` argument is written `goal=arg@snapshot`.
