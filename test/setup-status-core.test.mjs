@@ -1211,6 +1211,31 @@ test('only a main-checkout .gitignore negation that outranks info/exclude is not
   assert.match(data.ignore.remediation, /main checkout/);
 });
 
+test('a symlinked common-directory info/exclude is not setup-fixable from a linked worktree', async (t) => {
+  // Invariant: setup appends the runtime-root entry through the hidden-mode step, which refuses a
+  // symlinked `info/exclude`, so status reports the manual `exclude-unsafe` step instead of a
+  // setup-fixable `runtime-root-not-ignored`.
+  const { base, root } = repository(t, { files: { [SETUP_ADR]: setupDocument({}) } });
+  const linkedRoot = join(base, 'linked');
+  git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linkedRoot);
+  write(linkedRoot, '.gitignore', '.effective-flow/\n');
+  const exclude = join(commonDir(root), 'info', 'exclude');
+  mkdirSync(dirname(exclude), { recursive: true });
+  rmSync(exclude, { force: true });
+  write(base, 'elsewhere-exclude', '# unrelated\n');
+  symlinkSync(join(base, 'elsewhere-exclude'), exclude);
+
+  const data = await status(t, linkedRoot);
+  assert.equal(data.configuration.runtimeStateRoot, root);
+  assert.equal(data.ignore.state, 'problem', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.reason, 'exclude-unsafe');
+  assert.equal(data.ignore.detail, exclude);
+  assert.equal(data.ignore.setupFixable, false);
+  assert.equal(data.ignore.setupForm, null);
+  assert.match(data.ignore.remediation, /^Manual step: replace the symlinked/);
+  assert.equal(data.setupFixable, false);
+});
+
 test('runtime content tracked in the main checkout is a manual untrack step from a linked worktree', async (t) => {
   // Invariant: setup's tracked-content guard runs at the runtime-state root, so content tracked
   // there is reported with the root's paths and is not setup-fixable, even when the root is

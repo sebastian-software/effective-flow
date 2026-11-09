@@ -71,6 +71,10 @@
 //                        tracked-runtime-content (only when the predicate holds, or when the
 //                        checkout passes and the runtime-state root is another worktree that
 //                        tracks runtime content; paths are then the root's) |
+//                        exclude-unsafe (only when the checkout passes, that root is not ignored
+//                        and the Git common directory's `info` or `info/exclude` is a symlink or
+//                        not a regular entry, which setup refuses to write through; detail is the
+//                        `info/exclude` path) |
 //                        runtime-root-negated-entry (only when the checkout passes and that root
 //                        does not ignore the probe because its `.gitignore` carries a negation
 //                        that outranks an `info/exclude` entry: one of the directory itself, or
@@ -1141,12 +1145,6 @@ async function commonDirOf(context, root) {
   return result.stdout.replace(/\r?\n$/, '');
 }
 
-// Whether the common directory's `info/exclude` already holds the ignore entry.
-async function excludeHasEntry(context, root) {
-  const exclude = await readExclude(context, await commonDirOf(context, root));
-  return Array.isArray(exclude) && exclude.includes(IGNORE_ENTRY);
-}
-
 // The runtime-state root of a linked worktree whose own checkout passes: see `standardIgnore`.
 async function runtimeRootIgnore(context, runtimeStateRoot) {
   const rootTracked = await trackedRuntimePaths(context, runtimeStateRoot);
@@ -1159,13 +1157,24 @@ async function runtimeRootIgnore(context, runtimeStateRoot) {
   if (await isIgnored(context, runtimeStateRoot, STANDARD_PROBE)) {
     return ignoreResult('standard', 'ok');
   }
-  // Setup's fix is the common-directory `info/exclude` entry. A negation outranks it when it
-  // negates the directory itself, or when the entry is already there and the root is still not
-  // ignored; any other negation (such as the legacy `!.effective-flow/config.json`) yields to it.
+  // Setup's fix is the common-directory `info/exclude` entry, appended through the hidden-mode step
+  // that refuses a symlinked or non-regular `info` or `info/exclude`, so such a file is no setup fix.
+  const commonDir = await commonDirOf(context, runtimeStateRoot);
+  const exclude = await readExclude(context, commonDir);
+  if (exclude === 'unsafe') {
+    return ignoreResult('standard', 'problem', {
+      reason: 'exclude-unsafe',
+      detail: path.join(commonDir, 'info', 'exclude'),
+    });
+  }
+  // A negation outranks the entry when it negates the directory itself, or when the entry is
+  // already there and the root is still not ignored; any other negation (such as the legacy
+  // `!.effective-flow/config.json`) yields to it.
   const rootNegations = negationLines(await gitignoreLines(context, runtimeStateRoot));
-  const outranking = (await excludeHasEntry(context, runtimeStateRoot))
-    ? rootNegations
-    : rootNegations.filter(({ text }) => GITIGNORE_DIRECTORY_NEGATION.test(text));
+  const outranking =
+    Array.isArray(exclude) && exclude.includes(IGNORE_ENTRY)
+      ? rootNegations
+      : rootNegations.filter(({ text }) => GITIGNORE_DIRECTORY_NEGATION.test(text));
   if (outranking.length > 0) {
     return ignoreResult('standard', 'problem', {
       reason: 'runtime-root-negated-entry',
