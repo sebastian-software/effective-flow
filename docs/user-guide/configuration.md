@@ -870,6 +870,14 @@ In standard mode it first normalizes `.gitignore` to the single runtime-director
 .effective-flow/
 ```
 
+When setup runs in a linked worktree, the main checkout only receives this tracked line with the
+merge, yet delivery and merge-gate write runtime state from the main checkout. If the main checkout
+does not ignore `.effective-flow/` yet, setup therefore also appends the line to the Git common
+directory's `info/exclude`, verifies it from the main checkout and never touches the main
+checkout's `.gitignore`. Tracked runtime content there, or a tracked `!.effective-flow/` negation that outranks
+`info/exclude`, is reported: setup still writes the configuration, but no runtime state until the
+setup change is merged and pulled into the main checkout, or setup runs there.
+
 With no argument, or with the explicit `profile` argument, setup asks **Chat** and then
 **Profile** before it resolves later conditional gates. Fully local, Forge issues and development,
 and External issues and forge development map to the transient overlays above. The two forge-backed

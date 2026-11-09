@@ -210,8 +210,10 @@ fix; a non-interactive run produces the same report. The report has five section
   finding, and the other sections still appear.
 - **Ignore state:** whether `.effective-flow/` is ignored the way the visibility requires — through
   `.gitignore` with nothing tracked below it in standard mode, through `info/exclude` in the Git
-  common directory without an outranking `.gitignore` rule in hidden mode. Outside a Git repository
-  this section is not applicable.
+  common directory without an outranking `.gitignore` rule in hidden mode. Run from a linked
+  worktree in standard mode, it also requires the main checkout to ignore `.effective-flow/` and
+  otherwise reports `runtime-root-not-ignored`, which setup fixes. Outside a Git repository this
+  section is not applicable.
 - **Domain owners:** the central `effective-*` skills that Effective Flow tools delegate their domain
   craft to, when one of them is missing from your agent's skill list or disabled through the
   `skills` configuration. Each line names one skill and its cause and lists the affected tools,
@@ -258,7 +260,8 @@ alone without an existing configuration. The rules go into the untracked
 `.claude/settings.local.json` of the main checkout and are bound to the absolute path of this
 installation. Setup shows a preview of the change and writes it only after your explicit
 confirmation; if the file is not ignored, it asks whether to add it to `.gitignore` (in hidden
-mode, to `info/exclude`) and adds the line only after your yes. Destructive operations such as `lock break`, `worktree remove` and `cleanup apply` never get a rule.
+mode or in a linked worktree, to `info/exclude`, so the main checkout's `.gitignore` stays untouched)
+and adds the line only after your yes. Destructive operations such as `lock break`, `worktree remove` and `cleanup apply` never get a rule.
 
 The `commit create` rule lets `iterate` commit an item, running the repository's own hooks, without a
 prompt. It commits only the item's listed paths. When the head is a fork or the hook configuration

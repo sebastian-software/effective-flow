@@ -825,7 +825,8 @@ point is an I/O boundary over testable core or protocol modules:
   `config-resolve-core.mjs` as a module: one `resolveConfiguration` call with `tool: "setup"` supplies
   the source and diagnostics, and one further call per `SUCCESSOR_SETS` entry classifies the
   retired rows, all through one process runner with the lock-free `gitBaseEnv`. It adds read-only
-  ignore predicates per visibility, applies the `skills` scopes to the generated
+  ignore predicates per visibility (from a linked worktree it also probes the main checkout and
+  reports `runtime-root-not-ignored`), applies the `skills` scopes to the generated
   `setup-status-owners.json` it locates through `import.meta.url`, and compares the installed SemVer
   from that projection with one anonymous `GET` to the published repository's
   `releases/latest` (fixed `User-Agent`, short timeout, capped body). It emits one
@@ -1394,7 +1395,9 @@ and directive syntax").
   `setup-guided-core-switches` for core-switch keys, `setup-advanced-settings` for block keys, and
   only the "Writing the hidden local configuration" section of `setup-hidden-mode` for a hidden
   write. Those three are therefore loaded only from `tools/setup.md` and
-  `shared/setup-targeted-change.md`, never eagerly.
+  `shared/setup-targeted-change.md`, never eagerly. `setup-hidden-mode` is also loaded, for its
+  `info/exclude` steps only, when a standard run in a linked worktree finds the runtime-state root
+  not ignored (Step 1 item 4) or the allowlist step needs its ignore remedy there.
   `plan-archival` is pointed at from the four tool sources that keep a plan file rather than from
   inside `worktree-integration`: its decision point is the delivery point of the handback, and
   in-place execution without delivery reaches that point while performing no other step of that

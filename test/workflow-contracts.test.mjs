@@ -19693,6 +19693,63 @@ test('hidden setup writes the ignore entry into the common-dir info/exclude and 
   );
 });
 
+// Invariant: setup in a linked worktree bootstraps the runtime-state root's ignore through the
+// common-dir info/exclude and verifies it from RUNTIME_STATE_ROOT, because deliver and merge-gate
+// guard every runtime write there and the checkout's tracked .gitignore line reaches the main
+// checkout only with the merge; it never creates or edits the main checkout's .gitignore, reuses
+// the hidden arm's append mechanics instead of a second copy, and stays inside setup's repair
+// exception and Rules.
+test('setup in a linked worktree bootstraps the runtime-root ignore through info/exclude', () => {
+  const setup = source('src/tools/setup.md');
+  const step1 = boundedSlice(setup, '### Step 1: .gitignore entry', '### Step 2:');
+  const item = prose(boundedSlice(step1, '4. **Linked worktree.**', '5. If the project'));
+  assert.match(
+    item,
+    /the Visibility resolution call's `data\.checkoutRoot` differs from a non-null `data\.runtimeStateRoot`/,
+  );
+  assert.match(item, /receives this checkout's tracked line only with the merge/);
+  assert.match(item, /Run item 1's two non-verbose predicates from `RUNTIME_STATE_ROOT`/);
+  assert.match(
+    item,
+    /through items 1 and 3 of "Step 1 \(hidden\)" in `setup-hidden-mode`/,
+    'the append reuses the hidden arm, never a second copy of its link-safe mechanics',
+  );
+  assert.match(item, /never touching `<RUNTIME_STATE_ROOT>\/\.gitignore`/);
+  assert.match(item, /then require exit `0` from the predicate run there/);
+  assert.match(item, /^4\. Linked worktree\. After items 1–3, whatever their outcome:/);
+  assert.match(
+    item,
+    /Tracked runtime content there, or exit `1` after the append[^:]*: report its paths or lines/,
+  );
+  assert.match(
+    item,
+    /The ADR and convention-marker creation continue, but no `\.effective-flow\/` runtime marker may be written/,
+    'an unrepairable main checkout suppresses runtime writes like item 5, it never aborts the setup run',
+  );
+  ordered(item, 'Not ignored:', 'never touching', 'require exit `0`', 'report its paths or lines');
+  const when = [...step1.matchAll(LAZY_INCLUDE_RE)]
+    .find((match) => match[1].trim() === 'setup-hidden-mode')?.[2]
+    ?.trim();
+  assert.match(when ?? '', /a standard run reaches Step 1 item 4/);
+
+  assert.match(
+    prose(section(setup, '### Step 8: Summary', '\n## ')),
+    /in a linked worktree also the absolute `info\/exclude` path, whether Step 1 item 4 added its `\.effective-flow\/` line or found it present or not needed, and the verification from `RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(
+    prose(section(setup, '## Rules', '\n## ')),
+    /Change only `\.gitignore` \(the `\.effective-flow\/` line or its migration\), the `\.effective-flow\/` line in the Git common directory's `info\/exclude` that Step 1 item 4 adds/,
+  );
+  assert.match(
+    prose(source('src/shared/setup-hidden-mode.md')),
+    /standard Step 1 item 4 only its items 1 and 3, for the runtime-state root's `\.effective-flow\/` line/,
+  );
+  assert.match(
+    prose(source('src/shared/runtime-state-safety.md')),
+    /append the `\.effective-flow\/` line to the Git common directory's `info\/exclude` in hidden mode or when a linked-worktree run finds the runtime-state root unignored/,
+  );
+});
+
 // Invariant: hidden setup's write authority ends at the info/exclude lines (the allowlist line only
 // after its own confirmation) and the local project-setup.md; no tracked file is written or edited.
 test('hidden setup never writes or edits AGENTS.md, CLAUDE.md, .gitignore, or a tracked ADR', () => {

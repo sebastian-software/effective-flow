@@ -42,7 +42,12 @@ non-verbose `git check-ignore --no-index -- <path>`, then independently requires
 a not-ignored path, tracked runtime state, or a command error preserves all state and routes to
 `/effective-flow setup`. `git check-ignore --no-index` honours `info/exclude` exactly like
 `.gitignore`, so hidden mode needs no separate predicate. Ordinary workflows never repair
-`.gitignore` or `info/exclude`; setup is the sole owner of both.
+`.gitignore` or `info/exclude`; setup is the sole owner of both. Its standard-mode `info/exclude`
+writes are limited to linked worktrees (this line and the allowlist's settings line): `RUNTIME_STATE_ROOT` receives this checkout's tracked
+`.gitignore` line only with the merge, so setup runs the predicates from `RUNTIME_STATE_ROOT` and,
+when it is not ignored, appends `.effective-flow/` to the Git common directory's `info/exclude` and
+re-verifies there. `setup status` reports this as the setup-fixable ignore reason
+`runtime-root-not-ignored`.
 
 Before its first authorized runtime write, every writing workflow also runs the marker-driven
 legacy-directory prerequisite from
@@ -127,7 +132,8 @@ and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `threa
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
 allow-rules` writes the file, after a preview and an explicit confirmation in the conversation,
 and it refuses a settings file that is tracked or not ignored; the step then asks whether to add
-the `.gitignore` line, or the `info/exclude` line in hidden mode, and adds it only after a yes. A widened rule is warned about but
+the `.gitignore` line, or the `info/exclude` line in hidden mode or in a linked worktree (never the
+main checkout's `.gitignore`), and adds it only after a yes. A widened rule is warned about but
 never removed, and rules of another install are kept. The `setup status` report shows the
 `allowlist` state (`absent`, `current`, `stale`, `not-applicable`, `could-not-check`); any partial
 set, including an earlier release's six rules, is `stale`, `absent` means none present, and only rules
