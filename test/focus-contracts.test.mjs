@@ -172,6 +172,19 @@ test('Focus states pending qualification on all hosts while no gate row is quali
     'the sentence ends immediately before the disabled-path rule',
   );
   assert.doesNotMatch(pending, /(?<![\w/-])#613\b/, 'only the qualified #613 reference ships');
+  // Each output is bound to its side: the three included ones follow "only in", the four excluded
+  // ones follow "never in", so no output can move between the two lists unnoticed.
+  ordered(
+    pending,
+    'only in',
+    'a snapshot refusal',
+    'a `follow-up` limitation reply other than `follow-up stop`',
+    "a tick's disabled-row notice",
+    'never in a `follow-up stop` reply',
+    'a checkpoint-only tick',
+    'the `handle:pending` statement',
+    'the invalid-checkpoint notice',
+  );
   ordered(
     flat(qualification),
     '| Codex CLI or other unqualified host |',
