@@ -41,7 +41,6 @@ import {
 import {
   LEDGER_LANGUAGES,
   LEDGER_MAX_BYTES,
-  LEDGER_VISIBILITIES,
   RELEASE_PRESERVE_REF_PREFIX,
   branchHistory,
   commitGroupProblems,
@@ -65,7 +64,6 @@ import {
 } from './effective-flow-state-ledger-core.mjs';
 import {
   OID_PATTERN,
-  VISIBILITIES,
   deferSignals,
   evaluateEligibility,
   gatherFacts,
@@ -88,6 +86,7 @@ import {
   transition,
   withRecordLock,
 } from './effective-flow-state-worktree-core.mjs';
+import { VISIBILITY_VALUES } from './remote-tracker-shared-core.mjs';
 
 function gitOk(result) {
   return !result?.error && result?.status === 0;
@@ -427,8 +426,8 @@ function requireLedgerInit(input) {
   if (typeof base.oid !== 'string' || !OID_PATTERN.test(base.oid)) {
     fail('INVALID_INPUT', 'base.oid must be a full commit OID');
   }
-  if (!LEDGER_VISIBILITIES.includes(input.visibility)) {
-    fail('INVALID_INPUT', `visibility must be one of ${LEDGER_VISIBILITIES.join(', ')}`);
+  if (!VISIBILITY_VALUES.includes(input.visibility)) {
+    fail('INVALID_INPUT', `visibility must be one of ${VISIBILITY_VALUES.join(', ')}`);
   }
   const language = requireExactObject(input.language, ['git', 'forge'], 'language');
   for (const key of ['git', 'forge']) {
@@ -727,7 +726,7 @@ export async function recoveryTransition(input, deps) {
 //   condition-2 … condition-6, condition-9   the removal conditions of the record (7, the clean
 //                    status, is replaced by `index` and `residual`; 8 is skipped, as in adoption)
 //   visibility       the ledger's visibility is not weaker than the current one: a ledger written
-//                    `visible` refuses a current `hidden`
+//                    `standard` refuses a current `hidden`
 //   ledger           a valid ledger is bound to the record (`readLedger` with `ledgerBinding`)
 //   history          the commits from `creationOid` to the branch tip are exactly the ledger's
 //                    commits, or those plus one tip that passes the tip-recovery subset of the
@@ -875,7 +874,7 @@ async function evaluateResume({ context, roots, record, facts, request, once = u
   }
   const ledger = read.ledger;
   result.ledger = ledger;
-  if (ledger.visibility === 'visible' && request.visibility === 'hidden') failed.add('visibility');
+  if (ledger.visibility === 'standard' && request.visibility === 'hidden') failed.add('visibility');
   let recovered = null;
   if (facts.branchTip && facts.creationIsCommit && facts.creationAncestor) {
     const history = await historyProof(context, roots, ledger, facts.branchTip);
@@ -1136,8 +1135,8 @@ async function resumeProofs({ context, roots, paths, record, request, held, sign
 export async function resumeCheck(input, deps) {
   const context = prepare('worktree resume-check', input, deps);
   const recordId = requireRecordId(input.recordId);
-  if (!VISIBILITIES.includes(input.visibility)) {
-    fail('INVALID_INPUT', `visibility must be one of ${VISIBILITIES.join(', ')}`);
+  if (!VISIBILITY_VALUES.includes(input.visibility)) {
+    fail('INVALID_INPUT', `visibility must be one of ${VISIBILITY_VALUES.join(', ')}`);
   }
   const roots = await openRoots(context, input);
   const paths = recordPaths(roots.cwd, recordId);
