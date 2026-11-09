@@ -137,7 +137,7 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
 
 test('Focus states pending qualification on all hosts while no gate row is qualified', () => {
   // Invariant: while every route is disabled, one gate sentence — not the table — tells every host,
-  // the catch-all row and a bare invocation included, that focus is pending qualification under the
+  // the catch-all row and a bare snapshot invocation included, that focus is pending qualification under the
   // qualified #613 reference, first and once per reply, only in the three limitation outputs and
   // never in a stop or in the excluded tick notices. Activating a route removes this sentence.
   const contract = source('src/shared/focus-session-contract.md');
@@ -153,7 +153,7 @@ test('Focus states pending qualification on all hosts while no gate row is quali
     opening,
     'every row of this table',
     'Codex CLI or other unqualified host',
-    'before any selection is clarified',
+    'a bare snapshot invocation (`{{FLOW}} focus` without a session reference, never a `follow-up` form), which is refused before any selection is clarified',
     'once per reply',
     'only in',
     'never in a `follow-up stop` reply',
