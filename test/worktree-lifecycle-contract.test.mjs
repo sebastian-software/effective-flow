@@ -863,21 +863,21 @@ test('the recovery call lines use exactly the helper operation keys', () => {
       }
     }
   }
-  assert.match(recovery, /"adoption":"partial-diff-resume","visibility":"<visible\|hidden>"/);
+  assert.match(recovery, /"adoption":"partial-diff-resume","visibility":"<standard\|hidden>"/);
   assert.match(recovery, /"to":"cleanup-ready","reason":null,[^']*"release":"partial-diff"/);
 });
 
-// Invariant: the helper's visibility vocabulary differs from the resolved configuration's, so the
-// recovery contract states the mapping once; and `resume-check` names exactly the paths an eligible
-// ledger release discards, so the caller never derives them from its own `git status`.
-test('the recovery contract maps the visibility and names the paths a ledger release discards', () => {
+// Invariant: the helper takes the resolved configuration's visibility vocabulary verbatim
+// (`standard` or `hidden`, never a mapped `visible`), and `resume-check` names exactly the paths an
+// eligible ledger release discards, so the caller never derives them from its own `git status`.
+test('the recovery contract passes the resolved visibility verbatim and names the paths a ledger release discards', () => {
   for (const token of [
-    'Every `visibility` input is `visible` or `hidden`',
-    '`config-resolve` `standard` or `hidden`',
-    'with `standard` as `visible`',
+    'Every `visibility` input is `standard` or `hidden`',
+    "the resolver's `data.visibility`, passed verbatim",
   ]) {
-    assert.ok(flatRecovery.includes(token), `the visibility mapping states: ${token}`);
+    assert.ok(flatRecovery.includes(token), `the visibility contract states: ${token}`);
   }
+  assert.ok(!/`visible`/.test(flatRecovery), 'the recovery contract names no `visible` value');
   assert.match(
     flatRecovery,
     /`releasePaths` and `releasePathCount` \(for an eligible `ledger` route the bounded dirty residual paths a release discards/,

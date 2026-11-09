@@ -79,7 +79,7 @@ function resumeInput(fixture, overrides = {}) {
     branch: fixture.worktree.branch,
     workflow: 'deliver',
     adoption: 'partial-diff-resume',
-    visibility: 'visible',
+    visibility: 'standard',
     ...overrides,
   };
 }
@@ -95,7 +95,7 @@ function resumeCheck(fixture, overrides = {}, extra) {
       cwd: fixture.root,
       executionRoot: fixture.root,
       recordId: fixture.record.recordId,
-      visibility: 'visible',
+      visibility: 'standard',
       ...overrides,
     },
     extra,
@@ -253,7 +253,7 @@ test('resume after a failure following group 1 of 2, reconcile, and group 2', as
     hookStagedEntries: [],
     base: { branch: 'main', oid: fixture.worktree.head },
     language: { git: 'en', forge: 'de' },
-    visibility: 'visible',
+    visibility: 'standard',
     sourceRoot: fixture.root,
     groups: [
       { group: 0, paths: ['a.txt'], oid: fixture.first },
@@ -345,7 +345,7 @@ test('a leftover recovered entry is idempotent; nothing committed is committed-c
   assert.deepEqual(resumed.resume.committed, [{ group: 0, oid: first }]);
 });
 
-// Invariant (visibility): a ledger written `visible` refuses a resume in a run whose current
+// Invariant (visibility): a ledger written `standard` refuses a resume in a run whose current
 // visibility is `hidden`, with `visibility` alone and nothing changed; resume-check reports the
 // same refusal and still offers the release.
 test('a visibility downgrade refuses the resume and keeps the release', async (t) => {
@@ -805,7 +805,7 @@ for (const key of ['branch', 'workflow', 'visibility']) {
 
 // Invariant: `visibility` exists only with the resume adoption: forbidden with the plan-PR
 // continuation (explicit or default), with a release and with a plain transition; a value outside
-// `visible`/`hidden` is refused.
+// `standard`/`hidden` is refused.
 test('visibility is forbidden outside the resume adoption', async (t) => {
   const fixture = await failedAfterGroupOne(t);
   const before = stateBytes(fixture);
@@ -813,8 +813,8 @@ test('visibility is forbidden outside the resume adoption', async (t) => {
   const inputs = [
     bareResume(fixture, { adoption: 'plan-pr-continuation', fetchedHeadOid: head }),
     bareResume(fixture, { adoption: undefined, fetchedHeadOid: head }),
-    bareResume(fixture, { adoption: undefined, to: 'cleanup-ready', visibility: 'visible' }),
-    { ...releaseInput(fixture), visibility: 'visible' },
+    bareResume(fixture, { adoption: undefined, to: 'cleanup-ready', visibility: 'standard' }),
+    { ...releaseInput(fixture), visibility: 'standard' },
     bareResume(fixture, { adoption: undefined, from: 'active', to: 'failed', reason: 'x' }),
     bareResume(fixture, { visibility: 'public' }),
     bareResume(fixture, { visibility: true }),
@@ -1028,7 +1028,7 @@ for (const scenario of SINGLE_PROOF) {
     );
     assertUntouched(fixture, before, scenario.id);
     const check = expectOk(
-      await resumeCheck(fixture, { visibility: overrides.visibility ?? 'visible' }),
+      await resumeCheck(fixture, { visibility: overrides.visibility ?? 'standard' }),
     );
     if (scenario.inputOnly) {
       // `resume-check` takes no branch or workflow input: the proof exists only for the adoption.
@@ -1816,9 +1816,9 @@ test('end to end: source drift is refused by resume and by the ledger-route rele
   assert.equal(result.mismatches.sourceDrift, 1);
 });
 
-// Invariant (f): a ledger written `visible` refuses a hidden current mode, a ledger written
+// Invariant (f): a ledger written `standard` refuses a hidden current mode, a ledger written
 // `hidden` accepts either, and the result carries the ledger's visibility (hidden stays hidden).
-test('end to end: a visibility downgrade is refused, a hidden ledger resumes under visible', async (t) => {
+test('end to end: a visibility downgrade is refused, a hidden ledger resumes under standard', async (t) => {
   const downgrade = await failedAfterGroupOne(t);
   const before = stateBytes(downgrade);
   const refused = expectOutcome(await resume(downgrade, { visibility: 'hidden' }), 'NOT_ELIGIBLE');
@@ -1826,7 +1826,7 @@ test('end to end: a visibility downgrade is refused, a hidden ledger resumes und
   assertUntouched(downgrade, before);
   assert.equal(expectOk(await resumeCheck(downgrade, { visibility: 'hidden' })).releasable, true);
 
-  for (const current of ['visible', 'hidden']) {
+  for (const current of ['standard', 'hidden']) {
     const fixture = await delivery(t);
     expectOk(await call('ledger init', initInput(fixture, { visibility: 'hidden' })));
     expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
@@ -1834,6 +1834,40 @@ test('end to end: a visibility downgrade is refused, a hidden ledger resumes und
     const resumed = expectOk(await resume(fixture, { visibility: current }));
     assert.equal(resumed.resume.visibility, 'hidden', `current ${current}`);
   }
+});
+
+// Invariant: the resume helpers take the config resolver's visibility vocabulary `standard |
+// hidden` verbatim (`resume-check` and the resume adoption) and refuse the retired `visible`.
+test('resume-check and the resume adoption accept standard visibility and refuse visible', async (t) => {
+  const fixture = await failedAfterGroupOne(t);
+  const before = stateBytes(fixture);
+  expectError(await resumeCheck(fixture, { visibility: 'visible' }), 'INVALID_INPUT');
+  expectError(await resume(fixture, { visibility: 'visible' }), 'INVALID_INPUT');
+  assertUntouched(fixture, before);
+  const check = expectOk(await resumeCheck(fixture, { visibility: 'standard' }));
+  assert.equal(check.resumable, true, JSON.stringify(check));
+  const resumed = expectOk(await resume(fixture, { visibility: 'standard' }));
+  assert.equal(resumed.resume.visibility, 'standard');
+});
+
+// Invariant: a ledger written `standard` refuses a hidden current mode (proof `visibility`), and a
+// ledger written `hidden` resumes under `standard`.
+test('end to end: a standard ledger refuses hidden, a hidden ledger resumes under standard', async (t) => {
+  const downgrade = await delivery(t);
+  expectOk(await call('ledger init', initInput(downgrade, { visibility: 'standard' })));
+  expectOk(await append(downgrade, commitGroup(downgrade, ['a.txt'])));
+  await failRecord(downgrade);
+  const before = stateBytes(downgrade);
+  const refused = expectOutcome(await resume(downgrade, { visibility: 'hidden' }), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['visibility']);
+  assertUntouched(downgrade, before);
+
+  const fixture = await delivery(t);
+  expectOk(await call('ledger init', initInput(fixture, { visibility: 'hidden' })));
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  const resumed = expectOk(await resume(fixture, { visibility: 'standard' }));
+  assert.equal(resumed.resume.visibility, 'hidden');
 });
 
 // Invariant (g): after a resume that itself failed (record back to `failed`, ledger keeping its
