@@ -127,8 +127,9 @@ orphan for `{{SKILL:cleanup}}` or the user, and changes none.
 **Re-dispatch** with `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>` from the return,
 keeping the suspended dispatch's `Relayed answer:` line unchanged, `none` included, as for a
 `BLOCKED-USER` re-dispatch: re-run Phase 0 step 1 for the observer-only flag, ending where that read
-ends (report, delete the wisdom file, unwatch), pass `Caller limits:` as the union of earlier limits,
-and keep the other input lines. Only this re-dispatch carries `Resumed wait:`; every other
+ends (report, delete the wisdom file, unwatch). Otherwise pass `Observer-only re-entry:` from that
+read and `Caller limits:` as the union of earlier limits, and keep the other input lines, minus
+`Completion answer:` in observer-only mode. Only this re-dispatch carries `Resumed wait:`; every other
 re-dispatch of the gate run drops it. A non-interactive run takes the same path and stays
 `non-interactive`.
 
