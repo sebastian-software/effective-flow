@@ -211,10 +211,11 @@ test('built commit mutexes state the bounded wait, sibling, report-only and re-d
         ),
       `${target} iterate: item identifier falls back by pattern`,
     );
-    // A worker never resolves `<skill-root>` itself: the handoff carries path, root and runId.
+    // The item commit follows the item's pre-commit review, so the orchestrator issues it through
+    // the absolute helper path itself and no item delegation resolves `<skill-root>`.
     assert.match(
       iterate,
-      /the absolute helper path\s+`<skill-root>\/scripts\/effective-flow-state\.mjs`, `RUNTIME_STATE_ROOT`, `runId`, its own\s+`delegation` `<runId>\/<n>`[\s\S]*?and\s+verbatim the helper call shape/,
+      /The orchestrator issues the call itself through the\s+absolute helper path `<skill-root>\/scripts\/effective-flow-state\.mjs`/,
     );
     assert.match(
       applyReview,

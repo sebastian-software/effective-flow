@@ -307,8 +307,14 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    completed only after its linked issue is observed terminal – which an issue transitioned here now
    is.
 
-**How it runs:** The gate runs as one delegated run on the `deep` tier, so the long wait-and-repair
-loop stays out of your session's context. A restriction you give your session – do not merge, or
+**How it runs:** The gate runs as one delegated run on the `standard` tier, so the long wait-and-repair
+loop stays out of your session's context. The code it lands is reviewed at the `deep` tier: each
+review item's change before its commit, and a conflict resolution before it is committed and pushed.
+A blocking finding commits nothing, and a review counts only findings within its site's blocking
+scope: the item's diff, or for a conflict the resolved and adjacent hunks. The standard runner never
+closes or admits an item that the `deep` classification marked `uncertain`. A rejected item stays
+uncommitted: the run reports a dirty checkout, retains the worktree (recorded as `aborted`), and the
+next round stops until it is cleaned. Classifying review items is a separate read-only `deep` step. A restriction you give your session – do not merge, or
 commit or push nothing onto the branch – travels into the delegated run and wins over
 `mergeGate.completion`: the run then only reports, or ends with its report where it would otherwise
 write to the branch. A restriction neither of those expresses, such as read only, is never
@@ -411,7 +417,7 @@ What the run does with a conflict:
    concatenated. A rename that also changes content, a binary file, a submodule, and a symlink are
    aborts outright: the conflicted value is a decision, not something a merge can compute.
 
-2. **Verifies the result twice, before anything is committed – and fails closed.** The resolver runs
+2. **Verifies the result twice and has it reviewed, before anything is committed – and fails closed.** The resolver runs
    the repository's own checks on the resolved tree, and the gate then has that same uncommitted tree
    checked independently by its validation role, in that role's `full` mode. `full` is what honours a
    repository-mandated combined or top-level gate, and it is used here because this merge commit has
@@ -420,7 +426,10 @@ What the run does with a conflict:
    passed. A failing verdict from either role, a verdict that is not an affirmative pass, and a run in
    which every applicable check came back skipped are all treated exactly as an abort: the merge is
    aborted, nothing is pushed, and the run reports every check that did not run. A disagreement
-   between the two roles is never a tie broken in the merge's favour. CI remains the final criterion
+   between the two roles is never a tie broken in the merge's favour. A third layer follows: a routed
+   `deep` review of the staged resolution, limited to the conflicted and adjacent paths, still before
+   the commit. A blocking finding from that review commits nothing, exactly like a failed
+   verification. CI remains the final criterion
    afterwards, and a failure it catches is repaired through `/effective-flow iterate` as before.
 3. **Reports it file by file – and that report is what a human audits.** The run's chat summary names
    every conflicted file with what was done to it, and every non-conflicted file the resolver had to

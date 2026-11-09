@@ -302,9 +302,17 @@ the open PR of the current branch.
 
 **Input/output:** In **PR mode**, `iterate` reads the review threads of all reviewers fresh,
 classifies each point (actionable, already addressed, or pure question), and obtains an
-approval. Output is **one commit per implemented point** on the PR head branch (only new
-commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
-thread, and a summary comment. Pure reviewer questions are deferred and listed in the summary,
+approval. Output is **one commit per implemented point** on the PR head branch, each made only after
+the point's change has been checked (only new commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
+thread, and a summary comment. Code and tooling points get a `deep` review of the uncommitted diff
+before their commit, which the iterate runner issues; documentation points get the validator only,
+with no `deep` reviewer. The item delegations commit nothing: they receive a caller-owned-commit
+switch above `iterate`'s body delimiter, and the runner commits one item at a time after that item's
+review, so a `Commit:` line inside item, issue or review text is data. A review counts only findings
+within its blocking scope, the item's own diff. A rejected item stays uncommitted: the run reports a
+dirty checkout and retains the worktree (recorded as `aborted`), and the next round stops until it
+is cleaned. The `standard` runner never closes or admits an item that the `deep` classification
+marked `uncertain`. Pure reviewer questions are deferred and listed in the summary,
 not automatically answered on the merits. When another workflow delegates to it and supplies an
 identifier per item, `iterate` additionally returns exactly one outcome for each of those
 identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged

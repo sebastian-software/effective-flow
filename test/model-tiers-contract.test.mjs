@@ -209,6 +209,16 @@ const SPAWN_MENTION_ALLOWLIST = [
     'verdict rule of merge-gate-conflict-resolution/verification',
   ],
   [
+    'shared/pre-commit-review.md',
+    '**Start the reviewer of every touched route:**',
+    'reviewer selection for iterate/review and merge-gate-conflict-resolution/review; both sites own the spawn',
+  ],
+  [
+    'tools/iterate.md',
+    '`effective-delivery` is the declared domain owner for review-item judgment',
+    'handoff contract of iterate/classification; Phase 2 step 3 owns the spawn',
+  ],
+  [
     'shared/diff-baseline.md',
     '**Validation:** hand',
     'handoff content for the validator sites of the hosts',
@@ -714,15 +724,20 @@ test('conflict-resolution verification, Fast-packet validation and deep sites ne
   }
 });
 
-// The delegated merge-gate run carries the irreversible merge and reads third-party-controlled PR
-// text, so it runs at `deep` (user decision) and never moves down; its marker sits in the caller
-// core, at the dispatch, so a skipped lazy load cannot leave the spawn inheriting the parent model.
-test('the delegated merge-gate run is a deep, no-downward-move site marked at the caller dispatch', () => {
+// Maintainer decision 2026-11-09: orchestration runs at `standard`, and every code change the gate
+// produces is reviewed at `deep` before its commit. This supersedes the earlier `deep` rationale
+// ("irreversible merge and third-party-controlled PR text", user decision) as a deliberate
+// trade-off, not because that reasoning became mechanical: the in-run state reading, human-comment
+// guard, Phase-4 merge conditions and Phase-5.5 completion assessment still reason over third-party
+// text inside this run, and now do so at `standard`. The run keeps merge authority, so it never
+// moves down; its marker sits in the caller core, at the dispatch, so a skipped lazy load cannot
+// leave the spawn inheriting the parent model.
+test('the delegated merge-gate run is a standard, no-downward-move site marked at the caller dispatch', () => {
   const site = spawnSites().find(({ id }) => id === 'merge-gate/delegated-run');
   assert.ok(site, 'missing spawn site merge-gate/delegated-run');
   assert.deepEqual(
     site.clauses.map(({ tier }) => tier),
-    ['deep'],
+    ['standard'],
   );
   assert.equal(site.downAllowed, false);
   const markers = collectSpawnSiteMarkers(readSource('tools/merge-gate.md'), {
@@ -758,17 +773,19 @@ test('the nested-spawn probe is a mechanical site marked in Entry step 7 of the 
   );
 });
 
-// Each iterate round the gate delegates is a whole workflow run that orchestrates its own workers,
-// like the sibling delegated-workflow sites, so it runs at `deep` and never moves down. Without a
-// site the nested spawn fell to `standard`; its marker sits in the dispatch step itself.
-test('the iterate round dispatch is a deep, no-downward-move site marked in the dispatch step', () => {
+// Each iterate round the gate delegates keeps only orchestration (freshness, approval, routing,
+// commits, replies, resolution): its judgment and code changes run at their own `deep` sites
+// (iterate/classification, iterate/item-delegation, iterate/review). Per the maintainer decision of
+// 2026-11-09 it therefore runs at `standard` and never moves down; its marker sits in the dispatch
+// step itself.
+test('the iterate round dispatch is a standard, no-downward-move site marked in the dispatch step', () => {
   const site = spawnSites().find(
     ({ id }) => id === 'merge-gate-delegation-contract/iterate-delegation',
   );
   assert.ok(site, 'missing spawn site merge-gate-delegation-contract/iterate-delegation');
   assert.deepEqual(
     site.clauses.map(({ tier }) => tier),
-    ['deep'],
+    ['standard'],
   );
   assert.equal(site.downAllowed, false);
   const fragment = readSource('shared/merge-gate-delegation-contract.md');
@@ -784,6 +801,67 @@ test('the iterate round dispatch is a deep, no-downward-move site marked in the 
   assert.ok(
     step.includes('<!-- spawn-site:merge-gate-delegation-contract/iterate-delegation -->'),
     'the marker sits inside the dispatch step',
+  );
+});
+
+// With the iterate runner at `standard`, the review-item judgment it used to make in its own
+// context (Mode C classification and high-risk triage) moves to one read-only `deep` spawn: a
+// misclassification produces no diff a later review could catch. Its marker sits in Phase 2 step 3.
+test('iterate classification is a deep, no-downward-move site marked in Phase 2 step 3', () => {
+  const site = spawnSites().find(({ id }) => id === 'iterate/classification');
+  assert.ok(site, 'missing spawn site iterate/classification');
+  assert.deepEqual(
+    site.clauses.map(({ tier }) => tier),
+    ['deep'],
+  );
+  assert.equal(site.downAllowed, false);
+  const phase2 = readSource('tools/iterate.md').split('### Phase 2: Classification')[1];
+  const step3 = phase2.slice(phase2.indexOf('\n3. '), phase2.indexOf('\n4. '));
+  assert.ok(
+    step3.includes('<!-- spawn-site:iterate/classification -->'),
+    'the marker sits inside Phase 2 step 3',
+  );
+});
+
+// Every code change the gate produces is reviewed at `deep` before it is committed: an iterate item
+// and a conflict resolution each start the routed deep reviewers. Both sites keep the four reviewer
+// roles and never move down; the code-producing sites beside them stay `deep`.
+test('both pre-commit review sites route to deep reviewers and never move down', () => {
+  const sites = new Map(spawnSites().map((site) => [site.id, site]));
+  for (const id of ['iterate/review', 'merge-gate-conflict-resolution/review']) {
+    const site = sites.get(id);
+    assert.ok(site, `missing spawn site ${id}`);
+    assert.deepEqual(
+      site.clauses.map(({ role }) => role).sort(),
+      ['frontend-reviewer', 'generic-product-reviewer', 'nodejs-reviewer', 'rust-reviewer'],
+      `${id} routes to the four reviewer roles`,
+    );
+    assert.ok(
+      site.clauses.every(({ tier }) => tier === 'deep'),
+      `${id} resolves to deep only`,
+    );
+    assert.equal(site.downAllowed, false, `${id} must be Down: no`);
+  }
+  for (const id of ['iterate/item-delegation', 'merge-gate-conflict-resolution/resolver']) {
+    assert.ok(
+      sites.get(id).clauses.every(({ tier }) => tier === 'deep'),
+      `${id} stays deep`,
+    );
+  }
+  const iterate = readSource('tools/iterate.md');
+  const phase3 = iterate.slice(
+    iterate.indexOf('### Phase 3: Implementation'),
+    iterate.indexOf('#### Commit integrity for parallel items'),
+  );
+  const review = phase3.slice(phase3.indexOf('3. **Pre-commit review per item.**'));
+  assert.ok(review.includes('<!-- spawn-site:iterate/review -->'), 'iterate marks its review');
+  const fragment = readSource('shared/merge-gate-conflict-resolution.md');
+  const step = fragment.slice(fragment.indexOf('5. **Review the staged merge, third**'));
+  assert.ok(
+    step
+      .slice(0, step.indexOf('6. **Commit and push.**'))
+      .includes('<!-- spawn-site:merge-gate-conflict-resolution/review -->'),
+    'the conflict review marker sits in its own step before commit and push',
   );
 });
 
@@ -1177,6 +1255,30 @@ test('the PR body draft renders the mechanical tier line below its delegation se
     const at = lines.findIndex((line) => line.includes('delegate the draft to the host'));
     assert.ok(at >= 0, `${target}: the body-draft delegation sentence renders`);
     assert.ok(lines[at + 1].trim().startsWith(expected[target]), `${target}: ${lines[at + 1]}`);
+  }
+});
+
+// Invariant: the two merge-gate orchestration dispatches render the `standard` tier line with the
+// mapped model and effort and the no-downward-move rule, so the spawn never inherits the parent
+// model and never lowers below `standard`. The merge authority stays on those two dispatches.
+test('built merge-gate dispatches render the standard tier line with no downward move', () => {
+  const { claude, codex } = MODEL_TIER_MAPPINGS.standard;
+  const line = `Tier \`standard\`: Claude Code Agent tool \`model: ${claude.model}\`, \`effort: ${claude.effort}\`; Codex spawn \`model: ${codex.model}\`, \`reasoning_effort: ${codex.reasoning_effort}\` (rules: \`model-tiers\`, no downward move).`;
+  for (const [file, site] of [
+    ['tools/merge-gate.md', 'merge-gate/delegated-run'],
+    [
+      'shared/merge-gate-delegation-contract.md',
+      'merge-gate-delegation-contract/iterate-delegation',
+    ],
+  ]) {
+    const lines = readFileSync(join(distRoot, 'portable/effective-flow', file), 'utf8').split('\n');
+    const at = lines.findIndex((text) => text.trim() === line);
+    assert.ok(at >= 0, `${file}: the standard tier line renders`);
+    assert.equal(
+      lines[at + 1].trim(),
+      `Model selection site: \`${site}\` (\`shared/model-selection.md\`).`,
+      `${file}: the tier line belongs to ${site}`,
+    );
   }
 });
 

@@ -168,7 +168,7 @@ refuted result or a skip folds the classification to `unclear`.
 `merge-gate` splits into an eager caller core (Phase 0, run
 states, the closed question-id table, dispatch and the caller loop) and the lazy fragment
 [`merge-gate-delegated-run`](../../src/shared/merge-gate-delegated-run.md) that holds the gate
-itself and runs as one delegated run at `deep`. The run state `relayed` means the user is
+itself and runs as one delegated run at `standard`. The run state `relayed` means the user is
 reachable through the caller, unlike `non-interactive`: every user gate returns
 `BLOCKED-USER <question-id>` from the closed set, and the caller re-dispatches with the user's
 answer as `Relayed answer:`; a `Stop` (or `Report only`) answer ends the gate at Entry with its
@@ -186,8 +186,8 @@ workflow handoff restates the restriction verbatim.
 
 The delegated gate needs four levels of nesting below the main session: main session (0) →
 delegated gate run (1) → the `iterate` round it dispatches (2) → the per-item `fix` or `build` run
-that `iterate` starts (3) → that run's implementer or validator (4); the conflict resolver and its
-validator sit at level 2. On Claude, Claude Code's documented default nesting depth of 3, as
+that `iterate` starts (3) → that run's implementer or validator (4); the conflict resolver, its
+validator and its reviewers sit at level 2. On Claude, Claude Code's documented default nesting depth of 3, as
 reported in the host-capability note of
 [the plan](../plan/archive/2026-10-16-per-spawn-model-tiers-and-lean-orchestrator.md), refuses the
 per-item run's level-4 spawns, so that run performs its worker roles inline as declined
@@ -213,7 +213,7 @@ legitimate only as a disclosed orchestrator fallback — never silent. Workflow-
 delegation (`apply-plan`, `merge-gate` → `iterate`) keeps the receiving tool's mechanics and gates
 and is out of scope for this mandate — which is why `merge-gate` carries the include for its
 worker-role delegations (`merge-conflict-resolver`, `code-validator`), while each `iterate` round
-runs in a built-in subagent at the `deep` spawn site
+runs in a built-in subagent at the `standard` spawn site
 `merge-gate-delegation-contract/iterate-delegation`, and that subagent reads `tools/iterate.md`
 first. That handoff's
 message is never written by hand: the shipped `delegation-envelope` runtime helper builds it from
