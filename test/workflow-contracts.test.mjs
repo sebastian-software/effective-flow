@@ -23941,10 +23941,15 @@ test('merge-gate carries SUSPENDED host-pr-watch as a return entry, in the keywo
     /SUSPENDED host-pr-watch/,
     'the keyword-channel sentence names SUSPENDED host-pr-watch',
   );
-  assert.ok(core.includes('Host: t3-code'), 'input line `Host: t3-code`');
+  const inputLines = boundedSlice(
+    core,
+    '<!-- spawn-site:merge-gate/delegated-run -->',
+    '- `Observer-only re-entry:',
+  );
+  assert.ok(inputLines.includes('Host: t3-code'), 'dispatch input line `Host: t3-code`');
   assert.ok(
-    core.includes('Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>'),
-    'input line `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>`',
+    inputLines.includes('Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>'),
+    'dispatch input line `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>`',
   );
 });
 
@@ -23960,7 +23965,10 @@ test('merge-gate delegated-run entry accepts Host and Resumed wait with one Rela
     return run.slice(start, end);
   };
   const step1 = between('1. **Input lines.**', '\n2. **Roots.**');
-  assert.ok(step1.includes('Host: t3-code'), 'entry step 1 accepts `Host: t3-code`');
+  assert.ok(
+    prose(step1).includes('`Host:` accepts only `t3-code`'),
+    'entry step 1 accepts only `t3-code` for `Host:`',
+  );
   assert.ok(step1.includes('Resumed wait:'), 'entry step 1 accepts `Resumed wait:`');
   assert.match(
     prose(step1),
