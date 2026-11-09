@@ -187,8 +187,9 @@ test('the allowlist step handles every harness outcome', () => {
 });
 
 // Invariant: an unignored settings file is repaired by this step itself — `.gitignore` in standard
-// mode, `info/exclude` in hidden mode — only after the user's yes in both modes, and hidden mode
-// owns the second exclude line.
+// mode, `info/exclude` in hidden mode and in a linked worktree — only after the user's yes, and
+// hidden mode owns the second exclude line. In a linked worktree the standard remedy never creates
+// or edits the main checkout's `.gitignore`, which a later pull of the tracked file would collide with.
 test('the allowlist step owns its ignore remedy per visibility', () => {
   const text = flat(allowlist);
   const ask = text.indexOf('Ask whether to add the line `.claude/settings.local.json`');
@@ -203,12 +204,22 @@ test('the allowlist step owns its ignore remedy per visibility', () => {
   assert.match(text, /`info\/exclude`[^.]*never touch `\.gitignore`/);
   assert.match(
     flat(readSource('shared', 'setup-hidden-mode.md')),
-    /When `setup-allowlist` returns `SETTINGS_NOT_IGNORED` in hidden mode and the user answered yes to its ignore remedy's question, apply items 1 and 3 to the line `\.claude\/settings\.local\.json`/,
+    /When `setup-allowlist` returns `SETTINGS_NOT_IGNORED` in hidden mode or in a linked worktree and the user answered yes to its ignore remedy's question, apply items 1 and 3 to the line `\.claude\/settings\.local\.json`/,
   );
-  // The keyword form needs no configuration: it reads only the visibility to pick the remedy.
+  // The keyword form needs no configuration: it reads only the roots and the visibility to pick
+  // the remedy.
   assert.match(
     text,
-    /It needs no existing configuration: make Step 2 item 2's read-only resolution call with `tool: "setup"` and take only `data\.runtimeStateRoot` and `data\.visibility`/,
+    /It needs no existing configuration: make Step 2 item 2's read-only resolution call with `tool: "setup"` and take only `data\.runtimeStateRoot`, `data\.checkoutRoot` and `data\.visibility`/,
+  );
+  const standardRemedy = text.slice(standard, hidden);
+  assert.match(
+    standardRemedy,
+    /In a linked worktree \(`data\.checkoutRoot` differs from `data\.runtimeStateRoot`\) use the hidden-mode remedy instead and never create or edit `<RUNTIME_STATE_ROOT>\/\.gitignore`/,
+  );
+  assert.match(
+    allowlist,
+    /```lazy-include\nsetup-hidden-mode\nwhen: the helper returned `SETTINGS_NOT_IGNORED` and either the visibility is `hidden` or `data\.checkoutRoot` differs from `data\.runtimeStateRoot`\n/,
   );
 });
 

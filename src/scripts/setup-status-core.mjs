@@ -68,7 +68,17 @@
 //     visibility         standard | hidden | null
 //     reason             null, or the problem/could-not-check reason (see `REMEDIATIONS.ignore`);
 //                        standard: not-ignored | negated-entry | other-negated-entry |
-//                        tracked-runtime-content (only when the predicate holds); hidden:
+//                        tracked-runtime-content (only when the predicate holds, or when the
+//                        checkout passes and the runtime-state root is another worktree that
+//                        tracks runtime content; paths are then the root's) |
+//                        runtime-root-negated-entry (only when the checkout passes and that root
+//                        does not ignore the probe because its `.gitignore` carries a negation
+//                        that outranks an `info/exclude` entry: one of the directory itself, or
+//                        any `.effective-flow/…` one once the entry is present; detail is those
+//                        lines) |
+//                        runtime-root-not-ignored (only when the checkout passes and that root
+//                        does not ignore the probe without such a negation; detail is its
+//                        `check-ignore -v` line or the probe path); hidden:
 //                        tracked-runtime-content | exclude-unsafe | exclude-entry-missing |
 //                        outranked-by-gitignore; could-not-check: configuration-unresolved |
 //                        git-failed; not-applicable: not-a-git-repository
@@ -197,6 +207,10 @@ const GITIGNORE_LEFTOVER = /^\/?\.effective-flow(?:\/(?:\*)?)?$/;
 // A `.gitignore` negation line below `.effective-flow/`; setup migrates only the config.json one.
 const GITIGNORE_NEGATION = /^!\s*\/?\.effective-flow(?:\/|$)/;
 const GITIGNORE_CONFIG_NEGATION = /^!\s*\/?\.effective-flow\/config\.json$/;
+// A negation of the directory itself: it re-includes `.effective-flow/` at `.gitignore` rank, so an
+// `info/exclude` entry cannot exclude the directory. A negation of paths below it cannot outrank
+// that directory exclusion.
+const GITIGNORE_DIRECTORY_NEGATION = /^!\s*\/?\.effective-flow\/?$/;
 
 // ---------------------------------------------------------------------------------------------
 // Remediation map (frozen data)
@@ -435,6 +449,15 @@ export const REMEDIATIONS = Object.freeze({
     ),
     'other-negated-entry': entry(
       'Manual step: remove the `!.effective-flow/…` negation line(s) from `.gitignore` that setup does not migrate (it removes only `!.effective-flow/config.json`), then run `effective-flow setup status` again.',
+      false,
+    ),
+    'runtime-root-not-ignored': entry(
+      "Run `effective-flow setup` in this worktree: it adds `.effective-flow/` to the Git common directory's `info/exclude`, so the main checkout's runtime state is ignored too before the setup change is merged.",
+      true,
+      'setup',
+    ),
+    'runtime-root-negated-entry': entry(
+      "Manual step: the main checkout's `.gitignore` negation line(s) named in the detail outrank the Git common directory's `info/exclude`, so `effective-flow setup` in this worktree cannot fix it. Run `effective-flow setup` in the main checkout, or merge the setup change and pull it there, then run `effective-flow setup status` again.",
       false,
     ),
     'tracked-runtime-content': entry(
@@ -1059,8 +1082,14 @@ function ignoreResult(visibility, state, extra = {}) {
 // section's reason; tracked content is the reason only when the predicate holds, and otherwise an
 // additional `tracked-runtime-content` note, so `setupFixable` reflects the part setup can fix. A
 // negation line setup does not migrate is likewise a note beside a failed predicate, so the first
-// report already names every manual step.
-async function standardIgnore(context, checkoutRoot, tracked) {
+// report already names every manual step. Runtime writes land in the runtime-state root, so from a
+// linked worktree a passing checkout is ok only when that root passes as well; every checkout
+// problem keeps precedence. The root is then judged in setup's order and only for what setup in
+// this worktree can or cannot reach: content tracked there (setup's guard runs `git ls-files` at
+// the runtime-state root, and setup never untracks), then a `.gitignore` negation there that
+// outranks `info/exclude` (setup cannot edit the main checkout's `.gitignore` from here), and only
+// then a missing ignore that setup's `info/exclude` entry fixes.
+async function standardIgnore(context, checkoutRoot, runtimeStateRoot, tracked) {
   const notes = [];
   const trackedNote = () => {
     if (tracked.length > 0) notes.push(ignoreNote('tracked-runtime-content', { paths: tracked }));
@@ -1101,7 +1130,54 @@ async function standardIgnore(context, checkoutRoot, tracked) {
       paths: tracked,
     });
   }
+  if (runtimeStateRoot !== checkoutRoot) return await runtimeRootIgnore(context, runtimeStateRoot);
   return ignoreResult('standard', 'ok');
+}
+
+async function commonDirOf(context, root) {
+  const args = ['rev-parse', '--path-format=absolute', '--git-common-dir'];
+  const result = await git(context, root, args);
+  if (result.error || result.status !== 0) throw new CouldNotCheck(gitDetail(args, result));
+  return result.stdout.replace(/\r?\n$/, '');
+}
+
+// Whether the common directory's `info/exclude` already holds the ignore entry.
+async function excludeHasEntry(context, root) {
+  const exclude = await readExclude(context, await commonDirOf(context, root));
+  return Array.isArray(exclude) && exclude.includes(IGNORE_ENTRY);
+}
+
+// The runtime-state root of a linked worktree whose own checkout passes: see `standardIgnore`.
+async function runtimeRootIgnore(context, runtimeStateRoot) {
+  const rootTracked = await trackedRuntimePaths(context, runtimeStateRoot);
+  if (rootTracked.length > 0) {
+    return ignoreResult('standard', 'problem', {
+      reason: 'tracked-runtime-content',
+      paths: rootTracked,
+    });
+  }
+  if (await isIgnored(context, runtimeStateRoot, STANDARD_PROBE)) {
+    return ignoreResult('standard', 'ok');
+  }
+  // Setup's fix is the common-directory `info/exclude` entry. A negation outranks it when it
+  // negates the directory itself, or when the entry is already there and the root is still not
+  // ignored; any other negation (such as the legacy `!.effective-flow/config.json`) yields to it.
+  const rootNegations = negationLines(await gitignoreLines(context, runtimeStateRoot));
+  const outranking = (await excludeHasEntry(context, runtimeStateRoot))
+    ? rootNegations
+    : rootNegations.filter(({ text }) => GITIGNORE_DIRECTORY_NEGATION.test(text));
+  if (outranking.length > 0) {
+    return ignoreResult('standard', 'problem', {
+      reason: 'runtime-root-negated-entry',
+      detail: outranking.map(({ location }) => location).join('; '),
+    });
+  }
+  return ignoreResult('standard', 'problem', {
+    reason: 'runtime-root-not-ignored',
+    detail:
+      (await verboseRule(context, runtimeStateRoot, STANDARD_PROBE)) ??
+      path.join(runtimeStateRoot, STANDARD_PROBE),
+  });
 }
 
 async function ignoreSection(configuration, context) {
@@ -1117,7 +1193,8 @@ async function ignoreSection(configuration, context) {
   }
   try {
     const tracked = await trackedRuntimePaths(context, checkoutRoot);
-    if (visibility === 'standard') return await standardIgnore(context, checkoutRoot, tracked);
+    if (visibility === 'standard')
+      return await standardIgnore(context, checkoutRoot, runtimeStateRoot, tracked);
 
     // Hidden mode keeps setup-hidden-mode's order: tracked runtime content short-circuits.
     const notes = [];
@@ -1132,12 +1209,7 @@ async function ignoreSection(configuration, context) {
         notes,
       });
     }
-    const commonArgs = ['rev-parse', '--path-format=absolute', '--git-common-dir'];
-    const common = await git(context, checkoutRoot, commonArgs);
-    if (common.error || common.status !== 0) {
-      throw new CouldNotCheck(gitDetail(commonArgs, common));
-    }
-    const commonDir = common.stdout.replace(/\r?\n$/, '');
+    const commonDir = await commonDirOf(context, checkoutRoot);
     const exclude = await readExclude(context, commonDir);
     if (exclude === 'unsafe') {
       return ignoreResult(visibility, 'problem', {

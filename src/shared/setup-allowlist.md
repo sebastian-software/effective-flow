@@ -41,8 +41,8 @@ never edit it in prose.
 
 The keyword form runs only this step and its summary. It needs no existing configuration: make
 Step 2 item 2's read-only resolution call with `tool: "setup"` and take only
-`data.runtimeStateRoot` and `data.visibility` (`hidden` selects the hidden ignore remedy below,
-anything else the standard one). The shared chat-language rule applies. It asks no Visibility
+`data.runtimeStateRoot`, `data.checkoutRoot` and `data.visibility` (`hidden` selects the hidden ignore
+remedy below, anything else the standard one). The shared chat-language rule applies. It asks no Visibility
 question and runs no other setup step.
 
 ### Preview, confirmation, apply
@@ -101,13 +101,16 @@ Ask whether to add the line `.claude/settings.local.json`, naming the file; on n
 and report the outcome.
 
 - **Standard mode:** on yes append it once to `<RUNTIME_STATE_ROOT>/.gitignore`, creating the file
-  if missing and ensuring a trailing newline first, never rewriting another line.
+  if missing and ensuring a trailing newline first, never rewriting another line. In a linked
+  worktree (`data.checkoutRoot` differs from `data.runtimeStateRoot`) use the hidden-mode remedy
+  instead and never create or edit `<RUNTIME_STATE_ROOT>/.gitignore`: a local line there would
+  dirty the main checkout and collide with the tracked file a later pull brings.
 - **Hidden mode:** on yes add it to the Git common directory's `info/exclude` as
   `setup-hidden-mode` describes for that second line; never touch `.gitignore`.
 
 ```lazy-include
 setup-hidden-mode
-when: the visibility is `hidden` and the helper returned `SETTINGS_NOT_IGNORED`
+when: the helper returned `SETTINGS_NOT_IGNORED` and either the visibility is `hidden` or `data.checkoutRoot` differs from `data.runtimeStateRoot`
 ```
 
 ### Summary items

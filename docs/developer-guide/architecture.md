@@ -493,7 +493,9 @@ runtime-state boundary above. Workers read a hidden plan by its absolute main-ch
 delivery branch never carries a path below `.effective-flow/`, and plan archival runs only in the
 main checkout. The ignore entry lives in the Git common directory's `info/exclude`, which every
 linked worktree shares, so the existing `git check-ignore --no-index` predicates hold in each
-worktree without a tracked `.gitignore` line.
+worktree without a tracked `.gitignore` line. Standard-mode setup in a linked worktree uses the same
+entry when the runtime-state root does not yet ignore `.effective-flow/`, because the tracked line
+reaches the main checkout only with the merge.
 
 ## Delivery orchestration boundaries
 

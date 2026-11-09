@@ -2465,7 +2465,7 @@ try {
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
     iterate: 1700,
-    setup: 1543,
+    setup: 1553,
     'apply-review': 1071,
     'apply-issues': 984,
     'merge-gate': 903,

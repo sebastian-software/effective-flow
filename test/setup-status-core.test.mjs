@@ -1147,6 +1147,91 @@ test('standard ignore problems name setup or the manual untrack step', async (t)
   assert.equal(data.setupFixable, false);
 });
 
+test('a linked worktree ignoring .effective-flow/ does not hide an unignored runtime-state root', async (t) => {
+  // Invariant: standard visibility judges the ignore predicate at the runtime-state root (the
+  // main worktree), where runtime content is written; an ignore entry that only the linked
+  // checkout carries must not report ok, and setup can fix the root.
+  const { base, root } = repository(t, { files: { [SETUP_ADR]: setupDocument({}) } });
+  const linkedRoot = join(base, 'linked');
+  git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linkedRoot);
+  write(linkedRoot, '.gitignore', '.effective-flow/\n');
+
+  let data = await status(t, linkedRoot);
+  assert.equal(data.configuration.runtimeStateRoot, root);
+  assert.equal(data.configuration.checkoutRoot, linkedRoot);
+  assert.equal(data.ignore.state, 'problem', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.reason, 'runtime-root-not-ignored');
+  assert.equal(data.ignore.setupFixable, true);
+
+  // The common-directory exclude covers the runtime-state root and every linked worktree.
+  addExcludeEntry(root);
+  data = await status(t, linkedRoot);
+  assert.equal(data.ignore.state, 'ok', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.reason, null);
+});
+
+test('a linked worktree reports its own unignored checkout before the runtime-state root', async (t) => {
+  // Invariant: checkout problems take precedence over runtime-state root problems, so a linked
+  // worktree without an ignore entry reports `not-ignored` even though the main root is unignored.
+  const { base, root } = repository(t, { files: { [SETUP_ADR]: setupDocument({}) } });
+  const linkedRoot = join(base, 'linked');
+  git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linkedRoot);
+
+  const data = await status(t, linkedRoot);
+  assert.equal(data.configuration.runtimeStateRoot, root);
+  assert.equal(data.ignore.state, 'problem', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.reason, 'not-ignored');
+  assert.equal(data.ignore.setupFixable, true);
+});
+
+test('only a main-checkout .gitignore negation that outranks info/exclude is not setup-fixable from a linked worktree', async (t) => {
+  // Invariant: status never promises a setup fix that setup refuses, and never withholds one it
+  // makes. Setup in a linked worktree writes only the common-directory exclude: that excludes the
+  // directory and so beats the legacy two-line negation, but not a negation of the directory.
+  const { base, root } = repository(t, { files: { [SETUP_ADR]: setupDocument({}) } });
+  const linkedRoot = join(base, 'linked');
+  git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linkedRoot);
+  write(linkedRoot, '.gitignore', '.effective-flow/\n');
+  write(root, '.gitignore', '.effective-flow/*\n!.effective-flow/config.json\n');
+
+  let data = await status(t, linkedRoot);
+  assert.equal(data.ignore.reason, 'runtime-root-not-ignored', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.setupFixable, true);
+  addExcludeEntry(root);
+  data = await status(t, linkedRoot);
+  assert.equal(data.ignore.state, 'ok', JSON.stringify(data.ignore));
+
+  write(root, '.gitignore', '!.effective-flow/\n');
+  data = await status(t, linkedRoot);
+  assert.equal(data.ignore.state, 'problem', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.reason, 'runtime-root-negated-entry');
+  assert.equal(data.ignore.detail, `${join(root, '.gitignore')}:1:!.effective-flow/`);
+  assert.equal(data.ignore.setupFixable, false);
+  assert.equal(data.ignore.setupForm, null);
+  assert.match(data.ignore.remediation, /main checkout/);
+});
+
+test('runtime content tracked in the main checkout is a manual untrack step from a linked worktree', async (t) => {
+  // Invariant: setup's tracked-content guard runs at the runtime-state root, so content tracked
+  // there is reported with the root's paths and is not setup-fixable, even when the root is
+  // ignored.
+  const { base, root } = repository(t, { files: { [SETUP_ADR]: setupDocument({}) } });
+  const linkedRoot = join(base, 'linked');
+  git(root, 'worktree', 'add', '--quiet', '-b', 'feature', linkedRoot);
+  write(linkedRoot, '.gitignore', '.effective-flow/\n');
+  write(root, '.effective-flow/memory.json', '{}\n');
+  git(root, 'add', '-f', '.effective-flow/memory.json');
+  git(root, 'commit', '--quiet', '-m', 'track runtime content');
+  addExcludeEntry(root);
+
+  const data = await status(t, linkedRoot);
+  assert.equal(data.ignore.state, 'problem', JSON.stringify(data.ignore));
+  assert.equal(data.ignore.reason, 'tracked-runtime-content');
+  assert.deepEqual(data.ignore.paths, ['.effective-flow/memory.json']);
+  assert.equal(data.ignore.setupFixable, false);
+  assert.equal(data.setupFixable, false);
+});
+
 test('standard mode reports a failed predicate and tracked content together', async (t) => {
   // Invariant: setup Step 1 checks the predicate and tracked content independently, so a tracked
   // path never hides the setup-fixable missing entry; it becomes an additional note.
