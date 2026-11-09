@@ -135,6 +135,68 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
   assert.doesNotMatch(contract, /build target.*qualif(?:y|ication)/i);
 });
 
+test('Focus states pending qualification on all hosts while no gate row is qualified', () => {
+  // Invariant: while every route is disabled, one gate sentence — not the table — tells every host,
+  // the catch-all row and a bare invocation included, that focus is pending qualification under the
+  // qualified #613 reference, first and once per reply, only in the three limitation outputs and
+  // never in a stop or in the excluded tick notices. Activating a route removes this sentence.
+  const contract = source('src/shared/focus-session-contract.md');
+  const qualification = boundedSlice(
+    contract,
+    '## Current qualification gate',
+    '## Reader admission and bounded evidence',
+  );
+  const opening =
+    'While no row of this table is qualified, `focus` is disabled on all hosts pending qualification (`sebastian-software/effective-flow#613`)';
+  const pending = flat(boundedSlice(qualification, opening, 'On a disabled path'));
+  assertPhrases(pending, [
+    opening,
+    'every row of this table',
+    'Codex CLI or other unqualified host',
+    'before any selection is clarified',
+    'once per reply',
+    'only in',
+    'never in a `follow-up stop` reply',
+    "first and followed by the row's missing capability",
+    'a snapshot refusal',
+    'a `follow-up` limitation reply other than `follow-up stop`',
+    "a tick's disabled-row notice",
+    'a checkpoint-only tick',
+    'the `handle:pending` statement',
+    'the invalid-checkpoint notice',
+    "it never precedes or replaces a stop or a tick's deletion of its own handle",
+  ]);
+  assert.match(
+    pending,
+    /its own handle\.\s*$/,
+    'the sentence ends immediately before the disabled-path rule',
+  );
+  assert.doesNotMatch(pending, /(?<![\w/-])#613\b/, 'only the qualified #613 reference ships');
+  ordered(
+    flat(qualification),
+    '| Codex CLI or other unqualified host |',
+    flat(opening),
+    'On a disabled path return the stated missing capability before content access or dispatch.',
+  );
+
+  const authority = flat(
+    boundedSlice(contract, '## Authority before any host access', '## Current qualification gate'),
+  );
+  assert.match(
+    authority,
+    /Missing, ambiguous or conflicting selections are clarified before access, except that while no gate row is qualified the gate's pending refusal comes first wherever the gate states it;/,
+  );
+
+  const hint = frontmatter(source('src/tools/focus.md'))
+    .split('\n')
+    .find((line) => line.startsWith('catalogHint:'));
+  assertPhrases(hint, [
+    'Not yet available on any host',
+    'pending qualification',
+    'sebastian-software/effective-flow#613',
+  ]);
+});
+
 test('Focus reader admission preserves exact-source and evidence boundaries', () => {
   // Invariant: reader admission allows only the selected source and bounded evidence, with no child,
   // private-log, provenance, or access substitution that could turn missing evidence into a verdict.
