@@ -24071,17 +24071,26 @@ test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-res
   );
   assert.match(
     bounds,
-    /The third consecutive unchanged resume takes the run's report-and-stop path/,
+    near('third consecutive unchanged resume', "takes the run's report-and-stop path", 20),
     'the cap still takes report-and-stop by default',
   );
   assert.match(
     bounds,
     near(
       'pending only for its stale-verdict re-trigger',
-      'no review newer than the recorded re-trigger `createdAt`',
-      120,
+      'still has run with no review newer than the recorded re-trigger `createdAt`',
+      60,
     ),
-    'the exception is defined as a bot pending only for its re-trigger answer',
+    'the exception is defined as a bot pending only for its re-trigger answer that still has run with no newer review',
+  );
+  assert.match(
+    bounds,
+    near(
+      'where every pending bot is such a bot',
+      `step 5's "did not answer within the wait" continuation`,
+      60,
+    ),
+    'the hand-over applies only where every pending bot is such a bot',
   );
   assert.match(
     bounds,
@@ -24094,7 +24103,7 @@ test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-res
   );
   assert.match(
     bounds,
-    /Any other pending bot or check at the cap keeps report-and-stop/,
+    near('Any other pending bot or check at the cap', 'keeps report-and-stop', 20),
     'every other pending bot or check at the cap keeps report-and-stop',
   );
 });
