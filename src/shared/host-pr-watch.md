@@ -148,9 +148,10 @@ never watches and takes the caller's report-and-stop path.
 A **top-level** `{{SKILL:iterate}}` run carries neither a body delimiter nor a `Run state:` line.
 On T3 Code this wait replaces Phase 1.5 step 5's single blocking wait and the Rules' "wait at most
 once"; the cap of three unchanged wakes bounds it instead. When its T3 Code Phase 1.5 question is
-answered `Wait`, call `watch_pull_request` once, print one
-visible line naming the running reviewers, stating that the wait has no time bound and that the user
-can continue or stop, and end the turn. On each wake for this pull request, or a request to continue,
+answered `Wait`, call `watch_pull_request` once. Where it cannot be loaded or is rejected, end the
+run with step 5's report naming the running reviewers before any wait line: no sleep, no other
+transport. Otherwise print one visible line naming the running reviewers, stating that the wait has
+no time bound and that the user can continue or stop, and end the turn. On each wake for this pull request, or a request to continue,
 re-read once as Phase 1.5 step 5 does and observe again:
 
 - every reviewer finished: continue into Phase 2 with what they produced;
