@@ -20,7 +20,11 @@ the partial-diff recovery contract of `worktree-lifecycle`.
    whose lock another actor holds fails `condition-9`; it is reported, offered nothing, and its lock
    is never broken. A release refused as `residual`, `index` or `source` also names
    `details.release.residualPaths`: it stays refused until the user restores the source checkout or
-   cleans that worktree by hand.
+   cleans that worktree by hand. A release can also be refused as `quarantine` (a kept
+   `.effective-flow-release-*` directory in the worktree holds the only copy of bytes a failed
+   release took and also blocks worktree removal and cleanup; the user recovers them from it by
+   hand), `ignored` or `hidden` (naming `details.release.ignoredPaths` or `hiddenPaths` when they
+   could be established; the user removes or fixes those paths by hand).
 
 When at least one candidate is `resumable`, list those numbered and ask once:
 

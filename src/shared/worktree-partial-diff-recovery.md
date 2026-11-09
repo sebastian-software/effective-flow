@@ -56,14 +56,33 @@ Each proof below is reported by its identifier in `proofs` of `NOT_ELIGIBLE`.
   and modes match the next group), `committed-count` (at least one, after recovery), `index` (clean,
   or staging exactly the next group by path, blob and mode; refused beside a recovered tip),
   `residual` (no other dirty or untracked path, each residual endpoint holding its descriptor's
-  kind, mode and bytes) and `source` (`verifySourceManifest` exact: source `HEAD` and every selected
+  kind, mode and bytes; no index entry, committed and recovered endpoints included, carrying a
+  skip-worktree or assume-unchanged bit over bytes neither its index nor `HEAD` holds, compared by
+  content; and no ignored untracked file at an endpoint of any group: the endpoint itself, a file
+  below a directory in its place, or a file in place of a parent directory) and `source` (`verifySourceManifest` exact: source `HEAD` and every selected
   entry unchanged).
 - **Release** (`release: "partial-diff"`, `to` `cleanup-ready`, `reason` `null`): `purpose`,
   `condition-1`, `condition-2` … `condition-6`, `condition-9`, then one route: `gone` (unregistered
   and its path absent; a half-gone worktree is `half-gone` with its `shape`), `clean` (nothing to
   restore), or `ledger` (`residual`: the dirt is exactly the residual descriptors; `index`;
   `source`). A dirty worktree without a valid ledger is `residual` with `route: "no-ledger"` and its
-  exact dirty paths.
+  exact dirty paths, plus `hidden` beside it when that check fails. Before the `clean`, `ledger` and
+  no-ledger routes (not `gone`) come three more proofs, in this order; a failing `quarantine` or
+  `ignored` is reported alone, without evaluating the later ones:
+  - `quarantine`: an entry `.effective-flow-release-*` stands directly below the worktree root,
+    read from the file system, so an ignored one counts. A failed restore keeps it, and it holds
+    the only copy of the bytes it took.
+  - `ignored`: an ignored untracked file stands at a ledger endpoint as under `residual` above,
+    committed deletions included; also when the endpoints cannot be established. When they were
+    established, it names `details.release.ignoredPaths` and `ignoredPathCount`.
+  - `hidden`: a skip-worktree or assume-unchanged entry hides bytes neither its index nor `HEAD`
+    holds, of any path; also when the entries cannot be established. It names `hiddenPaths` and
+    `hiddenPathCount`.
+
+  On the `ledger` route a clean residual endpoint passes `residual` only if it holds its descriptor
+  or is byte-exactly at `HEAD` (`HEAD`'s index entry and mode plus the bytes a checkout of `HEAD`
+  writes); a hidden endpoint never counts as at `HEAD`, and a dirty one must hold its descriptor.
+  A source root equal to the delivery worktree is unproven and reported as `source`.
 
 Both replace the session-ownership check by their proofs, run under the record lock and rewrite only
 `status`, `reason`, `updatedAt` and `sessionId` (the new owner); `creationOid`, `receipt` and the
@@ -135,9 +154,12 @@ resolved visibility (`config-resolve` `standard` or `hidden`) with `standard` as
   mode) hold. Repeating the recorded tip is `appended: false`.
 - **`ledger reconcile`** is the read-only resume reconcile of the owning session's `active` record:
   committed endpoints against the tip's tree by blob and mode, residual endpoints against the
-  worktree by bytes and the index, no other dirty path, and `verifySourceManifest`; nothing is
-  re-planned. A tip the ledger lacks is `history`. It returns `exact`, `mismatches` (`head`,
-  `committed`, `residual`, `index`, `extra`, `sourceDrift`), `staged` `{paths, count}` (residual
+  worktree by bytes and the index (`residual` also covers a skip-worktree or assume-unchanged
+  endpoint), no other dirty path, no hidden entry (`hidden`) and no ignored file at an endpoint,
+  committed ones included (`ignored`), and `verifySourceManifest`; nothing is re-planned. A tip the
+  ledger lacks is `history`, and a source not proven this repository's or equal to the delivery
+  worktree is refused as `source-root`. It returns `exact`, `mismatches` (`head`, `committed`,
+  `residual`, `index`, `extra`, `hidden` and `ignored` as `{paths, count}`, `sourceDrift` a count), `staged` `{paths, count}` (residual
   endpoints staged away from `HEAD`, no mismatch by itself), `next`, `remaining` and `tip`.
 - **`worktree resume-check`** evaluates every resume and release proof, tip recovery included, and
   writes nothing; it observes the record lock without taking it. It returns `resumable`,
