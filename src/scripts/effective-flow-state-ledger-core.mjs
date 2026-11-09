@@ -18,7 +18,7 @@
 //   recordId, creationOid, worktreePath, branch   copied from the lifecycle record
 //   receiptDigest  SHA-256 of the record's canonical receipt (`itemDigest`)
 //   base           {branch, oid}: the resolved delivery base; `oid` is the record's `creationOid`
-//   visibility     `visible` | `hidden`
+//   visibility     `standard` | `hidden`
 //   language       {git, forge}: each `de` | `en`
 //   manifest       the bound selection manifest of `delivery-selection-core.mjs`
 //   groups         [{index, endpoints: [{path, kind, mode, digest, oid}]}]: the ordered group plan,
@@ -65,6 +65,7 @@ import {
 } from './runtime-state-guard.mjs';
 import { LEDGER_MAX_BYTES, StateError, fail } from './effective-flow-state-core.mjs';
 import { isObject, readBoundedFile } from './runtime-file-primitives.mjs';
+import { VISIBILITY_VALUES } from './remote-tracker-shared-core.mjs';
 
 export { LEDGER_MAX_BYTES };
 export const LEDGER_SCHEMA_VERSION = 1;
@@ -94,7 +95,6 @@ export const LEDGER_LANGUAGE_KEYS = Object.freeze(['git', 'forge']);
 export const LEDGER_GROUP_KEYS = Object.freeze(['index', 'endpoints']);
 export const LEDGER_ENDPOINT_KEYS = Object.freeze(['path', 'kind', 'mode', 'digest', 'oid']);
 export const LEDGER_COMMIT_KEYS = Object.freeze(['group', 'oid']);
-export const LEDGER_VISIBILITIES = Object.freeze(['visible', 'hidden']);
 export const LEDGER_LANGUAGES = Object.freeze(['de', 'en']);
 // At most this many paths are listed in a refusal; the count is always reported.
 export const MAX_REPORTED_PATHS = 256;
@@ -235,7 +235,7 @@ export function ledgerProblem(value, binding) {
   }
   if (!exactKeys(value.base, LEDGER_BASE_KEYS)) return 'base';
   if (!isPlainText(value.base.branch, 255) || value.base.oid !== value.creationOid) return 'base';
-  if (!LEDGER_VISIBILITIES.includes(value.visibility)) return 'visibility';
+  if (!VISIBILITY_VALUES.includes(value.visibility)) return 'visibility';
   if (
     !exactKeys(value.language, LEDGER_LANGUAGE_KEYS) ||
     !LEDGER_LANGUAGE_KEYS.every((key) => LEDGER_LANGUAGES.includes(value.language[key]))

@@ -134,7 +134,7 @@ test('the ledger worst case is every group committed with a 64-hex OID', () => {
       receiptDigest: '2'.repeat(64),
     },
     base: { branch: 'main', oid: '1'.repeat(40) },
-    visibility: 'visible',
+    visibility: 'standard',
     language: { git: 'en', forge: 'de' },
     manifest: { placeholder: true },
     groups: [
@@ -267,6 +267,19 @@ test('ledger init writes an exact-key ledger with helper-computed descriptors', 
   }
   expectOutcome(await call('ledger init', initInput(fixture)), 'LEDGER_EXISTS');
   assert.equal(readFileSync(ledgerFile(fixture), 'utf8'), raw);
+});
+
+// Invariant: the ledger takes the config resolver's visibility vocabulary `standard | hidden`
+// verbatim, stores it unchanged, and refuses the retired `visible` spelling.
+test('ledger init accepts the standard visibility and refuses visible', async (t) => {
+  const refused = await delivery(t);
+  expectError(
+    await call('ledger init', initInput(refused, { visibility: 'visible' })),
+    'INVALID_INPUT',
+  );
+  const fixture = await delivery(t);
+  expectOk(await call('ledger init', initInput(fixture, { visibility: 'standard' })));
+  assert.equal(readLedgerFile(fixture).visibility, 'standard');
 });
 
 // Invariant: a plan that is not an exact partition is refused before any write; a record owned by
@@ -498,7 +511,7 @@ test('a ledger sourced from its own delivery worktree refuses release, reconcile
       cwd: fixture.root,
       executionRoot: fixture.root,
       recordId: fixture.record.recordId,
-      visibility: 'visible',
+      visibility: 'standard',
     }),
   );
   assert.equal(check.releasable, false, JSON.stringify(check));
@@ -643,7 +656,7 @@ test('ledger schema: exact keys at every level and no content, credential or ses
   assert.match(ledger.receiptDigest, /^[0-9a-f]{64}$/);
   assert.deepEqual(Object.keys(ledger.base), ['branch', 'oid']);
   assert.deepEqual(Object.keys(ledger.language), ['git', 'forge']);
-  assert.ok(['visible', 'hidden'].includes(ledger.visibility));
+  assert.ok(['standard', 'hidden'].includes(ledger.visibility));
   assert.equal(ledger.groups.length, 2);
   for (const group of ledger.groups) {
     assert.deepEqual(Object.keys(group), ['index', 'endpoints']);
@@ -682,7 +695,7 @@ function modeledLedgerBytes(fixture, groups, branchLength) {
       receiptDigest: zero(64),
     },
     base: { branch: 'b'.repeat(branchLength), oid: fixture.record.creationOid },
-    visibility: 'visible',
+    visibility: 'standard',
     language: { git: 'en', forge: 'de' },
     manifest: fixture.manifest,
     groups: groups.map((paths, index) => ({
@@ -2496,7 +2509,7 @@ function resumeCheckOf(fixture) {
     cwd: fixture.root,
     executionRoot: fixture.root,
     recordId: fixture.record.recordId,
-    visibility: 'visible',
+    visibility: 'standard',
   });
 }
 
@@ -2512,7 +2525,7 @@ function resumeOf(fixture) {
     branch: fixture.worktree.branch,
     workflow: 'deliver',
     adoption: 'partial-diff-resume',
-    visibility: 'visible',
+    visibility: 'standard',
   });
 }
 
