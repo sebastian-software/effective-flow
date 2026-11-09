@@ -23784,14 +23784,6 @@ function hostPrWatchT3Section() {
   return text.slice(heading.index);
 }
 
-// Sentences split on `. `, blank lines and list or table-row starts, so one bullet or row is one unit.
-function sentencesOf(text) {
-  return text
-    .split(/(?<=\.)\s+|\n\s*\n|\n(?=\s*(?:[-*|]|\d+\.)\s)/)
-    .map((sentence) => sentence.trim())
-    .filter(Boolean);
-}
-
 // Invariant: the T3 PR-watch procedure is a deferred fragment reached only through a lazy pointer in
 // merge-gate, iterate and pr, so no run on another host and no other tool pays for it.
 test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', () => {
@@ -23851,22 +23843,25 @@ test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending 
   );
 });
 
-// Invariant: the T3 section (first heading containing "T3 Code" to end of file) never instructs a
-// sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup wait: every sentence naming one is a
-// prohibition (never, no, not, without, neither, nor). Terms and keywords are matched on the raw
-// sentence, code spans included; `sleep` in any case, so "Sleep" at a sentence start still counts.
-test('every sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup mention in the host-pr-watch T3 section is a prohibition sentence', () => {
-  const section = hostPrWatchT3Section();
-  const names = (sentence) =>
-    /sleep/i.test(sentence) || /--watch|pr-checks-wait|Monitor|ScheduleWakeup/.test(sentence);
-  const prohibition = /\b(?:never|no|not|without|neither|nor)\b/i;
-  const mentions = sentencesOf(section).filter(names);
-  assert.ok(
-    mentions.length > 0,
-    'the T3 section must state the prohibition on sleep, --watch and polling',
-  );
-  for (const sentence of mentions) {
-    assert.match(sentence, prohibition, `not a prohibition sentence: ${sentence}`);
+// Invariant: the T3 section (first heading containing "T3 Code" to end of file) prohibits each of
+// sleep, --watch, pr-checks-wait, Monitor and ScheduleWakeup, and never instructs one: each term
+// occurs, and every occurrence has a negation (never, no, not, without, neither, nor) at most 40
+// characters before it within its own clause (no `.`, `;`, `:` or `,` between). Matched on the
+// whitespace-collapsed section, code spans included; `sleep` in any case, so "Sleep" counts.
+test('every sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup occurrence in the host-pr-watch T3 section sits in a prohibition', () => {
+  const section = prose(hostPrWatchT3Section());
+  const terms = [/sleep/gi, /--watch/g, /pr-checks-wait/g, /Monitor/g, /ScheduleWakeup/g];
+  const negation = /\b(?:never|no|not|without|neither|nor)\b[^.;:,]{0,40}$/i;
+  for (const term of terms) {
+    const occurrences = [...section.matchAll(term)];
+    assert.ok(occurrences.length > 0, `the T3 section must prohibit ${term.source}`);
+    for (const { index } of occurrences) {
+      assert.match(
+        section.slice(0, index),
+        negation,
+        `${term.source} is not governed by a negation in its clause: …${section.slice(Math.max(0, index - 60), index + 40)}…`,
+      );
+    }
   }
 });
 
