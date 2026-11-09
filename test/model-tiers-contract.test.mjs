@@ -1359,3 +1359,29 @@ test('all targets ship bounded build caller and complete runner control with hel
     }
   }
 });
+
+// Invariant: both lazy partial-diff recovery fragments ship into every built skill, so a retained
+// `partial-diff` record can be resumed or released from any installed skill, while the deliver core
+// only points at the resume entry and the lifecycle contract at the recovery contract.
+test('all targets ship the lazy partial-diff resume and recovery fragments behind their pointers', () => {
+  for (const target of TARGETS) {
+    const skillRoot = join(distRoot, target, 'effective-flow');
+    const read = (file) => readFileSync(join(skillRoot, file), 'utf8');
+    for (const name of ['deliver-partial-diff-resume', 'worktree-partial-diff-recovery']) {
+      assert.ok(read(`shared/${name}.md`).length > 0, `${target}: ships shared/${name}.md`);
+    }
+    const deliver = read('tools/deliver.md');
+    assert.ok(
+      deliver.includes('shared/deliver-partial-diff-resume.md'),
+      `${target}: deliver pointer`,
+    );
+    assert.ok(
+      !deliver.includes('## Resume or release a retained delivery'),
+      `${target}: the deliver core does not inline the resume entry`,
+    );
+    assert.ok(
+      read('shared/worktree-lifecycle.md').includes('shared/worktree-partial-diff-recovery.md'),
+      `${target}: worktree-lifecycle points at the recovery contract`,
+    );
+  }
+});

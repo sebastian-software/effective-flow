@@ -47,7 +47,8 @@ entries do.
     and lister, the unattended plan-name pattern and the ref-path validator;
   - `delivery-selection-core.mjs`: the fetch hardening (ref guard, hook disabling, non-interactive
     environment, timeout, redacting diagnostics);
-  - `remote-tracker-shared-core.mjs`: the disclosure pattern set and `assertUndisclosed`.
+  - `remote-tracker-shared-core.mjs`: the disclosure pattern set, `assertUndisclosed` and the
+    `VISIBILITY_VALUES` enum (`standard | hidden`) that `delivery-branch-name` accepts.
 - `UNATTENDED_PLAN_NAME` and `refPathProblem` moved from `plan-publication-core.mjs` into
   `plan-lint-core.mjs`, which owns the plan-file contract and is a leaf. `plan-publication-core.mjs`
   imports both back and re-exports them, so its behaviour and its public surface stay unchanged.

@@ -493,7 +493,9 @@ runtime-state boundary above. Workers read a hidden plan by its absolute main-ch
 delivery branch never carries a path below `.effective-flow/`, and plan archival runs only in the
 main checkout. The ignore entry lives in the Git common directory's `info/exclude`, which every
 linked worktree shares, so the existing `git check-ignore --no-index` predicates hold in each
-worktree without a tracked `.gitignore` line.
+worktree without a tracked `.gitignore` line. Standard-mode setup in a linked worktree uses the same
+entry when the runtime-state root does not yet ignore `.effective-flow/`, because the tracked line
+reaches the main checkout only with the merge.
 
 ## Delivery orchestration boundaries
 
@@ -651,6 +653,25 @@ locked nor prunable, a `creationOid` equal to the freshly fetched remote head an
 the local tip, and a clean worktree. It then rewrites only `status`, `reason`, `updatedAt`, and
 `sessionId`; `creationOid`, the branch, and the receipt snapshot never change. A harness-managed,
 user-managed, or recordless worktree is never adopted.
+
+`deliver` adds a second, separate adoption for its own `partial-diff` records, selected by the
+explicit `adoption: "partial-diff-resume"` discriminator; a `partial-diff` record without it still
+fails the `purpose` proof. The route rests on a delivery ledger that `deliver` writes after its exact
+reconcile and extends after each verified group commit. The resume proves, under the record lock, the
+record, the ledger, the commit history (the ledger's commits plus at most one provable unrecorded
+tip), a clean or exactly-next-group index, the residual worktree content, the source manifest and a
+visibility not weaker than the ledger's; it rewrites only `status`, `reason`, `updatedAt` and
+`sessionId`. A `release: "partial-diff"` transition moves a record that cannot be resumed to
+`cleanup-ready` under a replacement proof set, discarding the proven residual on the ledger route
+under the worktree's Git index lock while keeping every discarded file under
+`refs/effective-flow/released/<RECORD_ID>/`, and `cleanup` then removes the worktree and ledger and
+keeps the branch. The lifecycle helper stays
+in `effective-flow-state-worktree-core.mjs`; the ledger lives in `effective-flow-state-ledger-core.mjs`
+and the recovery proofs and operations in `effective-flow-state-recovery-core.mjs`, which imports the
+former's internals and is never imported by it ([Build system](build-system.md#runtime-scripts)). The
+`deliver` side is a lazy resume entry at step 1.1, `src/shared/deliver-partial-diff-resume.md`, whose
+step map lists what a resume skips and reruns; the proofs and call shapes are in
+`src/shared/worktree-partial-diff-recovery.md`.
 An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
 claims `cleanup-ready` or `cleanup-failed` as `cleanup-in-progress` with its run ID and timestamp.
 A failed normal removal returns to `cleanup-failed`; complete and reverified worktree and branch
@@ -937,9 +958,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 58 non-destructive or bounded rules, in three
-families (thirteen runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect` and `cleanup plan`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+a prose removal of that state too. `setup` can write 62 non-destructive or bounded rules, in three
+families (seventeen runtime-state helper operations including `commit create`, `review
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan` and `ledger init|append|reconcile`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

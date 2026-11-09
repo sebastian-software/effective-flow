@@ -46,6 +46,8 @@ const RUNTIME_SCRIPT_FILES = [
   'effective-flow-state-commit-core.mjs',
   'effective-flow-state-review-core.mjs',
   'effective-flow-state-worktree-core.mjs',
+  'effective-flow-state-ledger-core.mjs',
+  'effective-flow-state-recovery-core.mjs',
   'dated-name-allocation.mjs',
   'claude-settings-core.mjs',
   'runtime-file-primitives.mjs',

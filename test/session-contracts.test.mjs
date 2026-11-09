@@ -619,6 +619,32 @@ test('session-rename dispatches each established host to its own native section'
   assert.doesNotMatch(dispatch, /^\| Codex\s+\|/m);
 });
 
+// Invariant: a deferred tool is loaded by its exact name before the call, and only the call's own
+// refusal or error is a failure. The failure mode this protects: host tools had to be loaded by
+// name before they could be called, and a run reading "not in my tool list" as "capability
+// absent" printed a suggestion line on a host where the rename works - which looks like a
+// supported degradation rather than like the bug it is. The rule applies to every host path, so
+// it lives once in the shared preamble rather than inside one host's section.
+test('session-rename states the deferred-tool rule once, in its shared preamble', () => {
+  const fragment = source('src/shared/session-rename.md');
+  const preamble = prose(boundedSlice(fragment, '## Session rename', '\n### T3 Code'));
+
+  assert.match(preamble, /An unlisted tool is not an absent capability/);
+  assert.match(
+    preamble,
+    near(
+      'loaded by their exact name',
+      'only a refusal or an error from the call itself is a failure',
+      250,
+    ),
+  );
+  assert.equal(
+    prose(fragment).match(/unlisted tool is not an absent capability/gi)?.length,
+    1,
+    'the deferred-tool rule must be stated exactly once in the fragment',
+  );
+});
+
 // Invariant: T3 dispatch wins before provider or harness, calls the current thread directly,
 // and treats every unconfirmed outcome as an independent visible fallback.
 test('the T3 Code section is host-first, id-free, and non-retrying', () => {
@@ -637,7 +663,12 @@ test('the T3 Code section is host-first, id-free, and non-retrying', () => {
     /regardless of whether the provider is Codex or Claude/,
   );
   assert.match(prose(fragment), /not merely from seeing a management tool/);
-  assert.match(contract, /call exactly `mcp__t3_code\.t3_thread_update`/);
+  // The operation is named semantically, not by one provider's transport spelling: T3 + Claude
+  // and T3 + Codex expose the same host operation under different tool names, and a literal
+  // spelling made the other provider read its own tool as a forbidden substitute.
+  assert.match(contract, /call the host's `t3_thread_update` operation/);
+  assert.match(contract, /through its `t3-code` MCP server/);
+  assert.match(contract, /The provider's tool for that operation is that operation/);
   assert.match(contract, /with `action: rename`/);
   assert.match(contract, /already-cut literal `title`/);
   assert.match(contract, /Omit both `threadId` and `environmentId`/);
@@ -647,7 +678,7 @@ test('the T3 Code section is host-first, id-free, and non-retrying', () => {
     /regenerate a title/,
     /read a thread back/,
     /inspect title ownership/,
-    /use another transport/,
+    /a transport other than the `t3-code` MCP server/,
   ]) {
     assert.match(contract, prohibited);
   }
@@ -782,15 +813,10 @@ test('the Claude Code section renames the calling session by sentinel and never 
   );
   assert.match(contract, near('licenses exactly one further call', 'nothing after that', 200));
 
-  // The failure mode observed while planning this change: both session tools had to be
-  // loaded by name before they could be called. A run reading "not in my tool list" as
-  // "capability absent" prints a suggestion line on a host where the rename works, which
-  // looks like a supported degradation rather than like the bug it is.
-  assert.match(contract, /An unlisted tool is not an absent capability/);
-  assert.match(
-    contract,
-    near('loaded by name', 'only a refusal or an error from the call itself is a failure', 250),
-  );
+  // The deferred-tool rule is stated once, in the shared preamble, because every host path
+  // that calls a deferred tool needs it - not only this one. A copy left here would be the
+  // second statement the shared rule exists to avoid.
+  assert.doesNotMatch(contract, /unlisted tool is not an absent capability/i);
 
   // A host that refuses the sentinel, and a Claude Code context carrying no session tools at
   // all, are ordinary outcomes of this path. Stated as errors instead they would invite a
@@ -884,7 +910,11 @@ test('setup probes T3 Code once without persistence, discovery, or retry', () =>
   assert.match(contract, /There is no hook, file, configuration key or one-time setup to install/);
   assert.match(contract, /deliberately renames the current thread once/);
   assert.match(contract, /including one chosen manually/);
-  assert.match(contract, /call `mcp__t3_code\.t3_thread_update` once/);
+  // Same semantic name as the rename fragment, so the probe reaches the provider's own tool for
+  // the operation on both T3 + Claude and T3 + Codex.
+  assert.match(contract, /call the host's `t3_thread_update`/);
+  assert.match(contract, near("the host's `t3_thread_update`", 'once', 80));
+  assert.match(contract, /via its `t3-code` MCP server/);
   assert.match(
     contract,
     /with `action: rename` and only the literal title `Effective Flow setup check`/,
@@ -1029,7 +1059,10 @@ test('the delivered setup guide keeps Desktop probe outcomes call-local', () => 
   );
 });
 
-test('active title surfaces contain no retired transport signatures outside precise removal guidance', () => {
+// Invariant: active title surfaces name neither a retired title mechanism nor a provider's
+// transport spelling of the T3 rename operation; the operation is named semantically so the
+// same contract reaches it on every T3 provider.
+test('active title surfaces contain no retired transport signatures or transport spellings outside precise removal guidance', () => {
   const activeSurfaces = [
     'build.mjs',
     'src/shared/session-title.md',
@@ -1062,6 +1095,8 @@ test('active title surfaces contain no retired transport signatures outside prec
       /codex app-server/i,
       /session-title\.json/,
       /session-title-hook\.json/,
+      // A provider's transport spelling of the T3 operation, with or without a prefix.
+      /mcp__\S*t3_thread_update|t3_code\.t3_thread_update/,
       ...(path === retirementRecord ? [] : [/butler/i]),
     ]) {
       assert.doesNotMatch(content, retired, `${path} still carries a retired title transport`);
@@ -1108,10 +1143,11 @@ test('setup probes the same native call the rename fragment defines', () => {
   );
   const fragment = prose(source('src/shared/session-rename.md'));
 
-  assert.match(setup, /`mcp__t3_code\.t3_thread_update`/);
+  assert.match(setup, /the host's `t3_thread_update` operation \(via its `t3-code` MCP server\)/);
   assert.match(setup, near('`action: rename`', 'Effective Flow setup check', 160));
   for (const shared of [
-    /`mcp__t3_code\.t3_thread_update`/,
+    /`t3_thread_update` operation/,
+    /`t3-code` MCP server/,
     /`action: rename`/,
     /`Effective Flow setup check`/,
   ]) {
@@ -1126,14 +1162,25 @@ test('setup probes the same native call the rename fragment defines', () => {
   assert.match(setup, near('T3 Code uses', 'no `threadId` or `environmentId`', 180));
   assert.match(setup, near('fixed probe title', 'only the actual host result', 160));
 
-  // setup keeps its own copy of the deferred-tool rule because its probe makes the call
-  // itself; the two copies exist to stay identical, so the clause is pinned on both sides.
-  // Without this, deleting it from setup left the suite green while deleting the fragment's
-  // copy failed - and a probe that reads "not in my tool list" as "capability absent"
+  // setup keeps its own statement of the deferred-tool rule because its probe makes the call
+  // itself; it sits once in the probe's host-detection preamble, so every host's probe step is
+  // covered and no host section carries a second copy. Without this pin, deleting it from setup
+  // left the suite green - and a probe that reads "not in my tool list" as "capability absent"
   // reports a failed probe on a host where the rename works.
+  const probe = source('src/shared/setup-rename-probe.md');
+  const probePreamble = prose(boundedSlice(probe, '## Session-rename probe', '\n### T3 Code'));
   assert.match(
-    setup,
+    probePreamble,
+    near('loaded by their exact name', 'load the named operation first', 120),
+  );
+  assert.match(
+    probePreamble,
     near('an unlisted tool is not an absent capability', 'only a refusal or an error', 200),
+  );
+  assert.equal(
+    prose(probe).match(/unlisted tool is not an absent capability/gi)?.length,
+    1,
+    'the probe must state the deferred-tool rule exactly once',
   );
 
   assert.doesNotMatch(setup, /Standing mandate for this session/);

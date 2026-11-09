@@ -233,7 +233,7 @@ In hidden mode, skip this step: "Step 1 (hidden)" of the fragment below replaces
 
 ```lazy-include
 setup-hidden-mode
-when: the visibility resolved to `hidden` — the `Hidden` answer or the `hidden` invocation — and the run reaches Step 1
+when: the visibility resolved to `hidden` — the `Hidden` answer or the `hidden` invocation — and the run reaches Step 1, or a standard run reaches Step 1 item 4 and finds the runtime-state root not ignored
 ```
 
 Target state: the entire runtime directory `.effective-flow/` (excluding the `config.json` migration — the config now lives in the ADR; runtime files like `memory.json`, `cache.json`, `review/`, `.worktrees/`) is ignored. The single line achieves this:
@@ -259,7 +259,19 @@ There is **no** `!.effective-flow/config.json` exception pattern anymore: the Ef
    - Migrate old directory patterns of the predecessor names: if a line ignores the former `.firmo/` or `.sf-plugin/` (common spellings with/without a leading or trailing slash, including the old `.firmo/*` + `!.firmo/config.json` two-line form), replace it with the single line `.effective-flow/`. Normalize an already-present blanket `.effective-flow/` (or `.effective-flow`, `/.effective-flow/`) to `.effective-flow/` and remove any subsequent `!.effective-flow/config.json` negation line.
    - If every `.effective-flow/` entry is missing, append the line `.effective-flow/`. Ensure a trailing newline before appending. If `.gitignore` is missing, create it with this single line.
 3. If the target state is already established: change nothing and report that briefly.
-4. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The ADR and convention-marker creation continue independently, but no `.effective-flow/` runtime marker may be written.
+4. **Linked worktree.** After items 1–3, whatever their outcome: when the Visibility resolution
+   call's `data.checkoutRoot` differs from a non-null `data.runtimeStateRoot`, runtime writes are
+   guarded from `RUNTIME_STATE_ROOT`, which receives
+   this checkout's tracked line only with the merge. Run item 1's two non-verbose predicates from
+   `RUNTIME_STATE_ROOT`; ignored and untracked there needs nothing more. Not ignored: add the line
+   `.effective-flow/` to the Git common directory's `info/exclude` through items 1 and 3 of
+   "Step 1 (hidden)" in `setup-hidden-mode` (local, shared by every worktree, never colliding with a
+   pull), never touching `<RUNTIME_STATE_ROOT>/.gitignore`, then require exit `0` from the predicate
+   run there. Tracked runtime content there, or exit `1` after the append (a tracked `!.effective-flow/`
+   negation outranks `info/exclude`): report its paths or lines and that runtime writes stay blocked until
+   this change is merged and pulled there or setup runs in the main checkout. The ADR and
+   convention-marker creation continue, but no `.effective-flow/` runtime marker may be written.
+5. If the project is not a Git repository: point out that a `.gitignore` is ineffective without Git, and ask whether it should be written anyway. Then use the same line comparison as above instead of `git check-ignore`. The ADR and convention-marker creation continue independently, but no `.effective-flow/` runtime marker may be written.
 
 ### Step 2: Determine the ADR location and read the existing config
 
@@ -964,7 +976,7 @@ Allowlist run only those of `setup-allowlist`):
 - for a mode switch: which direction, whether the local file was deleted or kept (and that a kept
   file leaves hidden mode active), that the `info/exclude` line stays, and every local plan and
   concept path left in place
-- whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established
+- whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established; in a linked worktree also the absolute `info/exclude` path, whether Step 1 item 4 added its `.effective-flow/` line or found it present or not needed, and the verification from `RUNTIME_STATE_ROOT`
 - which mode was chosen (Profile, Express, Guided, or Targeted); for Profile, the selected topology, chat
   choice, profile-owned final values and detected provider/base, and for Guided whether advanced
   settings were adjusted
@@ -1052,7 +1064,8 @@ with nothing staged matches no row and emits nothing.
   delete that file only after its fence). Never write or edit `.gitignore`, a tracked ADR,
   `AGENTS.md`, or `CLAUDE.md` in hidden mode, and never write `visibility | hidden` into a tracked
   file.
-- Change only `.gitignore` (the `.effective-flow/` line or its migration), the project setup ADR,
+- Change only `.gitignore` (the `.effective-flow/` line or its migration), the `.effective-flow/`
+  line in the Git common directory's `info/exclude` that Step 1 item 4 adds, the project setup ADR,
   the `**Effective Flow project setup:**` marker in `AGENTS.md`/`CLAUDE.md`, the `CLAUDE.md` that
   Step 6 item 7 writes to hold the `@AGENTS.md` import, and—only when the
   locator selected a transitional config—the runtime targets written by the shared
@@ -1061,11 +1074,11 @@ with nothing staged matches no row and emits nothing.
   Git hooks.
 - The capability step of Step 7 writes no file, edits no harness configuration, and adds no
   configuration key. Each identified host calls its own native title operation directly — T3 Code
-  uses `mcp__t3_code.t3_thread_update` with `action: rename` and no `threadId` or `environmentId`, the
-  Desktop path its current-task operation, and Claude Code its session-title operation with the
-  sentinel `"self"`. None creates a runtime target or invokes a write-safety guard. Each probe
-  renames the current session once, with the user's go-ahead and its own fixed probe title; report
-  only the actual host result.
+  uses the host's `t3_thread_update` operation (via its `t3-code` MCP server) with `action: rename`
+  and no `threadId` or `environmentId`, the Desktop path its current-task operation, and Claude Code
+  its session-title operation with the sentinel `"self"`. None creates a runtime target or invokes a
+  write-safety guard. Each probe renames the current session once, with the user's go-ahead and its
+  own fixed probe title; report only the actual host result.
 - Never overwrite existing config values and unknown keys without asking.
 - A Targeted run writes only what `setup-targeted-change` allows.
 - Profile mode asks `Chat` and then `Profile` before every conditional setup prompt. Local and forge

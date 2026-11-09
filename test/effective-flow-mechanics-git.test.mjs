@@ -9,9 +9,10 @@ import { spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
+import { executeOperation as resolveConfiguration } from '../src/scripts/config-resolve-core.mjs';
 import { executeOperation } from '../src/scripts/effective-flow-mechanics-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 
@@ -213,7 +214,7 @@ test('delivery-branch-name counts local and remote-tracking branches as taken', 
         branchPrefix: 'team',
         skill: 'build',
         text: 'User login',
-        visibility: 'visible',
+        visibility: 'standard',
       })
     ).branch;
   assert.equal(await name(), 'team/build/user-login');
@@ -225,4 +226,69 @@ test('delivery-branch-name counts local and remote-tracking branches as taken', 
   assert.equal(chosen, 'team/build/user-login-3');
   const check = spawnSync('git', ['check-ref-format', '--branch', chosen], { encoding: 'utf8' });
   assert.equal(check.status, 0);
+});
+
+// Cross-helper contract: the resolver's `data.visibility` passes verbatim into
+// `delivery-branch-name` (deliver.md step 3.2, worktree-integration.md step 4), in both modes.
+function setupDocument(rows) {
+  const table = Object.entries(rows)
+    .map(([key, value]) => `| ${key} | ${value} |`)
+    .join('\n');
+  return `# Effective Flow project setup\n\n## Status\n\nActive\n\n## Configuration\n\n| Key | Value |\n| --- | --- |\n${table}\n`;
+}
+
+function writeSetup(root, relative, rows) {
+  const target = join(root, relative);
+  mkdirSync(dirname(target), { recursive: true });
+  writeFileSync(target, setupDocument(rows));
+}
+
+async function resolvedConfiguration(cwd) {
+  const envelope = await resolveConfiguration('resolve', { cwd, tool: 'deliver' }, {});
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  return envelope.data;
+}
+
+async function branchFromResolution(cwd, resolution, input = {}) {
+  return await data('delivery-branch-name', {
+    cwd,
+    branchPrefix: resolution.values['delivery.branchPrefix'].value,
+    skill: 'build',
+    text: 'Effective Flow login',
+    visibility: resolution.visibility,
+    ...input,
+  });
+}
+
+test('a standard config-resolve visibility names the delivery branch unchanged', async (t) => {
+  const { local } = fixture(t);
+  writeSetup(local, join('docs', 'adr', 'effective-flow-project-setup.md'), {
+    'delivery.branchPrefix': 'team',
+  });
+  const resolution = await resolvedConfiguration(local);
+  assert.equal(resolution.visibility, 'standard');
+  const named = await branchFromResolution(local, resolution);
+  assert.equal(named.outcome, 'named');
+  assert.equal(named.branch, 'team/build/effective-flow-login');
+  assert.equal(named.sanitized, false);
+});
+
+test('a hidden config-resolve visibility keeps the disclosure handling', async (t) => {
+  const { local } = fixture(t);
+  writeSetup(local, join('.effective-flow', 'project-setup.md'), {
+    visibility: 'hidden',
+    'delivery.branchPrefix': 'work',
+  });
+  const resolution = await resolvedConfiguration(local);
+  assert.equal(resolution.visibility, 'hidden');
+  const named = await branchFromResolution(local, resolution);
+  assert.equal(named.outcome, 'named');
+  assert.equal(named.branch, 'work/build/login');
+  assert.equal(named.originalSlug, 'effective-flow-login');
+  assert.equal(named.sanitized, true);
+  const disclosing = await branchFromResolution(local, resolution, {
+    branchPrefix: 'Effective-Flow',
+  });
+  assert.equal(disclosing.outcome, 'prefix-discloses');
+  assert.equal(disclosing.branch, undefined);
 });

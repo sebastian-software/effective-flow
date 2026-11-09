@@ -158,8 +158,8 @@ When delivery or worktree is active:
    partial-diff PR by the procedure described below.
 4. Name the delivery branch with the helper's `delivery-branch-name` (call and fail-closed rule as
    under "Base-branch resolution"): `cwd`, `branchPrefix` (`delivery.branchPrefix`), `skill` (this
-   workflow), `text` (the plan title, task description, issue or finding), `visibility`,
-   `excludeNames: []`. Names read `<delivery.branchPrefix>/<skill>/<slug>`; an empty prefix, the
+   workflow), `text` (the plan title, task description, issue or finding), `visibility`
+   (the resolver's `data.visibility`, passed verbatim), `excludeNames: []`. Names read `<delivery.branchPrefix>/<skill>/<slug>`; an empty prefix, the
    hidden-mode default and valid in every mode, drops the prefix segment and its slash: `<skill>/<slug>`.
    `named`: use `data.branch`, reported when `data.suffix` is not `null`; when `data.sanitized`, report
    `data.originalSlug` and `data.slug` in one line. `prefix-discloses`: stop, naming `delivery.branchPrefix` and {{SKILL:setup}}.
@@ -303,6 +303,11 @@ A heuristic partial-diff selection by "all changed files
 except <plan.dir>" is not allowed. The workflow must know the files to include or
 ask. This reliably keeps newly created plans, `.effective-flow/` state and other
 local working files outside the PR.
+
+Only `{{SKILL:deliver}}` writes a delivery ledger, so only its retained `partial-diff` records can
+be resumed; this handback's failed worktree never is, and `plan-pr-continuation` adopts only purpose
+`delivery`. `{{SKILL:deliver}}` releases either kind for cleanup under the release proofs of the
+partial-diff recovery contract of `worktree-lifecycle`.
 
 ### What lives in the delivery branch and what stays in the main repo
 
