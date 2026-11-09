@@ -22,7 +22,11 @@ import { test } from 'node:test';
 
 import {
   bindSelectionManifest,
+  describeWorkingEndpoint,
   fastForwardUpstream,
+  hiddenWorktreeChanges,
+  ignoredPathsAt,
+  inspectResidual,
   inventoryRepository,
   nonInteractiveFetchEnv,
   reconcileDelivery,
@@ -646,6 +650,233 @@ test('mixed already-applied file-to-directory selection reconciles after an acti
   );
   assert.equal(reconciled.exact, true);
   assert.deepEqual(sourceSnapshot(sourceRoot), sourceBefore);
+});
+
+// Invariant (`inspectResidual` atHead is byte-exact): an endpoint counts as at HEAD only when its
+// working bytes are exactly what a checkout of HEAD's blob writes there, eol attributes included,
+// and never while its index entry carries the skip-worktree or assume-unchanged bit. Such a hidden
+// endpoint is in `content` even when it holds its descriptor, since `git status` never compares it.
+test('inspectResidual counts only byte-exact HEAD endpoints as atHead and hides none', async (t) => {
+  const { deliveryRoot } = createRepository(t);
+  write(deliveryRoot, '.gitattributes', 'crlf.txt text eol=crlf\n');
+  write(deliveryRoot, 'crlf.txt', 'one\r\ntwo\r\n');
+  git(deliveryRoot, 'add', '--', '.gitattributes', 'crlf.txt');
+  git(deliveryRoot, 'commit', '-m', 'eol fixture');
+  const changed = {
+    path: 'partial.txt',
+    kind: 'blob',
+    mode: '100644',
+    digest: '0'.repeat(64),
+    oid: '0'.repeat(40),
+  };
+  const filtered = { ...changed, path: 'crlf.txt' };
+  const inspect = async (endpoints) =>
+    await inspectResidual({ deliveryRoot, endpoints }, { runner: processRunner });
+
+  // At HEAD: a plain file and a filtered one whose CRLF bytes differ from the LF blob.
+  const clean = await inspect([changed, filtered]);
+  assert.deepEqual(clean.dirty, []);
+  assert.deepEqual(clean.content, ['crlf.txt', 'partial.txt']);
+  assert.deepEqual(clean.atHead, ['crlf.txt', 'partial.txt']);
+
+  // Newer bytes hidden from `git status` by either bit: not at HEAD, still in `content`.
+  for (const flag of ['--skip-worktree', '--assume-unchanged']) {
+    git(deliveryRoot, 'update-index', flag, '--', 'partial.txt');
+    write(deliveryRoot, 'partial.txt', 'newer\n');
+    const hidden = await inspect([changed, filtered]);
+    assert.deepEqual(hidden.dirty, [], flag);
+    assert.deepEqual(hidden.content, ['crlf.txt', 'partial.txt'], flag);
+    assert.deepEqual(hidden.atHead, ['crlf.txt'], flag);
+    // Holding its descriptor does not take a hidden endpoint out of `content`.
+    const held = await describeWorkingEndpoint(deliveryRoot, 'partial.txt', {
+      runner: processRunner,
+    });
+    assert.deepEqual((await inspect([held])).content, ['partial.txt'], flag);
+    git(deliveryRoot, 'update-index', flag.replace('--', '--no-'), '--', 'partial.txt');
+    git(deliveryRoot, 'checkout', '--', 'partial.txt');
+  }
+});
+
+// Invariant (`hiddenWorktreeChanges` compares content, worktree-wide): every index entry carrying
+// the skip-worktree or assume-unchanged bit is checked, selected or not, and only one whose working
+// tree holds bytes neither its index blob nor HEAD's blob checks out there is listed. An absent
+// entry (sparse checkout), a directory in its place, the index or HEAD bytes (eol attributes
+// applied), a changed mode alone, and a symbolic link's own target pass; an unflagged edit is left
+// to `git status`.
+test('hiddenWorktreeChanges lists only hidden entries whose bytes neither index nor HEAD hold', async (t) => {
+  const { deliveryRoot } = createRepository(t);
+  write(deliveryRoot, '.gitattributes', 'crlf.txt text eol=crlf\n');
+  write(deliveryRoot, 'crlf.txt', 'one\r\ntwo\r\n');
+  git(deliveryRoot, 'add', '--', '.gitattributes', 'crlf.txt');
+  git(deliveryRoot, 'commit', '-m', 'eol fixture');
+  const hidden = async () =>
+    await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: processRunner });
+  assert.deepEqual(await hidden(), []);
+
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'delete.txt', 'dir-shape/child.txt');
+  git(deliveryRoot, 'update-index', '--assume-unchanged', '--', 'crlf.txt', 'link.txt', 'gone.txt');
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'mode.txt', 'rename.txt');
+  rmSync(join(deliveryRoot, 'delete.txt'));
+  rmSync(join(deliveryRoot, 'dir-shape'), { recursive: true });
+  mkdirSync(join(deliveryRoot, 'dir-shape', 'child.txt'), { recursive: true });
+  chmodSync(join(deliveryRoot, 'mode.txt'), 0o755);
+  // `rename.txt` stages newer bytes and keeps them in the working tree; `gone.txt` stages them and
+  // keeps HEAD's bytes in the working tree: each holds its index or HEAD bytes.
+  write(deliveryRoot, 'rename.txt', 'staged\n');
+  git(deliveryRoot, 'update-index', '--no-skip-worktree', '--', 'rename.txt');
+  git(deliveryRoot, 'add', '--', 'rename.txt');
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'rename.txt');
+  const goneBlob = runGit(deliveryRoot, ['hash-object', '-w', '--stdin', '--path=gone.txt'], {
+    input: 'staged gone\n',
+  })
+    .stdout.toString('utf8')
+    .trim();
+  git(deliveryRoot, 'update-index', '--cacheinfo', `100644,${goneBlob},gone.txt`);
+  git(deliveryRoot, 'update-index', '--assume-unchanged', '--', 'gone.txt');
+  write(deliveryRoot, 'working.txt', 'unflagged edit\n');
+  assert.deepEqual(await hidden(), [], 'held bytes, absent paths and unflagged edits pass');
+
+  write(deliveryRoot, 'crlf.txt', 'one\ntwo\n');
+  write(deliveryRoot, 'rename.txt', 'newer than index and HEAD\n');
+  write(deliveryRoot, 'gone.txt', 'newer than index and HEAD\n');
+  rmSync(join(deliveryRoot, 'link.txt'));
+  symlinkSync('working.txt', join(deliveryRoot, 'link.txt'));
+  assert.deepEqual(await hidden(), ['crlf.txt', 'gone.txt', 'link.txt', 'rename.txt']);
+});
+
+// Invariant (ignored bytes in place of a path): a directory standing at a path, or a file standing
+// in place of one of its parent directories, reads as the path's absence, and `git status` lists
+// neither when it is ignored. `ignoredPathsAt` lists a path whose place holds an ignored file (the
+// path itself, below a directory there, or a file in place of a parent), and
+// `hiddenWorktreeChanges` lists a skip-worktree or assume-unchanged entry replaced that way. An
+// empty directory, a visible untracked file below one (left to `git status`) and a path with
+// nothing in its place pass.
+test('ignoredPathsAt and hiddenWorktreeChanges see ignored bytes below or above a path', async (t) => {
+  const { sourceRoot, deliveryRoot } = createRepository(t);
+  write(sourceRoot, '.git/info/exclude', '*.scratch\n/dir-shape\n');
+  const ignored = async (paths) =>
+    await ignoredPathsAt({ root: deliveryRoot, paths }, { runner: processRunner });
+  const hidden = async () =>
+    await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: processRunner });
+  const paths = ['partial.txt', 'dir-shape/child.txt', 'loose.scratch', 'missing/deep.txt'];
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'partial.txt');
+  git(deliveryRoot, 'update-index', '--assume-unchanged', '--', 'dir-shape/child.txt');
+  rmSync(join(deliveryRoot, 'partial.txt'));
+  mkdirSync(join(deliveryRoot, 'partial.txt'));
+  rmSync(join(deliveryRoot, 'dir-shape'), { recursive: true });
+  assert.deepEqual(await ignored(paths), [], 'an empty directory and nothing in place pass');
+  assert.deepEqual(await hidden(), []);
+  write(deliveryRoot, 'partial.txt/visible.txt', 'listed by git status\n');
+  assert.deepEqual(await ignored(paths), []);
+  assert.deepEqual(await hidden(), []);
+  rmSync(join(deliveryRoot, 'partial.txt', 'visible.txt'));
+
+  write(deliveryRoot, 'partial.txt/nested/only.scratch', 'moved bytes\n');
+  write(deliveryRoot, 'dir-shape', 'a file in place of the parent\n');
+  write(deliveryRoot, 'loose.scratch', 'ignored at the path itself\n');
+  assert.equal(git(deliveryRoot, 'status', '--porcelain', '--untracked-files=all'), '');
+  assert.deepEqual(await ignored(paths), ['dir-shape/child.txt', 'loose.scratch', 'partial.txt']);
+  assert.deepEqual(await hidden(), ['dir-shape/child.txt', 'partial.txt']);
+});
+
+// Invariant (source re-check, selected bytes last): for a working rename, `verifySourceManifest`
+// runs every source Git read of the entry (the rename source's index entry and HEAD, the ignore
+// check of the destination, the destination's index entry and HEAD) before it reads the
+// destination's bytes, so the destination deleted or replaced during any of those reads is
+// `selected-state` drift, never passed on an earlier read of it; an unchanged rename stays exact.
+test('verifySourceManifest reads a working rename destination after every source Git read', async (t) => {
+  const { sourceRoot } = createRepository(t);
+  git(sourceRoot, 'config', 'status.renames', 'true');
+  renameSync(join(sourceRoot, 'rename.txt'), join(sourceRoot, 'renamed.txt'));
+  git(sourceRoot, 'add', '--intent-to-add', '--', 'renamed.txt');
+  const manifest = await bind(sourceRoot, [{ path: 'renamed.txt', state: 'working' }]);
+  assert.equal(manifest.entries[0].renameFrom, 'rename.txt');
+  const bytes = readFileSync(join(sourceRoot, 'renamed.txt'));
+  let gitReads = 0;
+  let renameSourceReads = 0;
+  const counting = (call) => {
+    gitReads += 1;
+    if (call.args.includes(':(literal)rename.txt')) renameSourceReads += 1;
+    return processRunner(call);
+  };
+  assert.deepEqual(await verifySourceManifest({ manifest, sourceRoot }, { runner: counting }), {
+    exact: true,
+    drift: [],
+  });
+  assert.ok(
+    renameSourceReads >= 2,
+    `index and HEAD reads of the rename source: ${renameSourceReads}`,
+  );
+  const mutations = {
+    deleted: () => rmSync(join(sourceRoot, 'renamed.txt')),
+    replaced: () => write(sourceRoot, 'renamed.txt', 'replaced during a Git read\n'),
+  };
+  for (const [label, mutate] of Object.entries(mutations)) {
+    for (let read = 1; read <= gitReads; read += 1) {
+      write(sourceRoot, 'renamed.txt', bytes);
+      let seen = 0;
+      const racing = (call) => {
+        seen += 1;
+        if (seen === read) mutate();
+        return processRunner(call);
+      };
+      const verification = await verifySourceManifest({ manifest, sourceRoot }, { runner: racing });
+      assert.equal(verification.exact, false, `${label} during Git read ${read} of ${gitReads}`);
+      assert.deepEqual(
+        verification.drift.map(({ kind, path }) => [kind, path]),
+        [['selected-state', 'renamed.txt']],
+        `${label} during Git read ${read} of ${gitReads}`,
+      );
+    }
+  }
+});
+
+// Invariant (staged source stable across its blob read): a staged entry is read again after
+// `cat-file` returns, so a path restaged while its blob is read is never accepted on the blob the
+// index no longer names: verification reports `selected-state` drift without an actual state and
+// a selection being bound fails closed with SOURCE_DRIFT.
+test('a staged source restaged during its blob read is drift, never an exact source', async (t) => {
+  const { sourceRoot } = createRepository(t);
+  write(sourceRoot, 'partial.txt', 'staged\n');
+  git(sourceRoot, 'add', '--', 'partial.txt');
+  const selection = [{ path: 'partial.txt', state: 'staged' }];
+  const manifest = await bind(sourceRoot, selection);
+  assert.deepEqual(
+    await verifySourceManifest({ manifest, sourceRoot }, { runner: processRunner }),
+    { exact: true, drift: [] },
+  );
+  const restaging = () => {
+    let restaged = false;
+    return (call) => {
+      const result = processRunner(call);
+      if (!restaged && call.args.includes('cat-file')) {
+        restaged = true;
+        write(sourceRoot, 'partial.txt', 'restaged during cat-file\n');
+        git(sourceRoot, 'add', '--', 'partial.txt');
+      }
+      return result;
+    };
+  };
+  const verification = await verifySourceManifest(
+    { manifest, sourceRoot },
+    { runner: restaging() },
+  );
+  assert.equal(verification.exact, false);
+  assert.deepEqual(verification.drift, [
+    {
+      kind: 'selected-state',
+      path: 'partial.txt',
+      expected: manifest.entries[0].selected,
+      actual: null,
+    },
+  ]);
+
+  write(sourceRoot, 'partial.txt', 'staged\n');
+  git(sourceRoot, 'add', '--', 'partial.txt');
+  await assert.rejects(
+    bindSelectionManifest({ sourceRoot, selection }, { runner: restaging() }),
+    (error) => error.code === 'SOURCE_DRIFT',
+  );
 });
 
 // --- Pre-selection upstream status and fast-forward ---

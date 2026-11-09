@@ -16987,6 +16987,25 @@ test('deliver is exposed with its shipped helper and continues automatically aft
     /manifest confirmation is the sole routine approval[\s\S]*affirmative answer authorizes automatic/,
     'the manifest confirmation must be the sole approval and authorize the automatic continuation',
   );
+  // The rule names its exceptions exhaustively: only the conditional questions of step 1.1, the
+  // resume and release questions for a retained partial-diff record and the upstream questions,
+  // may precede the manifest answer, so no further routine question can be added unnoticed.
+  const additions = boundedSlice(
+    prose(deliver),
+    'sole routine approval. Its only additions',
+    'An affirmative answer',
+  );
+  for (const token of [
+    'conditional questions of step 1.1',
+    'can precede it',
+    'the resume and release questions for a retained `partial-diff` record',
+    'the upstream questions.',
+  ]) {
+    assert.ok(
+      additions.includes(token),
+      `the sole-approval rule must name its only additions exhaustively: ${token}`,
+    );
+  }
   ordered(
     deliver,
     'Should exactly this ordered file/state manifest be delivered?',
@@ -17154,6 +17173,248 @@ test('deliver checks the upstream before recording source evidence and defers th
   assert.match(
     text,
     /Never stash, rebase, create a merge commit, force, or retry the fast-forward, and never offer any of them as an alternative/,
+  );
+});
+
+// Invariant: the resume entry is paid only when a retained partial-diff record exists. Its pointer
+// sits after the source receipt and before `upstream-status`, fired by the `worktree inspect`
+// result, and the fragment it loads asks one resume question (never the selection again), offers
+// release only on an explicit answer, falls back to a new delivery otherwise, and maps every step
+// of a resumed run: what it skips, what it reruns in which order, and what comes from the ledger.
+test('deliver lazily loads a resume entry that maps the steps of a resumed delivery', () => {
+  const deliver = source('src/tools/deliver.md');
+  const resume = source('src/shared/deliver-partial-diff-resume.md');
+
+  const step1 = boundedSlice(
+    deliver,
+    '### 1. Establish immutable source evidence',
+    '\n2. Resolve `language.git`',
+  );
+  ordered(
+    step1,
+    'Issue and verify a source execution-location receipt',
+    'Then call `worktree inspect`',
+    '```lazy-include\ndeliver-partial-diff-resume\n',
+    'Unless a record was resumed',
+    'call `upstream-status {root: sourceRoot, fetch: true}`',
+  );
+  const triggers = new Map(
+    [...deliver.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.equal(
+    triggers.get('deliver-partial-diff-resume'),
+    '`worktree inspect` lists a record with purpose `partial-diff` and status `aborted` or `failed`',
+    'the resume entry must load only when a retained partial-diff record exists',
+  );
+  assert.doesNotMatch(
+    deliver,
+    /^```include\ndeliver-partial-diff-resume\n/m,
+    'the resume entry must never be part of the always-loaded core',
+  );
+
+  const asks = askContracts(resume, 'src/shared/deliver-partial-diff-resume.md');
+  assert.deepEqual(
+    asks.map(({ header }) => header),
+    ['Resume', 'Release'],
+    'the resume entry asks exactly one resume and one release question',
+  );
+  assert.deepEqual(
+    asks[0].options.map(({ label }) => label),
+    ['Resume', 'New delivery'],
+  );
+  assert.equal(
+    asks[1].type ?? 'options',
+    'options',
+    'the irreversible release question stays unscored',
+  );
+  const text = prose(resume);
+  assert.match(
+    text,
+    /An unanswered or skipped question, or a non-interactive run, resolves to New delivery/,
+    'an unanswered resume question must fall back to a new delivery',
+  );
+  assert.match(text, /Release only on an explicit answer/, 'release needs an explicit answer');
+  const scoping = boundedSlice(text, 'Resume is scoped by source', '3. Report every candidate');
+  for (const token of [
+    "ledger's `source.root` is not this run's `sourceRoot`, the source receipt's `EXECUTION_ROOT`, is never resumable here",
+    '`releasable` through the `clean` or `gone` route',
+    'report only its record ID and `source.root`',
+    'without a ledger is a candidate for release only, whatever its source',
+  ]) {
+    assert.ok(
+      scoping.includes(token),
+      `ledger records are scoped by their source root, foreign ones released only when clean or gone: ${token}`,
+    );
+  }
+  assert.match(
+    text,
+    /A result that is not `ok` stops the run/,
+    'a refused adoption after a Resume answer is the only stop of the entry',
+  );
+
+  const skipped = boundedSlice(text, 'Skipped:', 'Runs, in this order:');
+  for (const step of [
+    '`upstream-status` and `fast-forward`',
+    '`bind-manifest` (step 1.3)',
+    'steps 1.4, 2, 3, 4.1 and 4.2',
+    '`worktree.setup`',
+    '`ledger init`',
+  ]) {
+    assert.ok(skipped.includes(step), `a resumed delivery skips ${step}`);
+  }
+  ordered(
+    boundedSlice(text, 'Runs, in this order:', 'From the ledger:'),
+    "Step 1.1's source evidence, recorded fresh",
+    'Step 1.2, with hidden mode when the current visibility or `resume.visibility` is hidden',
+    'A fresh delivery execution-location receipt',
+    'expected `HEAD` `resume.tip`',
+    'Step 4.3.',
+    '`ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0',
+    'Step 4.5.',
+    'Step 5 from group `resume.next`',
+    'with `ledger append` after each verified commit',
+    'Step 6',
+    'Step 7',
+  );
+  assert.match(
+    boundedSlice(text, 'From the ledger:', 'A new failure'),
+    /`resume\.language` for both languages, `resume\.base` for the base[\s\S]*`resume\.groups` with this run's commit OIDs filled in/,
+    'languages, base and the final commit list come from the ledger',
+  );
+  assert.match(
+    text,
+    /without asking for the selection again/,
+    'a resume never asks for selection approval again',
+  );
+  assert.match(text, /model-evidence status of resumed worker turns as observed/);
+  assert.match(text, /the resume itself makes no model-evidence claim/);
+
+  // The core keeps the ledger writes on the normal path: init after the exact reconcile and before
+  // staging with its size-bound notice, and one append per verified group commit.
+  const init = boundedSlice(
+    prose(deliver),
+    '6. Call `ledger init`',
+    '### 5. Commit each derived group',
+  );
+  for (const token of [
+    'report once "resume unavailable for this run"',
+    'skip every `ledger append`',
+    'continue unchanged',
+    'After `INVALID_INPUT`, correct the input once',
+    '`NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER` or `WRITE_FAILED`',
+    'a failure before staging',
+  ]) {
+    assert.ok(
+      init.includes(token),
+      `ledger init must run before staging, degrade to one notice above the size bound or after a corrected INVALID_INPUT, and stop on other refusals: ${token}`,
+    );
+  }
+  assert.match(
+    prose(deliver),
+    /After all checks pass, record the commit with `ledger append`, then advance the receipt's expected commit/,
+  );
+  assert.match(
+    prose(deliver),
+    /Do not write it to tracked files or runtime state; only step 4\.6 binds it into the private delivery ledger/,
+    'the delivery ledger is the only runtime copy of the manifest',
+  );
+  assert.match(
+    prose(deliver),
+    /A later `deliver` run offers the retained record for resume or release at step 1\.1/,
+    'the failure clause must name the resume re-entry',
+  );
+});
+
+// Invariant: the resume entry judges a record only after the visibility is known and never takes
+// another actor's lock; it reports non-resumable records and offers release only for releasable
+// ones, and a resumed run's committed handoff covers every group, ledger-recorded or new.
+test('the resume entry resolves visibility first, spares foreign locks and covers every group in the handoff', () => {
+  const text = prose(source('src/shared/deliver-partial-diff-resume.md'));
+  const candidates = boundedSlice(text, '### Candidates', '```ask');
+  ordered(
+    candidates,
+    'Resolve the current visibility',
+    'Call `worktree resume-check` with that visibility for each such record',
+    'Report every candidate',
+  );
+  assert.match(candidates, /naming the failed proofs otherwise/);
+  assert.match(candidates, /fails `condition-9`[\s\S]{0,120}its lock is never broken/);
+  const releaseReport = boundedSlice(text, 'The Release question comes only after', '```ask');
+  for (const token of [
+    'resolved to New delivery or was not asked',
+    'a resumed run releases nothing',
+    'report its `releaseRoute`',
+    'exactly its `releasePaths`',
+    'Never run `git status` in a delivery worktree',
+  ]) {
+    assert.ok(
+      releaseReport.includes(token),
+      `a non-resumable record is reported with its route and discarded paths after the resume question: ${token}`,
+    );
+  }
+  assert.match(
+    candidates,
+    /refused as `residual`, `index` or `source`[\s\S]{0,120}restores the source checkout or cleans that worktree by hand/,
+    'a drift-refused release names how the user unblocks it',
+  );
+  assert.match(
+    text,
+    /Step 6, its committed-handoff evidence covering every group: the ledger's commits and this run's/,
+    'the step 6 evidence covers every group',
+  );
+  assert.match(text, /A new failure follows step 5's failure clause/);
+});
+
+// Invariant: a hook-staged group is unstaged by the adoption itself, on one locked index snapshot
+// that must still stage exactly that group, so the resumed run never unstages anything: a
+// per-path read before its own unstage could not see an entry staged at a parent of a staged
+// deletion, which that unstage would drop. The recovery contract names the lock, the snapshot and
+// the entries the adoption unstaged.
+test('the adoption unstages a hook-staged group and the resumed run never unstages', () => {
+  const text = prose(source('src/shared/deliver-partial-diff-resume.md'));
+  assert.match(
+    text,
+    /With `resume\.hookStaged`, the adoption itself already unstaged exactly `resume\.remainingGroups\[0\]` \(`resume\.hookStagedEntries`\), the working tree keeping its bytes; this run never unstages/,
+  );
+  assert.doesNotMatch(text, /restore --staged/, 'the resumed run runs no unstage of its own');
+  const recovery = prose(source('src/shared/worktree-partial-diff-recovery.md'));
+  for (const token of [
+    "only while holding its `index.lock`, Git's own lock",
+    'Every index read and write goes to one private snapshot taken under the lock',
+    'only while the snapshot still stages exactly that group',
+    'an entry staged since the proof, beside it or at a parent of a staged deletion, refuses with `WRITE_FAILED` and the index unchanged',
+  ]) {
+    assert.ok(recovery.includes(token), `the recovery contract states: ${token}`);
+  }
+  assert.match(
+    recovery,
+    /`hookStagedEntries` lists each path of `remainingGroups\[0\]` with the index `mode` and blob `oid` the resume proved staged and then unstaged/,
+    'the recovery contract names the entries the adoption unstaged',
+  );
+});
+
+// Invariant: a ledger release keeps every byte it discards: the contract states the locked
+// snapshot proof before the first discard, the quarantine proof of what left the worktree, the
+// preserve ref, and the no-clobber checkout; `deliver` reports where the discarded files are kept.
+test('a ledger release proves one locked snapshot and keeps every discarded file', () => {
+  const recovery = prose(source('src/shared/worktree-partial-diff-recovery.md'));
+  for (const token of [
+    'proves the snapshot once',
+    'stops the release before anything is discarded',
+    "moves the path's file into a private quarantine directory in the worktree and proves it there against its descriptor",
+    'a changed file is put back and stops the release',
+    'kept as one tree at `refs/effective-flow/released/<RECORD_ID>/<tree>` before the quarantine is cleared',
+    'through `checkout-index` without `--force`, which never replaces what stands at the path',
+    'such a directory goes only through `rmdir`',
+  ]) {
+    assert.ok(recovery.includes(token), `the recovery contract states: ${token}`);
+  }
+  assert.match(
+    prose(source('src/shared/deliver-partial-diff-resume.md')),
+    /a `ledger` release also names `refs\/effective-flow\/released\/<RECORD_ID>\/`, where it kept every file it discarded/,
   );
 });
 

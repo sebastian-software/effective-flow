@@ -17,6 +17,14 @@ const readSource = (...segments) => readFileSync(join(SOURCE_DIR, ...segments), 
 const allowlist = readSource('shared', 'setup-allowlist.md');
 const setup = readSource('tools', 'setup.md');
 const flat = (text) => text.replace(/\s+/g, ' ');
+// The text from `start` up to `stop`, so a token assertion cannot be met by a neighboring sentence.
+function boundedSlice(text, start, stop) {
+  const from = text.indexOf(start);
+  assert.notEqual(from, -1, `missing opening marker: ${start}`);
+  const to = text.indexOf(stop, from + start.length);
+  assert.notEqual(to, -1, `missing stop marker: ${stop}`);
+  return text.slice(from, to);
+}
 const toolNames = readdirSync(join(SOURCE_DIR, 'tools'))
   .filter((name) => name.endsWith('.md'))
   .map((name) => name.slice(0, -3));
@@ -84,6 +92,57 @@ test('the allowlist step names the rule families, the rule count and no rule for
   );
   for (const operation of NEVER_ALLOWLISTED_OPERATIONS) {
     assert.ok(!ALLOWLISTED_OPERATIONS.includes(operation), operation);
+  }
+});
+
+// Invariant: the allowlisted `worktree transition` changes more than lifecycle records in exactly
+// two bounded cases (the partial-diff release restores proven residual paths, the resume adoption
+// appends at most one proven tip to the delivery ledger), so the prose states both bounds; the
+// allowlisted ledger writes touch only the private ledger of the caller's own `active` record, and
+// `worktree resume-check` and `ledger reconcile` only read, and the prose states each bound.
+test('the allowlist step bounds the release, resume and ledger writes and the read-only resume operations', () => {
+  const text = flat(allowlist);
+  const exceptions = boundedSlice(text, 'never remove a worktree or branch', 'That ledger is');
+  for (const token of [
+    'two bounded exceptions in `worktree transition`',
+    '`release: "partial-diff"` restores exactly the residual paths',
+    'proved equal to the delivery ledger and still in the source',
+    '`partial-diff-resume` adoption appends at most one proven tip',
+  ]) {
+    assert.ok(exceptions.includes(token), `the bounded transition exceptions state: ${token}`);
+  }
+  assert.doesNotMatch(
+    text,
+    /never remove a worktree, branch or file/,
+    'the retired claim that no allowlisted operation changes a file must not return',
+  );
+  const ledger = boundedSlice(text, 'That ledger is', '`worktree resume-check` and');
+  for (const token of [
+    '`.effective-flow/worktree-runs/ledgers/`',
+    'at most 256 KiB',
+    'once, no-clobber and under the record lock',
+    "the calling session's own `active` `partial-diff` record",
+    'descriptors the helper computes itself',
+    'not at all when that worst case exceeds the bound',
+    '`ledger append` adds one commit entry',
+    "proved the next group's exact commit",
+    'Neither touches a worktree, branch or record.',
+  ]) {
+    assert.ok(ledger.includes(token), `the ledger write bound states: ${token}`);
+  }
+  assert.match(
+    text,
+    /`worktree resume-check` and `ledger reconcile` only read: they take no lock and write nothing/,
+    'the read-only resume operations must be stated as such',
+  );
+  assert.doesNotMatch(text, /each call prompts/, 'no allowlisted operation is said to prompt');
+  for (const operation of [
+    'ledger init',
+    'ledger append',
+    'ledger reconcile',
+    'worktree resume-check',
+  ]) {
+    assert.ok(ALLOWLISTED_OPERATIONS.includes(operation), `${operation} is allowlisted`);
   }
 });
 

@@ -299,6 +299,11 @@ except <plan.dir>" is not allowed. The workflow must know the files to include o
 ask. This reliably keeps newly created plans, `.effective-flow/` state and other
 local working files outside the PR.
 
+Only `{{SKILL:deliver}}` writes a delivery ledger, so only its retained `partial-diff` records can
+be resumed; this handback's failed worktree never is, and `plan-pr-continuation` adopts only purpose
+`delivery`. `{{SKILL:deliver}}` releases either kind for cleanup under the release proofs of the
+partial-diff recovery contract of `worktree-lifecycle`.
+
 ### What lives in the delivery branch and what stays in the main repo
 
 Data-keeping invariant: **Of the Effective Flow artifacts, only plans are

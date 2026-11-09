@@ -40,9 +40,10 @@ the complete working-tree state as separate choices instead of choosing one for 
 There is no path-list argument to prepare. If session evidence is missing, contradictory, or admits
 more than one plausible scope, `deliver` asks you to refine the selection in normal conversation.
 If the exact files and states still cannot be agreed, it stops without changing Git or the forge.
-This manifest confirmation is the workflow's sole routine approval; the conditional upstream
-questions described under [When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream)
-are the only questions that can come before it. If source state drifts after
+This manifest confirmation is the workflow's sole routine approval; the only questions that can come
+before it are the [resume and release questions](#resuming-or-releasing-a-failed-delivery) for a
+retained failed delivery and the conditional upstream questions described under
+[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). If source state drifts after
 confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
 continues.
 
@@ -59,6 +60,54 @@ tool. After each commit, `deliver` verifies the parent, branch, tree, and remain
 later group or commit hook fails, the fresh worktree and branch are retained together with all
 earlier verified commits and the still-uncommitted groups. Nothing is pushed and no pull request is
 created; successful commits are never amended, reordered, squashed, or retried.
+
+#### Resuming or releasing a failed delivery
+
+A delivery that failed after its first commit stays retained, and a later `deliver` run can continue
+it. Right after it verifies the source checkout, before the upstream check, `deliver` looks for
+retained deliveries (lifecycle status `aborted` or `failed`; see
+[Resuming or releasing a failed delivery](./worktree-and-delivery.md#resuming-or-releasing-a-failed-delivery))
+and checks each one read-only. It reports every candidate with its committed and remaining group
+counts, and a record that another run still holds is reported and left alone.
+
+- **Resume.** One question, **Resume** or **New delivery**, lists the deliveries that can be
+  continued. A delivery qualifies when at least one of its commit groups is provably on its branch,
+  the source checkout still holds the confirmed selection, the worktree holds exactly the changes the
+  earlier run left, and the current visibility is not weaker than the original one. Resume continues
+  the same branch and worktree with the original selection and does not ask you to confirm it again.
+  An unanswered question or a non-interactive run starts a new delivery and keeps the record.
+- **What a resume skips and reruns.** It skips the upstream check and fast-forward, the selection and
+  its confirmation, the commit grouping, branch and worktree creation, the transfer, and the project
+  setup. It reruns the repository validation, the exact-diff reconcile against the recorded progress,
+  and the source comparisons against a fresh snapshot, then commits only the remaining groups from the
+  first uncommitted one and continues with the pull request and report as usual. Base branch and
+  languages come from the recorded progress. A commit that was created but never recorded, for
+  example after a helper failure, is accepted once the same proofs hold. A group that a failing commit
+  hook left staged is unstaged by the resume itself while it holds the worktree's Git index lock,
+  only while the index still stages exactly that group, and committed again; staged content that
+  changed since then, a newer entry beside the group included, stops the resume and stays staged. If
+  the resume fails again, the record returns to its failed state and can be resumed the same way.
+- **Release.** A candidate that cannot be resumed, for example because the visibility is weaker or
+  its branch history no longer matches the recorded progress, is listed with the way it can be
+  released and, with recorded progress, the exact paths a release discards. A separate **Release**
+  question (**Release all listed**, **Select individually** or **Keep all**) asks for explicit
+  confirmation; nothing is released otherwise. Releasing a record with recorded progress discards its
+  remaining changes from the worktree only when they provably equal what is still in your checkout,
+  and keeps every discarded file as a tree under `refs/effective-flow/released/<RECORD_ID>/`
+  (`git ls-tree -r <ref>` lists it; `git update-ref -d <ref>` drops it once you no longer need it);
+  without recorded progress it requires a clean or already vanished worktree. When the source
+  checkout or the worktree changed and the worktree still holds changes, release is refused and the
+  blocking paths are listed: restore the source checkout or clean the worktree by hand first. The
+  branch and its commits stay, and `/effective-flow cleanup` then removes the worktree. A delivery
+  started from another checkout is resumed or released by `deliver` in that checkout; from here only
+  its clean or vanished worktree can be released.
+- **A failure before the first commit** offers no resume, but the record can still be released.
+- **Resume unavailable for this run.** When the selection is too large for the recorded progress
+  (256 KiB), the delivery shows this notice once and continues unchanged. If it fails later, it can
+  only be released.
+
+These two questions are the only routine approvals `deliver` adds. Selection approval is not asked
+again, and a resumed run reports its model evidence as observed, with no claim of its own.
 
 **Isolation and result:** `deliver` refreshes `delivery.baseBranch` and creates a collision-safe
 `<delivery.branchPrefix>/deliver/<slug>` branch in a new Effective Flow-owned worktree. Only the
