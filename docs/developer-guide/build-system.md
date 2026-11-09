@@ -1086,7 +1086,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
     taken for the plan families. It computes the name only and creates nothing.
   - `delivery-branch-name`: `named` or `prefix-discloses`; it slugifies, strips disclosure matches
     in hidden mode, and suffixes from `-2` against local branches, remote-tracking refs and the
-    caller's `excludeNames`.
+    caller's `excludeNames`. It accepts `visibility` only as `standard | hidden`, the
+    `VISIBILITY_VALUES` of `remote-tracker-shared-core.mjs` and the resolver's `data.visibility`
+    passed verbatim; any other value, a missing one included, is `INVALID_INPUT`.
   - `adr-observe`: `numbered`, `numberless`, `inconclusive`, `none` or `outside-repo-stop`.
   - `adr-allocate`: `allocated`, `reallocated`, `collision-stop`, `symlink-stop`,
     `outside-repo-stop` or `unrecognized`, for new ADRs only.

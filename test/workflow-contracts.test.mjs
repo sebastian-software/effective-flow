@@ -19696,6 +19696,17 @@ test('delivery branch names come from the helper, with no restated strip or suff
       `${site} must stop on a disclosing prefix and point to setup`,
     );
   }
+  // Both callers pass the resolver's `standard | hidden` value unchanged; the helper accepts only it.
+  assert.match(
+    deliver,
+    /`visibility` the resolver's `data\.visibility`, passed verbatim/,
+    'deliver must pass the resolved visibility verbatim',
+  );
+  assert.match(
+    step,
+    /`visibility` \(the resolver's `data\.visibility`, passed verbatim\)/,
+    'worktree-integration step 4 must pass the resolved visibility verbatim',
+  );
   assert.match(deliver, /`skill: "deliver"`/, 'deliver names its own skill segment');
   // deliver does not load worktree-integration, so it carries the fail-closed rule itself.
   assert.match(
