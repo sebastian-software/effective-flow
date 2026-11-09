@@ -605,6 +605,146 @@ API transcript. Historical extraction gaps remain disclosed in the private evide
 | `qualification-2026-11-08/restore-restart-verification.json`        | `c0e470b83af2a7a012853ff61a028ea89dc9b7083831d33e5388c07a04c865e1` |
 | `qualification-2026-11-08/dalo-postrestart.json`                    | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
 
+### November 9 rerun — failed first scheduled output
+
+**Result: failed; overall WP2b-2 qualification remains incomplete.** A fresh approval-required
+observer completed its first scheduled turn with only the literal text `< t3-thread>` and no
+required focus checkpoint. API messages and the authenticated UI agree. The cause remains
+unproven; neither the earlier trailing-`>` defect nor model execution compliance is established
+as its explanation. The November 6 and November 8 records, activation status, acceptance matrix
+and ADRs remain unchanged. #625 remains a draft.
+
+#### November 9 candidate binding
+
+This attempt used candidate `21f2a36802a98abf696c6780d46372b2c529136c`, portable build
+`1.72.0 (21f2a36)`, on T3 Code 0.1.7 through provider instance `codex`, with host-reported
+`gpt-6.1-sol` at medium reasoning effort and full-access runtime mode. Observers and targets were
+fresh top-level sessions in a dedicated throwaway project. The separate coordinator authored
+scenario requests through the API under the plan's supervised-execution amendment. Human
+approvals were answered only by the owner. Requested or host-reported settings do not prove the
+executed model settings; model compliance remains unverified.
+
+Fresh format, build and 33 focused tests passed before installation. The installed portable tree
+matched its complete 185-entry manifest, and the owned temporary configuration matched its saved
+SHA-256 before and after the scenarios. The original DALO tree retained all 188 baseline entries.
+All eight candidate digests below matched at both boundaries; no digest-bound file changed
+during recording.
+
+| Candidate file                                                | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `d5b2c8cb7e5099a35dd2d2a461767c78e980d6aa407ba7af444507aaee7fa912` |
+| `src/shared/focus-session-contract.md`                        | `405a7742145d41141a0b5026b32ac04bc88f3330a659989b0f7103518cb2a68a` |
+| `src/shared/focus-follow-up.md`                               | `e860ebeda3357900478132e1bbd29fa8fb404a7b29ac15f4407d8d4ec4720d4d` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `184fa19352ec436a21b09eca19a863201ca311a0d8c69d690d23068b2e217a0a` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `08e39a78b07603577156fd75af662ee900963134f86c95f98dc60ce81372aa5e` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `b5a2e105e2a63584993f9fcd0ea548d729e7d39b9854ebeb5510be10df9148cb` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+Regular PR CI passed on synthetic merge `7e1bd06d4805768b2306af370004a107aa9ef5c2` into
+`4f4e516f23d6e1b339bf1782088325c8f49a734a`: 5,034 tests, 5,007 passed, zero failed and 27 skipped,
+plus format, build and distribution checks. This was not an exact-branch full-suite pass.
+The four focus-source blobs and digest fixture matched the candidate. Earlier local full-suite
+timeouts remain timeouts; they were not relabeled or repeated for this record. No branch update
+from develop was performed.
+
+#### Fresh observations and unrecorded cases
+
+These results belong only to November 9; no November 8 pass carries forward.
+
+| Item | Observation and result                                                                                                                                                                                                                                                                                                                                                  |
+| ---- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| F1   | Observed pass: identity and scope checked before history; synthetic contact and token redacted from leaf and final; snapshot and analysis leaf both On track with cited evidence. Three reads charged 15,512 characters. Declined follow-up left no UI automation; self and ancestor requests were refused without target history. Model compliance remains unverified. |
+| F2   | Observed pass: after the first idle-target report, the entire unchanged second real tick contained one checkpoint and no other assistant prose or analysis leaf. Three reads charged 15,512 characters; the five-minute automation was visible.                                                                                                                         |
+| F3   | Not provoked: two identical missing-file reads failed in separate windows, but the request explicitly asked for a retry. The observer treated this as a known blocker, stayed On track, and later produced an idle-target report. No Looping or nonrepeat pass is claimed.                                                                                              |
+| F4   | Observed pass: a real silent 420-second wait crossed a real scheduled tick. While the command was still running, that whole turn emitted only an On track checkpoint. Five reads charged 30,768 characters. The wait was an observation fixture, not project validation.                                                                                                |
+| F5   | Not yet recorded: no qualifying target-completion scenario was performed.                                                                                                                                                                                                                                                                                               |
+| F6   | Not yet recorded: no target was deleted through the UI in this attempt.                                                                                                                                                                                                                                                                                                 |
+| F7   | Not yet recorded: no fresh invalid-checkpoint observer scenario was allocated.                                                                                                                                                                                                                                                                                          |
+| F8   | Not yet recorded: no failed-deletion scenario was performed.                                                                                                                                                                                                                                                                                                            |
+| F9   | Queue and timing observed, without final pass adjudication: an ordinary busy observer turn ended at 14:28:13.659 UTC; its queued tick started at 14:28:14.207, and the following real grid run was requested at 14:28:49.593.                                                                                                                                           |
+| F10  | Intended late-approval overlap not provoked: the owner approved the first tick's reads before the following grid. That completed scheduled turn failed the required output contract, as detailed below.                                                                                                                                                                 |
+| F11  | Not yet recorded: no qualifying host-notification scenario was performed.                                                                                                                                                                                                                                                                                               |
+| F12  | Observed pass: the fresh observer's first five-minute loop reached 48 ticks, deleted its own schedule and emitted the capped stopped result. API and UI confirmed absence.                                                                                                                                                                                              |
+| F13  | Observed pass on this path: actual scheduled prompts carried the `$effective-flow focus follow-up tick` prefix and performed admission and incremental reads. No independent loader or deterministic model-compliance claim is made.                                                                                                                                    |
+| F14  | Not yet recorded: cleanup stop was performed, but no stop/resume qualification sequence followed.                                                                                                                                                                                                                                                                       |
+| F15  | Not provoked: the coordinator missed the early-send window. No Send now click or manual tick occurred.                                                                                                                                                                                                                                                                  |
+| F16  | Quiet tick 2 added 7 activity items / 21,532 extracted text characters and 2 message items / 539 characters. Its three reads charged 15,512 characters. The first loop subsequently reached its cap. These are character counts, not tokens; no compaction-stop result is claimed.                                                                                      |
+
+The snapshot evidence retains the report-only limits: initial-read delivery effects and the
+state/history race were not established. Native compaction history was not exhaustively inspected;
+the cap result does not prove that no internal compaction occurred.
+
+#### Missing checkpoint and failure cleanup
+
+The approval-required scheduled run began at 14:24:04.771 UTC. Human read approvals completed at
+14:27:16.232 and 14:27:25.958. At 14:27:37.189 its sole visible assistant output was:
+
+```text
+< t3-thread>
+```
+
+The run completed at 14:27:37.252 without a focus checkpoint or prescribed report. The host's
+separate native checkpoint was not a focus output. This is an observed output defect, not a
+successful late-approval overlap. No source fix, static-guard proof of model behavior or acceptance
+exception is claimed.
+
+Further scenario provocations stopped. The main observer processed its own stop and deleted its
+schedule; the coordinator deleted the approval-required observer's schedule and interrupted only
+its own following pending run. No approval was answered by the coordinator, and no stopped
+checkpoint is invented for that interrupted turn. API and paired UI observations confirmed both
+automations absent.
+
+The independent first cap loop was preserved without manual ticks, interval changes or an early
+stop. It started at 13:38:51.290 UTC; its actual 48th run was requested at 17:39:29.329. Its own
+schedule deletion returned true at 17:39:57.809. The completed output at 17:40:05.642 reported the
+48-tick cap and ended `ticks=48 | backlog=no | lag=0 | state=stopped`. The native run completed at
+17:40:05.737. The schedule API returned an empty list, and the authenticated, fully loaded UI
+showed no Automations heading or manage button. This cap result does not reverse the independent
+output failure.
+
+#### November 9 restoration and evidence
+
+After final candidate verification, all active projects, including child sessions, were checked
+before shared mutations. No foreign Codex run was active; foreign work was untouched. The guarded
+restore reinstated the original DALO symlink and all 188 baseline entries. It removed only the
+owned temporary configuration, after confirming that the original was absent and its installed
+hash still matched. The candidate copy was retained privately.
+
+A 45-second delayed helper rechecked the current app-server executable and process-start identity
+before signaling it. The old process was absent and its replacement started later. Post-restart
+verification confirmed the original link, full 188-entry tree and configuration absence.
+`dalo --json status --check` returned exit 0; its complete parsed JSON was semantically equal to
+the fresh pre-install baseline. DALO assistant and doctor checks also returned exit 0.
+
+No qualification schedule remains active. All 16 finished sessions belonging to this attempt,
+including the cap observer and target, were archived. The recording plan remains unimplemented
+and unarchived. This failed entry changes no product source, fixture, activation status, ADR or
+PR readiness. Any further fix and fresh qualification require the plan's failure procedure.
+
+The private evidence includes native-payload captures, visible-text observations and explicit
+coordinator transcriptions of actual tool results. The digests below bind those existing files;
+they do not assert a complete raw API export or backfill missing historical payloads.
+
+| Evidence file                                                  | SHA-256                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `qualification-2026-11-09/O4-first-tick-output-failure.json`   | `85eddf81eda0bed5d0b98897e782791d2e8e989c4bfa29cbf048a7df138c53d9` |
+| `qualification-2026-11-09/O4-first-tick-output-failure-UI.png` | `bc85334ebcda68b0f4abf0e47583de6ec5b5c37a5a7264a0b460761367d740b1` |
+| `qualification-2026-11-09/F1-completion-result.json`           | `e57917a547c13ad37409753ba7a58c08ae562ce88bb063590428a8da27cb2a4a` |
+| `qualification-2026-11-09/F2-completion-result.json`           | `436dc8e23c9307c3dde60fc0792ea926e1911dc4496e17063e2a4af72f0243d1` |
+| `qualification-2026-11-09/F4-completion-result.json`           | `dc46b137dbc0d02b62a1f15206bf4f658d29a6544f21c86344320e45aee03d57` |
+| `qualification-2026-11-09/F13-completion-result.json`          | `bb931a9f1aef350823625f76c574829fd31d8625db21901b326e16a6eaa7c812` |
+| `qualification-2026-11-09/F16-quiet-tick-growth.json`          | `4a4b52782579622e5ee2a647475d97d1c276e793ff46e4d0a2745a61da01f1d1` |
+| `qualification-2026-11-09/cap-completion-result.json`          | `5cb01c93ab1cc217cdda1d8a1ba1b896464be128e781c0f944f67add01d28586` |
+| `qualification-2026-11-09/O2-cap-completion-UI.png`            | `987d08c091a84820562c3d0c79eb20b972fa4d501d9496cd7326b7652bbb9115` |
+| `qualification-2026-11-09/failure-cleanup-noncap.json`         | `8362234ca06756e6e87f4ba70463dc581f2ac0303249e72eaf876f20891bdf26` |
+| `qualification-2026-11-09/candidate-end-integrity.json`        | `bdefb7556c31f2d282a7ef68539a7f707c808b3c38f0ccb6455a6e89da105ad8` |
+| `qualification-2026-11-09/baseline.json`                       | `0290b52c06b745a4ba46bfe23851a56f6ae66e1219231a92c910bd451c1e7263` |
+| `qualification-2026-11-09/restore-restart.json`                | `41313ef17e0be20f23b42ed6eef5bbe514ff4242ad51eeb2bf1bd2d2fe19557b` |
+| `qualification-2026-11-09/restore-verification.json`           | `9745eb052a9d83798b427fce2aad0a9e266b73b5c7c2eb9dad710f0d806ea8fb` |
+| `qualification-2026-11-09/dalo-restored.json`                  | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
+| `qualification-2026-11-09/ci-tested-tree-binding.json`         | `14aaf6aacb0c306276f479cfdf1b0d2111633b4b858e985fdbe07aa5414686d1` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
