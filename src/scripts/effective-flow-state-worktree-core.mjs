@@ -121,6 +121,7 @@ import { isObject, readBoundedFile } from './runtime-file-primitives.mjs';
 import {
   DeliverySelectionError,
   hiddenWorktreeChanges,
+  ignoredPathsAt,
   scopedGitRunner,
 } from './delivery-selection-core.mjs';
 import {
@@ -889,10 +890,11 @@ export async function deferSignals(deps, recordId, fn) {
 // only ones where a fully gone `partial-diff` worktree counts (see `goneRemovable`) and where a
 // retained release quarantine fails condition 7 as well (`quarantineRetained`): `git worktree
 // remove` deletes an ignored quarantine with the only copy of the bytes it holds. For the same
-// reason a ledger endpoint standing as an ignored untracked file, or ledger endpoints that cannot
-// be established, fail condition 7 of those callers too (`ignoredEndpoints`), and so does an index
-// entry of the worktree, of any purpose, whose skip-worktree or assume-unchanged bit hides bytes
-// that neither its index nor HEAD holds, or such entries that cannot be established
+// reason a ledger endpoint at whose place an ignored untracked file stands (the endpoint itself,
+// below a directory in its place, or in place of a parent directory), or ledger endpoints that
+// cannot be established, fail condition 7 of those callers too (`ignoredEndpoints`), and so does
+// an index entry of the worktree, of any purpose, whose skip-worktree or assume-unchanged bit
+// hides bytes that neither its index nor HEAD holds, or such entries that cannot be established
 // (`hiddenChanges`): `git status` never compares their working tree.
 export function evaluateEligibility(
   facts,
@@ -1045,13 +1047,15 @@ async function retainsQuarantine(fs, root) {
   }
 }
 
-// The ledger endpoints of a `partial-diff` `record` that stand in its proven worktree as ignored
-// untracked files (`ls-files --others --ignored --exclude-standard`, exact endpoint paths only),
-// sorted. `git status` never lists them, so the worktree looks clean while they hold delivery
-// bytes a removal would delete. Every endpoint of every group counts. There are none, and no Git
-// call runs, without a ledger and when the guard refuses the `ledgers/` entry itself (that entry
-// stops every removal on its own, see `claimAndRemove`). Null when they cannot be established: an
-// invalid ledger, or a listing Git fails. Only for a worktree whose common directory is proven ours.
+// The ledger endpoints of a `partial-diff` `record` at whose place its proven worktree holds an
+// ignored untracked file (`ignoredPathsAt`: the endpoint itself, any file below a directory in its
+// place, or a file in place of one of its parent directories), sorted. `git status` never lists
+// them, so the worktree looks clean, and such an endpoint reads as absent, while they hold delivery
+// bytes a removal would delete. Every endpoint of every group counts, a committed deletion
+// included. There are none, and no Git call runs, without a ledger and when the guard refuses the
+// `ledgers/` entry itself (that entry stops every removal on its own, see `claimAndRemove`). Null
+// when they cannot be established: an invalid ledger, or a listing Git or the file system fails.
+// Only for a worktree whose common directory is proven ours.
 async function ignoredLedgerEndpoints(context, roots, record) {
   if (record.purpose !== 'partial-diff') return [];
   let read;
@@ -1067,22 +1071,15 @@ async function ignoredLedgerEndpoints(context, roots, record) {
     read.ledger.groups.flatMap((group) => group.endpoints.map((endpoint) => endpoint.path)),
   );
   if (endpoints.size === 0) return [];
-  const inWorktree = guardedGit(context, record.worktreePath);
-  const listed = await inWorktree([
-    'ls-files',
-    '-z',
-    '--others',
-    '--ignored',
-    '--exclude-standard',
-    '--',
-    ...[...endpoints].map((repoPath) => `:(literal)${repoPath}`),
-  ]);
-  if (!gitOk(listed)) return null;
-  return asBuffer(listed.stdout)
-    .toString('utf8')
-    .split('\0')
-    .filter((repoPath) => endpoints.has(repoPath))
-    .sort();
+  try {
+    return await ignoredPathsAt(
+      { root: record.worktreePath, paths: [...endpoints] },
+      { runner: selectionRunner(context, roots, [record.worktreePath]) },
+    );
+  } catch (error) {
+    if (error instanceof DeliverySelectionError) return null;
+    throw error;
+  }
 }
 
 // The paths of the proven worktree `root` whose skip-worktree or assume-unchanged index entry hides

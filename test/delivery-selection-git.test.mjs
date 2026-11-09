@@ -25,6 +25,7 @@ import {
   describeWorkingEndpoint,
   fastForwardUpstream,
   hiddenWorktreeChanges,
+  ignoredPathsAt,
   inspectResidual,
   inventoryRepository,
   nonInteractiveFetchEnv,
@@ -741,6 +742,41 @@ test('hiddenWorktreeChanges lists only hidden entries whose bytes neither index 
   rmSync(join(deliveryRoot, 'link.txt'));
   symlinkSync('working.txt', join(deliveryRoot, 'link.txt'));
   assert.deepEqual(await hidden(), ['crlf.txt', 'gone.txt', 'link.txt', 'rename.txt']);
+});
+
+// Invariant (ignored bytes in place of a path): a directory standing at a path, or a file standing
+// in place of one of its parent directories, reads as the path's absence, and `git status` lists
+// neither when it is ignored. `ignoredPathsAt` lists a path whose place holds an ignored file (the
+// path itself, below a directory there, or a file in place of a parent), and
+// `hiddenWorktreeChanges` lists a skip-worktree or assume-unchanged entry replaced that way. An
+// empty directory, a visible untracked file below one (left to `git status`) and a path with
+// nothing in its place pass.
+test('ignoredPathsAt and hiddenWorktreeChanges see ignored bytes below or above a path', async (t) => {
+  const { sourceRoot, deliveryRoot } = createRepository(t);
+  write(sourceRoot, '.git/info/exclude', '*.scratch\n/dir-shape\n');
+  const ignored = async (paths) =>
+    await ignoredPathsAt({ root: deliveryRoot, paths }, { runner: processRunner });
+  const hidden = async () =>
+    await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: processRunner });
+  const paths = ['partial.txt', 'dir-shape/child.txt', 'loose.scratch', 'missing/deep.txt'];
+  git(deliveryRoot, 'update-index', '--skip-worktree', '--', 'partial.txt');
+  git(deliveryRoot, 'update-index', '--assume-unchanged', '--', 'dir-shape/child.txt');
+  rmSync(join(deliveryRoot, 'partial.txt'));
+  mkdirSync(join(deliveryRoot, 'partial.txt'));
+  rmSync(join(deliveryRoot, 'dir-shape'), { recursive: true });
+  assert.deepEqual(await ignored(paths), [], 'an empty directory and nothing in place pass');
+  assert.deepEqual(await hidden(), []);
+  write(deliveryRoot, 'partial.txt/visible.txt', 'listed by git status\n');
+  assert.deepEqual(await ignored(paths), []);
+  assert.deepEqual(await hidden(), []);
+  rmSync(join(deliveryRoot, 'partial.txt', 'visible.txt'));
+
+  write(deliveryRoot, 'partial.txt/nested/only.scratch', 'moved bytes\n');
+  write(deliveryRoot, 'dir-shape', 'a file in place of the parent\n');
+  write(deliveryRoot, 'loose.scratch', 'ignored at the path itself\n');
+  assert.equal(git(deliveryRoot, 'status', '--porcelain', '--untracked-files=all'), '');
+  assert.deepEqual(await ignored(paths), ['dir-shape/child.txt', 'loose.scratch', 'partial.txt']);
+  assert.deepEqual(await hidden(), ['dir-shape/child.txt', 'partial.txt']);
 });
 
 // Invariant (source re-check, selected bytes last): for a working rename, `verifySourceManifest`

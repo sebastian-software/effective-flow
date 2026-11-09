@@ -153,13 +153,15 @@ function conditionProofs(facts, statuses, skip) {
 //                 so an ignored one counts too); checked once the worktree is proven ours, before
 //                 the `clean` and `ledger` routes, since either would end in a removal that
 //                 deletes the only copy of the bytes it holds
-//   ignored       no ledger endpoint stands in the worktree as an ignored untracked file
-//                 (`ignoredEndpoints` of `gatherFacts`): `git status` never lists it, so the
-//                 worktree looks clean, yet the removal would delete its bytes; checked right after
-//                 `quarantine`, before both routes. When the endpoints cannot be established (an
-//                 invalid ledger, a failed listing), the `clean` route and the `ledger` route
-//                 refuse with `ignored` too; a dirty worktree without a valid ledger keeps its
-//                 `residual` refusal
+//   ignored       no ignored untracked file stands in the worktree at the place of a ledger
+//                 endpoint of any group, a committed deletion included: the endpoint itself, any
+//                 file below a directory in its place, or a file in place of one of its parent
+//                 directories (`ignoredEndpoints` of `gatherFacts`): `git status` never lists it,
+//                 so the worktree looks clean and the endpoint reads as absent, yet the removal
+//                 would delete its bytes; checked right after `quarantine`, before both routes.
+//                 When the endpoints cannot be established (an invalid ledger, a failed listing),
+//                 the `clean` route and the `ledger` route refuse with `ignored` too; a dirty
+//                 worktree without a valid ledger keeps its `residual` refusal
 //   hidden        no index entry of the worktree, any path and any group included, carries the
 //                 skip-worktree or assume-unchanged bit over bytes that neither its index nor HEAD
 //                 holds (`hiddenChanges` of `gatherFacts`, compared by content, so an absent
@@ -739,7 +741,10 @@ export async function recoveryTransition(input, deps) {
 //                    holds its descriptor's kind, mode and byte digest in the working tree, and no
 //                    index entry of the worktree, committed and recovered endpoints included,
 //                    hides bytes that neither its index nor HEAD holds behind the skip-worktree or
-//                    assume-unchanged bit (`hiddenChanges` of `gatherFacts`)
+//                    assume-unchanged bit (`hiddenChanges` of `gatherFacts`), and no ignored
+//                    untracked file stands at the place of a ledger endpoint, committed and
+//                    recovered ones included (`ignoredEndpoints` of `gatherFacts`: the endpoint
+//                    itself, below a directory in its place, or in place of a parent directory)
 //   source           `verifySourceManifest` of the ledger's manifest is exact at its proven source
 //                    root: source HEAD and every selected entry unchanged
 export const RESUME_PROOFS = Object.freeze([
@@ -915,12 +920,15 @@ async function evaluateResume({ context, roots, record, facts, request, once = u
     const recoveredGroup = recovered === null ? null : ledger.groups[ledger.commits.length];
     const residual = inspected && resumeResidual(inspected, recoveredGroup);
     const hidden = facts.hiddenChanges;
+    const ignored = facts.ignoredEndpoints;
     if (
       !residual ||
       residual.extra.length > 0 ||
       residual.content.length > 0 ||
       hidden === null ||
-      hidden.length > 0
+      hidden.length > 0 ||
+      ignored === null ||
+      ignored.length > 0
     ) {
       failed.add('residual');
       if (residual) {
@@ -932,6 +940,10 @@ async function evaluateResume({ context, roots, record, facts, request, once = u
       if (hidden !== null && hidden.length > 0) {
         details.hidden = reportedPaths(hidden).paths;
         details.hiddenCount = hidden.length;
+      }
+      if (ignored !== null && ignored.length > 0) {
+        details.ignored = reportedPaths(ignored).paths;
+        details.ignoredCount = ignored.length;
       }
     }
   } else {
@@ -1239,12 +1251,13 @@ export async function resumeCheck(input, deps) {
 // endpoints against the tip's tree by blob OID and mode, residual endpoints against the working
 // tree by byte digest and the index (HEAD's or the descriptor's entry), no dirty path outside the
 // residual, no skip-worktree or assume-unchanged entry hiding bytes that neither its index nor HEAD
-// holds (`hidden`, committed endpoints included), and `verifySourceManifest`; nothing is
+// holds (`hidden`, committed endpoints included), no ignored untracked file at the place of an
+// endpoint (`ignored`, committed endpoints included), and `verifySourceManifest`; nothing is
 // re-planned. Returns `{recordId, exact, mismatches: {head, committed, residual, index, extra,
-// hidden, sourceDrift}, staged, next, remaining, tip, status}` with each path list `{paths,
-// count}` and `sourceDrift` a count. `staged` lists the residual endpoints whose index entry
-// differs from HEAD; a staged descriptor is no mismatch, so after unstaging a proven hook-staged
-// group the caller requires `staged.count` to be 0.
+// hidden, ignored, sourceDrift}, staged, next, remaining, tip, status}` with each path list
+// `{paths, count}` and `sourceDrift` a count. `staged` lists the residual endpoints whose index
+// entry differs from HEAD; a staged descriptor is no mismatch, so after unstaging a proven
+// hook-staged group the caller requires `staged.count` to be 0.
 export async function ledgerReconcile(input, deps) {
   const context = prepare('ledger reconcile', input, deps);
   const recordId = requireRecordId(input.recordId);
@@ -1303,6 +1316,7 @@ export async function ledgerReconcile(input, deps) {
       index: reportedPaths(mismatches.index),
       extra: reportedPaths(mismatches.extra),
       hidden: reportedPaths(mismatches.hidden),
+      ignored: reportedPaths(mismatches.ignored),
       sourceDrift: mismatches.sourceDrift.length,
     },
     staged: reportedPaths(compared.staged),

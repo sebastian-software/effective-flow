@@ -1589,6 +1589,73 @@ async function holdsCheckoutBytes(root, repoPath, actual, head, runner) {
   }
 }
 
+// What stands in the working tree of `root` at `repoPath`, as the literal path to list: the path
+// itself when it exists (a file, a symbolic link or a directory), or the first parent that exists
+// but is no directory (a file or a symbolic link in place of a parent directory), else null:
+// nothing stands there. No entry is followed.
+async function occupiedPath(root, repoPath) {
+  const parts = repoPath.split('/');
+  let current = root;
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]);
+    const stats = await safeLstat(current);
+    if (stats === null) return null;
+    if (index === parts.length - 1 || !stats.isDirectory()) {
+      return parts.slice(0, index + 1).join('/');
+    }
+  }
+  return null;
+}
+
+// The paths among `paths` at whose place the worktree `root` holds an ignored untracked file
+// (`ls-files --others --ignored --exclude-standard`): the path itself, any file below a directory
+// in its place, or a file or symbolic link standing in place of one of its parent directories.
+// `git status` never lists such a file, so the path reads as clean, or as absent where a directory
+// or a parent file stands in its place, while a discard or a `git worktree remove` deletes the
+// bytes it holds. An empty directory holds none. Returns the sorted paths. A path whose place
+// cannot be read is UNSUPPORTED_PATH and a failed listing COMMAND_FAILED, never a pass. Nothing is
+// written.
+export async function ignoredPathsAt(input, options = {}) {
+  requireObject(input);
+  const root = await canonicalDirectory(input.root, 'root');
+  if (!Array.isArray(input.paths)) fail('INVALID_PAYLOAD', 'paths must be an array');
+  for (const repoPath of input.paths) validateLiteralPath(repoPath, 'path');
+  return await ignoredAt(root, input.paths, options.runner);
+}
+
+// `ignoredPathsAt` for the canonical `root` and repository paths Git itself listed.
+async function ignoredAt(root, paths, runner) {
+  const occupied = new Map();
+  for (const repoPath of new Set(paths)) {
+    try {
+      const place = await occupiedPath(root, repoPath);
+      if (place !== null) occupied.set(repoPath, place);
+    } catch (error) {
+      fail('UNSUPPORTED_PATH', 'the place of a path cannot be read from the working tree', {
+        path: repoPath,
+        code: error?.code ?? null,
+      });
+    }
+  }
+  if (occupied.size === 0) return [];
+  const listed = await git(runner, root, [
+    'ls-files',
+    '-z',
+    '--others',
+    '--ignored',
+    '--exclude-standard',
+    '--',
+    ...[...new Set(occupied.values())].map((place) => `:(literal)${place}`),
+  ]);
+  const ignored = asText(listed.stdout).split('\0').filter(Boolean);
+  return [...occupied]
+    .filter(([, place]) =>
+      ignored.some((repoPath) => repoPath === place || repoPath.startsWith(`${place}/`)),
+    )
+    .map(([repoPath]) => repoPath)
+    .sort();
+}
+
 // The paths of the worktree `root` whose index entry carries the skip-worktree or the
 // assume-unchanged bit (`ls-files -v`: `S`, or any lowercase tag) and whose working tree holds
 // bytes only it holds: a file or symbolic link that holds neither the bytes a checkout of its index
@@ -1596,15 +1663,18 @@ async function holdsCheckoutBytes(root, repoPath, actual, head, runner) {
 // such an entry's working tree, so a clean status proves nothing about it, while a discard or a
 // `git worktree remove` deletes those bytes. Every index entry counts, not only selected ones.
 // Content is compared, never the bit alone: an absent path (a sparse-checkout entry) or one that
-// holds its index or HEAD bytes passes, as does a directory in its place (an untracked file below
-// it is listed by `git status`); a gitlink or an unmerged stage is left to `git status`. Returns
-// the sorted paths. A listing or read that cannot be made fails (COMMAND_FAILED or
-// UNSUPPORTED_PATH), never passes. Nothing is written.
+// holds its index or HEAD bytes passes, as does a directory in its place that holds no ignored
+// file (an untracked file below it is listed by `git status`); a directory in its place holding an
+// ignored file, or an ignored file in place of one of its parent directories, is listed
+// (`ignoredPathsAt`), since `git status` lists neither; a gitlink or an unmerged stage is left to
+// `git status`. Returns the sorted paths. A listing or read that cannot be made fails
+// (COMMAND_FAILED or UNSUPPORTED_PATH), never passes. Nothing is written.
 export async function hiddenWorktreeChanges(input, options = {}) {
   requireObject(input);
   const root = await canonicalDirectory(input.root, 'root');
   const listed = await git(options.runner, root, ['ls-files', '-v', '-s', '-z']);
   const changed = [];
+  const absent = [];
   for (const record of asText(listed.stdout).split('\0').filter(Boolean)) {
     const tab = record.indexOf('\t');
     const fields = tab === -1 ? [] : record.slice(0, tab).split(' ');
@@ -1629,7 +1699,10 @@ export async function hiddenWorktreeChanges(input, options = {}) {
         code: error?.code ?? null,
       });
     }
-    if (state.mode === null) continue;
+    if (state.mode === null) {
+      absent.push(repoPath);
+      continue;
+    }
     const actual = selectedDescriptor(state);
     if (await holdsCheckoutBytes(root, repoPath, actual, index, options.runner)) continue;
     const head = await treeState(root, 'HEAD', repoPath, options.runner);
@@ -1641,6 +1714,7 @@ export async function hiddenWorktreeChanges(input, options = {}) {
     }
     changed.push(repoPath);
   }
+  changed.push(...(await ignoredAt(root, absent, options.runner)));
   return changed.sort();
 }
 
@@ -1741,6 +1815,9 @@ export async function inspectResidual(input, options = {}) {
 //   hidden     every path of the checkout, committed endpoints included, whose skip-worktree or
 //              assume-unchanged entry hides bytes that neither its index nor HEAD holds
 //              (`hiddenWorktreeChanges`)
+//   ignored    every endpoint, committed and residual, at whose place the checkout holds an
+//              ignored untracked file (`ignoredPathsAt`: the path itself, below a directory in its
+//              place, or in place of a parent directory), which `git status` never lists
 //   sourceDrift  the drift entries of `verifySourceManifest` (exact only without any)
 // and, beside them, `staged`: the residual endpoints whose index entry differs from HEAD
 // (`inspectResidual`'s `staged`). A staged entry holding its descriptor is no mismatch (a
@@ -1784,6 +1861,7 @@ export async function reconcileResume(input, options = {}) {
     { runner: options.runner },
   );
   const hidden = await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: options.runner });
+  const ignored = await ignoredAt(deliveryRoot, [...named], options.runner);
   const source = await verifySourceManifest({ manifest, sourceRoot }, { runner: options.runner });
   const mismatches = {
     head: context.headOid !== input.commitOid,
@@ -1792,6 +1870,7 @@ export async function reconcileResume(input, options = {}) {
     index: inspected.index,
     extra: inspected.extra,
     hidden,
+    ignored,
     sourceDrift: source.drift,
   };
   return {
@@ -1802,6 +1881,7 @@ export async function reconcileResume(input, options = {}) {
       mismatches.index.length === 0 &&
       mismatches.extra.length === 0 &&
       mismatches.hidden.length === 0 &&
+      mismatches.ignored.length === 0 &&
       source.exact,
     mismatches,
     staged: inspected.staged,

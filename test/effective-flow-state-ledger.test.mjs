@@ -2760,6 +2760,164 @@ test('release ledger route: an ignored ledger endpoint refuses beside a dirty re
   assert.equal(readRecord(fixture.root).status, 'failed');
 });
 
+// Asserts that `worktree remove` and `cleanup plan` refuse the record of `fixture`, rewritten to
+// `cleanup-ready` as a release made before these checks existed would have left it, with
+// condition 7 alone, and that the worktree stays.
+async function assertRemovalRefused(fixture) {
+  const record = readRecord(fixture.root);
+  writeFileSync(
+    recordFile(fixture.root),
+    `${JSON.stringify({ ...record, status: 'cleanup-ready', reason: null, sessionId: OTHER_SESSION })}\n`,
+  );
+  const input = { cwd: fixture.root, executionRoot: fixture.root };
+  const removed = expectOk(
+    await call('worktree remove', { ...input, sessionId: OTHER_SESSION, recordIds: ['record-1'] }),
+  );
+  assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+  assert.deepEqual(removed.items[0].conditions, [7]);
+  const plan = expectOk(await call('cleanup plan', input));
+  const blocked = plan.blocked.find((entry) => entry.itemId === 'worktree:record-1');
+  assert.deepEqual(blocked?.conditions, [7], JSON.stringify(plan));
+  assert.equal(existsSync(fixture.worktree.worktreePath), true, 'the worktree stays');
+}
+
+// Replaces the committed endpoint `repoPath` of the delivery worktree, hidden by `flag`, with a
+// directory holding only the ignored file `<repoPath>/only.scratch`.
+function hideBehindDirectory(fixture, flag, repoPath) {
+  const worktree = fixture.worktree.worktreePath;
+  write(fixture.root, '.git/info/exclude', '*.scratch\n');
+  hideEdit(fixture, flag, [repoPath]);
+  rmSync(join(worktree, repoPath));
+  mkdirSync(join(worktree, repoPath));
+  write(worktree, `${repoPath}/only.scratch`, 'the only copy\n');
+}
+
+// Invariant (a directory is no tombstone while it holds ignored bytes): a committed endpoint
+// hidden by skip-worktree or assume-unchanged and replaced by a directory that holds only an
+// ignored file keeps the status clean, and the path reads as absent. The release refuses with
+// `ignored` instead of taking the clean route, `resume-check` reports the path as `hidden` and
+// `ignored`, and `worktree remove` and `cleanup plan` refuse with condition 7; the bytes stay.
+for (const flag of ['--skip-worktree', '--assume-unchanged']) {
+  test(`release clean route: a ${flag} endpoint replaced by a directory with an ignored file refuses`, async (t) => {
+    const fixture = await delivery(t);
+    const worktree = fixture.worktree.worktreePath;
+    expectOk(await call('ledger init', initInput(fixture)));
+    expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+    expectOk(await append(fixture, commitGroup(fixture, ['b.txt'])));
+    await failRecord(fixture);
+    hideBehindDirectory(fixture, flag, 'a.txt');
+    assert.equal(status(worktree), '', 'Git sees a clean worktree');
+
+    const before = snapshot(fixture);
+    const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+    assert.deepEqual(refused.proofs, ['ignored'], JSON.stringify(refused));
+    assert.deepEqual([refused.ignoredPaths, refused.ignoredPathCount], [['a.txt'], 1]);
+    const check = expectOk(await resumeCheckOf(fixture));
+    assert.deepEqual([check.releasable, check.releaseProofs], [false, ['ignored']]);
+    assert.deepEqual(check.resumeProofs, ['residual'], JSON.stringify(check));
+    assert.deepEqual(check.details.resume.hidden, ['a.txt']);
+    assert.deepEqual(check.details.resume.ignored, ['a.txt']);
+    assertUnchanged(fixture, before);
+    await assertRemovalRefused(fixture);
+    assert.equal(readFileSync(join(worktree, 'a.txt', 'only.scratch'), 'utf8'), 'the only copy\n');
+  });
+}
+
+// Invariant (the ledger route too): beside a dirty residual endpoint that holds its descriptor, a
+// committed endpoint hidden by skip-worktree and replaced by a directory holding an ignored file
+// refuses the release with `ignored`; the residual, the ignored bytes and the record stay.
+test('release ledger route: a hidden endpoint replaced by a directory with an ignored file refuses', async (t) => {
+  const fixture = await delivery(t);
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(await call('ledger init', initInput(fixture)));
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt'])));
+  await failRecord(fixture);
+  hideBehindDirectory(fixture, '--skip-worktree', 'a.txt');
+  assert.equal(status(worktree), 'M b.txt', 'Git sees only the residual endpoint');
+
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['ignored'], JSON.stringify(refused));
+  assert.deepEqual(refused.ignoredPaths, ['a.txt']);
+  assertUnchanged(fixture, before);
+  assert.equal(readFileSync(join(worktree, 'b.txt'), 'utf8'), 'b changed\n');
+  assert.equal(readFileSync(join(worktree, 'a.txt', 'only.scratch'), 'utf8'), 'the only copy\n');
+  assert.equal(readRecord(fixture.root).status, 'failed');
+});
+
+// Invariant (a committed deletion has no index entry, yet its place counts): a directory recreated
+// at a committed tombstone endpoint and holding only an ignored file refuses the ledger-route
+// release with `ignored` and the resume with `residual` (its `ignored` detail); emptied, the
+// resume adopts the record, and the file back makes `ledger reconcile` inexact with the path in
+// `ignored`; `worktree remove` and `cleanup plan` refuse with condition 7.
+test('a directory with an ignored file at a committed deletion refuses release, resume, reconcile and removal', async (t) => {
+  const fixture = await delivery(t, { deleted: ['gone.txt'] });
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt', 'gone.txt'], ['b.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt', 'gone.txt'])));
+  await failRecord(fixture);
+  write(fixture.root, '.git/info/exclude', '*.local\n');
+  mkdirSync(join(worktree, 'gone.txt'));
+  write(worktree, 'gone.txt/private.local', 'private\n');
+  assert.equal(status(worktree), 'M b.txt', 'Git sees only the residual endpoint');
+
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['ignored'], JSON.stringify(refused));
+  assert.deepEqual(refused.ignoredPaths, ['gone.txt']);
+  const check = expectOk(await resumeCheckOf(fixture));
+  assert.deepEqual([check.resumable, check.resumeProofs], [false, ['residual']]);
+  assert.deepEqual(check.details.resume.ignored, ['gone.txt'], JSON.stringify(check));
+  const resumed = expectOutcome(await resumeOf(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(resumed.proofs, ['residual'], JSON.stringify(resumed));
+  assert.deepEqual([resumed.ignored, resumed.ignoredCount], [['gone.txt'], 1]);
+  assertUnchanged(fixture, before);
+  assert.equal(readFileSync(join(worktree, 'gone.txt', 'private.local'), 'utf8'), 'private\n');
+
+  rmSync(join(worktree, 'gone.txt', 'private.local'));
+  expectOk(await resumeOf(fixture));
+  const exact = expectOk(await reconcileOf(fixture));
+  assert.equal(exact.exact, true, JSON.stringify(exact));
+  assert.deepEqual(exact.mismatches.ignored, { paths: [], count: 0 });
+  write(worktree, 'gone.txt/private.local', 'private\n');
+  const reconciled = expectOk(await reconcileOf(fixture));
+  assert.equal(reconciled.exact, false, JSON.stringify(reconciled));
+  assert.deepEqual(reconciled.mismatches.ignored, { paths: ['gone.txt'], count: 1 });
+  for (const list of ['committed', 'residual', 'index', 'extra', 'hidden']) {
+    assert.equal(reconciled.mismatches[list].count, 0, list);
+  }
+  await assertRemovalRefused(fixture);
+  assert.equal(readFileSync(join(worktree, 'gone.txt', 'private.local'), 'utf8'), 'private\n');
+});
+
+// Invariant (an ignored file in place of a parent directory): an ignored file replacing the
+// directory of an endpoint keeps the status clean, and the endpoint below it reads as absent. The
+// release refuses with `ignored` instead of taking the clean route, and `worktree remove` and
+// `cleanup plan` refuse with condition 7; the file stays.
+test('release clean route: an ignored file in place of an endpoint parent directory refuses', async (t) => {
+  const fixture = await delivery(t, { added: { 'new/c.txt': 'c added\n' } });
+  const worktree = fixture.worktree.worktreePath;
+  expectOk(
+    await call('ledger init', initInput(fixture, { groups: [['a.txt', 'b.txt'], ['new/c.txt']] })),
+  );
+  expectOk(await append(fixture, commitGroup(fixture, ['a.txt', 'b.txt'])));
+  await failRecord(fixture);
+  write(fixture.root, '.git/info/exclude', '/new\n');
+  rmSync(join(worktree, 'new'), { recursive: true });
+  write(worktree, 'new', 'c moved here\n');
+  assert.equal(status(worktree), '', 'Git sees a clean worktree');
+
+  const before = snapshot(fixture);
+  const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+  assert.deepEqual(refused.proofs, ['ignored'], JSON.stringify(refused));
+  assert.deepEqual(refused.ignoredPaths, ['new/c.txt']);
+  assertUnchanged(fixture, before);
+  await assertRemovalRefused(fixture);
+  assert.equal(readFileSync(join(worktree, 'new'), 'utf8'), 'c moved here\n');
+});
+
 // Invariant (locked index, per path): from the snapshot to the last discard the worktree's index
 // is locked, so a concurrent `git add` fails instead of staging content a later discard would
 // drop: an entry restaged for an already unstaged path, or for a tracked path after its index
@@ -2812,12 +2970,12 @@ test('restoreResidual keeps the index locked and leaves newer content untouched'
   assert.equal(git(staged.root, 'diff', '--cached', '--name-only'), '');
 });
 
-// Invariant (release restore, unproven content): restoring a deleted tracked residual path never
-// deletes content outside the residual. A directory replacing the deleted file counts as its
-// tombstone in the residual proofs, which never see the directory's ignored descendants, while
-// `git restore` would delete that directory recursively. Holding an ignored file, it stops the
-// release with UNSAFE_TARGET before any discard, on the first attempt and on the retry, with the
-// ignored file, the residual, the record and the ledger unchanged; emptied, it is released.
+// Invariant (release proofs, unproven content): restoring a deleted tracked residual path never
+// deletes content outside the residual. A directory replacing the deleted file reads as its
+// tombstone, while `git restore` would delete that directory recursively. Holding an ignored
+// file, it refuses the release with the `ignored` proof before any discard, on the first attempt
+// and on the retry, with the ignored file, the residual, the record and the ledger unchanged;
+// emptied, it is released.
 test('release ledger route: an ignored file below a directory replacing a deleted tracked path survives', async (t) => {
   const fixture = await delivery(t, { deleted: ['gone.txt'] });
   expectOk(
@@ -2832,13 +2990,9 @@ test('release ledger route: an ignored file below a directory replacing a delete
   const ledger = readFileSync(ledgerFile(fixture), 'utf8');
   const residual = status(worktree);
   for (const attempt of ['first', 'retry']) {
-    const failed = expectError(await release(fixture), 'UNSAFE_TARGET');
-    assert.match(
-      failed.message,
-      /restoring the tracked residual path gone\.txt would delete gone\.txt\/private\.local/,
-      attempt,
-    );
-    assert.match(failed.message, /already restored: none; already unstaged: none;/, attempt);
+    const refused = expectOutcome(await release(fixture), 'NOT_ELIGIBLE');
+    assert.deepEqual(refused.proofs, ['ignored'], `${attempt}: ${JSON.stringify(refused)}`);
+    assert.deepEqual([refused.ignoredPaths, refused.ignoredPathCount], [['gone.txt'], 1], attempt);
     assert.equal(readFileSync(join(worktree, 'gone.txt', 'private.local'), 'utf8'), 'private\n');
     assert.equal(status(worktree), residual, `${attempt}: nothing is discarded`);
     assert.equal(readRecord(fixture.root).status, 'failed', `${attempt}: the record is unchanged`);
