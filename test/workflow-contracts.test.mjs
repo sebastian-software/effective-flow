@@ -3014,6 +3014,14 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision:
         'Phase 0 having resolved a non-observer merge or report mode immediately before Phase 1',
     },
+    {
+      // A delegated gate run learns its host only from the `Host: t3-code` input line, so a clause
+      // naming only the T3 Code environment would leave every delegated run on T3 without the
+      // fragment and waiting through its non-T3 path. Both halves are required.
+      fragment: 'host-pr-watch',
+      trigger: /(?=[\s\S]*T3 Code)(?=[\s\S]*`Host: t3-code`)/,
+      decision: 'the environment identifying T3 Code, or a delegated run receiving `Host: t3-code`',
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -23765,4 +23773,337 @@ test('all continuation entry and recommendation consumers defer one protocol and
       tool,
     );
   }
+});
+
+// --- Issue #635: T3 Code PR watch and linking (host-pr-watch fragment) ---
+
+const HOST_PR_WATCH_PATH = 'src/shared/host-pr-watch.md';
+const HOST_PR_WATCH_TOOLS = ['watch_pull_request', 'link_pull_request', 'unwatch_pull_request'];
+
+function hostPrWatchSource() {
+  return source(HOST_PR_WATCH_PATH);
+}
+
+// Everything from the first heading naming "T3 Code" to the end of the file.
+function hostPrWatchT3Section() {
+  const text = hostPrWatchSource();
+  const heading = text.match(/^#{1,6}[^\n]*T3 Code[^\n]*$/m);
+  assert.ok(heading, `${HOST_PR_WATCH_PATH} must carry a heading naming "T3 Code"`);
+  return text.slice(heading.index);
+}
+
+// Invariant: the T3 PR-watch procedure is a deferred fragment reached only through a lazy pointer in
+// merge-gate, iterate and pr, so no run on another host and no other tool pays for it.
+test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', () => {
+  assert.ok(
+    existsSync(new URL(HOST_PR_WATCH_PATH, repositoryRoot)),
+    `${HOST_PR_WATCH_PATH} must exist`,
+  );
+  for (const path of [MERGE_GATE_PATH, 'src/tools/iterate.md', 'src/tools/pr.md']) {
+    const includes = collectIncludeNames(source(path));
+    assert.ok(
+      includes.lazy.has('host-pr-watch'),
+      `${path} must reach host-pr-watch through a lazy-include`,
+    );
+    assert.equal(
+      includes.eager.has('host-pr-watch'),
+      false,
+      `${path} must not include host-pr-watch eagerly`,
+    );
+  }
+  const eagerCarriers = ['src/tools', 'src/agents', 'src/shared']
+    .flatMap((directory) =>
+      readdirSync(new URL(`${directory}/`, repositoryRoot))
+        .filter((file) => file.endsWith('.md'))
+        .map((file) => `${directory}/${file}`),
+    )
+    .filter((path) => collectIncludeNames(source(path)).eager.has('host-pr-watch'));
+  assert.deepEqual(
+    eagerCarriers,
+    [],
+    'no tool, agent or shared fragment may include host-pr-watch eagerly',
+  );
+});
+
+// Invariant: the iterate and pr pointers load host-pr-watch only at their decision points. iterate
+// loads it on T3 Code only in a top-level run, decided by the absence of both a body delimiter and
+// a `Run state:` line, because a run delegated by merge-gate leaves the watch to the gate; pr loads
+// it on T3 Code. The merge-gate pointer is pinned with the other merge-gate pointers. Exactly these
+// three tools reach the fragment, so no other tool pays for it.
+test('host-pr-watch pointers in iterate and pr name their decision points and are its only other hosts', () => {
+  const pointerIn = (path) =>
+    [...source(path).matchAll(LAZY_INCLUDE_RE)]
+      .find((match) => match[1].trim() === 'host-pr-watch')?.[2]
+      ?.trim();
+  const pinned = [
+    {
+      path: 'src/tools/iterate.md',
+      trigger:
+        /(?=[\s\S]*T3 Code)(?=[\s\S]*top-level)(?=[\s\S]*body delimiter)(?=[\s\S]*`Run state:`)/,
+      decision: 'T3 Code in a top-level run with neither a body delimiter nor a `Run state:` line',
+    },
+    {
+      path: 'src/tools/pr.md',
+      trigger: /T3 Code/,
+      decision: 'the environment identifying T3 Code',
+    },
+  ];
+  for (const { path, trigger, decision } of pinned) {
+    const when = pointerIn(path);
+    assert.ok(when, `${path} must keep a non-empty when: clause on its host-pr-watch pointer`);
+    assert.match(
+      when,
+      trigger,
+      `the host-pr-watch pointer in ${path} must name ${decision}; got: ${when}`,
+    );
+  }
+  assert.deepEqual(includeHostsOf('host-pr-watch'), {
+    eager: [],
+    lazy: ['tools/iterate.md', 'tools/merge-gate.md', 'tools/pr.md'],
+  });
+});
+
+// Invariant: a run on any other host stops reading at the dispatch table, so the fragment opens with
+// a host table whose T3 Code row precedes an "any other host: read no further" row. The T3 row also
+// routes a delegated `merge-gate` run that received `Host: t3-code`, and the prose between the table
+// and the T3 heading makes that input line its only host identity; without both, a delegated gate
+// run on T3 would read no further and wait through its non-T3 path.
+test('host-pr-watch opens with a host-dispatch table routing T3 Code and ending other hosts at read no further', () => {
+  const text = hostPrWatchSource();
+  const rows = text.split('\n').filter((line) => /^\|/.test(line));
+  const t3Row = rows.findIndex((row) => /T3 Code/.test(row));
+  const otherRow = rows.findIndex((row) => /other host/i.test(row) && /read no further/i.test(row));
+  assert.notEqual(t3Row, -1, 'dispatch table needs a "T3 Code" row');
+  assert.notEqual(
+    otherRow,
+    -1,
+    'dispatch table needs an "any other host" row ending in "read no further"',
+  );
+  assert.ok(t3Row < otherRow, 'the T3 Code row precedes the any-other-host row');
+  assert.match(
+    rows[t3Row],
+    /T3 Code[^|]*delegated `merge-gate` run[^|]*`Host: t3-code`/,
+    'the T3 Code row also routes a delegated `merge-gate` run that received `Host: t3-code`',
+  );
+  const tableEnd = text.indexOf(rows[otherRow]) + rows[otherRow].length;
+  assert.match(
+    prose(text.slice(tableEnd, text.search(/^#{1,6}[^\n]*T3 Code[^\n]*$/m))),
+    near('delegated `merge-gate` run', 'host identity is the `Host: t3-code` input line alone', 80),
+    'before the T3 Code heading, the delegated `merge-gate` run takes its host identity from the `Host: t3-code` input line alone',
+  );
+  const tableStart = text.indexOf(rows[0]);
+  assert.equal(
+    text.slice(0, tableStart).includes('## T3 Code'),
+    false,
+    'the dispatch table precedes the T3 Code section',
+  );
+  assert.ok(
+    text.indexOf(rows[otherRow]) < text.search(/^#{1,6}[^\n]*T3 Code[^\n]*$/m),
+    'the dispatch table precedes the T3 Code section heading',
+  );
+});
+
+// Invariant: the T3 section (first heading containing "T3 Code" to end of file) prohibits each of
+// sleep, --watch, pr-checks-wait, Monitor and ScheduleWakeup, and never instructs one: each term
+// occurs, and every occurrence has a negation (never, no, not, without, neither, nor) at most 40
+// characters before it within its own clause (no `.`, `;`, `:` or `,` between). Matched on the
+// whitespace-collapsed section, code spans included; `sleep` in any case, so "Sleep" counts.
+test('every sleep, --watch, pr-checks-wait, Monitor or ScheduleWakeup occurrence in the host-pr-watch T3 section sits in a prohibition', () => {
+  const section = prose(hostPrWatchT3Section());
+  const terms = [/sleep/gi, /--watch/g, /pr-checks-wait/g, /Monitor/g, /ScheduleWakeup/g];
+  const negation = /\b(?:never|no|not|without|neither|nor)\b[^.;:,]{0,40}$/i;
+  for (const term of terms) {
+    const occurrences = [...section.matchAll(term)];
+    assert.ok(occurrences.length > 0, `the T3 section must prohibit ${term.source}`);
+    for (const { index } of occurrences) {
+      assert.match(
+        section.slice(0, index),
+        negation,
+        `${term.source} is not governed by a negation in its clause: …${section.slice(Math.max(0, index - 60), index + 40)}…`,
+      );
+    }
+  }
+});
+
+// Invariant: the fragment names the host tools unqualified, as the host's deferred-tool mechanism
+// loads them, never with an `mcp__` prefix.
+test('host-pr-watch names watch, link and unwatch tools unqualified without an mcp__ prefix', () => {
+  const text = hostPrWatchSource();
+  for (const tool of HOST_PR_WATCH_TOOLS) {
+    assert.ok(text.includes(tool), `fragment must name ${tool}`);
+    assert.doesNotMatch(
+      text,
+      new RegExp(`mcp__[A-Za-z0-9_.-]*${tool}`),
+      `${tool} must carry no mcp__ prefix`,
+    );
+  }
+  assert.doesNotMatch(text, /mcp__[A-Za-z0-9_-]*(?:watch|link)_pull_request/);
+});
+
+// Invariant: the procedure lives only in the fragment; the callers carry no tool name.
+test('watch_pull_request, link_pull_request and unwatch_pull_request appear only in host-pr-watch, not in the merge-gate, iterate or pr sources', () => {
+  for (const path of [
+    MERGE_GATE_PATH,
+    'src/shared/merge-gate-delegated-run.md',
+    'src/shared/merge-gate-configured-reviewer.md',
+    'src/tools/iterate.md',
+    'src/tools/pr.md',
+  ]) {
+    const text = source(path);
+    for (const tool of HOST_PR_WATCH_TOOLS) {
+      assert.equal(text.includes(tool), false, `${path} must not name ${tool}`);
+    }
+  }
+});
+
+// Invariant: the non-T3 path is unchanged: Phase 2 step 2 still calls pr-checks-wait with the
+// configured timeout whenever the run is not on the host-pr-watch T3 path.
+test('merge-gate Phase 2 step 2 still calls pr-checks-wait on the path without Host', () => {
+  const run = mergeGateDelegatedRun(repositoryRoot);
+  const start = run.indexOf('2. **Pending checks.**');
+  assert.notEqual(start, -1, 'Phase 2 step 2 "**Pending checks.**" must exist');
+  const step = prose(run.slice(start, run.indexOf('\n3. ', start)));
+  assert.match(
+    step,
+    /Otherwise call `pr-checks-wait` with `mergeGate\.checkWaitMinutes` as its timeout/,
+    'the non-T3 branch of step 2 calls pr-checks-wait with mergeGate.checkWaitMinutes',
+  );
+});
+
+// Invariant: SUSPENDED host-pr-watch is a return of the delegated channel, so the completion
+// protocol's keyword-less resume never applies to it and the caller knows its input lines.
+test('merge-gate carries SUSPENDED host-pr-watch as a return entry, in the keyword sentence, and the Host and Resumed wait input lines', () => {
+  const core = mergeGateCore(repositoryRoot);
+  const returns = boundedSlice(
+    core,
+    'The delegated run returns exactly one of:',
+    '\n\n`BLOCKED-USER` is',
+  );
+  assert.match(
+    returns,
+    /^- `SUSPENDED host-pr-watch`, only under `Host: t3-code`, followed by `Kind: <checks\|bot>`,\s+`Round: <n>`/m,
+    'the return list carries "- `SUSPENDED host-pr-watch`" with its Kind and Round lines',
+  );
+  const keywordParagraph = core
+    .split(/\n\s*\n/)
+    .find(
+      (paragraph) =>
+        /BLOCKED-USER/.test(paragraph) &&
+        /keyword/.test(paragraph) &&
+        /completion protocol/.test(paragraph),
+    );
+  assert.ok(
+    keywordParagraph,
+    'the keyword-channel sentence naming BLOCKED-USER and the completion protocol must exist',
+  );
+  assert.match(
+    keywordParagraph,
+    /SUSPENDED host-pr-watch/,
+    'the keyword-channel sentence names SUSPENDED host-pr-watch',
+  );
+  const inputLines = boundedSlice(
+    core,
+    '<!-- spawn-site:merge-gate/delegated-run -->',
+    '- `Observer-only re-entry:',
+  );
+  assert.ok(inputLines.includes('Host: t3-code'), 'dispatch input line `Host: t3-code`');
+  assert.ok(
+    inputLines.includes('Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>'),
+    'dispatch input line `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>`',
+  );
+});
+
+// Invariant: the delegated run's entry contract accepts the T3 host and resume lines, including the
+// resume together with one relayed answer and an existing wisdom file, and ends once on a suspend.
+test('merge-gate delegated-run entry accepts Host and Resumed wait with one Relayed answer and an existing wisdom file, and a suspend ends the run once', () => {
+  const run = mergeGateDelegatedRun(repositoryRoot);
+  const between = (from, to) => {
+    const start = run.indexOf(from);
+    assert.notEqual(start, -1, `missing ${from}`);
+    const end = run.indexOf(to, start);
+    assert.notEqual(end, -1, `missing ${to}`);
+    return run.slice(start, end);
+  };
+  const step1 = between('1. **Input lines.**', '\n2. **Roots.**');
+  assert.ok(
+    prose(step1).includes('`Host:` accepts only `t3-code`'),
+    'entry step 1 accepts only `t3-code` for `Host:`',
+  );
+  assert.ok(step1.includes('Resumed wait:'), 'entry step 1 accepts `Resumed wait:`');
+  assert.match(
+    prose(step1),
+    /`Resumed wait:` is accepted only together with `Host: t3-code`,[^.]{0,80}alone or with one `Relayed answer:` line/,
+    'entry step 1 states the accepted `Resumed wait:` plus one `Relayed answer:` combination',
+  );
+  const step3 = between('3. **Wisdom file.**', '\n4. **Fresh state.**');
+  assert.match(
+    prose(step3),
+    /A `Resumed wait:` dispatch instead requires a present file holding an unconsumed wait record whose kind and round equal the line's/,
+    'entry step 3 requires an existing wisdom file with a matching unconsumed wait record under `Resumed wait:`',
+  );
+  const ends = between('- **Every return ends the run once.**', '- **A delegated orchestrator.**');
+  assert.ok(
+    ends.includes('SUSPENDED host-pr-watch'),
+    '"Every return ends the run once" names SUSPENDED host-pr-watch',
+  );
+});
+
+// Invariant: a T3-path gate run (a `Host: t3-code` dispatch or an inline T3 run) reserves no pilot
+// observation, so a suspend has nothing to finalize and a resume reserves nothing; a reservation's
+// transient capability could not survive a suspension.
+test('pilot-measurement reserves no observation on the host-pr-watch T3 path', () => {
+  const text = prose(source('src/shared/pilot-measurement.md'));
+  assert.match(
+    text,
+    /A dispatch carrying `Host: t3-code`, and an inline run on the T3 path of `host-pr-watch`, reserves no observation either, so a `SUSPENDED host-pr-watch` return has nothing to finalize and a `Resumed wait:` dispatch reserves nothing/,
+    'the T3 path reserves no observation, so suspend finalizes nothing and resume reserves nothing',
+  );
+});
+
+// Invariant: on T3 the unchanged-resume cap does not strand a stale-verdict re-trigger. A bot wait
+// pending only for the re-trigger's answer (still has run, no review newer than the recorded
+// `createdAt`) takes configured-reviewer step 5's "did not answer within the wait" hand-over to
+// iterate at the cap, as on every other host; every other pending bot or check keeps
+// report-and-stop.
+test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-resume cap to step 5 instead of report-and-stop', () => {
+  const bounds = prose(
+    boundedSlice(hostPrWatchSource(), '**Bounds.**', '**Report-and-stop, run side.**'),
+  );
+  assert.match(
+    bounds,
+    near('third consecutive unchanged resume', "takes the run's report-and-stop path", 20),
+    'the cap still takes report-and-stop by default',
+  );
+  assert.match(
+    bounds,
+    near(
+      'pending only for its stale-verdict re-trigger',
+      'still has run with no review newer than the recorded re-trigger `createdAt`',
+      60,
+    ),
+    'the exception is defined as a bot pending only for its re-trigger answer that still has run with no newer review',
+  );
+  assert.match(
+    bounds,
+    near(
+      'where every pending bot is such a bot',
+      `step 5's "did not answer within the wait" continuation`,
+      60,
+    ),
+    'the hand-over applies only where every pending bot is such a bot',
+  );
+  assert.match(
+    bounds,
+    near(
+      `step 5's "did not answer within the wait" continuation`,
+      "handing the verdict's items to `\\{\\{SKILL:iterate\\}\\}`",
+      120,
+    ),
+    'at the cap that bot takes the step-5 hand-over to iterate',
+  );
+  assert.match(
+    bounds,
+    near('Any other pending bot or check at the cap', 'keeps report-and-stop', 20),
+    'every other pending bot or check at the cap keeps report-and-stop',
+  );
 });
