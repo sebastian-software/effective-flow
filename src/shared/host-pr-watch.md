@@ -152,8 +152,9 @@ once"; the cap of three unchanged wakes bounds it instead. When its T3 Code Phas
 answered `Wait`, call `watch_pull_request` once. Where it cannot be loaded or is rejected, end the
 run with step 5's report naming the running reviewers before any wait line: no sleep, no other
 transport. Otherwise print one visible line naming the running reviewers, stating that the wait has
-no time bound and that the user can continue or stop, and end the turn. On each wake for this pull request, or a request to continue,
-re-read once as Phase 1.5 step 5 does and observe again:
+no time bound and that the user can continue or stop, and end the turn. While this run is suspended
+in its Phase 1.5 wait, on each wake for this pull request, or a request to continue, re-read once as
+Phase 1.5 step 5 does and observe again:
 
 - every reviewer finished: continue into Phase 2 with what they produced;
 - a reviewer still running: re-suspend without asking again or calling the watch again. A wake whose
@@ -161,6 +162,9 @@ re-read once as Phase 1.5 step 5 does and observe again:
   wakes, end the run with step 5's report. Only unchanged wakes count: a wake that changed a
   reviewer's state or evidence resets the count;
 - a stop request ends the run with that report.
+
+A wake while this run is not suspended in its Phase 1.5 wait, such as while the Phase 2.5 approval
+question is open, continues nothing; restate any open question.
 
 Unwatch before the final report whenever this session watched the pull request, and link after the
 Phase 5 push per "Linking".
