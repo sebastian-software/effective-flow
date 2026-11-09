@@ -24,14 +24,21 @@ the provider or harness is considered; its path applies when T3 Code runs Codex 
 Codex CLI remains in the catch-all path, and the native Desktop operation is not a generic Codex
 mechanism.
 
+**An unlisted tool is not an absent capability.** A host may defer its tools until they are loaded
+by their exact name, so loading the named operation is part of making the call, and only a refusal
+or an error from the call itself is a failure. Reading "not in my tool list" as "capability absent"
+prints a suggestion line on a host where the rename works.
+
 ### T3 Code: rename the calling thread directly
 
-When the running environment explicitly identifies T3 Code, call exactly
-`mcp__t3_code.t3_thread_update` with `action: rename` and the already-cut literal `title`. Omit both
-`threadId` and `environmentId`: the host operation targets the calling thread. Never derive either
-identifier from a delegate, parent, fork, environment, listing or search; never regenerate a title,
-read a thread back, inspect title ownership, or use another transport. Tool visibility alone is not
-host proof, and an unavailable named operation is not permission to discover a substitute.
+When the running environment explicitly identifies T3 Code, call the host's `t3_thread_update`
+operation, which T3 Code exposes through its `t3-code` MCP server, with `action: rename` and the
+already-cut literal `title`. The provider's tool for that operation is that operation, whatever its
+spelling. Omit both `threadId` and `environmentId`: the host operation targets the calling thread.
+Never derive either identifier from a delegate, parent, fork, environment, listing or search; never
+regenerate a title, read a thread back, inspect title ownership, or use a transport other than the
+`t3-code` MCP server. Tool visibility alone is not host proof, and an unavailable named operation is
+not permission to discover a substitute.
 
 - Treat only the host's actual reported success as success and stay silent. A work reference that
   becomes available after that success licenses exactly one further call with the newly derived title,
@@ -99,11 +106,6 @@ Do not load runtime-directory migration or write-safety guidance for it.
   emit the one `**Suggested session title:**` line the session-title contract defines. Do not block
   the workflow, retry, or claim that a title was applied; a later reference licenses no call here
   either, because that line already carries it.
-
-**An unlisted tool is not an absent capability.** A host may defer its session tools until they are
-loaded by name, so loading the operation by name is part of making the call, and only a refusal or
-an error from the call itself is a failure. Reading "not in my tool list" as "capability absent"
-prints a suggestion line on a host where the rename works.
 
 Not every Claude Code context carries the session tools at all, so do not assume they exist merely
 because the host is Claude Code. Where the operation cannot be called, and equally where a host
