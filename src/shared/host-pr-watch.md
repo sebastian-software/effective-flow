@@ -83,14 +83,19 @@ of any rule below.
   `VERIFIED_HEAD_SHA` and restarts Phase 2 as step 6 does, consuming one round. A changed state of a
   recorded bot, or a new review, at an unchanged head with a bot still pending re-suspends in Phase
   3 and consumes one round. Step-5 delegations start only once no bot is pending. These rules replace the "still not
-  has run" report endings of steps 4 and 5.
+  has run" report endings of steps 4 and 5; step 5's "did not answer within the wait" continuation
+  is reached only at the cap under "Bounds".
 - **Unchanged** is every other wake, for either kind: re-suspend in the same round, consume no round,
   add one to the count. The gate's own pushes, `{{SKILL:iterate}}` replies, trigger comments and
   unrelated comments are unchanged unless they change the head, the pending set, a recorded bot's
   state or a review.
 
 **Bounds.** The third consecutive unchanged resume takes the run's report-and-stop path instead of
-suspending again. A changed or progress resume, a suspend of a different kind, and
+suspending again. The one exception is a bot pending only for its stale-verdict re-trigger's
+answer, still **has run** with no review newer than the recorded re-trigger `createdAt`: where every
+pending bot is such a bot, that resume instead takes step 5's "did not answer within the wait"
+continuation, recording the stale-verdict state and handing the verdict's items to
+`{{SKILL:iterate}}` as on every other host. Any other pending bot or check at the cap keeps report-and-stop. A changed or progress resume, a suspend of a different kind, and
 any return other than `SUSPENDED host-pr-watch` reset the count to zero. Where a resume under
 `mergeGate.requireAllChecks: true` finds every still-pending check reporting `required: false`, it
 does not suspend again and takes that path, naming them. `mergeGate.maxRounds` bounds changed

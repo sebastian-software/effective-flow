@@ -381,8 +381,10 @@ required, or when a reviewer's has-run check is not required, because such a pas
 gate. `/effective-flow merge-gate <PR>` in the same session continues a suspended gate; a new session
 starts a fresh run, whose report names the earlier run's leftover wisdom file for
 `/effective-flow cleanup`. Three consecutive wakes that change nothing end the run with a report
-naming the pending checks or reviewer and the re-entry command; so does a resume under
-`mergeGate.requireAllChecks: true` where only non-required checks remain pending. Where the watch
+naming the pending checks or reviewer and the re-entry command, unless the only wait is for a
+reviewer's answer to a stale-verdict re-trigger: then the gate hands that verdict's items to
+`iterate`, as on every other host. A resume under `mergeGate.requireAllChecks: true` where only
+non-required checks remain pending also ends with that report. Where the watch
 cannot be loaded or is rejected (Forgejo support is unconfirmed), or the gate runs inside a sub-agent, the run reports and
 stops instead of waiting and never merges. The watch is removed before the final report. Every
 other host keeps the bounded waits unchanged.

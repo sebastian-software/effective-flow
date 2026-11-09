@@ -23999,3 +23999,42 @@ test('pilot-measurement reserves no observation on the host-pr-watch T3 path', (
     'the T3 path reserves no observation, so suspend finalizes nothing and resume reserves nothing',
   );
 });
+
+// Invariant: on T3 the unchanged-resume cap does not strand a stale-verdict re-trigger. A bot wait
+// pending only for the re-trigger's answer (still has run, no review newer than the recorded
+// `createdAt`) takes configured-reviewer step 5's "did not answer within the wait" hand-over to
+// iterate at the cap, as on every other host; every other pending bot or check keeps
+// report-and-stop.
+test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-resume cap to step 5 instead of report-and-stop', () => {
+  const bounds = prose(
+    boundedSlice(hostPrWatchSource(), '**Bounds.**', '**Report-and-stop, run side.**'),
+  );
+  assert.match(
+    bounds,
+    /The third consecutive unchanged resume takes the run's report-and-stop path/,
+    'the cap still takes report-and-stop by default',
+  );
+  assert.match(
+    bounds,
+    near(
+      'pending only for its stale-verdict re-trigger',
+      'no review newer than the recorded re-trigger `createdAt`',
+      120,
+    ),
+    'the exception is defined as a bot pending only for its re-trigger answer',
+  );
+  assert.match(
+    bounds,
+    near(
+      `step 5's "did not answer within the wait" continuation`,
+      "handing the verdict's items to `\\{\\{SKILL:iterate\\}\\}`",
+      120,
+    ),
+    'at the cap that bot takes the step-5 hand-over to iterate',
+  );
+  assert.match(
+    bounds,
+    /Any other pending bot or check at the cap keeps report-and-stop/,
+    'every other pending bot or check at the cap keeps report-and-stop',
+  );
+});
