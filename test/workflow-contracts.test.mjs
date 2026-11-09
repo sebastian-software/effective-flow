@@ -3014,6 +3014,14 @@ test('every merge-gate lazy pointer names the decision point that loads it', () 
       decision:
         'Phase 0 having resolved a non-observer merge or report mode immediately before Phase 1',
     },
+    {
+      // A delegated gate run learns its host only from the `Host: t3-code` input line, so a clause
+      // naming only the T3 Code environment would leave every delegated run on T3 without the
+      // fragment and waiting through its non-T3 path. Both halves are required.
+      fragment: 'host-pr-watch',
+      trigger: /(?=[\s\S]*T3 Code)(?=[\s\S]*`Host: t3-code`)/,
+      decision: 'the environment identifying T3 Code, or a delegated run receiving `Host: t3-code`',
+    },
     // Pre-existing pointers, pinned in the same battery so the slimming cannot quietly
     // strip a condition that predates it:
     { fragment: 'next-steps', trigger: /completion report/i, decision: 'the completion report' },
@@ -23815,6 +23823,44 @@ test('host-pr-watch is lazy in merge-gate, iterate and pr and eager nowhere', ()
     [],
     'no tool, agent or shared fragment may include host-pr-watch eagerly',
   );
+});
+
+// Invariant: the iterate and pr pointers load host-pr-watch only at their decision points. iterate
+// loads it on T3 Code only in a top-level run, decided by the absence of both a body delimiter and
+// a `Run state:` line, because a run delegated by merge-gate leaves the watch to the gate; pr loads
+// it on T3 Code. The merge-gate pointer is pinned with the other merge-gate pointers. Exactly these
+// three tools reach the fragment, so no other tool pays for it.
+test('host-pr-watch pointers in iterate and pr name their decision points and are its only other hosts', () => {
+  const pointerIn = (path) =>
+    [...source(path).matchAll(LAZY_INCLUDE_RE)]
+      .find((match) => match[1].trim() === 'host-pr-watch')?.[2]
+      ?.trim();
+  const pinned = [
+    {
+      path: 'src/tools/iterate.md',
+      trigger:
+        /(?=[\s\S]*T3 Code)(?=[\s\S]*top-level)(?=[\s\S]*body delimiter)(?=[\s\S]*`Run state:`)/,
+      decision: 'T3 Code in a top-level run with neither a body delimiter nor a `Run state:` line',
+    },
+    {
+      path: 'src/tools/pr.md',
+      trigger: /T3 Code/,
+      decision: 'the environment identifying T3 Code',
+    },
+  ];
+  for (const { path, trigger, decision } of pinned) {
+    const when = pointerIn(path);
+    assert.ok(when, `${path} must keep a non-empty when: clause on its host-pr-watch pointer`);
+    assert.match(
+      when,
+      trigger,
+      `the host-pr-watch pointer in ${path} must name ${decision}; got: ${when}`,
+    );
+  }
+  assert.deepEqual(includeHostsOf('host-pr-watch'), {
+    eager: [],
+    lazy: ['tools/iterate.md', 'tools/merge-gate.md', 'tools/pr.md'],
+  });
 });
 
 // Invariant: a run on any other host stops reading at the dispatch table, so the fragment opens with
