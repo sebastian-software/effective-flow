@@ -136,10 +136,11 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
 });
 
 test('Focus states pending qualification on all hosts while no gate row is qualified', () => {
-  // Invariant: while every route is disabled, one gate sentence — not the table — tells every host,
-  // the catch-all row and a bare snapshot invocation included, that focus is pending qualification under the
-  // qualified #613 reference, first and once per reply, only in the three limitation outputs and
-  // never in a stop or in the excluded tick notices. Activating a route removes this sentence.
+  // Invariant: while every route is disabled, one gate sentence, not the table, tells every host,
+  // the catch-all row and every invocation without a session reference except `follow-up stop`
+  // included, that focus is pending qualification under the qualified #613 reference, first and
+  // once per reply, only in the three limitation outputs and never in a stop or in the excluded
+  // tick notices. Activating a route removes this sentence.
   const contract = source('src/shared/focus-session-contract.md');
   const qualification = boundedSlice(
     contract,
@@ -153,17 +154,9 @@ test('Focus states pending qualification on all hosts while no gate row is quali
     opening,
     'every row of this table',
     'Codex CLI or other unqualified host',
-    'a bare snapshot invocation (`{{FLOW}} focus` without a session reference, never a `follow-up` form), which is refused before any selection is clarified',
+    'and for any invocation other than `follow-up stop` that has no session reference (for example `{{FLOW}} focus` or `{{FLOW}} focus follow-up`), which is refused before any selection is clarified',
     'once per reply',
-    'only in',
-    'never in a `follow-up stop` reply',
     "first and followed by the row's missing capability",
-    'a snapshot refusal',
-    'a `follow-up` limitation reply other than `follow-up stop`',
-    "a tick's disabled-row notice",
-    'a checkpoint-only tick',
-    'the `handle:pending` statement',
-    'the invalid-checkpoint notice',
     "it never precedes or replaces a stop or a tick's deletion of its own handle",
   ]);
   assert.match(
@@ -171,20 +164,15 @@ test('Focus states pending qualification on all hosts while no gate row is quali
     /its own handle\.\s*$/,
     'the sentence ends immediately before the disabled-path rule',
   );
-  assert.doesNotMatch(pending, /(?<![\w/-])#613\b/, 'only the qualified #613 reference ships');
-  // Each output is bound to its side: the three included ones follow "only in", the four excluded
-  // ones follow "never in", so no output can move between the two lists unnoticed.
-  ordered(
+  assert.doesNotMatch(
     pending,
-    'only in',
-    'a snapshot refusal',
-    'a `follow-up` limitation reply other than `follow-up stop`',
-    "a tick's disabled-row notice",
-    'never in a `follow-up stop` reply',
-    'a checkpoint-only tick',
-    'the `handle:pending` statement',
-    'the invalid-checkpoint notice',
+    /never a `follow-up` form/,
+    'the retired follow-up exclusion is gone',
   );
+  // One contiguous span fixes membership, order and both list boundaries.
+  assertPhrases(pending, [
+    "only in a snapshot refusal, a `follow-up` limitation reply other than `follow-up stop`, and a tick's disabled-row notice, and never in a `follow-up stop` reply, a checkpoint-only tick, the `handle:pending` statement or the invalid-checkpoint notice; it never precedes",
+  ]);
   ordered(
     flat(qualification),
     '| Codex CLI or other unqualified host |',
@@ -197,7 +185,7 @@ test('Focus states pending qualification on all hosts while no gate row is quali
   );
   assert.match(
     authority,
-    /Missing, ambiguous or conflicting selections are clarified before access, except that while no gate row is qualified the gate's pending refusal comes first wherever the gate states it;/,
+    /Missing, ambiguous or conflicting selections are clarified before access, except that while no gate row is qualified the gate's pending refusal comes first where the gate says it precedes selection clarification;/,
   );
 
   const hint = frontmatter(source('src/tools/focus.md'))
@@ -208,6 +196,13 @@ test('Focus states pending qualification on all hosts while no gate row is quali
     'pending qualification',
     'sebastian-software/effective-flow#613',
   ]);
+  assert.doesNotMatch(
+    ['src/tools/focus.md', 'src/shared/focus-session-contract.md', 'src/shared/focus-follow-up.md']
+      .map(source)
+      .join('\n'),
+    /(?<![\w/-])#613\b/,
+    'only the qualified #613 reference ships',
+  );
 });
 
 test('Focus reader admission preserves exact-source and evidence boundaries', () => {
