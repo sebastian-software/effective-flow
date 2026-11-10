@@ -78,13 +78,14 @@ repairs, rewrites or deletes such a record.
 - `cleanup-failed`: an ordinary removal or required post-removal operation failed and may be
   retried only after all eligibility proofs pass again
 
-| From                                | To or terminal action                   | Operation                                                                |
-| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
-| newly created                       | `active`                                | `worktree record-init`                                                   |
-| `active`                            | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                              |
-| `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `plan-pr-continuation` only |
-| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                          |
-| `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                      |
+| From                                | To or terminal action                   | Operation                                                                                               |
+| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| newly created                       | `active`                                | `worktree record-init`                                                                                  |
+| `active`                            | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                                                             |
+| `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `adoption` `plan-pr-continuation` or `partial-diff-resume` |
+| `aborted` or `failed`               | `cleanup-ready` (release)               | `worktree transition` under the record lock, `release: "partial-diff"`                                  |
+| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                                                         |
+| `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                                                     |
 
 A controlled user or workflow stop becomes `aborted`; an implementation, integration, validation,
 ownership, or state-persistence error becomes `failed`. A sudden interruption leaves `active`,
@@ -112,6 +113,10 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
    empty.
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
+
+A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`) whose worktree is fully gone,
+unregistered and its path absent, is removable without conditions 3, 4, 5 and 7 and the toplevel
+part of 2; no Git call runs in the vanished path. A half-gone worktree keeps every condition.
 
 ### Helper operations
 
@@ -141,7 +146,7 @@ mutation.
 `cwd` is `RUNTIME_STATE_ROOT`; `executionRoot` is the registered checkout the calling run operates
 from, and `RUNTIME_STATE_ROOT` for `worktree inspect`, the exit self-check and every call after the
 run's own worktree was withdrawn, since that path no longer exists. `sessionId` proves ownership:
-the record's own, or on adoption the new owner (`build` passes its build-run ID).
+the record's own, or on adoption or release the new owner (`build` passes its build-run ID).
 
 ```text
 node <skill-root>/scripts/effective-flow-state.mjs worktree record-init <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","record":<complete version 1 record, status active>}'
@@ -156,15 +161,17 @@ node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"
 - **`worktree transition`** runs under the record lock; a `from` that differs from the stored
   status writes nothing.
 - **`worktree inspect`** is read-only: the session's records with their failed conditions, plus
-  registered worktrees under its session paths that no record names (`unrecorded`). Omitting
-  `sessionId` covers every session.
+  registered worktrees under its session paths that no record names (`unrecorded`) and ledgers
+  without a record (`orphanLedgers`). Omitting `sessionId` covers every session.
 - **`worktree remove`** lists every record of one session to withdraw in one call. Under one lock
   hold per record it moves `active` to `cleanup-ready`, claims it, runs only
   `git worktree remove <WORKTREE_PATH>` without force and never `git worktree prune`, applies the
-  branch policy and deletes the record; a failed removal persists `cleanup-failed` with Git's error,
-  and an already absent worktree is reconciled only under the call's own claim. Give the call an
+  branch policy and deletes the record, its ledger first; a failed removal persists `cleanup-failed`
+  with Git's error, and an already absent worktree is reconciled only under the call's own claim. Give the call an
   explicit Bash timeout of 120000 ms, above its 90 s deadline; in Codex, request sandbox escalation
   for it up front. `executionRoot` is never one of the listed worktrees.
+
+**Load on demand:** Read `shared/worktree-partial-diff-recovery.md`, when a `partial-diff` record's delivery ledger, `ledger init`, `ledger append`, `ledger reconcile`, `worktree resume-check`, or a `worktree transition` with `adoption`, `visibility` or `release` is used: that fragment owns them.
 
 **Branch policy.** `retain` leaves the branch. `delete-after-integration` runs
 `git branch -d <BRANCH_NAME>`; when Git refuses, only an `apply-review` call carrying
@@ -180,7 +187,7 @@ envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `r
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                              |
 | `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                          |
-| `inspect` lists an orphan record lock                                                        | A lock with no record, or no owner: report it; never break it.                                                                                   |
+| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                             |
 | item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                             |
 | item `BRANCH_RETAINED`                                                                       | Worktree and record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven`.                                            |
 | item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions, owner or reason; the record keeps its status.                                                     |

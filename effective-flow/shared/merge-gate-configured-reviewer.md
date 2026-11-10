@@ -191,7 +191,8 @@ because neither has a delegated return at all:
 ## Phase 3: Automatic reviewer round
 
 Otherwise, for each login in `mergeGate.bots`, after "Matching a configured login" has de-duplicated
-entries that denote the same reviewer – two spellings of one account are one round here, not two:
+entries that denote the same reviewer – two spellings of one account are one round here, not two
+(on the T3 path of `host-pr-watch`, in that fragment's bot order):
 
 1. **Observe its state** through the loaded "Automatic reviewer state", against the fresh read: one
    of **running**, **not started**, or **has run**. Record the state together with the evidence that
@@ -243,6 +244,7 @@ entries that denote the same reviewer – two spellings of one account are one r
    substitute a sequence of status reads: that is the per-interval model turn the design rejects.
    Apply "Unconfigured automatic-reviewer advisory" to the review surfaces of that same re-read,
    merge its candidates into the wisdom record, and only then decide whether the reviewer has run.
+   On the T3 path of `host-pr-watch`, suspend and resume per that fragment instead of this wait.
    - If the harness cannot block that long (a tool timeout below the configured span), block for the
      longest single span it allows, re-read once, and, if the bot still has not run, end with a
      report naming it. Do not chain further waits to make up the difference.
@@ -286,7 +288,8 @@ entries that denote the same reviewer – two spellings of one account are one r
      triggered this round".
 
      Post only the literal trigger text, through the same PR-comment mutation step 3 uses, then apply
-     the single wait of step 4 and re-read once. **The reviewer has answered** only when that re-read
+     the single wait of step 4 and re-read once; on the T3 path of `host-pr-watch` that wait
+     suspends per that fragment too. **The reviewer has answered** only when that re-read
      shows a new submitted review at `VERIFIED_HEAD_SHA` whose `submittedAt` is later than the
      re-trigger comment's `createdAt`; a reviewer check that was already `COMPLETED` is not an answer.
      A re-read that observes the reviewer as **running** ends the run with step 4's report, carrying

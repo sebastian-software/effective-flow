@@ -537,16 +537,35 @@ function sameDescriptor(left, right) {
   return left.digest === right.digest;
 }
 
-async function selectedState(root, repoPath, origin, runner) {
+// One read of the `origin` state of `repoPath` at `root`, as `{state, stable}`. A working state's
+// Git reads (index entry, HEAD) run before its working file is read. A staged state is the index
+// entry's blob, and the entry is read again after `cat-file` returns: `stable` is false when it
+// changed in between (a restage), since the bytes are then those of a blob the index no longer
+// names.
+async function readSelectedState(root, repoPath, origin, runner) {
   const index = await indexState(root, repoPath, runner);
   if (origin === 'staged') {
-    return {
-      ...index,
-      bytes: await blobBytes(root, index.oid, runner),
-    };
+    const bytes = await blobBytes(root, index.oid, runner);
+    const after = await indexState(root, repoPath, runner);
+    return { state: { ...index, bytes }, stable: statesEqual(index, after) };
   }
   const head = await treeState(root, 'HEAD', repoPath, runner);
-  return await workingState(root, repoPath, index.oid === null ? head : index);
+  return {
+    state: await workingState(root, repoPath, index.oid === null ? head : index),
+    stable: true,
+  };
+}
+
+// `readSelectedState`'s state; a staged entry restaged while its blob was read fails closed with
+// SOURCE_DRIFT, so selection and transfer never bind or apply a blob the index no longer names.
+async function selectedState(root, repoPath, origin, runner) {
+  const { state, stable } = await readSelectedState(root, repoPath, origin, runner);
+  if (!stable) {
+    fail('SOURCE_DRIFT', 'staged source entry changed while its blob was read', {
+      path: repoPath,
+    });
+  }
+  return state;
 }
 
 function normalizeSelection(value) {
@@ -801,8 +820,37 @@ async function refreshSelectedSnapshot(manifestEntry, sourceRoot, runner) {
 export async function verifySourceManifest(input, options = {}) {
   requireObject(input);
   const manifest = validateSelectionManifest(input.manifest);
-  const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
-  const current = await repositoryContext(sourceRoot, options.runner);
+  return await verifySourceEntries(manifest, manifest.entries, input.sourceRoot, options.runner);
+}
+
+// `verifySourceManifest` restricted to the manifest entry covering the endpoint `path` (the entry
+// at it or renamed from it), beside the source's repository, root and HEAD, with the same `{exact,
+// drift}` and read order (see `verifySourceEntries`). A path that is no manifest endpoint is
+// INVALID_PAYLOAD. Read-only; the release re-checks the source of every residual path with it
+// immediately before it takes that path's content.
+export async function verifySourceEndpoint(input, options = {}) {
+  requireObject(input);
+  const manifest = validateSelectionManifest(input.manifest);
+  const repoPath = validateLiteralPath(input.path, 'path');
+  const entries = manifest.entries.filter(
+    (entry) => entry.path === repoPath || entry.renameFrom === repoPath,
+  );
+  if (entries.length === 0) {
+    fail('INVALID_PAYLOAD', 'path is not a manifest endpoint', { path: repoPath });
+  }
+  return await verifySourceEntries(manifest, entries, input.sourceRoot, options.runner);
+}
+
+// The `{exact, drift}` of the source's identity and of `entries` (manifest entries) at the source.
+// Per entry, the rename source (which must be a tombstone) and the ignore check run first and the
+// entry's own selected state is read last, so no source Git read for the entry follows the read of
+// the bytes it compares: a selected file deleted or replaced during the earlier reads is drift,
+// never passed on an earlier read. A staged state restaged while its blob was read (`stable` false
+// in `readSelectedState`) is drift too (`selected-state` with `actual: null`, or `rename-source`),
+// never a blob the index no longer names.
+async function verifySourceEntries(manifest, entries, sourceRootInput, runner) {
+  const sourceRoot = normalizeAbsolute(sourceRootInput ?? manifest.source.root, 'sourceRoot');
+  const current = await repositoryContext(sourceRoot, runner);
   const drift = [];
   if (current.repositoryIdentity !== manifest.source.repositoryIdentity) {
     drift.push({ kind: 'repository', expected: manifest.source.repositoryIdentity });
@@ -813,27 +861,28 @@ export async function verifySourceManifest(input, options = {}) {
   if (current.headOid !== manifest.source.headOid) {
     drift.push({ kind: 'head', expected: manifest.source.headOid, actual: current.headOid });
   }
-  for (const entry of manifest.entries) {
-    await checkIgnored(sourceRoot, entry.path, options.runner);
-    const refreshed = await refreshSelectedSnapshot(entry, sourceRoot, options.runner);
-    if (!sameDescriptor(refreshed.descriptor, entry.selected)) {
-      drift.push({
-        kind: 'selected-state',
-        path: entry.path,
-        expected: entry.selected,
-        actual: refreshed.descriptor,
-      });
-    }
+  for (const entry of entries) {
     if (entry.renameFrom !== null) {
-      const prior = await selectedState(
+      const prior = await readSelectedState(
         sourceRoot,
         entry.renameFrom,
         entry.selectionOrigin,
-        options.runner,
+        runner,
       );
-      if (prior.mode !== null) {
+      if (!prior.stable || prior.state.mode !== null) {
         drift.push({ kind: 'rename-source', path: entry.renameFrom, expected: 'tombstone' });
       }
+    }
+    await checkIgnored(sourceRoot, entry.path, runner);
+    const refreshed = await readSelectedState(
+      sourceRoot,
+      entry.path,
+      entry.selectionOrigin,
+      runner,
+    );
+    const actual = refreshed.stable ? selectedDescriptor(refreshed.state) : null;
+    if (actual === null || !sameDescriptor(actual, entry.selected)) {
+      drift.push({ kind: 'selected-state', path: entry.path, expected: entry.selected, actual });
     }
   }
   return { exact: drift.length === 0, drift };
@@ -1268,7 +1317,9 @@ async function applyActions(root, actions, topology) {
   }
 }
 
-function expectedEndpoints(manifest, actions) {
+// The expected working-tree descriptor of every manifest endpoint, rename sources included as
+// tombstones: the confirmed selection, or the planned bytes and mode of `actions` when given.
+export function expectedEndpoints(manifest, actions) {
   const endpoints = new Map();
   for (let index = 0; index < manifest.entries.length; index += 1) {
     const entry = manifest.entries[index];
@@ -1284,6 +1335,17 @@ function expectedEndpoints(manifest, actions) {
       endpoints.set(entry.renameFrom, { kind: 'tombstone', mode: null });
   }
   return endpoints;
+}
+
+// The transfer action of every manifest entry against the delivery checkout's current HEAD.
+async function planActions(manifest, sourceRoot, deliveryRoot, runner) {
+  return await Promise.all(
+    manifest.entries.map((entry) =>
+      entry.renameFrom === null
+        ? planOrdinaryEntry(entry, sourceRoot, deliveryRoot, runner)
+        : planRenameEntry(entry, sourceRoot, deliveryRoot, runner),
+    ),
+  );
 }
 
 async function actualWorkingDescriptor(root, repoPath, runner) {
@@ -1303,14 +1365,7 @@ export async function reconcileDelivery(input, options = {}) {
   const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
   const source = await verifySourceManifest({ manifest, sourceRoot }, { runner: options.runner });
   const actions =
-    options.actions ??
-    (await Promise.all(
-      manifest.entries.map((entry) =>
-        entry.renameFrom === null
-          ? planOrdinaryEntry(entry, sourceRoot, deliveryRoot, options.runner)
-          : planRenameEntry(entry, sourceRoot, deliveryRoot, options.runner),
-      ),
-    ));
+    options.actions ?? (await planActions(manifest, sourceRoot, deliveryRoot, options.runner));
   const inventory = await statusInventory(deliveryRoot, options.runner, false);
   const actualPaths = new Set(
     inventory.entries.flatMap((entry) =>
@@ -1339,6 +1394,497 @@ export async function reconcileDelivery(input, options = {}) {
       mode.length === 0 &&
       source.exact,
     mismatches: { missing: missing.sort(), extra, content, mode, sourceDrift: source.drift },
+  };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Endpoint descriptors and the residual comparison
+//
+// These functions only read. The runtime-state helper reuses them with `validateSelectionManifest`,
+// `verifySourceManifest` and `expectedEndpoints` for its private delivery-progress ledger, and
+// injects its own guarded runner through `options.runner` (see `scopedGitRunner`).
+
+const OBJECT_ID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+
+// The Git runner seam of the selection functions. Every Git call they make reaches
+// `options.runner` as `{executable: 'git', args: ['-C', <root>, ...]}`, except `merge-file`, which
+// runs on temporary files without `-C`. `scopedGitRunner` turns `gitRunner(cwd, args, {stdin})`
+// into such a runner: it admits only calls into one of `roots` (a `-C`-less `merge-file` runs in
+// `defaultRoot`), puts `-c <entry>` before the arguments for every entry of `config`, and answers
+// any other call, or one that brings its own environment, with a spawn error that the functions
+// report as COMMAND_FAILED, so a call outside the proven roots never starts.
+export function scopedGitRunner(gitRunner, { roots, defaultRoot = null, config = [] }) {
+  const allowed = new Set(roots);
+  const prefix = config.flatMap((entry) => ['-c', entry]);
+  const refuse = (message) => ({
+    status: null,
+    stdout: Buffer.alloc(0),
+    stderr: Buffer.alloc(0),
+    error: { code: 'EGITSCOPE', message },
+  });
+  return async (call) => {
+    if (call?.executable !== 'git' || !Array.isArray(call.args) || call.env !== undefined) {
+      return refuse('only a plain git call is admitted');
+    }
+    const options = call.stdin === undefined ? {} : { stdin: call.stdin };
+    if (call.args[0] === '-C') {
+      if (!allowed.has(call.args[1])) return refuse('git -C names a root outside the proven roots');
+      return await gitRunner(call.args[1], [...prefix, ...call.args.slice(2)], options);
+    }
+    if (call.args[0] !== 'merge-file' || typeof defaultRoot !== 'string') {
+      return refuse('a git call without -C is admitted only for merge-file');
+    }
+    return await gitRunner(defaultRoot, [...prefix, ...call.args], options);
+  };
+}
+
+// The descriptor of one endpoint as the delivery working tree holds it; nothing is written. An
+// absent path is `{path, kind: 'tombstone', mode: null, digest: null, oid: null}`; a file or a
+// tracked symbolic link is `{path, kind: 'blob', mode, digest, oid}` with the SHA-256 of the bytes on
+// disk and the blob OID Git would store for exactly these bytes at this path: `hash-object --stdin
+// --path=<path>`, with the path's filters and attributes, never `-w`. A symbolic link's target text
+// is hashed without filters, as Git stores it.
+export async function describeWorkingEndpoint(root, repoPath, options = {}) {
+  validateLiteralPath(repoPath, 'endpoint');
+  const tracked = await treeState(root, 'HEAD', repoPath, options.runner);
+  const state = await workingState(root, repoPath, tracked, { directoryMeansAbsent: true });
+  if (state.mode === null) {
+    return { path: repoPath, kind: 'tombstone', mode: null, digest: null, oid: null };
+  }
+  const descriptor = selectedDescriptor(state);
+  const oid = await gitText(
+    options.runner,
+    root,
+    ['hash-object', '--stdin', ...(state.mode === '120000' ? [] : [`--path=${repoPath}`])],
+    { stdin: state.bytes },
+  );
+  if (!OBJECT_ID_PATTERN.test(oid)) {
+    fail('COMMAND_FAILED', 'git hash-object returned an invalid object id', { path: repoPath });
+  }
+  return { path: repoPath, kind: 'blob', mode: descriptor.mode, digest: descriptor.digest, oid };
+}
+
+// The exact reconcile of `reconcileDelivery` followed by the descriptor of every manifest endpoint
+// in manifest order (rename sources included), read from the delivery working tree itself. The
+// descriptors exist only when the reconcile is exact and every endpoint still holds exactly the
+// planned bytes and mode: `{exact: true, mismatches, endpoints}`, otherwise `{exact: false,
+// mismatches, endpoints: null}`. Nothing is written.
+export async function describeDeliveryEndpoints(input, options = {}) {
+  requireObject(input);
+  const manifest = validateSelectionManifest(input.manifest);
+  const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
+  const context = await repositoryContext(deliveryRoot, options.runner);
+  if (context.repositoryIdentity !== manifest.source.repositoryIdentity) {
+    fail('UNSAFE_DELIVERY_CHECKOUT', 'delivery checkout belongs to a different repository');
+  }
+  const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
+  const actions = await planActions(manifest, sourceRoot, deliveryRoot, options.runner);
+  const reconciliation = await reconcileDelivery(
+    { manifest, sourceRoot, deliveryRoot },
+    { runner: options.runner, actions },
+  );
+  if (!reconciliation.exact) {
+    return { exact: false, mismatches: reconciliation.mismatches, endpoints: null };
+  }
+  const endpoints = [];
+  const content = [];
+  for (const [repoPath, expected] of expectedEndpoints(manifest, actions)) {
+    const actual = await describeWorkingEndpoint(deliveryRoot, repoPath, options);
+    if (
+      actual.kind !== expected.kind ||
+      actual.mode !== expected.mode ||
+      (expected.kind === 'blob' && actual.digest !== expected.digest)
+    ) {
+      content.push({ path: repoPath, expected: expected.kind, actual: actual.kind });
+    }
+    endpoints.push(actual);
+  }
+  const mismatches = { ...reconciliation.mismatches, content };
+  return content.length === 0
+    ? { exact: true, mismatches, endpoints }
+    : { exact: false, mismatches, endpoints: null };
+}
+
+function requireEndpointDescriptors(value) {
+  const endpoints = requireArray(value, 'endpoints');
+  const seen = new Set();
+  return endpoints.map((endpoint, index) => {
+    const label = `endpoints[${index}]`;
+    exactKeys(endpoint, ['path', 'kind', 'mode', 'digest', 'oid'], label);
+    const repoPath = validateLiteralPath(endpoint.path, `${label}.path`);
+    if (seen.has(repoPath)) fail('INVALID_PAYLOAD', 'endpoints contain a duplicate path');
+    seen.add(repoPath);
+    if (endpoint.kind === 'tombstone') {
+      if (endpoint.mode !== null || endpoint.digest !== null || endpoint.oid !== null) {
+        fail('INVALID_PAYLOAD', `${label} must be an empty tombstone`);
+      }
+    } else if (
+      endpoint.kind !== 'blob' ||
+      !FILE_MODES.has(endpoint.mode) ||
+      !/^[0-9a-f]{64}$/.test(endpoint.digest) ||
+      !OBJECT_ID_PATTERN.test(endpoint.oid)
+    ) {
+      fail('INVALID_PAYLOAD', `${label} must be a blob or tombstone descriptor`);
+    }
+    return endpoint;
+  });
+}
+
+// Whether a working-tree descriptor `actual` holds `endpoint`'s kind, mode and, for a blob, bytes.
+function holdsDescriptor(actual, endpoint) {
+  return (
+    actual.kind === endpoint.kind &&
+    actual.mode === endpoint.mode &&
+    (endpoint.kind !== 'blob' || actual.digest === endpoint.digest)
+  );
+}
+
+function indexMatchesDescriptor(index, descriptor) {
+  if (descriptor.kind === 'tombstone') return index.oid === null;
+  return index.oid === descriptor.oid && index.mode === descriptor.mode;
+}
+
+// The paths among `repoPaths` whose index entry carries the skip-worktree or the assume-unchanged
+// bit, as `ls-files -v` tags them (`S`, or any lowercase tag). `git status` takes such an entry's
+// working tree as unchanged, whatever bytes it holds. Nothing runs for no path, since `ls-files`
+// without a pathspec would list the whole index; a failed listing is COMMAND_FAILED.
+async function hiddenIndexEntries(root, repoPaths, runner) {
+  const hidden = new Set();
+  if (repoPaths.length === 0) return hidden;
+  const result = await git(runner, root, [
+    'ls-files',
+    '-v',
+    '-z',
+    '--',
+    ...repoPaths.map(literalPathspec),
+  ]);
+  for (const record of asText(result.stdout).split('\0').filter(Boolean)) {
+    if (record.length < 3 || record[1] !== ' ') {
+      fail('COMMAND_FAILED', 'git returned an invalid ls-files -v entry');
+    }
+    const tag = record[0];
+    if (tag === 'S' || tag !== tag.toUpperCase()) hidden.add(record.slice(2));
+  }
+  return hidden;
+}
+
+// Whether the working-tree descriptor `actual` of `repoPath` holds exactly the bytes a checkout of
+// HEAD's blob `head` writes there: the blob after the path's smudge filters and eol attributes
+// (`cat-file --filters --path=<path>`), compared by SHA-256 with the bytes on disk, or for a
+// symbolic link the target text Git stores, unfiltered. A blob Git cannot read or filter is no
+// match, so equality that cannot be established never counts as HEAD's state.
+async function holdsCheckoutBytes(root, repoPath, actual, head, runner) {
+  try {
+    const result = await git(
+      runner,
+      root,
+      head.mode === '120000'
+        ? ['cat-file', 'blob', head.oid]
+        : ['cat-file', '--filters', `--path=${repoPath}`, head.oid],
+    );
+    return sha256(asBuffer(result.stdout)) === actual.digest;
+  } catch (error) {
+    if (error instanceof DeliverySelectionError) return false;
+    throw error;
+  }
+}
+
+// What stands in the working tree of `root` at `repoPath`, as the literal path to list: the path
+// itself when it exists (a file, a symbolic link or a directory), or the first parent that exists
+// but is no directory (a file or a symbolic link in place of a parent directory), else null:
+// nothing stands there. No entry is followed.
+async function occupiedPath(root, repoPath) {
+  const parts = repoPath.split('/');
+  let current = root;
+  for (let index = 0; index < parts.length; index += 1) {
+    current = path.join(current, parts[index]);
+    const stats = await safeLstat(current);
+    if (stats === null) return null;
+    if (index === parts.length - 1 || !stats.isDirectory()) {
+      return parts.slice(0, index + 1).join('/');
+    }
+  }
+  return null;
+}
+
+// The paths among `paths` at whose place the worktree `root` holds an ignored untracked file
+// (`ls-files --others --ignored --exclude-standard`): the path itself, any file below a directory
+// in its place, or a file or symbolic link standing in place of one of its parent directories.
+// `git status` never lists such a file, so the path reads as clean, or as absent where a directory
+// or a parent file stands in its place, while a discard or a `git worktree remove` deletes the
+// bytes it holds. An empty directory holds none. Returns the sorted paths. A path whose place
+// cannot be read is UNSUPPORTED_PATH and a failed listing COMMAND_FAILED, never a pass. Nothing is
+// written.
+export async function ignoredPathsAt(input, options = {}) {
+  requireObject(input);
+  const root = await canonicalDirectory(input.root, 'root');
+  if (!Array.isArray(input.paths)) fail('INVALID_PAYLOAD', 'paths must be an array');
+  for (const repoPath of input.paths) validateLiteralPath(repoPath, 'path');
+  return await ignoredAt(root, input.paths, options.runner);
+}
+
+// `ignoredPathsAt` for the canonical `root` and repository paths Git itself listed.
+async function ignoredAt(root, paths, runner) {
+  const occupied = new Map();
+  for (const repoPath of new Set(paths)) {
+    try {
+      const place = await occupiedPath(root, repoPath);
+      if (place !== null) occupied.set(repoPath, place);
+    } catch (error) {
+      fail('UNSUPPORTED_PATH', 'the place of a path cannot be read from the working tree', {
+        path: repoPath,
+        code: error?.code ?? null,
+      });
+    }
+  }
+  if (occupied.size === 0) return [];
+  const listed = await git(runner, root, [
+    'ls-files',
+    '-z',
+    '--others',
+    '--ignored',
+    '--exclude-standard',
+    '--',
+    ...[...new Set(occupied.values())].map((place) => `:(literal)${place}`),
+  ]);
+  const ignored = asText(listed.stdout).split('\0').filter(Boolean);
+  return [...occupied]
+    .filter(([, place]) =>
+      ignored.some((repoPath) => repoPath === place || repoPath.startsWith(`${place}/`)),
+    )
+    .map(([repoPath]) => repoPath)
+    .sort();
+}
+
+// The paths of the worktree `root` whose index entry carries the skip-worktree or the
+// assume-unchanged bit (`ls-files -v`: `S`, or any lowercase tag) and whose working tree holds
+// bytes only it holds: a file or symbolic link that holds neither the bytes a checkout of its index
+// blob writes there nor those of HEAD's blob (`holdsCheckoutBytes`). `git status` never compares
+// such an entry's working tree, so a clean status proves nothing about it, while a discard or a
+// `git worktree remove` deletes those bytes. Every index entry counts, not only selected ones.
+// Content is compared, never the bit alone: an absent path (a sparse-checkout entry) or one that
+// holds its index or HEAD bytes passes, as does a directory in its place that holds no ignored
+// file (an untracked file below it is listed by `git status`); a directory in its place holding an
+// ignored file, or an ignored file in place of one of its parent directories, is listed
+// (`ignoredPathsAt`), since `git status` lists neither; a gitlink or an unmerged stage is left to
+// `git status`. Returns the sorted paths. A listing or read that cannot be made fails
+// (COMMAND_FAILED or UNSUPPORTED_PATH), never passes. Nothing is written.
+export async function hiddenWorktreeChanges(input, options = {}) {
+  requireObject(input);
+  const root = await canonicalDirectory(input.root, 'root');
+  const listed = await git(options.runner, root, ['ls-files', '-v', '-s', '-z']);
+  const changed = [];
+  const absent = [];
+  for (const record of asText(listed.stdout).split('\0').filter(Boolean)) {
+    const tab = record.indexOf('\t');
+    const fields = tab === -1 ? [] : record.slice(0, tab).split(' ');
+    const repoPath = tab === -1 ? '' : record.slice(tab + 1);
+    if (fields.length !== 4 || fields[0].length !== 1 || repoPath === '') {
+      fail('COMMAND_FAILED', 'git returned an invalid ls-files -v -s entry');
+    }
+    const [tag, mode, oid, stage] = fields;
+    if (tag !== 'S' && tag === tag.toUpperCase()) continue;
+    if (stage !== '0' || !FILE_MODES.has(mode)) continue;
+    if (!OBJECT_ID_PATTERN.test(oid)) {
+      fail('COMMAND_FAILED', 'git returned an invalid index object id', { path: repoPath });
+    }
+    const index = { path: repoPath, mode, oid };
+    let state;
+    try {
+      state = await workingState(root, repoPath, index, { directoryMeansAbsent: true });
+    } catch (error) {
+      if (error instanceof DeliverySelectionError) throw error;
+      fail('UNSUPPORTED_PATH', 'a hidden index entry cannot be read from the working tree', {
+        path: repoPath,
+        code: error?.code ?? null,
+      });
+    }
+    if (state.mode === null) {
+      absent.push(repoPath);
+      continue;
+    }
+    const actual = selectedDescriptor(state);
+    if (await holdsCheckoutBytes(root, repoPath, actual, index, options.runner)) continue;
+    const head = await treeState(root, 'HEAD', repoPath, options.runner);
+    if (
+      head.oid !== null &&
+      (await holdsCheckoutBytes(root, repoPath, actual, head, options.runner))
+    ) {
+      continue;
+    }
+    changed.push(repoPath);
+  }
+  changed.push(...(await ignoredAt(root, absent, options.runner)));
+  return changed.sort();
+}
+
+// Compares the delivery checkout with the descriptors of `endpoints` (the uncommitted residual of a
+// delivery) without writing anything. Returns sorted path lists:
+//   dirty     every path whose index or working tree differs from HEAD, untracked ones included
+//   extra     the dirty paths outside `endpoints`
+//   content   the endpoints whose working-tree kind, mode or bytes differ from their descriptor,
+//             and every endpoint whose index entry carries the skip-worktree or assume-unchanged
+//             bit (`hiddenIndexEntries`): `git status` never compares its working tree, so newer
+//             bytes there would pass as clean
+//   staged    the endpoints whose index entry differs from HEAD
+//   index     the endpoints whose index entry is neither HEAD's nor the descriptor's blob and mode
+//   tracked   the dirty endpoints HEAD tracks (the rest are absent from HEAD)
+//   atHead    the endpoints that are not dirty, carry neither bit, and hold HEAD's state in index
+//             and working tree: for a path HEAD tracks, HEAD's mode and exactly the bytes a
+//             checkout of HEAD's blob writes there (`holdsCheckoutBytes`); absent for one HEAD
+//             does not track (an ignored file left at a path HEAD lacks is not at HEAD); an
+//             endpoint a release already restored
+// An unmerged index entry is UNSUPPORTED_PATH.
+export async function inspectResidual(input, options = {}) {
+  requireObject(input);
+  const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
+  const endpoints = requireEndpointDescriptors(input.endpoints);
+  const inventory = await statusInventory(deliveryRoot, options.runner, false);
+  const hidden = await hiddenIndexEntries(
+    deliveryRoot,
+    endpoints.map((endpoint) => endpoint.path),
+    options.runner,
+  );
+  const dirty = new Set(
+    inventory.entries.flatMap((entry) =>
+      entry.renameFrom ? [entry.renameFrom, entry.path] : [entry.path],
+    ),
+  );
+  const named = new Set(endpoints.map((endpoint) => endpoint.path));
+  const content = [];
+  const staged = [];
+  const index = [];
+  const tracked = [];
+  const atHead = [];
+  for (const endpoint of endpoints) {
+    const actual = await actualWorkingDescriptor(deliveryRoot, endpoint.path, options.runner);
+    const isHidden = hidden.has(endpoint.path);
+    if (isHidden || !holdsDescriptor(actual, endpoint)) content.push(endpoint.path);
+    const head = await treeState(deliveryRoot, 'HEAD', endpoint.path, options.runner);
+    const entry = await indexState(deliveryRoot, endpoint.path, options.runner);
+    if (!statesEqual(entry, head)) {
+      staged.push(endpoint.path);
+      if (!indexMatchesDescriptor(entry, endpoint)) index.push(endpoint.path);
+    }
+    if (dirty.has(endpoint.path) && head.oid !== null) tracked.push(endpoint.path);
+    if (
+      !isHidden &&
+      !dirty.has(endpoint.path) &&
+      statesEqual(entry, head) &&
+      (head.oid === null
+        ? actual.kind === 'tombstone'
+        : actual.mode === head.mode &&
+          (await holdsCheckoutBytes(deliveryRoot, endpoint.path, actual, head, options.runner)))
+    ) {
+      atHead.push(endpoint.path);
+    }
+  }
+  const sorted = (values) => [...values].sort();
+  return {
+    dirty: sorted(dirty),
+    extra: sorted([...dirty].filter((repoPath) => !named.has(repoPath))),
+    content: sorted(content),
+    staged: sorted(staged),
+    index: sorted(index),
+    tracked: sorted(tracked),
+    atHead: sorted(atHead),
+  };
+}
+
+// The resume-mode reconcile of a delivery checkout against the persisted descriptors of its
+// ledger, without writing anything and without re-planning: no committed rename or three-way entry
+// is planned again, every comparison uses the descriptors `ledger init` computed. Input:
+//   manifest     the bound selection manifest (`validateSelectionManifest`)
+//   deliveryRoot the delivery checkout, at `commitOid`
+//   commitOid    the branch tip the committed groups end in
+//   committed    the endpoint descriptors of the committed groups
+//   residual     the endpoint descriptors of the uncommitted groups
+//   sourceRoot   optional, defaults to `manifest.source.root`
+// `committed` and `residual` must together be exactly the manifest's endpoints
+// (`expectedEndpoints`, rename sources included) with the manifest's kinds, else INVALID_PAYLOAD.
+// Returns `{exact, mismatches, staged}` with sorted path lists:
+//   head       true when the checkout's HEAD is not `commitOid`
+//   committed  the committed endpoints whose entry in `commitOid`'s tree is not the descriptor's
+//              blob OID and mode (or present for a tombstone): compared by blob OID, so clean and
+//              smudge filters, LFS and EOL attributes keep a committed path exact
+//   residual   the residual endpoints whose working tree differs from the descriptor's kind, mode
+//              or byte digest, or whose index entry carries the skip-worktree or assume-unchanged
+//              bit (`inspectResidual`'s `content`)
+//   index      the residual endpoints whose index entry is neither HEAD's nor the descriptor's
+//   extra      the dirty or untracked paths outside the residual endpoints
+//   hidden     every path of the checkout, committed endpoints included, whose skip-worktree or
+//              assume-unchanged entry hides bytes that neither its index nor HEAD holds
+//              (`hiddenWorktreeChanges`)
+//   ignored    every endpoint, committed and residual, at whose place the checkout holds an
+//              ignored untracked file (`ignoredPathsAt`: the path itself, below a directory in its
+//              place, or in place of a parent directory), which `git status` never lists
+//   sourceDrift  the drift entries of `verifySourceManifest` (exact only without any)
+// and, beside them, `staged`: the residual endpoints whose index entry differs from HEAD
+// (`inspectResidual`'s `staged`). A staged entry holding its descriptor is no mismatch (a
+// hook-rejected group stays staged and exact), so a caller that unstaged such a group proves the
+// unstaging by an empty `staged`.
+export async function reconcileResume(input, options = {}) {
+  requireObject(input);
+  const manifest = validateSelectionManifest(input.manifest);
+  const deliveryRoot = await canonicalDirectory(input.deliveryRoot, 'deliveryRoot');
+  if (typeof input.commitOid !== 'string' || !OBJECT_ID_PATTERN.test(input.commitOid)) {
+    fail('INVALID_PAYLOAD', 'commitOid must be a full commit object id');
+  }
+  const committed = requireEndpointDescriptors(input.committed);
+  const residual = requireEndpointDescriptors(input.residual);
+  const expected = expectedEndpoints(manifest);
+  const described = [...committed, ...residual];
+  const named = new Set(described.map((endpoint) => endpoint.path));
+  if (
+    named.size !== described.length ||
+    named.size !== expected.size ||
+    described.some((endpoint) => expected.get(endpoint.path)?.kind !== endpoint.kind)
+  ) {
+    fail('INVALID_PAYLOAD', 'committed and residual must be exactly the manifest endpoints');
+  }
+  const context = await repositoryContext(deliveryRoot, options.runner);
+  if (context.repositoryIdentity !== manifest.source.repositoryIdentity) {
+    fail('UNSAFE_DELIVERY_CHECKOUT', 'delivery checkout belongs to a different repository');
+  }
+  const sourceRoot = normalizeAbsolute(input.sourceRoot ?? manifest.source.root, 'sourceRoot');
+  const committedMismatches = [];
+  for (const endpoint of committed) {
+    const state = await treeState(deliveryRoot, input.commitOid, endpoint.path, options.runner);
+    const holds =
+      endpoint.kind === 'tombstone'
+        ? state.oid === null
+        : state.oid === endpoint.oid && state.mode === endpoint.mode;
+    if (!holds) committedMismatches.push(endpoint.path);
+  }
+  const inspected = await inspectResidual(
+    { deliveryRoot, endpoints: residual },
+    { runner: options.runner },
+  );
+  const hidden = await hiddenWorktreeChanges({ root: deliveryRoot }, { runner: options.runner });
+  const ignored = await ignoredAt(deliveryRoot, [...named], options.runner);
+  const source = await verifySourceManifest({ manifest, sourceRoot }, { runner: options.runner });
+  const mismatches = {
+    head: context.headOid !== input.commitOid,
+    committed: committedMismatches.sort(),
+    residual: inspected.content,
+    index: inspected.index,
+    extra: inspected.extra,
+    hidden,
+    ignored,
+    sourceDrift: source.drift,
+  };
+  return {
+    exact:
+      !mismatches.head &&
+      mismatches.committed.length === 0 &&
+      mismatches.residual.length === 0 &&
+      mismatches.index.length === 0 &&
+      mismatches.extra.length === 0 &&
+      mismatches.hidden.length === 0 &&
+      mismatches.ignored.length === 0 &&
+      source.exact,
+    mismatches,
+    staged: inspected.staged,
   };
 }
 

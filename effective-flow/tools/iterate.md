@@ -106,6 +106,8 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
+**Load on demand:** Read `shared/host-pr-watch.md`, when the running environment identifies T3 Code in a top-level run (neither a body delimiter nor a `Run state:` line), before Phase 1.5 asks or Phase 5 step 1 pushes.
+
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
 
 ## Effective Flow configuration (project setup ADR)
@@ -1281,6 +1283,11 @@ because classification is the thing being protected.
 
 If at least one configured automatic reviewer counts as running for the current head: Ask the user: **An automatic reviewer is still working on the current head. Wait for it, work with the notes that are already there, or stop?**
 - Wait -- Block once for mergeGate.botWaitMinutes and re-read; continue with the reviewer's notes if it finished by then, otherwise end the run with a report
+- Proceed -- Classify the threads that are there now; notes arriving afterwards stay for a later run
+- Abort -- End the run without classifying, implementing, replying, or pushing
+
+If at least one configured automatic reviewer counts as running for the current head, in a top-level run whose running environment identifies T3 Code; ask this in place of the question above: Ask the user: **An automatic reviewer is still working on the current head. Wait for it, work with the notes that are already there, or stop?**
+- Wait -- Watch and resume on PR events
 - Proceed -- Classify the threads that are there now; notes arriving afterwards stay for a later run
 - Abort -- End the run without classifying, implementing, replying, or pushing
 

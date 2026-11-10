@@ -330,13 +330,14 @@ repairs, rewrites or deletes such a record.
 - `cleanup-failed`: an ordinary removal or required post-removal operation failed and may be
   retried only after all eligibility proofs pass again
 
-| From                                | To or terminal action                   | Operation                                                                |
-| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------ |
-| newly created                       | `active`                                | `worktree record-init`                                                   |
-| `active`                            | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                              |
-| `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `plan-pr-continuation` only |
-| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                          |
-| `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                      |
+| From                                | To or terminal action                   | Operation                                                                                               |
+| ----------------------------------- | --------------------------------------- | ------------------------------------------------------------------------------------------------------- |
+| newly created                       | `active`                                | `worktree record-init`                                                                                  |
+| `active`                            | `cleanup-ready`, `aborted`, or `failed` | `worktree transition` by the owning session                                                             |
+| `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `adoption` `plan-pr-continuation` or `partial-diff-resume` |
+| `aborted` or `failed`               | `cleanup-ready` (release)               | `worktree transition` under the record lock, `release: "partial-diff"`                                  |
+| `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                                                         |
+| `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                                                     |
 
 A controlled user or workflow stop becomes `aborted`; an implementation, integration, validation,
 ownership, or state-persistence error becomes `failed`. A sudden interruption leaves `active`,
@@ -364,6 +365,10 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
    empty.
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
+
+A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`) whose worktree is fully gone,
+unregistered and its path absent, is removable without conditions 3, 4, 5 and 7 and the toplevel
+part of 2; no Git call runs in the vanished path. A half-gone worktree keeps every condition.
 
 ### Helper operations
 
@@ -393,7 +398,7 @@ mutation.
 `cwd` is `RUNTIME_STATE_ROOT`; `executionRoot` is the registered checkout the calling run operates
 from, and `RUNTIME_STATE_ROOT` for `worktree inspect`, the exit self-check and every call after the
 run's own worktree was withdrawn, since that path no longer exists. `sessionId` proves ownership:
-the record's own, or on adoption the new owner (`build` passes its build-run ID).
+the record's own, or on adoption or release the new owner (`build` passes its build-run ID).
 
 ```text
 node <skill-root>/scripts/effective-flow-state.mjs worktree record-init <<< '{"cwd":"<RUNTIME_STATE_ROOT>","executionRoot":"<EXECUTION_ROOT>","record":<complete version 1 record, status active>}'
@@ -408,15 +413,17 @@ node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"
 - **`worktree transition`** runs under the record lock; a `from` that differs from the stored
   status writes nothing.
 - **`worktree inspect`** is read-only: the session's records with their failed conditions, plus
-  registered worktrees under its session paths that no record names (`unrecorded`). Omitting
-  `sessionId` covers every session.
+  registered worktrees under its session paths that no record names (`unrecorded`) and ledgers
+  without a record (`orphanLedgers`). Omitting `sessionId` covers every session.
 - **`worktree remove`** lists every record of one session to withdraw in one call. Under one lock
   hold per record it moves `active` to `cleanup-ready`, claims it, runs only
   `git worktree remove <WORKTREE_PATH>` without force and never `git worktree prune`, applies the
-  branch policy and deletes the record; a failed removal persists `cleanup-failed` with Git's error,
-  and an already absent worktree is reconciled only under the call's own claim. Give the call an
+  branch policy and deletes the record, its ledger first; a failed removal persists `cleanup-failed`
+  with Git's error, and an already absent worktree is reconciled only under the call's own claim. Give the call an
   explicit Bash timeout of 120000 ms, above its 90 s deadline; in Codex, request sandbox escalation
   for it up front. `executionRoot` is never one of the listed worktrees.
+
+**Load on demand:** Read `shared/worktree-partial-diff-recovery.md`, when a `partial-diff` record's delivery ledger, `ledger init`, `ledger append`, `ledger reconcile`, `worktree resume-check`, or a `worktree transition` with `adoption`, `visibility` or `release` is used: that fragment owns them.
 
 **Branch policy.** `retain` leaves the branch. `delete-after-integration` runs
 `git branch -d <BRANCH_NAME>`; when Git refuses, only an `apply-review` call carrying
@@ -432,7 +439,7 @@ envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `r
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `record-init` not `ok` (`RECORD_EXISTS`, `NOT_ELIGIBLE`, `LOCK_HELD`, `INTERRUPTED`, …)      | Retain worktree and branch, run no setup or delegation there, stop, and report the code and proofs.                                              |
 | `transition` not `ok` (`STATUS_MISMATCH`, `RECORD_NOT_FOUND`, `NOT_OWNER`, `INTERRUPTED`, …) | Retain worktree and branch; report the record ID, code and current status. `LOCK_HELD` names the owner.                                          |
-| `inspect` lists an orphan record lock                                                        | A lock with no record, or no owner: report it; never break it.                                                                                   |
+| `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                             |
 | item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                             |
 | item `BRANCH_RETAINED`                                                                       | Worktree and record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven`.                                            |
 | item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions, owner or reason; the record keeps its status.                                                     |
@@ -490,6 +497,7 @@ When an internal sub-agent ends without `DONE` or `ABORT`, its result counts as 
 
 - derive the candidate files and selected states from changes made in the current session
 - require confirmation of the exact ordered selection as the sole routine approval
+- resume a failed delivery from its ledger without a second approval, or release it for cleanup
 - derive and display an exact ordered commit partition, then continue automatically
 - transfer only those states to a fresh branch/worktree based on the refreshed configured base
 - stage and commit one derived coherent group at a time through `effective-flow commit`
@@ -600,8 +608,9 @@ blob and mode without dereferencing it. Bind each selected state to source `HEAD
 absence, selected content digest/blob/mode or tombstone, and both rename endpoints without printing
 file contents.
 
-This manifest confirmation is the sole routine approval; the conditional pre-selection upstream
-questions of step 1.1 are the only questions that can precede it. An affirmative answer authorizes automatic
+This manifest confirmation is the sole routine approval. Its only additions are the conditional
+questions of step 1.1, which alone can precede it: the resume and release questions for a retained
+`partial-diff` record and the upstream questions. An affirmative answer authorizes automatic
 derivation, non-blocking display, validation, and sequential execution of coherent commit groups,
 subject to every drift check, invariant, verification step, and abort boundary below.
 
@@ -610,15 +619,19 @@ subject to every drift check, invariant, verification step, and abort boundary b
 ### 1. Establish immutable source evidence
 
 1. Issue and verify a source execution-location receipt before any operation that may write, with
-   repository identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`. Then, before any candidate is
-   reconstructed, call `upstream-status {root: sourceRoot, fetch: true}`. A failed `upstream-status`
-   envelope (`ok: false`) ends this check with one notice line naming its error code; continue
-   without an update. A failed or stale fetch, or one reported as `fetch.skipped`, ends this check
-   with one notice line whatever the state; so do `detached`, `no-upstream`, `upstream-gone`,
-   `untracked-upstream`, `up-to-date`, and `ahead`, with no question. Only `behind`,
-   `behind-overlap`, and `diverged` proceed to the fragment below, and only when the fetch was not
-   attempted, or `fetch.ok` is true and `fetch.stale` is false. A local upstream
-   (`branch.<name>.remote = .`) is compared without fetching, so its fetch is not attempted.
+   repository identity, `EXECUTION_ROOT`, and `RUNTIME_STATE_ROOT`. Then call `worktree inspect`
+   without `sessionId`; a call that is not `ok` gets one notice line and the run continues.
+
+**Load on demand:** Read `shared/deliver-partial-diff-resume.md`, when `worktree inspect` lists a record with purpose `partial-diff` and status `aborted` or `failed`.
+
+Unless a record was resumed, call `upstream-status {root: sourceRoot, fetch: true}` before any
+candidate is reconstructed. A failed `upstream-status` envelope (`ok: false`) ends this check with
+one notice line naming its error code; continue without an update. A failed or stale fetch, or one
+reported as `fetch.skipped`, ends this check with one notice line whatever the state; so do
+`detached`, `no-upstream`, `upstream-gone`, `untracked-upstream`, `up-to-date`, and `ahead`, with no
+question. Only `behind`, `behind-overlap`, and `diverged` proceed to the fragment below, and only
+when the fetch was not attempted, or `fetch.ok` is true and `fetch.stale` is false. A local upstream
+(`branch.<name>.remote = .`) is compared without fetching, so its fetch is not attempted.
 
 **Load on demand:** Read `shared/source-upstream-sync.md`, when upstream-status reports behind, behind-overlap, or diverged.
 
@@ -635,7 +648,8 @@ worktree state.
    `effective-flow pr`.
 3. Resolve and confirm the selection contract above. Invoke `bind-manifest` with
    `{sourceRoot, selection}` and retain the returned ephemeral manifest plus source receipt for every
-   later comparison. Do not write it to tracked files or runtime state.
+   later comparison. Do not write it to tracked files or runtime state; only step 4.6 binds it
+   into the private delivery ledger.
 4. Verify after confirmation that source `HEAD`, the complete source index, and every selected state
    still match the captured evidence through `verify-source {manifest, sourceRoot}`. Drift requires
    a newly displayed and confirmed manifest.
@@ -658,7 +672,7 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
    exact OID before creating delivery artifacts.
 2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
-   the prefix is empty (the hidden-mode default), as `data.branch` of `named` from `node <skill-root>/scripts/effective-flow-mechanics.mjs delivery-branch-name` with one JSON object on stdin: `cwd` the repository root, `branchPrefix`, `skill: "deliver"`, `text` the confirmed delivery subject, `visibility`, `excludeNames`. Report `data.originalSlug` and `data.slug` in one line when `data.sanitized`; `prefix-discloses` stops, naming `delivery.branchPrefix` and effective-flow setup; so do a nonzero exit, an unparsable envelope and `ok: false`, naming the error code — never derive the name by hand.
+   the prefix is empty (the hidden-mode default), as `data.branch` of `named` from `node <skill-root>/scripts/effective-flow-mechanics.mjs delivery-branch-name` with one JSON object on stdin: `cwd` the repository root, `branchPrefix`, `skill: "deliver"`, `text` the confirmed delivery subject, `visibility` the resolver's `data.visibility`, passed verbatim, `excludeNames`. Report `data.originalSlug` and `data.slug` in one line when `data.sanitized`; `prefix-discloses` stops, naming `delivery.branchPrefix` and effective-flow setup; so do a nonzero exit, an unparsable envelope and `ok: false`, naming the error code — never derive the name by hand.
    Verify the branch and the absolute worktree path are unused in `git worktree list --porcelain`; a branch listed there goes into `excludeNames` for another call.
 3. Create a fresh branch/worktree from the refreshed base without switching, adopting, stashing,
    cleaning, resetting, or otherwise changing the source checkout. Issue a separate
@@ -695,6 +709,14 @@ headOid}}` in its default redacted dry-run mode. Inspect the planned paths, mode
    selection; never silently refresh or broaden the manifest.
 5. Revalidate that the source receipt, source `HEAD`, complete source index, and non-selected source
    paths are unchanged. A mismatch retains the delivery artifacts and blocks commit and PR.
+6. Call `ledger init` for the record with the bound manifest, step 2's groups in order (each with
+   the source path of every rename in it), `base` the resolved base branch and the creation OID,
+   the visibility of step 1.2 as the recovery contract maps it, and both resolved languages.
+   `written: false` (`reason: "size-bound"`) or `INPUT_TOO_LARGE` leaves no ledger: report once
+   "resume unavailable for this run", skip every `ledger append`, and continue unchanged. After
+   `INVALID_INPUT`, correct the input once; a second `INVALID_INPUT` takes that same path. Any other
+   result that is not `ok`, such as `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER` or `WRITE_FAILED`, is
+   a failure before staging.
 
 ### 5. Commit each derived group
 
@@ -711,12 +733,14 @@ Process groups sequentially in their displayed order:
 4. Require the returned commit OID to be a new child of the expected `HEAD` on the exact delivery
    branch, and require its tree OID to equal the expected index-tree OID. Verify the residual changed
    paths equal the ordered union of all later groups, with no staged residue from the completed
-   group. Advance the receipt's expected commit only after all checks pass.
+   group. After all checks pass, record the commit with `ledger append`, then advance the
+   receipt's expected commit.
 
 If delegation, a hook, tree comparison, receipt validation, or residual comparison fails, preserve
 the worktree, branch, verified earlier commits, and remaining uncommitted groups. Report the exact
 boundary and expected/actual state; never amend, squash, reorder, delete, or retry successful
-commits, and never push or create a PR.
+commits, and never push or create a PR. A failed `ledger append` is such a failure. A later
+`deliver` run offers the retained record for resume or release at step 1.1.
 
 ### 6. Publish only the verified commits
 

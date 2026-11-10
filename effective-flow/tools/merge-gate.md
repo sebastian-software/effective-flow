@@ -724,11 +724,16 @@ The delegated run returns exactly one of:
 - `DONE`, followed by its Phase-6 report as the **outcome record**;
 - `BLOCKED-USER <question-id>`, followed by `Round: <n>`, `State digest: <hex>`, the gate's evidence
   and what this dispatch has done so far;
+- `SUSPENDED host-pr-watch`, only under `Host: t3-code`, followed by `Kind: <checks|bot>`,
+  `Round: <n>`, the pending checks or bots and what this dispatch has done so far;
 - `ABORT <reason>`; `ABORT nested-spawn-unavailable` means it can start no child.
 
 `BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in
 `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies
-to it.
+to it. `SUSPENDED host-pr-watch` is a keyword of this channel only, and that resume never applies to
+it either.
+
+**Load on demand:** Read `shared/host-pr-watch.md`, when the running environment identifies T3 Code, or this delegated run received `Host: t3-code`.
 
 ## Workflow
 
@@ -756,6 +761,8 @@ input object's top-level `cwd`; setting only the process or tool working directo
    completion assessment and its offered terminal transition, terminal label cleanup, and eligible
    container reconciliation. Never repeat checks, repairs, bot triggers, branch writes, or merge.
    This is the intended recovery path for a run that could not pose the offer.
+   On T3 Code the caller links an open pull request of this repository once per gate run, per
+   `host-pr-watch`, before step 2.
 
 2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
    the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`,
@@ -847,6 +854,10 @@ Model selection site: `merge-gate/delegated-run` (`shared/model-selection.md`).
 - `Caller limits: <token>[,<token>]` with the tokens `no-merge` and `no-branch-writes`, only when the user restricted this gate run per "Caller limits";
 - on a re-dispatch only, `Relayed answer: <question-id>; round=<n>; digest=<hex>; option=<label>`,
   with `; deselect=<durable key>,…` for an `Adjust`, or `Relayed answer: none`;
+- only from a caller whose running environment identifies T3 Code, also when that caller is itself
+  delegated, `Host: t3-code`;
+- on a re-dispatch after `SUSPENDED host-pr-watch` only,
+  `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>` per `host-pr-watch`;
 - `Observer-only re-entry: <yes|no>`;
 - `Wisdom file: <RUNTIME_STATE_ROOT>/.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`, one
   session ID per gate run, kept across re-dispatches;
@@ -880,11 +891,14 @@ limits never shrink within a gate run.
   `Adjust`, only a deselection of durable keys the evidence listed – and ask again otherwise. Re-run
   Phase 0 step 1 for the observer-only flag; where that read ends the run, report it, dispatch
   nothing more and delete the wisdom file. Otherwise re-dispatch once with `Observer-only re-entry:`
-  from that read, `Caller limits:` per "Caller limits", the other input lines unchanged, minus `Completion answer:` in observer-only mode, and the answer as `Relayed answer:`.
+  from that read, `Caller limits:` per "Caller limits", the other input lines unchanged, minus `Completion answer:` in observer-only mode, and the answer as `Relayed answer:`, dropping any `Resumed wait:`.
 - An invalid `BLOCKED-USER`, or a question the user leaves unanswered: report it, re-run Phase 0
   step 1 as above, ending where that read ends, and otherwise re-dispatch as above once per gate run
   with `Relayed answer: none`, under which the run resolves `report` and every gate takes its
-  unanswered branch, so it ends with its report and its cleanup. An invalid return from that dispatch ends the gate: report it, dispatch nothing more and delete the wisdom file.
+  unanswered branch, so it ends with its report and its cleanup, unless it suspends validly. An invalid return from that dispatch ends the gate: report it, dispatch nothing more and delete the wisdom file.
+- `SUSPENDED host-pr-watch`: valid only from a dispatch that carried `Host: t3-code`; handle it per
+  the caller section of `host-pr-watch`. Otherwise report it, dispatch nothing more and delete the
+  wisdom file.
 - `ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session, then run it
   here per the delegated-run section with this run's own run state and caller limits.
 - Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file.

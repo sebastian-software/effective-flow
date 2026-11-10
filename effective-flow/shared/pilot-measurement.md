@@ -43,6 +43,9 @@ before Phase 1 performs gate work.
 
 2. Determine the native harness family as the closed value `claude|codex`. Portable execution has
    no native pilot capability and records no observation. It continues the merge gate unchanged.
+   A dispatch carrying `Host: t3-code`, and an inline run on the T3 path of `host-pr-watch`, reserves
+   no observation either, so a `SUSPENDED host-pr-watch` return has nothing to finalize and a
+   `Resumed wait:` dispatch reserves nothing.
 3. When inventory returned exactly one present generation, invoke `start-gate-observation` with an
    stdin object containing exactly these keys:
 

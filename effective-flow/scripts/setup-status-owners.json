@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.72.0",
+  "version": "1.73.0",
   "exposedTools": [
     "concept",
     "investigate",

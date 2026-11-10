@@ -3,12 +3,15 @@
 This fragment is loaded only when the Step 7 `Rename path` question was answered `Yes`.
 
 **Detect the host** from explicit running-environment context first. Three hosts have an established
-rename path today: **T3 Code** exposes `mcp__t3_code.t3_thread_update`, the **ChatGPT Desktop Codex
-tab** exposes a native current-task operation, and **Claude Code** renames the running session through
-its own session-title operation. Follow only the identified host's path below; tool visibility alone
-is not host proof. Plain Codex CLI has no automatic path in this scope. On any other host, say plainly
-that no path is established, that runs therefore keep suggesting a title, and end Step 7. Never
-invent a mechanism, discover a substitute, or probe a host for one.
+rename path today: **T3 Code** exposes the host's `t3_thread_update` operation (via its `t3-code` MCP
+server), the **ChatGPT Desktop Codex tab** exposes a native current-task operation, and **Claude
+Code** renames the running session through its own session-title operation. Follow only the
+identified host's path below; tool visibility alone is not host proof. Where a host defers its tools
+until they are loaded by their exact name, load the named operation first — an unlisted tool is not
+an absent capability, and only a refusal or an error from the call itself is a failed probe. Plain
+Codex CLI has no automatic path in this scope. On any other host, say plainly that no path is
+established, that runs therefore keep suggesting a title, and end Step 7. Never invent a mechanism,
+discover a substitute, or probe a host for one.
 
 ### T3 Code: the current-thread capability needs no installation
 
@@ -17,12 +20,13 @@ invent a mechanism, discover a substitute, or probe a host for one.
    install. Ordinary Effective Flow runs use it directly when their subject is fixed.
 2. **Probe with a real rename, not a claim.** Say beforehand that this deliberately renames the
    current thread once and may replace its existing title, including one chosen manually; the user
-   may rename it back or let the next run retitle it. Then call `mcp__t3_code.t3_thread_update` once
-   with `action: rename` and only the literal title `Effective Flow setup check`; omit both
-   `threadId` and `environmentId`, never list, search or read back a thread, and never retry. Report
-   the actual host result. A success proves the path for this run; an unavailable, denied, errored,
-   ambiguous or unconfirmed result means only that this probe failed. Later eligible runs still
-   attempt the operation and fall back independently. Never claim more than the host reported.
+   may rename it back or let the next run retitle it. Then call the host's `t3_thread_update`
+   operation (via its `t3-code` MCP server) once with `action: rename` and only the literal title
+   `Effective Flow setup check`; omit both `threadId` and `environmentId`, never list, search or
+   read back a thread, and never retry. Report the actual host result. A success proves the path for
+   this run; an unavailable, denied, errored, ambiguous or unconfirmed result means only that this
+   probe failed. Later eligible runs still attempt the operation and fall back independently. Never
+   claim more than the host reported.
 
 ### ChatGPT Desktop, Codex tab: the native capability needs no installation
 
@@ -53,10 +57,7 @@ invent a mechanism, discover a substitute, or probe a host for one.
    current session once and that the user may rename it back or let the next run retitle it. Then
    call the operation once with the sentinel `"self"` and only the literal title
    `Effective Flow setup check`; never resolve or supply a session id, never name another session,
-   and never retry. Where the host defers its session tools until they are loaded by name, load the
-   operation first — an unlisted tool is not an absent capability, and only a refusal or an error
-   from the call itself is a failed probe. Report the concrete result. A successful call proves the
-   path for this run; an absent or denied operation, a refused sentinel, or a failed call means only
-   that this setup probe failed. Later eligible runs still attempt the operation and fall back
-   independently from each call's result. Never report a probe that did not run or claim more than
-   the host reported.
+   and never retry. Report the concrete result. A successful call proves the path for this run; an
+   absent or denied operation, a refused sentinel, or a failed call means only that this setup probe
+   failed. Later eligible runs still attempt the operation and fall back independently from each
+   call's result. Never report a probe that did not run or claim more than the host reported.

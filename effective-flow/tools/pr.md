@@ -399,6 +399,9 @@ pair. The aborting arm records nothing, and no consuming step runs.
    If a PR already exists for the head branch, subsequent changes are pushed
    exclusively as new commits on this branch. Do not rewrite existing
    PR history via `commit --amend`, rebase, squash, or force push.
+
+**Load on demand:** Read `shared/host-pr-watch.md`, when the running environment identifies T3 Code and step 8 matched exactly one open pull request or step 10 created one, before step 11 and before any plan-draft finish mutation.
+
 8. **Look up an existing open PR:** After the successful push, invoke the helper's
    `pr-list` operation for open pull requests, with the execution root as `cwd`. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;

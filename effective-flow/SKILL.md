@@ -6,7 +6,7 @@ argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|appl
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.72.0 (87b7bfc)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.73.0 (398c7057)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -65,7 +65,7 @@ _from a clarified plan/issue to code_
 
 - `effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
 - `effective-flow retro` — Reviews one session for supported improvements – current conversation, supplied export, or available native history.
-- `effective-flow focus` — Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict.
+- `effective-flow focus` — Not yet available on any host – pending qualification (sebastian-software/effective-flow#613); checks one selected session's goal trajectory with a cited chat-only verdict.
 
 ### Deliver changes
 

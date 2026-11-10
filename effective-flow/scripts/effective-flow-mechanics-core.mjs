@@ -10,8 +10,8 @@
 // they make mechanical. It imports the code that owns a rule instead of copying it, and only from
 // leaf modules whose own imports are `node:` built-ins: `plan-lint-core` (plan-file contract, plan
 // roots, safe reader), `delivery-selection-core` (fetch hardening), `remote-tracker-shared-core`
-// (disclosure patterns), and `dated-name-allocation` (the error class, the local date, the
-// directory containment and the first-free-name search, shared with the runtime-state helper). It spawns nothing: Git runs through the injected runner, which the CLI
+// (disclosure patterns and the visibility enum), and `dated-name-allocation` (the error class,
+// the local date, the directory containment and the first-free-name search, shared with the runtime-state helper). It spawns nothing: Git runs through the injected runner, which the CLI
 // takes from `process-runner.mjs`. Every operation is a computation or a read, except that
 // `base-branch-fetch` updates remote-tracking refs through `git fetch`.
 
@@ -39,6 +39,7 @@ import {
 import {
   PRODUCT_NAME_PATTERNS,
   RemoteTrackerError,
+  VISIBILITY_VALUES,
   assertUndisclosed,
 } from './remote-tracker-shared-core.mjs';
 import {
@@ -594,7 +595,7 @@ async function deliveryBranchName(input, deps) {
   }
   const skill = requireEnum(input.skill, 'skill', BRANCH_SKILLS);
   const text = requireString(input.text, 'text', { allowEmpty: true });
-  const visibility = requireEnum(input.visibility, 'visibility', ['visible', 'hidden']);
+  const visibility = requireEnum(input.visibility, 'visibility', VISIBILITY_VALUES);
   const excludeNames = input.excludeNames ?? [];
   if (!Array.isArray(excludeNames)) {
     fail('INVALID_INPUT', 'excludeNames must be an array', { field: 'excludeNames' });

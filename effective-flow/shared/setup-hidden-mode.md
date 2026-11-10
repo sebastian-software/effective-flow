@@ -3,10 +3,11 @@
 This fragment is loaded only when the visibility resolved to `hidden`, through the `Hidden` answer
 or the `effective-flow setup hidden` invocation, or when a Targeted run with the hidden local file as
 source reaches its write; that run follows only "Writing the hidden local configuration", in place
-of item 4 alone, after its own Targeted item 3. A hidden `effective-flow setup allowlist` run follows
-only the second-line paragraph of Step 1 (hidden). The fragment holds the hidden arm's two write
-steps, Step 1 (hidden), which replaces Step 1, and the Step 6 write that replaces items 3 and 4,
-plus the allowlist step's second `info/exclude` line. Every other hidden-mode exception stays with
+of item 4 alone, after its own Targeted item 3. A linked worktree loads it in standard mode too:
+the allowlist step there follows only the second-line paragraph of Step 1 (hidden), and standard
+Step 1 item 4 only its items 1 and 3, for the runtime-state root's `.effective-flow/` line. The
+fragment holds the hidden arm's two write steps, Step 1 (hidden), which replaces Step 1, and the
+Step 6 write that replaces items 3 and 4, plus the allowlist step's second `info/exclude` line. Every other hidden-mode exception stays with
 its step in `effective-flow setup`.
 
 ### Step 1 (hidden): `info/exclude` entry
@@ -41,7 +42,7 @@ written. Evaluate in this order and stop without any write at the first failed p
    project setup ADR stays untouched as well and is reported as shadowed by the local file.
 
 **Second line, for the allowlist step only.** When `setup-allowlist` returns `SETTINGS_NOT_IGNORED`
-in hidden mode and the user answered yes to its ignore remedy's question, apply items 1 and 3 to
+in hidden mode or in a linked worktree and the user answered yes to its ignore remedy's question, apply items 1 and 3 to
 the line `.claude/settings.local.json` instead of `.effective-flow/`, then require exit `0` from
 `git check-ignore --no-index -- .claude/settings.local.json`. Never add it without that yes or for
 any other reason.
