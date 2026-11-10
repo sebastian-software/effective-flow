@@ -235,6 +235,12 @@ const LOADED_BY_A_RUN = [
   'tools/merge-gate.md',
   'tools/iterate.md',
   'workers/effective-flow-merge-conflict-resolver.md',
+  // The routed reviewers the conflict review can select: a resolution's code is reviewed at `deep`
+  // before its commit, so their contracts change what a conflicted run does.
+  'workers/effective-flow-frontend-reviewer.md',
+  'workers/effective-flow-nodejs-reviewer.md',
+  'workers/effective-flow-rust-reviewer.md',
+  'workers/effective-flow-generic-product-reviewer.md',
   'scripts/delegation-envelope.mjs',
   'scripts/delegation-envelope-core.mjs',
   'shared/merge-gate-check-list-waiver.md',
@@ -248,7 +254,7 @@ const LOADED_BY_A_RUN = [
 // each direction it could wrongly widen again: a worker contract the gate never selects, an
 // unrelated tool, an unrelated `shared/` fragment — which is what separates the derived include
 // graph from the coarser "hash all of `shared/`" set that was weighed and rejected — and `LICENSE`.
-// The worker is a UI implementer rather than one of the two the gate can reach, so the entry stays a
+// The worker is a UI implementer rather than one of those the gate can reach, so the entry stays a
 // statement about roles outside the gate's delegation rather than one contradicted by the seeds.
 //
 // The tracker helper is the pointed exclusion, both halves of it. `scaffold.mjs` overwrites

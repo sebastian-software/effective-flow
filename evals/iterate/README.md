@@ -128,11 +128,11 @@ it and hashes it among its own instrument files.
 
 **The load set.** The seeds are `SKILL.md` and `tools/iterate.md`, plus the exit channel at
 `scripts/report-channel.mjs`. `iterate`'s own delegation targets — `fix`, `refactor`, `build`,
-`docs` and the code-validator worker — are deliberately **not** seeded, a departure from the
+`docs`, the code-validator worker, and the routed reviewer workers — are deliberately **not** seeded, a departure from the
 merge-gate suite's one-hop rule: every scenario ends at or before Phase 2, so no correct run
 reaches them, and seeding them would stale this corpus on every edit to the four most-edited tools
-for evidence that cannot depend on them. The first scenario that proceeds past Phase 2 must add
-them. The rationale is in `suite.config.mjs` beside the seed list.
+for evidence that cannot depend on them. The classification spawn needs no seed either: it is a built-in read-only spawn with no worker
+contract to seed. The first scenario that proceeds past Phase 2 must add the targets above. The rationale is in `suite.config.mjs` beside the seed list.
 
 **The empty call log is evidence.** The evaluator's `permitsEmptyCallLog` answers `true` for every
 scenario, so zero records is a valid log here rather than "a run that never started". What proves a

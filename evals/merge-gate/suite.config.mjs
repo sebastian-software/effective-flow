@@ -41,8 +41,9 @@ const SHARED_SCAFFOLD = resolve(SUITE_ROOT, '..', '_scaffold');
 const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 
 // The seeds of the load set: the router that dispatches the invocation, the tool body that is the
-// gate itself, the three artifacts the gate delegates into — the `iterate` workflow it hands a
-// review round to, and the two worker contracts it can select — and the delegation-envelope helper
+// gate itself, the artifacts the gate delegates into — the `iterate` workflow it hands a review round
+// to, and the worker contracts it can select: the conflict resolver, the validator, and the four
+// routed reviewers of the conflict review — and the delegation-envelope helper
 // the gate runs to build and validate every one of those handoffs, together with the `-core.mjs`
 // half that helper imports.
 //
@@ -76,6 +77,10 @@ const LOAD_SET_SEEDS = Object.freeze([
   'tools/iterate.md',
   'workers/effective-flow-merge-conflict-resolver.md',
   'workers/effective-flow-code-validator.md',
+  'workers/effective-flow-frontend-reviewer.md',
+  'workers/effective-flow-nodejs-reviewer.md',
+  'workers/effective-flow-rust-reviewer.md',
+  'workers/effective-flow-generic-product-reviewer.md',
   'scripts/delegation-envelope.mjs',
   'scripts/delegation-envelope-core.mjs',
   'scripts/config-resolve.mjs',

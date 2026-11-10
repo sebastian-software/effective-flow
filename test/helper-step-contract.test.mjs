@@ -71,7 +71,7 @@ test('iterate maps every commit create outcome', () => {
   const text = flat(outcomeMap);
   assert.match(
     text,
-    /`HOOKS_UNTRUSTED`: report `outcome\.reason`; a delegation returns it, and the orchestrator commits this item through the prose sequence of the fallback loaded below/,
+    /`HOOKS_UNTRUSTED`: report `outcome\.reason`, and the orchestrator commits this item through the prose sequence of the fallback loaded below/,
   );
   assert.match(
     text,
@@ -104,28 +104,31 @@ test('iterate loads the HOOKS_UNTRUSTED fallback only through its lazy-include p
   assert.match(outcomeMap, /```lazy-include\niterate-commit-fallback\nwhen: [^\n]*\n```\n\n$/);
 });
 
-// Invariant: the item commit runs in a delegation that never sees this file, so its handoff carries
-// the call line, the outcome map and the ban verbatim; the call outlives a slow hook only with an
-// explicit Bash timeout above the helper's commit bound; Codex escalates before the call.
-test('iterate item handoff carries the commit create call, outcome map and ban', () => {
+// Invariant: the item commit follows that item's deep pre-commit review, so the delegation commits
+// nothing and returns its paths and message uncommitted; the orchestrator issues the one
+// `commit create` call itself. The call outlives a slow hook only with an explicit Bash timeout
+// above the helper's commit bound; Codex escalates before the call.
+test('the iterate orchestrator commits each item after its review; the delegation commits nothing', () => {
   const handoff = flat(
     section(
       iterate,
-      'Each delegation also receives, for the item commit below',
+      'Each delegation **commits nothing**',
       'Each delegation receives its analyzed owned paths',
     ),
   );
   assert.match(
     handoff,
-    /the concrete `worktree`, `hookBase` and `sameRepository` values the orchestrator resolved per step 2 of "Commit integrity for parallel items"/,
+    /it carries the literal lines `Commit: caller-owned` and `Execution root: <this run's execution root>`, receives verbatim the bolded ban on other commit paths, and returns `DONE` with its actual paths/,
   );
   assert.match(
-    handoff,
-    /verbatim the helper call shape, steps 1–3 of that section \(the inspection with its `expect` derivation, the call with its Bash timeout, Codex escalation and `item` rule, and the outcome map\), and the bolded ban on other commit paths/,
+    flat(commitSection),
+    /The orchestrator issues the call itself through the absolute helper path `<skill-root>\/scripts\/effective-flow-state\.mjs`/,
   );
   const text = flat(commitSection);
-  // The handed-over steps hold every value the call needs, so a delegation derives nothing alone.
+  // The inspection before the review fixes the call's `expect`, so the committed content is the
+  // reviewed content.
   assert.match(text, /the OIDs are the call's `expect`/);
+  assert.match(text, /These OIDs pin the reviewed content/);
   assert.match(
     text,
     /hash a symlink's link text \(`readlink -n <path>` into `git hash-object --stdin`\), never its target, and take a gitlink's checked-out commit/,
@@ -137,7 +140,7 @@ test('iterate item handoff carries the commit create call, outcome map and ban',
   );
   assert.match(
     text,
-    /The orchestrator resolves `worktree`, `hookBase` and `sameRepository` and hands them to each item delegation as concrete values/,
+    /The orchestrator resolves `worktree`, `hookBase` and `sameRepository` as concrete values/,
   );
   const bound = /above the helper's (\d+) ms commit bound, for example (\d+) ms/.exec(text);
   assert.ok(bound, 'an explicit Bash timeout above the commit bound');
