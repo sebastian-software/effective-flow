@@ -14,9 +14,11 @@ qualified, it compares exactly one developer-selected session with one goal and 
 snapshot verdict. It does not execute commands, persist focus-owned state, create a report, or change a
 session title. No host route is qualified yet, so `focus` is disabled on every host pending
 qualification ([issue #613](https://github.com/sebastian-software/effective-flow/issues/613)).
-Every invocation, including one without a session reference such as `focus follow-up`, returns that
-pending statement followed by the missing capability, before any question about which session is
-meant and with no such question afterwards; only `follow-up stop` is excepted and stays available.
+A request returns that pending statement followed by the missing capability. One without a session
+reference, such as `focus` or `focus follow-up`, gets it before any question about which session is
+meant and with no such question afterwards; an ambiguous or conflicting session reference is
+clarified first. `follow-up stop` stays available and carries no pending statement, nor do the
+follow-up tick replies that only report a checkpoint, a pending handle or an invalid checkpoint.
 Host reads, cross-session messages, and the opt-in follow-up mode are available only after the
 candidate-bound host qualification described in the
 [Focus host acceptance](../developer-guide/focus-host-acceptance.md) record.
