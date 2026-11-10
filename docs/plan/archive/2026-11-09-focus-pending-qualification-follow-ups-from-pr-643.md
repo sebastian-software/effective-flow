@@ -1,6 +1,6 @@
 # Focus pending-qualification follow-ups from PR 643
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 

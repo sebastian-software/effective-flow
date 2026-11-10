@@ -283,9 +283,10 @@ Activation of any advertised path requires a completed row backed by a candidate
 from the current source are only binding drift. The first activation of any route also removes the
 pending-qualification sentence of the contract's qualification gate ("While no row of this table is
 qualified, …"), the selection rule's deferral to that pending refusal, and their tests in
-`test/focus-contracts.test.mjs`, and replaces the pending wording of the `focus` `catalogHint` and of
-the user guide ([Ensure quality](../user-guide/tools-quality.md)). A failed or unavailable row is a missing-capability result, not a reason to broaden permissions, switch hosts,
-use a name-only address, or substitute a private transcript or log.
+`test/focus-contracts.test.mjs`, and replaces the pending wording of the `focus` `catalogHint`, of its
+frontmatter `description` and of the user guide ([Ensure quality](../user-guide/tools-quality.md)).
+A failed or unavailable row is a missing-capability result, not a reason to broaden permissions,
+switch hosts, use a name-only address, or substitute a private transcript or log.
 
 ## Follow-up qualification checklist
 
@@ -316,10 +317,11 @@ The [focus schedule evidence](focus-schedule-evidence.md) spike motivates these 
 measured 13,130 characters of observer transcript growth per proxy tick in the `activity` view
 (partial, without skill load, ancestry reads or leaf), one host version, and one interval, so the
 merged candidate re-observes them. Only then does the operator enable the gate row; in the same step
-the contract's sole-executable-path wording and its test, the `focus` `catalogHint`, the user-guide
-wording, and owed eval recordings are updated. If this is the first route to qualify, that step also
-removes the gate's pending-qualification sentence, the selection rule's deferral to it, and their
-tests, and replaces the pending wording of the `catalogHint` and the user guide.
+the contract's sole-executable-path wording and its test, the `focus` `catalogHint` and frontmatter
+`description`, the user-guide wording, and owed eval recordings are updated. If this is the first
+route to qualify, that step also removes the gate's pending-qualification sentence, the selection
+rule's deferral to it, and their tests, and replaces the pending wording of the `catalogHint`, the
+frontmatter `description` and the user guide.
 
 ## Required send cases
 
