@@ -604,6 +604,18 @@ test('Focus follow-up ticks never send and keep the confirmed-send path interact
   ]);
 });
 
+test('Focus follow-up reports failed end-event deletion without claiming host cleanup', () => {
+  // Invariant: a failed deletion must preserve the end-event report and stopped checkpoint while
+  // disclosing that host cleanup is unconfirmed; stopped describes the loop, not scheduler state.
+  const endEvents = boundedSlice(followUp(), '## End events', '## Stop and resume');
+  assertPhrases(endEvents, [
+    'If end-event deletion fails, including `task_not_found`, report the end event and the actual delete error without claiming successful deletion.',
+    'The one final notice states that deletion is not confirmed and that the schedule may still be active and must be deleted in T3 if present.',
+    'Emit the stopped checkpoint even when deletion fails; `state=stopped` ends observation and does not confirm removal of the host schedule.',
+    'Later stopped ticks retain the retry and notice-suppression rules above.',
+  ]);
+});
+
 test('Focus follow-up ends every loop by deleting exactly its own handle', () => {
   // Invariant: delete-only end — every end event deletes the prompt's handle under the safeguard
   // before one final notice, the cap is tick-countable, and a task is never disabled.

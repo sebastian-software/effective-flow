@@ -192,6 +192,12 @@ notice and emits `state=stopped`:
 The final notice is posted after the delete call returns; the run continues after deleting its own
 task. A task is never disabled.
 
+If end-event deletion fails, including `task_not_found`, report the end event and the actual delete
+error without claiming successful deletion. The one final notice states that deletion is not
+confirmed and that the schedule may still be active and must be deleted in T3 if present. Emit the
+stopped checkpoint even when deletion fails; `state=stopped` ends observation and does not confirm
+removal of the host schedule. Later stopped ticks retain the retry and notice-suppression rules above.
+
 ## Stop and resume
 
 `stop` needs no admission and reads nothing about the target. It deletes, per loop in this observer
