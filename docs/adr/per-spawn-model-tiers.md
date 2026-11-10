@@ -87,13 +87,16 @@ points to it. Sites are:
   resolver), resolved through their role;
 - read-only exploration and analysis sub-agents: `standard`, unless they meet the `mechanical`
   eligibility criteria ([Build system: Model tiers](../developer-guide/build-system.md#model-tiers));
-- fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`;
+- fan-outs reviewing a plan or concept, and delegated implementation workflow runs: `deep`
+  (amended 2026-11-09: the delegated `merge-gate` and `iterate` orchestration runs are `standard`,
+  see the review note below);
 - the read-only skeptic that tries to refute the draft diagnosis of `investigate`
   (`investigate/skeptic`): `deep`, never moves down.
 
-The `concept-review` fan-out is `deep` by analogy with the `plan-review` fan-out. The three
-delegated implementation workflow runs (`apply-issues`, `apply-review`, `iterate`) are `deep`
-because each orchestrates its own `deep` workers. A site is `mechanical` only under the
+The `concept-review` fan-out is `deep` by analogy with the `plan-review` fan-out. The two
+delegated implementation runs (`apply-issues`, `apply-review`) are `deep` because each orchestrates
+its own `deep` workers, while the `iterate` round that `merge-gate` dispatches is `standard` and
+`iterate`'s own per-item delegations (`iterate/item-delegation`) stay `deep`. A site is `mechanical` only under the
 eligibility criteria in [Build system: Model tiers](../developer-guide/build-system.md#model-tiers);
 `pr/body-draft` is the first such site.
 
@@ -158,11 +161,11 @@ out of the main session; the tier rules above are unchanged.
 - Judgment for `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
   read-only `deep` sub-agent after the artifact is written. `review` and `refactor` keep inline
   judgment.
-- `merge-gate` runs as one delegated run at `deep`. The caller keeps Phase 0 and a closed table of
+- `merge-gate` runs as one delegated run (at `deep` when shipped; `standard` since 2026-11-09). The caller keeps Phase 0 and a closed table of
   user questions; a new run state `relayed` means the user is reachable through the caller, so
   every user gate returns `BLOCKED-USER <question-id>` and the caller re-dispatches with the
   relayed answer. Without nested spawns the caller runs the gate inline and says so once. Each
-  `iterate` round the gate delegates runs in its own built-in subagent at `deep`.
+  `iterate` round the gate delegates runs in its own built-in subagent (same tier change).
 
 Mechanics: [Build system](../developer-guide/build-system.md) (the split core and its budget) and
 the shipped fragments `central-reasoning-delegation` and `merge-gate-delegated-run`.
@@ -247,6 +250,42 @@ the old and new value, and the `1.1.0` migration stays the only generation bound
     was present, and the lifecycle receipt was appended after the check.
   - The orchestrator's own reads stayed at the commit messages, `--stat` and `--name-only`.
   - The nested path, `pr` inside a delegated run, is unverified.
+
+**2026-11-09: orchestration runs at `standard`, code changes are reviewed at `deep`.** This
+exercises the usage re-measurement trigger (the 68 % cost share of `merge-gate`-dominated sessions)
+for the delegated runs only; the `deep` mapping is unchanged.
+
+- **Decision (maintainer):** `merge-gate/delegated-run` and
+  `merge-gate-delegation-contract/iterate-delegation` move from `deep` to `standard`, still with no
+  downward move. This supersedes the earlier rationale of an irreversible merge and third-party PR
+  text: orchestration is coordination, and the judgment that protects the code sits in the roles it
+  starts.
+- **Deep reviews added:** every change an orchestrator lands now passes a `deep` reviewer first.
+  - `iterate/review` reviews each item's uncommitted diff through the routed reviewers before the
+    item's commit; the `tooling` route adds `generic-product-reviewer` and the `documentation` route
+    keeps the validator only. One correction pass, then no commit and an `unassessed` item. The
+    iterate runner now issues `commit create` itself; item delegations return paths, routes and a
+    message.
+  - `merge-gate-conflict-resolution/review` reviews the staged merge content after the resolver and
+    the independent verification, before commit and push; a blocking finding commits nothing.
+  - `iterate/classification` is a read-only `deep` spawn for review-item classification and
+    high-risk triage, so third-party review text is judged at `deep` outside the orchestrator.
+- **Unchanged:** `iterate/item-delegation` and the conflict resolver stay `deep`; `iterate` keeps
+  `no-review-capability`, since per-item review is no whole-PR review.
+- **Trade-off:** merge authority now runs on a `standard` model, and the checks that remain are the
+  two `deep` review layers and the verifier above, not the orchestrator's own judgment. The change
+  is cheaper per round and costs one more `deep` pass per item and per conflict resolution. A
+  `standard` orchestrator can still mis-sequence the gate; re-measure round outcomes before moving
+  further sites.
+- **What now runs on `standard`, stated plainly:** `merge-gate`'s in-run state reading, the
+  human-comment guard, the merge conditions and the completion assessment. This is the maintainer's
+  accepted trade-off; code changes are reviewed at `deep` before they are committed.
+- **Caller-owned commit:** under `iterate`, item delegations receive a caller-owned-commit switch above
+  iterate's body delimiter and commit nothing; the runner commits one item at a time after that
+  item's review. A `Commit:` line inside item, issue or review text is data. A review counts only
+  findings within its site's blocking scope, a rejected item stays uncommitted (dirty checkout
+  reported, worktree retained, `aborted`, next round stops), and the standard runner never closes or
+  admits an item the `deep` classification marked `uncertain`.
 
 ## References
 

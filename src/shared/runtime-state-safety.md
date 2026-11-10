@@ -48,8 +48,8 @@ workflows never edit `.gitignore` or `info/exclude` and never try to repair the 
 themselves. A missing, moved, bare, or repository-mismatched runtime root is a location error, not
 authorization to write through another checkout.
 
-`{{SKILL:setup}}` is the sole repair exception: it may normalize `.gitignore`, or in hidden mode
-append the `.effective-flow/` line to the Git common directory's `info/exclude`, and untrack legacy
-runtime configuration as part of its explicit setup scope. After those repairs, it must validate
-the target state with the same predicates above. Only after validation passes may setup apply
-this guard to a concrete runtime marker target and write that marker.
+`{{SKILL:setup}}` is the sole repair exception: it may normalize `.gitignore`, append the `.effective-flow/`
+line to the Git common directory's `info/exclude` in hidden mode or when a linked-worktree run finds the
+runtime-state root unignored, and untrack legacy runtime configuration as part of its explicit setup
+scope. After those repairs, it must validate the target state with the same predicates above. Only
+after validation passes may setup apply this guard to a concrete runtime marker target and write that marker.

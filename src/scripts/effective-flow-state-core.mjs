@@ -6,8 +6,13 @@
 // `review open-report` and `review write-report` in `effective-flow-state-review-core.mjs` (the
 // report renderer of `write-report` in `review-report-render.mjs`), and the worktree-lifecycle and
 // cleanup operations (`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree
-// remove`, `cleanup plan`, `cleanup apply`) in `effective-flow-state-worktree-core.mjs`; each imports
-// this module and is loaded on first use.
+// remove`, `cleanup plan`, `cleanup apply`) in `effective-flow-state-worktree-core.mjs`, and the
+// delivery-progress ledger operations (`ledger init`, `ledger append`, `ledger reconcile`), the
+// read-only `worktree resume-check`, plus every `worktree transition` input that carries `release`
+// (the release of a retained `partial-diff` record) or `adoption: "partial-diff-resume"` (its
+// resume adoption) in `effective-flow-state-recovery-core.mjs`, whose ledger schema and
+// comparisons live in `effective-flow-state-ledger-core.mjs`; each imports this module and is
+// loaded on first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
 //
@@ -95,14 +100,23 @@ export const STATE_OPERATIONS = Object.freeze([
   'worktree transition',
   'worktree inspect',
   'worktree remove',
+  'worktree resume-check',
   'cleanup plan',
   'cleanup apply',
+  'ledger init',
+  'ledger append',
+  'ledger reconcile',
 ]);
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
 // STATE_OPERATIONS is classified here; a destructive operation (`lock break`, `worktree remove`,
-// `cleanup apply`) and the rule writer itself are never allowlisted. The allowlisted ones equal
-// ALLOWLISTED_OPERATIONS of the shared settings module, which a unit test pins.
+// `cleanup apply`) and the rule writer itself are never allowlisted. The allowlisted `worktree
+// transition` with `release: "partial-diff"` restores exactly the proven residual paths of its
+// record's worktree, and with `adoption: "partial-diff-resume"` appends at most one proven tip
+// commit to its record's ledger; the allowlisted `ledger init` and `ledger append` write only that
+// private ledger, and `worktree resume-check` and `ledger reconcile` only read (see
+// ALLOWLISTED_OPERATIONS for each bound). The allowlisted ones equal ALLOWLISTED_OPERATIONS of the shared
+// settings module, which a unit test pins.
 export const STATE_OPERATION_CLASSES = Object.freeze({
   'lock acquire': 'allowlisted',
   'lock release': 'allowlisted',
@@ -119,8 +133,15 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'worktree transition': 'allowlisted',
   'worktree inspect': 'allowlisted',
   'worktree remove': 'not-allowlisted',
+  // Read-only: no lock, no write.
+  'worktree resume-check': 'allowlisted',
   'cleanup plan': 'allowlisted',
   'cleanup apply': 'not-allowlisted',
+  // The ledger writes, bounded to the private ledger of the caller's own `active` record.
+  'ledger init': 'allowlisted',
+  'ledger append': 'allowlisted',
+  // Read-only, like `worktree resume-check`.
+  'ledger reconcile': 'allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
@@ -170,6 +191,7 @@ export const OUTCOME_CODES = Object.freeze([
   'REMOVE_FAILED',
   'BRANCH_RETAINED',
   'DEADLINE_REACHED',
+  'LEDGER_EXISTS',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
@@ -228,6 +250,24 @@ export const RETRY_DELAY_MS = 200;
 export const GUARD_WAIT_MS = 10_000;
 export const GUARD_RETRY_MS = 20;
 export const MAX_STDIN_BYTES = 64 * 1024;
+// The byte bound of one delivery-progress ledger (`effective-flow-state-ledger-core.mjs`). It is
+// also the stdin bound of `ledger init`, whose input carries the whole bound manifest: a larger
+// input, or a ledger whose fully appended worst case would serialize above it, writes nothing and
+// is the non-error `{written: false, reason: "size-bound"}` result.
+export const LEDGER_MAX_BYTES = 256 * 1024;
+// The stdin bound per operation. `bytes` is the most stdin that is read and parsed. `drainBytes`,
+// when set, admits a larger input up to that many bytes, drained without being kept or parsed, as
+// the operation's non-error over-bound result (for `ledger init`, the size-bound result); an input
+// above `drainBytes`, or above `bytes` without it, is INPUT_TOO_LARGE. Every operation not listed
+// here takes MAX_STDIN_BYTES and no drain.
+export const STDIN_LIMITS = Object.freeze({
+  'ledger init': Object.freeze({ bytes: LEDGER_MAX_BYTES, drainBytes: 4 * LEDGER_MAX_BYTES }),
+});
+const DEFAULT_STDIN_LIMIT = Object.freeze({ bytes: MAX_STDIN_BYTES, drainBytes: null });
+
+export function stdinLimitFor(operation) {
+  return STDIN_LIMITS[operation] ?? DEFAULT_STDIN_LIMIT;
+}
 const MAX_OWNER_BYTES = 64 * 1024;
 // An owner above this size is never hashed: it is `oversized`, identified by its size alone.
 export const MAX_HASH_BYTES = 16 * 1024 * 1024;
@@ -296,6 +336,9 @@ export const OPERATION_KEYS = Object.freeze({
     'branch',
     'workflow',
     'fetchedHeadOid',
+    'release',
+    'adoption',
+    'visibility',
   ]),
   'worktree inspect': Object.freeze(['cwd', 'executionRoot', 'sessionId']),
   'worktree remove': Object.freeze([
@@ -305,8 +348,22 @@ export const OPERATION_KEYS = Object.freeze({
     'recordIds',
     'integrationRoot',
   ]),
+  'worktree resume-check': Object.freeze(['cwd', 'executionRoot', 'recordId', 'visibility']),
   'cleanup plan': Object.freeze(['cwd', 'executionRoot', 'decisions']),
   'cleanup apply': Object.freeze(['cwd', 'executionRoot', 'decisions', 'items']),
+  'ledger init': Object.freeze([
+    'cwd',
+    'executionRoot',
+    'recordId',
+    'sessionId',
+    'manifest',
+    'groups',
+    'base',
+    'visibility',
+    'language',
+  ]),
+  'ledger append': Object.freeze(['cwd', 'executionRoot', 'recordId', 'sessionId', 'commitOid']),
+  'ledger reconcile': Object.freeze(['cwd', 'executionRoot', 'recordId', 'sessionId']),
 });
 
 // The caller-supplied owner fields per lock. The helper adds `token`, `acquiredAt`, `host` and
@@ -1129,6 +1186,7 @@ const loadHarness = () => import('./effective-flow-state-harness-core.mjs');
 const loadCommit = () => import('./effective-flow-state-commit-core.mjs');
 const loadReview = () => import('./effective-flow-state-review-core.mjs');
 const loadWorktree = () => import('./effective-flow-state-worktree-core.mjs');
+const loadRecovery = () => import('./effective-flow-state-recovery-core.mjs');
 
 const HANDLERS = Object.freeze({
   'lock acquire': acquireLock,
@@ -1144,11 +1202,20 @@ const HANDLERS = Object.freeze({
   'review open-report': async (input, deps) => (await loadReview()).openReport(input, deps),
   'review write-report': async (input, deps) => (await loadReview()).writeReport(input, deps),
   'worktree record-init': async (input, deps) => (await loadWorktree()).recordInit(input, deps),
-  'worktree transition': async (input, deps) => (await loadWorktree()).transition(input, deps),
+  // The release transition, the resume adoption and their proofs live in the recovery module,
+  // which builds on the worktree module; the worktree module never imports it.
+  'worktree transition': async (input, deps) =>
+    input?.release === undefined && input?.adoption !== 'partial-diff-resume'
+      ? (await loadWorktree()).transition(input, deps)
+      : (await loadRecovery()).recoveryTransition(input, deps),
   'worktree inspect': async (input, deps) => (await loadWorktree()).inspect(input, deps),
   'worktree remove': async (input, deps) => (await loadWorktree()).removeRecords(input, deps),
+  'worktree resume-check': async (input, deps) => (await loadRecovery()).resumeCheck(input, deps),
   'cleanup plan': async (input, deps) => (await loadWorktree()).cleanupPlan(input, deps),
   'cleanup apply': async (input, deps) => (await loadWorktree()).cleanupApply(input, deps),
+  'ledger init': async (input, deps) => (await loadRecovery()).ledgerInit(input, deps),
+  'ledger append': async (input, deps) => (await loadRecovery()).ledgerAppend(input, deps),
+  'ledger reconcile': async (input, deps) => (await loadRecovery()).ledgerReconcile(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process

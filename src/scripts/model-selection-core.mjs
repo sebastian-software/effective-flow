@@ -53,6 +53,10 @@ function runtimeToken(value) {
   return typeof value === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:/-]{0,199}$/.test(value);
 }
 
+function hostId(value) {
+  return text(value) && /^[A-Za-z0-9](?:[A-Za-z0-9._:/-]|%[0-9A-Fa-f]{2})*$/.test(value);
+}
+
 function canonical(value) {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (object(value)) {
@@ -336,11 +340,7 @@ function parseRollout(contents, parentId, childId, expected) {
 
 async function verify(input, contract) {
   keys(input, ['selection', 'parentId', 'childId', 'evidence']);
-  if (
-    !runtimeToken(input.parentId) ||
-    !runtimeToken(input.childId) ||
-    input.parentId === input.childId
-  ) {
+  if (!hostId(input.parentId) || !hostId(input.childId) || input.parentId === input.childId) {
     fail('INVALID_INPUT', 'Distinct bounded parentId and childId values are required');
   }
   let selection;

@@ -6,12 +6,19 @@
 //   node effective-flow-state.mjs harness allow-rules <<< '<json>'
 //   node effective-flow-state.mjs commit create <<< '<json>'
 //   node effective-flow-state.mjs review <open-report|write-report> <<< '<json>'
-//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove> <<< '<json>'
+//   node effective-flow-state.mjs worktree <record-init|transition|inspect|remove|resume-check> \
+//     <<< '<json>'
 //   node effective-flow-state.mjs cleanup <plan|apply> <<< '<json>'
+//   node effective-flow-state.mjs ledger <init|append|reconcile> <<< '<json>'
 // The operation is exactly these two argv tokens; any other argv, an extra token included, is
 // rejected before stdin is read, so an allowlisted command prefix cannot be widened by an extra
-// argument and `--help` never blocks on a tty. Stdin carries one JSON object of at most 64 KiB;
-// a larger one is INPUT_TOO_LARGE, for every operation.
+// argument and `--help` never blocks on a tty. Stdin carries one JSON object within the bound
+// `STDIN_LIMITS` of `effective-flow-state-core.mjs` names for the operation (64 KiB unless listed);
+// a larger one is INPUT_TOO_LARGE. `ledger init`, the one listed operation, reads up to
+// LEDGER_MAX_BYTES, the ledger's own bound, and drains a larger input up to its `drainBytes`
+// (4 x LEDGER_MAX_BYTES) without keeping or parsing it, answered with the non-error size-bound
+// result, since a ledger holding that manifest could not stay within the bound either; above
+// `drainBytes` it is INPUT_TOO_LARGE as well.
 // Writes exactly one JSON envelope line to stdout and `CODE: message` to stderr on failure; the
 // exit code is 0 on success, 4 for an outcome, and 1, 2 or 3 for an error.
 
@@ -20,27 +27,42 @@ import process from 'node:process';
 import { fileURLToPath } from 'node:url';
 import { createProcessRunner, terminateActiveProcessGroups } from './process-runner.mjs';
 import {
-  MAX_STDIN_BYTES,
   STATE_OPERATIONS,
   StateError,
   errorEnvelope,
   executeOperation,
   exitCodeFor,
+  stdinLimitFor,
 } from './effective-flow-state-core.mjs';
 
 const USAGE = `usage: effective-flow-state.mjs <${STATE_OPERATIONS.join('|')}> (input as one JSON object on stdin)`;
 
-async function readStdin(stream = process.stdin) {
+// What `readStdin` returns for an input above its operation's `bytes` and within its
+// `drainBytes`: the drained byte count, never the content.
+class OverBound {
+  constructor(bytes) {
+    this.bytes = bytes;
+  }
+}
+
+async function readStdin(stream, operation) {
+  const { bytes: limit, drainBytes } = stdinLimitFor(operation);
   const chunks = [];
   let bytes = 0;
   for await (const chunk of stream) {
     const buffer = Buffer.from(chunk);
     bytes += buffer.length;
-    if (bytes > MAX_STDIN_BYTES) {
-      throw new StateError('INPUT_TOO_LARGE', `stdin exceeds ${MAX_STDIN_BYTES} bytes`);
+    if (bytes > limit) {
+      if (drainBytes === null || bytes > drainBytes) {
+        throw new StateError('INPUT_TOO_LARGE', `stdin exceeds ${drainBytes ?? limit} bytes`);
+      }
+      // Drained, never kept: the writer of a here-string is not left with a broken pipe.
+      chunks.length = 0;
+      continue;
     }
     chunks.push(buffer);
   }
+  if (bytes > limit) return new OverBound(bytes);
   let parsed;
   try {
     parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
@@ -95,10 +117,11 @@ const OUTCOME_MESSAGES = Object.freeze({
     `the report could not be written at step ${outcome.step}${outcome.guardCode ? ` (${outcome.guardCode})` : ''}; ${outcome.firstId} to ${outcome.lastId} stay reserved and unused, and no report of this call was left${outcome.foreignPath ? `; ${outcome.foreignPath} holds a file this call did not write` : ''}`,
   // `commit create` reports the commit it reached; a worktree item reports the record `status` it
   // was left in (`cleanup-failed` once a claim had to be reconciled).
-  // A single-record write (`record-init`, `transition`) reports whether it landed (`written`).
+  // A single-record write (`record-init`, `transition`) reports whether it landed (`written`), and
+  // a release transition the residual paths its restore discarded.
   INTERRUPTED: (outcome) =>
     typeof outcome.written === 'boolean'
-      ? `stopped by ${outcome.signal}; record ${outcome.recordId} ${outcome.written ? `was written as ${outcome.status}` : 'was not written'}, and its lock was released`
+      ? `stopped by ${outcome.signal}; record ${outcome.recordId} ${outcome.written ? `was written as ${outcome.status}` : 'was not written'}${outcome.release ? ` after the release restored ${outcome.release.restored.length} residual path(s)` : ''}, and its lock was released`
       : outcome.status
         ? `stopped by ${outcome.signal}; record status ${outcome.status}, no further item was started`
         : `stopped by ${outcome.signal}${outcome.commit ? ` after commit ${outcome.commit}` : ' before a commit landed'}`,
@@ -128,6 +151,8 @@ const OUTCOME_MESSAGES = Object.freeze({
     `branch ${outcome.branch?.branch ?? outcome.branch} was kept because its integration was not proven; the worktree and record were removed`,
   DEADLINE_REACHED: () =>
     'the deadline was reached before this item started; nothing was touched, rerun for the rest',
+  LEDGER_EXISTS: (outcome) =>
+    `the ledger of record ${outcome.recordId} already exists; nothing was written`,
 });
 
 function outcomeLine({ outcome, error }) {
@@ -145,14 +170,31 @@ export async function main(argv = process.argv.slice(2), io = {}) {
   let envelope;
   try {
     if (!STATE_OPERATIONS.includes(operation)) throw new StateError('INVALID_INPUT', USAGE);
-    const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));
-    envelope = await executeOperation(operation, input, {
-      runner: io.runner ?? createProcessRunner(),
-      env: process.env,
-      signalTarget: process,
-      terminateChildren: terminateActiveProcessGroups,
-      ...io.deps,
-    });
+    const input = io.input ?? (await readStdin(io.stdin ?? process.stdin, operation));
+    // The over-bound input has the keys of the size-bound result of `ledger init` itself, with
+    // `bytes` the drained input size; `recordId` and `status` are null because the input was never
+    // parsed and no record was read.
+    envelope =
+      input instanceof OverBound
+        ? {
+            ok: true,
+            operation,
+            result: {
+              recordId: null,
+              written: false,
+              reason: 'size-bound',
+              bytes: input.bytes,
+              limitBytes: stdinLimitFor(operation).bytes,
+              status: null,
+            },
+          }
+        : await executeOperation(operation, input, {
+            runner: io.runner ?? createProcessRunner(),
+            env: process.env,
+            signalTarget: process,
+            terminateChildren: terminateActiveProcessGroups,
+            ...io.deps,
+          });
   } catch (error) {
     envelope = errorEnvelope(STATE_OPERATIONS.includes(operation) ? operation : null, error);
   }

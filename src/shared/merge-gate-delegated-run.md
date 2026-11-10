@@ -17,6 +17,9 @@ In this order, before any other write:
    `non-interactive`, or under `non-interactive` a `Completion answer:` or a `Relayed answer:` other
    than `none` returns `ABORT unparseable input line`. `Caller limits:` holds one or more
    comma-separated tokens; an unknown, duplicated or empty token returns the same `ABORT`.
+   `Host:` accepts only `t3-code`. `Resumed wait:` is accepted only together with `Host: t3-code`,
+   under every run state, alone or with one `Relayed answer:` line, whose answer the digest rule of
+   "Answers and returns" consumes or discards; it never sets `report` mode itself.
    Optional `Progress context:` is the sole additional line: read `shared/subagent-progress.md`
    on demand and validate it before any authority-bearing work; missing context is valid legacy
    input with progress disabled. Unknown/malformed/duplicate/injected context returns
@@ -27,6 +30,8 @@ In this order, before any other write:
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
    file this check rejected. A present file is this gate run's record from an earlier dispatch.
+   A `Resumed wait:` dispatch instead requires a present file holding an unconsumed wait record
+   whose kind and round equal the line's; otherwise it returns `ABORT unparseable input line`.
    A dispatch whose `Caller limits:` line is missing or lacks a limit that file records returns
    `ABORT caller limits narrowed`.
 4. **Fresh state.** Re-read all pull-request state: re-run Phase 0 steps 1 and 2 read-only with the
@@ -70,7 +75,8 @@ In this order, before any other write:
   nothing. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
   `DONE` and `ABORT` run Phase 6 exactly once. `BLOCKED-USER` first ends an in-progress merge as
   Phase 2 step 1's controlled stop, then runs Phase 6 without its report and without deleting the
-  wisdom file, which the re-dispatch continues.
+  wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way; a T3-path run
+  holds no reservation to finalize, per `pilot-measurement`.
 - **A delegated orchestrator.** The delegation mandate's pending-child bullet binds this run: every
   child runs in the foreground, and no turn ends while one is pending. This foreground shape stays
   blocked for progress until useful pre-terminal delivery plus terminal joins is observed in that
@@ -462,7 +468,7 @@ gate run inline generates it at the start. Use
   writes no summary onto the pull request
 
 Write a summary after each phase and pass it on to later phases. Delete the file at the end, except
-on a `BLOCKED-USER` return.
+on a `BLOCKED-USER` or `SUSPENDED host-pr-watch` return.
 
 ## Workflow after Phase 0
 
@@ -734,7 +740,8 @@ run can push an unbounded number of commits onto someone's pull request.
      repository, and pushing to it additionally requires the contributor to have allowed maintainer
      edits.
    - Both stops retain the worktree and its branch for inspection.
-2. **Pending checks.** Call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
+2. **Pending checks.** On the T3 path of `host-pr-watch`, apply its pending read instead of this
+   step. Otherwise call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the provider watch or deterministic helper poller block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
    form of that restriction.
@@ -801,7 +808,8 @@ again – before proceeding, and an unanswered or non-interactive run ends there
 
 Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
-workflow records a head SHA for later use.
+workflow records a head SHA for later use, except the wait record of `host-pr-watch`, which serves
+only its changed-wait comparison and the report.
 
 #### Round accounting
 
@@ -824,6 +832,9 @@ itself: a bot round that produced an implementation and sent the run back into P
 round** like any other, and so does the return into Phase 3. When the counter reaches
 `mergeGate.maxRounds`, the run ends with a report naming the still-unmet condition, never with a
 merge.
+
+On the T3 path of `host-pr-watch`, a resume consumes rounds as that fragment's "Resume" states; its
+same-round re-suspensions for a progress or unchanged wake are the exceptions to this section.
 
 ### Phase 3: Automatic reviewer round
 
@@ -960,7 +971,9 @@ Before step 1, if Phase 0 reserved a pilot observation and no earlier controlled
 it, apply `## Phase 6 observation finalization` in the loaded `pilot-measurement` fragment. This
 ordering is mandatory: finalization needs the counters and final status evidence that step 1
 deletes. The mutually exclusive earlier-ending and normal-Phase-6 routes together finalize every
-reservation exactly once.
+reservation exactly once. On the T3 path of `host-pr-watch`, step 1 keeps the wisdom file on a
+`SUSPENDED host-pr-watch` return as on `BLOCKED-USER`, and a report naming a pending wait follows
+that fragment's report-and-stop path.
 
 1. Delete the wisdom file – except on a `BLOCKED-USER` return – and every delegation message file
    and snapshot this run wrote that is still present – after a sender stop, the one whose delegation

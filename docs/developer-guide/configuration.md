@@ -42,7 +42,12 @@ non-verbose `git check-ignore --no-index -- <path>`, then independently requires
 a not-ignored path, tracked runtime state, or a command error preserves all state and routes to
 `/effective-flow setup`. `git check-ignore --no-index` honours `info/exclude` exactly like
 `.gitignore`, so hidden mode needs no separate predicate. Ordinary workflows never repair
-`.gitignore` or `info/exclude`; setup is the sole owner of both.
+`.gitignore` or `info/exclude`; setup is the sole owner of both. Its standard-mode `info/exclude`
+writes are limited to linked worktrees (this line and the allowlist's settings line): `RUNTIME_STATE_ROOT` receives this checkout's tracked
+`.gitignore` line only with the merge, so setup runs the predicates from `RUNTIME_STATE_ROOT` and,
+when it is not ignored, appends `.effective-flow/` to the Git common directory's `info/exclude` and
+re-verifies there. `setup status` reports this as the setup-fixable ignore reason
+`runtime-root-not-ignored`.
 
 Before its first authorized runtime write, every writing workflow also runs the marker-driven
 legacy-directory prerequisite from
@@ -117,16 +122,18 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive or bounded helper operation, 58 rules in all: thirteen runtime-state helper operations
+each non-destructive or bounded helper operation, 62 rules in all: seventeen runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
 `memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
-`worktree record-init`, `worktree transition`, `worktree inspect`, `cleanup plan`), `config-resolve.mjs resolve`,
+`worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
+`ledger init`, `ledger append`, `ledger reconcile`), `config-resolve.mjs resolve`,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
 allow-rules` writes the file, after a preview and an explicit confirmation in the conversation,
 and it refuses a settings file that is tracked or not ignored; the step then asks whether to add
-the `.gitignore` line, or the `info/exclude` line in hidden mode, and adds it only after a yes. A widened rule is warned about but
+the `.gitignore` line, or the `info/exclude` line in hidden mode or in a linked worktree (never the
+main checkout's `.gitignore`), and adds it only after a yes. A widened rule is warned about but
 never removed, and rules of another install are kept. The `setup status` report shows the
 `allowlist` state (`absent`, `current`, `stale`, `not-applicable`, `could-not-check`); any partial
 set, including an earlier release's six rules, is `stale`, `absent` means none present, and only rules
@@ -171,8 +178,11 @@ project-setup ADR.
 Records and locks change only through the `worktree` and `cleanup` operations of the
 runtime-state helper; prose never writes or deletes them
 ([Build system](build-system.md#guards)). `worktree record-init`, `transition`, `inspect` and
-`cleanup plan` are allowlisted. The destructive `worktree remove` and `cleanup apply` are not, so
-the user confirms once and the whole selection runs as one call.
+`resume-check`, `cleanup plan` and the `ledger` operations are allowlisted. The destructive
+`worktree remove` and `cleanup apply` are not, so the user confirms once and the whole selection runs
+as one call. The delivery ledger of a `deliver` run is part of the same runtime state: a private file
+below `worktree-runs/ledgers/`, at most 256 KiB, deleted with its record
+([Build system](build-system.md#runtime-scripts)). It adds no configuration key.
 
 ## Resolution order and ownership
 

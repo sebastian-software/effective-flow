@@ -43,6 +43,7 @@ import {
 } from '../src/scripts/delivery-selection-core.mjs';
 import {
   RemoteTrackerError,
+  VISIBILITY_VALUES,
   assertUndisclosed,
 } from '../src/scripts/remote-tracker-shared-core.mjs';
 
@@ -423,7 +424,7 @@ async function branch(input, git = fakeGit({ remotes: ['origin'] })) {
       cwd: tmpdir(),
       branchPrefix: '',
       skill: 'build',
-      visibility: 'visible',
+      visibility: 'standard',
       ...input,
     },
     { runner: git.runner },
@@ -455,10 +456,10 @@ test('hidden mode strips every disclosure form with attached letters or digits',
   }
 });
 
-test('visible mode keeps the product name and an empty slug becomes change', async () => {
-  const visible = await branch({ text: 'Effective Flow login' });
-  assert.equal(visible.branch, 'build/effective-flow-login');
-  assert.equal(visible.sanitized, false);
+test('standard mode keeps the product name and an empty slug becomes change', async () => {
+  const standard = await branch({ text: 'Effective Flow login' });
+  assert.equal(standard.branch, 'build/effective-flow-login');
+  assert.equal(standard.sanitized, false);
   const empty = await branch({ text: '!!!' });
   assert.equal(empty.branch, 'build/change');
 });
@@ -494,7 +495,7 @@ test('excludeNames feeds caller-found names back into the -2 suffix rule', async
   for (const bad of ['bad..name', '-x', 'a b', '']) {
     await failure(
       'delivery-branch-name',
-      { cwd: tmpdir(), skill: 'build', visibility: 'visible', ...base, excludeNames: [bad] },
+      { cwd: tmpdir(), skill: 'build', visibility: 'standard', ...base, excludeNames: [bad] },
       'INVALID_INPUT',
       { runner: fakeGit({ remotes: ['origin'] }).runner },
     );
@@ -516,27 +517,51 @@ test('a local branch or a remote-tracking ref of any remote counts as taken', as
 });
 
 test('delivery-branch-name rejects unknown skills, visibilities and unsafe prefixes', async () => {
+  // The accepted visibility set is the owning core's VISIBILITY_VALUES (`standard | hidden`):
+  // an exact match, no trimming, no case folding and no default for a missing value.
   const runner = fakeGit({ remotes: ['origin'] }).runner;
-  for (const input of [
-    { skill: 'nope' },
-    { skill: 'x/../y' },
-    { visibility: 'standard' },
-    { branchPrefix: 'a..b' },
-    { branchPrefix: '-x' },
-    { surprise: 1 },
+  const base = {
+    cwd: tmpdir(),
+    branchPrefix: '',
+    skill: 'build',
+    visibility: 'standard',
+    text: 'x',
+  };
+  const { visibility: _omitted, ...withoutVisibility } = base;
+  for (const [input, field] of [
+    [{ ...base, skill: 'nope' }, 'skill'],
+    [{ ...base, skill: 'x/../y' }, 'skill'],
+    [{ ...base, visibility: 'visible' }, 'visibility'],
+    [{ ...base, visibility: 'Standard' }, 'visibility'],
+    [{ ...base, visibility: ' hidden' }, 'visibility'],
+    [{ ...base, visibility: '' }, 'visibility'],
+    [{ ...base, visibility: null }, 'visibility'],
+    [withoutVisibility, 'visibility'],
+    [{ ...base, branchPrefix: 'a..b' }, 'branchPrefix'],
+    [{ ...base, branchPrefix: '-x' }, 'branchPrefix'],
   ]) {
-    await failure(
-      'delivery-branch-name',
-      {
-        cwd: tmpdir(),
-        branchPrefix: '',
-        skill: 'build',
-        visibility: 'visible',
-        text: 'x',
-        ...input,
-      },
-      'INVALID_INPUT',
-      { runner },
+    const envelope = await failure('delivery-branch-name', input, 'INVALID_INPUT', { runner });
+    assert.equal(envelope.error.details.field, field, JSON.stringify(input));
+    assert.notEqual(exitCodeFor(envelope), 0, JSON.stringify(input));
+  }
+  const unknown = await failure('delivery-branch-name', { ...base, surprise: 1 }, 'INVALID_INPUT', {
+    runner,
+  });
+  assert.deepEqual(unknown.error.details.keys, ['surprise']);
+});
+
+test('delivery-branch-name takes its visibility set from the owning core', () => {
+  // docs/adr/mechanics-helpers-import-owning-cores.md: no restated copy, no `visible` literal.
+  assert.deepEqual(VISIBILITY_VALUES, ['standard', 'hidden']);
+  const source = readFileSync(CORE_PATH, 'utf8');
+  assert.match(source, /requireEnum\(input\.visibility, 'visibility', VISIBILITY_VALUES\)/);
+  const scripts = dirname(CORE_PATH);
+  for (const name of readdirSync(scripts).filter((entry) => entry.endsWith('.mjs'))) {
+    const text = readFileSync(join(scripts, name), 'utf8');
+    assert.doesNotMatch(
+      text,
+      /['"`]visible['"`]/,
+      `${name} must not use a visible visibility value`,
     );
   }
 });

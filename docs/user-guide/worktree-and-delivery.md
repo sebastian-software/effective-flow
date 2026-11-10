@@ -97,10 +97,12 @@ The lifecycle makes later cleanup explicit instead of relying on path or age heu
 | `cleanup-in-progress` | One verified actor has claimed the removal attempt. Other workflows and cleanup runs leave the worktree and claim untouched. |
 | `cleanup-failed`      | A normal removal attempt did not finish. A later cleanup may retry only after all safety checks pass again.                  |
 
-An `aborted` or `failed` record can return to `active` in exactly one case: a later run on the same
+An `aborted` or `failed` record can return to `active` in exactly two cases: a later run on the same
 published plan resumes the worktree the interrupted run left behind (see
-[Resumption by adoption](#resumption-by-adoption)). Nothing else adopts a worktree, and a
-user-created or harness-managed one is never adopted.
+[Resumption by adoption](#resumption-by-adoption)), or a later `deliver` run resumes its own
+partially committed delivery (see
+[Resuming or releasing a failed delivery](#resuming-or-releasing-a-failed-delivery)). Nothing else
+adopts a worktree, and a user-created or harness-managed one is never adopted.
 
 All status changes use a per-record lock and fresh receipt, Git registration, and lifecycle
 checks. Before removing a worktree, the owning actor changes an eligible record to
@@ -112,6 +114,36 @@ The lifecycle record remains until worktree removal and any permitted branch fol
 verified. If a crash happens between those steps, a later cleanup reconciles the registration,
 path, branch policy, and claim. It removes only its own record when the result is complete;
 otherwise it reports partial cleanup and preserves the remaining state.
+
+### Resuming or releasing a failed delivery
+
+A `deliver` run that fails after its first commit leaves a `partial-diff` record as `aborted` or
+`failed`, with the worktree, the branch, the verified commits and the uncommitted remaining groups.
+To make that resumable, `deliver` keeps a delivery ledger for the record in private runtime state
+(one file below `worktree-runs/`, at most 256 KiB, no file content or credentials). It stores the
+confirmed selection, the group plan, a fingerprint of each group's expected content, and the commit
+of each finished group. The ledger is deleted together with its record, so it lives only as long as
+the retained delivery.
+
+- **Resume.** A later `deliver` run adopts the record again, `aborted` or `failed` to `active`, only
+  when every fresh proof passes: the record and its ledger match, the branch holds exactly the
+  recorded commits (plus at most one proven commit that was created but not yet recorded) and at
+  least one group is committed, the index is clean or stages exactly the next group, the worktree
+  holds exactly the remaining groups' content, the source checkout still matches the confirmed
+  selection, and the current visibility is not weaker than the recorded one. Any drift, a record
+  held by another run, or unprovable ownership blocks the resume. What the run then skips and
+  reruns is described in [Deliver](./tools-deliver.md#resuming-or-releasing-a-failed-delivery).
+- **Release.** A record that cannot be resumed can go from `aborted` or `failed` to `cleanup-ready`
+  after you confirm it. With a ledger, the remaining changes are discarded from the worktree only
+  when they equal the recorded content and the source still holds it, while Git's index lock of the
+  worktree keeps other Git commands from changing its index, and every discarded file stays as a
+  tree under `refs/effective-flow/released/<RECORD_ID>/` until you delete that ref. Without one, the
+  worktree must be clean or already gone; otherwise the exact blocking paths are listed. Release
+  keeps the branch and its commits.
+- **Cleanup.** `cleanup` then removes the released worktree like any `cleanup-ready` one and deletes
+  the ledger before the record. A released record whose worktree is already fully gone, unregistered
+  and without a directory, is removed as well; a half-gone worktree stays retained for manual
+  reconciliation. The branch is kept, and deleting it stays your choice.
 
 ### Harness-native worktrees
 

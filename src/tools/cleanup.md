@@ -405,7 +405,9 @@ Retention reasons and their safe next steps:
 - `active`: an Effective Flow run is registered as active and may still be running or may have
   been interrupted unexpectedly; let the named owner finish
 - `aborted` or `failed`: the owning run stopped or failed before cleanup readiness; inspect and
-  recover its work
+  recover its work. For a `partial-diff` record, the next step is `{{SKILL:deliver}}` in its source
+  checkout, whose start offers to resume it or release it for cleanup; cleanup then removes it, also
+  when its worktree is fully gone
 - `cleanup-in-progress` or an existing lock: cleanup is claimed, active, or may have been
   interrupted; include known owner and timestamp and let the owner finish
 - dirty: clean the checkout before rerunning cleanup; locked: ask the known owner before unlocking

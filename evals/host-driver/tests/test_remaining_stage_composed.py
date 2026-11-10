@@ -17,7 +17,10 @@ from unittest import mock
 
 from test_first_stage import TEST_TEMP_ROOT, LOCAL_POPEN, LOCAL_RUN, digest
 from remaining_stage_support import RemainingStageFixtureMixin
-from composed_remaining_support import ComposedRemainingFixture, copy_fixture_executable
+from composed_remaining_support import (
+    ComposedRemainingFixture, complete_ready_batch, copy_fixture_executable,
+    wait_for_ready_batch,
+)
 
 
 class ComposedRemainingStageContracts(unittest.TestCase):
@@ -89,8 +92,19 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                 "finally:\n"
                 "    case.doCleanups()\n"
             )
-            result = LOCAL_RUN([str(python), '-B', '-c', script, str(Path(__file__).resolve().parent),
-                                str(root), str(int(unknown))], capture_output=True, text=True, timeout=120)
+            try:
+                result = LOCAL_RUN([str(python), '-B', '-c', script, str(Path(__file__).resolve().parent),
+                                    str(root), str(int(unknown))], capture_output=True, text=True,
+                                   timeout=120 if unknown else 180)
+            except subprocess.TimeoutExpired as error:
+                for output, stream in ((error.stdout, sys.stdout), (error.stderr, sys.stderr)):
+                    if isinstance(output, bytes):
+                        stream.buffer.write(output)
+                        stream.buffer.flush()
+                    elif output:
+                        stream.write(output)
+                        stream.flush()
+                raise
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def _run_composed_batch(self, root, *, unknown):
@@ -104,8 +118,6 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                          for item in row['files'] if item['path'].endswith('/host-profile-cleanup.json')]
         cleanup_pins = {path: (path.read_bytes(), path.stat().st_mtime_ns) for path in cleanup_paths}
         self.assertEqual(len(cleanup_pins), 5)
-        if unknown:
-            (self.f.controls / 'unknown').touch()
         admitted = self.f.stage.admit_remaining_stage(context)
         admission_path = Path(admitted['admission']['path'])
         admission_bytes = admission_path.read_bytes()
@@ -141,42 +153,48 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                 self.assertFalse(future.done(), 'startup failed before the recovery barrier')
                 for claim in claims:
                     claim.unlink()
-                self.wait_for(lambda: all((self.f.controls / ('ready-' + str(i))).exists()
-                    for i in range(1, 7)) or future.done(), 'six real fixture workers running')
-                # This is the receipt regression assertion, also on pre-fix worker refusal.
-                self.assert_original_closure(original, first)
+                ready = wait_for_ready_batch(self.f.controls, future.done)
+                if future.done():
+                    self.assert_original_closure(original, first)
                 self.assertFalse(future.done(), 'real worker startup refused before native fixtures')
-                self.assertFalse(any(Path(row['artifactDir']).exists()
-                                     for row in self.f.remaining_grant['orderedTasks'][6:]))
-                self.f.stage.remaining_context_data(driver.remaining_stage, batch=1)
-                # Reject actual foreign/future children while accepting every current
-                # suite/scenario/slot/job/runner and cancellation path created above.
-                foreign = driver.outroot / 'foreign-child'
-                foreign.write_text('not granted\n')
-                with self.assertRaisesRegex(ValueError, 'unexplained cohort child'):
+                self.assertEqual([ready[i]['ordinal'] for i in ready], list(range(1, 7)))
+
+                def check_context():
+                    # This is the receipt regression assertion, also on pre-fix worker refusal.
+                    self.assert_original_closure(original, first)
+                    self.assertFalse(any(Path(row['artifactDir']).exists()
+                                         for row in self.f.remaining_grant['orderedTasks'][6:]))
                     self.f.stage.remaining_context_data(driver.remaining_stage, batch=1)
-                foreign.unlink()
-                future_root = Path(self.f.remaining_grant['orderedTasks'][6]['artifactDir'])
-                future_root.mkdir(parents=True)
-                with self.assertRaisesRegex(ValueError, 'future remainder artifact exists'):
-                    self.f.stage.remaining_context_data(driver.remaining_stage, batch=1)
-                future_root.rmdir()
+                    # Reject actual foreign/future children while accepting every current
+                    # suite/scenario/slot/job/runner and cancellation path created above.
+                    foreign = driver.outroot / 'foreign-child'
+                    foreign.write_text('not granted\n')
+                    with self.assertRaisesRegex(ValueError, 'unexplained cohort child'):
+                        self.f.stage.remaining_context_data(driver.remaining_stage, batch=1)
+                    foreign.unlink()
+                    future_root = Path(self.f.remaining_grant['orderedTasks'][6]['artifactDir'])
+                    future_root.mkdir(parents=True)
+                    with self.assertRaisesRegex(ValueError, 'future remainder artifact exists'):
+                        self.f.stage.remaining_context_data(driver.remaining_stage, batch=1)
+                    future_root.rmdir()
+
                 # Hold the unknown job (or the last clean job) until five real seals close.
-                held = 1 if unknown else 6
-                for ordinal in range(1, 7):
-                    if ordinal != held:
-                        (self.f.controls / ('release-' + str(ordinal))).touch()
-                self.wait_for(lambda: all((root / 'operator-result.json').exists()
-                    for ordinal, root in enumerate(first, 1) if ordinal != held), 'five real closures')
-                self.assertTrue(all(json.loads((root / 'operator-result.json').read_text())['state'] == 'sealed'
-                    for ordinal, root in enumerate(first, 1) if ordinal != held))
-                self.assertFalse((self.f.controls / 'batch-two-reached').exists())
-                self.assertFalse(any(Path(row['artifactDir']).exists()
-                                     for row in self.f.remaining_grant['orderedTasks'][6:]))
-                self.assert_original_closure(original, first)
-                for path, pin in cleanup_pins.items():
-                    self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), pin)
-                (self.f.controls / ('release-' + str(held))).touch()
+                def check_closures(held):
+                    self.wait_for(lambda: all((root / 'operator-result.json').exists()
+                        for ordinal, root in enumerate(first, 1) if ordinal != held), 'five real closures')
+                    self.assertTrue(all(json.loads((root / 'operator-result.json').read_text())['state'] == 'sealed'
+                        for ordinal, root in enumerate(first, 1) if ordinal != held))
+                    self.assertFalse((self.f.controls / 'batch-two-reached').exists())
+                    self.assertFalse(any(Path(row['artifactDir']).exists()
+                                         for row in self.f.remaining_grant['orderedTasks'][6:]))
+                    self.assert_original_closure(original, first)
+                    for path, pin in cleanup_pins.items():
+                        self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), pin)
+
+                held = complete_ready_batch(ready, unknown=unknown,
+                    set_unknown=lambda ordinal: (self.f.controls / 'unknown').write_text(str(ordinal) + '\n'),
+                    release=lambda ordinal: (self.f.controls / ('release-' + str(ordinal))).touch(),
+                    check_context=check_context, check_closures=check_closures)
                 summary = future.result(timeout=35)
             finally:
                 # Release every owned claim/harmless command even if an assertion failed.
@@ -204,11 +222,13 @@ class ComposedRemainingStageContracts(unittest.TestCase):
         self.assertTrue(summary['fixtureOnly'])
         self.assertTrue(all(row['chargedRoots'] == 1 for row in summary['originalResults']))
         self.assertTrue(all(row['state'] == 'sealed' for ordinal, row in enumerate(summary['results'][:6], 1)
-                            if not unknown or ordinal != 1))
+                            if not unknown or ordinal != held))
         self.assertEqual((self.f.controls / 'batch-two-reached').exists(), not unknown)
         if unknown:
             self.assertEqual(len(starts), 6)
             self.assertEqual(summary['reservationUnknownRoots'], 1)
+            self.assertEqual(summary['results'][held - 1]['consumptionState'], 'reservation-unknown')
+            self.assertEqual(summary['results'][held - 1]['chargedRoots'], 1)
             self.assertFalse(summary['accountingComplete'])
             self.assertTrue(all(row['state'] == 'not-submitted' for row in summary['results'][6:]))
         else:
