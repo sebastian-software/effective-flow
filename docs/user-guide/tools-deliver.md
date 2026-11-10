@@ -73,7 +73,9 @@ counts, and a record that another run still holds is reported and left alone.
 - **Resume.** One question, **Resume** or **New delivery**, lists the deliveries that can be
   continued. A delivery qualifies when at least one of its commit groups is provably on its branch,
   the source checkout still holds the confirmed selection, the worktree holds exactly the changes the
-  earlier run left, and the current visibility is not weaker than the original one. Resume continues
+  earlier run left (no file hidden by skip-worktree or assume-unchanged differs from the index and
+  `HEAD`, and no ignored file stands where a delivery file belongs), and the current visibility is
+  not weaker than the original one. Resume continues
   the same branch and worktree with the original selection and does not ask you to confirm it again.
   An unanswered question or a non-interactive run starts a new delivery and keeps the record.
 - **What a resume skips and reruns.** It skips the upstream check and fast-forward, the selection and
@@ -95,9 +97,15 @@ counts, and a record that another run still holds is reported and left alone.
   remaining changes from the worktree only when they provably equal what is still in your checkout,
   and keeps every discarded file as a tree under `refs/effective-flow/released/<RECORD_ID>/`
   (`git ls-tree -r <ref>` lists it; `git update-ref -d <ref>` drops it once you no longer need it);
-  without recorded progress it requires a clean or already vanished worktree. When the source
-  checkout or the worktree changed and the worktree still holds changes, release is refused and the
-  blocking paths are listed: restore the source checkout or clean the worktree by hand first. The
+  without recorded progress it requires a clean or already vanished worktree. Each file is
+  re-checked against the source right before it is discarded, and release stops with a write failure
+  if either side changed. When the source checkout or the worktree changed and the worktree still
+  holds changes, release is refused and the blocking paths are listed: restore the source checkout
+  or clean the worktree by hand first. Release is also refused when a kept quarantine from an earlier
+  failed release is in the worktree (it holds the only copy of those files; recover them by hand,
+  cleanup refuses it too), when an ignored file stands where a delivery file belongs or a hidden
+  (skip-worktree or assume-unchanged) file differs from index and `HEAD`, and when the source
+  checkout is the delivery worktree itself; remove or fix those files by hand. The
   branch and its commits stay, and `/effective-flow cleanup` then removes the worktree. A delivery
   started from another checkout is resumed or released by `deliver` in that checkout; from here only
   its clean or vanished worktree can be released.

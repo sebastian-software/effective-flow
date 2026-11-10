@@ -110,7 +110,7 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
    (`git merge-base --is-ancestor <CREATION_OID> <CURRENT_BRANCH_TIP>` exits `0`), never compared
    with a moving remote tip.
 7. `git -C <WORKTREE_PATH> status --porcelain --untracked-files=all --ignore-submodules=none` is
-   empty.
+   empty; for removal it also fails on a kept release quarantine, ignored endpoint or hidden edit.
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
 
