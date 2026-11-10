@@ -31,8 +31,10 @@ a branch that is already checked out elsewhere without `--force`, which this wor
 Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
 its lifecycle record (`worktree record-init`), and close that record in the same run: after the
 push of Phase 2 step 1 is confirmed, withdraw it with one `worktree remove` call, with the denial
-fallback of its outcome table; on a controlled stop before the push – including a conflict this run
-may not or cannot resolve – end the in-progress merge with `git merge --abort` so the checkout is
-left clean, then call `worktree transition` to `aborted`; on an error, to `failed`. `aborted` and
+fallback of its outcome table; after a no-op merge or a head-identity mismatch, which commit and
+push nothing, withdraw it with the same one `worktree remove` call and the same fallback; on a
+controlled stop before the push – including a conflict this run may not or cannot resolve – end
+the in-progress merge with `git merge --abort` so the checkout is left clean, then call
+`worktree transition` to `aborted`; on an error, to `failed`. `aborted` and
 `failed` retain the worktree and the branch for inspection. Never end a run leaving an `active` record behind – `{{SKILL:cleanup}}` will correctly
 refuse to remove it.

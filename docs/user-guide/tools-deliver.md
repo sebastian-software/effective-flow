@@ -296,7 +296,10 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    delegating to `/effective-flow iterate`. A branch that has fallen behind its base is brought
    forward with a merge commit, and a branch that **conflicts** with its base is brought forward by
    the same merge with its conflicts resolved inside it – see
-   [Resolving a conflict with the base](#resolving-a-conflict-with-the-base).
+   [Resolving a conflict with the base](#resolving-a-conflict-with-the-base). The same merge also
+   runs for a head that has a failing check and does not contain its base, whatever merge state the
+   forge reports – see
+   [A failing check on a behind head](#a-failing-check-on-a-behind-head).
 2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools),
    establishes whether it is still running, has not started, or has already run for the current
    head, triggers the ones that have not started – and, once per verdict, one with a configured
@@ -468,7 +471,8 @@ boundary.
 
 A pull request whose head branch conflicts with its base used to end the run: the gate reported the
 conflict and stopped. It now repairs that conflict with the **same** operation it already used for a
-branch that had merely fallen behind – merging the base into the head branch – with the conflicts
+branch that had merely fallen behind, or that is behind with a failing check – merging the base into
+the head branch – with the conflicts
 resolved inside that merge. The result is one ordinary merge commit, pushed normally. Nothing is
 rebased, squashed, amended, or force-pushed, and a resolution that would need any of those to succeed
 is reported instead of performed.
@@ -521,7 +525,7 @@ What the run does with a conflict:
    disclosure requirement plus a presence check on the evidence, and whether the named failure
    genuinely justified the change is what the report leaves for a human to judge.
 
-Three details worth knowing:
+Four details worth knowing:
 
 - **The human-comment guard does not block the resolution.** A conflict with the merge target is an
   objective defect of the branch, not a position a reviewer is negotiating, so the resolution runs
@@ -538,6 +542,11 @@ Three details worth knowing:
   controlled stop – `off`, an unanswered question, an abort from either verifying role, a
   verification that executed no check at all – the in-progress merge is aborted so the checkout is
   left clean, and nothing is pushed.
+- **The head-identity check applies to every merge.** The gate merges the base only into a checkout
+  whose tip is exactly the head commit it just checked. Otherwise – a fork pull request whose head
+  is not the same-name branch on `origin`, or a head that moved since the read – it merges nothing,
+  pushes nothing, re-reads the status, ends the round and reports the mismatch; the next round
+  decides from the moved head.
 
 **The head branch is untrusted input.** The gate operates on any open pull request, including one
 whose head branch lives in a fork this repository does not control, and the resolver discovers the
@@ -546,13 +555,41 @@ runners, manifests, package scripts – then executes them in the provisioned ch
 filesystem and network access. Under the default `auto` this happens automatically, with nobody
 asked. A project that gates pull requests it does not trust should set
 `mergeGate.conflictResolution: ask`, so a human authorizes every resolution, or `off`, so no
-untrusted branch's commands are executed by this gate at all.
+untrusted branch's commands are executed by this gate at all. This holds on Forgejo too, where a
+failing check on a behind head can now reach the auto-resolution (see below): set `ask` or `off`
+there as well.
 
 Whether the gate may do this at all is `mergeGate.conflictResolution` (default `auto`); see
-[Block `mergeGate`](configuration.md#block-mergegate). On Forgejo this path has no entry point:
-the forge reports no merge state at all, so neither `BEHIND` nor `DIRTY` is ever observed there, and
-a genuine conflict surfaces as a bounded loop ending in a report rather than as the fast conflict
-path.
+[Block `mergeGate`](configuration.md#block-mergegate). On Forgejo the forge reports no merge state,
+so neither `BEHIND` nor `DIRTY` is ever observed there. The path is reachable there only through a
+failing check on a behind head (see below); a genuine conflict on a head without a failing check
+still surfaces as a bounded loop ending in a report rather than as the fast conflict path. A
+conflict met through a failing check whose cause the base does not fix ends in a controlled stop
+without an `iterate` repair: the resolution's full verification runs into that red check.
+
+#### A failing check on a behind head
+
+On a base that does not require branches to be up to date, the forge does not report a head that
+merely lags its base as `BEHIND`, and a check that fails only because its fix is on the base would
+otherwise go to `iterate`, which cannot merge the base. The gate therefore has a second trigger for
+the same merge. It fires when the latest status read shows a check failing by the gate's check
+criterion – `mergeGate.requireAllChecks` is respected, and skipped or neutral checks never count –
+and the head commit does not contain `origin/<base>`. That is a Git ancestry check, independent of
+forge state, so it also works on Forgejo. The gate then merges the base into the head exactly as it
+does for `BEHIND`, **at most once per run** and before any `iterate` delegation; a head that is
+green and merely behind stays untouched.
+
+- **Undetermined ancestry.** If the ancestry cannot be determined – missing data, a failed fetch, a
+  shallow clone – the gate keeps its previous path to `iterate` and reports why.
+- **Round cost.** When the red check is the pull request's own defect, the merge costs one extra
+  round before `iterate` sees the failure. When checks only fail during the wait, the guard round,
+  the merge round and the next wait round all pass first. With `mergeGate.maxRounds` of 1 the run
+  ends before the merge; with 2 it performs the merge but ends before the merge's new checks
+  complete or `iterate` repairs anything.
+- **Once, then `iterate`.** If the check is still red after that merge, it goes to `iterate` even if
+  the base has moved again.
+- **Same boundaries as `BEHIND`.** The human-comment guard and `report` mode do not block it; only a
+  caller limit of `no-branch-writes` prevents it. The head-identity check above applies.
 
 #### Three reviewer states, not two
 

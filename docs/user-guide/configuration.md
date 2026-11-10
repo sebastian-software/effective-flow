@@ -430,7 +430,8 @@ person's comment must be answered or resolved instead.
 
 **`mergeGate.conflictResolution` decides what happens when the head branch conflicts with its base.**
 The gate already brings a branch that has merely fallen _behind_ its base forward with a merge
-commit; this key covers the case where that same merge does not apply cleanly.
+commit – and does the same, once per run, for a behind head with a failing check, whatever merge
+state the forge reports; this key covers the case where that same merge does not apply cleanly.
 
 - `auto` (the default) hands the conflicted files to the gate's dedicated resolver, has the resolved
   tree verified independently before anything is committed, and pushes one ordinary merge commit.

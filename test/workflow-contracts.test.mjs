@@ -6947,6 +6947,306 @@ test('the check criterion counts SKIPPED and NEUTRAL as satisfied, as GitHub doe
   }
 });
 
+// The pins below guard Phase 2 step 1's second trigger (issue #646): a failing check on a head that
+// is behind its base brings the head forward by the same merge as `BEHIND` or `DIRTY`. They pin short
+// load-bearing tokens and their co-occurrence, so rewording stays free while dropping a guarantee
+// fails. `mergeGateStep1` and `mergeGateStep3` cut the two steps so a pin cannot pass on text that
+// sits in a neighbouring step.
+function mergeGateStep1() {
+  return boundedSlice(
+    section(mergeGateSource(), '### Phase 2: Check gate (bounded)'),
+    '1. **Bring the head branch forward',
+    '2. **Pending checks.**',
+  );
+}
+function mergeGateStep3() {
+  return boundedSlice(
+    section(mergeGateSource(), '### Phase 2: Check gate (bounded)'),
+    '3. **Failed checks.**',
+    '4. **Re-read the status**',
+  );
+}
+
+// Invariant: Phase 2 step 1 has exactly two triggers for one merge, (a) the forge state and (b) a
+// failing check with the ancestry check stating "behind", and "the run's latest check result" is
+// defined as the most recent `pr-status-read`, never a `pr-checks-wait` result.
+test('Phase 2 step 1 names trigger (a) and trigger (b) and defines the latest check result', () => {
+  const step1 = prose(mergeGateStep1());
+  assert.match(
+    step1,
+    near('Trigger \\(a\\)', '`BEHIND`', 80),
+    'trigger (a) must stay BEHIND or DIRTY',
+  );
+  assert.match(
+    step1,
+    near('Trigger \\(a\\)', '`DIRTY`', 80),
+    'trigger (a) must stay BEHIND or DIRTY',
+  );
+  assert.match(
+    step1,
+    near('Trigger \\(b\\)', 'trigger \\(a\\) has not fired', 40),
+    'trigger (b) must be exclusive of trigger (a)',
+  );
+  assert.match(
+    step1,
+    near('latest check result', 'most recent `pr-status-read`', 120),
+    'the latest check result must be defined as the most recent pr-status-read',
+  );
+  assert.match(step1, near('most recent `pr-status-read`', 'whichever step performed it', 80));
+  for (const read of [
+    'Phase 1',
+    'Entry step 4',
+    'mismatch',
+    'step 3',
+    'step 4',
+    'Phase 4',
+    'host-pr-watch',
+  ]) {
+    assert.match(
+      step1,
+      near('most recent `pr-status-read`', read, 400),
+      `the definition must list ${read}`,
+    );
+  }
+});
+
+// Invariant: a `pr-checks-wait` result is never the source of trigger (b)'s criterion or `headSha`,
+// because it carries no `headSha` and keeps superseded runs.
+test('a pr-checks-wait result never supplies trigger (b) criterion or headSha', () => {
+  const step1 = prose(mergeGateStep1());
+  assert.match(step1, near('`pr-checks-wait`', 'never supplies', 60));
+  assert.match(step1, near('never supplies', '`headSha`', 120));
+  assert.match(step1, near('`pr-checks-wait`', 'carries no `headSha`', 160));
+});
+
+// Invariant: trigger (b)'s "failing" is step 4's check criterion, so pending, `SKIPPED`, `NEUTRAL`,
+// unreported lists and optional checks under `requireAllChecks: false` never fire it.
+test('trigger (b) counts a check failing as step 4 defines it', () => {
+  const step1 = prose(mergeGateStep1());
+  assert.match(step1, near('Trigger \\(b\\)', 'failing as step 4 defines it', 250));
+  for (const token of [
+    '`SKIPPED`',
+    '`NEUTRAL`',
+    '`checksReported: false`',
+    '`mergeGate.requireAllChecks: false`',
+  ]) {
+    assert.match(
+      step1,
+      near('Step 4', token, 250),
+      `step 4's criterion must keep trigger (b) off for ${token}`,
+    );
+  }
+});
+
+// Invariant: the ancestry check is a ref-only read: an explicit base refspec, a pull-head fetch that
+// writes no FETCH_HEAD and no destination ref, a commit-existence check, then `merge-base`.
+test('the ancestry check uses the explicit refspec, no FETCH_HEAD write and merge-base', () => {
+  const step1 = flat(mergeGateStep1());
+  assert.ok(
+    step1.includes('+refs/heads/<base>:refs/remotes/origin/<base>'),
+    'explicit base refspec',
+  );
+  assert.match(
+    step1,
+    /git fetch[^`;]*--no-write-fetch-head[^`;]*\+refs\/heads\/<base>:refs\/remotes\/origin\/<base>/,
+    'the base fetch must not write FETCH_HEAD',
+  );
+  assert.match(
+    step1,
+    /git fetch[^`;]*--no-write-fetch-head[^`;]*--refmap=[^`;]*refs\/pull\/<N>\/head/,
+    'the pull-head fetch must not write FETCH_HEAD and must disable the opportunistic ref update',
+  );
+  assert.match(step1, near('refs/pull/<N>/head', 'no destination refspec', 80));
+  assert.ok(step1.includes('git cat-file -e <headSha>^{commit}'), 'commit existence check');
+  assert.ok(
+    step1.includes('git merge-base --is-ancestor origin/<base> <headSha>'),
+    'ancestry command',
+  );
+  assert.match(step1, near('ancestry check', '`RUNTIME_STATE_ROOT`', 200));
+  ordered(
+    step1,
+    '+refs/heads/<base>:refs/remotes/origin/<base>',
+    '--no-write-fetch-head',
+    'git cat-file -e <headSha>^{commit}',
+    'git merge-base --is-ancestor',
+  );
+});
+
+// Invariant: exit 0 means no trigger, exit 1 means "behind", and every other outcome - including a
+// shallow repository - is undetermined, which merges nothing and keeps the path to step 3.
+test('the ancestry check maps exit codes and treats everything else as undetermined', () => {
+  const step1 = prose(mergeGateStep1());
+  assert.match(step1, near('exit `0`', 'no trigger', 80));
+  assert.match(step1, near('exit `1`', 'states "behind"', 40));
+  assert.match(step1, near('everything else', 'undetermined', 60));
+  assert.match(step1, near('undetermined', '--is-shallow-repository', 400));
+  assert.match(step1, near('undetermined', 'any other code', 400));
+  assert.match(
+    step1,
+    near('undetermined merges nothing', 'step 3', 80),
+    'undetermined keeps the path to step 3',
+  );
+});
+
+// Invariant: trigger (b) fires at most once per run; its record is written once the push is
+// confirmed or on a no-op and never on BLOCKED-USER, a controlled stop, a rejected push or a
+// head-identity mismatch, so a failed attempt can be retried.
+test('trigger (b) fires once per run and its record has a stated write condition', () => {
+  const step1 = prose(mergeGateStep1());
+  assert.match(step1, near('Trigger \\(b\\) fires at most once per run', 'record', 200));
+  assert.match(step1, near('record', 'push is confirmed', 200));
+  assert.match(step1, near('push is confirmed', 'no-op', 80));
+  for (const never of [
+    '`BLOCKED-USER`',
+    'controlled stop',
+    'rejected push',
+    'head-identity mismatch',
+  ]) {
+    assert.match(
+      step1,
+      near('no other case', never, 200),
+      `the record must not be written on ${never}`,
+    );
+  }
+  assert.match(step1, near('Trigger \\(a\\) is not limited', 'writes none', 80));
+  // The wisdom list names the record and points at step 1 for when it is written, without restating it.
+  const wisdom = prose(mergeGateDelegatedRun(repositoryRoot));
+  assert.match(wisdom, near('once-per-run record', 'written per Phase 2 step 1', 80));
+});
+
+// Invariant: step 3 performs one `pr-status-read` after `pr-checks-wait`, and where trigger (b) is
+// still due and the head is behind it delegates nothing and ends the round; an undetermined
+// ancestry check does not hold the delegation back.
+test('the step-3 guard defers to trigger (b) without blocking on an undetermined check', () => {
+  const step3 = prose(mergeGateStep3());
+  assert.match(step3, near('`pr-checks-wait`', 'one `pr-status-read`', 120));
+  assert.match(step3, near('trigger-\\(b\\) record', 'states "behind"', 200));
+  assert.match(step3, near('failing as step 4 defines it', '`pr-status-read`', 300));
+  assert.match(step3, near('ancestry check', '`headSha`', 120));
+  assert.match(step3, near('ancestry check', '`baseRef`', 120));
+  assert.match(step3, near('neither `BEHIND` nor `DIRTY`', 'ancestry check', 200));
+  ordered(step3, 'ancestry check', 'delegate nothing', 'Otherwise delegate to');
+  assert.match(step3, near('delegate nothing', 'end the round', 40));
+  assert.match(step3, near('end the round', 'A round runs forward only', 40));
+  assert.match(step3, near('next round', 'fires trigger \\(b\\)', 80));
+  assert.match(step3, near('undetermined', 'not hold', 60), 'an undetermined check must not block');
+  assert.match(step3, near('undetermined', 'delegation', 100));
+});
+
+// Invariant: the ancestry check precedes provisioning, so a head that already contains the base never
+// gets a worktree, and both lazy pointers fire on trigger (b) stating "behind" as well as on trigger (a).
+test('the ancestry check precedes provisioning and both lazy pointers name trigger (b)', () => {
+  const step1 = prose(mergeGateStep1());
+  const check = step1.indexOf('git merge-base --is-ancestor');
+  const provision = step1.search(/provision a checkout of the existing head branch/i);
+  assert.notEqual(check, -1);
+  assert.notEqual(provision, -1);
+  assert.ok(check < provision, 'the ancestry check must come before the checkout is provisioned');
+  assert.match(step1, near('provisions nothing', 'ancestry check states "behind"', 60));
+
+  const triggers = new Map(
+    [...mergeGateSource().matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      prose((match[2] ?? '').trim()),
+    ]),
+  );
+  for (const fragment of ['worktree-integration', 'merge-gate-checkout-boundary']) {
+    const when = triggers.get(fragment);
+    assert.ok(when, `${fragment} must stay a lazy pointer`);
+    assert.match(when, /behind|dirty/i);
+    assert.match(when, /trigger \(b\)/i, `${fragment} must load on trigger (b)`);
+    assert.match(
+      when,
+      near('ancestry check', '"behind"', 40),
+      `${fragment} must name the ancestry check`,
+    );
+  }
+});
+
+// Invariant: the merge happens only on the head the triggering read reported; a moved or foreign tip
+// merges, commits and pushes nothing, withdraws the worktree once and ends the round.
+test('the head-identity check merges nothing on a mismatch and ends the round', () => {
+  const step1raw = mergeGateStep1();
+  const step1 = prose(step1raw);
+  assert.match(step1, near('head identity', 'tip must equal', 80));
+  assert.match(step1, near('tip must equal', '`headSha`', 60));
+  assert.match(step1, near('`headSha`', 'called for the merge', 80));
+  ordered(
+    step1,
+    'check the head identity',
+    'merge `origin/<base>` into the head branch as a merge commit',
+  );
+  const mismatch = prose(
+    boundedSlice(step1raw, '- **The tip is not', '- **The merge is a no-op**'),
+  );
+  assert.match(mismatch, near('merge nothing', 'commit nothing', 40));
+  assert.match(mismatch, near('commit nothing', 'push nothing', 40));
+  assert.match(mismatch, near('`pr-status-read`', 'end the round', 80));
+  ordered(mismatch, '`worktree remove`', '`pr-status-read`', 'end the round');
+  assert.match(mismatch, near('`worktree remove`', 'one', 40));
+  assert.match(mismatch, near('record the mismatch', 'end the round', 60));
+  assert.match(mismatch, /A round runs forward only/);
+});
+
+// Invariant: a no-op merge commits and pushes nothing, closes the worktree with one `worktree remove`
+// and continues with step 2; the checkout-boundary fragment names the same closing call for the no-op
+// and for the head-identity mismatch.
+test('a no-op base merge continues with step 2 and closes the worktree', () => {
+  const noop = prose(
+    boundedSlice(
+      mergeGateStep1(),
+      '- **The merge is a no-op**',
+      '- **The merge applies cleanly:**',
+    ),
+  );
+  assert.match(noop, near('commit nothing', 'push nothing', 40));
+  assert.match(noop, near('`worktree remove`', 'one', 60));
+  assert.match(noop, near('continue', 'step 2', 30));
+  const boundary = prose(source('src/shared/merge-gate-checkout-boundary.md'));
+  assert.match(boundary, near('no-op', 'head-identity mismatch', 80));
+  assert.match(boundary, near('head-identity mismatch', 'one `worktree remove`', 200));
+});
+
+// Invariant: a round that merged under trigger (b) delegates nothing to iterate; the next round waits
+// for the checks the merge started.
+test('a trigger (b) round ends with its push and delegates nothing to iterate', () => {
+  const step1 = prose(mergeGateStep1());
+  assert.match(step1, near('trigger-\\(b\\) round ends', 'confirmed push', 80));
+  assert.match(
+    step1,
+    near('trigger-\\(b\\) round ends', 'no `\\{\\{SKILL:iterate\\}\\}` delegation', 200),
+  );
+  assert.match(step1, near('no `\\{\\{SKILL:iterate\\}\\}` delegation', 'next round', 200));
+});
+
+// Invariant: Phase 6 reports a trigger-(b) merge with its round, an undetermined ancestry check with
+// its reason, and every head-identity mismatch.
+test('the Phase 6 report names a trigger (b) merge, an undetermined check and a head-identity mismatch', () => {
+  const summary = prose(boundedSlice(mergeGateSource(), '### Phase 6: Summary', '\n## Rules'));
+  assert.match(summary, near('trigger-\\(b\\) merge', 'its round', 60));
+  assert.match(summary, near('undetermined ancestry check', 'reason', 80));
+  assert.match(summary, near('head-identity mismatch', 'provisioned tip', 160));
+  assert.match(summary, near('head-identity mismatch', '`headSha`', 120));
+});
+
+// Invariant: the Git write boundary still counts two kinds and classifies the ancestry fetch as a
+// read limited to `refs/remotes/origin/<base>`; `no-branch-writes` covers trigger (b) while that
+// read-only fetch stays permitted.
+test('the Git write boundary keeps two kinds, treats the ancestry fetch as a read and binds trigger (b)', () => {
+  const boundary = prose(section(mergeGateSource(), '## Git write boundary', '\n## '));
+  assert.match(boundary, near('two', 'sanctioned kinds', 40));
+  assert.match(boundary, near('ancestry check', 'is a read', 80));
+  assert.match(boundary, near('ancestry check', 'outside both kinds', 120));
+  assert.match(boundary, near('base fetch', 'limited to `refs/remotes/origin/<base>`', 120));
+  assert.match(boundary, near('head fetch', 'no ref', 60));
+  assert.match(boundary, near('trigger \\(b\\)|\\(b\\)', 'at most once per run', 200));
+
+  const binding = mergeGateCallerLimitsBinding();
+  assert.match(binding, near('trigger \\(b\\)', 'Phase 2 step 1', 100));
+  assert.match(binding, near('ancestry check', 'stays permitted', 200));
+  assert.match(binding, near('stays permitted', '`no-branch-writes`', 100));
+});
+
 test('only the bot threads this run implemented can block the merge', () => {
   const preconditions = flat(section(mergeGateSource(), '### Phase 4'));
 
