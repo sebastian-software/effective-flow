@@ -235,6 +235,25 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // The generic-product reviewer accepts the `tooling` paths a pre-commit review assigns, and
+    // its reduced-depth notice no longer calls them product code.
+    Object.freeze({
+      id: 'generic-product-reviewer-tooling-assignment',
+      edits: Object.freeze([
+        Object.freeze({
+          from: 'framework reviewer applies. Ground every judgment',
+          to: 'framework reviewer applies, and for the `tooling` paths a pre-commit review assigns. Ground every judgment',
+        }),
+        Object.freeze({
+          from: 'specialist matches this product code; findings are limited',
+          to: 'specialist matches this review scope; findings are limited',
+        }),
+        Object.freeze({
+          from: 'review only the generic product bucket assigned through `Project routing`; specialist and tooling buckets stay with their corresponding reviewers',
+          to: 'review only the generic product bucket assigned through `Project routing`, and `tooling` paths when the assignment states it is a pre-commit review and gives their route; every specialist bucket, and `tooling` from any other assignment, stays with its corresponding reviewer',
+        }),
+      ]),
+    }),
   ]),
 });
 

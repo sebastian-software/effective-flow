@@ -7563,6 +7563,40 @@ test('both pre-commit review sites take reviewer selection from the one pre-comm
   }
 });
 
+// Invariant: sender and receiver of the pre-commit `tooling` assignment agree. The owner's
+// assignment states it is a pre-commit review and gives each path's confirmed route; the
+// generic-product reviewer accepts `tooling` exactly from such an assignment, keeps every
+// specialist bucket and all other `tooling` out of scope, and its reduced-depth notice does not
+// call tooling product code.
+test('the generic-product reviewer accepts exactly the tooling a pre-commit review assigns', () => {
+  const owner = prose(source('src/shared/pre-commit-review.md'));
+  const reviewer = prose(source('src/agents/generic-product-reviewer.md'));
+  assert.match(
+    owner,
+    /deliberately departs from the routing table's validator-only Reviewer column, so its assignment states it is a pre-commit review and gives each path's confirmed route/,
+  );
+  assert.match(
+    reviewer,
+    /review only the generic product bucket assigned through `Project routing`, and `tooling` paths when the assignment states it is a pre-commit review and gives their route; every specialist bucket, and `tooling` from any other assignment, stays with its corresponding reviewer/,
+    'the reviewer accepts the tooling assignment the owner sends and no other',
+  );
+  assert.doesNotMatch(
+    reviewer,
+    /specialist and tooling buckets stay with/,
+    'the reviewer no longer refuses every tooling bucket',
+  );
+  assert.match(
+    reviewer,
+    /no dedicated Effective Flow specialist matches this review scope/,
+    'the disclosure holds for tooling as well as product code',
+  );
+  assert.doesNotMatch(
+    reviewer,
+    /specialist matches this product code/,
+    'the disclosure does not call tooling product code',
+  );
+});
+
 // Invariant: iterate reviews each item before its commit, so rejected code never enters history;
 // an item still blocked after one correction pass commits nothing, returns as `unassessed` exactly
 // as an item ABORT does with no new BLOCKED-USER id, and its uncommitted paths stay out of Phase 4.

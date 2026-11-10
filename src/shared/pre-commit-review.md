@@ -18,8 +18,9 @@ when: a changed path's route is confirmed for its pre-commit reviewers
   {{AGENT:nodejs-reviewer}} for `node-backend-cli`, {{AGENT:rust-reviewer}} for `rust`, and
   {{AGENT:generic-product-reviewer}} for `generic-product` and for `tooling`, the latter in addition
   to the validator. That `tooling` entry deliberately departs from the routing table's
-  validator-only Reviewer column. A change touching only `documentation` paths needs no reviewer;
-  record "documentation route: validator only".
+  validator-only Reviewer column, so its assignment states it is a pre-commit review and gives each
+  path's confirmed route. A change touching only `documentation` paths needs no reviewer; record
+  "documentation route: validator only".
 - **A review passes** only when every started reviewer returned `DONE` with no Critical or Important
   finding within the blocking scope the calling site assigns. Such a finding blocks; a finding
   outside that scope and a Note go into the report as context and do not block. A required reviewer
