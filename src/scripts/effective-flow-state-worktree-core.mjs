@@ -133,6 +133,7 @@ import {
   listLedgerIds,
   readLedger,
 } from './effective-flow-state-ledger-core.mjs';
+import { VISIBILITY_VALUES } from './remote-tracker-shared-core.mjs';
 
 export const RECORDS_DIR = 'worktree-runs';
 export const RECORD_SCHEMA_VERSION = 1;
@@ -213,8 +214,6 @@ export const RELEASE_DISCRIMINATOR = 'partial-diff';
 export const PLAN_PR_ADOPTION = 'plan-pr-continuation';
 export const RESUME_ADOPTION = 'partial-diff-resume';
 export const ADOPTIONS = Object.freeze([PLAN_PR_ADOPTION, RESUME_ADOPTION]);
-// The visibility values a resume adoption states for the current run.
-export const VISIBILITIES = Object.freeze(['visible', 'hidden']);
 // The `core.fsmonitor=false` configuration of every Git call inside a proven worktree or source.
 const IN_WORKTREE_GIT_CONFIG = Object.freeze(['core.fsmonitor=false']);
 export const ELIGIBILITY_CONDITIONS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9]);
@@ -1459,10 +1458,10 @@ function requireTransition(input) {
     );
   }
   if (adoptionKind === RESUME_ADOPTION) {
-    if (!VISIBILITIES.includes(input.visibility)) {
+    if (!VISIBILITY_VALUES.includes(input.visibility)) {
       fail(
         'INVALID_INPUT',
-        `visibility must be one of ${VISIBILITIES.join(', ')} for a partial-diff-resume adoption`,
+        `visibility must be one of ${VISIBILITY_VALUES.join(', ')} for a partial-diff-resume adoption`,
       );
     }
   } else if (input.visibility !== undefined) {

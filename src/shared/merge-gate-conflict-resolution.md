@@ -59,7 +59,7 @@ stated for the reason the second bullet gives:
   the resolution is not verified only by the role that produced it. A failing verdict from **either**
   role is treated as `ABORT`; the two roles disagreeing is not a tie to break. This is the only
   validation this workflow commissions directly, and it still happens inside delegated roles – the
-  gate starts none of its own.
+  gate starts none of its own, and the review below is delegated too.
 
   Hand `{{AGENT:code-validator}}`:
   - the **provisioned checkout's absolute root** – the same checkout, with the merge still in
@@ -87,11 +87,26 @@ stated for the reason the second bullet gives:
   verified together with every check that did not run, and push nothing. An unprovable verification
   is never an assumed pass, exactly as an unstated merge state, an unstated `required` flag, an
   unprovable bot state, an unprovable assessment, and an unprovable identity are never assumed
-  passes in this file.
+  passes in this file;
+
+- **review, third.** Hand the **staged merge content**, never the working tree with the
+  validator's generated changes – its diffs against both parents restricted to the conflicted and
+  adjacent paths (`git diff --cached HEAD -- <paths>` and `git diff --cached MERGE_HEAD -- <paths>`)
+  – together with the worker's record, to the reviewers `pre-commit-review` selects: a conflicted
+  path's route comes from the record, an adjacent path's from the validator's routing bucket. Its
+  blocking scope is the resolved hunks and the adjacent changes; a finding on other content of
+  those paths is reported as context. A review that does not pass under `pre-commit-review`'s pass rule is treated
+  **exactly as `ABORT`**: abort the merge, report it as a failed verification is reported, and
+  commit nothing.
 
 **A generated file can be the conflicted one**, and the resolver regenerates it from its source
 instead of merging its text. `dist/` is gitignored in this repository and cannot conflict here, but
 a consumer project's generated tracked files can.
+
+```lazy-include
+pre-commit-review
+when: step 5 selects the reviewers of a resolved merge or judges their verdicts
+```
 
 #### Resolving a conflict with the base
 
@@ -125,11 +140,14 @@ checkout is the one step 1 provisioned – never a second one.
    the record does not name and justify, a failing verdict from either role, or a verification that
    executed **no** check at all ends this step as a stop that commits nothing.
    <!-- spawn-site:merge-gate-conflict-resolution/verification -->
-5. **Commit and push.** The gate – not the worker – completes the merge commit and pushes the head
+5. **Review the staged merge, third**, per that contract. A review that does not pass ends this
+   step as a stop that commits nothing.
+   <!-- spawn-site:merge-gate-conflict-resolution/review -->
+6. **Commit and push.** The gate – not the worker – completes the merge commit and pushes the head
    branch normally. Keep Git's default merge-commit message, which already lists the conflicted paths;
    add no `Co-Authored-By` trailer and no AI attribution. Then re-read the status, exactly as the
    clean path does, and close the checkout's lifecycle per step 1.
-6. **One attempt per round.** There is no retry loop inside this step, and it opens **no round of its
+7. **One attempt per round.** There is no retry loop inside this step, and it opens **no round of its
    own** – it lives inside the round step 1 belongs to, which continues into step 2 – and
    `mergeGate.maxRounds` bounds how often the run may come back here.
 

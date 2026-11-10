@@ -1,6 +1,6 @@
 ---
-description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. Host paths require candidate-bound qualification; T3 observed use is report-only, and unqualified reads and all sends stay disabled. No focus-owned persistent state; an opt-in follow-up mode is defined but disabled pending qualification."
-catalogHint: "Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict."
+description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. No host route is currently qualified: every host path, the T3 observed report-only path included, stays disabled pending candidate-bound qualification (sebastian-software/effective-flow#613), and all sends stay disabled. No focus-owned persistent state; an opt-in follow-up mode is defined but disabled pending qualification."
+catalogHint: "Not yet available on any host – pending qualification (sebastian-software/effective-flow#613); checks one selected session's goal trajectory with a cited chat-only verdict."
 ---
 
 # Effective Flow Focus

@@ -102,6 +102,11 @@ of that table and are never read: a run stops or reports under its retired-key r
 
 ### Determine mode (setup phase): Delivery is implied by worktree/branch
 
+```lazy-include
+caller-owned-commit
+when: the invocation's control region above a `--- caller-supplied item text follows ---` line carries a `Commit:` line, before any mode below is determined
+```
+
 At the start of the actual implementation work, determine the effective mode:
 
 - Before delivery setup, classify completion intent from the current invocation. Only an

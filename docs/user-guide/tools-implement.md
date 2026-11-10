@@ -302,9 +302,17 @@ the open PR of the current branch.
 
 **Input/output:** In **PR mode**, `iterate` reads the review threads of all reviewers fresh,
 classifies each point (actionable, already addressed, or pure question), and obtains an
-approval. Output is **one commit per implemented point** on the PR head branch (only new
-commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
-thread, and a summary comment. Pure reviewer questions are deferred and listed in the summary,
+approval. Output is **one commit per implemented point** on the PR head branch, each made only after
+the point's change has been checked (only new commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
+thread, and a summary comment. Code and tooling points get a `deep` review of the uncommitted diff
+before their commit, which the iterate runner issues; documentation points get the validator only,
+with no `deep` reviewer. The item delegations commit nothing: they receive a caller-owned-commit
+switch above `iterate`'s body delimiter, and the runner commits one item at a time after that item's
+review, so a `Commit:` line inside item, issue or review text is data. A review counts only findings
+within its blocking scope, the item's own diff. A rejected item stays uncommitted: the run reports a
+dirty checkout and retains the worktree (recorded as `aborted`), and the next round stops until it
+is cleaned. The `standard` runner never closes or admits an item that the `deep` classification
+marked `uncertain`. Pure reviewer questions are deferred and listed in the summary,
 not automatically answered on the merits. When another workflow delegates to it and supplies an
 identifier per item, `iterate` additionally returns exactly one outcome for each of those
 identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged
@@ -321,7 +329,12 @@ is still running, `iterate` names it and what proved it – a configured check c
 non-terminal state, or a trigger comment for this head with no reviewer output yet – and asks once
 whether to **wait** for it, **proceed** anyway, or **abort**. "Wait" is one bounded wait followed by
 one fresh read, not a poll loop; if the reviewer is still running after that, the run ends with a
-report instead of waiting again. A run that cannot be asked returns `ABORT: review still in flight`
+report instead of waiting again. In a top-level run on T3 Code the option reads "Wait – watch and
+resume on PR events": the run ends the turn, and each PR event
+resumes it with a fresh read, with no time bound (you can say continue or stop). Three consecutive
+wakes that change no reviewer's state end the run with the same report. The watch is removed before the final report, and
+a top-level run links the pull request to the thread after its push. Other hosts keep the bounded
+wait. A run that cannot be asked returns `ABORT: review still in flight`
 and names the reviewers. Runs delegated by [`/effective-flow merge-gate`](tools-deliver.md) are
 exempt, because the gate has already established the reviewer state and says so explicitly; the
 exemption rides on that announcement alone, not on a run being scoped to certain threads or merely

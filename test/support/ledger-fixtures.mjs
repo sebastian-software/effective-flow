@@ -115,7 +115,7 @@ export function initInput(fixture, overrides = {}) {
     manifest: fixture.manifest,
     groups: [['a.txt'], ['b.txt']],
     base: { branch: 'main', oid: fixture.worktree.head },
-    visibility: 'visible',
+    visibility: 'standard',
     language: { git: 'en', forge: 'de' },
     ...overrides,
   };

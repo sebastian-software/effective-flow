@@ -385,18 +385,18 @@ location of the overall workflow. See [Worktree and delivery](./worktree-and-del
 Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
 already-open pull request to merge-readiness and, if allowed, merges it.
 
-| Key                    | Values                              | Default   | Meaning                                                                               |
-| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------------------- |
-| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness                          |
-| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base                   |
-| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones              |
-| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling |
-| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                                    |
-| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer              |
-| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                    |
-| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale              |
-| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                         |
-| `botAccounts`          | Comma list of logins                | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block   |
+| Key                    | Values                              | Default   | Meaning                                                                                                       |
+| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness                                                  |
+| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base                                           |
+| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones                                      |
+| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling; not applied on T3 Code |
+| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                                                            |
+| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer; not applied on T3 Code              |
+| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                                            |
+| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale                                      |
+| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                                                 |
+| `botAccounts`          | Comma list of logins                | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block                           |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
@@ -869,6 +869,14 @@ In standard mode it first normalizes `.gitignore` to the single runtime-director
 ```gitignore
 .effective-flow/
 ```
+
+When setup runs in a linked worktree, the main checkout only receives this tracked line with the
+merge, yet delivery and merge-gate write runtime state from the main checkout. If the main checkout
+does not ignore `.effective-flow/` yet, setup therefore also appends the line to the Git common
+directory's `info/exclude`, verifies it from the main checkout and never touches the main
+checkout's `.gitignore`. Tracked runtime content there, or a tracked `!.effective-flow/` negation that outranks
+`info/exclude`, is reported: setup still writes the configuration, but no runtime state until the
+setup change is merged and pulled into the main checkout, or setup runs there.
 
 With no argument, or with the explicit `profile` argument, setup asks **Chat** and then
 **Profile** before it resolves later conditional gates. Fully local, Forge issues and development,

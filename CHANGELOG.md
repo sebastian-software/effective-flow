@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.73.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.72.0...effective-flow-v1.73.0) (2026-11-10)
+
+
+### Features
+
+* resume or release failed partial-diff deliveries ([#629](https://github.com/sebastian-software/effective-flow/issues/629)) ([4f4e516](https://github.com/sebastian-software/effective-flow/commit/4f4e516f23d6e1b339bf1782088325c8f49a734a))
+
+
+### Bug Fixes
+
+* accept percent-encoded host identifiers ([#627](https://github.com/sebastian-software/effective-flow/issues/627)) ([a46c9a8](https://github.com/sebastian-software/effective-flow/commit/a46c9a84e4607a78bcb69d9c184076f6c3517f66))
+* accept the resolver's standard visibility in delivery-branch-name ([#631](https://github.com/sebastian-software/effective-flow/issues/631)) ([638bb9b](https://github.com/sebastian-software/effective-flow/commit/638bb9b95849bd42a5b2607097be0c3b8fcf7769)), closes [#630](https://github.com/sebastian-software/effective-flow/issues/630)
+* name the T3 rename operation semantically for every provider ([#640](https://github.com/sebastian-software/effective-flow/issues/640)) ([0a43c83](https://github.com/sebastian-software/effective-flow/commit/0a43c839ad2f82f1b381eb1b1000fb019011a5ae)), closes [#634](https://github.com/sebastian-software/effective-flow/issues/634)
+* present focus as pending qualification on all hosts ([#643](https://github.com/sebastian-software/effective-flow/issues/643)) ([07ebb1a](https://github.com/sebastian-software/effective-flow/commit/07ebb1a6047b124d6858156f2fcfd2a99fa59085))
+* refuse reference-less focus invocations before selection clarification ([#644](https://github.com/sebastian-software/effective-flow/issues/644)) ([8efe467](https://github.com/sebastian-software/effective-flow/commit/8efe467b28d7277c0bc175426dc0f321ada9d39b))
+* **setup:** bootstrap the runtime-root ignore in linked worktrees ([#632](https://github.com/sebastian-software/effective-flow/issues/632)) ([085a031](https://github.com/sebastian-software/effective-flow/commit/085a031c867c7cb24c7b4773bfe48b8ed2c89971))
+* use the standard visibility vocabulary in the partial-diff state helpers ([#639](https://github.com/sebastian-software/effective-flow/issues/639)) ([e3f8f08](https://github.com/sebastian-software/effective-flow/commit/e3f8f08bc927878d98a413ea001d5b523f79f77a)), closes [#638](https://github.com/sebastian-software/effective-flow/issues/638)
+* use the T3 Code PR watch and linking in merge-gate, iterate and pr ([#642](https://github.com/sebastian-software/effective-flow/issues/642)) ([7b72778](https://github.com/sebastian-software/effective-flow/commit/7b72778a0d60a046686fba47b439706d41fdc2e0))
+
 ## [1.72.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.71.0...effective-flow-v1.72.0) (2026-11-05)
 
 

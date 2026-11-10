@@ -102,7 +102,7 @@ were actually used.
 **The pinned profile is the caller's.** The fresh session the host starts is the gate's caller: it
 runs Phase 0 and dispatches the rest of the gate to a delegated run ("Dispatching the delegated run"
 in `tools/merge-gate.md`), which in turn spawns the `iterate` round and the worker roles. Those
-spawns run on their own model tiers — the delegated run on `deep` (`shared/model-tiers.md`, site
+spawns run on their own model tiers — the delegated run on `standard` (`shared/model-tiers.md`, site
 `merge-gate/delegated-run`) — which the round neither pins nor attests. A delegated run that cannot
 spawn returns `ABORT nested-spawn-unavailable`, and the caller then runs the gate inline
 on the pinned profile. Caller and delegated run reach the forge through the same stub and write one
