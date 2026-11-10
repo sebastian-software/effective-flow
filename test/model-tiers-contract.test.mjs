@@ -576,6 +576,26 @@ const SPAWN_MENTION_ALLOWLIST = [
     'Returning commit, PR and review handoffs retain',
     'existing returning delivery ownership; no new spawn',
   ],
+  [
+    'shared/host-pr-watch.md',
+    '**The host owns every pull-request wait.**',
+    'host-pr-watch: no-watch rule for a delegated context; no spawn',
+  ],
+  [
+    'shared/host-pr-watch.md',
+    '`{{SKILL:pr}}`: right after step 10',
+    'host-pr-watch: no-link rule for a delegated context; no spawn',
+  ],
+  [
+    'shared/host-pr-watch.md',
+    '**Report-and-stop, caller side.**',
+    'host-pr-watch: no-watch rule for a delegated caller; no spawn',
+  ],
+  [
+    'shared/host-pr-watch.md',
+    '**Inline run.**',
+    'host-pr-watch: no-watch rule for a delegated inline run; no spawn',
+  ],
 ].map(([source, anchor, reason]) => ({ source, anchor, reason }));
 
 function sourceFiles() {

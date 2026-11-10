@@ -329,7 +329,12 @@ is still running, `iterate` names it and what proved it – a configured check c
 non-terminal state, or a trigger comment for this head with no reviewer output yet – and asks once
 whether to **wait** for it, **proceed** anyway, or **abort**. "Wait" is one bounded wait followed by
 one fresh read, not a poll loop; if the reviewer is still running after that, the run ends with a
-report instead of waiting again. A run that cannot be asked returns `ABORT: review still in flight`
+report instead of waiting again. In a top-level run on T3 Code the option reads "Wait – watch and
+resume on PR events": the run ends the turn, and each PR event
+resumes it with a fresh read, with no time bound (you can say continue or stop). Three consecutive
+wakes that change no reviewer's state end the run with the same report. The watch is removed before the final report, and
+a top-level run links the pull request to the thread after its push. Other hosts keep the bounded
+wait. A run that cannot be asked returns `ABORT: review still in flight`
 and names the reviewers. Runs delegated by [`/effective-flow merge-gate`](tools-deliver.md) are
 exempt, because the gate has already established the reviewer state and says so explicitly; the
 exemption rides on that announcement alone, not on a run being scoped to certain threads or merely

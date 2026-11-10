@@ -68,6 +68,11 @@ when: the run's subject is fixed and a session title is about to be applied or e
 ```
 
 ```lazy-include
+host-pr-watch
+when: the running environment identifies T3 Code in a top-level run (neither a body delimiter nor a `Run state:` line), before Phase 1.5 asks or Phase 5 step 1 pushes
+```
+
+```lazy-include
 next-steps
 when: the run reaches its completion report
 ```
@@ -624,6 +629,19 @@ question: An automatic reviewer is still working on the current head. Wait for i
 options:
   - label: Wait
     description: Block once for mergeGate.botWaitMinutes and re-read; continue with the reviewer's notes if it finished by then, otherwise end the run with a report
+  - label: Proceed
+    description: Classify the threads that are there now; notes arriving afterwards stay for a later run
+  - label: Abort
+    description: End the run without classifying, implementing, replying, or pushing
+```
+
+```ask
+when: at least one configured automatic reviewer counts as running for the current head, in a top-level run whose running environment identifies T3 Code; ask this in place of the question above
+header: T3 in flight
+question: An automatic reviewer is still working on the current head. Wait for it, work with the notes that are already there, or stop?
+options:
+  - label: Wait
+    description: Watch and resume on PR events
   - label: Proceed
     description: Classify the threads that are there now; notes arriving afterwards stay for a later run
   - label: Abort

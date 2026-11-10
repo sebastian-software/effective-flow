@@ -265,6 +265,10 @@ subject. The PR body and subsequent PR or review-thread comments follow `languag
 may intentionally differ without producing a mixed artifact: each surface uses one resolved
 language, while types, branch names, paths, labels, and other machine-facing tokens stay stable.
 
+**T3 Code:** On T3 Code, `pr` links each created or reused pull request to the current thread once, right
+after it is created or matched. A failed link is reported in one line and never blocks the run. Other
+hosts do nothing extra, and `deliver` gets the same behavior through `pr`.
+
 **Interplay:** `pr` is the commit-only leaf used by `deliver` and by the `pr` completion action of
 implementation workflows. It can also be called standalone for a clean, already-prepared branch.
 Fresh branch creation and local-change transfer belong to `deliver` or an implementation handback,
@@ -372,6 +376,24 @@ your session. Without a "do not merge" restriction, your session asks for the me
 completion mode before the gate starts. Every later question – a waiver for a missing check list, a conflict resolution, a
 finding it set aside, an issue transition – comes back through your session with what each answer
 does, and the run then continues with your answer, or ends with its report when you stop it. A host that cannot start a nested sub-agent runs the gate inline and says so once.
+
+**Waiting on T3 Code:** On T3 Code the gate links the resolved pull request to the thread and leaves
+every wait for pending checks or a pending configured reviewer to the host's pull-request watch: it
+never uses `sleep`, `gh --watch` or polling. The run suspends, the session prints one line naming
+what it waits for and ends the turn, and each pull-request event resumes the gate with fresh reads.
+The wait has no time bound, so `mergeGate.checkWaitMinutes` and `mergeGate.botWaitMinutes` do not
+apply there; you can say continue or stop. The line warns when none of the pending checks is
+required, or when a reviewer's has-run check is not required, because such a pass may not wake the
+gate. `/effective-flow merge-gate <PR>` in the same session continues a suspended gate; a new session
+starts a fresh run, whose report names the earlier run's leftover wisdom file for
+`/effective-flow cleanup`. Three consecutive wakes that change nothing end the run with a report
+naming the pending checks or reviewer and the re-entry command, unless the only wait is for a
+reviewer's answer to a stale-verdict re-trigger: then the gate hands that verdict's items to
+`iterate`, as on every other host. A resume under `mergeGate.requireAllChecks: true` where only
+non-required checks remain pending also ends with that report. Where the watch
+cannot be loaded or is rejected (Forgejo support is unconfirmed), or the gate runs inside a sub-agent, the run reports and
+stops instead of waiting and never merges. The watch is removed before the final report. Every
+other host keeps the bounded waits unchanged.
 
 **When to use:** On a pull request that is otherwise done and only needs CI to pass, its automatic
 reviewers to be satisfied, and the merge button pressed – so you do not have to babysit checks and
