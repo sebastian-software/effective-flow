@@ -7309,7 +7309,22 @@ test('a head-identity mismatch on an unmoved head makes the base merge unavailab
   assert.match(otherwise, near('`different-commit`', 'neither `BEHIND` nor `DIRTY`', 200));
   assert.match(otherwise, near('neither `BEHIND` nor `DIRTY`', 'next round.s step 3', 80));
   assert.match(otherwise, near('next round.s step 3', '`\\{\\{SKILL:iterate\\}\\}`', 80));
-  assert.match(prose(step1raw), near('base-merge-unavailable record', 'once per run', 120));
+  // Pinned inside the record's own definition bullet: across all of step 1 the pair is also met by
+  // the undetermined existence check ("record it once per run ... write no base-merge-unavailable
+  // record"), which states the opposite and would keep the pin green with the definition's
+  // "once per run" gone.
+  const recordDefinition = prose(
+    boundedSlice(
+      step1raw,
+      '- **The base-merge-unavailable record**',
+      '- **The report-only run end**',
+    ),
+  );
+  assert.match(
+    recordDefinition,
+    near('is written', 'once per run', 20),
+    'the base-merge-unavailable record definition must state that it is written once per run',
+  );
 
   const triggerB = prose(boundedSlice(step1raw, '**Trigger (b):**', "Step 4's"));
   assert.match(
