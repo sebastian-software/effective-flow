@@ -465,6 +465,8 @@ gate run inline generates it at the start. Use
 - an undetermined ancestry check, once per run, with its reason
 - every head-identity mismatch of Phase 2 step 1: its round, the read's `headSha` and the
   provisioned tip
+- the trigger-(b)-unavailable record, once per run, written per Phase 2 step 1: its round, whose
+  head-identity mismatch entry carries the SHAs
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
   record ID and that record's last transition, plus this run's worktree-record exit self-check
   result
@@ -723,7 +725,8 @@ run can push an unbounded number of commits onto someone's pull request.
    branch – has two triggers. **Trigger (a):** the forge reports `BEHIND` or `DIRTY`; `DIRTY` only
    states in advance that the operation will conflict. **Trigger (b):** trigger (a) has not fired,
    the run's latest check result shows at least one check failing as step 4 defines it, the
-   ancestry check below states "behind", and the wisdom file holds no trigger-(b) record. Step 4's
+   ancestry check below states "behind", and the wisdom file holds neither a trigger-(b) record
+   nor a trigger-(b)-unavailable record. Step 4's
    criterion is what keeps it off for checks that are only pending, `SKIPPED` or `NEUTRAL`, for
    `checksReported: false`, and for a red optional check under `mergeGate.requireAllChecks: false`.
    - **The run's latest check result** is the most recent `pr-status-read` of this run, whichever
@@ -766,7 +769,11 @@ run can push an unbounded number of commits onto someone's pull request.
      on `origin` is not the pull request's head: merge nothing, commit nothing and push nothing,
      withdraw an Effective Flow-owned worktree with one `worktree remove` call per
      `merge-gate-checkout-boundary`, record the mismatch, perform one `pr-status-read`, and end
-     the round under "A round runs forward only", so the next round decides from the moved head.
+     the round under "A round runs forward only". Where that re-read reports a different `headSha`,
+     the mismatch is transient and the next round decides from the moved head. Where it reports the
+     **same** `headSha` and trigger (b) called for the merge, the provisioned branch does not carry
+     the pull request's head: write the **trigger-(b)-unavailable record** once per run, so the next
+     round's step 3 delegates the failing check to `{{SKILL:iterate}}`.
    - **The merge is a no-op** ("Already up to date"): commit nothing and push nothing, withdraw an
      Effective Flow-owned worktree with the same one `worktree remove` call, and continue with
      step 2.
@@ -823,7 +830,8 @@ run can push an unbounded number of commits onto someone's pull request.
 3. **Failed checks.** First, where step 2's `pr-checks-wait` was the last read, perform one
    `pr-status-read`; on the T3 path of `host-pr-watch` the pending read already is one. Where that
    read shows a check failing as step 4 defines it, reports neither `BEHIND` nor `DIRTY`, and the
-   wisdom file holds no trigger-(b) record, run step 1's ancestry check against that read's
+   wisdom file holds neither a trigger-(b) record nor a trigger-(b)-unavailable record, run step
+   1's ancestry check against that read's
    `headSha` and `baseRef`. Where it states "behind", delegate nothing and end the round under "A
    round runs forward only": the next round's step 1 fires trigger (b). An undetermined ancestry
    check does not hold the delegation back. Otherwise delegate to `{{SKILL:iterate}} <PR>` an
@@ -1067,7 +1075,9 @@ that fragment's report-and-stop path.
      worktree-record exit self-check result;
    - a trigger-(b) merge of Phase 2 step 1 with its round, any undetermined ancestry check with its
      reason, and every head-identity mismatch with its round, the read's `headSha` and the
-     provisioned tip;
+     provisioned tip; and a trigger-(b)-unavailable record with its round, stating that the
+     provisioned branch did not carry the pull request's head, so the failing check is
+     handed to `{{SKILL:iterate}}` without the base merge;
    - the delegated `{{SKILL:iterate}}` rounds and their results, including the summary content each
      one handed back instead of posting, which carries that round's worktree-record exit self-check
      result relayed verbatim; every item or instruction `build` refused, with its reason;

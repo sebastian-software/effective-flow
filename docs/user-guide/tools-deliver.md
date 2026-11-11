@@ -545,8 +545,13 @@ Four details worth knowing:
 - **The head-identity check applies to every merge.** The gate merges the base only into a checkout
   whose tip is exactly the head commit it just checked. Otherwise – a fork pull request whose head
   is not the same-name branch on `origin`, or a head that moved since the read – it merges nothing,
-  pushes nothing, re-reads the status, ends the round and reports the mismatch; the next round
-  decides from the moved head.
+  pushes nothing, re-reads the status, ends the round and reports the mismatch. If the re-read shows
+  a different head commit, the head moved and the next round decides from it. If it shows the same
+  head commit and the merge was for
+  [a failing check on a behind head](#a-failing-check-on-a-behind-head), the same-name branch on
+  `origin` does not carry the pull request's head: the gate records once per run that this merge
+  is unavailable, reports it, and from the next round on hands the failing check to `iterate`
+  instead.
 
 **The head branch is untrusted input.** The gate operates on any open pull request, including one
 whose head branch lives in a fork this repository does not control, and the resolver discovers the
@@ -585,7 +590,9 @@ green and merely behind stays untouched.
   round before `iterate` sees the failure. When checks only fail during the wait, the guard round,
   the merge round and the next wait round all pass first. With `mergeGate.maxRounds` of 1 the run
   ends before the merge; with 2 it performs the merge but ends before the merge's new checks
-  complete or `iterate` repairs anything.
+  complete or `iterate` repairs anything. When the head is not the same-name branch on `origin` –
+  typically a fork pull request – the merge cannot run: the round that finds the head-identity
+  mismatch costs one round, and the next round hands the failing check to `iterate`.
 - **Once, then `iterate`.** If the check is still red after that merge, it goes to `iterate` even if
   the base has moved again.
 - **Same boundaries as `BEHIND`.** The human-comment guard and `report` mode do not block it; only a

@@ -7090,7 +7090,8 @@ test('the ancestry check maps exit codes and treats everything else as undetermi
 
 // Invariant: trigger (b) fires at most once per run; its record is written once the push is
 // confirmed or on a no-op and never on BLOCKED-USER, a controlled stop, a rejected push or a
-// head-identity mismatch, so a failed attempt can be retried.
+// head-identity mismatch, so a failed attempt can be retried - unless that mismatch's re-read shows the
+// same head, which writes the separate trigger-(b)-unavailable record pinned further below.
 test('trigger (b) fires once per run and its record has a stated write condition', () => {
   const step1 = prose(mergeGateStep1());
   assert.match(step1, near('Trigger \\(b\\) fires at most once per run', 'record', 200));
@@ -7186,6 +7187,82 @@ test('the head-identity check merges nothing on a mismatch and ends the round', 
   assert.match(mismatch, near('`worktree remove`', 'one', 40));
   assert.match(mismatch, near('record the mismatch', 'end the round', 60));
   assert.match(mismatch, /A round runs forward only/);
+});
+
+// Invariant: a trigger-(b) head-identity mismatch whose re-read reports the same `headSha` shows the
+// provisioned branch does not carry the pull request's head, so it writes a once-per-run
+// trigger-(b)-unavailable record that both trigger (b) and step 3's guard read as "not due"; without
+// it a fork or foreign same-name branch re-fires trigger (b) every round and the red check never
+// reaches iterate. A mismatch whose re-read reports a moved head stays transient and writes no record.
+test('a head-identity mismatch on an unmoved head makes trigger (b) unavailable for the run', () => {
+  const step1raw = mergeGateStep1();
+  const mismatch = prose(
+    boundedSlice(step1raw, '- **The tip is not', '- **The merge is a no-op**'),
+  );
+  assert.match(mismatch, near('merge nothing', 'push nothing', 60), 'no merge, no push stays');
+  ordered(
+    mismatch,
+    'record the mismatch',
+    '`pr-status-read`',
+    'different `headSha`',
+    'same `headSha`',
+    'trigger-(b)-unavailable record',
+  );
+  const moved = boundedSlice(mismatch, 'different `headSha`', 'same `headSha`');
+  assert.match(moved, /transient/, 'a moved head stays transient');
+  assert.doesNotMatch(moved, /unavailable/, 'a moved head writes no unavailable record');
+  assert.match(mismatch, near('same `headSha`', 'trigger \\(b\\) called for the merge', 60));
+  assert.match(mismatch, near('same `headSha`', 'not carry the pull request.s head', 120));
+  assert.match(mismatch, near('trigger-\\(b\\)-unavailable record', 'once per run', 40));
+  assert.match(mismatch, near('next round.s step 3', '`\\{\\{SKILL:iterate\\}\\}`', 80));
+
+  const triggerB = prose(boundedSlice(step1raw, '**Trigger (b):**', "Step 4's"));
+  assert.match(
+    triggerB,
+    /trigger-\(b\)-unavailable record/,
+    'trigger (b) must not be due once the unavailable record exists',
+  );
+  assert.match(triggerB, near('neither a trigger-\\(b\\) record', 'unavailable record', 60));
+
+  const step3 = prose(mergeGateStep3());
+  assert.match(step3, near('trigger-\\(b\\)-unavailable record', 'ancestry check', 120));
+  ordered(step3, 'trigger-(b)-unavailable record', 'ancestry check', 'Otherwise delegate to');
+
+  const wisdom = prose(
+    boundedSlice(mergeGateSource(), '## Wisdom accumulation', '## Workflow after Phase 0'),
+  );
+  assert.match(wisdom, near('trigger-\\(b\\)-unavailable record', 'once per run', 40));
+  assert.match(
+    wisdom,
+    near('trigger-\\(b\\)-unavailable record', 'written per Phase 2 step 1', 80),
+  );
+
+  const summary = prose(boundedSlice(mergeGateSource(), '### Phase 6: Summary', '\n## Rules'));
+  assert.match(summary, near('trigger-\\(b\\)-unavailable record', 'its round', 40));
+  assert.match(
+    summary,
+    near('trigger-\\(b\\)-unavailable record', 'not carry the pull request.s head', 200),
+  );
+
+  const guideRaw = source('docs/user-guide/tools-deliver.md');
+  const identity = prose(
+    boundedSlice(
+      guideRaw,
+      '**The head-identity check applies to every merge.**',
+      '**The head branch is untrusted input.**',
+    ),
+  );
+  assert.match(identity, near('different head commit', 'next round decides', 80));
+  assert.match(identity, near('same head commit', 'once per run', 250));
+  assert.match(identity, near('once per run', '`iterate`', 250));
+  const behind = prose(
+    boundedSlice(guideRaw, '#### A failing check on a behind head', '#### Three reviewer states'),
+  );
+  assert.match(behind, near('head-identity mismatch', 'costs one round', 60));
+  assert.match(
+    behind,
+    near('costs one round', 'next round hands the failing check to `iterate`', 80),
+  );
 });
 
 // Invariant: a no-op merge commits and pushes nothing, closes the worktree with one `worktree remove`
