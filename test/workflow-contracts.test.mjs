@@ -7100,7 +7100,8 @@ test('the ancestry check maps exit codes and treats everything else as undetermi
 // Invariant: trigger (b) fires at most once per run; its record is written once the push is
 // confirmed or on a no-op and never on BLOCKED-USER, a controlled stop, a rejected push or a
 // head-identity mismatch, so a failed attempt can be retried - unless that mismatch's re-read shows the
-// same head, which writes the separate trigger-(b)-unavailable record pinned further below.
+// same head, which classifies `origin`'s branch and can write the base-merge-unavailable record
+// pinned further below.
 test('trigger (b) fires once per run and its record has a stated write condition', () => {
   const step1 = prose(mergeGateStep1());
   assert.match(step1, near('Trigger \\(b\\) fires at most once per run', 'record', 200));
@@ -7198,16 +7199,83 @@ test('the head-identity check merges nothing on a mismatch and ends the round', 
   assert.match(mismatch, /A round runs forward only/);
 });
 
-// Invariant: a trigger-(b) head-identity mismatch whose re-read reports the same `headSha` shows the
-// provisioned branch does not carry the pull request's head, so it writes a once-per-run
-// trigger-(b)-unavailable record that both trigger (b) and step 3's guard read as "not due"; without
-// it a fork or foreign same-name branch re-fires trigger (b) every round and the red check never
-// reaches iterate. A mismatch whose re-read reports a moved head stays transient and writes no record.
-test('a head-identity mismatch on an unmoved head makes trigger (b) unavailable for the run', () => {
-  const step1raw = mergeGateStep1();
-  const mismatch = prose(
-    boundedSlice(step1raw, '- **The tip is not', '- **The merge is a no-op**'),
+// Pin vocabulary for issue #648's base-merge-unavailable record. `NO_RECORD` reads "no record" in the
+// several spellings an editor may choose ("writes no record", "no record", "without writing a
+// record"); every alternative is word-bounded, so "nothing", "not" and "another" cannot stand in for
+// the "no" of "no record". `ENDS_THE_RUN` reads the run-end verb either way round.
+const NO_RECORD =
+  '(?:\\bwrites? no\\b|\\bno\\b|\\bwithout\\b|\\bnot writing\\b)[^.;]{0,40}\\brecord\\b';
+const ENDS_THE_RUN = '(?:end(?:s)? the run|run ends)';
+
+// The tail of `text` from `marker` on, with the marker required, so a pin on the last sub-bullet or
+// the last sentence of a bullet cannot pass on text above it.
+function fromMarker(text, marker) {
+  const from = text.indexOf(marker);
+  assert.notEqual(from, -1, `missing marker: ${marker}`);
+  return text.slice(from);
+}
+
+// The head-identity mismatch bullet of Phase 2 step 1, cut with both required markers, so a pin on
+// the mismatch re-read and its classification cannot pass on text in a neighbouring bullet.
+function mergeGateMismatchBullet() {
+  return boundedSlice(mergeGateStep1(), '- **The tip is not', '- **The merge is a no-op**');
+}
+
+// The mismatch bullet cut into its re-read introduction and the three classification sub-bullets, so
+// a pin on "forge lag", "local divergence" or the `different-commit` fallback cannot be met by the
+// wording of one of the others (the forge-lag sub-bullet says "no record" too).
+function mergeGateMismatchParts() {
+  const bullet = mergeGateMismatchBullet();
+  return {
+    intro: prose(boundedSlice(bullet, '- **The tip is not', '- **forge lag**')).trim(),
+    forgeLag: prose(boundedSlice(bullet, '- **forge lag**', '- **local divergence**')).trim(),
+    localDivergence: prose(boundedSlice(bullet, '- **local divergence**', '- otherwise')).trim(),
+    otherwise: prose(fromMarker(bullet, '- otherwise')).trim(),
+  };
+}
+
+// The "before provisioning" bullet of Phase 2 step 1 cut into its reads introduction (the head
+// branch name's source and validation, and the caller-limit pre-check) and the numbered proofs, one
+// slice per proof, so a pin on `fork` or `missing-branch` cannot pass on the other proof's text.
+function mergeGateProofs() {
+  const step1 = mergeGateStep1();
+  return {
+    intro: prose(
+      boundedSlice(step1, '- **Before provisioning, once a trigger calls', '1. **`fork`:**'),
+    ),
+    fork: prose(boundedSlice(step1, '1. **`fork`:**', '2. **`missing-branch`:**')),
+    missingBranch: prose(
+      boundedSlice(step1, '2. **`missing-branch`:**', '- **The operation is the same'),
+    ),
+  };
+}
+
+// Step 1 split into its top-level bullets (a nested bullet stays with its parent), so a pin on one
+// bullet - the report-only run end's definition - cannot be met by a neighbouring one.
+function mergeGateStep1Chunks() {
+  return mergeGateStep1().split(/\n(?= {3}- )|\n\n/);
+}
+function reportOnlyRunEndDefinition() {
+  const chunk = mergeGateStep1Chunks().find(
+    (candidate) =>
+      /report-only run end/.test(candidate) && /no further round starts/.test(prose(candidate)),
   );
+  assert.ok(chunk, 'step 1 must define the report-only run end with "no further round starts"');
+  return chunk;
+}
+
+// Invariant: a head-identity mismatch whose re-read reports the same `headSha` shows the provisioned
+// branch does not carry the pull request's head, and `origin`'s branch SHA then decides: forge lag
+// is transient, local divergence ends the run without a record, and anything else - including an
+// undetermined result - writes the once-per-run base-merge-unavailable record with proof kind
+// `different-commit`, which both triggers and step 3's guard read as "not due"; without it a foreign
+// same-name branch re-fires the merge every round and the red check never reaches iterate. A
+// mismatch whose re-read reports a moved head stays transient and writes no record. With a merge
+// state that is neither `BEHIND` nor `DIRTY`, #647's behavior is kept: the next round's step 3 hands
+// the failing check to iterate.
+test('a head-identity mismatch on an unmoved head makes the base merge unavailable for the run', () => {
+  const step1raw = mergeGateStep1();
+  const mismatch = prose(mergeGateMismatchBullet());
   assert.match(mismatch, near('merge nothing', 'push nothing', 60), 'no merge, no push stays');
   ordered(
     mismatch,
@@ -7215,43 +7283,73 @@ test('a head-identity mismatch on an unmoved head makes trigger (b) unavailable 
     '`pr-status-read`',
     'different `headSha`',
     'same `headSha`',
-    'trigger-(b)-unavailable record',
+    'base-merge-unavailable record',
   );
   const moved = boundedSlice(mismatch, 'different `headSha`', 'same `headSha`');
   assert.match(moved, /transient/, 'a moved head stays transient');
-  assert.doesNotMatch(moved, /unavailable/, 'a moved head writes no unavailable record');
-  assert.match(mismatch, near('same `headSha`', 'trigger \\(b\\) called for the merge', 60));
-  assert.match(mismatch, near('same `headSha`', 'not carry the pull request.s head', 120));
-  assert.match(mismatch, near('trigger-\\(b\\)-unavailable record', 'once per run', 40));
-  assert.match(mismatch, near('next round.s step 3', '`\\{\\{SKILL:iterate\\}\\}`', 80));
+  assert.doesNotMatch(
+    moved,
+    /(?:write|writes|written)[^.]{0,30}unavailable record/,
+    'a moved head writes no base-merge-unavailable record',
+  );
+  assert.doesNotMatch(
+    mismatch,
+    /same `headSha` and trigger \(b\) called for the merge/,
+    'the same-head classification is no longer limited to trigger (b)',
+  );
+  assert.match(
+    mismatch,
+    /(?:either|both|whichever|any) trigger|trigger \(a\) or \(b\)|trigger \(b\) or \(a\)/i,
+    'the same-head classification applies whichever trigger called for the merge',
+  );
+  assert.match(mismatch, near('same `headSha`', 'not carry the pull request.s head', 500));
+  // #647 behavior kept, now conditional on the proof kind and the merge state - pinned in the
+  // `different-commit` fallback sub-bullet, where the proof kind and the merge state are stated.
+  const { otherwise } = mergeGateMismatchParts();
+  assert.match(otherwise, near('`different-commit`', 'neither `BEHIND` nor `DIRTY`', 200));
+  assert.match(otherwise, near('neither `BEHIND` nor `DIRTY`', 'next round.s step 3', 80));
+  assert.match(otherwise, near('next round.s step 3', '`\\{\\{SKILL:iterate\\}\\}`', 80));
+  // Pinned inside the record's own definition bullet: across all of step 1 the pair is also met by
+  // the undetermined existence check ("record it once per run ... write no base-merge-unavailable
+  // record"), which states the opposite and would keep the pin green with the definition's
+  // "once per run" gone.
+  const recordDefinition = prose(
+    boundedSlice(
+      step1raw,
+      '- **The base-merge-unavailable record**',
+      '- **The report-only run end**',
+    ),
+  );
+  assert.match(
+    recordDefinition,
+    near('is written', 'once per run', 20),
+    'the base-merge-unavailable record definition must state that it is written once per run',
+  );
 
   const triggerB = prose(boundedSlice(step1raw, '**Trigger (b):**', "Step 4's"));
   assert.match(
     triggerB,
-    /trigger-\(b\)-unavailable record/,
-    'trigger (b) must not be due once the unavailable record exists',
+    /base-merge-unavailable record/,
+    'trigger (b) must not be due once the base-merge-unavailable record exists',
   );
-  assert.match(triggerB, near('neither a trigger-\\(b\\) record', 'unavailable record', 60));
+  assert.match(
+    triggerB,
+    near('neither a trigger-\\(b\\) record', 'base-merge-unavailable record', 60),
+  );
+  assert.doesNotMatch(triggerB, /trigger-\(b\)-unavailable/);
 
   const step3 = prose(mergeGateStep3());
-  assert.match(step3, near('trigger-\\(b\\)-unavailable record', 'ancestry check', 120));
-  ordered(step3, 'trigger-(b)-unavailable record', 'ancestry check', 'Otherwise delegate to');
+  assert.match(step3, near('base-merge-unavailable record', 'ancestry check', 120));
+  ordered(step3, 'base-merge-unavailable record', 'ancestry check', 'Otherwise delegate to');
 
   const wisdom = prose(
     boundedSlice(mergeGateSource(), '## Wisdom accumulation', '## Workflow after Phase 0'),
   );
-  assert.match(wisdom, near('trigger-\\(b\\)-unavailable record', 'once per run', 40));
-  assert.match(
-    wisdom,
-    near('trigger-\\(b\\)-unavailable record', 'written per Phase 2 step 1', 80),
-  );
+  assert.match(wisdom, near('base-merge-unavailable record', 'once per run', 80));
+  assert.match(wisdom, near('base-merge-unavailable record', 'written per Phase 2 step 1', 160));
 
   const summary = prose(boundedSlice(mergeGateSource(), '### Phase 6: Summary', '\n## Rules'));
-  assert.match(summary, near('trigger-\\(b\\)-unavailable record', 'its round', 40));
-  assert.match(
-    summary,
-    near('trigger-\\(b\\)-unavailable record', 'not carry the pull request.s head', 200),
-  );
+  assert.match(summary, near('base-merge-unavailable record', 'its round', 120));
 
   const guideRaw = source('docs/user-guide/tools-deliver.md');
   const identity = prose(
@@ -7262,16 +7360,567 @@ test('a head-identity mismatch on an unmoved head makes trigger (b) unavailable 
     ),
   );
   assert.match(identity, near('different head commit', 'next round decides', 80));
-  assert.match(identity, near('same head commit', 'once per run', 250));
-  assert.match(identity, near('once per run', '`iterate`', 250));
+  assert.match(identity, near('same head commit', 'once per run', 400));
   const behind = prose(
     boundedSlice(guideRaw, '#### A failing check on a behind head', '#### Three reviewer states'),
   );
-  assert.match(behind, near('head-identity mismatch', 'costs one round', 60));
-  assert.match(
-    behind,
-    near('costs one round', 'next round hands the failing check to `iterate`', 80),
+  assert.match(behind, near('head-identity mismatch', 'costs one round', 120));
+  assert.match(behind, near('costs one round', 'hands the failing check to `iterate`', 300));
+  assert.match(behind, near('hands the failing check to `iterate`', '`different-commit`', 500));
+});
+
+// Invariant: the record has one name. The #647 name "trigger-(b)-unavailable record" is gone from
+// the merge-gate prompt sources, and every "unavailable record" in them is the shared one.
+test('the shared record is named base-merge-unavailable record and the #647 name is gone', () => {
+  for (const [label, text] of [
+    ['merge-gate source', prose(mergeGateSource())],
+    ['checkout boundary', prose(source('src/shared/merge-gate-checkout-boundary.md'))],
+    ['user guide', prose(source('docs/user-guide/tools-deliver.md'))],
+  ]) {
+    assert.doesNotMatch(text, /trigger-\(b\)-unavailable/, `${label} must not use the #647 name`);
+    assert.doesNotMatch(
+      text,
+      /(?<!base-merge-)unavailable record/,
+      `${label} must name only the base-merge-unavailable record`,
+    );
+  }
+  const gate = prose(mergeGateSource());
+  assert.match(gate, /base-merge-unavailable record/);
+  assert.match(gate, near('base-merge-unavailable record', '\\bproof kind\\b', 400));
+  for (const kind of ['`fork`', '`missing-branch`', '`different-commit`']) {
+    assert.ok(gate.includes(kind), `the merge-gate source must name the proof kind ${kind}`);
+  }
+});
+
+// Invariant: every new read takes the head branch name from the `head` of Phase 0 step 1's
+// pull-request resolution (Entry step 4 on a re-dispatch), validated and passed as one argument; it
+// is never derived from `pr-status-read`, which carries no head branch name, and
+// `git check-ref-format --branch` only validates it. Pinned in the reads introduction of the
+// "before provisioning" bullet alone, not across the whole step.
+test('the branch name of every new read comes from the pull-request resolution, never from pr-status-read', () => {
+  const intro = mergeGateProofs().intro;
+  assert.match(intro, near('`head`', 'Phase 0 step 1.s pull-request resolution', 150));
+  assert.match(intro, near('Phase 0 step 1.s pull-request resolution', 'Entry step 4', 100));
+  assert.match(intro, near('Entry step 4', 're-dispatch', 60));
+  assert.match(intro, near('git check-ref-format --branch', 'validated', 60));
+  assert.match(intro, near('git check-ref-format --branch', 'one argument', 80));
+  assert.match(intro, /never derived from `pr-status-read`/);
+  assert.match(intro, near('`pr-status-read`', 'carries no head branch name', 60));
+  assert.doesNotMatch(
+    intro,
+    /(?:taken|derived|read|resolved) from `?git check-ref-format/,
+    'check-ref-format validates the name and is never its source',
   );
+});
+
+// Invariant (F1): a head branch name that fails `git check-ref-format --branch` reaches no further
+// command - the repository convention of plan-publication and plan-pr-continuation - so it
+// provisions nothing, writes no base-merge-unavailable record and ends the run with a report naming
+// the invalid name, rather than being an "undetermined existence check" that continues provisioning
+// with a rejected name. The sentence comes before the first proof, so no read can carry the name.
+test('a head branch name that fails validation reaches no further command, provisions nothing and writes no record', () => {
+  const { intro } = mergeGateProofs();
+  const rejected = boundedSlice(intro, 'A name that fails validation', 'Phase 6 runs');
+  assert.match(rejected, near('fails validation', 'reaches no further command', 60));
+  assert.match(rejected, /reaches no further command: provision nothing/);
+  assert.match(rejected, new RegExp(NO_RECORD, 'i'));
+  assert.match(rejected, /base-merge-unavailable record/);
+  assert.match(rejected, new RegExp(ENDS_THE_RUN, 'i'));
+  assert.match(rejected, near('round', 'counted', 40));
+  assert.match(rejected, near('merged', 'delegated', 40));
+  assert.match(rejected, /report names the invalid head branch name/);
+  assert.doesNotMatch(rejected, /continue/i, 'a rejected name is no undetermined, continuing case');
+  // It sits before the first proof and before any command that carries the name.
+  const step1 = prose(mergeGateStep1());
+  ordered(
+    step1,
+    'A name that fails validation',
+    'reaches no further command',
+    'stated `sameRepository: false`',
+    'git ls-remote --exit-code origin refs/heads/<head>',
+    'provision a checkout of the existing head branch',
+  );
+  // The report names it in Phase 6.
+  const summary = prose(boundedSlice(mergeGateSource(), '### Phase 6: Summary', '\n## Rules'));
+  assert.match(summary, near('ended on an invalid head branch name', 'with that name', 40));
+});
+
+// Invariant: the `fork` proof is the only one that needs no Git read - Phase 0 step 1's resolution
+// stated `sameRepository: false` - so it writes the record and provisions nothing before any read,
+// and an absent `sameRepository` proves nothing and continues with the next check. Pinned in the
+// proof's own numbered item.
+test('the fork proof writes the base-merge-unavailable record before any Git read, only on sameRepository false', () => {
+  const fork = mergeGateProofs().fork;
+  assert.match(
+    fork,
+    /^1\. `fork`: where Phase 0 step 1.s resolution stated `sameRepository: false`,/,
+  );
+  ordered(
+    fork,
+    '`sameRepository: false`',
+    'write the base-merge-unavailable record with proof kind `fork`',
+    'without any Git read',
+    'provision nothing',
+    'apply the report-only run end',
+  );
+  assert.doesNotMatch(fork, /ls-remote/, 'the fork proof runs no Git read');
+  // "only on sameRepository false": an absent statement is no proof and falls through.
+  const absent = boundedSlice(fork, 'An absent', 'continue');
+  assert.match(absent, /An absent `sameRepository` is no proof/);
+  assert.match(fork, near('An absent `sameRepository` is no proof', 'next check', 40));
+  // It precedes the existence check and the provisioning.
+  const step1 = prose(mergeGateStep1());
+  ordered(
+    step1,
+    '`sameRepository: false`',
+    'git ls-remote --exit-code origin refs/heads/<head>',
+    'provision a checkout of the existing head branch',
+  );
+});
+
+// Invariant: the `missing-branch` proof runs before provisioning as one ref-only existence check -
+// `git ls-remote --exit-code origin refs/heads/<head>`, which writes no ref and no `FETCH_HEAD` -
+// and only exit `2` writes the record and provisions nothing; exit `0` with exactly one output ref
+// equal to `refs/heads/<head>` means present and continues. Pinned in the proof's own numbered item,
+// the exit-`2` clause apart from the other outcomes.
+test('the missing-branch proof writes the record before provisioning, only when the existence check exits 2', () => {
+  const { missingBranch } = mergeGateProofs();
+  const command = 'git ls-remote --exit-code origin refs/heads/<head>';
+  assert.match(missingBranch, near('run', command, 20));
+  assert.match(missingBranch, near(command, 'writes no ref and no `FETCH_HEAD`', 40));
+  const absent = boundedSlice(missingBranch, 'Exit `2`', 'Exit `0`');
+  assert.match(absent, /^Exit `2` means absent: write the base-merge-unavailable record/);
+  assert.match(
+    absent,
+    near('write the base-merge-unavailable record', 'proof kind `missing-branch`', 40),
+  );
+  ordered(
+    absent,
+    'proof kind `missing-branch`',
+    'provision nothing',
+    'apply the report-only run end',
+  );
+  const present = boundedSlice(missingBranch, 'Exit `0`', 'Anything else');
+  assert.match(present, near('Exit `0`', 'exactly one output ref', 40));
+  assert.match(present, near('exactly one output ref', 'equal to `refs/heads/<head>`', 40));
+  assert.match(present, /means present: continue/);
+  assert.doesNotMatch(
+    present,
+    /base-merge-unavailable record/,
+    'a present branch writes no record',
+  );
+  ordered(missingBranch, 'Exit `2`', 'Exit `0`', 'Anything else');
+  const step1 = prose(mergeGateStep1());
+  const check = step1.indexOf(command);
+  const provision = step1.search(/provision a checkout of the existing head branch/i);
+  assert.notEqual(provision, -1);
+  assert.ok(check !== -1 && check < provision, 'the existence check precedes the provisioning');
+});
+
+// Invariant: an existence check that is neither "absent" nor "present" is undetermined: recorded
+// once per run like an undetermined ancestry check, it writes no base-merge-unavailable record and
+// provisioning continues as today, so a flaky `ls-remote` never ends a run. Pinned in the clause that
+// follows "Anything else" - not in the exit-`2` clause, whose "provision nothing" and record belong
+// to the opposite outcome.
+test('an undetermined existence check writes no record and continues provisioning', () => {
+  const undetermined = fromMarker(mergeGateProofs().missingBranch, 'Anything else');
+  assert.match(undetermined, /^Anything else is an undetermined existence check:/);
+  assert.match(undetermined, near('undetermined existence check', 'record it once per run', 40));
+  assert.match(undetermined, near('once per run', 'like an undetermined ancestry check', 40));
+  assert.match(
+    undetermined,
+    /(?:\bwrites? no\b|\bno\b)[^.;]{0,40}base-merge-unavailable record/i,
+    'the undetermined check writes no base-merge-unavailable record',
+  );
+  assert.match(undetermined, /and continue provisioning/);
+  assert.doesNotMatch(undetermined, /provisions? nothing/, 'it must not provision nothing');
+  assert.doesNotMatch(undetermined, /report-only run end/, 'it must not end the run');
+});
+
+// Invariant: forge lag - `origin`'s branch SHA descends from the read's `headSha` and differs from it
+// - is transient: the forge has not caught up with a push, so no record is written and the next
+// round decides again. Pinned in the forge-lag sub-bullet alone.
+test('forge lag after a head-identity mismatch stays transient and writes no record', () => {
+  const { forgeLag } = mergeGateMismatchParts();
+  assert.match(forgeLag, near('descends from `headSha`', 'differs from it', 150));
+  assert.match(
+    forgeLag,
+    near('descends from', 'git merge-base --is-ancestor <headSha> <origin SHA>', 40),
+  );
+  assert.match(forgeLag, near('is-ancestor', 'exits `0`', 80));
+  assert.match(forgeLag, near('transient', NO_RECORD, 30));
+  assert.match(forgeLag, near(NO_RECORD, 'next round decides again', 60));
+  assert.doesNotMatch(forgeLag, /`different-commit`|report-only run end/, 'forge lag ends nothing');
+});
+
+// Invariant (F3): local divergence is keyed on `origin`'s branch SHA equalling the read's `headSha`
+// alone - the provisioned tip differs by definition of the mismatch, and the checkout may be any
+// the run provisioned - and it ends the run: the round already begun stays counted, nothing is
+// merged or delegated, the report names the checkout, Phase 6 runs, and no record is written, so
+// #647's guard does not turn unpushed local commits into a "branch is not the head" proof. Pinned in
+// the local-divergence sub-bullet alone, so the forge-lag bullet's "no record" cannot satisfy it.
+test('local divergence after a head-identity mismatch ends the run naming the checkout and writes no record', () => {
+  const { localDivergence } = mergeGateMismatchParts();
+  const [condition, outcome] = localDivergence.split(': ');
+  assert.match(condition, /^- local divergence . it equals `headSha`/);
+  assert.doesNotMatch(
+    condition,
+    /reused|in.place|dirty/i,
+    'the condition is the origin SHA equalling headSha alone, not a reused in-place checkout',
+  );
+  assert.ok(outcome, 'the local-divergence sub-bullet states its outcome after the condition');
+  assert.match(outcome, new RegExp(`^${ENDS_THE_RUN} here`, 'i'));
+  assert.match(outcome, near('round already begun', 'counted', 30));
+  assert.match(outcome, near('nothing is merged or delegated', 'report names that checkout', 80));
+  assert.match(outcome, near('report names that checkout', 'Phase 6 runs', 40));
+  assert.match(
+    outcome,
+    new RegExp(`and ${NO_RECORD}[;.]?$`, 'i'),
+    'local divergence writes no record',
+  );
+});
+
+// Invariant: the `different-commit` proof is what is left after the fetch of `refs/pull/<N>/head` -
+// exactly as ancestry-check step 2 does - and a fresh `ls-remote` classified `origin`'s branch SHA:
+// anything that is neither forge lag nor local divergence, an undetermined result included, writes
+// the record with that proof kind. A moved head never reaches it. The fetch and the `ls-remote` are
+// pinned in the re-read introduction, the fallback in its own "otherwise" sub-bullet, which comes
+// after the two it is "otherwise" to.
+test('the different-commit proof is written when the origin SHA is neither forge lag nor local divergence', () => {
+  const { intro, otherwise } = mergeGateMismatchParts();
+  ordered(intro, 'same `headSha`', 'refs/pull/<N>/head', 'ls-remote', 'classify it');
+  assert.match(intro, near('refs/pull/<N>/head', 'ancestry check.s step 2', 80));
+  assert.match(intro, /fresh `ls-remote` of `refs\/heads\/<head>`/);
+  assert.match(otherwise, /^- otherwise, an undetermined result included:/);
+  assert.match(
+    otherwise,
+    near('write the base-merge-unavailable record', 'proof kind `different-commit`', 40),
+  );
+  const bullet = prose(mergeGateMismatchBullet());
+  ordered(bullet, 'forge lag', 'local divergence', 'otherwise, an undetermined result included');
+});
+
+// Invariant: with the base-merge-unavailable record, trigger (a) does not fire: a head that is
+// `BEHIND` or `DIRTY` on a branch proven not to carry the pull request's head is not merged again.
+test('trigger (a) does not fire once the base-merge-unavailable record exists', () => {
+  const triggerA = prose(boundedSlice(mergeGateStep1(), '**Trigger (a):**', '**Trigger (b):**'));
+  assert.match(triggerA, near('`BEHIND`', '`DIRTY`', 40));
+  assert.match(triggerA, /and the wisdom file holds no base-merge-unavailable record/);
+  ordered(triggerA, '`BEHIND`', 'and the wisdom file holds no base-merge-unavailable record');
+});
+
+// Invariant: the report-only run end is one rule, defined once in Phase 2 step 1 and worded like
+// step 3's existing run end: the round already begun stays counted, no further round starts, and
+// the run merges, commits, pushes and delegates nothing, lists the failing checks without
+// delegating them, and runs Phase 6.
+test('the report-only run end is defined once in Phase 2 step 1 as a run end that writes and delegates nothing', () => {
+  const definition = prose(reportOnlyRunEndDefinition());
+  assert.match(definition, near('end the run here', 'no further round starts', 250));
+  assert.match(definition, near('already begun', 'counted', 100));
+  assert.match(definition, /merges, commits, pushes,? and delegates nothing/);
+  assert.match(definition, near('failing checks', 'without delegating', 150));
+  assert.match(definition, /Phase 6/);
+  // The three locations, in spec order: the mismatch re-read that wrote the record, the start of
+  // step 1 before either trigger, and step 3 against its fresh read.
+  ordered(
+    definition,
+    '(i) at the mismatch re-read that wrote it',
+    '(ii) at the start of this step',
+    '(iii) in step 3 against its fresh read',
+  );
+});
+
+// Invariant: a `fork` or `missing-branch` record ends the run report-only where the record is
+// written, whatever the merge state - the proof says the branch is not the pull request's head, so
+// no iterate delegation onto it can help. Pinned in the definition's own `fork`/`missing-branch`
+// clause and in the proofs themselves, so the `different-commit` clause's `BEHIND` or `DIRTY`
+// condition cannot stand in for "whatever the merge state".
+test('a fork or missing-branch record ends the run report-only where it is written, whatever the merge state', () => {
+  const definition = prose(reportOnlyRunEndDefinition());
+  const forkClause = boundedSlice(definition, 'applies to a `fork`', 'and to a `different-commit`');
+  assert.match(forkClause, near('`fork`', '`missing-branch`', 20));
+  assert.match(forkClause, near('`missing-branch` record', 'where that record is written', 30));
+  assert.match(forkClause, near('where that record is written', 'whatever the merge state', 30));
+  assert.doesNotMatch(forkClause, /`BEHIND`|`DIRTY`/, 'no merge-state condition on these proofs');
+  const proofs = mergeGateProofs();
+  assert.match(proofs.fork, /apply the report-only run end/);
+  assert.match(
+    boundedSlice(proofs.missingBranch, 'Exit `2`', 'Exit `0`'),
+    /apply the report-only run end/,
+  );
+});
+
+// Invariant (end location i): the mismatch re-read that writes a `different-commit` record ends the
+// run report-only when that read reports `BEHIND` or `DIRTY`, so the proof reaches Phase 6 even in
+// the last allowed round. Pinned in the fallback sub-bullet that writes the record.
+test('the mismatch re-read that writes a different-commit record ends the run report-only on BEHIND or DIRTY', () => {
+  const { otherwise } = mergeGateMismatchParts();
+  ordered(
+    otherwise,
+    'proof kind `different-commit`',
+    're-read reports `BEHIND` or `DIRTY`',
+    'apply the report-only run end here',
+  );
+  assert.match(
+    otherwise,
+    near('re-read reports `BEHIND` or `DIRTY`', 'apply the report-only run end', 20),
+  );
+});
+
+// Invariant (end location ii, F2): first in step 1 - before either trigger is evaluated, against the
+// run's latest check result - a `different-commit` record with `BEHIND` or `DIRTY` ends the run
+// report-only, so a later round or a resumed run does not merge again. The instruction is pinned in
+// the text between "has two triggers." and `**Trigger (a):**`, and its order is checked: a check
+// that sat after the triggers would not be a "check first".
+test('step 1 checks a different-commit record against BEHIND or DIRTY before either trigger is evaluated', () => {
+  const lead = prose(boundedSlice(mergeGateStep1(), 'has two triggers.', '**Trigger (a):**'));
+  assert.match(lead, /before either is evaluated/);
+  assert.match(
+    lead,
+    near('where the wisdom file holds a `different-commit`', 'base-merge-unavailable record', 40),
+  );
+  assert.match(lead, near('base-merge-unavailable record', 'latest check result', 40));
+  assert.match(lead, near('latest check result', 'reports `BEHIND` or `DIRTY`', 40));
+  assert.match(lead, /apply the report-only run end\.\s*$/);
+  const step1 = prose(mergeGateStep1());
+  ordered(
+    step1,
+    'has two triggers.',
+    'before either is evaluated',
+    'apply the report-only run end.',
+    'Trigger (a):',
+    'Trigger (b):',
+  );
+});
+
+// Invariant (end location iii): step 3 reads fresh and, with the record and `BEHIND` or `DIRTY`,
+// applies the report-only run end instead of delegating - which also covers a `host-pr-watch` checks
+// resume that re-enters at step 2. The refusal comes before the delegation.
+test('step 3 refuses the iterate delegation on BEHIND or DIRTY with the base-merge-unavailable record', () => {
+  const step3 = prose(mergeGateStep3());
+  // Cut to the refusal sentence itself: the guard sentence above it also names `BEHIND`, `DIRTY`
+  // and the record, so a whole-step match stays green when the record condition leaves the refusal.
+  const refusal = boundedSlice(
+    step3,
+    'does not hold the delegation back.',
+    'Otherwise delegate to',
+  );
+  assert.match(refusal, near('`BEHIND` or `DIRTY`', 'holds the base-merge-unavailable record', 60));
+  assert.match(
+    refusal,
+    near('holds the base-merge-unavailable record', 'report-only run end', 120),
+  );
+  assert.match(refusal, near('delegate nothing', 'report-only run end', 120));
+  assert.match(refusal, near('report-only run end', 'a `host-pr-watch` checks resume', 120));
+  assert.match(refusal, /re-enters at step 2/);
+  ordered(step3, 'report-only run end', 'Otherwise delegate to');
+});
+
+// Invariant: under `no-branch-writes` the run ends per "Caller limits" before any new read - no
+// `ls-remote`, no classification - so the caller limit stays the blocking condition the report
+// names. Pinned in the clause of the "before provisioning" bullet that states it, which comes before
+// the first proof's read.
+test('no-branch-writes ends the run per Caller limits before any new read', () => {
+  const { intro } = mergeGateProofs();
+  const clause = boundedSlice(intro, 'under `no-branch-writes`', 'Otherwise run these checks');
+  assert.match(clause, near('`no-branch-writes`', 'per "Caller limits"', 40));
+  assert.match(clause, near('per "Caller limits"', 'before any new read', 20));
+  assert.match(clause, near('before any new read', 'no `ls-remote`', 40));
+  assert.match(clause, near('no `ls-remote`', 'no classification', 20));
+  assert.match(clause, near('no classification', 'blocking condition', 60));
+  assert.match(mergeGateCallerLimitsBinding(), near('`no-branch-writes`', 'Phase 2 step 1', 400));
+  const step1 = prose(mergeGateStep1());
+  ordered(step1, '`no-branch-writes`', 'git ls-remote --exit-code origin refs/heads/<head>');
+});
+
+// Invariant: the wisdom-record list carries the shared record with the trigger that called for the
+// merge, its round, its proof kind and its evidence, plus the undetermined existence check (once
+// per run) and the local-divergence end - so a relayed or re-dispatched run keeps both triggers off.
+test('the wisdom record list names the shared record, the undetermined existence check and the local-divergence end', () => {
+  const wisdom = prose(
+    boundedSlice(mergeGateSource(), '## Wisdom accumulation', '## Workflow after Phase 0'),
+  );
+  assert.match(wisdom, near('base-merge-unavailable record', 'trigger', 250));
+  assert.match(wisdom, near('base-merge-unavailable record', 'its round', 250));
+  assert.match(wisdom, near('base-merge-unavailable record', 'proof kind', 250));
+  assert.match(wisdom, near('proof kind', 'evidence', 120));
+  assert.match(wisdom, near('undetermined existence check', 'once per run', 150));
+  assert.match(wisdom, near('a run ended on local divergence', 'reused checkout', 40));
+});
+
+// Invariant (F6): Phase 6 is keyed on whether the base-merge-unavailable record exists, not on which
+// path ended the run. It names the proof kind with its evidence (the `sameRepository` statement, the
+// `ls-remote` result, or both SHAs and the classification), that the base must be merged or the
+// conflict resolved where the head lives, the failing checks not delegated, and a fork only where
+// `sameRepository: false` was stated. "handed to iterate without the base merge" is the exception
+// for a `different-commit` record, and it is keyed on the run NOT having ended with the report-only
+// run end - the merge-state wording of #647 ("neither BEHIND nor DIRTY") would make the report say
+// "handed to iterate" for a run that did end report-only. Pinned in the record's own bullet, up to
+// the next bullet.
+test('the Phase 6 report is keyed on the record and hands to iterate only for a different-commit record whose run did not end report-only', () => {
+  const summary = prose(boundedSlice(mergeGateSource(), '### Phase 6: Summary', '\n## Rules'));
+  const bullet = prose(
+    boundedSlice(
+      boundedSlice(mergeGateSource(), '### Phase 6: Summary', '\n## Rules'),
+      '- wherever the base-merge-unavailable record exists',
+      '- the delegated `{{SKILL:iterate}}` rounds',
+    ),
+  );
+  assert.match(summary, near('base-merge-unavailable record', '(?:exists|holds)', 120));
+  assert.match(bullet, near('base-merge-unavailable record', 'whichever path ended the run', 40));
+  assert.match(bullet, near('base-merge-unavailable record', 'proof kind', 250));
+  for (const evidence of ['sameRepository', 'ls-remote', 'classification']) {
+    assert.match(bullet, near('proof kind', evidence, 250), `Phase 6 must name ${evidence}`);
+  }
+  assert.match(bullet, near('merged', 'where the head lives', 150));
+  assert.match(bullet, near('resolved', 'where the head lives', 150));
+  assert.match(bullet, near('failing checks', 'not delegated', 150));
+  assert.match(
+    bullet,
+    near('fork', 'only (?:where|when|if)[^.]{0,80}sameRepository: false', 250),
+    'a fork is reported only where sameRepository: false was stated',
+  );
+  const handed = 'handed to `{{SKILL:iterate}}` without the base merge';
+  assert.equal(bullet.split(handed).length, 2, 'the hand-off to iterate is stated exactly once');
+  ordered(
+    bullet,
+    'whichever path ended the run',
+    'Where the run did not end with the report-only run end',
+    'for a `different-commit` record',
+    handed,
+  );
+  assert.match(
+    bullet,
+    /Where the run did not end with the report-only run end, state for a `different-commit` record, instead of the undelegated checks, that the failing check is handed/,
+  );
+  assert.doesNotMatch(
+    bullet,
+    /neither `BEHIND` nor `DIRTY`/,
+    'the hand-off is keyed on the run end, not on the merge state',
+  );
+});
+
+// Invariant: the Rules section names both triggers: once the base-merge-unavailable record exists,
+// neither fires.
+test('the Rules section fires neither trigger once the base-merge-unavailable record exists', () => {
+  const rules = prose(section(mergeGateSource(), '## Rules', '\n## '));
+  assert.match(
+    rules,
+    /Fire neither trigger of Phase 2 step 1 once the base-merge-unavailable record exists/,
+  );
+});
+
+// Invariant (F4): the checkout boundary states what a `fork` or `missing-branch` proof leaves behind -
+// nothing provisioned, no worktree and no worktree lifecycle record - and refers to the
+// local-divergence end of Phase 2 step 1 instead of redefining it: the run ends with a report naming
+// the reused in-place checkout, which has no record to close. Each statement is pinned in its own
+// sentence group, so the local-divergence end cannot be met by the proof sentence or the other way
+// round.
+test('the checkout boundary provisions nothing on a fork or missing-branch proof and refers to the local-divergence end of step 1', () => {
+  const boundary = prose(source('src/shared/merge-gate-checkout-boundary.md'));
+  const proofs = boundedSlice(
+    boundary,
+    'A `fork` or `missing-branch` proof',
+    ' Prefer the invocation checkout',
+  );
+  assert.match(proofs, near('`fork`', '`missing-branch`', 20));
+  assert.match(proofs, /of Phase 2 step 1 provisions nothing/);
+  assert.match(proofs, near('provisions nothing', 'no worktree', 60));
+  assert.match(proofs, near('no worktree', 'no worktree lifecycle record', 40));
+  const divergence = boundedSlice(
+    boundary,
+    'On the local-divergence end',
+    ' When `git worktree list',
+  );
+  assert.match(divergence, /^On the local-divergence end of Phase 2 step 1,/);
+  assert.match(divergence, new RegExp(`the ${ENDS_THE_RUN} with a report`, 'i'));
+  assert.match(divergence, near('report naming that', 'reused in.place checkout', 20));
+  assert.match(divergence, /reused in.place checkout, which has no record to close\.$/);
+  assert.doesNotMatch(
+    boundary,
+    /local divergence[^.]{0,80}(?:when|if|where)[^.]{0,80}reused/i,
+    'the boundary does not redefine local divergence with a condition of its own',
+  );
+});
+
+// Invariant: the user guide describes the shared base-merge-unavailable record, its three proofs
+// and the report-only run ends in the two sections that carry the head-identity and the
+// behind-head behavior; a `different-commit` record keeps handing the failing check to iterate only
+// without `BEHIND`/`DIRTY`.
+test('the user guide describes the shared record, its proofs and the report-only run ends', () => {
+  const guideRaw = source('docs/user-guide/tools-deliver.md');
+  const identity = prose(
+    boundedSlice(
+      guideRaw,
+      '**The head-identity check applies to every merge.**',
+      '**The head branch is untrusted input.**',
+    ),
+  );
+  const behind = prose(
+    boundedSlice(guideRaw, '#### A failing check on a behind head', '#### Three reviewer states'),
+  );
+  const both = `${identity} ${behind}`;
+  assert.match(both, /base-merge-unavailable record/);
+  for (const kind of ['`fork`', '`missing-branch`', '`different-commit`']) {
+    assert.ok(both.includes(kind), `the guide must name the proof kind ${kind}`);
+  }
+  // Each section's own run-end sentence carries the pin: a wide window over both sections is also
+  // satisfied by the neighbouring local-divergence and invalid-name run ends.
+  const identityEnd = boundedSlice(
+    identity,
+    'A `fork` or `missing-branch` proof',
+    'That run merges',
+  );
+  assert.match(
+    identityEnd,
+    near('`fork` or `missing-branch` proof', ENDS_THE_RUN, 40),
+    'the head-identity section must end the run on a fork or missing-branch proof',
+  );
+  assert.match(
+    identityEnd,
+    /whatever the merge state/,
+    'the head-identity section must end the run on a fork or missing-branch proof whatever the merge state',
+  );
+  const behindEnd = boundedSlice(behind, 'A `fork` or `missing-branch` proof', '- Once, then');
+  assert.match(
+    behindEnd,
+    near('`fork` or `missing-branch` proof', ENDS_THE_RUN, 40),
+    'the behind-head section must end the run on a fork or missing-branch proof',
+  );
+  assert.match(both, near('`different-commit`', '`BEHIND`', 600));
+  assert.match(both, near('`different-commit`', '`DIRTY`', 600));
+  assert.match(both, near('base-merge-unavailable record', 'once per run', 300));
+});
+
+// Invariant: the user guide's "brought forward" statements are qualified - a branch is brought
+// forward by the base merge unless the merge is proven unavailable (fork, missing branch, different
+// commit) - in the check-gate step, the "What it never does" paragraph and the conflict section's
+// introduction.
+test('the user guide qualifies its brought-forward statements with the unavailable base merge', () => {
+  const guideRaw = source('docs/user-guide/tools-deliver.md');
+  const qualification = /unavailable|proven|report-only|`fork`/i;
+  for (const [label, slice] of [
+    [
+      'the check-gate step',
+      boundedSlice(guideRaw, '1. **Check gate**', '2. **Automatic-reviewer round**'),
+    ],
+    [
+      'the "What it never does" paragraph',
+      boundedSlice(guideRaw, '**What it never does:**', 'It also never force-closes'),
+    ],
+    [
+      'the conflict section introduction',
+      boundedSlice(
+        guideRaw,
+        '#### Resolving a conflict with the base',
+        'What the run does with a conflict:',
+      ),
+    ],
+  ]) {
+    const text = prose(slice);
+    assert.match(text, /brought forward|merging the base/i, `${label} keeps its statement`);
+    assert.match(text, qualification, `${label} must qualify it for an unavailable base merge`);
+  }
 });
 
 // Invariant: a no-op merge commits and pushes nothing, closes the worktree with one `worktree remove`
@@ -7316,10 +7965,12 @@ test('the Phase 6 report names a trigger (b) merge, an undetermined check and a 
 });
 
 // Invariant: the Git write boundary still counts two kinds and classifies the ancestry fetch as a
-// read limited to `refs/remotes/origin/<base>`; trigger (b), a failing check on a behind head, calls
-// for a base-into-head merge at most once per run; `no-branch-writes` covers trigger (b) while that
-// read-only fetch stays permitted.
-test('the Git write boundary keeps two kinds, treats the ancestry fetch as a read and binds trigger (b)', () => {
+// read limited to `refs/remotes/origin/<base>`; trigger (a) applies only until a
+// base-merge-unavailable record exists and trigger (b), a failing check on a behind head, calls for
+// a base-into-head merge at most once per run; the `ls-remote` existence and classification reads
+// and the `refs/pull/<N>/head` fetch are reads, outside both kinds; `no-branch-writes` covers
+// trigger (b) while that read-only fetch stays permitted.
+test('the Git write boundary keeps two kinds, treats the ancestry fetch and the proof reads as reads and binds both triggers', () => {
   const boundary = prose(section(mergeGateSource(), '## Git write boundary', '\n## '));
   assert.match(boundary, near('two', 'sanctioned kinds', 40));
   assert.match(boundary, near('ancestry check', 'is a read', 80));
@@ -7327,6 +7978,30 @@ test('the Git write boundary keeps two kinds, treats the ancestry fetch as a rea
   assert.match(boundary, near('base fetch', 'limited to `refs/remotes/origin/<base>`', 120));
   assert.match(boundary, near('head fetch', 'no ref', 60));
   assert.match(boundary, near('\\(b\\) a failing check', 'at most once per run', 200));
+  assert.match(
+    boundary,
+    near('\\(a\\)', 'until a base-merge-unavailable record exists', 250),
+    'kind (a) is restricted to the time before the base-merge-unavailable record',
+  );
+  // The proof reads are classified in one sentence of their own. Unsliced, `reads?` already matched
+  // the noun phrase "`ls-remote` reads" and "read-side" beside the tokens, so rewording the
+  // classification into a third kind of write left both pins green.
+  const proofReads = boundedSlice(boundary, "Step 1's `ls-remote`", 'The second kind is bounded');
+  assert.match(
+    proofReads,
+    near('`ls-remote` reads of the head branch', '\\bwhich write nothing\\b', 20),
+    'the ls-remote reads write nothing',
+  );
+  assert.match(
+    proofReads,
+    near('`ls-remote`', '\\bare reads in the same way\\b', 200),
+    'the ls-remote reads are classified as reads',
+  );
+  assert.match(
+    proofReads,
+    near('`refs/pull/<N>/head`', '\\bare reads in the same way\\b', 80),
+    'the pull-head fetch is classified as a read',
+  );
 
   const binding = mergeGateCallerLimitsBinding();
   assert.match(binding, near('trigger \\(b\\)', 'Phase 2 step 1', 100));

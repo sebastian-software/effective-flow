@@ -299,7 +299,11 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    [Resolving a conflict with the base](#resolving-a-conflict-with-the-base). The same merge also
    runs for a head that has a failing check and does not contain its base, whatever merge state the
    forge reports – see
-   [A failing check on a behind head](#a-failing-check-on-a-behind-head).
+   [A failing check on a behind head](#a-failing-check-on-a-behind-head). Where the base merge is
+   proven unavailable for the head – it lives in a fork, in no same-name branch on `origin`, or in a
+   same-name branch that carries a different commit while the forge reports `BEHIND` or `DIRTY` – the
+   branch is not brought forward: the run ends with a report instead. The proofs are listed under
+   [the base merge can be proven unavailable](#resolving-a-conflict-with-the-base).
 2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools),
    establishes whether it is still running, has not started, or has already run for the current
    head, triggers the ones that have not started – and, once per verdict, one with a configured
@@ -420,11 +424,12 @@ a re-entry retries only the reconciliation a previous run left open.
 **What it never does:** It never reviews. It produces no findings of its own, never approves a pull
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
 force-push of the head branch – a branch behind or in conflict with its base is only ever brought
-forward with a merge commit, and a conflict that could only be resolved by rewriting history is
-reported instead), and never merges past an open comment from an account that is neither a bot nor
-the one it runs as. It implements no code itself: CI repairs and bot-finding fixes are delegated to
-`/effective-flow iterate`, and a merge conflict is delegated to a dedicated resolver worker. The gate
-itself only ever writes that one merge commit and pushes it.
+forward with a merge commit, and not at all where the base merge is proven unavailable; a conflict
+that could only be resolved by rewriting history is reported instead), and never merges past an open
+comment from an account that is neither a bot nor the one it runs as. It implements no code itself:
+CI repairs and bot-finding fixes are delegated to `/effective-flow iterate`, and a merge conflict is
+delegated to a dedicated resolver worker. The gate itself only ever writes that one merge commit and
+pushes it.
 
 It also never force-closes a linked issue and never treats PR prose as a substitute for a valid
 lifecycle receipt. A transition you confirmed after a `complete` assessment verdict is not a forced
@@ -475,7 +480,8 @@ branch that had merely fallen behind, or that is behind with a failing check –
 the head branch – with the conflicts
 resolved inside that merge. The result is one ordinary merge commit, pushed normally. Nothing is
 rebased, squashed, amended, or force-pushed, and a resolution that would need any of those to succeed
-is reported instead of performed.
+is reported instead of performed. Where the base merge is proven unavailable for the head (see
+below), the gate does not attempt it and the run ends with a report instead.
 
 What the run does with a conflict:
 
@@ -525,7 +531,7 @@ What the run does with a conflict:
    disclosure requirement plus a presence check on the evidence, and whether the named failure
    genuinely justified the change is what the report leaves for a human to judge.
 
-Four details worth knowing:
+Five details worth knowing:
 
 - **The human-comment guard does not block the resolution.** A conflict with the merge target is an
   objective defect of the branch, not a position a reviewer is negotiating, so the resolution runs
@@ -547,11 +553,24 @@ Four details worth knowing:
   is not the same-name branch on `origin`, or a head that moved since the read – it merges nothing,
   pushes nothing, re-reads the status, ends the round and reports the mismatch. If the re-read shows
   a different head commit, the head moved and the next round decides from it. If it shows the same
-  head commit and the merge was for
-  [a failing check on a behind head](#a-failing-check-on-a-behind-head), the same-name branch on
-  `origin` does not carry the pull request's head: the gate records once per run that this merge
-  is unavailable, reports it, and from the next round on hands the failing check to `iterate`
-  instead.
+  head commit, whichever trigger called for the merge, the gate compares the same-name branch on
+  `origin` with it. A branch that is only ahead (the forge lags) stays transient. A branch equal to
+  the pull request's head while the local checkout differs ends the run with a report. Anything else
+  writes the base-merge-unavailable record once per run with the proof `different-commit`.
+- **The base merge can be proven unavailable.** The gate looks for one of three proofs – two before
+  it provisions anything for a merge, one at the head-identity check. Each writes the one
+  base-merge-unavailable record, once per run, and from then on neither trigger merges again.
+  - `fork` – the pull request states that its head is in another repository.
+  - `missing-branch` – `git ls-remote` finds no same-name branch on `origin`. A lookup that fails
+    any other way proves nothing: the gate reports it and carries on. A head branch name that fails
+    validation ends the run with a report before anything is looked up.
+  - `different-commit` – the same-head mismatch above.
+
+  A `fork` or `missing-branch` proof ends the run with a report whatever the merge state, and so does
+  a `different-commit` proof wherever the forge reports `BEHIND` or `DIRTY`. That run merges,
+  commits, pushes and delegates nothing; the report lists the failing checks and tells you to merge
+  the base, or resolve the conflict, where the head lives. A `different-commit` proof with any other
+  merge state keeps the previous path: the failing check goes to `iterate`.
 
 **The head branch is untrusted input.** The gate operates on any open pull request, including one
 whose head branch lives in a fork this repository does not control, and the resolver discovers the
@@ -590,11 +609,14 @@ green and merely behind stays untouched.
   round before `iterate` sees the failure. When checks only fail during the wait, the guard round,
   the merge round and the next wait round all pass first. With `mergeGate.maxRounds` of 1 the run
   ends before the merge; with 2 it performs the merge but ends before the merge's new checks
-  complete or `iterate` repairs anything. When the head is not the same-name branch on `origin` –
-  typically a fork pull request – the merge cannot run: the round that finds the head-identity
-  mismatch costs one round, and the next round hands the failing check to `iterate`.
+  complete or `iterate` repairs anything. A head-identity mismatch on an unmoved head means the merge
+  cannot run: unless `origin` is only ahead or a local checkout diverged, it costs one round and
+  records `different-commit`, and the next round hands the failing check to `iterate` – unless the
+  forge reports `BEHIND` or `DIRTY`, where the run ends with a report instead. A `fork` or
+  `missing-branch` proof ends the run in the round that finds it.
 - **Once, then `iterate`.** If the check is still red after that merge, it goes to `iterate` even if
-  the base has moved again.
+  the base has moved again. Once a base-merge-unavailable record exists, the merge is not tried
+  again either.
 - **Same boundaries as `BEHIND`.** The human-comment guard and `report` mode do not block it; only a
   caller limit of `no-branch-writes` prevents it. The head-identity check above applies.
 
