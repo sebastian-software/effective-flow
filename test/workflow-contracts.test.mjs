@@ -7864,8 +7864,29 @@ test('the user guide describes the shared record, its proofs and the report-only
   for (const kind of ['`fork`', '`missing-branch`', '`different-commit`']) {
     assert.ok(both.includes(kind), `the guide must name the proof kind ${kind}`);
   }
-  assert.match(both, near('`fork`', `(?:${ENDS_THE_RUN}|ends with a report|stops)`, 500));
-  assert.match(both, near('`missing-branch`', `(?:${ENDS_THE_RUN}|ends with a report|stops)`, 500));
+  // Each section's own run-end sentence carries the pin: a wide window over both sections is also
+  // satisfied by the neighbouring local-divergence and invalid-name run ends.
+  const identityEnd = boundedSlice(
+    identity,
+    'A `fork` or `missing-branch` proof',
+    'That run merges',
+  );
+  assert.match(
+    identityEnd,
+    near('`fork` or `missing-branch` proof', ENDS_THE_RUN, 40),
+    'the head-identity section must end the run on a fork or missing-branch proof',
+  );
+  assert.match(
+    identityEnd,
+    /whatever the merge state/,
+    'the head-identity section must end the run on a fork or missing-branch proof whatever the merge state',
+  );
+  const behindEnd = boundedSlice(behind, 'A `fork` or `missing-branch` proof', '- Once, then');
+  assert.match(
+    behindEnd,
+    near('`fork` or `missing-branch` proof', ENDS_THE_RUN, 40),
+    'the behind-head section must end the run on a fork or missing-branch proof',
+  );
   assert.match(both, near('`different-commit`', '`BEHIND`', 600));
   assert.match(both, near('`different-commit`', '`DIRTY`', 600));
   assert.match(both, near('base-merge-unavailable record', 'once per run', 300));
