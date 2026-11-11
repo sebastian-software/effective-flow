@@ -7983,11 +7983,24 @@ test('the Git write boundary keeps two kinds, treats the ancestry fetch and the 
     near('\\(a\\)', 'until a base-merge-unavailable record exists', 250),
     'kind (a) is restricted to the time before the base-merge-unavailable record',
   );
-  assert.match(boundary, near('`ls-remote`', 'reads?', 250), 'the ls-remote reads are reads');
+  // The proof reads are classified in one sentence of their own. Unsliced, `reads?` already matched
+  // the noun phrase "`ls-remote` reads" and "read-side" beside the tokens, so rewording the
+  // classification into a third kind of write left both pins green.
+  const proofReads = boundedSlice(boundary, "Step 1's `ls-remote`", 'The second kind is bounded');
   assert.match(
-    boundary,
-    near('`refs/pull/<N>/head`', 'reads?', 250),
-    'the pull-head fetch is a read',
+    proofReads,
+    near('`ls-remote` reads of the head branch', '\\bwhich write nothing\\b', 20),
+    'the ls-remote reads write nothing',
+  );
+  assert.match(
+    proofReads,
+    near('`ls-remote`', '\\bare reads in the same way\\b', 200),
+    'the ls-remote reads are classified as reads',
+  );
+  assert.match(
+    proofReads,
+    near('`refs/pull/<N>/head`', '\\bare reads in the same way\\b', 80),
+    'the pull-head fetch is classified as a read',
   );
 
   const binding = mergeGateCallerLimitsBinding();
