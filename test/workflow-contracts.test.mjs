@@ -273,10 +273,11 @@ function prose(text) {
 // Two contract tokens inside one bounded window, in either order. Used where the contract is
 // that the two belong together — a rule and its rationale, an exclusion and the marker it
 // names — but not which of them an editor puts first. A reworded paragraph therefore stays
-// green while a dropped half still fails.
+// green while a dropped half still fails. Each argument is grouped, so a caller's alternation stays
+// inside its own half instead of splitting the whole pattern into free-standing branches.
 function near(first, second, span = 300) {
   return new RegExp(
-    `(?:${first}[\\s\\S]{0,${span}}?${second}|${second}[\\s\\S]{0,${span}}?${first})`,
+    `(?:(?:${first})[\\s\\S]{0,${span}}?(?:${second})|(?:${second})[\\s\\S]{0,${span}}?(?:${first}))`,
     'i',
   );
 }
@@ -7307,7 +7308,8 @@ test('the Phase 6 report names a trigger (b) merge, an undetermined check and a 
 });
 
 // Invariant: the Git write boundary still counts two kinds and classifies the ancestry fetch as a
-// read limited to `refs/remotes/origin/<base>`; `no-branch-writes` covers trigger (b) while that
+// read limited to `refs/remotes/origin/<base>`; trigger (b), a failing check on a behind head, calls
+// for a base-into-head merge at most once per run; `no-branch-writes` covers trigger (b) while that
 // read-only fetch stays permitted.
 test('the Git write boundary keeps two kinds, treats the ancestry fetch as a read and binds trigger (b)', () => {
   const boundary = prose(section(mergeGateSource(), '## Git write boundary', '\n## '));
@@ -7316,7 +7318,7 @@ test('the Git write boundary keeps two kinds, treats the ancestry fetch as a rea
   assert.match(boundary, near('ancestry check', 'outside both kinds', 120));
   assert.match(boundary, near('base fetch', 'limited to `refs/remotes/origin/<base>`', 120));
   assert.match(boundary, near('head fetch', 'no ref', 60));
-  assert.match(boundary, near('trigger \\(b\\)|\\(b\\)', 'at most once per run', 200));
+  assert.match(boundary, near('\\(b\\) a failing check', 'at most once per run', 200));
 
   const binding = mergeGateCallerLimitsBinding();
   assert.match(binding, near('trigger \\(b\\)', 'Phase 2 step 1', 100));
