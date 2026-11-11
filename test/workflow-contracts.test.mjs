@@ -6970,9 +6970,19 @@ function mergeGateStep3() {
 
 // Invariant: Phase 2 step 1 has exactly two triggers for one merge, (a) the forge state and (b) a
 // failing check with the ancestry check stating "behind", and "the run's latest check result" is
-// defined as the most recent `pr-status-read`, never a `pr-checks-wait` result.
+// defined as the most recent `pr-status-read`, never a `pr-checks-wait` result. The reads that
+// may supply it are pinned inside the definition bullet itself, cut from its own marker to the
+// next bullet: step 1's trigger prose also says "as step 4 defines it" and "Step 4's criterion",
+// so a window over the whole step let a dropped list item pass on that neighbouring text.
 test('Phase 2 step 1 names trigger (a) and trigger (b) and defines the latest check result', () => {
   const step1 = prose(mergeGateStep1());
+  const definition = prose(
+    boundedSlice(
+      mergeGateStep1(),
+      "- **The run's latest check result**",
+      '- **The ancestry check**',
+    ),
+  );
   assert.match(
     step1,
     near('Trigger \\(a\\)', '`BEHIND`', 80),
@@ -6989,25 +6999,23 @@ test('Phase 2 step 1 names trigger (a) and trigger (b) and defines the latest ch
     'trigger (b) must be exclusive of trigger (a)',
   );
   assert.match(
-    step1,
+    definition,
     near('latest check result', 'most recent `pr-status-read`', 120),
     'the latest check result must be defined as the most recent pr-status-read',
   );
-  assert.match(step1, near('most recent `pr-status-read`', 'whichever step performed it', 80));
-  for (const read of [
-    'Phase 1',
-    'Entry step 4',
-    'mismatch',
-    'step 3',
-    'step 4',
-    'Phase 4',
-    'host-pr-watch',
+  assert.match(definition, near('most recent `pr-status-read`', 'whichever step performed it', 80));
+  // "step 4" is a substring of "Entry step 4", so the plain item excludes that spelling; each
+  // read must then be named on its own.
+  for (const [read, pattern] of [
+    ['Phase 1', /\bPhase 1\b/i],
+    ['Entry step 4', /\bEntry step 4\b/i],
+    ['mismatch', /\bmismatch\b/i],
+    ['step 3', /\bstep 3\b/i],
+    ['step 4', /(?<!Entry )\bstep 4\b/i],
+    ['Phase 4', /\bPhase 4\b/i],
+    ['host-pr-watch', /`host-pr-watch`/i],
   ]) {
-    assert.match(
-      step1,
-      near('most recent `pr-status-read`', read, 400),
-      `the definition must list ${read}`,
-    );
+    assert.match(definition, pattern, `the definition must list ${read}`);
   }
 });
 
