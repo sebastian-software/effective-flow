@@ -872,8 +872,12 @@ point is an I/O boundary over testable core or protocol modules:
   collision gets a `-2`, `-3`, … suffix) and snapshots every non-ignored working-tree path into a
   tree object. `render` repeats that snapshot with the identical procedure, optionally limited to a
   literal path scope, and atomically replaces `diff.patch` and `paths.json` with the tree-to-tree
-  delta; `discard` removes `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left
-  empty. Every snapshot uses a private temporary index and a private object directory inside
+  delta and records its `currentTree` in `rendered-trees.json`. Given `sinceTree`, which must equal
+  a `currentTree` an earlier render of the same handle recorded (else `INVALID_INPUT`), `render`
+  instead writes only `delta.patch`, `delta-paths.json` and its recorded tree and returns only `deltaDiffPath`,
+  `deltaPathsPath`, `currentTree` and `deltaEntries`, with the same `scope` handling and without
+  touching `diff.patch` or `paths.json`; an equal tree yields an empty delta. `discard` removes
+  `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left empty. Every snapshot uses a private temporary index and a private object directory inside
   `diff-baseline/`, with the real object store attached read-only as an alternate. Every git call
   carries `GIT_OPTIONAL_LOCKS=0`, so the real index, stash, refs, `HEAD` and object store stay
   untouched and no call takes the real `index.lock`. Snapshots also pin `core.splitIndex=false`
@@ -1362,7 +1366,7 @@ and directive syntax").
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
   `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
-  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
+  `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
   `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.

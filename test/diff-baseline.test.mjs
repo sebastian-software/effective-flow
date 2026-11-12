@@ -146,6 +146,26 @@ test('render validates baselineTree, scope and dir before running git', async (t
   await expectError('discard', { cwd: root, dir, executionRoot: root }, 'INVALID_INPUT');
 });
 
+// Invariant: a malformed sinceTree (non-hex, wrong length, wrong type) fails input validation
+// before any git call or delta computation.
+test('render validates sinceTree before running git', async (t) => {
+  const root = tempDir(t);
+  const dir = join(root, '.effective-flow/runs/s/diff-baseline');
+  const valid = { cwd: root, executionRoot: root, dir, baselineTree: OID };
+  for (const sinceTree of [
+    'not-hex',
+    'zz'.repeat(20),
+    '',
+    'A'.repeat(40),
+    'a'.repeat(39),
+    'HEAD',
+    42,
+    null,
+  ]) {
+    await expectError('render', { ...valid, sinceTree }, 'INVALID_INPUT');
+  }
+});
+
 test('normalizeScope keeps literal repository-relative paths', () => {
   assert.equal(normalizeScope(undefined), null);
   assert.equal(normalizeScope(null), null);

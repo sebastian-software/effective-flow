@@ -235,20 +235,30 @@ when: the validation decision selects the protected native macOS GitHub Actions 
 ### Phase 6: Review
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
+   Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
+   CI path goes to `{{AGENT:generic-product-reviewer}}` with its reduced-depth notice, under an
+   explicit bounded implementation full-pass assignment from `{{SKILL:build}}`; supply only the
+   floor-hit tooling/CI path list and each path's confirmed route.
    <!-- spawn-site:build-delegated-run/review -->
+
+```lazy-include
+review-depth
+when: Phase 6 aggregates review findings for the incorporation pass, or a step 3 correction or containment is about to be accepted
+```
+
 2. Aggregate all review findings, then make exactly one automatic incorporation pass through the
-   routed Quality implementer for every new finding that belongs to the authorized slice. Render
-   again and re-run the affected review checks once after that pass; do not weaken or consume the
+   routed Quality implementer for every new finding that belongs to the authorized slice. Then
+   re-run the affected review checks once per `review-depth`. Do not weaken or consume the
    separate validator correction budget.
 3. Send the residual batch through the admission contract loaded by “Gated residual
    review-finding reports”. Severity remains review information, not an admission label:
-   - `current-scope`: correct or safely contain it now through the routed Quality implementer, then render again; completion stays blocked unless the user or
+   - `current-scope`: correct or safely contain it now through the routed Quality implementer, then render again and classify that correction or containment against the `review-depth` floor before accepting it; completion stays blocked unless the user or
      authorized plan/tracker owner explicitly reduces the slice
    - `admitted`: eligible for the common residual report path
    - `closed`: report only an aggregate count and short reason in chat
    - `uncertain`: perform the one bounded evidence/containment check and resolve it or stop
 4. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
-5. Present the review results in this format. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
+5. Present the review results in this format, followed by the `review-depth` floor classification record and re-check report. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
 **Review results**

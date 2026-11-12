@@ -254,6 +254,25 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // Explicit implementation full-pass assignments widen only this reviewer's assigned paths;
+    // ordinary routing and the disclosed lack of specialist depth remain intact.
+    Object.freeze({
+      id: 'generic-product-reviewer-implementation-full-pass',
+      edits: Object.freeze([
+        Object.freeze({
+          from: 'framework reviewer applies, and for the `tooling` paths a pre-commit review assigns. Ground every judgment',
+          to: 'framework reviewer applies, for the `tooling` paths a pre-commit review assigns, and for explicit bounded implementation full-pass assignments as defined below. Ground every judgment',
+        }),
+        Object.freeze({
+          from: 'no dedicated Effective Flow specialist matches this review scope; findings are limited',
+          to: 'this generic pass provides no dedicated Effective Flow language or framework specialist depth; findings are limited',
+        }),
+        Object.freeze({
+          from: '- review only the generic product bucket assigned through `Project routing`, and `tooling` paths when the assignment states it is a pre-commit review and gives their route; every specialist bucket, and `tooling` from any other assignment, stays with its corresponding reviewer',
+          to: "- outside an explicit implementation full-pass assignment, review only the generic product bucket assigned through `Project routing`, and `tooling` paths when the assignment states it is a pre-commit review and gives their route; every specialist bucket, and `tooling` from any other assignment, stays with its corresponding reviewer\n- for an explicit bounded implementation full-pass assignment from `effective-flow fix`, `effective-flow build`, or `effective-flow refactor`, accept only the supplied paths and their confirmed routes, including specialist and tooling/CI paths; this exception covers `review-depth` floor hits or triggers and fix's missing-`reviewTree` fallback; it does not change ordinary specialist routing",
+        }),
+      ]),
+    }),
   ]),
 });
 
