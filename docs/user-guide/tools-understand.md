@@ -123,11 +123,32 @@ New local plans and canonical planning comments also retain a compact Outcome ch
 [continuation toward the original outcome](tool-flow.md#continuing-toward-the-original-outcome);
 legacy sources remain usable without a bulk migration.
 
+**Review and decision round:** Gap analysis, validation, and the internal plan review always run.
+Gaps that can be resolved directly are incorporated without asking. Points that need your decision
+are collected in the plan's open-points section, marked `Pending batch:` in an English plan or
+`Offen bis zur Sammelrunde:` in a German one, and asked together in one round after the internal
+review. The round uses the same decision format as the deep review: options with
+[fit scores](glossary.md#fit-score) plus "Decide later". If the host limits questions per call,
+consecutive calls without analysis in between still count as one round.
+
+After your answers, the plan is re-checked only as far as needed. If nothing relevant changed, there
+is no new review. If an answer changed an unrelated section, a point could not be confirmed as
+resolved, or an answer changed an assumption, acceptance criterion, or decision, the changed
+sections are reviewed again. If an answer touched a section on a consequential boundary (a fixed
+list covering security, secrets, personal data, persistence, destructive operations, money, public
+API, dependencies, and CI/release), the whole plan gets another internal review. New decisions from
+that re-review become open points without another round; only a new critical finding triggers a
+second round. Unanswered points and "Decide later" stay open points with a re-entry note. An
+undecided critical point stays a blocking open point: the plan is still written, but marked
+`Revision required`, and the deep review is not offered. Unattended runs ask nothing: every
+collected point becomes a blocking open point.
+
 **Interplay:** A finished local plan is implemented later with `/effective-flow apply <plan file>`,
 which reads the plan's own `**Recommended workflow:**` field and routes to the matching
 implementation tool, so the routing decision is made once, at invocation time. Optionally,
-`plan` offers a deeper interactive plan review directly afterwards; if it is
-skipped, it can be caught up later via `/effective-flow review <plan file>`. That review gives
+`plan` offers a deeper interactive plan review after the decision round, and an explicit request
+for a full re-review or the deep review is always honored. A skipped review can be caught up later
+via `/effective-flow review <plan file>`. That review gives
 each option of a decision it asks about a [fit score](glossary.md#fit-score) from 1 to 10 for
 your context, shown as `n/10 – <reason>`, instead of marking one option as recommended; "Decide
 later" stays unscored, and the scores stay in the dialog and are never written into the plan.
@@ -317,6 +338,12 @@ cross-process lock. A provider may not offer an atomic conditional write for thi
 simultaneous runs can still race after the last read. A duplicate that becomes visible is detected
 and fails closed for reconciliation; Effective Flow does not claim globally unique creation under
 concurrent writers.
+
+Points that need your decision are not asked one by one and nothing is written to the tracker
+beforehand. Per issue, they are collected and asked in one round between the internal review and
+persisting the planning comment, in the same decision format and with the same follow-up review
+rules as in `/effective-flow plan`. Unanswered points become open points in the comment, and the
+issue keeps `effective-flow-needs-planning`.
 
 After the automatic baseline, answer **Yes** to continue with the shared plan-review method as a
 deep interactive review or **No** to release the ready baseline. A skipped review can be resumed later with
