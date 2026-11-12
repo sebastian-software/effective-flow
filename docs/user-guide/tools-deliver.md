@@ -43,7 +43,9 @@ If the exact files and states still cannot be agreed, it stops without changing 
 This manifest confirmation is the workflow's sole routine approval; the only questions that can come
 before it are the [resume and release questions](#resuming-or-releasing-a-failed-delivery) for a
 retained failed delivery and the conditional upstream questions described under
-[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). If source state drifts after
+[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). The
+[committed-range route](#publishing-commits-you-already-made) replaces it with at most its provider
+question or one focused publish question. If source state drifts after
 confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
 continues.
 
@@ -60,6 +62,43 @@ tool. After each commit, `deliver` verifies the parent, branch, tree, and remain
 later group or commit hook fails, the fresh worktree and branch are retained together with all
 earlier verified commits and the still-uncommitted groups. Nothing is pushed and no pull request is
 created; successful commits are never amended, reordered, squashed, or retried.
+
+#### Publishing commits you already made
+
+When the session produced no uncommitted changes to select, `deliver` can still publish commits it
+made itself. The route applies only when the reconciled candidate is empty, the checkout is clean
+(untracked files included), and the branch is attached and not the base branch. It needs no
+confirmation round of its own and creates no branch, worktree, commit, or manifest.
+
+- **Which commits count:** only commits whose full 40-character OID (64 in a SHA-256 repository)
+  this session holds: from a
+  `commit` report (which always names the full OID), from `git rev-parse HEAD` right after the
+  session's own `git commit`, or from a worker report naming the full OID. An abbreviated OID, a
+  merge commit, a rebased or cherry-picked commit, an OID lost to context compaction, and any
+  guess from author, message, or recency never count.
+- **Four conditions:** the fetch and upstream state allow publishing; the commits between the
+  refreshed base and `HEAD` are non-empty and all session-known; no pull request already exists
+  for the branch (any base, any state); and no earlier `pr` attempt on it ended uncertain.
+- **Outcomes:** when all four hold, `deliver` lists each commit and its changed paths and hands
+  the branch to `pr` without asking a tool-choice question. An open pull request instead points
+  you to `iterate`, or to a direct `pr` call when it is a plan's draft. A failed condition that
+  you can reasonably override, such as commits this session cannot vouch for, only closed or
+  merged pull requests, an uncertain earlier attempt, or an unexpected upstream, produces one
+  focused **Publish via pr** or **Cancel** question naming the condition. Hard failures, such as
+  a failed or stale fetch, a detached checkout, an empty range, or missing forge access, end with
+  one notice line. An unanswered or skipped question, and a non-interactive run, resolve to
+  **Cancel**: nothing is pushed. When the run must ask which forge it is (`github` or `forgejo`),
+  that is its only question: a condition that would otherwise ask the Publish or Cancel question
+  then ends with a notice instead, and an unanswered forge question also ends with a notice, with
+  nothing pushed.
+- **Dirty checkouts:** any staged, unstaged, or untracked change keeps the selection path above.
+  When the configured base resolves to an `origin` remote-tracking ref and the checkout is attached
+  to a non-base branch, its delivery adds one notice line that committed work on the branch is not
+  included. A local-only base, a detached checkout, or the base branch itself (`HEAD_IS_BASE`) adds
+  no notice, because the range read fails and a failed read adds none; on the base branch the
+  earlier upstream check's ahead notice is the signal.
+- **Writes:** `deliver` itself pushes nothing. The only write is `pr`'s `push -u`, which also
+  sets the branch's upstream configuration; `pr` owns it.
 
 #### Resuming or releasing a failed delivery
 
@@ -153,7 +192,9 @@ Most states end with one notice line and no question, and `deliver` goes on to t
 detached checkout, a branch without an upstream, an upstream that no longer exists, a fetch that
 failed, timed out, could not refresh the upstream, or was skipped because the upstream
 configuration is invalid, a comparison that could not be completed, a branch that is up to date,
-and a branch that is only ahead. Two states ask:
+and a branch that is only ahead. An ahead branch still reaches the selection, and when the checkout is
+clean and nothing is left to select, the [committed-range route](#publishing-commits-you-already-made) applies. Two
+states ask:
 
 - **Behind:** `deliver` names the upstream and how many commits your branch is behind, then asks
   whether to **Fast-forward first**, **Continue without update**, or **Abort**.
@@ -206,8 +247,9 @@ other Conventional-Commit syntax remain English and language-stable.
 workflows call it with a verified delivery receipt after they have staged only their known output.
 `commit` never selects, stages, unstages, restores, or validates files. It respects existing hooks;
 if a hook fails, it reports the cause instead of bypassing it. With multiple unrelated topics in a
-directly staged diff, it suggests splitting first. A delivery caller additionally receives the
-created commit OID, branch, tree OID, and remaining staged, unstaged, and untracked state so it can
+directly staged diff, it suggests splitting first. Every report names the created commit's full
+40-character OID (64 in a SHA-256 repository), never an abbreviation, so a later publish can recognize the commit as
+session-made. A delivery caller additionally receives the branch, tree OID, and remaining staged, unstaged, and untracked state so it can
 verify the boundary before continuing.
 
 ## `/effective-flow pr`
@@ -220,6 +262,8 @@ or switches a branch, stages or commits content, or restores a checkout.
 **When to use:** When every intended change is already committed on an attached, non-base branch
 and that branch is ready to publish. If local staged, unstaged, or untracked changes still need to
 be included, use `deliver`; direct `pr` aborts on a dirty checkout rather than omitting them.
+When the session's own commits are all that is left to publish, `deliver` hands them to `pr` for
+you (see [Publishing commits you already made](#publishing-commits-you-already-made)).
 
 **Typical call:** `/effective-flow pr`
 

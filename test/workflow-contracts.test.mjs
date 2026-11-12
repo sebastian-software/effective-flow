@@ -18381,6 +18381,8 @@ test('deliver is exposed with its shipped helper and continues automatically aft
     'can precede it',
     'the resume and release questions for a retained `partial-diff` record',
     'the upstream questions.',
+    // The committed-range route's replacement of the manifest confirmation is named here too.
+    'The committed-range route replaces it with at most its provider question or its focused publish question.',
   ]) {
     assert.ok(
       additions.includes(token),
@@ -18797,6 +18799,403 @@ test('a ledger release proves one locked snapshot and keeps every discarded file
     prose(source('src/shared/deliver-partial-diff-resume.md')),
     /a `ledger` release also names `refs\/effective-flow\/released\/<RECORD_ID>\/`, where it kept every file it discarded/,
   );
+});
+
+// Invariant: the committed-range route is named in deliver's helper operation list, yet it is never
+// spliced into the `upstream-status`, `fast-forward`, `bind-manifest` adjacency that the step 1.1
+// pin and the source-upstream-sync flow depend on.
+test('deliver names committed-range in its operation list outside the pinned helper adjacency', () => {
+  const deliver = source('src/tools/deliver.md');
+  assert.match(
+    prose(deliver),
+    /`reconcile`, and `committed-range` operations/,
+    'the helper operation list must name committed-range',
+  );
+  assert.ok(
+    !boundedSlice(deliver, '`upstream-status`, `fast-forward`', '`bind-manifest`').includes(
+      'committed-range',
+    ),
+    'committed-range must not sit between upstream-status and bind-manifest',
+  );
+});
+
+// Invariant: the committed-range fragment is a lazy include in the Selection contract, loaded only
+// when the reconciled candidate is empty and the source is entirely clean, and its content is never
+// inlined into the always-loaded deliver core.
+test('deliver lazily loads the committed-range fragment from the selection contract only', () => {
+  const deliver = source('src/tools/deliver.md');
+  const triggers = new Map(
+    [...deliver.matchAll(LAZY_INCLUDE_RE)].map((match) => [
+      match[1].trim(),
+      (match[2] ?? '').trim(),
+    ]),
+  );
+  assert.equal(
+    triggers.get('deliver-committed-range'),
+    'the reconciled candidate is empty and the source tree and index are clean, untracked paths included',
+    'the committed-range pointer must fire only for an empty candidate on a fully clean source',
+  );
+  assert.ok(
+    section(deliver, '## Selection contract', '\n## ').includes(
+      '```lazy-include\ndeliver-committed-range\n',
+    ),
+    'the pointer must sit in the Selection contract section',
+  );
+  // A clean empty candidate reaches the pointer before the selection contract's user interaction.
+  ordered(
+    section(deliver, '## Selection contract', '\n## '),
+    '```lazy-include\ndeliver-committed-range\n',
+    'If session and Git evidence are absent, incomplete',
+  );
+  assert.doesNotMatch(
+    deliver,
+    /^```include\ndeliver-committed-range\n/m,
+    'the committed-range fragment must never be part of the always-loaded core',
+  );
+  for (const inlined of [
+    '### Session-known commits',
+    'Publish the commit range listed above',
+    'foreignOids',
+    '`planPrMarker`',
+  ]) {
+    assert.ok(
+      !deliver.includes(inlined),
+      `the deliver core must not inline fragment content: ${inlined}`,
+    );
+  }
+});
+
+// Invariant: the fragment's single question is an unscored publish-or-cancel fence that fails safe:
+// Cancel pushes nothing and creates no pull request, and an unanswered, skipped, or non-interactive
+// run resolves to Cancel and says so. The scored-fence registry stays at its ten entries.
+test('the committed-range fragment asks one unscored publish question that fails safe to Cancel', () => {
+  const fragment = source('src/shared/deliver-committed-range.md');
+  const asks = askContracts(fragment, 'src/shared/deliver-committed-range.md');
+  assert.equal(asks.length, 1, 'the fragment must contain exactly one ask fence');
+  const [ask] = asks;
+  assert.equal(ask.header, 'Publish');
+  assert.equal(
+    ask.question,
+    'Publish the commit range listed above through pr despite the condition named above?',
+  );
+  assert.match(ask.when, /noted a focused-question outcome and asked no provider question/);
+  assert.deepEqual(
+    ask.options.map(({ label }) => label),
+    ['Publish via pr', 'Cancel'],
+  );
+  assert.equal(ask.type, null, 'the publish question must stay unscored (no type)');
+  const cancel = ask.options.find(({ label }) => label === 'Cancel');
+  assert.match(cancel.description, /without pushing anything or creating a pull request/);
+  // Invariant: the publish answer discloses `pr`'s write before the user grants it: the push to
+  // `origin` and the upstream it sets (`push -u`) come before the pull request is opened.
+  const publish = ask.options.find(({ label }) => label === 'Publish via pr');
+  assert.match(
+    publish.description,
+    /pushes the branch to origin and sets its upstream \(push -u\) before opening a pull request/,
+  );
+  assert.match(
+    prose(fragment),
+    /An unanswered or skipped question, or a non-interactive run, resolves to Cancel: nothing is pushed, no pull request is created, and the report says so/,
+    'an unanswered, skipped, or non-interactive question must resolve to Cancel and be reported',
+  );
+});
+
+// Invariant: ownership proof is a session-held full OID only; weaker evidence never counts and no
+// heuristic or persisted receipt substitutes for it.
+test('committed-range defines a session-known commit as a full OID with no heuristic', () => {
+  const text = prose(
+    boundedSlice(
+      source('src/shared/deliver-committed-range.md'),
+      '### Session-known commits',
+      '### Range base',
+    ),
+  );
+  for (const token of [
+    'full 40-character OID',
+    '`{{SKILL:commit}}` report',
+    "`git rev-parse HEAD` run immediately after the session's own `git commit`",
+    'An abbreviated OID, a merge commit, a rebased or cherry-picked commit, and an OID lost to context compaction never count',
+    'No author, message, time, or recency heuristic and no persisted receipt',
+    'never pass an abbreviated one',
+  ]) {
+    assert.ok(text.includes(token), `session-known definition: ${token}`);
+  }
+});
+
+// Invariant: the range the route checks is the range `pr` publishes: its base is derived exactly as
+// `pr` step 4 does, with the same three aborts and one shared-rule refresh.
+test('committed-range derives its range base exactly as pr step 4 with its three aborts', () => {
+  const fragment = source('src/shared/deliver-committed-range.md');
+  const slice = boundedSlice(fragment, '### Range base', '### Conditions');
+  const text = prose(slice);
+  for (const token of [
+    'Derive the range base exactly as `{{SKILL:pr}}` step 4 does',
+    "require the resolved base ref's remote to be `origin`",
+    'base branch has no upstream',
+    'base branch tracked on a non-`origin` remote',
+    'base branch tracked under a different name',
+    'once for its one refresh',
+  ]) {
+    assert.ok(text.includes(token), `range base: ${token}`);
+  }
+  assert.match(
+    slice,
+    /```lazy-include\nbase-branch-resolution\nwhen: the committed-range route derives its range base\n```/,
+    'the base-branch rule is the shared lazy rule, never re-derived',
+  );
+  // Invariant: the fragment and `pr` step 4 must derive the same range base. The fragment restates
+  // step 4's remote-not-configured arm, so every load-bearing token it relies on must still be in
+  // that step; a reworded or dropped abort, upstream format, or refresh in `pr` fails here instead
+  // of silently letting the checked range and the published range diverge.
+  const prStep4 = prose(
+    boundedSlice(
+      source('src/tools/pr.md'),
+      '4. **Resolve the base and inspect the head',
+      '5. **Resolve the provider:**',
+    ),
+  );
+  for (const token of [
+    'base branch has no upstream',
+    'base branch tracked on a non-`origin` remote',
+    'base branch tracked under a different name',
+    "--format='%(refname:short) %(upstream:short)' refs/heads/<branch>",
+    'back through',
+  ]) {
+    assert.ok(text.includes(token), `range base (fragment): ${token}`);
+    assert.ok(prStep4.includes(token), `range base (pr step 4): ${token}`);
+  }
+});
+
+// Invariant: the four handoff conditions are all required, in order, each with its load-bearing
+// tokens (fetch and upstream states, range, any-state PR lookup, uncertain earlier attempt).
+test('committed-range hands off only when all four conditions hold', () => {
+  const fragment = source('src/shared/deliver-committed-range.md');
+  const slice = boundedSlice(fragment, '### Conditions', '### Outcomes');
+  const text = prose(slice);
+  // Invariant: condition evaluation order. The route runs after step 1.2, a notice outcome ends it
+  // at once, and a question outcome is only noted, so a later notice or pointer still wins.
+  assert.ok(
+    prose(fragment.slice(0, fragment.indexOf('### Session-known commits'))).includes(
+      'The route runs after step 1.2',
+    ),
+    'condition evaluation order: the route runs after step 1.2',
+  );
+  assert.ok(
+    text.includes(
+      'A notice outcome ends the run at once; a question outcome is noted and evaluation continues',
+    ),
+    'condition evaluation order: notice ends at once, question is noted',
+  );
+  ordered(
+    text,
+    '1. Fetch and upstream.',
+    '2. Range.',
+    '3. No existing PR.',
+    '4. No uncertain attempt.',
+  );
+  const tokens = {
+    'condition 1 (fetch state)': [
+      'was not attempted, or reported `fetch.ok` true, `fetch.stale` false, and no `fetch.skipped`',
+      'read after any fast-forward the user confirmed',
+    ],
+    'condition 1 (upstream states)': [
+      'is `ahead`, `no-upstream`, or `up-to-date`',
+      'or `behind` or `diverged` with an upstream equal to the range base (base drift)',
+    ],
+    'condition 1 (allowed upstream set)': [
+      '(`branch.<name>.remote = .`)',
+      '`origin/<head-branch>`',
+      'or the range base; any other upstream is a question outcome naming it',
+    ],
+    'condition 2 (range)': [
+      '`committed-range` succeeds with a non-empty range and empty `foreignOids`',
+      '`baseRef` the range base',
+      '`knownOids`',
+    ],
+    'condition 3 (existing PR lookup)': [
+      '`repository-resolve`',
+      'the probe once',
+      '`pr-list` with `{state: "all", head}`',
+      'each with the verified `RUNTIME_STATE_ROOT` as `cwd`',
+      '`<owner>:<head-branch>`',
+      "`pr-read` under `pr` step 8's completeness rules",
+      '`sameRepository === true`, with no base or state filter',
+    ],
+    'condition 4 (uncertain attempt)': [
+      'no earlier `pr` run on this head that ended uncertain',
+      '`mutationMayHaveSucceeded`',
+    ],
+  };
+  for (const [name, list] of Object.entries(tokens)) {
+    for (const token of list) assert.ok(text.includes(token), `${name}: ${token}`);
+  }
+  assert.match(
+    slice,
+    /```lazy-include\nremote-helper-contract\nwhen: condition 3 calls the remote helper\n```/,
+    'the remote-helper contract loads lazily for the lookup',
+  );
+});
+
+// Invariant: every failure outcome is fixed: pointers without a question, a focused question that
+// names the failed condition, the provider question as the single question, and notice rows with
+// `setup` pointed to only for an unresolvable base.
+test('committed-range fixes its pointer, question, provider, and notice outcomes', () => {
+  const text = prose(
+    boundedSlice(source('src/shared/deliver-committed-range.md'), '### Outcomes', '### Handoff'),
+  );
+  const groups = {
+    'pointer rows': [
+      'any other kept open item, on any base, points to `{{SKILL:iterate}}`',
+      'a kept open item carrying a `planPrMarker` points to a direct `{{SKILL:pr}}` call from this checkout (plan-draft recovery)',
+    ],
+    'focused-question rows': [
+      'non-empty `foreignOids` (mixed state, a merge, a lost or abbreviated OID)',
+      'only closed or merged kept items',
+      'a known uncertain earlier `pr` mutation',
+      "an upstream outside condition 1's set",
+    ],
+    'provider question': [
+      'on `AMBIGUOUS_HOST`, ask for `github` or `forgejo` as `pr` step 5 does and repeat the lookup with that answer',
+      "It is the route's single question",
+      // A noted focused-question outcome never slips to the handoff once the provider question
+      // was asked, whichever side of it the outcome was noted on.
+      'any noted focused-question outcome, whether noted before or after it, then ends the run with one notice naming every failed condition, nothing pushed',
+      'An unanswered, skipped, or non-interactive provider question ends the run with one notice naming `AMBIGUOUS_HOST`, nothing pushed',
+    ],
+    'notice rows': [
+      "the rule's `unresolvable`, the only notice that points to `{{SKILL:setup}}`",
+      'no remote-tracking diff base',
+      "`CLI_MISSING` or `AUTH_FAILED` with the helper's remediation",
+      '`upstream-status` `ok: false`',
+      'a failed, stale, or skipped fetch',
+      '`upstream-gone` or `untracked-upstream`',
+      '`behind` or `diverged` against an upstream other than the range base',
+      '`DETACHED_HEAD`',
+      '`HEAD_IS_BASE`',
+      'an empty range',
+      'any other helper, lookup, or rule failure or state',
+      '`fetch-failed`',
+      '`fetch-denied`',
+      '`tracking-stale`',
+      '`UNSUPPORTED_CAPABILITY`',
+      '`INVALID_PAYLOAD`',
+      'a missing `origin`',
+    ],
+  };
+  for (const [name, list] of Object.entries(groups)) {
+    for (const token of list) assert.ok(text.includes(token), `${name}: ${token}`);
+  }
+  assert.equal(
+    text.split('`{{SKILL:setup}}`').length - 1,
+    1,
+    '`setup` is pointed to exactly once, by the unresolvable notice',
+  );
+});
+
+// Invariant: the handoff is a true handoff: everything is printed before `pr`, HEAD and cleanliness
+// are re-checked, `pr` is invoked plainly and owns the report and next steps, and deliver itself
+// creates no artifact and pushes nothing (the `push -u` write belongs to `pr`).
+test('committed-range hands off to pr plainly after printing and re-checking', () => {
+  const fragment = source('src/shared/deliver-committed-range.md');
+  const handoff = prose(boundedSlice(fragment, '### Handoff', '```ask'));
+  for (const token of [
+    'print one route line',
+    'the upstream outcome',
+    "each commit's OID and subject",
+    'marking every `foreignOids` entry',
+    "the range's changed `paths`",
+    'Without a noted question outcome, ask nothing',
+    'only when no provider question was asked, name every failed condition and ask',
+  ]) {
+    assert.ok(handoff.includes(token), `handoff printing: ${token}`);
+  }
+  const tail = prose(fragment.slice(fragment.indexOf('An unanswered or skipped question')));
+  for (const token of [
+    // A noted question outcome cannot hand off unless the publish question was answered.
+    'A noted question outcome reaches the call below only through the answer Publish via pr',
+    'Before calling `pr`, re-check that the source `HEAD` equals `headOid` and that the tree and index are still clean, untracked paths included; otherwise end with one notice',
+    'call `{{SKILL:pr}}` as a plain direct invocation from the source checkout',
+    'no `Next steps: suppressed` line',
+    'Print nothing afterwards',
+    '`pr` owns the final report and the next-step block',
+  ]) {
+    assert.ok(tail.includes(token), `handoff call: ${token}`);
+  }
+  ordered(
+    tail,
+    'Before calling `pr`, re-check',
+    'plain direct invocation',
+    'Print nothing afterwards',
+  );
+  const intro = prose(fragment.slice(0, fragment.indexOf('### Session-known commits')));
+  for (const token of [
+    '`deliver` creates no branch, worktree, commit, manifest, or ledger entry and pushes nothing',
+    "The only write is `pr`'s `push -u`",
+    'replaces steps 1.3 through 7 of `deliver`, its report and next-step block included',
+    'that write belongs to `{{SKILL:pr}}`',
+    'a dirty selection is never read as a committed range',
+  ]) {
+    assert.ok(intro.includes(token), `handoff ownership: ${token}`);
+  }
+});
+
+// Invariant: a dirty selection keeps the unchanged path; after the step 3.1 base refresh one
+// committed-range read adds a single notice and never enters or replaces the manifest.
+test('deliver step 3.1 notes committed work after the base refresh without touching the manifest', () => {
+  const step = prose(
+    boundedSlice(
+      source('src/tools/deliver.md'),
+      '### 3. Create the isolated delivery branch',
+      '2. Derive a collision-safe',
+    ),
+  );
+  ordered(step, 'Refresh the configured remote base', 'committed-range', 'adds one notice line');
+  for (const token of [
+    'A non-empty `committed-range` read `{root: sourceRoot, baseRef: <refreshed base ref>, baseBranch: <resolved local base branch>, knownOids: []}`',
+    'committed work is not included in this delivery',
+    'never enters or replaces the manifest',
+    'A failed read adds no notice',
+  ]) {
+    assert.ok(step.includes(token), `dirty-selection notice: ${token}`);
+  }
+});
+
+// Invariant: `commit` step 9 reports the full 40-character OID, which makes the session-known proof
+// reliable for commits created through `commit`.
+test('commit reports the full 40-character commit OID', () => {
+  assert.match(
+    prose(source('src/tools/commit.md')),
+    /Report the created commit's full 40-character OID, never abbreviated \(64 characters in a SHA-256 repository\)/,
+  );
+});
+
+// Scenario mapping (issue #652 "Scenarios"). Helper scenarios (clean one commit ahead, no-upstream,
+// up-to-date, base-drift diverged range, empty range, merge, foreign commit, non-origin base, error
+// codes) live in test/delivery-selection-git.test.mjs. The routing scenarios below each pin the
+// contract row that decides them.
+test('committed-range scenarios each map to a named contract row', () => {
+  const fragment = prose(source('src/shared/deliver-committed-range.md'));
+  const scenarios = {
+    'open PR on any base -> iterate':
+      'any other kept open item, on any base, points to `{{SKILL:iterate}}`',
+    'open plan-draft PR -> direct pr':
+      'a kept open item carrying a `planPrMarker` points to a direct `{{SKILL:pr}}` call',
+    'closed or merged PR -> focused question': 'only closed or merged kept items',
+    'known uncertain mutation -> focused question': 'a known uncertain earlier `pr` mutation',
+    'upstream on another remote or name -> focused question':
+      "an upstream outside condition 1's set",
+    'foreign commit or unpushed base commits -> focused question':
+      'non-empty `foreignOids` (mixed state, a merge, a lost or abbreviated OID)',
+    'upstream-gone -> notice': '`upstream-gone` or `untracked-upstream`',
+    'checkout on the base branch -> HEAD_IS_BASE notice': '`HEAD_IS_BASE`',
+    'agent worktree tracking origin/base, diverged -> handoff (base drift)':
+      '`diverged` with an upstream equal to the range base (base drift)',
+    'dirty selection plus committed range -> unchanged path':
+      'a dirty selection is never read as a committed range',
+  };
+  for (const [scenario, token] of Object.entries(scenarios)) {
+    assert.ok(fragment.includes(token), `scenario: ${scenario}`);
+  }
 });
 
 // The commit groups must cover the confirmed manifest exactly and be committed one by one; a
