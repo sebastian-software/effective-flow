@@ -1452,13 +1452,17 @@ const NO_CI_UNATTENDED_KEY = 'mergeGate.noCiPolicy.unattended';
 const ORIGIN_REMOTE_PREFIX = 'refs/remotes/origin/';
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // The read-only git vectors of the base-branch read; each call appends exactly one operand: the
-// exact remote-tracking ref, a revision built from it or from the verified commit, or an object id.
+// exact remote-tracking ref, a revision built from it, or a verified object id. `ls-tree` takes no
+// path operand, so no pathspec is matched; the caller picks the exact entry name from the listing.
 // `show-ref --verify --quiet` and `rev-parse --verify --quiet` exit 1 for "does not exist" only.
 const showRefArgs = ['show-ref', '--verify', '--quiet'];
 const verifyRefArgs = ['rev-parse', '--verify', '--quiet'];
-const catTypeArgs = ['cat-file', '-t'];
 const catBlobArgs = ['cat-file', 'blob'];
-const lsTreeNamesArgs = ['ls-tree', '-z', '--name-only'];
+const lsTreeArgs = ['ls-tree', '-z', '--full-tree'];
+// The only tree entries a base path may pass through: a regular file or a directory. A symlink
+// (120000), a submodule (160000) or any other mode stops the base read as unprovable.
+const REGULAR_FILE_MODES = Object.freeze(['100644', '100755']);
+const TREE_MODE = '040000';
 
 // `data.noCiPolicy.baseComparison`: how the base-branch rows compare with the working rows.
 export const NO_CI_BASE_COMPARISONS = Object.freeze([
@@ -1542,28 +1546,54 @@ function baseOutcome(args, result, absentStatus = null) {
   throw gitFailure(args, result);
 }
 
-// Reads paths of one base commit: an entry absent from its tree is null, never an error.
+// Thrown inside the base comparison when a path the base locator consults passes through an entry
+// other than a regular file or a directory, so which source the base selects cannot be proven.
+class BaseSourceUnprovable extends Error {}
+
+// Reads paths of one base commit component by component, each entry's mode taken from its parent
+// tree. An absent entry, or one below a regular file, is null, never an error; a symlink, a
+// submodule or any other entry on the way throws BaseSourceUnprovable, because the working locator
+// would follow or reject it and the base side cannot tell which.
 function baseCommitReader(context, root, commit) {
-  const entry = async (relative) => {
-    const spec = `${commit}:${relative.split(path.sep).join('/')}`;
-    const found = baseOutcome(
-      [...verifyRefArgs, spec],
-      await runGit(context, root, [...verifyRefArgs, spec]),
-      1,
+  const listings = new Map();
+  const listing = async (oid) => {
+    if (listings.has(oid)) return listings.get(oid);
+    const output = baseOutcome(
+      [...lsTreeArgs, oid],
+      await runGit(context, root, [...lsTreeArgs, oid]),
     );
-    if (found === null) return null;
-    const oid = found.trim();
-    if (!OBJECT_ID.test(oid)) fail('GIT_FAILED', `git rev-parse printed no object id for ${spec}`);
-    const type = baseOutcome(
-      [...catTypeArgs, oid],
-      await runGit(context, root, [...catTypeArgs, oid]),
-    ).trim();
-    return { oid, type };
+    const entries = new Map();
+    for (const record of output.split('\0')) {
+      if (record === '') continue;
+      const tab = record.indexOf('\t');
+      const [mode, type, entryOid] = tab === -1 ? [] : record.slice(0, tab).split(' ');
+      if (!mode || !type || !OBJECT_ID.test(entryOid ?? '')) {
+        fail('GIT_FAILED', `git ls-tree printed an unparseable entry for ${oid}`);
+      }
+      let kind = 'unsafe';
+      if (type === 'blob' && REGULAR_FILE_MODES.includes(mode)) kind = 'file';
+      else if (type === 'tree' && mode === TREE_MODE) kind = 'tree';
+      entries.set(record.slice(tab + 1), { kind, oid: entryOid });
+    }
+    listings.set(oid, entries);
+    return entries;
+  };
+  const entry = async (relative) => {
+    let current = { kind: 'tree', oid: commit };
+    for (const name of relative.split(path.sep)) {
+      if (current.kind !== 'tree') return null;
+      const found = (await listing(current.oid)).get(name);
+      if (!found) return null;
+      if (found.kind === 'unsafe') throw new BaseSourceUnprovable(relative);
+      current = found;
+    }
+    return current;
   };
   return {
+    entry,
     async blobText(relative) {
       const found = await entry(relative);
-      if (!found || found.type !== 'blob') return null;
+      if (!found || found.kind !== 'file') return null;
       return baseOutcome(
         [...catBlobArgs, found.oid],
         await runGit(context, root, [...catBlobArgs, found.oid]),
@@ -1571,12 +1601,8 @@ function baseCommitReader(context, root, commit) {
     },
     async treeNames(relative) {
       const found = await entry(relative);
-      if (!found || found.type !== 'tree') return null;
-      const listing = baseOutcome(
-        [...lsTreeNamesArgs, found.oid],
-        await runGit(context, root, [...lsTreeNamesArgs, found.oid]),
-      );
-      return listing.split('\0').filter((name) => name !== '');
+      if (!found || found.kind !== 'tree') return null;
+      return [...(await listing(found.oid)).keys()];
     },
   };
 }
@@ -1590,15 +1616,21 @@ function markerRelative(checkoutRoot, target) {
 
 // Mirrors locator steps 1 and 2 on the base commit: the checkout-relative path of the source the
 // base itself would locate, or null when it locates none (it would fall through to steps 3 and 4).
-// Symlinks are not followed, so a base that relies on one locates nothing here and fails closed.
+// It consults only what decides the selection: the convention files up to the first one carrying a
+// marker, that marker's target, then the first existing ADR directory and its candidates. A symlink
+// or submodule on any of those paths throws BaseSourceUnprovable through the reader.
 async function locateInBase(reader, checkoutRoot) {
-  const markers = [];
+  let marker = null;
   for (const name of CONVENTION_FILES) {
     const text = await reader.blobText(name);
-    if (text !== null) markers.push(...parseSetupMarkers(text));
+    const markers = text === null ? [] : parseSetupMarkers(text);
+    if (markers.length > 0) {
+      [marker] = markers;
+      break;
+    }
   }
-  if (markers.length > 0) {
-    const target = markerRelative(checkoutRoot, markers[0].path);
+  if (marker) {
+    const target = markerRelative(checkoutRoot, marker.path);
     const text = target === null ? null : await reader.blobText(target);
     if (text !== null && parseConfigurationDocument(text).envelope) return target;
   }
@@ -1621,10 +1653,23 @@ async function locateInBase(reader, checkoutRoot) {
   return null;
 }
 
+// Whether the base selects the step-3 file at `relative`: it locates nothing through steps 1 and 2,
+// and no transitional file ranked before it exists in the base, because the working locator stops
+// at the first one present, whatever it holds.
+async function baseSelectsTransitional(reader, checkoutRoot, relative) {
+  if ((await locateInBase(reader, checkoutRoot)) !== null) return false;
+  for (const candidate of TRANSITIONAL_FILES) {
+    if (candidate === relative) return true;
+    if ((await reader.entry(candidate)) !== null) return false;
+  }
+  return false;
+}
+
 // Compares the working checkout with the commit of `refs/remotes/origin/<baseRef>`, read in the
 // runtime-state root. `missing`: the exact ref, or the located source's path in that commit, does
 // not exist. `unreadable`: the base blob has no decodable configuration. `mismatch`: the base would
-// locate another source, or its policy rows differ. Any other Git failure is GIT_FAILED.
+// locate another source, a symlink or submodule on a path its locator consults leaves that
+// unprovable, or its policy rows differ. Any other Git failure is GIT_FAILED.
 async function compareWithBase(resolution, baseRef) {
   const { context, roots, located, rows } = resolution;
   if (!roots.git || !located) return 'missing';
@@ -1651,15 +1696,24 @@ async function compareWithBase(resolution, baseRef) {
   const commit = peeled.trim();
   if (!OBJECT_ID.test(commit)) fail('GIT_FAILED', `git rev-parse printed no commit for ${fullRef}`);
   const reader = baseCommitReader(context, root, commit);
-  const text = await reader.blobText(relative);
-  if (text === null) return 'missing';
-  const baseRows = decodeSourceText(located, text);
-  if (baseRows === null) return 'unreadable';
-  // The base must choose the same source: a head that edits or drops a marker, or changes the ADR
-  // candidates, could otherwise point the locator at a base file that already carries policy rows.
-  const baseSource = await locateInBase(reader, roots.checkoutRoot);
-  const sameSource = located.step === 3 ? baseSource === null : baseSource === relative;
-  if (!sameSource) return 'mismatch';
+  let baseRows;
+  try {
+    const text = await reader.blobText(relative);
+    if (text === null) return 'missing';
+    baseRows = decodeSourceText(located, text);
+    if (baseRows === null) return 'unreadable';
+    // The base must choose the same source: a head that edits or drops a marker, a symlink, or
+    // changes the ADR candidates or transitional files, could otherwise point the locator at a base
+    // file that already carries policy rows.
+    const sameSource =
+      located.step === 3
+        ? await baseSelectsTransitional(reader, roots.checkoutRoot, relative)
+        : (await locateInBase(reader, roots.checkoutRoot)) === relative;
+    if (!sameSource) return 'mismatch';
+  } catch (error) {
+    if (error instanceof BaseSourceUnprovable) return 'mismatch';
+    throw error;
+  }
   const working = noCiPolicyRows(rows);
   const base = noCiPolicyRows(baseRows);
   return working.length === base.length && working.every((row, index) => row === base[index])

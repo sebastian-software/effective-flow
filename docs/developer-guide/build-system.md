@@ -825,9 +825,10 @@ point is an I/O boundary over testable core or protocol modules:
   setup document as a blob at `refs/remotes/origin/<baseRef>` in `runtimeStateRoot` (it fetches
   nothing; the merge gate fetches the base first), and compares the `mergeGate.noCiPolicy.*` rows
   of both. The base commit must locate the same setup source (marker, then scan; a step-3 source
-  requires the base to locate none), or the result is `mismatch`; a missing exact ref
-  `refs/remotes/origin/<baseRef>` or a missing file is `missing`; any other Git failure is a
-  `GIT_FAILED` error envelope (exit 1), not a `data.noCiPolicy` outcome, which the merge gate treats
+  requires the base to locate none and to select the same transitional file), reading each entry's
+  mode from its parent tree; a symlink or submodule on a consulted path, or another source, is
+  `mismatch`; a missing exact ref `refs/remotes/origin/<baseRef>` or a missing file is `missing`;
+  any other Git failure is a `GIT_FAILED` error envelope (exit 1), not a `data.noCiPolicy` outcome, which the merge gate treats
   as an inactive policy; `HEAD` is rejected as `baseRef`. Its `data.noCiPolicy` carries `configured`, `bases`, `unattended`, `invalid`, `baseRef`,
   `baseListed`, `baseComparison` (`equal`, `mismatch`, `missing`, `unreadable`, `hidden-self`,
   `not-applicable`), `active` and `reason`, beside the usual `data` fields. The merge gate, not the

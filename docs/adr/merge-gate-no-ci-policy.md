@@ -51,11 +51,13 @@ at `origin/<baseRef>` with the working checkout and reports the policy active on
 are identical, so a pull request cannot grant the policy to itself by editing the rows. Adding,
 removing or changing any such row on the head is a mismatch, and a missing or unreadable base blob
 leaves the policy inactive. The base commit must locate the same setup source as the working
-checkout (marker first, then the scan; a step-3 source requires the base to locate none), or the
-result is `mismatch`. A missing exact ref `refs/remotes/origin/<baseRef>` or a missing file is
-`missing`. Any other Git failure is a `GIT_FAILED` error envelope (exit 1), not a
-`data.noCiPolicy` outcome, and merge-gate treats it as an inactive policy. `HEAD` is rejected as
-`baseRef`.
+checkout (marker first, then the scan; a step-3 source requires the base to locate none and to
+select the same transitional file), or the result is `mismatch`. A symlink, a submodule or any
+other entry that is neither a regular file nor a directory on a path the base-side locator
+consults is not followed, and the result is `mismatch` too. A missing exact ref
+`refs/remotes/origin/<baseRef>` or a missing file is `missing`. Any other Git failure is a
+`GIT_FAILED` error envelope (exit 1), not a `data.noCiPolicy` outcome, and merge-gate treats it as
+an inactive policy. `HEAD` is rejected as `baseRef`.
 
 Known limitations:
 
@@ -63,8 +65,11 @@ Known limitations:
   itself: it grants the policy but offers no pull-request-head guard.
 - In a blobless partial clone the resolver never fetches lazily (`GIT_NO_LAZY_FETCH=1`), so a base
   blob that was not fetched makes the policy read fail closed.
-- A setup source or marker reached through a symlink is not followed on the base side, and the
-  policy read fails closed.
+- The base side reads each path entry by entry from its parent tree and follows no symlink. A
+  base whose selected source depends on a symlinked convention file, marker target, ADR directory,
+  candidate, transitional file or parent directory makes the policy read fail closed, although the
+  working locator would follow that link. A convention file after the first one that carries a
+  marker is not consulted, so a `CLAUDE.md` symlink to `AGENTS.md` does not block the policy.
 
 ## Consequences
 

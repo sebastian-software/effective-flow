@@ -2753,10 +2753,15 @@ function pullRequestHead(base, root, name, change) {
   return head;
 }
 
-// Commits `files` (relative path → content) on the main branch and points `origin/main` at it.
-function baseRepository(t, files) {
+// Commits `files` (relative path → content) and `links` (relative path → symlink target text) on
+// the main branch and points `origin/main` at it.
+function baseRepository(t, files, links = {}) {
   const { base, root } = repository(t);
   for (const [relative, content] of Object.entries(files)) write(root, relative, content);
+  for (const [relative, target] of Object.entries(links)) {
+    mkdirSync(dirname(join(root, relative)), { recursive: true });
+    symlinkSync(target, join(root, relative));
+  }
   git(root, 'add', '-A');
   git(root, 'commit', '--quiet', '-m', 'base');
   git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
@@ -3065,6 +3070,155 @@ test('no-ci-policy: a step-3 JSON source is compared by key, raw cell and decode
   }
 });
 
+// Invariant: a step-3 source counts only when the base selects that very transitional file: the
+// working locator stops at the first one present, so a base that carries the higher-ranked file
+// selects it, whatever the lower-ranked one holds.
+test('no-ci-policy: a step-3 source the base does not select is a mismatch', async (t) => {
+  const current = join('.effective-flow', 'config.json');
+  const legacy = join('.firmo', 'config.json');
+  const policy = JSON.stringify({ mergeGate: { noCiPolicy: { bases: 'main', unattended: true } } });
+  const { root } = baseRepository(t, {
+    [current]: JSON.stringify({ plan: { dir: 'docs/plan' } }),
+    [legacy]: policy,
+  });
+  rmSync(join(root, current));
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(data.source.step, 3);
+  assert.equal(data.source.path, join(root, legacy));
+  assert.equal(data.noCiPolicy.configured, true);
+  assert.equal(data.noCiPolicy.baseComparison, 'mismatch');
+  assert.equal(data.noCiPolicy.active, false);
+  assert.equal(data.noCiPolicy.reason, 'base-blob-mismatch');
+
+  // The lower-ranked file alone in the base is selected there too.
+  const { root: alone } = baseRepository(t, { [legacy]: policy });
+  const selected = await noCiPolicy({ cwd: alone, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(selected.source.path, join(alone, legacy));
+  assert.equal(selected.noCiPolicy.baseComparison, 'equal');
+  assert.equal(selected.noCiPolicy.active, true);
+});
+
+// Invariant: the base side follows no symlink and no submodule. The working locator follows a
+// symlink that stays inside the checkout, so a base that relies on one selects a source the base
+// read cannot prove; reading the link text instead would let a head that drops or changes the
+// link match an unused base candidate that carries policy rows.
+test('no-ci-policy: a symlink on a path the base locator consults fails the comparison closed', async (t) => {
+  const policy = setupDocument({ [NO_CI_BASES]: 'main', [NO_CI_UNATTENDED]: 'true' });
+  const plain = setupDocument({ 'plan.dir': 'docs/plan' });
+  const marker = (target) => `**Effective Flow project setup:** ${target}\n`;
+  const prefixed = join('docs', 'adr', '0002-effective-flow-project-setup.md');
+  for (const { name, files, links, change, step, source } of [
+    {
+      name: 'symlinked AGENTS.md',
+      files: {
+        [join('docs', 'agents.md')]: marker('docs/setup.md'),
+        [join('docs', 'setup.md')]: plain,
+        [SETUP_ADR]: policy,
+      },
+      links: { 'AGENTS.md': join('docs', 'agents.md') },
+      change: (head) => rmSync(join(head, 'AGENTS.md')),
+      step: 2,
+      source: SETUP_ADR,
+    },
+    {
+      name: 'symlinked marker target',
+      files: {
+        'AGENTS.md': marker('docs/setup.md'),
+        [join('docs', 'real-setup.md')]: plain,
+        [SETUP_ADR]: policy,
+      },
+      links: { [join('docs', 'setup.md')]: 'real-setup.md' },
+      change: (head) => rmSync(join(head, 'AGENTS.md')),
+      step: 2,
+      source: SETUP_ADR,
+    },
+    {
+      name: 'symlinked marker target directory',
+      files: {
+        'AGENTS.md': marker('config/setup.md'),
+        [join('real-config', 'setup.md')]: plain,
+        [SETUP_ADR]: policy,
+      },
+      links: { config: 'real-config' },
+      change: (head) => rmSync(join(head, 'AGENTS.md')),
+      step: 2,
+      source: SETUP_ADR,
+    },
+    {
+      name: 'symlinked ADR directory',
+      files: {
+        [join('docs', 'real-adr', 'effective-flow-project-setup.md')]: plain,
+        [join('docs', 'decisions', 'effective-flow-project-setup.md')]: policy,
+      },
+      links: { [join('docs', 'adr')]: 'real-adr' },
+      change: (head) => rmSync(join(head, 'docs', 'adr')),
+      step: 2,
+      source: join('docs', 'decisions', 'effective-flow-project-setup.md'),
+    },
+    {
+      name: 'symlinked ADR candidate',
+      files: { [join('docs', 'other.md')]: plain, [prefixed]: policy },
+      links: { [SETUP_ADR]: join('..', 'other.md') },
+      change: (head) => rmSync(join(head, SETUP_ADR)),
+      step: 2,
+      source: prefixed,
+    },
+    {
+      name: 'symlinked transitional directory',
+      files: {
+        [join('real-state', 'config.json')]: JSON.stringify({ plan: { dir: 'docs/plan' } }),
+        [join('.firmo', 'config.json')]: JSON.stringify({
+          mergeGate: { noCiPolicy: { bases: 'main' } },
+        }),
+      },
+      links: { '.effective-flow': 'real-state' },
+      change: null,
+      step: 3,
+      source: join('.firmo', 'config.json'),
+    },
+  ]) {
+    const { base, root } = baseRepository(t, files, links);
+    let cwd = root;
+    if (change) cwd = pullRequestHead(base, root, 'head', change);
+    else rmSync(join(root, '.effective-flow'));
+    const data = await noCiPolicy({ cwd, tool: 'merge-gate', baseRef: 'main' });
+    assert.equal(data.source.step, step, name);
+    assert.equal(data.source.path, join(step === 3 ? root : cwd, source), name);
+    assert.equal(data.noCiPolicy.configured, true, name);
+    assert.equal(data.noCiPolicy.baseComparison, 'mismatch', name);
+    assert.equal(data.noCiPolicy.active, false, name);
+    assert.equal(data.noCiPolicy.reason, 'base-blob-mismatch', name);
+  }
+
+  // The located source itself may not be a symlink in the base either.
+  const { root } = baseRepository(
+    t,
+    { [join('docs', 'real.md')]: policy },
+    { [SETUP_ADR]: join('..', 'real.md') },
+  );
+  const linked = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(linked.source.path, join(root, SETUP_ADR));
+  assert.equal(linked.noCiPolicy.baseComparison, 'mismatch');
+  assert.equal(linked.noCiPolicy.active, false);
+});
+
+// Invariant: only paths that decide the selection are consulted, so the common `CLAUDE.md` symlink
+// to `AGENTS.md` keeps the policy active once `AGENTS.md` itself carries the marker.
+test('no-ci-policy: a convention file after the first marker is not consulted', async (t) => {
+  const { root } = baseRepository(
+    t,
+    {
+      'AGENTS.md': '**Effective Flow project setup:** docs/setup.md\n',
+      [join('docs', 'setup.md')]: setupDocument({ [NO_CI_BASES]: 'main' }),
+    },
+    { 'CLAUDE.md': 'AGENTS.md' },
+  );
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(data.source.step, 1);
+  assert.equal(data.noCiPolicy.baseComparison, 'equal');
+  assert.equal(data.noCiPolicy.active, true);
+});
+
 // Invariant: only "does not exist" makes the base comparison `missing`; git that cannot run or
 // fails otherwise is GIT_FAILED, never a silent fallback, and no base read may fetch lazily.
 test('no-ci-policy: a git failure in the base comparison is GIT_FAILED', async (t) => {
@@ -3091,6 +3245,8 @@ test('no-ci-policy: a git failure in the base comparison is GIT_FAILED', async (
     ['show-ref failure', 'show-ref', gitResult('', 128, 'fatal: bad object')],
     ['rev-parse failure', '--quiet', gitResult('', 128, 'fatal: corrupt')],
     ['cat-file failure', 'blob', gitResult('', 128, 'fatal: unable to read')],
+    ['ls-tree failure', 'ls-tree', gitResult('', 128, 'fatal: not a tree object')],
+    ['ls-tree garbage', 'ls-tree', gitResult('garbage\0')],
   ]) {
     const runner = fakeRunner((call) =>
       isCall(call, needle) && (needle !== '--quiet' || isCall(call, 'rev-parse')) ? answer : null,

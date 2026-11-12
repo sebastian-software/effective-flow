@@ -283,9 +283,8 @@ test('configuration resolver is read-only: filesystem reads only and git limited
   const OPERAND_GIT_ARGS = {
     showRefArgs: ['show-ref', '--verify', '--quiet'],
     verifyRefArgs: ['rev-parse', '--verify', '--quiet'],
-    catTypeArgs: ['cat-file', '-t'],
     catBlobArgs: ['cat-file', 'blob'],
-    lsTreeNamesArgs: ['ls-tree', '-z', '--name-only'],
+    lsTreeArgs: ['ls-tree', '-z', '--full-tree'],
   };
   assert.equal([...resolver.matchAll(/\bspawn\(/g)].length, 1, 'one process spawn site');
   assert.equal([...resolver.matchAll(/\.runner\(/g)].length, 1, 'one runner call site');
