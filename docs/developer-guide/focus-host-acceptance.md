@@ -1005,6 +1005,138 @@ used up. Any further candidate needs an owner decision and follows the plan's fa
 | `candidate-d/window-1/restore-verification.json`    | `9a9e7f4a31427e9081959939f2c057487e08a7d120e4ce5cbb8cf4ef303bcb9c` |
 | `candidate-d/window-1/dalo-post.json`               | `d6b8b7e7f43b21175b50c2602d8569c0851ca582fbaacdd629710dfce5d54e91` |
 
+### November 12 recording on candidate 887ba1fd, window 2 — failed follow-up offer
+
+**Result: failed; overall WP2b-2 qualification remains incomplete.** After the window 1 failure
+above, the owner decided on 2026-11-12:
+
+- a well-formed host thread link to the right session in an otherwise complete message counts as a
+  limitation, not a defect;
+- a malformed link fragment, a link or ID naming the wrong session and an incomplete report stay
+  defects;
+- the qualified configuration gains one sentence that applies the naming rule to every focus turn;
+- one further attempt on `887ba1fd`.
+
+In the second install window, a complete snapshot omitted the follow-up offer that its eager offer
+condition required. The recording plan counts a missing offer as an incomplete report, so the
+recording stopped under the #613 failure rule. No item F1–F16 is recorded as passed for `887ba1fd`.
+The earlier records, activation status, acceptance matrix and ADRs remain unchanged. #625 remains
+a draft.
+
+#### 887ba1fd window 2: binding
+
+The candidate, its validation and its eight digests are those of the window 1 entry above.
+Differences:
+
+- **Build:** portable build `1.73.0 (57fc72a)`. The branch head had advanced only by the window 1
+  failed entry, a documentation commit. The installed tree matched window 1's 192-entry manifest
+  except for the version stamp in `SKILL.md` and `tools/version.md`, and all eight digests matched.
+- **Configuration:** the extended entry below was active (SHA-256 `c19e3da3…`), the only key in a
+  configuration file that did not exist before. Its first eight lines are the qualified 2026-11-10
+  entry unchanged.
+
+```toml
+developer_instructions = """
+For effective-flow focus follow-up tick turns only: apply the focus contract's output rules to
+all visible assistant messages in the turn. When the tick is quiet, emit exactly its required
+checkpoint line as the final response and no opening commentary, progress update, acknowledgement,
+heading or other visible prose. For reportable events, emit only the report and checkpoint required
+by the focus contract. This specific exception overrides generic progress-commentary requirements
+for these tick turns only. Keep all tool, admission, read-budget, authority and safety rules.
+For every other turn, retain the normal communication requirements.
+In every effective-flow focus turn, snapshots and follow-up ticks alike, name every session in
+visible output by its exact reference in inline code (on T3 the bare thread ID), never as a host
+thread link or angle-bracketed URL, even where host instructions ask to mention threads by their
+link. The checkpoint line keeps its raw target.
+"""
+```
+
+Host, model, effort, runtime mode, approval policy and session handling were as in window 1. Install
+window 2 ran from 14:23:38 to 14:32:54 UTC. The installed tree matched its manifest at installation
+and at the end, `diff -r` against the build was empty, and the configuration hash matched at both
+boundaries.
+
+#### 887ba1fd window 2: observations before the defect
+
+These observations are not recorded items, because the record binds only a complete pass:
+
+- The cap-loop observer's opening snapshot of a synthetic open target was complete and named the
+  target in inline code. The 5-minute opt-in created a schedule, and the checkpoint kept a raw
+  `target=`. The first scheduled tick posted the one-time idle-target report with the exact
+  `state=active` ending.
+- The main observer's positive snapshot of a second synthetic target was complete, including the
+  offer. "No follow-up" created no schedule. The self refusal and, through the delegated child of a
+  parent session, the ancestor refusal were complete.
+- One host fault occurred. Shortly after T3 marked the second target settled, the observer's
+  target-state read returned a tool error instead of session metadata. The observer refused
+  admission completely, without verdict or delivery. Under the plan this is a host fault and was
+  retried.
+- A scan of all 17 assistant messages of the three observers found no host thread link, no
+  malformed fragment and no truncation. T3 texts equalled the Codex session records byte for byte.
+
+#### 887ba1fd window 2: observed defect
+
+The retried snapshot of the second target ran from 14:30:51 to 14:31:42 UTC in the main observer.
+It came after that observer's earlier offer for the same target and the operator's "no follow-up"
+answer.
+
+The final message carried the On track verdict with cited positions, coverage, the conservative read
+budget, owner-guidance use, the analysis leaf's settings and "Message delivery: Not attempted". It
+named the target in inline code. It ended "No follow-up scheduled." without the offer and its
+disclosures.
+
+The eager offer condition held:
+
+- a non-tick turn completed an initial verdict;
+- the target was a top-level admitted target on the T3 observed path;
+- the gate row matched, as the same observer's earlier offer shows;
+- the snapshot served a history page.
+
+Under `shared/focus-follow-up.md` "Offer", a "no follow-up" answer withdraws only the offer it
+answers, and a new snapshot owes a new offer. The turn's tool calls show no read of
+`shared/focus-follow-up.md`, which `tools/focus.md` loads on demand before presenting an offer.
+
+This is an observed defect in focus's snapshot behaviour, independent of the link rule. No source
+fix or acceptance exception is claimed.
+
+#### 887ba1fd window 2: restoration and evidence
+
+Before installation, no Codex work was running in any project and the configuration file was absent.
+After the defect, no further scenario started. The coordinator deleted the cap loop's schedule
+through the T3 API after its first tick; the schedule list of the throwaway project was then empty.
+All throwaway sessions were archived.
+
+The guarded restore:
+
+- confirmed that the installed tree still matched the candidate manifest;
+- reinstated the original DALO slot link and all 190 baseline entries;
+- removed only the owned temporary configuration, after its hash matched;
+- signalled the app-server only after rechecking its executable and process-start identity. The
+  old process was absent afterwards.
+
+`dalo --json status --check` returned output byte-identical to the pre-install capture. The host was
+restored at 14:32:54 UTC.
+
+The recording plan remains unimplemented and unarchived. This failed entry changes no product
+source, fixture, activation status, ADR or PR readiness. The further allowance for `887ba1fd` is
+used up. Any further attempt or candidate needs an owner decision.
+
+| Evidence file                                       | SHA-256                                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| `candidate-d/window-2/O-missing-offer-defect.json`  | `a6166d5526ff74c2ef220747ed90b4aeeeb3b7f6292ddafd2157c40ab6f874ff` |
+| `candidate-d/window-2/O-host-fault-1.json`          | `dcfb9270c1d36cc71fc8a93eb9f7bf20e587edfa68b0de9a0e0bc068ead42f91` |
+| `candidate-d/scan-w2-O-final.json`                  | `57b0b75b4a4b77f79a2d6e9a234861ee6854906df084daf1c0d0d87cefab40be` |
+| `candidate-d/scan-w2-O2-final.json`                 | `66a6a0fbc551dd6fc1519af2836ca5d78fa87ff271118ba1cd5bee4bde67b318` |
+| `candidate-d/scan-w2-P-child-final.json`            | `2dd14a234b040d77afdec08671ac3850dfe9ceabdd271c57d5ea8feba81ea444` |
+| `candidate-d/temporary-config-2.toml`               | `c19e3da30e7256403e4a88881745026311c5127c3e35051cc656cff813680f42` |
+| `candidate-d/window-2/stage-deviation.json`         | `69df1b1966178731de702a1af6f9d2e88a8bfddeb96f53be76c446c8d702c571` |
+| `candidate-d/window-2/candidate-end-integrity.json` | `b00650dc6cc2ecb2a711ca1e204ce7d7c7ece440691488505055cf210d48fda9` |
+| `candidate-d/window-2/baseline.json`                | `7d02285bc7e0c3000015da74ae802f35a8491db2f4a43741368650576fca32dd` |
+| `candidate-d/window-2/restart-install.json`         | `1243540ee870f542c8ab702d605f1bd34cd0850a92674d91b995d2d10ba9f804` |
+| `candidate-d/window-2/restart-restore.json`         | `36afe8fa36d8f42b84e113d5a536994acea2ee2f2ea5d7174bb1eb95cfae5c83` |
+| `candidate-d/window-2/restore-verification.json`    | `fbc92a2b2e65ebef8b71c9b32df08cdd0b4ce9bbf8300a1c959068c712bcc176` |
+| `candidate-d/window-2/dalo-post.json`               | `d6b8b7e7f43b21175b50c2602d8569c0851ca582fbaacdd629710dfce5d54e91` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
