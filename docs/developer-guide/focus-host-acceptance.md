@@ -745,6 +745,138 @@ they do not assert a complete raw API export or backfill missing historical payl
 | `qualification-2026-11-09/dalo-restored.json`                  | `5c6d72c70215fca6f2cf4cf05ddafa30716d957ae1900c1e0bd2537d10f66bef` |
 | `qualification-2026-11-09/ci-tested-tree-binding.json`         | `14aaf6aacb0c306276f479cfdf1b0d2111633b4b858e985fdbe07aa5414686d1` |
 
+### November 11 recording on candidate C — failed snapshot output
+
+**Result: failed; overall WP2b-2 qualification remains incomplete.** The first scenario of the
+recording on integration candidate C produced an observed output defect. The defect ended the
+recording under the #613 failure rule. No item F1–F16 is recorded for C, and no schedule was
+created. The earlier records, activation status, acceptance matrix and ADRs remain unchanged.
+#625 remains a draft.
+
+#### C: candidate binding
+
+The candidate was merge commit `a2e97ad8f83b13dac87bf2b7931f2731c029a810`. Its parents are
+`974fe72e` and the `develop` merge base `2ff3c0fd`.
+
+- **Build:** portable build `1.73.0 (a2e97ad)`.
+- **Host:** T3 Code 0.1.7 through provider instance `codex`.
+- **Model:** host-reported `gpt-6.1-sol` at medium reasoning effort, in full-access runtime mode
+  with approval policy `never`.
+- **Sessions:** fresh top-level sessions in a dedicated throwaway project.
+- **Configuration:** the qualified conditional `developer_instructions` entry was active, with
+  SHA-256 `38c613f6…`. It was the only key in a configuration file that did not exist before.
+- **Scenario requests:** a separate coordinator authored them through the API under supervised
+  execution.
+
+Local validation of C:
+
+- format, build, distribution and the eval evidence report passed;
+- the full suite passed except the focus digest guard (5,042 passed, 27 skipped, 1 failed). The
+  guard is red by design until a passing record exists;
+- CI's unit-test step matched that result, and format, shellcheck and manager compatibility
+  passed.
+
+Install and restore:
+
+- The installed portable tree matched its complete 192-entry manifest at installation and at the
+  end.
+- The configuration hash matched at both boundaries.
+
+| Candidate file                                                | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `d5b2c8cb7e5099a35dd2d2a461767c78e980d6aa407ba7af444507aaee7fa912` |
+| `src/shared/focus-session-contract.md`                        | `405a7742145d41141a0b5026b32ac04bc88f3330a659989b0f7103518cb2a68a` |
+| `src/shared/focus-follow-up.md`                               | `c6ee9dc6414b1ae4037a4012d9afba88599fe3f6f8a9ee39bd15c1f340ffe601` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `e16d106ef09ecdb7f52255d04a7eccdfcf5cba4a4b9199007ed3ddad7dbc47d4` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `08e39a78b07603577156fd75af662ee900963134f86c95f98dc60ce81372aa5e` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `2b41e1c864aede33157781c14fd006ad4b3b421e4ed186711f5a627b425af4d2` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+#### C: observed defect
+
+The first scenario was the initial snapshot of the cap-loop observer on a synthetic open target.
+It ran from 23:06:34 to 23:07:40 UTC.
+
+Internally the run followed the contract:
+
+- it loaded the candidate skill and `focus-follow-up.md`;
+- it checked identity and scope before history and read the target within budget;
+- it selected `gpt-5.6-luna` at medium effort for the analysis leaf;
+- the leaf returned a supported On track verdict ending `DONE`.
+
+The sole visible final message was:
+
+```text
+**On track — observed snapshot.**
+
+< t3 >
+```
+
+The message lacks the target citation, cited evidence, coverage, the report-only correction and
+dispatch statement, and the follow-up offer. API messages and the provider's raw output in the
+private Codex session record agree byte for byte.
+
+The visible output token count leaves no room for a link that was generated and then removed: 19
+tokens against about 4 tokens of message overhead. The model itself produced the fragment and
+ended the message. This is an observed output defect. No source fix or acceptance exception is
+claimed.
+
+**Cause.** A later read-only diagnosis found the same fragment shape (`< t3-thread >` or `< t3 >`)
+in five independent assistant messages:
+
+- the November 9 tick output above;
+- this snapshot;
+- three messages in two non-focus sessions, both without the `developer_instructions` entry and
+  with approval policy `never`.
+
+That is about 1% of messages that carry a T3 thread link. The host instructs the model to mention
+a thread by its link, and no focus source requires a link. The focus output lists the target
+identity first, so in a snapshot the link lands right after the headline. In a tick it lands
+before the required final checkpoint. Elsewhere it usually ends the message.
+
+The diagnosis therefore points to a host-prompted, model-level link-emission glitch that focus
+turns into a total loss of the report or checkpoint. It was challenged once and weakened in
+detail, not refuted. The model attribution and a possible tool-output trigger remain open. The
+cause is not proven.
+
+#### C: restoration and evidence
+
+Before installation, every active project was checked. One foreign Codex run blocked the first
+attempt, and installation proceeded only after it ended; foreign work was untouched.
+
+After the defect, further scenarios stopped. The main target, a second staged target and the
+observer were archived, and no schedule existed.
+
+The guarded restore:
+
+- confirmed that the installed tree still matched the candidate manifest;
+- reinstated the original DALO slot link and all 190 baseline entries;
+- removed only the owned temporary configuration after its hash matched;
+- signalled the app-server only after rechecking its executable and process-start identity. The
+  old process was absent afterwards.
+
+Post-restore verification confirmed the original link, the full tree and the absence of the
+configuration. `dalo --json status --check` returned output byte-identical to the pre-install
+capture. The host was restored at 23:08:36 UTC.
+
+The recording plan remains unimplemented and unarchived. This failed entry changes no product
+source, fixture, activation status, ADR or PR readiness. The attempt allowance for C is used up.
+Any further candidate needs an owner decision and follows the plan's failure procedure.
+
+| Evidence file                              | SHA-256                                                            |
+| ------------------------------------------ | ------------------------------------------------------------------ |
+| `candidate-c/O2-snapshot-defect.json`      | `ab46277ce21353e4ba640032178fbf6a2f85ac32dd79c517a2ef041c83fb1da2` |
+| `candidate-c/O2-raw-provider-output.json`  | `0368d8567936a1ff821f1c70e2ff5bcc0a07ed63b33841a3353afd962d92ad23` |
+| `candidate-c/diagnosis-2026-11-12.md`      | `9061f8c9b9e3b999694dddc2e65560c10376b1eefc9e7bd4a93b543b8a58f58b` |
+| `candidate-c/candidate-digests.json`       | `8df27d497d8ea5197f7ada9d9d27ed0f392f4d49563afc5abdfab2d82d050cd0` |
+| `candidate-c/step0-result.json`            | `87673f71aac2abaa32cae5bc61fc6674d1eb6dc817ee6546c124d3711494842c` |
+| `candidate-c/candidate-end-integrity.json` | `aaa7e2739d9c1a23609b237b670416d0c842686e0a46541b1b569b5b96ec763c` |
+| `candidate-c/baseline.json`                | `e2f492d4d7a273b9c95f2f1c8dc53bf136eb637b715d814777295b0440482b01` |
+| `candidate-c/restart-restore.json`         | `ff42ffee1ff9409f6f583fa2504a9d0e91456163ea847f733d4e42e83f94701c` |
+| `candidate-c/restore-verification.json`    | `2244a5e098173d718b813fdd4e4c6deb89a299752d564ba736fa218b37efa094` |
+| `candidate-c/dalo-post.json`               | `5a95cb8868fffd47d5af27e0f97440b11d3eece613c260e8af4effe201588425` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
