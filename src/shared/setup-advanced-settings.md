@@ -68,18 +68,20 @@ options:
 Then ask for the remaining keys, each with a short explanation, the valid values, and the current
 value or default as the pre-selection:
 
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
 
 - `mergeGate.conflictResolution`: what a gate run does when the head branch conflicts with its base.
   `auto` (the default) has the conflict resolved by the gate's dedicated worker, the result verified
@@ -146,6 +148,19 @@ value or default as the pre-selection:
   a `mergeGate.botAccounts` entry are equal after trimming one trailing `[bot]` from each, name the
   pair and ask whether that account is a reviewer or a non-reviewer bot; change the other list only
   with that answer.
+- `mergeGate.noCiPolicy.bases` and `mergeGate.noCiPolicy.unattended`, the **declared no-CI
+  policy**, offered last as an opt-in: first ask whether the repository intentionally runs no CI,
+  and ask `bases` only on a yes. Pre-select the
+  recorded value or "not set", and record, change or remove it only on the operator's explicit
+  choice. `bases` is a comma list of exact, case-sensitive base branch names: for a pull request
+  into a listed base that reports no check list at all, the gate then asks neither its
+  pending-checks question nor its no-check-list waiver. Ask `unattended` only once `bases` is set:
+  `true` lets a non-interactive gate run merge on the policy too. Explain that the policy applies
+  only once the same rows are on the base branch, so a pull request cannot grant it to itself; that
+  unattended merging also needs `mergeGate.completion: merge`; that a GitHub repository without CI
+  also needs `mergeGate.requireAllChecks: false`, or its check wait fails first; and the residual
+  risk that a late-attaching check, or CI a pull request introduces, looks like no CI. Removing
+  `bases` also removes `unattended` in the same confirmed write.
 
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.

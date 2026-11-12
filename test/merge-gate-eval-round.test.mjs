@@ -332,6 +332,15 @@ function copyRestampedResults(resultsDir) {
 // here fails loudly, naming the two ways out.
 const UNRECORDED_SCENARIO_LOGS = Object.freeze({
   'bot-login-excluded': ['pr-comments-read', 'pr-merge', { operation: 'pr-merge', apply: true }],
+  // The four no-CI policy refusals pass on the one status read that carries their deciding fact.
+  'no-ci-policy-flag-absent-blocks': ['pr-status-read'],
+  'no-ci-policy-reported-check-blocks': ['pr-status-read'],
+  'no-ci-policy-unlisted-base-blocks': ['pr-status-read'],
+  // The failing-read scenario needs the failing element served: a second status read.
+  'no-ci-policy-status-read-failure-blocks': ['pr-status-read', 'pr-status-read'],
+  // The two that attempt the merge: a preview, then exactly one applied call.
+  'no-ci-policy-unattended-merges': ['pr-merge', { operation: 'pr-merge', apply: true }],
+  'no-ci-policy-merge-failure-reports': ['pr-merge', { operation: 'pr-merge', apply: true }],
 });
 
 function synthesizeUnrecordedScenario(directory, scenario, identity) {
@@ -3248,7 +3257,15 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
   // The scenarios a merge is expected in: the positive control, the bot-account scenario (its only
   // other comment is excluded, so it differs from the control in that one comment), and the
   // nested-spawn fallback, whose inline gate merges the same pull request.
-  const merging = ['merge-proceeds', 'bot-login-excluded', 'nested-spawn-abort-runs-inline'];
+  // The two no-CI policy scenarios that attempt the merge: the unattended grant merges, and the
+  // failing-merge scenario applies exactly one merge the forge then refuses.
+  const merging = [
+    'merge-proceeds',
+    'bot-login-excluded',
+    'nested-spawn-abort-runs-inline',
+    'no-ci-policy-unattended-merges',
+    'no-ci-policy-merge-failure-reports',
+  ];
   for (const scenario of suite.scenarios) {
     assert.deepEqual(decisive(scenario, []), [], `${scenario}: an empty partial log`);
     assert.deepEqual(decisive(scenario, ['pr-status-read']), [], `${scenario}: a lone read`);

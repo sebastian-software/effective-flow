@@ -385,18 +385,20 @@ location of the overall workflow. See [Worktree and delivery](./worktree-and-del
 Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
 already-open pull request to merge-readiness and, if allowed, merges it.
 
-| Key                    | Values                              | Default   | Meaning                                                                                                       |
-| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness                                                  |
-| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base                                           |
-| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones                                      |
-| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling; not applied on T3 Code |
-| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                                                            |
-| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer; not applied on T3 Code              |
-| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                                            |
-| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale                                      |
-| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                                                 |
-| `botAccounts`          | Comma list of logins                | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block                           |
+| Key                     | Values                                | Default   | Meaning                                                                                                       |
+| ----------------------- | ------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| `completion`            | `ask` / `merge` / `report` / `null`   | `ask`     | May the run merge at the end, or only report merge-readiness                                                  |
+| `conflictResolution`    | `off` / `ask` / `auto`                | `auto`    | May the run resolve a conflict between the head branch and its base                                           |
+| `requireAllChecks`      | `true` / `false`                      | `true`    | Require every check's latest run green, not only the forge-required ones                                      |
+| `checkWaitMinutes`      | Positive integer                      | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling; not applied on T3 Code |
+| `maxRounds`             | Positive integer                      | `10`      | Upper bound on check-gate rounds for the whole run                                                            |
+| `botWaitMinutes`        | Positive integer                      | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer; not applied on T3 Code              |
+| `bots`                  | Comma list of logins                  | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                                            |
+| `bots.<login>.trigger`  | Literal trigger comment text          | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale                                      |
+| `bots.<login>.check`    | Commit-status or check-run context    | `(unset)` | Check that proves whether that reviewer is running or has run                                                 |
+| `botAccounts`           | Comma list of logins                  | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block                           |
+| `noCiPolicy.bases`      | Comma list of exact base branch names | `(unset)` | Base branches of a repository that intentionally runs no CI; the declared no-CI policy applies to them        |
+| `noCiPolicy.unattended` | `true` / `false`                      | `false`   | Lets a non-interactive run merge on the policy too; only a literal `true` grants it                           |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
@@ -408,6 +410,16 @@ reported but does not block. A counted check passes when it completed as `SUCCES
 `NEUTRAL`, as GitHub counts it; any other conclusion blocks. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
+
+**`mergeGate.noCiPolicy.*` declares that a repository intentionally runs no CI.** For a pull request
+into a listed base branch whose head reports no check list at all, the gate then asks neither its
+pending-checks question nor its no-check-list waiver, and merges once every other condition holds.
+The policy counts only where the same two rows are on the base branch, so a pull request cannot
+grant it to itself, and it never reaches a check that has appeared, a failing check, another merge
+condition or branch protection. A non-interactive run uses it only with `unattended: true` (and
+`mergeGate.completion: merge`); a GitHub repository without CI also needs
+`mergeGate.requireAllChecks: false`. Removing `bases` revokes the policy. See
+[the merge gate](./tools-deliver.md) for what the run reports.
 
 **`mergeGate.botAccounts` declares automated accounts that are not reviewers.** Some coverage and
 report bots are typed by the forge as ordinary users, for example Codecov's `codecov-commenter`. The

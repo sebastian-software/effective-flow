@@ -12,18 +12,20 @@ fragment `config-migration`, which every consumer of this block also loads.
 {{SKILL:merge-gate}} reads the keys below; {{SKILL:iterate}} reads the `bots` entries for its
 review-in-flight guard. A missing line means the default, per the encoding rule above.
 
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
@@ -32,6 +34,12 @@ splits on `.` only.
 possibly typed as users, whose top-level comments and review-thread items {{SKILL:merge-gate}}
 treats as bot comments. The gate never triggers or waits for them, and their changes-requested
 reviews still count. A record a `mergeGate.bots` entry matches is a reviewer either way.
+
+**`mergeGate.noCiPolicy.*` is the declared no-CI policy,** set by {{SKILL:setup}} only on an
+explicit operator choice. `bases` is active only when its decoded `value` is a string with at least
+one item, and `unattended` grants only when `value === true`; any other value is off and reported
+once. The gate honors it only where these rows are identical on `origin/<baseRef>` and in the
+working checkout. Removing `bases` revokes it, and no state outlives the configuration.
 
 **`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
 row; one that exists anyway is retired like any other `prReview.<key>` row, with successor

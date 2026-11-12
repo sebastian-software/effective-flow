@@ -107,6 +107,7 @@ consumer, and "this section" below means that Phase-4 section.
 - **A merge performed on a waived check list is reported as one.** Phase 6 names it rather than
   letting the run read as a merge whose checks were green, because nothing here verified that any
   check ran at all.
+- **A declared no-CI policy pre-answers this question:** where condition 2's policy clause holds, the bullets above on Phase 2's question, a non-interactive run and the Forgejo wait do not apply; see "Declared no-CI policy" below.
 
 ```ask
 when: condition 2 is the only unmet condition of this evaluation and is unmet solely because the fresh read states `checksReported: false`, the check criterion is otherwise satisfied, the waiver record does not already cover this evaluation, `VERIFIED_HEAD_SHA` is a full object name of 40 or 64 hex digits in either case, the resolved completion mode is `merge`, and the run is gated. An evaluation that leaves any other condition unmet poses nothing: this answer authorizes a merge rather than disposing of anything, so it is asked only where it can decide the outcome
@@ -118,3 +119,28 @@ options:
   - label: Stop
     description: End the run with a report naming the declined waiver; nothing is merged, and no further round is delegated because no round changes this answer
 ```
+
+### Declared no-CI policy
+
+`mergeGate.noCiPolicy.*` is the operator's advance answer to the question above, for the base
+branches it lists. The delegated run's "Configuration" defines the policy read that decides whether
+it is active, and condition 2 the evaluation it pre-answers.
+
+- **It pre-answers; it records no waiver.** Where condition 2's policy clause holds, the
+  reported-at-all clause is clear: the waiver is not posed, a relayed run returns no
+  `BLOCKED-USER check-list-waiver`, and the run merges once every other condition holds. No waiver
+  record is written; the wisdom file holds only `no-ci-policy used: <base> @ <VERIFIED_HEAD_SHA>`
+  for Phase 6, and no later evaluation reads it. An operator's `Waive` keeps its meaning above.
+- **Only the fresh Phase-4 read decides,** in every Phase-4 evaluation again, on condition 2's
+  terms, which include the exact base match. Phase 2's skip of `checks-pending` authorizes nothing
+  and carries nothing into this evaluation; where this evaluation finds the policy inactive, the
+  waiver above is the first question about this list.
+- **Unattended means literal `true`.** A non-interactive run uses the policy only where
+  `mergeGate.noCiPolicy.unattended` decoded to `true`; otherwise it blocks and reports as above.
+- **The forge still enforces required checks.** The policy reaches neither the check criterion nor
+  a pending or failing check, nor any other condition, and the gate never bypasses branch
+  protection: a base that requires checks refuses the merge server-side, and Phases 5 and 6 handle
+  that failed `pr-merge`.
+- **Residual risk:** a check that attaches after the fresh read, or CI that the pull request itself
+  introduces, is indistinguishable from no CI. The operator accepted that by declaring the policy,
+  and Phase 6 names it whenever the policy was used.

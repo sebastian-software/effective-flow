@@ -28,6 +28,7 @@ import {
   requiresIterateTrace,
   scenarioSetup,
 } from './_scaffold/configured-reviewer-scenario.mjs';
+import { prepareCheckout } from './_scaffold/no-ci-checkout.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
 import * as evaluator from './_scaffold/evaluate.mjs';
 import { SCENARIOS } from './scenario-registry.mjs';
@@ -131,6 +132,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SHARED_SCAFFOLD, 'host-qualification.mjs'),
   resolve(SCAFFOLD, 'configured-reviewer-scenario.mjs'),
   resolve(SCAFFOLD, 'project-setup.mjs'),
+  resolve(SCAFFOLD, 'no-ci-checkout.mjs'),
 ]);
 
 const suite = {
@@ -181,10 +183,12 @@ const suite = {
   },
   scenarioSetup,
   projectDocuments,
-  // No checkout preparation beyond the shared seed commit: a gate run reads the forge through the
-  // stub and never fetches, so its sandbox keeps an `origin` no run reaches. Spelled out rather
-  // than omitted, for the same reason `auxiliaryEvidence` is: absence must not read as a choice.
-  prepareCheckout: null,
+  // No checkout preparation beyond the shared seed commit, except for the declared no-CI policy
+  // scenarios: a gate run reads the forge through the stub and never fetches, so its sandbox keeps an
+  // `origin` no run reaches, but a policy read fetches the base ref and compares the setup ADR it
+  // finds there. `no-ci-checkout.mjs` gives exactly those scenarios a local `origin` and does nothing
+  // for any other.
+  prepareCheckout,
   evaluator,
   // Five discarded attempts on the sequenced Phase-4 scenario is a signal to stop and investigate
   // rather than to keep spending runs; every other scenario has no cap.

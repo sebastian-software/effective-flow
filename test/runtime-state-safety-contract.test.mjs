@@ -185,10 +185,12 @@ test('review requires ignored untracked runtime state and keeps read-only lookup
 
 // Invariant: the configuration resolver never writes. Every filesystem binding it imports, and every
 // member it uses on one (or on the injected `context.fs` and an opened handle), is a read; the only
-// open flags are read-only no-follow; and git runs only through `runGit` with the three pinned
-// read-only argument vectors, so a mutating call or git subcommand fails here. That it never reads
-// below a linked EXECUTION_ROOT is behaviour, covered by the "step 0: a linked worktree …" and
-// "containment: …" cases in `test/config-resolve.test.mjs`.
+// open flags are read-only no-follow; git runs only through `runGit` with the pinned read-only
+// argument vectors: the root-verification vectors passed whole, the `no-ci-policy` base-read
+// vectors only with exactly one appended operand (a ref, a revision or an object id); and a partial
+// clone never fetches lazily, so a mutating call, a git subcommand or a network read fails here.
+// That it never reads below a linked EXECUTION_ROOT is behaviour, covered by the "step 0: a linked
+// worktree …" and "containment: …" cases in `test/config-resolve.test.mjs`.
 test('configuration resolver is read-only: filesystem reads only and git limited to the pinned read-only argument vectors', () => {
   const resolver = readFileSync(join(SOURCE_DIR, 'scripts', 'config-resolve-core.mjs'), 'utf8');
   const READ_ONLY_FS = ['lstat', 'open', 'readFile', 'readdir', 'realpath', 'stat'];
@@ -272,11 +274,18 @@ test('configuration resolver is read-only: filesystem reads only and git limited
   );
 
   // Git: one spawn, one runner call (inside runGit, for git), and every runGit call passes one of
-  // the pinned read-only argument vectors.
-  const PINNED_GIT_ARGS = {
+  // the pinned read-only argument vectors in its pinned form.
+  const WHOLE_GIT_ARGS = {
     toplevelArgs: ['rev-parse', '--show-toplevel'],
     commonArgs: ['rev-parse', '--path-format=absolute', '--git-common-dir'],
     listArgs: ['worktree', 'list', '--porcelain', '-z'],
+  };
+  const OPERAND_GIT_ARGS = {
+    showRefArgs: ['show-ref', '--verify', '--quiet'],
+    verifyRefArgs: ['rev-parse', '--verify', '--quiet'],
+    catTypeArgs: ['cat-file', '-t'],
+    catBlobArgs: ['cat-file', 'blob'],
+    lsTreeNamesArgs: ['ls-tree', '-z', '--name-only'],
   };
   assert.equal([...resolver.matchAll(/\bspawn\(/g)].length, 1, 'one process spawn site');
   assert.equal([...resolver.matchAll(/\.runner\(/g)].length, 1, 'one runner call site');
@@ -284,21 +293,33 @@ test('configuration resolver is read-only: filesystem reads only and git limited
     resolver,
     /async function runGit\(context, cwd, args\) \{\n\s*const result = await context\.runner\(\{\n\s*executable: 'git',\n\s*args: \['-C', cwd, \.\.\.args\],/,
   );
+  assert.match(resolver, /env\.GIT_NO_LAZY_FETCH = '1';/, 'no lazy fetch in a partial clone');
   const vectors = Object.fromEntries(
     [...resolver.matchAll(/const (\w+Args) = (\[[^\]]*\]);/g)].map(([, name, literal]) => [
       name,
       JSON.parse(literal.replace(/'/g, '"')),
     ]),
   );
-  assert.deepEqual(vectors, PINNED_GIT_ARGS, 'the git argument vectors are pinned');
-  const calls = [...resolver.matchAll(/(?<!function )\brunGit\(([^)]*)\)/g)].map((match) =>
-    match[1].split(',').at(-1).trim(),
+  assert.deepEqual(
+    vectors,
+    { ...WHOLE_GIT_ARGS, ...OPERAND_GIT_ARGS },
+    'the git argument vectors are pinned',
   );
-  assert.ok(calls.length > 0, 'the runGit calls are recognised');
-  for (const argument of calls) {
-    assert.ok(Object.hasOwn(PINNED_GIT_ARGS, argument), `runGit called with ${argument}`);
+  const used = new Set();
+  for (const [, call] of resolver.matchAll(/(?<!function )\brunGit\(([^)]*)\)/g)) {
+    const whole = /^\s*context,\s*[\w.]+,\s*(\w+Args),?\s*$/.exec(call);
+    const operand = /^\s*context,\s*[\w.]+,\s*\[\.\.\.(\w+Args),\s*[\w.]+\],?\s*$/.exec(call);
+    assert.ok(
+      (whole && Object.hasOwn(WHOLE_GIT_ARGS, whole[1])) ||
+        (operand && Object.hasOwn(OPERAND_GIT_ARGS, operand[1])),
+      `runGit called as ${call}`,
+    );
+    used.add((whole ?? operand)[1]);
   }
-  assert.deepEqual([...new Set(calls)].sort(), Object.keys(PINNED_GIT_ARGS).sort());
+  assert.deepEqual(
+    [...used].sort(),
+    Object.keys({ ...WHOLE_GIT_ARGS, ...OPERAND_GIT_ARGS }).sort(),
+  );
 });
 
 // Invariant: the shared fragment that sends every tool to the resolver states that reading creates

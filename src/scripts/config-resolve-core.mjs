@@ -18,13 +18,20 @@
 // The resolver is the only source of the root verification, the stem tolerance and ranking, the
 // hidden-mode forced values, the retired-row successor map and the per-tool successor sets. Prose
 // consumers act on its diagnostics and never restate those rules.
+//
+// `no-ci-policy` resolves the same source and decides whether the declared no-CI merge policy
+// (`mergeGate.noCiPolicy.*`) applies to one pull-request base branch: the commit of
+// `refs/remotes/origin/<baseRef>` must locate the same source through locator steps 1 and 2 and
+// carry exactly the same policy rows in it, so a pull-request head can neither grant the policy to
+// itself nor redirect the locator to a file that grants it. It reads Git objects only; it never
+// fetches and never writes.
 
 import { spawn } from 'node:child_process';
 import nodeFs from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 
-export const CONFIG_RESOLVE_OPERATIONS = Object.freeze(['resolve']);
+export const CONFIG_RESOLVE_OPERATIONS = Object.freeze(['resolve', 'no-ci-policy']);
 
 export const CONFIG_RESOLVE_ERROR_CODES = Object.freeze([
   'INVALID_INPUT',
@@ -287,6 +294,8 @@ export function gitBaseEnv(source = process.env) {
   }
   env.GIT_OPTIONAL_LOCKS = '0';
   env.GIT_TERMINAL_PROMPT = '0';
+  // A partial clone must never fetch a missing object (such as a base-branch blob) on demand.
+  env.GIT_NO_LAZY_FETCH = '1';
   // Untranslated messages keep the "not a git repository" detection locale-independent.
   env.LC_ALL = 'C';
   return env;
@@ -379,15 +388,16 @@ function gitFailure(args, result) {
 // Input validation
 
 const INPUT_KEYS = Object.freeze(['cwd', 'tool', 'mode']);
+const NO_CI_POLICY_INPUT_KEYS = Object.freeze([...INPUT_KEYS, 'baseRef']);
 const STANDARD_ONLY_TOOL = 'setup';
 const STANDARD_ONLY_MODE = 'standard';
 
-function validateInput(input) {
+function validateInput(input, inputKeys = INPUT_KEYS) {
   if (!input || typeof input !== 'object' || Array.isArray(input)) {
     fail('INVALID_INPUT', 'input must be a JSON object');
   }
   for (const key of Object.keys(input)) {
-    if (!INPUT_KEYS.includes(key)) fail('INVALID_INPUT', `unknown input field: ${key}`, { key });
+    if (!inputKeys.includes(key)) fail('INVALID_INPUT', `unknown input field: ${key}`, { key });
   }
   const { cwd, tool: requestedTool, mode } = input;
   if (typeof cwd !== 'string' || cwd === '' || cwd.includes('\0')) {
@@ -1351,7 +1361,12 @@ function documentDiagnostics(located, diagnostics) {
 }
 
 export async function resolveConfiguration(input, deps = {}) {
-  const { cwd: cwdInput, tool, mode } = validateInput(input);
+  return (await resolveValidated(validateInput(input), deps)).data;
+}
+
+// The whole `resolve` run for validated input. Returns the public `data` beside the internal state
+// a further operation builds on: the context, the roots, the located source, and the decoded rows.
+async function resolveValidated({ cwd: cwdInput, tool, mode }, deps) {
   const context = makeContext(deps);
   const cwd = await realDirectory(context, cwdInput);
   if (!cwd) fail('INVALID_INPUT', 'cwd must be an existing directory', { field: 'cwd' });
@@ -1407,7 +1422,7 @@ export async function resolveConfiguration(input, deps = {}) {
   if (hidden) applyForcedValues(values, diagnostics);
   const retired = classifyRetiredRows(rows, retiredKeys, tool, mode, diagnostics);
 
-  return {
+  const data = {
     runtimeStateRoot: roots.runtimeStateRoot,
     checkoutRoot: roots.checkoutRoot,
     visibility: hidden ? 'hidden' : 'standard',
@@ -1425,12 +1440,303 @@ export async function resolveConfiguration(input, deps = {}) {
     retired,
     diagnostics,
   };
+  return { data, context, roots, located, hidden, rows };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Declared no-CI policy
+
+const NO_CI_POLICY_PREFIX = 'mergeGate.noCiPolicy.';
+const NO_CI_BASES_KEY = 'mergeGate.noCiPolicy.bases';
+const NO_CI_UNATTENDED_KEY = 'mergeGate.noCiPolicy.unattended';
+const ORIGIN_REMOTE_PREFIX = 'refs/remotes/origin/';
+const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
+// The read-only git vectors of the base-branch read; each call appends exactly one operand: the
+// exact remote-tracking ref, a revision built from it or from the verified commit, or an object id.
+// `show-ref --verify --quiet` and `rev-parse --verify --quiet` exit 1 for "does not exist" only.
+const showRefArgs = ['show-ref', '--verify', '--quiet'];
+const verifyRefArgs = ['rev-parse', '--verify', '--quiet'];
+const catTypeArgs = ['cat-file', '-t'];
+const catBlobArgs = ['cat-file', 'blob'];
+const lsTreeNamesArgs = ['ls-tree', '-z', '--name-only'];
+
+// `data.noCiPolicy.baseComparison`: how the base-branch rows compare with the working rows.
+export const NO_CI_BASE_COMPARISONS = Object.freeze([
+  'equal',
+  'mismatch',
+  'missing',
+  'unreadable',
+  'hidden-self',
+  'not-applicable',
+]);
+
+// `data.noCiPolicy.reason`: why the policy is or is not active, in the order they are decided. A
+// failed base comparison precedes the value checks, because working rows the base branch does not
+// confirm are not trusted to state anything.
+export const NO_CI_POLICY_REASONS = Object.freeze([
+  'not-configured',
+  'base-blob-missing',
+  'base-blob-unreadable',
+  'base-blob-mismatch',
+  'invalid-value',
+  'base-not-listed',
+  'active',
+]);
+
+const COMPARISON_REASONS = Object.freeze({
+  missing: 'base-blob-missing',
+  unreadable: 'base-blob-unreadable',
+  mismatch: 'base-blob-mismatch',
+});
+
+// A base branch name as a pull request states it: a plain branch name that `git check-ref-format`
+// accepts below `refs/remotes/origin/`, so it can never become an option, a revision expression
+// or a path outside that namespace.
+export function isSafeBaseRef(value) {
+  if (typeof value !== 'string' || value === '' || value === '@' || value === 'HEAD') return false;
+  if (value.startsWith('-') || value.startsWith('/') || value.endsWith('/')) return false;
+  if (value.endsWith('.') || value.includes('..') || value.includes('//')) return false;
+  if (value.includes('@{')) return false;
+  // Control characters, whitespace, and every character with a meaning in a revision or a pattern.
+  if (/[\s\u0000-\u001f\u007f:~^?*[\\]/.test(value)) return false;
+  return value
+    .split('/')
+    .every((component) => !component.startsWith('.') && !component.endsWith('.lock'));
+}
+
+// The comparable form of the policy rows: one `[key, raw, decoded]` entry per row whose key begins
+// with the exact `mergeGate.noCiPolicy.` prefix, sorted, so any added, removed or changed row
+// differs. A transitional JSON row also carries its decoded value, so `"true"` and `true`, or
+// `"main"` and `["main"]`, which flatten to one raw cell, still differ.
+function noCiPolicyRows(rows) {
+  return rows
+    .filter((row) => row.key.startsWith(NO_CI_POLICY_PREFIX))
+    .map((row) =>
+      JSON.stringify([row.key, row.raw ?? null, row.decoded ? row.decoded.value : null]),
+    )
+    .sort();
+}
+
+// Decodes a source read as a base-branch blob with the parser of its locator step. Returns its rows,
+// or null when the blob has no decodable configuration.
+function decodeSourceText(located, text) {
+  if (located.source === 'transitional-json') {
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return flattenJsonConfiguration(parsed).filter((row) => row.key !== '');
+  }
+  const document = parseConfigurationDocument(text);
+  return document.envelope ? document.envelope.rows.filter((row) => row.key !== '') : null;
+}
+
+// The outcome of one base-read call: exit 0 returns its output, `absentStatus` returns null
+// ("does not exist"), and anything else is GIT_FAILED.
+function baseOutcome(args, result, absentStatus = null) {
+  if (!result.error && result.status === 0) return result.stdout;
+  if (!result.error && absentStatus !== null && result.status === absentStatus) return null;
+  throw gitFailure(args, result);
+}
+
+// Reads paths of one base commit: an entry absent from its tree is null, never an error.
+function baseCommitReader(context, root, commit) {
+  const entry = async (relative) => {
+    const spec = `${commit}:${relative.split(path.sep).join('/')}`;
+    const found = baseOutcome(
+      [...verifyRefArgs, spec],
+      await runGit(context, root, [...verifyRefArgs, spec]),
+      1,
+    );
+    if (found === null) return null;
+    const oid = found.trim();
+    if (!OBJECT_ID.test(oid)) fail('GIT_FAILED', `git rev-parse printed no object id for ${spec}`);
+    const type = baseOutcome(
+      [...catTypeArgs, oid],
+      await runGit(context, root, [...catTypeArgs, oid]),
+    ).trim();
+    return { oid, type };
+  };
+  return {
+    async blobText(relative) {
+      const found = await entry(relative);
+      if (!found || found.type !== 'blob') return null;
+      return baseOutcome(
+        [...catBlobArgs, found.oid],
+        await runGit(context, root, [...catBlobArgs, found.oid]),
+      );
+    },
+    async treeNames(relative) {
+      const found = await entry(relative);
+      if (!found || found.type !== 'tree') return null;
+      const listing = baseOutcome(
+        [...lsTreeNamesArgs, found.oid],
+        await runGit(context, root, [...lsTreeNamesArgs, found.oid]),
+      );
+      return listing.split('\0').filter((name) => name !== '');
+    },
+  };
+}
+
+// A marker target as a checkout-relative path, or null when it leaves the checkout root.
+function markerRelative(checkoutRoot, target) {
+  const relative = path.relative(checkoutRoot, path.resolve(checkoutRoot, target));
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return null;
+  return relative;
+}
+
+// Mirrors locator steps 1 and 2 on the base commit: the checkout-relative path of the source the
+// base itself would locate, or null when it locates none (it would fall through to steps 3 and 4).
+// Symlinks are not followed, so a base that relies on one locates nothing here and fails closed.
+async function locateInBase(reader, checkoutRoot) {
+  const markers = [];
+  for (const name of CONVENTION_FILES) {
+    const text = await reader.blobText(name);
+    if (text !== null) markers.push(...parseSetupMarkers(text));
+  }
+  if (markers.length > 0) {
+    const target = markerRelative(checkoutRoot, markers[0].path);
+    const text = target === null ? null : await reader.blobText(target);
+    if (text !== null && parseConfigurationDocument(text).envelope) return target;
+  }
+  for (const directory of ADR_DIRECTORIES) {
+    const names = await reader.treeNames(directory);
+    if (names === null) continue;
+    const matches = [];
+    for (const name of [...names].sort()) {
+      const stem = classifySetupStem(name);
+      if (!stem) continue;
+      const relative = path.join(directory, name);
+      const text = await reader.blobText(relative);
+      if (text === null || !parseConfigurationDocument(text).envelope) continue;
+      matches.push({ ...stem, path: relative });
+    }
+    const ranked = matches.sort(compareSetupCandidates);
+    const top = ranked.filter((match) => compareSetupCandidates(match, ranked[0]) === 0);
+    return top.length === 1 ? top[0].path : null;
+  }
+  return null;
+}
+
+// Compares the working checkout with the commit of `refs/remotes/origin/<baseRef>`, read in the
+// runtime-state root. `missing`: the exact ref, or the located source's path in that commit, does
+// not exist. `unreadable`: the base blob has no decodable configuration. `mismatch`: the base would
+// locate another source, or its policy rows differ. Any other Git failure is GIT_FAILED.
+async function compareWithBase(resolution, baseRef) {
+  const { context, roots, located, rows } = resolution;
+  if (!roots.git || !located) return 'missing';
+  // Steps 1 and 2 read below the checkout root, step 3 below the runtime-state root.
+  const sourceRoot = located.step === 3 ? roots.runtimeStateRoot : roots.checkoutRoot;
+  const relative = path.relative(sourceRoot, located.path);
+  if (relative === '' || relative.startsWith('..') || path.isAbsolute(relative)) return 'missing';
+  const root = roots.runtimeStateRoot;
+  const fullRef = `${ORIGIN_REMOTE_PREFIX}${baseRef}`;
+  // The exact ref first, so no other ref the revision lookup would try in its place can answer.
+  const exact = baseOutcome(
+    [...showRefArgs, fullRef],
+    await runGit(context, root, [...showRefArgs, fullRef]),
+    1,
+  );
+  if (exact === null) return 'missing';
+  const commitSpec = `${fullRef}^{commit}`;
+  const peeled = baseOutcome(
+    [...verifyRefArgs, commitSpec],
+    await runGit(context, root, [...verifyRefArgs, commitSpec]),
+    1,
+  );
+  if (peeled === null) return 'missing';
+  const commit = peeled.trim();
+  if (!OBJECT_ID.test(commit)) fail('GIT_FAILED', `git rev-parse printed no commit for ${fullRef}`);
+  const reader = baseCommitReader(context, root, commit);
+  const text = await reader.blobText(relative);
+  if (text === null) return 'missing';
+  const baseRows = decodeSourceText(located, text);
+  if (baseRows === null) return 'unreadable';
+  // The base must choose the same source: a head that edits or drops a marker, or changes the ADR
+  // candidates, could otherwise point the locator at a base file that already carries policy rows.
+  const baseSource = await locateInBase(reader, roots.checkoutRoot);
+  const sameSource = located.step === 3 ? baseSource === null : baseSource === relative;
+  if (!sameSource) return 'mismatch';
+  const working = noCiPolicyRows(rows);
+  const base = noCiPolicyRows(baseRows);
+  return working.length === base.length && working.every((row, index) => row === base[index])
+    ? 'equal'
+    : 'mismatch';
+}
+
+// Decides the declared no-CI policy for one base branch. The caller (merge-gate) still owns the
+// run state, the `unattended` requirement of a non-interactive run, the check list and the head.
+export async function resolveNoCiPolicy(input, deps = {}) {
+  const validated = validateInput(input, NO_CI_POLICY_INPUT_KEYS);
+  const { baseRef } = input;
+  if (!isSafeBaseRef(baseRef)) {
+    fail('INVALID_INPUT', 'baseRef must be a safe branch name without a remote prefix', {
+      field: 'baseRef',
+    });
+  }
+  const resolution = await resolveValidated(validated, deps);
+  const { values } = resolution.data;
+  const invalid = [];
+
+  const basesEntry = Object.hasOwn(values, NO_CI_BASES_KEY) ? values[NO_CI_BASES_KEY] : null;
+  const configured = basesEntry !== null;
+  const basesValid =
+    basesEntry?.state === 'set' &&
+    typeof basesEntry.value === 'string' &&
+    basesEntry.items.length > 0;
+  if (configured && !basesValid) invalid.push(NO_CI_BASES_KEY);
+  const bases = basesValid ? [...basesEntry.items] : [];
+
+  const unattendedEntry = Object.hasOwn(values, NO_CI_UNATTENDED_KEY)
+    ? values[NO_CI_UNATTENDED_KEY]
+    : null;
+  const unattendedFlag = unattendedEntry?.state === 'set' ? strictBoolean(unattendedEntry) : null;
+  if (unattendedEntry !== null && unattendedFlag === null) invalid.push(NO_CI_UNATTENDED_KEY);
+
+  const baseListed = bases.includes(baseRef);
+  let baseComparison = 'not-applicable';
+  if (configured) {
+    baseComparison = resolution.hidden ? 'hidden-self' : await compareWithBase(resolution, baseRef);
+  }
+
+  let reason = 'active';
+  if (!configured) reason = 'not-configured';
+  else if (Object.hasOwn(COMPARISON_REASONS, baseComparison)) {
+    reason = COMPARISON_REASONS[baseComparison];
+  } else if (!basesValid) reason = 'invalid-value';
+  else if (!baseListed) reason = 'base-not-listed';
+
+  const { runtimeStateRoot, checkoutRoot, visibility, source, diagnostics } = resolution.data;
+  return {
+    runtimeStateRoot,
+    checkoutRoot,
+    visibility,
+    source,
+    noCiPolicy: {
+      configured,
+      bases,
+      unattended: unattendedFlag === true,
+      invalid,
+      baseRef,
+      baseListed,
+      baseComparison,
+      active: reason === 'active',
+      reason,
+    },
+    diagnostics,
+  };
 }
 
 // ---------------------------------------------------------------------------------------------
 // Envelopes
 
-const HANDLERS = Object.freeze({ resolve: resolveConfiguration });
+const HANDLERS = Object.freeze({
+  resolve: resolveConfiguration,
+  'no-ci-policy': resolveNoCiPolicy,
+});
 
 export async function executeOperation(operation, input = {}, deps = {}) {
   try {
