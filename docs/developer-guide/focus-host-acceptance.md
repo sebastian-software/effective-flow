@@ -1137,6 +1137,175 @@ used up. Any further attempt or candidate needs an owner decision.
 | `candidate-d/window-2/restore-verification.json`    | `fbc92a2b2e65ebef8b71c9b32df08cdd0b4ce9bbf8300a1c959068c712bcc176` |
 | `candidate-d/window-2/dalo-post.json`               | `d6b8b7e7f43b21175b50c2602d8569c0851ca582fbaacdd629710dfce5d54e91` |
 
+### November 12 recording on candidate 85728d95 — failed schedule self-deletion
+
+**Result: failed; overall WP2b-2 qualification remains incomplete.** After the window 2 failure
+above, the fix `85728d95` made a declined or withdrawn offer bind only itself. One install window on
+`85728d95` observed every item F1–F16. The owner accepted two deviations as limitations during the
+run:
+
+- a later snapshot in a long observer conversation carried the follow-up offer without its
+  disclosures;
+- one end event deleted its schedule with a malformed ID.
+
+When the second deviation recurred at the cap of a different loop, the owner reclassified it as a
+defect under the #613 failure rule. No item F1–F16 is recorded as passed for `85728d95`. The
+earlier records, activation status, acceptance matrix and ADRs remain unchanged. #625 remains a
+draft.
+
+#### 85728d95: binding
+
+The candidate was `85728d955c31ae553788c9286d6b6cab2ce4bf39`: `887ba1fd`, its two failed entries and
+the fix.
+
+- **Delta from `887ba1fd`:** among the focus sources and `build.mjs`, only the fix's sentence in
+  `src/tools/focus.md` changed.
+- **Build:** portable build `1.73.0 (85728d9)`, focus at 414 of 414 budget lines.
+- **Validation on a clean, container-local checkout:**
+  - format, the focus contract tests (27) and the focus eval tests (88) passed;
+  - the build and the distribution suite passed;
+  - the eval evidence report passed for all five suites.
+- **CI:** run `43249974317` failed only in the focus digest guard, which is red by design (5,108
+  tests, 5,080 passed, 27 skipped, 1 failed).
+- **Host:** host, model, effort, runtime modes and session handling were as for `887ba1fd`.
+- **Configuration:** the extended entry shown in the window 2 binding was active (SHA-256
+  `c19e3da3…`).
+
+Install window 1 ran from 16:53:56 to 21:04:58 UTC. The installed tree matched its 192-entry
+manifest at installation and at the end. `diff -r` against the build was empty, and the
+configuration hash matched at both boundaries.
+
+| Candidate file                                                | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `f694d14058fa4a50bee7fd19b8540b06d98743fdceb83a8deec482ede19e9b78` |
+| `src/shared/focus-session-contract.md`                        | `405a7742145d41141a0b5026b32ac04bc88f3330a659989b0f7103518cb2a68a` |
+| `src/shared/focus-follow-up.md`                               | `6ffc6c707374588998349a10cbe2697b093fa1fadee89501a5240cc7f8c896e4` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `e16d106ef09ecdb7f52255d04a7eccdfcf5cba4a4b9199007ed3ddad7dbc47d4` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `00adaf80283bd198fb23e65150c28cd67ad590c79ba62c4438f43d6d5c4226b5` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `24c769ab9ffc162850761bb888047b448beef555aab12bf2045537bbe94cc562` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+#### 85728d95: observations
+
+These observations are not recorded items, because the record binds only a complete pass:
+
+- **Snapshot and refusals (F1):**
+  - a positive snapshot with the offer; "no follow-up" created no schedule;
+  - complete self and ancestor refusals;
+  - after the decline, a second snapshot of the same target carried a new offer, so the window 2
+    defect did not recur;
+  - the authenticated T3 UI rendered the target ID as inline code, not as a link.
+- **Tick behaviour:**
+  - the one-time idle report, then a quiet tick (F2);
+  - Looping reported once and not repeated (F3);
+  - a quiet tick across an 11-minute silent command (F4);
+  - completion reported and the schedule deleted, twice (F5);
+  - a queued tick behind an operator turn, answering no developer turn (F9);
+  - a background-task notification run that was not treated as a tick (F11);
+  - the bare thread ID and the `$effective-flow` prefix in every tick prompt (F13);
+  - stop, then an explicit resume with a new offer and a new handle (F14).
+- **Invalid checkpoint (F7):** in a fresh observer, the first tick stopped before any host access
+  with the one-time notice and `ticks=1`. The second tick wrote `ticks=2` with no notice and no
+  deletion. Both were observed for two loops.
+- **Failed deletion (F8):**
+  - the owner deleted the schedule in the T3 UI before the target completed and before any grid
+    fire. This order was swapped from the plan to remove timing pressure;
+  - the directly sent tick reported completion, surfaced `task_not_found` and stated that deletion
+    was unconfirmed, ending `state=stopped`.
+- **Approval-required mode (F10):** the owner held a tick's real approval past several grid fires.
+  The held tick then completed with the exact checkpoint, and the queued fires ran one after
+  another without overlap.
+- **Early send (F15):** T3 labels the early-send control for a queued scheduled run "Steer". The
+  steered tick ran inside the busy operator turn and posted the exact checkpoint.
+- **Cap loop (F12, F16):** the loop reached its 48-tick cap without compaction. A real quiet tick
+  added 7 `activity` items (about 20,400 payload characters) and 2 `messages` (about 1,800
+  characters).
+- **Host fault:** one target-state read failed after T3 auto-settled the target. The observer
+  refused admission completely and the retry succeeded.
+- **Naming:** a scan of 141 assistant messages across five observers found no host thread link, no
+  malformed fragment and no truncation. T3 texts equalled the Codex session records.
+
+Both limitations the owner accepted before the reclassification:
+
+- **Offer disclosures:** the fifth snapshot in the main observer's conversation offered the
+  intervals without the offer's disclosures. The report was otherwise complete and the opt-in
+  worked.
+- **Schedule ID:** see the observed defect below. The owner first accepted its F6 occurrence as a
+  limitation.
+
+#### 85728d95: observed defect
+
+`shared/focus-follow-up.md` deletes the prompt's handle under the deletion safeguard. Its T3
+scheduled-task ID carries the `scheduled-task:` prefix that the checkpoint line also records.
+
+In two of the three loops that ended by an end event, the observer passed the ID to
+`delete_scheduled_task` without that prefix:
+
+- **F6, approval-mode observer:** after the owner deleted the target in the T3 UI, the next tick
+  read `thread_not_found` and reported lost access with Cannot judge. It then called
+  `delete_scheduled_task` with the bare UUID and received `task_not_found`. It ended
+  `state=stopped` with the notice that deletion was unconfirmed. The schedule kept firing until
+  the owner deleted it in the T3 UI.
+- **F12, cap-loop observer:** tick 48 reported the cap. It then made the same unprefixed call,
+  received `task_not_found` and ended `state=stopped` with the same notice. Tick 49 retried the
+  unprefixed call, as the stopped-state rule requires, and posted only its checkpoint. The owner
+  deleted the schedule in the T3 UI.
+
+The main observer passed the full prefixed ID in all four of its deletions. Three of them deleted
+the schedule; the fourth was the provoked F8 failure.
+
+Every report was honest and the fallback notice worked. The end events' self-deletion still failed
+for reasons inside focus's own call. This is an observed defect in focus's end-event behaviour. No
+source fix or acceptance exception is claimed.
+
+#### 85728d95: restoration and evidence
+
+After the defect, no further scenario started:
+
+- the owner deleted the remaining schedules in the T3 UI; the T3 database then held no active
+  qualification schedule, and the UI listed none;
+- all throwaway sessions were archived, and the F6 target had been deleted.
+
+The guarded restore:
+
+- confirmed that the installed tree still matched the candidate manifest;
+- reinstated the original DALO slot link and all 190 baseline entries;
+- removed only the owned temporary configuration, after its hash matched;
+- signalled the app-server only after rechecking its executable and process-start identity. The
+  old process was absent afterwards.
+
+The pre-install DALO capture ran with `CLAUDE_CONFIG_DIR` set to a second Claude profile. In that same
+environment, `dalo --json status --check` returned output identical to the capture. With the
+variable unset, only the known hook target differed. The host was restored at 21:04:58 UTC.
+
+The recording plan remains unimplemented and unarchived. This failed entry changes no product
+source, fixture, activation status, ADR or PR readiness. A further candidate needs the owner's
+decision.
+
+| Evidence file                                              | SHA-256                                                            |
+| ---------------------------------------------------------- | ------------------------------------------------------------------ |
+| `candidate-85728d95/window-1/F12-cap.json`                 | `d13e4b3d23c3ae7b3eb608904e853ad1e006f3a775b19a9afe8e2294ee6ecdb5` |
+| `candidate-85728d95/window-1/F6-lost-access.json`          | `bb564b2a4c0f89431e46d9e905e1587cc0fadd43c8c8443f0e551b064ed57fb6` |
+| `candidate-85728d95/window-1/limitations.json`             | `67b98c34c3d23c805a1d94b654d6497a24ebd2d88a045fe0f85d3b250f1d62ab` |
+| `candidate-85728d95/window-1/F7-F8-T2b.json`               | `a62c2bd1ed50c7802f97894f03dcd13ded927d7d6c0afdbd23315cc41a7173a9` |
+| `candidate-85728d95/window-1/F15-early-send.json`          | `c9ea55225db5146a924947086c4da5057497fca54393528447bd8e4b69458b7a` |
+| `candidate-85728d95/window-1/F16-growth.jsonl`             | `8e0d62021ab50c3d754fe8fdaec04f598907cf47eddd85866007864a84e00579` |
+| `candidate-85728d95/window-1/O-host-fault-1.json`          | `a0b75760073fede013d89330b6bd1cb097dc6b7040aaa3795d311cf676f9b187` |
+| `candidate-85728d95/scan-O-final.json`                     | `6f62fffd678835823f00d3a3d59ac3ad2b4754f82109b5b90f66f3eff2313715` |
+| `candidate-85728d95/scan-O2-final.json`                    | `80b41ff459ab8aa0f44d18032ed5d966028b61fb24dfe6fdf1985faf9904dabf` |
+| `candidate-85728d95/scan-O3-final.json`                    | `8ffe45c04321ca91ad0ba5462741541ea880d1a4ad910f12b94b5f02601a5b4a` |
+| `candidate-85728d95/scan-O4-final.json`                    | `d81d34933c55387d9c0fda0c3b20bd77e4b44a5a0b6deefcda0d1dbff8798a64` |
+| `candidate-85728d95/scan-P-child-final.json`               | `0dc93f58bfb4aee535261cfcb259dff99de353c7c500869af909beaa4175facf` |
+| `candidate-85728d95/qualified-config.toml`                 | `c19e3da30e7256403e4a88881745026311c5127c3e35051cc656cff813680f42` |
+| `candidate-85728d95/candidate-digests.json`                | `3c57ce7b864c82c4765757bcd6d1766b21e31bb9e7515f55350be67432b5e734` |
+| `candidate-85728d95/window-1/candidate-end-integrity.json` | `ffcd0a2b68daec239558a14f49ec5bfc95f5165b57e99c27636a1d2fe872e90f` |
+| `candidate-85728d95/window-1/baseline.json`                | `3930f03ee06319bbdc21a4e18d36f006172b1623285c85032f77e95acd8ee9ce` |
+| `candidate-85728d95/window-1/restart-install.json`         | `4f207cc5043c28d44ed26b479fd00c52826a16dec4168a675931318d9a16a78b` |
+| `candidate-85728d95/window-1/restart-restore.json`         | `2fe932e23b80b1d620a2fd08de4466db2754461a6d8e6d59621bbacd85850414` |
+| `candidate-85728d95/window-1/restore-verification.json`    | `f10bd140debdab5682621075995e870bc8cfc1afc6ec391d945e7f89182afa29` |
+| `candidate-85728d95/window-1/dalo-post-eg.json`            | `d6b8b7e7f43b21175b50c2602d8569c0851ca582fbaacdd629710dfce5d54e91` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
