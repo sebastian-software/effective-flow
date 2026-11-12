@@ -47,11 +47,13 @@ On opt-in, create exactly one task with `schedule_task` and only these fields: `
 follow-up"`, `prompt: "$effective-flow focus follow-up tick <session-ref> handle:pending"`,
 `schedule: {type: 'interval', everyMs: <interval in milliseconds>}`, `bindToCurrentThread: true`
 and `enabled: false`. In the same turn, make one update by the returned ID that sets the prompt to
-`$effective-flow focus follow-up tick <session-ref> handle:<id>` and `enabled: true`; an unprefixed
-prompt does not load the skill. Creating the task disabled is not the forbidden end-event disable.
-If the update fails, delete the task in that turn and report the failure; if that deletion fails
-too, the task stays disabled and the report names it for deletion in T3. List no schedule; read or
-write no other scheduler.
+`$effective-flow focus follow-up tick <session-ref> handle:<id>` and `enabled: true`; a prompt
+without `$effective-flow` does not load the skill. The handle (`<id>` in `handle:<id>` and
+`handle=<id>`) is the complete ID returned by `schedule_task`, including its `scheduled-task:`
+prefix; pass it unchanged as `scheduledTaskId`, never stripped or shortened. Creating the task
+disabled is not the forbidden end-event disable. If the update fails, delete the task in that turn
+and report the failure; if that deletion fails too, the task stays disabled and the report names it
+for deletion in T3. List no schedule; read or write no other scheduler.
 
 After a successful update, end the opt-in turn with the initial checkpoint: `ticks=0`,
 `state=active`, `handle=<id>`, `verdict=` and `correction=` from the snapshot, `last=` the highest

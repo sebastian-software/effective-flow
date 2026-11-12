@@ -459,7 +459,7 @@ test('Focus follow-up schedules exactly one handle-bound task', () => {
   const text = followUp();
   assertPhrases(text, [
     'create exactly one task with `schedule_task` and only these fields: `title: "focus follow-up"`, `prompt: "$effective-flow focus follow-up tick <session-ref> handle:pending"`, `schedule: {type: \'interval\', everyMs: <interval in milliseconds>}`, `bindToCurrentThread: true` and `enabled: false`.',
-    'make one update by the returned ID that sets the prompt to `$effective-flow focus follow-up tick <session-ref> handle:<id>` and `enabled: true`; an unprefixed prompt does not load the skill.',
+    'make one update by the returned ID that sets the prompt to `$effective-flow focus follow-up tick <session-ref> handle:<id>` and `enabled: true`; a prompt without `$effective-flow` does not load the skill.',
     'Creating the task disabled is not the forbidden end-event disable.',
     'If the update fails, delete the task in that turn and report the failure; if that deletion fails too, the task stays disabled and the report names it for deletion in T3.',
     'List no schedule; read or write no other scheduler.',
@@ -470,6 +470,24 @@ test('Focus follow-up schedules exactly one handle-bound task', () => {
     "Focus's only host-persisted artifact is one T3 `schedule_task` per opted-in loop, bound to this observer thread, whose prompt holds only the tick invocation, the session reference and its own handle; focus never lists, reads or writes another schedule or scheduler.",
     "The only host writes are that follow-up task's creation, its one prompt-and-enable update in the creating turn, and deleting a handle under the follow-up deletion safeguard.",
   ]);
+});
+
+test('Focus follow-up handle is the complete scheduled-task ID passed verbatim', () => {
+  // Invariant: the handle is the complete ID returned by `schedule_task`, `scheduled-task:` prefix
+  // included, passed unchanged as `scheduledTaskId`. The follow-up fragment owns this once; a
+  // stripped prefix makes `delete_scheduled_task` fail with task_not_found while the schedule
+  // keeps firing.
+  assertPhrases(followUp(), [
+    'complete ID returned by `schedule_task`',
+    '`scheduled-task:` prefix',
+    'unchanged as `scheduledTaskId`',
+  ]);
+  for (const path of ['src/tools/focus.md', 'src/shared/focus-session-contract.md']) {
+    assert.ok(
+      !flat(source(path)).includes('scheduled-task:'),
+      `${path} must not restate the scheduled-task ID prefix`,
+    );
+  }
 });
 
 test('Focus follow-up grammar has three forms and a tick never offers', () => {
