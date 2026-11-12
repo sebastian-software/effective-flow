@@ -114,6 +114,11 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
   request touching only an existing reviewer's `.check` asks only `.check`; untouched reviewers are
   not asked. Removing a login from `mergeGate.bots` also removes its `.trigger` and `.check` rows in
   the same preview.
+- `mergeGate.noCiPolicy.*` changes only on a request that explicitly names the policy; a vaguer one
+  ("no CI", "skip checks") gets the focused question, never a guessed write. Setting `unattended`
+  with no `bases` recorded or requested also asks block 9's `bases` question, and removing
+  `mergeGate.noCiPolicy.bases` also removes `mergeGate.noCiPolicy.unattended` in the same preview,
+  which carries block 9's `completion` and `requireAllChecks` hints.
 - Adding a login to either `mergeGate.bots` or `mergeGate.botAccounts` first runs block 9's two-way
   overlap check against the other list and changes that list only with the user's answer.
 - Changing `tracker.mode` to `external` also touches the owner's external follow-ups

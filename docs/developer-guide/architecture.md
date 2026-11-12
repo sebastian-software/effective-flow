@@ -990,9 +990,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 62 non-destructive or bounded rules, in three
+a prose removal of that state too. `setup` can write 63 non-destructive or bounded rules, in three
 families (seventeen runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan` and `ledger init|append|reconcile`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan` and `ledger init|append|reconcile`, `config-resolve resolve|no-ci-policy`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

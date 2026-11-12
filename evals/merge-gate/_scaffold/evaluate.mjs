@@ -17,6 +17,12 @@ import {
 import {
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  NO_CI_FLAG_ABSENT_SCENARIO,
+  NO_CI_MERGE_FAILURE_SCENARIO,
+  NO_CI_REPORTED_CHECK_SCENARIO,
+  NO_CI_STATUS_FAILURE_SCENARIO,
+  NO_CI_UNATTENDED_MERGES_SCENARIO,
+  NO_CI_UNLISTED_BASE_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
 } from './configured-reviewer-scenario.mjs';
 
@@ -35,6 +41,16 @@ const ITERATE_TRACE_KEYS = [
   'schema',
   'seq',
 ];
+// The scenarios in which the gate is expected to attempt the merge: the applied call is made once,
+// and a second one is a deviation whatever else the run did. Both no-CI policy members are here —
+// the one that merges and the one whose single applied merge is refused by the forge.
+const MERGING_SCENARIOS = Object.freeze([
+  'merge-proceeds',
+  BOT_LOGIN_SCENARIO,
+  NESTED_SPAWN_SCENARIO,
+  NO_CI_UNATTENDED_MERGES_SCENARIO,
+  NO_CI_MERGE_FAILURE_SCENARIO,
+]);
 const CONFIGURED_REVIEWER_THREAD = 'PRRT_kwDOconfiguredReviewer';
 
 export function phaseFourInvalidity(records, flippedPosition) {
@@ -242,6 +258,14 @@ const MERGE_REFUSALS = Object.freeze({
   [LIFECYCLE_SCENARIO]: 'the gate requested pr-merge after checks became unreported',
   [NON_INTERACTIVE_DISPATCH_SCENARIO]:
     'the gate requested pr-merge although mergeGate.completion is ask and a non-interactive delegation behaves as report',
+  [NO_CI_FLAG_ABSENT_SCENARIO]:
+    'the gate requested pr-merge with no reported check list under a no-CI policy that carries no unattended grant',
+  [NO_CI_REPORTED_CHECK_SCENARIO]:
+    'the gate requested pr-merge although a reported required check was failing',
+  [NO_CI_STATUS_FAILURE_SCENARIO]:
+    'the gate requested pr-merge although its status read failed under a no-CI policy',
+  [NO_CI_UNLISTED_BASE_SCENARIO]:
+    'the gate requested pr-merge with no reported check list for a base the no-CI policy does not list',
 });
 
 function mergeRefusalFindings(scenario, records) {
@@ -310,6 +334,43 @@ function outcomeFindings(scenario, records, fixture) {
   } else if (scenario === 'guard-blocks-merge') {
     findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
+  } else if (scenario === NO_CI_UNATTENDED_MERGES_SCENARIO) {
+    // The log shows that the merge was applied, never why the gate took the policy as its answer: the
+    // chat report, where the Phase 6 policy line stands, is captured nowhere. The refusal scenarios
+    // beside this one differ from it in exactly one fact each, which is what makes the merge here
+    // attributable to the policy rather than to a gate that merges unreported check lists.
+    if (merges.length === 0) {
+      findings.push(
+        'the gate did not request pr-merge although the declared no-CI policy was active and granted for an unattended run',
+      );
+    }
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
+  } else if (scenario === NO_CI_MERGE_FAILURE_SCENARIO) {
+    // The applied merge fails with COMMAND_FAILED (mutationMayHaveSucceeded: true), so the gate is expected to report and not to
+    // retry: exactly one applied `pr-merge` record. The preview call that precedes it is a record of
+    // its own and is not counted.
+    if (merges.length === 0) findings.push('the gate did not request pr-merge');
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
+  } else if (
+    scenario === NO_CI_FLAG_ABSENT_SCENARIO ||
+    scenario === NO_CI_UNLISTED_BASE_SCENARIO ||
+    scenario === NO_CI_REPORTED_CHECK_SCENARIO
+  ) {
+    // The fourth shape of the README: a run that ends before any merge decision, asserted by the
+    // absence of `pr-merge` plus the one read that carries the deciding fact.
+    findings.push(...mergeRefusalFindings(scenario, records));
+    if (operationStarts(records, 'pr-status-read').length === 0) {
+      findings.push('the run never read the status that carries the check list');
+    }
+  } else if (scenario === NO_CI_STATUS_FAILURE_SCENARIO) {
+    findings.push(...mergeRefusalFindings(scenario, records));
+    // The first read succeeds and every later one fails, so fewer than two reads means the failing
+    // element was never served and the run proved nothing about a failed read.
+    const reads = operationStarts(records, 'pr-status-read').length;
+    if (reads < 2)
+      findings.push(`pr-status-read appears ${reads} time(s); the failing read was not observed`);
   } else if (scenario === 'linked-issue-open-points') {
     const reads = operationStarts(records, 'issue-comments-read').length;
     if (reads !== 1) findings.push(`issue-comments-read appears ${reads} time(s), expected one`);
@@ -358,6 +419,12 @@ export const BRANCHED_SCENARIOS = Object.freeze([
   'merge-proceeds',
   NESTED_SPAWN_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
+  NO_CI_FLAG_ABSENT_SCENARIO,
+  NO_CI_MERGE_FAILURE_SCENARIO,
+  NO_CI_REPORTED_CHECK_SCENARIO,
+  NO_CI_STATUS_FAILURE_SCENARIO,
+  NO_CI_UNATTENDED_MERGES_SCENARIO,
+  NO_CI_UNLISTED_BASE_SCENARIO,
   'unreported-checks-block-merge',
   LIFECYCLE_SCENARIO,
 ]);
@@ -404,11 +471,7 @@ export function findings({ scenario, records, fixture, auxiliaryRecords, require
 
 export function fixtureIndependentFindings({ scenario, records }) {
   const findings = [];
-  if (
-    scenario === 'merge-proceeds' ||
-    scenario === BOT_LOGIN_SCENARIO ||
-    scenario === NESTED_SPAWN_SCENARIO
-  ) {
+  if (MERGING_SCENARIOS.includes(scenario)) {
     const applied = appliedMergeCount(records);
     if (applied > 1) findings.push(appliedMergeFinding(applied));
   }
@@ -436,11 +499,7 @@ export function decisiveFindings({
   requiresAuxiliary,
 }) {
   const findings = [];
-  if (
-    scenario === 'merge-proceeds' ||
-    scenario === BOT_LOGIN_SCENARIO ||
-    scenario === NESTED_SPAWN_SCENARIO
-  ) {
+  if (MERGING_SCENARIOS.includes(scenario)) {
     const applied = appliedMergeCount(records);
     if (applied > 1) findings.push(appliedMergeFinding(applied));
   } else if (Object.hasOwn(MERGE_REFUSALS, scenario)) {

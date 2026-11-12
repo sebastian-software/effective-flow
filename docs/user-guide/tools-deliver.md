@@ -406,6 +406,24 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    only about the forge's own required checks. On Forgejo the helper polls within the same bound and
    already asks you once. Those two are where the waiver is reachable; a GitHub repository that runs
    no CI at all and keeps the default check criterion still cannot be merged by this tool.
+
+   **Declared no-CI policy.** A repository that intentionally runs no CI can record
+   `mergeGate.noCiPolicy.bases` (exact base branch names) in its setup, and `setup` writes it only
+   on your explicit choice. For a pull request into a listed base whose fresh status read reports
+   no check at all, the gate then skips the pending-checks question and the waiver, and merges once
+   every other condition holds; no waiver record is written. It applies only where the same
+   `mergeGate.noCiPolicy.*` rows are on the base branch, so a pull request cannot grant it to
+   itself (in hidden mode the file is local and there is no such guard). A non-interactive run uses
+   it only with `mergeGate.noCiPolicy.unattended: true` and `mergeGate.completion: merge`;
+   otherwise it stops as before. A GitHub repository without CI also needs
+   `mergeGate.requireAllChecks: false`, or its check wait fails before the policy is reached. On
+   Forgejo the run makes one status read instead of waiting.
+   The policy reaches nothing but the missing check list: a pending or red check, every other
+   condition and branch protection are unchanged, and a base that requires checks refuses the merge.
+   The report names the policy, the matched base and the residual risk that a check attaching
+   after the read, or CI the pull request itself introduces, looks like no CI; where the policy
+   was configured but did not apply, it says why.
+
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
    confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked

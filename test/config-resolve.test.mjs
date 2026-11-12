@@ -2720,6 +2720,619 @@ test('diagnostics: every emitted code belongs to the closed set', async (t) => {
 });
 
 // ---------------------------------------------------------------------------------------------
+// no-ci-policy: the declared no-CI merge policy for one base branch
+
+const NO_CI_BASES = 'mergeGate.noCiPolicy.bases';
+const NO_CI_UNATTENDED = 'mergeGate.noCiPolicy.unattended';
+
+async function noCiPolicy(input, deps) {
+  const envelope = await executeOperation('no-ci-policy', input, deps);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.operation, 'no-ci-policy');
+  return envelope.data;
+}
+
+// Commits the setup ADR with `rows` on the main branch and points `origin/main` at that commit,
+// as merge-gate's base fetch leaves it.
+function policyRepository(t, rows) {
+  const { base, root } = repository(t);
+  write(root, SETUP_ADR, setupDocument(rows));
+  git(root, 'add', SETUP_ADR);
+  git(root, 'commit', '--quiet', '-m', 'setup');
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  return { base, root };
+}
+
+// A linked worktree on the pull-request branch `name` whose head commits what `change` writes.
+function pullRequestHead(base, root, name, change) {
+  const head = join(base, name);
+  git(root, 'worktree', 'add', '--quiet', '-b', name, head);
+  change(head);
+  git(head, 'add', '-A');
+  git(head, 'commit', '--quiet', '-m', `${name} head`);
+  return head;
+}
+
+// Commits `files` (relative path → content) and `links` (relative path → symlink target text) on
+// the main branch and points `origin/main` at it.
+function baseRepository(t, files, links = {}) {
+  const { base, root } = repository(t);
+  for (const [relative, content] of Object.entries(files)) write(root, relative, content);
+  for (const [relative, target] of Object.entries(links)) {
+    mkdirSync(dirname(join(root, relative)), { recursive: true });
+    symlinkSync(target, join(root, relative));
+  }
+  git(root, 'add', '-A');
+  git(root, 'commit', '--quiet', '-m', 'base');
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  return { base, root };
+}
+
+test('no-ci-policy: the policy is active when the base blob rows equal the working rows and the base is listed', async (t) => {
+  const rows = {
+    [NO_CI_BASES]: 'main, release',
+    [NO_CI_UNATTENDED]: 'true',
+    'plan.dir': 'docs/plan',
+  };
+  const { root } = policyRepository(t, rows);
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.deepEqual(data.noCiPolicy, {
+    configured: true,
+    bases: ['main', 'release'],
+    unattended: true,
+    invalid: [],
+    baseRef: 'main',
+    baseListed: true,
+    baseComparison: 'equal',
+    active: true,
+    reason: 'active',
+  });
+  assert.equal(data.runtimeStateRoot, root);
+  assert.equal(data.checkoutRoot, root);
+  assert.equal(data.visibility, 'standard');
+  assert.equal(data.source.path, join(root, SETUP_ADR));
+  assert.deepEqual(data.diagnostics, []);
+  // A row outside the policy prefix may differ between base and head without effect.
+  write(root, SETUP_ADR, setupDocument({ ...rows, 'plan.dir': 'elsewhere' }));
+  const unrelated = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(unrelated.noCiPolicy.baseComparison, 'equal');
+  assert.equal(unrelated.noCiPolicy.active, true);
+});
+
+test('no-ci-policy: a base that is not listed exactly leaves the policy inactive', async (t) => {
+  const { root } = policyRepository(t, { [NO_CI_BASES]: 'main' });
+  git(root, 'update-ref', 'refs/remotes/origin/Main', 'HEAD');
+  git(root, 'update-ref', 'refs/remotes/origin/develop', 'HEAD');
+  for (const baseRef of ['develop', 'Main']) {
+    const { noCiPolicy: policy } = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef });
+    assert.equal(policy.baseListed, false, baseRef);
+    assert.equal(policy.baseComparison, 'equal', baseRef);
+    assert.equal(policy.active, false, baseRef);
+    assert.equal(policy.reason, 'base-not-listed', baseRef);
+    assert.equal(policy.unattended, false, 'an absent unattended row is false');
+  }
+});
+
+// Invariant: removing `bases` revokes the policy; an `unattended` row alone configures nothing,
+// and no source at all is not configured either.
+test('no-ci-policy: without a bases row the policy is not configured and nothing is compared', async (t) => {
+  const { root } = policyRepository(t, { [NO_CI_BASES]: 'main', [NO_CI_UNATTENDED]: 'true' });
+  write(root, SETUP_ADR, setupDocument({ [NO_CI_UNATTENDED]: 'true' }));
+  const calls = [];
+  const runner = fakeRunner((call) => {
+    calls.push(call.args);
+    return null;
+  });
+  const { noCiPolicy: policy } = await noCiPolicy(
+    { cwd: root, tool: 'merge-gate', baseRef: 'main' },
+    { runner },
+  );
+  assert.deepEqual(policy, {
+    configured: false,
+    bases: [],
+    unattended: true,
+    invalid: [],
+    baseRef: 'main',
+    baseListed: false,
+    baseComparison: 'not-applicable',
+    active: false,
+    reason: 'not-configured',
+  });
+  assert.ok(!calls.some((args) => args.includes('cat-file')), 'no base blob is read');
+
+  const { root: empty } = plainDirectory(t);
+  const none = await noCiPolicy({ cwd: empty, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(none.source.step, 4);
+  assert.equal(none.noCiPolicy.reason, 'not-configured');
+  assert.equal(none.noCiPolicy.baseComparison, 'not-applicable');
+});
+
+// Invariant: `bases` is active only as a string value with at least one item, and `unattended`
+// grants only on the literal `true`; any other value is off and named once in `invalid`.
+test('no-ci-policy: an invalid bases or unattended value is off and reported in invalid', async (t) => {
+  for (const cell of [
+    '(empty)',
+    '(leer)',
+    'null',
+    'true',
+    'false',
+    ' , ',
+    rowsOf('main', 'main'),
+  ]) {
+    const rows = { [NO_CI_BASES]: cell };
+    const { root } = policyRepository(t, rows);
+    const { noCiPolicy: policy } = await noCiPolicy({
+      cwd: root,
+      tool: 'merge-gate',
+      baseRef: 'main',
+    });
+    const label = JSON.stringify(cell);
+    assert.equal(policy.configured, true, label);
+    assert.deepEqual(policy.bases, [], label);
+    assert.deepEqual(policy.invalid, [NO_CI_BASES], label);
+    assert.equal(policy.baseListed, false, label);
+    assert.equal(policy.active, false, label);
+    assert.equal(policy.reason, 'invalid-value', label);
+  }
+  for (const [cell, unattended, invalid] of [
+    ['true', true, []],
+    ['false', false, []],
+    ['True', false, [NO_CI_UNATTENDED]],
+    ['yes', false, [NO_CI_UNATTENDED]],
+    ['(empty)', false, [NO_CI_UNATTENDED]],
+    ['null', false, [NO_CI_UNATTENDED]],
+    [rowsOf('true', 'true'), false, [NO_CI_UNATTENDED]],
+  ]) {
+    const { root } = policyRepository(t, { [NO_CI_BASES]: 'main', [NO_CI_UNATTENDED]: cell });
+    const { noCiPolicy: policy } = await noCiPolicy({
+      cwd: root,
+      tool: 'merge-gate',
+      baseRef: 'main',
+    });
+    const label = JSON.stringify(cell);
+    assert.equal(policy.unattended, unattended, label);
+    assert.deepEqual(policy.invalid, invalid, label);
+    // An invalid `unattended` withholds only the unattended grant, never the policy itself.
+    assert.equal(policy.active, true, label);
+  }
+});
+
+test('no-ci-policy: a missing base ref or a missing base blob leaves the policy inactive', async (t) => {
+  const { root } = policyRepository(t, { [NO_CI_BASES]: 'main, release' });
+  const missingRef = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'release' });
+  assert.equal(missingRef.noCiPolicy.baseListed, true);
+  assert.equal(missingRef.noCiPolicy.baseComparison, 'missing');
+  assert.equal(missingRef.noCiPolicy.active, false);
+  assert.equal(missingRef.noCiPolicy.reason, 'base-blob-missing');
+
+  // Only the exact remote-tracking ref counts: a tag whose name a revision lookup would try in
+  // its place never answers for it.
+  git(root, 'update-ref', 'refs/tags/refs/remotes/origin/release', 'HEAD');
+  const tagOnly = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'release' });
+  assert.equal(tagOnly.noCiPolicy.baseComparison, 'missing');
+
+  // The base branch predates the setup ADR: the ref exists, the blob does not.
+  const { root: fresh } = repository(t);
+  git(fresh, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  write(fresh, SETUP_ADR, setupDocument({ [NO_CI_BASES]: 'main' }));
+  const missingBlob = await noCiPolicy({ cwd: fresh, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(missingBlob.noCiPolicy.baseComparison, 'missing');
+  assert.equal(missingBlob.noCiPolicy.reason, 'base-blob-missing');
+  assert.equal(missingBlob.noCiPolicy.active, false);
+});
+
+test('no-ci-policy: a base blob without a decodable configuration is unreadable', async (t) => {
+  const { root } = repository(t);
+  write(root, SETUP_ADR, '# Effective Flow project setup\n\nNo configuration table yet.\n');
+  git(root, 'add', SETUP_ADR);
+  git(root, 'commit', '--quiet', '-m', 'setup stub');
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  write(root, SETUP_ADR, setupDocument({ [NO_CI_BASES]: 'main' }));
+  const { noCiPolicy: policy } = await noCiPolicy({
+    cwd: root,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(policy.baseComparison, 'unreadable');
+  assert.equal(policy.reason, 'base-blob-unreadable');
+  assert.equal(policy.active, false);
+});
+
+// Invariant: a PR head cannot enable the no-CI policy for itself. Configuration is read from the
+// working checkout, typically the pull-request head, so the policy rows count only when the base
+// branch carries exactly the same `mergeGate.noCiPolicy.*` rows.
+test('no-ci-policy: a PR head that adds or changes policy rows cannot enable the policy for itself', async (t) => {
+  // The base branch has no policy rows; the PR head adds them.
+  const added = policyRepository(t, { 'plan.dir': 'docs/plan' });
+  const addingHead = pullRequestHead(added.base, added.root, 'adding', (head) =>
+    write(
+      head,
+      SETUP_ADR,
+      setupDocument({
+        'plan.dir': 'docs/plan',
+        [NO_CI_BASES]: 'main',
+        [NO_CI_UNATTENDED]: 'true',
+      }),
+    ),
+  );
+  const adding = await noCiPolicy({ cwd: addingHead, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(adding.checkoutRoot, addingHead);
+  assert.equal(adding.runtimeStateRoot, added.root);
+  assert.equal(adding.noCiPolicy.configured, true);
+  assert.equal(adding.noCiPolicy.baseListed, true);
+  assert.equal(adding.noCiPolicy.baseComparison, 'mismatch');
+  assert.equal(adding.noCiPolicy.active, false);
+  assert.equal(adding.noCiPolicy.reason, 'base-blob-mismatch');
+
+  // The base branch lists another base; a PR head widens the list, another adds unattended.
+  const changed = policyRepository(t, { [NO_CI_BASES]: 'release' });
+  git(changed.root, 'update-ref', 'refs/remotes/origin/release', 'refs/remotes/origin/main');
+  for (const [name, rows, baseRef] of [
+    ['widening', { [NO_CI_BASES]: 'release, main' }, 'main'],
+    ['unattending', { [NO_CI_BASES]: 'release', [NO_CI_UNATTENDED]: 'true' }, 'release'],
+  ]) {
+    const head = pullRequestHead(changed.base, changed.root, name, (checkout) =>
+      write(checkout, SETUP_ADR, setupDocument(rows)),
+    );
+    const { noCiPolicy: policy } = await noCiPolicy({ cwd: head, tool: 'merge-gate', baseRef });
+    assert.equal(policy.baseComparison, 'mismatch', name);
+    assert.equal(policy.active, false, name);
+    assert.equal(policy.reason, 'base-blob-mismatch', name);
+  }
+});
+
+// Invariant: a PR head cannot enable the no-CI policy for itself by choosing another source either:
+// the base commit must locate the same source through its own marker or ADR scan, so a head that
+// edits or drops the marker cannot point the locator at a tracked base file with policy rows.
+test('no-ci-policy: a PR head that redirects the setup marker cannot enable the policy for itself', async (t) => {
+  const policy = setupDocument({ [NO_CI_BASES]: 'main', [NO_CI_UNATTENDED]: 'true' });
+  const { base, root } = baseRepository(t, {
+    'AGENTS.md': '**Effective Flow project setup:** docs/setup.md\n',
+    [join('docs', 'setup.md')]: setupDocument({ 'plan.dir': 'docs/plan' }),
+    [join('docs', 'notes', 'policy.md')]: policy,
+    [SETUP_ADR]: policy,
+  });
+  const unchanged = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(unchanged.source.step, 1);
+  assert.equal(unchanged.noCiPolicy.reason, 'not-configured');
+
+  const redirected = pullRequestHead(base, root, 'redirected', (head) =>
+    write(head, 'AGENTS.md', '**Effective Flow project setup:** docs/notes/policy.md\n'),
+  );
+  const dropped = pullRequestHead(base, root, 'dropped', (head) => rmSync(join(head, 'AGENTS.md')));
+  for (const [cwd, step, sourcePath] of [
+    [redirected, 1, join(redirected, 'docs', 'notes', 'policy.md')],
+    [dropped, 2, join(dropped, SETUP_ADR)],
+  ]) {
+    const data = await noCiPolicy({ cwd, tool: 'merge-gate', baseRef: 'main' });
+    assert.equal(data.source.step, step, cwd);
+    assert.equal(data.source.path, sourcePath, cwd);
+    assert.equal(data.noCiPolicy.configured, true, cwd);
+    assert.equal(data.noCiPolicy.baseComparison, 'mismatch', cwd);
+    assert.equal(data.noCiPolicy.active, false, cwd);
+    assert.equal(data.noCiPolicy.reason, 'base-blob-mismatch', cwd);
+  }
+});
+
+test('no-ci-policy: a marker source that the base locates the same way keeps the policy active', async (t) => {
+  const { root } = baseRepository(t, {
+    'AGENTS.md': '**Effective Flow project setup:** docs/setup.md\n',
+    [join('docs', 'setup.md')]: setupDocument({ [NO_CI_BASES]: 'main' }),
+  });
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(data.source.step, 1);
+  assert.equal(data.noCiPolicy.baseComparison, 'equal');
+  assert.equal(data.noCiPolicy.active, true);
+});
+
+// Invariant: a PR head cannot enable the no-CI policy for itself through the ADR scan: removing
+// the candidate the base ranks first makes the head scan pick another one, which the base does not.
+test('no-ci-policy: a PR head that redirects the ADR scan cannot enable the policy for itself', async (t) => {
+  const prefixed = join('docs', 'adr', '0002-effective-flow-project-setup.md');
+  const { base, root } = baseRepository(t, {
+    [SETUP_ADR]: setupDocument({ 'plan.dir': 'docs/plan' }),
+    [prefixed]: setupDocument({ [NO_CI_BASES]: 'main' }),
+  });
+  const head = pullRequestHead(base, root, 'rescanned', (checkout) =>
+    rmSync(join(checkout, SETUP_ADR)),
+  );
+  const data = await noCiPolicy({ cwd: head, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(data.source.step, 2);
+  assert.equal(data.source.path, join(head, prefixed));
+  assert.equal(data.noCiPolicy.baseComparison, 'mismatch');
+  assert.equal(data.noCiPolicy.active, false);
+  assert.equal(data.noCiPolicy.reason, 'base-blob-mismatch');
+});
+
+// Invariant: a transitional JSON source compares decoded values too, so a string and a Boolean, or
+// a string and a list, that flatten to the same raw cell are still different rows.
+test('no-ci-policy: a step-3 JSON source is compared by key, raw cell and decoded value', async (t) => {
+  const config = join('.effective-flow', 'config.json');
+  const committed = { mergeGate: { noCiPolicy: { bases: 'main', unattended: true } } };
+  const { root } = baseRepository(t, { [config]: JSON.stringify(committed) });
+  const same = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(same.source.step, 3);
+  assert.equal(same.noCiPolicy.baseComparison, 'equal');
+  assert.equal(same.noCiPolicy.active, true);
+  assert.equal(same.noCiPolicy.unattended, true);
+  for (const policy of [
+    { bases: 'main', unattended: 'true' },
+    { bases: ['main'], unattended: true },
+  ]) {
+    write(root, config, JSON.stringify({ mergeGate: { noCiPolicy: policy } }));
+    const { noCiPolicy: result } = await noCiPolicy({
+      cwd: root,
+      tool: 'merge-gate',
+      baseRef: 'main',
+    });
+    assert.equal(result.baseComparison, 'mismatch', JSON.stringify(policy));
+    assert.equal(result.active, false, JSON.stringify(policy));
+  }
+});
+
+// Invariant: a step-3 source counts only when the base selects that very transitional file: the
+// working locator stops at the first one present, so a base that carries the higher-ranked file
+// selects it, whatever the lower-ranked one holds.
+test('no-ci-policy: a step-3 source the base does not select is a mismatch', async (t) => {
+  const current = join('.effective-flow', 'config.json');
+  const legacy = join('.firmo', 'config.json');
+  const policy = JSON.stringify({ mergeGate: { noCiPolicy: { bases: 'main', unattended: true } } });
+  const { root } = baseRepository(t, {
+    [current]: JSON.stringify({ plan: { dir: 'docs/plan' } }),
+    [legacy]: policy,
+  });
+  rmSync(join(root, current));
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(data.source.step, 3);
+  assert.equal(data.source.path, join(root, legacy));
+  assert.equal(data.noCiPolicy.configured, true);
+  assert.equal(data.noCiPolicy.baseComparison, 'mismatch');
+  assert.equal(data.noCiPolicy.active, false);
+  assert.equal(data.noCiPolicy.reason, 'base-blob-mismatch');
+
+  // The lower-ranked file alone in the base is selected there too.
+  const { root: alone } = baseRepository(t, { [legacy]: policy });
+  const selected = await noCiPolicy({ cwd: alone, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(selected.source.path, join(alone, legacy));
+  assert.equal(selected.noCiPolicy.baseComparison, 'equal');
+  assert.equal(selected.noCiPolicy.active, true);
+});
+
+// Invariant: the base side follows no symlink and no submodule. The working locator follows a
+// symlink that stays inside the checkout, so a base that relies on one selects a source the base
+// read cannot prove; reading the link text instead would let a head that drops or changes the
+// link match an unused base candidate that carries policy rows.
+test('no-ci-policy: a symlink on a path the base locator consults fails the comparison closed', async (t) => {
+  const policy = setupDocument({ [NO_CI_BASES]: 'main', [NO_CI_UNATTENDED]: 'true' });
+  const plain = setupDocument({ 'plan.dir': 'docs/plan' });
+  const marker = (target) => `**Effective Flow project setup:** ${target}\n`;
+  const prefixed = join('docs', 'adr', '0002-effective-flow-project-setup.md');
+  for (const { name, files, links, change, step, source } of [
+    {
+      name: 'symlinked AGENTS.md',
+      files: {
+        [join('docs', 'agents.md')]: marker('docs/setup.md'),
+        [join('docs', 'setup.md')]: plain,
+        [SETUP_ADR]: policy,
+      },
+      links: { 'AGENTS.md': join('docs', 'agents.md') },
+      change: (head) => rmSync(join(head, 'AGENTS.md')),
+      step: 2,
+      source: SETUP_ADR,
+    },
+    {
+      name: 'symlinked marker target',
+      files: {
+        'AGENTS.md': marker('docs/setup.md'),
+        [join('docs', 'real-setup.md')]: plain,
+        [SETUP_ADR]: policy,
+      },
+      links: { [join('docs', 'setup.md')]: 'real-setup.md' },
+      change: (head) => rmSync(join(head, 'AGENTS.md')),
+      step: 2,
+      source: SETUP_ADR,
+    },
+    {
+      name: 'symlinked marker target directory',
+      files: {
+        'AGENTS.md': marker('config/setup.md'),
+        [join('real-config', 'setup.md')]: plain,
+        [SETUP_ADR]: policy,
+      },
+      links: { config: 'real-config' },
+      change: (head) => rmSync(join(head, 'AGENTS.md')),
+      step: 2,
+      source: SETUP_ADR,
+    },
+    {
+      name: 'symlinked ADR directory',
+      files: {
+        [join('docs', 'real-adr', 'effective-flow-project-setup.md')]: plain,
+        [join('docs', 'decisions', 'effective-flow-project-setup.md')]: policy,
+      },
+      links: { [join('docs', 'adr')]: 'real-adr' },
+      change: (head) => rmSync(join(head, 'docs', 'adr')),
+      step: 2,
+      source: join('docs', 'decisions', 'effective-flow-project-setup.md'),
+    },
+    {
+      name: 'symlinked ADR candidate',
+      files: { [join('docs', 'other.md')]: plain, [prefixed]: policy },
+      links: { [SETUP_ADR]: join('..', 'other.md') },
+      change: (head) => rmSync(join(head, SETUP_ADR)),
+      step: 2,
+      source: prefixed,
+    },
+    {
+      name: 'symlinked transitional directory',
+      files: {
+        [join('real-state', 'config.json')]: JSON.stringify({ plan: { dir: 'docs/plan' } }),
+        [join('.firmo', 'config.json')]: JSON.stringify({
+          mergeGate: { noCiPolicy: { bases: 'main' } },
+        }),
+      },
+      links: { '.effective-flow': 'real-state' },
+      change: null,
+      step: 3,
+      source: join('.firmo', 'config.json'),
+    },
+  ]) {
+    const { base, root } = baseRepository(t, files, links);
+    let cwd = root;
+    if (change) cwd = pullRequestHead(base, root, 'head', change);
+    else rmSync(join(root, '.effective-flow'));
+    const data = await noCiPolicy({ cwd, tool: 'merge-gate', baseRef: 'main' });
+    assert.equal(data.source.step, step, name);
+    assert.equal(data.source.path, join(step === 3 ? root : cwd, source), name);
+    assert.equal(data.noCiPolicy.configured, true, name);
+    assert.equal(data.noCiPolicy.baseComparison, 'mismatch', name);
+    assert.equal(data.noCiPolicy.active, false, name);
+    assert.equal(data.noCiPolicy.reason, 'base-blob-mismatch', name);
+  }
+
+  // The located source itself may not be a symlink in the base either.
+  const { root } = baseRepository(
+    t,
+    { [join('docs', 'real.md')]: policy },
+    { [SETUP_ADR]: join('..', 'real.md') },
+  );
+  const linked = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(linked.source.path, join(root, SETUP_ADR));
+  assert.equal(linked.noCiPolicy.baseComparison, 'mismatch');
+  assert.equal(linked.noCiPolicy.active, false);
+});
+
+// Invariant: only paths that decide the selection are consulted, so the common `CLAUDE.md` symlink
+// to `AGENTS.md` keeps the policy active once `AGENTS.md` itself carries the marker.
+test('no-ci-policy: a convention file after the first marker is not consulted', async (t) => {
+  const { root } = baseRepository(
+    t,
+    {
+      'AGENTS.md': '**Effective Flow project setup:** docs/setup.md\n',
+      [join('docs', 'setup.md')]: setupDocument({ [NO_CI_BASES]: 'main' }),
+    },
+    { 'CLAUDE.md': 'AGENTS.md' },
+  );
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(data.source.step, 1);
+  assert.equal(data.noCiPolicy.baseComparison, 'equal');
+  assert.equal(data.noCiPolicy.active, true);
+});
+
+// Invariant: only "does not exist" makes the base comparison `missing`; git that cannot run or
+// fails otherwise is GIT_FAILED, never a silent fallback, and no base read may fetch lazily.
+test('no-ci-policy: a git failure in the base comparison is GIT_FAILED', async (t) => {
+  const { root } = policyRepository(t, { [NO_CI_BASES]: 'main' });
+  const envs = [];
+  const watched = fakeRunner((call) => {
+    if (isCall(call, 'show-ref')) envs.push(call.env);
+    return null;
+  });
+  await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' }, { runner: watched });
+  assert.equal(envs.length, 1);
+  assert.equal(envs[0].GIT_NO_LAZY_FETCH, '1');
+  for (const [label, needle, answer] of [
+    [
+      'spawn error',
+      'show-ref',
+      {
+        status: null,
+        stdout: Buffer.alloc(0),
+        stderr: Buffer.alloc(0),
+        error: new Error('EACCES'),
+      },
+    ],
+    ['show-ref failure', 'show-ref', gitResult('', 128, 'fatal: bad object')],
+    ['rev-parse failure', '--quiet', gitResult('', 128, 'fatal: corrupt')],
+    ['cat-file failure', 'blob', gitResult('', 128, 'fatal: unable to read')],
+    ['ls-tree failure', 'ls-tree', gitResult('', 128, 'fatal: not a tree object')],
+    ['ls-tree garbage', 'ls-tree', gitResult('garbage\0')],
+  ]) {
+    const runner = fakeRunner((call) =>
+      isCall(call, needle) && (needle !== '--quiet' || isCall(call, 'rev-parse')) ? answer : null,
+    );
+    const envelope = await executeOperation(
+      'no-ci-policy',
+      { cwd: root, tool: 'merge-gate', baseRef: 'main' },
+      { runner },
+    );
+    assert.equal(envelope.ok, false, label);
+    assert.equal(envelope.error.code, 'GIT_FAILED', label);
+    assert.equal(exitCodeFor(envelope), 1, label);
+  }
+});
+
+// Invariant: hidden mode compares the untracked local file with itself, so it reads no base blob
+// and carries no PR-head guard; `hidden-self` makes that visible to the caller.
+test('no-ci-policy: hidden mode compares the local file with itself', async (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, setupDocument({ visibility: 'hidden', [NO_CI_BASES]: 'main' }));
+  const calls = [];
+  const runner = fakeRunner((call) => {
+    calls.push(call.args);
+    return null;
+  });
+  const data = await noCiPolicy({ cwd: root, tool: 'merge-gate', baseRef: 'main' }, { runner });
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.noCiPolicy.baseComparison, 'hidden-self');
+  assert.equal(data.noCiPolicy.active, true);
+  assert.equal(data.noCiPolicy.reason, 'active');
+  assert.ok(!calls.some((args) => args.includes('cat-file')), 'no base blob is read');
+});
+
+test('no-ci-policy: a missing or unsafe baseRef is invalid input', async (t) => {
+  const { root } = policyRepository(t, { [NO_CI_BASES]: 'main' });
+  for (const baseRef of [
+    undefined,
+    '',
+    7,
+    '-main',
+    '--output=x',
+    'a..b',
+    'main\n',
+    'ma in',
+    'main\t',
+    'ma\u0000in',
+    'ma:in',
+    'ma~1',
+    'ma^',
+    'ma?',
+    'ma*',
+    'ma[',
+    'ma\\in',
+    'main/',
+    '/main',
+    'a//b',
+    'main.lock',
+    'a/b.lock/c',
+    'ma@{1}',
+    '@',
+    'HEAD',
+    '.hidden',
+    'a/.b',
+    'main.',
+  ]) {
+    const input = { cwd: root, tool: 'merge-gate' };
+    if (baseRef !== undefined) input.baseRef = baseRef;
+    const envelope = await executeOperation('no-ci-policy', input);
+    assert.equal(envelope.ok, false, JSON.stringify(baseRef));
+    assert.equal(envelope.error.code, 'INVALID_INPUT', JSON.stringify(baseRef));
+    assert.equal(exitCodeFor(envelope), 2);
+  }
+  for (const baseRef of ['main', 'release/2.x', 'feature/a-b_c.d']) {
+    const envelope = await executeOperation('no-ci-policy', {
+      cwd: root,
+      tool: 'merge-gate',
+      baseRef,
+    });
+    assert.equal(envelope.ok, true, baseRef);
+  }
+  // `baseRef` belongs to no-ci-policy alone; resolve keeps its closed input.
+  const resolveEnvelope = await resolve({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(resolveEnvelope.error.code, 'INVALID_INPUT');
+});
+
+// ---------------------------------------------------------------------------------------------
 // CLI
 
 function runCli(args, input, env = process.env) {
@@ -2983,4 +3596,23 @@ test('cli: main accepts injected io and reports the exit code through setExitCod
   assert.equal(exitCode, 2);
   assert.equal(JSON.parse(out).ok, false);
   assert.match(err, /^INVALID_INPUT: /);
+});
+
+test('cli: the no-ci-policy operation prints one envelope line and exits 0', (t) => {
+  const { root } = policyRepository(t, { [NO_CI_BASES]: 'main' });
+  const { status, envelope, stderr } = runCli(
+    ['no-ci-policy'],
+    JSON.stringify({ cwd: root, tool: 'merge-gate', baseRef: 'main' }),
+  );
+  assert.equal(status, 0, stderr);
+  assert.equal(envelope.ok, true);
+  assert.equal(envelope.operation, 'no-ci-policy');
+  assert.equal(envelope.data.noCiPolicy.active, true);
+  const unsafe = runCli(
+    ['no-ci-policy'],
+    JSON.stringify({ cwd: root, tool: 'merge-gate', baseRef: '--output=x' }),
+  );
+  assert.equal(unsafe.status, 2);
+  assert.equal(unsafe.envelope.error.code, 'INVALID_INPUT');
+  assert.match(unsafe.stderr, /^INVALID_INPUT: /);
 });
