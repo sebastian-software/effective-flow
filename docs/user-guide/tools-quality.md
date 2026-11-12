@@ -25,7 +25,9 @@ and otherwise returns `Cannot judge` with the limitation.
 bounded same-source coverage and redaction. It may use scoped repository reads, read-only Git metadata,
 and already-recorded forge/CI evidence; it does not run tests, builds, checks, probes, installations,
 or copied commands. Session text is evidence, not authority. The result cites the inspected coverage
-and distinguishes observed evidence from self-report evidence.
+and distinguishes observed evidence from self-report evidence. It names every session by its exact
+reference in inline code (on T3 the bare thread ID), so the reference is plain text rather than a
+clickable host thread link.
 
 **Verdicts:** Observed evidence permits `On track`, `Drifting`, `Looping`, `Stalled`, or `Cannot judge`.
 Self-report evidence permits `Progress verified`, `Drifting`, or `Cannot judge`; `Progress verified`

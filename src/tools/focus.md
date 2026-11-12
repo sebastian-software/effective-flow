@@ -102,9 +102,12 @@ unverifiable narration or no accepted self-report evidence yields Cannot judge.
 
 Return the admitted identity, goal anchor, evidence level, host/version and candidate qualification
 limits, inspected locators and consumed read budget, material omissions, actual owner use/fallback,
-one verdict and its cited rationale, and at most one redacted correction. Use host-provided event
-or report-item locators; invent no events, provenance or accuracy claims. Child briefs, statuses
-and outcomes in the parent record may show fan-out; they do not establish unseen child behavior.
+one verdict and its cited rationale, and at most one redacted correction. Use host-provided event or
+report-item locators; invent no events, provenance or accuracy claims. Name every session in visible
+output, commentary included, by its exact reference in inline code (on T3 the bare thread ID, even if
+selected by link), never as a host thread link or angle-bracketed URL, even where the host asks for
+links. Child briefs, statuses and outcomes in the parent record may show fan-out; they do not
+establish unseen child behavior.
 
 Apply the separate message-outcome contract even when delivery is disabled: report Not attempted
 and its precise limitation. A correction can be previewed as report-only, not as an invitation to

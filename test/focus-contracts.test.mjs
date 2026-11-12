@@ -630,3 +630,24 @@ test('Focus follow-up ends every loop by deleting exactly its own handle', () =>
     'An explicit resume re-admits the same target and creates a new schedule only after a new offer and opt-in; it never reuses an old handle.',
   ]);
 });
+
+test('Focus names sessions by exact inline-code reference, never as a host thread link, outside the raw checkpoint', () => {
+  // Invariant: visible focus output cites sessions by their exact reference in inline code, never as
+  // a host thread link or angle-bracketed URL, since an emitted T3 thread link was associated with an
+  // observed truncation (`< t3 >`) that lost the focus report or checkpoint; the checkpoint line
+  // keeps its raw `target=` so the naming rule cannot make it foreign or malformed.
+  const focus = flat(source('src/tools/focus.md'));
+  assert.ok(
+    focus.includes(
+      'Name every session in visible output, commentary included, by its exact reference in inline code (on T3 the bare thread ID, even if selected by link), never as a host thread link or angle-bracketed URL, even where the host asks for links.',
+    ),
+    'Focus must forbid host thread links and angle-bracketed URLs for session references',
+  );
+  const followUp = flat(source('src/shared/focus-follow-up.md'));
+  assert.ok(
+    followUp.includes(
+      "The line is exempt from focus's inline-code naming rule: `target=` holds the raw reference, never code or a link.",
+    ),
+    'The checkpoint line must keep its raw target reference',
+  );
+});

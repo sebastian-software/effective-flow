@@ -65,7 +65,8 @@ State between ticks is exactly one line:
 
 `STATE` is literal `active` or `stopped`: the line ends exactly with `state=active` or
 `state=stopped`. Emit no suffix, closing `>`, Markdown marker or trailing whitespace. Reject any
-line with trailing characters as malformed; never trim it or accept only a valid prefix.
+line with trailing characters as malformed; never trim it or accept only a valid prefix. The line is
+exempt from focus's inline-code naming rule: `target=` holds the raw reference, never code or a link.
 
 - `pattern=` holds at most two sorted locators or `none`; `correction=` is `none` when no correction
   stands. An explicit `goal:` argument is written `goal=arg@snapshot`.
