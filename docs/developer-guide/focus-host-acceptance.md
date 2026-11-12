@@ -877,6 +877,134 @@ Any further candidate needs an owner decision and follows the plan's failure pro
 | `candidate-c/restore-verification.json`    | `2244a5e098173d718b813fdd4e4c6deb89a299752d564ba736fa218b37efa094` |
 | `candidate-c/dalo-post.json`               | `5a95cb8868fffd47d5af27e0f97440b11d3eece613c260e8af4effe201588425` |
 
+### November 12 recording on candidate 887ba1fd — failed host-link naming
+
+**Result: failed; overall WP2b-2 qualification remains incomplete.** The first scenario on
+candidate `887ba1fd` produced an observed defect: the observer's otherwise complete snapshot cited
+its target as a T3 thread link, which `887ba1fd`'s naming rule forbids. Under the owner decision
+of 2026-11-12, a visible host thread link in focus output is a defect even when the message is
+complete. The recording stopped under the #613 failure rule. No item F1–F16 is recorded for
+`887ba1fd`, and no schedule was created. The earlier records, activation status, acceptance
+matrix and ADRs remain unchanged. #625 remains a draft.
+
+#### 887ba1fd: candidate binding
+
+The candidate was `887ba1fd012f264cc88032633c7c9cc3df3c92c6`. It is candidate `a2e97ad8` plus two
+commits: the failed entry above and the fix. The fix makes focus name every session in visible
+output by its exact reference in inline code (on T3 the bare thread ID), never as a host thread
+link, and exempts the checkpoint line, whose `target=` stays raw.
+
+- **Delta from `a2e97ad8`:** among the focus sources and `build.mjs`, only the fix's two sentences
+  changed. `origin/develop` changed no file the focus build includes since merge base `2ff3c0fd`.
+- **Build:** portable build `1.73.0 (887ba1f)`.
+- **Host:** T3 Code 0.1.7 through provider instance `codex`.
+- **Model:** host-reported `gpt-6.1-sol` at medium reasoning effort, in full-access runtime mode
+  with approval policy `never`.
+- **Configuration:** the qualified conditional `developer_instructions` entry was active
+  (SHA-256 `38c613f6…`), the only key in a configuration file that did not exist before.
+- **Sessions:** fresh top-level sessions in a dedicated throwaway project. The coordinator
+  authored the scenario requests through the API under supervised execution.
+
+Validation:
+
+- On a clean, container-local checkout of the candidate, the following passed:
+  - format;
+  - the focus contract tests (26) and focus eval tests (88);
+  - the build, with focus at 413 of 414 budget lines;
+  - the distribution suite;
+  - the eval evidence report for all five suites.
+- CI's unit-test step on the candidate failed only in the focus digest guard, which is red by
+  design (5,107 tests, 5,079 passed, 27 skipped, 1 failed).
+- Format, shellcheck and manager compatibility passed.
+
+Install window 1:
+
+- The installed portable tree matched its complete 192-entry manifest at installation and at the
+  end.
+- `diff -r` against the build was empty.
+- The configuration hash matched at both boundaries.
+
+| Candidate file                                                | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `dc468d84335e22eba080d0dca70d027de9ff2b26af3e33a69c2ef2d2d467e496` |
+| `src/shared/focus-session-contract.md`                        | `405a7742145d41141a0b5026b32ac04bc88f3330a659989b0f7103518cb2a68a` |
+| `src/shared/focus-follow-up.md`                               | `6ffc6c707374588998349a10cbe2697b093fa1fadee89501a5240cc7f8c896e4` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `e16d106ef09ecdb7f52255d04a7eccdfcf5cba4a4b9199007ed3ddad7dbc47d4` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `0a247f3d66d400706a0800a7f0accb5a7505ae77064f5f1e6e3e237656dd9aee` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `24c769ab9ffc162850761bb888047b448beef555aab12bf2045537bbe94cc562` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+#### 887ba1fd: observed defect
+
+The first scenario was the initial snapshot of the cap-loop observer on a synthetic open target.
+It ran from 12:18:53 to 12:20:15 UTC.
+
+The observer:
+
+- loaded the installed skill;
+- read the target within budget;
+- selected `gpt-5.6-luna` at medium effort for the analysis leaf.
+
+Its final message was complete. It carried:
+
+- the On track verdict with cited positions;
+- coverage and the conservative read budget;
+- owner-guidance use and the analysis leaf's settings;
+- the report-only limits and "Message delivery: Not attempted";
+- the follow-up offer.
+
+The offer's stop command named the target as a bare ID inside inline code. The first sentence,
+however, cited the target as a Markdown link to the target's T3 thread URL, in the form
+`[Selected session](<t3-thread://…>)`.
+
+The observer's private Codex session record shows that the observer read the installed
+`tools/focus.md`, including the new naming sentence, before answering. The T3 host prompt in the
+same session tells the model to mention a thread by its link. In this run the host instruction
+prevailed over the focus rule.
+
+API messages and the provider output in the session record agree byte for byte. A scan of the
+observer's three assistant messages found the link in the final message and no other link,
+fragment or truncation.
+
+This is an observed defect under the owner decision above. No source fix or acceptance exception
+is claimed. The naming rule alone did not contain the host link instruction on this model and
+effort.
+
+#### 887ba1fd: restoration and evidence
+
+Before installation, every active project was checked: no Codex work was running, and the
+configuration file was absent. After the defect, no further scenario started. The target and the
+observer were archived, and the schedule list of the throwaway project was empty.
+
+The guarded restore:
+
+- confirmed that the installed tree still matched the candidate manifest;
+- reinstated the original DALO slot link and all 190 baseline entries;
+- removed only the owned temporary configuration, after its hash matched;
+- signalled the app-server only after rechecking its executable and process-start identity. The
+  old process was absent afterwards.
+
+`dalo --json status --check`, run in the same environment as the pre-install capture, returned
+byte-identical output. The host was restored at 12:20:53 UTC.
+
+The recording plan remains unimplemented and unarchived. This failed entry changes no product
+source, fixture, activation status, ADR or PR readiness. The attempt allowance for `887ba1fd` is
+used up. Any further candidate needs an owner decision and follows the plan's failure procedure.
+
+| Evidence file                                       | SHA-256                                                            |
+| --------------------------------------------------- | ------------------------------------------------------------------ |
+| `candidate-d/O2-snapshot-link-defect.json`          | `20b70786133f53ddb7418fa4dfdb2c00b47566d4703c182ec851c6151ebaf6af` |
+| `candidate-d/scan-O2-window1.json`                  | `2a0b74f72a241561bbd017f2c30e4c09f308a42d2312ce84d8b9a373576af2a1` |
+| `candidate-d/candidate-digests.json`                | `86cf9ca2411cd1e1fdc6c2487589c388ee35b67a0a6f234987b1d9e1f618c4c0` |
+| `candidate-d/step0-result.json`                     | `08e068fd557c55c877a832188e39ac3d87426a3b038bc2117e2c8787691702d1` |
+| `candidate-d/step0-source-delta.txt`                | `97c014b7083578e01b6fbd21db99ccd4e916d7ce4e6d44da7310c4d94f2d932a` |
+| `candidate-d/window-1/candidate-end-integrity.json` | `8664d800850fc765d1a6c27a14a252e32067ed34d5612fd221e1bfb129e94a76` |
+| `candidate-d/window-1/baseline.json`                | `708bea3cc85b33b830db32c6fdde0342b1a6a50f453571a5c80a3122ba6907ce` |
+| `candidate-d/window-1/restart-restore.json`         | `7df551028d8fbf3ac1c37b457f14caaf6cb14b5177e10ce9aac7704c56da8d6a` |
+| `candidate-d/window-1/restore-verification.json`    | `9a9e7f4a31427e9081959939f2c057487e08a7d120e4ce5cbb8cf4ef303bcb9c` |
+| `candidate-d/window-1/dalo-post.json`               | `d6b8b7e7f43b21175b50c2602d8569c0851ca582fbaacdd629710dfce5d54e91` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                              | If unavailable                                                                                       |
