@@ -255,16 +255,28 @@ documentation-sync
 1. First `{{AGENT:test-writer}}`
    <!-- spawn-site:fix/regression-test -->
    - confirms that the Phase 3 failing test now passes, or writes a regression test
-2. Then render the diff baseline and hand the path list per "Diff baseline" to, in parallel if possible:
+2. Then render the diff baseline, retain its `currentTree` as `reviewTree`, and hand the path list per "Diff baseline" to, in parallel if possible:
    <!-- spawn-site:fix/verification -->
    - `{{AGENT:code-validator}}`: repository-native lint, type, build and documentation checks that
      can be discovered safely
    - for every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`: a read-only
      qualitative review with the reduced-depth limitation, reporting all severities; critical
      findings must be fixed before completion
+   - after the incorporation pass, only on a `review-depth` floor hit or trigger:
+     `{{AGENT:generic-product-reviewer}}` with its reduced-depth notice for the full pass, which
+     also stands in for the routed reviewers when `reviewTree` is unavailable
+
+```lazy-include
+review-depth
+when: Phase 4 aggregates findings for the incorporation pass
+```
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
-items, render again, then pass the residual batch through “Gated residual review-finding reports”. Document only
+items, then apply `review-depth` without a reviewer re-check unless a floor hit or trigger starts
+step 2's full-pass reviewer on its triggering paths: the orchestrator runs both renders,
+classifies the floor, and writes the three-part report itself from the delta render, the corrected
+findings with their evidence, and the open evidence. Then pass the residual batch through “Gated residual review-finding reports”. The Phase 4 report carries the
+floor classification record and the three-part report. Document only
 `admitted` residuals in the structured form below; a remaining `current-scope` or unresolved
 `uncertain` item blocks completion, and `closed` items produce no artifact:
 

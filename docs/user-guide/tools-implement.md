@@ -59,6 +59,28 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   checkout, each item's delta is limited to its own files. An aborted run leaves its snapshot under
   `.effective-flow/runs/<RUN_ID>/diff-baseline/` for
   [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
+- **Review depth is proportionate.** `build`, `fix`, and `refactor` run the routed reviewers once,
+  then make exactly one incorporation pass for their findings. Afterwards the affected review
+  checks run once as a **scoped re-check** over only what the pass changed, and report three
+  parts: the changed areas (from the delta since the review), the verified findings, and the open
+  evidence. A full pass on a path replaces the scoped re-check only for that path, when
+  (a) the correction changed a file no corrected finding named, (b) it touched a fixed-floor
+  boundary, (c) a corrected finding could not be confirmed as resolved, or (d) it changed a
+  recorded assumption, an acceptance criterion, an architecture decision, or public behavior.
+  Nothing else is re-reviewed in full, and a run without findings has no re-check. Requesting a
+  full re-review explicitly is always honored.
+  - **Fixed floor:** security, authentication and authorization; secrets and credentials; data
+    protection and personal data; persistence, schema and migrations; destructive or irreversible
+    data operations; money and billing; public API and cross-module contracts; dependency
+    manifests and lockfiles; CI, release and delivery configuration. Each corrected path is
+    classified from its path and its changes as a hit, none, or uncertain; uncertain counts as a
+    hit, and the classification appears in the review results. The list is fixed and not a
+    per-run judgment.
+  - **Fallback:** if the tree the review was based on is no longer available, every affected
+    reviewer runs a full pass instead, and the review results say why.
+  - **`fix`:** without a floor hit or trigger, no reviewer re-check runs; the orchestrator writes
+    the three-part report itself. With one, the reduced-depth product reviewer runs the full pass
+    and discloses its reduced depth.
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only

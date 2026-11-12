@@ -298,12 +298,23 @@ documentation-sync
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
    routing selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
+   Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
+   CI path goes to `{{AGENT:generic-product-reviewer}}`.
    <!-- spawn-site:refactor/review -->
+
+```lazy-include
+review-depth
+when: Phase 4 aggregates review findings for the incorporation pass
+```
+
 2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
-   items through the routed Quality implementer. Render again and run the affected review checks once after the pass, then classify the residual batch via
-   “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
-   item blocks completion; only `admitted` residuals may become a report, and `closed` items do not.
-3. Present the review results in detail, including status per finding. Treat the results as
+   items through the routed Quality implementer. Then run the affected review checks once per
+   `review-depth`, with the scoped re-check by the routed reviewers, then classify the residual
+   batch via “Gated residual review-finding reports”. A remaining `current-scope` or unresolved
+   `uncertain` item blocks completion; only `admitted` residuals may become a report, and `closed`
+   items do not.
+3. Present the review results in detail, including status per finding, the `review-depth` floor
+   classification record and the re-check report. Treat the results as
    provisional until Phase 6 confirms that no regression remains. On every Phase 4 run, replace
    the previous provisional review set in full with the newest results; do not carry findings
    from superseded runs forward.

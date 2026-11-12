@@ -879,6 +879,23 @@ the assigned files as before. When
 an owned or affected file set, the item renders only that literal path scope, so a sibling's edits
 never enter its change.
 
+Every render records its `currentTree` in `rendered-trees.json`. A **delta render** passes
+`sinceTree`, which the helper accepts only when it equals a `currentTree` an earlier render of the
+same handle recorded; any other value is `INVALID_INPUT`. It applies `scope` exactly as the
+cumulative render does, writes `delta.patch` and `delta-paths.json`, and returns `deltaDiffPath`,
+`deltaPathsPath`, `currentTree` and `deltaEntries`; it never touches `diff.patch` or `paths.json`,
+and an equal tree yields an empty delta. The lazily loaded
+[`src/shared/review-depth.md`](../../src/shared/review-depth.md) fragment, included by `build`
+(Phase 6), `fix` (Phase 4) and `refactor` (Phase 4), builds on it: the `currentTree` of the render
+that fed the first review is retained as `reviewTree`; after the one incorporation pass, a
+cumulative render and a delta render with `sinceTree: reviewTree` define the changed areas for the
+scoped re-check. Triggers (a)–(d) widen only their own paths to a full pass, and the fixed floor
+(nine boundaries, classified per path from path and hunks, `uncertain` failing closed) applies to
+every correction no later review covers. Without a retained `reviewTree`, every affected routed
+reviewer runs a full pass on the cumulative path list. `fix` has no reviewer re-check by default:
+the orchestrator runs both renders and writes the report, and a floor hit or trigger starts
+`generic-product-reviewer` for the full pass.
+
 The directory lives at `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`, which
 is distinct from the worktree lifecycle records under `worktree-runs/`; the diff baseline owns only
 the `diff-baseline/` subdirectory of its run directory. A successful run discards it; an aborted or

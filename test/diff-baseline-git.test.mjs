@@ -21,7 +21,11 @@ import { join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { createProcessRunner, executeOperation } from '../src/scripts/diff-baseline-core.mjs';
+import {
+  createProcessRunner,
+  executeOperation,
+  MAX_RENDERED_TREES,
+} from '../src/scripts/diff-baseline-core.mjs';
 
 const CLI = fileURLToPath(new URL('../src/scripts/diff-baseline.mjs', import.meta.url));
 const GIT_ENV = {
@@ -331,16 +335,18 @@ test('render reports only what changed since capture', async (t) => {
   ]) {
     assert.equal(mode(directory), 0o700, directory);
   }
-  for (const file of ['baseline.json', 'diff.patch', 'paths.json']) {
+  for (const file of ['baseline.json', 'diff.patch', 'paths.json', 'rendered-trees.json']) {
     assert.equal(mode(join(baseline.dir, file)), 0o600, file);
   }
-  // No temporary index or write temp file survives.
+  // No temporary index or write temp file survives; the render's recorded tree is the only
+  // addition to the cumulative files.
   assert.deepEqual(readdirSync(baseline.dir).sort(), [
     'baseline.json',
     'diff.patch',
     'hooks',
     'objects',
     'paths.json',
+    'rendered-trees.json',
   ]);
   assert.deepEqual(readdirSync(join(baseline.dir, 'hooks')), []);
 
@@ -1098,4 +1104,357 @@ test('CLI: a refused capture exits 3 with CODE: message on stderr', (t) => {
   assert.equal(result.status, 3);
   assert.equal(cliEnvelope(result).error.code, 'RUNTIME_STATE_UNSAFE');
   assert.match(result.stderr, /^RUNTIME_STATE_UNSAFE: /);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Delta render (`sinceTree`)
+
+// A repository with a captured baseline, one edit rendered cumulatively (the "review input"),
+// and a second edit made afterwards, so the delta since that render differs from the cumulative one.
+async function deltaFixture(t) {
+  const fixture = repository(t);
+  const { root } = fixture;
+  commitFiles(root, { 'src/a.txt': 'a\n', 'docs/b.txt': 'b\n' });
+  const baseline = await ok(root, 'capture', captureInput(fixture));
+  writeFileSync(join(root, 'src/a.txt'), 'a, reviewed edit\n');
+  writeFileSync(join(root, 'early.txt'), 'created before the first render\n');
+  const first = await ok(root, 'render', renderInput(fixture, baseline));
+  return { fixture, root, baseline, first };
+}
+
+// Invariant: the delta holds exactly the change since the recorded tree, so a file changed only
+// before the reviewed render never reaches the scoped re-check, and the helper returns its paths.
+test('sinceTree render writes delta files with only the change since the recorded tree', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  writeFileSync(join(root, 'docs/b.txt'), 'b, corrected after review\n');
+  writeFileSync(join(root, 'late.txt'), 'created after the review\n');
+
+  const delta = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+  );
+  assert.deepEqual(Object.keys(delta), [
+    'deltaDiffPath',
+    'deltaPathsPath',
+    'currentTree',
+    'deltaEntries',
+  ]);
+  assert.equal(delta.deltaDiffPath, join(baseline.dir, 'delta.patch'));
+  assert.equal(delta.deltaPathsPath, join(baseline.dir, 'delta-paths.json'));
+  assert.notEqual(delta.currentTree, first.currentTree);
+  assert.deepEqual(delta.deltaEntries, [
+    { status: 'M', path: 'docs/b.txt' },
+    { status: 'A', path: 'late.txt' },
+  ]);
+
+  const patch = readFileSync(delta.deltaDiffPath, 'utf8');
+  assert.match(patch, /^\+b, corrected after review$/m);
+  assert.match(patch, /^\+created after the review$/m);
+  for (const absent of ['src/a.txt', 'early.txt', 'reviewed edit', 'created before the first']) {
+    assert.ok(!patch.includes(absent), `${absent} changed before the recorded tree`);
+  }
+  const paths = JSON.parse(readFileSync(delta.deltaPathsPath, 'utf8'));
+  assert.deepEqual(paths, {
+    version: 1,
+    baselineTree: baseline.baselineTree,
+    sinceTree: first.currentTree,
+    currentTree: delta.currentTree,
+    scope: null,
+    entries: delta.deltaEntries,
+  });
+  assert.equal(mode(delta.deltaDiffPath), 0o600);
+  assert.equal(mode(delta.deltaPathsPath), 0o600);
+});
+
+// Invariant: a delta render never replaces the cumulative render the reviewers were handed.
+test('sinceTree render leaves diff.patch and paths.json byte-identical', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  writeFileSync(join(root, 'docs/b.txt'), 'b, corrected after review\n');
+  const cumulative = await ok(root, 'render', renderInput(fixture, baseline));
+  const patchBefore = readFileSync(cumulative.diffPath);
+  const pathsBefore = readFileSync(cumulative.pathsPath);
+
+  const delta = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+  );
+  assert.deepEqual(delta.deltaEntries, [{ status: 'M', path: 'docs/b.txt' }]);
+  assert.ok(readFileSync(cumulative.diffPath).equals(patchBefore));
+  assert.ok(readFileSync(cumulative.pathsPath).equals(pathsBefore));
+  assert.ok(patchBefore.includes('early.txt'), 'the cumulative patch still carries every change');
+});
+
+// Invariant: only a currentTree that an earlier render of this very handle recorded anchors a
+// delta, so a foreign or other-handle tree never defines what counts as "changed since review".
+test('sinceTree refuses a tree no render of this handle recorded', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+
+  // The baseline tree exists in the store but no render recorded it.
+  const baselineError = await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: baseline.baselineTree }),
+    'INVALID_INPUT',
+  );
+  assert.ok(baselineError.message.includes('sinceTree'), baselineError.message);
+  await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: 'c'.repeat(40) }),
+    'INVALID_INPUT',
+  );
+
+  // A tree recorded by a second handle of the same repository is foreign to the first.
+  const secondBaseline = await ok(
+    root,
+    'capture',
+    captureInput(fixture, { sessionId: '20260929-005957' }),
+  );
+  writeFileSync(join(root, 'second-handle.txt'), 'only the second handle saw this\n');
+  const second = await ok(root, 'render', renderInput(fixture, secondBaseline));
+  assert.notEqual(second.currentTree, first.currentTree);
+  await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: second.currentTree }),
+    'INVALID_INPUT',
+  );
+  // The same tree is accepted on the handle that recorded it.
+  const own = await ok(
+    root,
+    'render',
+    renderInput(fixture, secondBaseline, { sinceTree: second.currentTree }),
+  );
+  assert.deepEqual(own.deltaEntries, []);
+
+  // A refusal writes no delta files.
+  assert.ok(!existsSync(join(baseline.dir, 'delta.patch')));
+  assert.ok(!existsSync(join(baseline.dir, 'delta-paths.json')));
+});
+
+// Invariant: with no edit since the reviewed render the delta is empty, so the re-check only
+// confirms the corrected findings.
+test('sinceTree equal to the current tree yields an empty delta', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  const delta = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+  );
+  assert.equal(delta.currentTree, first.currentTree);
+  assert.deepEqual(delta.deltaEntries, []);
+  assert.equal(readFileSync(delta.deltaDiffPath).length, 0);
+  assert.deepEqual(JSON.parse(readFileSync(delta.deltaPathsPath, 'utf8')).entries, []);
+});
+
+// Invariant: scope narrows the delta exactly as it narrows the cumulative render.
+test('scope applies to the sinceTree delta as to the cumulative render', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  writeFileSync(join(root, 'src/a.txt'), 'a, corrected in scope\n');
+  writeFileSync(join(root, 'docs/b.txt'), 'b, corrected out of scope\n');
+
+  const scoped = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree, scope: ['src/'] }),
+  );
+  assert.deepEqual(scoped.deltaEntries, [{ status: 'M', path: 'src/a.txt' }]);
+  const patch = readFileSync(scoped.deltaDiffPath, 'utf8');
+  assert.match(patch, /^\+a, corrected in scope$/m);
+  assert.ok(!patch.includes('docs/b.txt'));
+  assert.deepEqual(JSON.parse(readFileSync(scoped.deltaPathsPath, 'utf8')).scope, ['src']);
+
+  const none = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree, scope: [] }),
+  );
+  assert.deepEqual(none.deltaEntries, []);
+  assert.equal(readFileSync(none.deltaDiffPath).length, 0);
+});
+
+// Invariant: a render without sinceTree keeps its documented envelope and writes no delta files.
+test('a render without sinceTree keeps its envelope and writes no delta files', async (t) => {
+  const { baseline, first } = await deltaFixture(t);
+  assert.deepEqual(Object.keys(first), ['diffPath', 'pathsPath', 'currentTree', 'entries']);
+  assert.ok(!existsSync(join(baseline.dir, 'delta.patch')));
+  assert.ok(!existsSync(join(baseline.dir, 'delta-paths.json')));
+});
+
+// Invariant: the delta render works through the CLI with the same envelope keys.
+test('CLI: a sinceTree render prints the delta envelope', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  writeFileSync(join(root, 'late.txt'), 'late\n');
+  const result = runCli('render', renderInput(fixture, baseline, { sinceTree: first.currentTree }));
+  assert.equal(result.status, 0, result.stderr);
+  const envelope = cliEnvelope(result);
+  assert.deepEqual(Object.keys(envelope.result), [
+    'deltaDiffPath',
+    'deltaPathsPath',
+    'currentTree',
+    'deltaEntries',
+  ]);
+  assert.deepEqual(envelope.result.deltaEntries, [{ status: 'A', path: 'late.txt' }]);
+  const bad = runCli('render', renderInput(fixture, baseline, { sinceTree: 'd'.repeat(40) }));
+  assert.notEqual(bad.status, 0);
+  assert.equal(cliEnvelope(bad).error.code, 'INVALID_INPUT');
+});
+
+function renderedTreesPath(baseline) {
+  return join(baseline.dir, 'rendered-trees.json');
+}
+
+function readRenderedTrees(baseline) {
+  return JSON.parse(readFileSync(renderedTreesPath(baseline), 'utf8')).trees;
+}
+
+// A distinct, well-formed object id that names no object in any store.
+function fakeTree(index) {
+  return index.toString(16).padStart(40, 'e');
+}
+
+// Invariant: a damaged rendered-trees record fails closed with INVALID_INPUT on both the delta and
+// the plain cumulative render, so neither a corrupt nor an oversized record silently loses or
+// forges the trees a `sinceTree` may name, and a refused render rewrites no output file.
+test('a malformed, oversized or overfull rendered-trees record refuses every render', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  const record = renderedTreesPath(baseline);
+  const cumulativeBefore = readFileSync(join(baseline.dir, 'diff.patch'));
+  writeFileSync(join(root, 'late.txt'), 'changed after the recorded render\n');
+  const overfull = Array.from({ length: MAX_RENDERED_TREES + 1 }, (_, index) => fakeTree(index));
+  for (const [label, content] of [
+    ['not JSON', '{ not json'],
+    ['wrong version', JSON.stringify({ version: 2, trees: [first.currentTree] })],
+    ['no tree list', JSON.stringify({ version: 1 })],
+    ['a non-object-id tree', JSON.stringify({ version: 1, trees: [first.currentTree, 'HEAD'] })],
+    ['more than the cap', JSON.stringify({ version: 1, trees: overfull })],
+    [
+      'oversized',
+      `${JSON.stringify({ version: 1, trees: [first.currentTree] })}${' '.repeat(64 * 1024)}`,
+    ],
+  ]) {
+    writeFileSync(record, content, { mode: 0o600 });
+    await refused(
+      root,
+      'render',
+      renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+      'INVALID_INPUT',
+    );
+    const plain = await refused(root, 'render', renderInput(fixture, baseline), 'INVALID_INPUT');
+    assert.ok(plain.message.includes('rendered-trees.json'), `${label}: ${plain.message}`);
+    assert.ok(readFileSync(join(baseline.dir, 'diff.patch')).equals(cumulativeBefore), label);
+    assert.ok(!existsSync(join(baseline.dir, 'delta.patch')), label);
+  }
+});
+
+// Invariant: the rendered-trees record is read without following a symlink and never through a
+// FIFO, so a planted link or pipe can neither redirect nor block the anchor check.
+test(
+  'a symlinked or FIFO rendered-trees record is refused as UNSAFE_TARGET',
+  { timeout: 10_000 },
+  async (t) => {
+    const { fixture, root, baseline, first } = await deltaFixture(t);
+    const record = renderedTreesPath(baseline);
+    const saved = readFileSync(record);
+    const decoy = join(root, '.effective-flow/decoy-trees.json');
+    writeFileSync(decoy, saved);
+    rmSync(record);
+    symlinkSync(decoy, record);
+    const since = renderInput(fixture, baseline, { sinceTree: first.currentTree });
+    await refused(root, 'render', since, 'UNSAFE_TARGET');
+    await refused(root, 'render', renderInput(fixture, baseline), 'UNSAFE_TARGET');
+    rmSync(record);
+
+    if (process.platform !== 'win32') {
+      let fifo = true;
+      try {
+        execFileSync('mkfifo', [record], { stdio: 'ignore' });
+      } catch {
+        fifo = false;
+      }
+      if (fifo) {
+        const error = await refused(root, 'render', since, 'UNSAFE_TARGET');
+        assert.match(error.message, /not a regular file/);
+        rmSync(record);
+      }
+    }
+    assert.ok(!existsSync(join(baseline.dir, 'delta.patch')));
+  },
+);
+
+// Invariant: the record is bounded; at the cap a new render drops the oldest tree, which can then
+// no longer anchor a delta, while the newest tree can.
+test('rendered-trees keeps at most MAX_RENDERED_TREES and evicts the oldest', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  const seeded = [
+    first.currentTree,
+    ...Array.from({ length: MAX_RENDERED_TREES - 1 }, (_, index) => fakeTree(index)),
+  ];
+  writeFileSync(
+    renderedTreesPath(baseline),
+    `${JSON.stringify({ version: 1, trees: seeded }, null, 2)}\n`,
+    { mode: 0o600 },
+  );
+  writeFileSync(join(root, 'late.txt'), 'pushes a new tree into the full record\n');
+  const latest = await ok(root, 'render', renderInput(fixture, baseline));
+
+  const trees = readRenderedTrees(baseline);
+  assert.equal(trees.length, MAX_RENDERED_TREES);
+  assert.ok(!trees.includes(first.currentTree), 'the oldest tree is evicted');
+  assert.deepEqual(trees, [...seeded.slice(1), latest.currentTree]);
+  await refused(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+    'INVALID_INPUT',
+  );
+  const own = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: latest.currentTree }),
+  );
+  assert.deepEqual(own.deltaEntries, []);
+});
+
+// Invariant: a delta render records its own current tree, so a later delta may chain from it and
+// then holds only the change made after that delta render.
+test('a delta render records its tree so a later delta can chain from it', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  writeFileSync(join(root, 'docs/b.txt'), 'b, first correction\n');
+  const firstDelta = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+  );
+  assert.ok(readRenderedTrees(baseline).includes(firstDelta.currentTree));
+
+  writeFileSync(join(root, 'chained.txt'), 'second correction\n');
+  const chained = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: firstDelta.currentTree }),
+  );
+  assert.deepEqual(chained.deltaEntries, [{ status: 'A', path: 'chained.txt' }]);
+  const patch = readFileSync(chained.deltaDiffPath, 'utf8');
+  assert.ok(!patch.includes('first correction'), 'the earlier delta is not repeated');
+});
+
+// Invariant: a rename made after the recorded tree appears in the delta as one rename entry with
+// both paths, so the scoped re-check sees the move and not an unrelated add and delete.
+test('a rename inside the delta is reported with its old and new path', async (t) => {
+  const { fixture, root, baseline, first } = await deltaFixture(t);
+  renameSync(join(root, 'src/a.txt'), join(root, 'src/renamed.txt'));
+  const delta = await ok(
+    root,
+    'render',
+    renderInput(fixture, baseline, { sinceTree: first.currentTree }),
+  );
+  assert.deepEqual(delta.deltaEntries, [
+    { status: 'R', path: 'src/renamed.txt', oldPath: 'src/a.txt' },
+  ]);
+  const patch = readFileSync(delta.deltaDiffPath, 'utf8');
+  assert.match(patch, /^rename from src\/a\.txt$/m);
+  assert.match(patch, /^rename to src\/renamed\.txt$/m);
 });
