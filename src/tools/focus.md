@@ -27,7 +27,8 @@ initial verdict on an admitted top-level target on the T3 observed path, and the
 observed follow-up" is qualified for the actual host. While that row is disabled or unmatched, add
 nothing about follow-up to a snapshot; state the limitation only when the developer asks for
 follow-up or uses a `follow-up` form. A `follow-up` form loads the fragment below before any host
-access.
+access. A declined or withdrawn offer never suppresses the offer of a later snapshot that meets the
+eager offer condition.
 
 ```lazy-include
 focus-follow-up

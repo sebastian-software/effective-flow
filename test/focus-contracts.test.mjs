@@ -435,6 +435,23 @@ test('Focus follow-up offer is bounded, disclosed, and opted into only by the ne
   ]);
 });
 
+test('Focus offers anew on every later snapshot meeting the eager offer condition, despite an earlier decline', () => {
+  // Invariant: declining or withdrawing a follow-up offer binds only that offer, never later
+  // snapshots of the same target, since an observer that read an earlier "no follow-up" as
+  // persistent omitted the owed offer from a complete snapshot (window 2 recording on 887ba1fd).
+  // The rule sits in the eager core before the lazy include: a model that wrongly treats the
+  // decline as binding never meets the include's condition and so never reads the fragment.
+  const core = flat(
+    boundedSlice(source('src/tools/focus.md'), '## Follow-up mode', '```lazy-include'),
+  );
+  assert.ok(
+    core.includes(
+      'A declined or withdrawn offer never suppresses the offer of a later snapshot that meets the eager offer condition.',
+    ),
+    'Focus must re-offer follow-up on every later snapshot that meets the eager offer condition',
+  );
+});
+
 test('Focus follow-up schedules exactly one handle-bound task', () => {
   // Invariant: single handle — one disabled-then-enabled schedule_task with fixed fields, a prompt
   // holding only the prefixed invocation, reference and handle, cleanup on a failed rewrite, and no
