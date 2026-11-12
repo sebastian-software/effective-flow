@@ -236,7 +236,9 @@ when: the validation decision selects the protected native macOS GitHub Actions 
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `{{SKILL:review}}` default, which delivers only Critical + Important.
    Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
-   CI path goes to `{{AGENT:generic-product-reviewer}}`.
+   CI path goes to `{{AGENT:generic-product-reviewer}}` with its reduced-depth notice, under an
+   explicit bounded implementation full-pass assignment from `{{SKILL:build}}`; supply only the
+   floor-hit tooling/CI path list and each path's confirmed route.
    <!-- spawn-site:build-delegated-run/review -->
 
 ```lazy-include

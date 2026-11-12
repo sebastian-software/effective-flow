@@ -262,9 +262,12 @@ documentation-sync
    - for every degraded generic product bucket, `{{AGENT:generic-product-reviewer}}`: a read-only
      qualitative review with the reduced-depth limitation, reporting all severities; critical
      findings must be fixed before completion
-   - after the incorporation pass, only on a `review-depth` floor hit or trigger:
-     `{{AGENT:generic-product-reviewer}}` with its reduced-depth notice for the full pass, which
-     also stands in for the routed reviewers when `reviewTree` is unavailable
+   - after the incorporation pass, on a `review-depth` floor hit or trigger, or when `reviewTree` is unavailable:
+     `{{AGENT:generic-product-reviewer}}` with its reduced-depth notice for the full pass. Label
+     the handoff as an explicit bounded implementation full-pass assignment from `{{SKILL:fix}}`;
+     supply only its triggering path list and each path's confirmed route. When `reviewTree` is
+     unavailable, this reviewer also stands in for the routed reviewers; give it the full
+     cumulative path list and confirmed routes under the same explicit assignment.
 
 ```lazy-include
 review-depth

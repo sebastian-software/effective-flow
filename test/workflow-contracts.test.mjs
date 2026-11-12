@@ -8627,10 +8627,9 @@ test('both pre-commit review sites take reviewer selection from the one pre-comm
 
 // Invariant: sender and receiver of the pre-commit `tooling` assignment agree. The owner's
 // assignment states it is a pre-commit review and gives each path's confirmed route; the
-// generic-product reviewer accepts `tooling` exactly from such an assignment, keeps every
-// specialist bucket and all other `tooling` out of scope, and its reduced-depth notice does not
-// call tooling product code.
-test('the generic-product reviewer accepts exactly the tooling a pre-commit review assigns', () => {
+// generic-product reviewer keeps its ordinary scope narrow while accepting explicit bounded
+// implementation full-pass assignments; neither exception claims specialist depth.
+test('the generic-product reviewer bounds pre-commit and implementation full-pass assignments', () => {
   const owner = prose(source('src/shared/pre-commit-review.md'));
   const reviewer = prose(source('src/agents/generic-product-reviewer.md'));
   assert.match(
@@ -8639,8 +8638,18 @@ test('the generic-product reviewer accepts exactly the tooling a pre-commit revi
   );
   assert.match(
     reviewer,
-    /review only the generic product bucket assigned through `Project routing`, and `tooling` paths when the assignment states it is a pre-commit review and gives their route; every specialist bucket, and `tooling` from any other assignment, stays with its corresponding reviewer/,
-    'the reviewer accepts the tooling assignment the owner sends and no other',
+    /outside an explicit implementation full-pass assignment, review only the generic product bucket assigned through `Project routing`, and `tooling` paths when the assignment states it is a pre-commit review and gives their route; every specialist bucket, and `tooling` from any other assignment, stays with its corresponding reviewer/,
+    'ordinary assignments preserve specialist routing and the pre-commit tooling exception',
+  );
+  assert.match(
+    reviewer,
+    /for an explicit bounded implementation full-pass assignment from `effective-flow fix`, `effective-flow build`, or `effective-flow refactor`, accept only the supplied paths and their confirmed routes, including specialist and tooling\/CI paths/,
+    'only the named implementation workflows can explicitly assign bounded full-pass scope',
+  );
+  assert.match(
+    reviewer,
+    /this exception covers `review-depth` floor hits or triggers and fix's missing-`reviewTree` fallback; it does not change ordinary specialist routing/,
+    'floor, trigger, and missing-tree assignments share the same bounded exception',
   );
   assert.doesNotMatch(
     reviewer,
@@ -8649,8 +8658,8 @@ test('the generic-product reviewer accepts exactly the tooling a pre-commit revi
   );
   assert.match(
     reviewer,
-    /no dedicated Effective Flow specialist matches this review scope/,
-    'the disclosure holds for tooling as well as product code',
+    /this generic pass provides no dedicated Effective Flow language or framework specialist depth; findings are limited to repository-supported evidence and general software-engineering analysis/,
+    'full-pass scope does not claim specialist expertise',
   );
   assert.doesNotMatch(
     reviewer,

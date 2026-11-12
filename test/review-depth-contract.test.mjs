@@ -192,15 +192,18 @@ test('review-depth is loaded only through a lazy-include with a when line and ne
 });
 
 // Invariant: `fix` starts no reviewer re-check without a floor hit or trigger; the orchestrator
-// writes the three-part report, and a hit or trigger starts the generic reviewer with its notice.
+// writes the three-part report, and a hit, trigger or missing tree starts the generic reviewer.
 test('fix re-checks without a reviewer unless a floor hit or trigger starts generic-product-reviewer', () => {
   const verification = flat(section(fix, '2. Then render the diff baseline', '```lazy-include'));
   assert.match(verification, /retain its `currentTree` as `reviewTree`/);
   assert.match(
     verification,
-    /after the incorporation pass, only on a `review-depth` floor hit or trigger: `\{\{AGENT:generic-product-reviewer\}\}` with its reduced-depth notice for the full pass/,
+    /after the incorporation pass, on a `review-depth` floor hit or trigger, or when `reviewTree` is unavailable: `\{\{AGENT:generic-product-reviewer\}\}` with its reduced-depth notice for the full pass/,
   );
-  assert.match(verification, /stands in for the routed reviewers when `reviewTree` is unavailable/);
+  assert.match(
+    verification,
+    /When `reviewTree` is unavailable, this reviewer also stands in for the routed reviewers/,
+  );
   const incorporation = flat(
     section(fix, 'If findings or residual risks arise', 'Then pass the residual batch'),
   );
@@ -280,3 +283,43 @@ test('refactor applies the scoped re-check and floor and records them in Phase 4
   assert.match(step3, /the `review-depth` floor classification record and the re-check report/);
   assert.match(phase4, /```lazy-include\nreview-depth\nwhen: /);
 });
+
+// Invariant: implementation full-pass senders use the receiver's explicit exception and give
+// concrete paths with confirmed routes; otherwise a specialist/tooling scope is rejected or
+// silently widened. Fix alone substitutes the whole cumulative list for a missing reviewTree.
+for (const [name, workflow, phase] of [
+  ['fix', fix, '### Phase 4: Verification'],
+  ['build', delegatedRun, '### Phase 6: Review'],
+  ['refactor', refactor, '### Phase 4: Review'],
+]) {
+  test(`${name} full-pass assignment matches the generic reviewer's bounded scope contract`, () => {
+    const receiver = flat(read('agents/generic-product-reviewer.md'));
+    assert.match(
+      receiver,
+      /for an explicit bounded implementation full-pass assignment from `effective-flow fix`, `effective-flow build`, or `effective-flow refactor`, accept only the supplied paths and their confirmed routes/,
+    );
+    const assignment = flat(section(workflow, phase, '```lazy-include'));
+    assert.match(
+      assignment,
+      new RegExp(
+        'explicit bounded implementation full-pass assignment[^;]*from `\\{\\{SKILL:' +
+          name +
+          '\\}\\}`',
+      ),
+      'the sender explicitly invokes the receiving workflow exception',
+    );
+    assert.match(assignment, /reduced-depth notice/);
+    assert.match(assignment, /path list and each path's confirmed route/);
+    if (name === 'fix') {
+      assert.match(assignment, /floor hit or trigger, or when `reviewTree` is unavailable/);
+      assert.match(assignment, /supply only its triggering path list/);
+      assert.match(
+        assignment,
+        /When `reviewTree` is unavailable[^;]*stands in for the routed reviewers; give it the full cumulative path list and confirmed routes under the same explicit assignment/,
+      );
+    } else {
+      assert.match(assignment, /supply only the floor-hit tooling\/CI path list/);
+      assert.doesNotMatch(assignment, /full cumulative path list/);
+    }
+  });
+}

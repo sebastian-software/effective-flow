@@ -299,7 +299,9 @@ documentation-sync
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
    routing selects, including `{{AGENT:generic-product-reviewer}}` for degraded product buckets.
    Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
-   CI path goes to `{{AGENT:generic-product-reviewer}}`.
+   CI path goes to `{{AGENT:generic-product-reviewer}}` with its reduced-depth notice, under an
+   explicit bounded implementation full-pass assignment from `{{SKILL:refactor}}`; supply only the
+   floor-hit tooling/CI path list and each path's confirmed route.
    <!-- spawn-site:refactor/review -->
 
 ```lazy-include
