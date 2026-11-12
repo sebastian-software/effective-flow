@@ -820,6 +820,20 @@ point is an I/O boundary over testable core or protocol modules:
   `src/tools/<name>.md`, so a renamed tool cannot silently lose its retired-row stop. Both the
   `merge-gate` and `iterate` eval suites list the pair in their `LOAD_SET_SEEDS`, because their
   runs execute it at the first configuration read and no load pointer names it.
+  A second operation, `no-ci-policy`, takes `baseRef` beside `cwd` and `tool: "merge-gate"` (a valid,
+  safe branch name, else `INVALID_INPUT`), resolves the working checkout as above, reads the located
+  setup document as a blob at `refs/remotes/origin/<baseRef>` in `runtimeStateRoot` (it fetches
+  nothing; the merge gate fetches the base first), and compares the `mergeGate.noCiPolicy.*` rows
+  of both. The base commit must locate the same setup source (marker, then scan; a step-3 source
+  requires the base to locate none and to select the same transitional file), reading each entry's
+  mode from its parent tree; a symlink or submodule on a consulted path, or another source, is
+  `mismatch`; a missing exact ref `refs/remotes/origin/<baseRef>` or a missing file is `missing`;
+  any other Git failure is a `GIT_FAILED` error envelope (exit 1), not a `data.noCiPolicy` outcome, which the merge gate treats
+  as an inactive policy; `HEAD` is rejected as `baseRef`. Its `data.noCiPolicy` carries `configured`, `bases`, `unattended`, `invalid`, `baseRef`,
+  `baseListed`, `baseComparison` (`equal`, `mismatch`, `missing`, `unreadable`, `hidden-self`,
+  `not-applicable`), `active` and `reason`, beside the usual `data` fields. The merge gate, not the
+  operation, decides run state, the check list and the head; see the
+  [merge-gate no-CI policy ADR](../adr/merge-gate-no-ci-policy.md).
 - **Setup-status.** Invoke it as `node <skill-root>/scripts/setup-status.mjs status` with one JSON
   object `{ "cwd": "<directory>" }` on standard input; `setup status` runs it. It imports
   `config-resolve-core.mjs` as a module: one `resolveConfiguration` call with `tool: "setup"` supplies
@@ -872,8 +886,12 @@ point is an I/O boundary over testable core or protocol modules:
   collision gets a `-2`, `-3`, … suffix) and snapshots every non-ignored working-tree path into a
   tree object. `render` repeats that snapshot with the identical procedure, optionally limited to a
   literal path scope, and atomically replaces `diff.patch` and `paths.json` with the tree-to-tree
-  delta; `discard` removes `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left
-  empty. Every snapshot uses a private temporary index and a private object directory inside
+  delta and records its `currentTree` in `rendered-trees.json`. Given `sinceTree`, which must equal
+  a `currentTree` an earlier render of the same handle recorded (else `INVALID_INPUT`), `render`
+  instead writes only `delta.patch`, `delta-paths.json` and its recorded tree and returns only `deltaDiffPath`,
+  `deltaPathsPath`, `currentTree` and `deltaEntries`, with the same `scope` handling and without
+  touching `diff.patch` or `paths.json`; an equal tree yields an empty delta. `discard` removes
+  `diff-baseline/` and its `runs/<RUN_ID>/` parent only when that is left empty. Every snapshot uses a private temporary index and a private object directory inside
   `diff-baseline/`, with the real object store attached read-only as an alternate. Every git call
   carries `GIT_OPTIONAL_LOCKS=0`, so the real index, stash, refs, `HEAD` and object store stay
   untouched and no call takes the real `index.lock`. Snapshots also pin `core.splitIndex=false`
@@ -1252,7 +1270,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 62 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 63 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1362,7 +1380,7 @@ and directive syntax").
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
   `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
-  `delegation-envelope-examples`, `diff-baseline`, `source-upstream-sync`, `setup-profiles`,
+  `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
   `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.
@@ -1467,6 +1485,12 @@ and directive syntax").
   states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
   fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
   the merge-gate eval identity.
+  `deliver-committed-range` is the single-consumer `deliver` fragment for the route that publishes
+  session-made commits when the reconciled candidate is empty. Its pointer sits before the manifest
+  display and fires when that candidate is empty and the source tree and index are clean, untracked
+  paths included; a dirty checkout never loads it. It nests lazy pointers to
+  `base-branch-resolution` (range-base derivation) and `remote-helper-contract` (the existing-PR
+  lookup), and holds the route's only `ask` fence, which is unscored.
   `deliver-partial-diff-resume` (the resume and release entry with its step map) is the single-consumer
   `deliver` fragment lazy from step 1.1, loaded only when `worktree inspect` lists a retained
   `partial-diff` record. `worktree-partial-diff-recovery` (ledger schema, size bound, proofs and call

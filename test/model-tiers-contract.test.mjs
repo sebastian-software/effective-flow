@@ -1405,3 +1405,22 @@ test('all targets ship the lazy partial-diff resume and recovery fragments behin
     );
   }
 });
+
+// Invariant: the committed-range fragment ships into every built skill behind its deliver pointer,
+// while the always-loaded deliver core never inlines its content.
+test('all targets ship the lazy committed-range fragment behind its deliver pointer', () => {
+  for (const target of TARGETS) {
+    const skillRoot = join(distRoot, target, 'effective-flow');
+    const read = (file) => readFileSync(join(skillRoot, file), 'utf8');
+    assert.ok(
+      read('shared/deliver-committed-range.md').includes('### Session-known commits'),
+      `${target}: ships shared/deliver-committed-range.md`,
+    );
+    const deliver = read('tools/deliver.md');
+    assert.ok(deliver.includes('shared/deliver-committed-range.md'), `${target}: deliver pointer`);
+    assert.ok(
+      !deliver.includes('### Session-known commits'),
+      `${target}: the deliver core does not inline the committed-range fragment`,
+    );
+  }
+});

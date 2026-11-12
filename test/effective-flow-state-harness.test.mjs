@@ -331,7 +331,9 @@ test('the read-helper rule shapes round-trip and their widened forms are detecte
   assert.deepEqual(helperRules(root).length, RULE_ENTRIES.length);
   assert.equal(
     RULE_ENTRIES.length,
-    ALLOWLISTED_OPERATIONS.length + 1 + REMOTE_TRACKER_READ_OPERATIONS.length,
+    ALLOWLISTED_OPERATIONS.length +
+      CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS.length +
+      REMOTE_TRACKER_READ_OPERATIONS.length,
   );
   const cases = {
     [`Bash(node ${root}/scripts/config-resolve.mjs resolve *)`]: null,

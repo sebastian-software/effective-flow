@@ -243,12 +243,12 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 62 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 63 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
 `worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
-`ledger reconcile`), one for `config-resolve`, and 44 for the remote tracker's read-only operations:
+`ledger reconcile`), two for `config-resolve` (`resolve` and `no-ci-policy`), and 44 for the remote tracker's read-only operations:
 its forge reads, its pure local computations and `thread-ledger-lookup`. `worktree resume-check` and
 `ledger reconcile` only read. `ledger init` writes the delivery ledger once during an active
 `deliver` run, for that run's own record, and only within a size bound of 256 KiB; `ledger append`

@@ -99,7 +99,7 @@ export async function main(argv = process.argv.slice(2), io = {}) {
     if (!operation) {
       throw new DeliverySelectionError(
         'INVALID_PAYLOAD',
-        'usage: delivery-selection.mjs <inventory|bind-manifest|verify-source|transfer|reconcile|upstream-status|fast-forward> [--apply]',
+        'usage: delivery-selection.mjs <inventory|bind-manifest|verify-source|transfer|reconcile|upstream-status|fast-forward|committed-range> [--apply]',
       );
     }
     const input = io.input ?? (await readStdin(io.stdin ?? process.stdin));

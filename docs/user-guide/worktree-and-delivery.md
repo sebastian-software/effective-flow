@@ -130,18 +130,28 @@ the retained delivery.
   recorded commits (plus at most one proven commit that was created but not yet recorded) and at
   least one group is committed, the index is clean or stages exactly the next group, the worktree
   holds exactly the remaining groups' content, the source checkout still matches the confirmed
-  selection, and the current visibility is not weaker than the recorded one. Any drift, a record
-  held by another run, or unprovable ownership blocks the resume. What the run then skips and
+  selection, no file hidden by Git's skip-worktree or assume-unchanged flag differs from the index
+  and `HEAD`, no ignored file stands where a delivery file belongs, and the current visibility is
+  not weaker than the recorded one. Any drift, a record held by another run, or unprovable
+  ownership blocks the resume. What the run then skips and
   reruns is described in [Deliver](./tools-deliver.md#resuming-or-releasing-a-failed-delivery).
 - **Release.** A record that cannot be resumed can go from `aborted` or `failed` to `cleanup-ready`
   after you confirm it. With a ledger, the remaining changes are discarded from the worktree only
   when they equal the recorded content and the source still holds it, while Git's index lock of the
-  worktree keeps other Git commands from changing its index, and every discarded file stays as a
-  tree under `refs/effective-flow/released/<RECORD_ID>/` until you delete that ref. Without one, the
-  worktree must be clean or already gone; otherwise the exact blocking paths are listed. Release
-  keeps the branch and its commits.
+  worktree keeps other Git commands from changing its index. Each file is re-checked against the
+  source right before it is discarded, and release stops with a write failure if either side
+  changed. Discarded files are first moved to a private quarantine and verified there, then kept as
+  a tree under `refs/effective-flow/released/<RECORD_ID>/` until you delete that ref, and only then
+  is the quarantine cleared. Release is also refused when a kept quarantine from an earlier failed
+  release is still in the worktree (it holds the only copy of those files, and cleanup refuses it
+  too), when an ignored file stands where a delivery file belongs or a hidden file differs from
+  both index and `HEAD`, and when the source checkout is the delivery worktree itself. Without a
+  ledger, the worktree must be clean or already gone; otherwise the exact blocking paths are listed.
+  Release keeps the branch and its commits.
 - **Cleanup.** `cleanup` then removes the released worktree like any `cleanup-ready` one and deletes
-  the ledger before the record. A released record whose worktree is already fully gone, unregistered
+  the ledger before the record. Like release, it refuses a worktree that holds a kept release
+  quarantine, an ignored file at a ledger endpoint, or hidden changes, since removing it would
+  delete those files unseen. A released record whose worktree is already fully gone, unregistered
   and without a directory, is removed as well; a half-gone worktree stays retained for manual
   reconciliation. The branch is kept, and deleting it stays your choice.
 
@@ -461,7 +471,10 @@ names the draft, and `pr` finishes it instead of leaving the reused pull request
 A direct `pr` call requires a clean, attached, non-base checkout whose branch contains at least one
 commit against the refreshed base. Staged, unstaged, or untracked content makes the invocation
 abort rather than silently excluding it. Use `deliver` when local content still needs selection or
-isolation.
+isolation. On a clean checkout with nothing left to select, `deliver` itself calls `pr` as a direct
+invocation for commits the session made (see
+[Publishing commits you already made](./tools-deliver.md#publishing-commits-you-already-made));
+`pr`'s `push -u` is then the only write, and `pr` owns it.
 
 ## Distinction: the apply-review-specific worktree
 

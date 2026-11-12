@@ -563,6 +563,8 @@ against it:
 - **No merge state.** Forgejo's pull-request object has no `mergeStateStatus` equivalent, so the
   adapter states none rather than fabricating a `CLEAN`. `BEHIND` is therefore undetectable; a
   branch-protection rule that blocks an outdated branch fails the merge closed server-side instead.
+  The gate still brings a behind head with a failing check forward, through its Git ancestry check
+  rather than a merge state.
 - **No requiredness per check.** Forgejo has no such flag, so every check reports it as unstated and
   `mergeGate.requireAllChecks: false` fails closed on each of them – stricter than the default,
   never looser.

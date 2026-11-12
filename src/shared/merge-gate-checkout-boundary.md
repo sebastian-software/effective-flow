@@ -21,18 +21,23 @@ Everything else in that fragment stays off:
   findings of its own and never publishes under the outbound `<!-- effective-flow-pr-review -->`
   marker.
 
-**The checkout's lifecycle is closed by this workflow.** Prefer the invocation checkout when it
-already has the head branch checked out and clean: work in place, create no worktree, and create no
-lifecycle record. When `git worktree list --porcelain` shows the head branch checked out in any
-other state – a dirty invocation checkout or another linked worktree – stop before provisioning:
-create no worktree and no record, use no `--force` or detached workaround, merge nothing, and report
-which checkout holds the branch and that it must be cleaned or released first. Git refuses to attach
-a branch that is already checked out elsewhere without `--force`, which this workflow never uses.
-Otherwise create one Effective Flow-owned worktree with the fragment's receipt and
-its lifecycle record (`worktree record-init`), and close that record in the same run: after the
-push of Phase 2 step 1 is confirmed, withdraw it with one `worktree remove` call, with the denial
-fallback of its outcome table; on a controlled stop before the push – including a conflict this run
-may not or cannot resolve – end the in-progress merge with `git merge --abort` so the checkout is
-left clean, then call `worktree transition` to `aborted`; on an error, to `failed`. `aborted` and
-`failed` retain the worktree and the branch for inspection. Never end a run leaving an `active` record behind – `{{SKILL:cleanup}}` will correctly
-refuse to remove it.
+**The checkout's lifecycle is closed by this workflow.** A `fork` or `missing-branch` proof of Phase
+2 step 1 provisions nothing: it creates no worktree and no worktree lifecycle record. Prefer the
+invocation checkout when it already has the head branch checked out and clean: work in place, create
+no worktree, and create no lifecycle record. On the local-divergence end of Phase 2 step 1, the run
+ends with a report naming that reused in-place checkout, which has no record to close. When
+`git worktree list --porcelain` shows the head branch checked out in any other state – a dirty
+invocation checkout or another linked worktree – stop before provisioning: create no worktree and no
+record, use no `--force` or detached workaround, merge nothing, and report which checkout holds the
+branch and that it must be cleaned or released first. Git refuses to attach a branch that is already
+checked out elsewhere without `--force`, which this workflow never uses. Otherwise create one
+Effective Flow-owned worktree with the fragment's receipt and its lifecycle record
+(`worktree record-init`), and close that record in the same run: after the push of Phase 2 step 1 is
+confirmed, withdraw it with one `worktree remove` call, with the denial fallback of its outcome
+table; after a no-op merge or a head-identity mismatch, which commit and push nothing, withdraw it
+with the same one `worktree remove` call and the same fallback; on a controlled stop before the push
+– including a conflict this run may not or cannot resolve – end the in-progress merge with
+`git merge --abort` so the checkout is left clean, then call `worktree transition` to `aborted`; on
+an error, to `failed`. `aborted` and `failed` retain the worktree and the branch for inspection.
+Never end a run leaving an `active` record behind – `{{SKILL:cleanup}}` will correctly refuse to
+remove it.

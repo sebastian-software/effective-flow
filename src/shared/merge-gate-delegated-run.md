@@ -101,8 +101,10 @@ authority limits; a worker that cannot honor it returns `ABORT`.
   `{{SKILL:iterate}}` delegation – CI repair and bot round – unavailable. Where Phase 2 step 1 would
   provision a checkout, or Phase 2 step 3 or Phase 3 would build a delegation, the run instead ends
   with its report and Phase 6, names the limit as the blocking condition, and makes no commit, no
-  push and no merge. It withholds no write outside the head branch: a bot trigger comment and Phase
-  5.5's `issueClose` stay governed by their own rules.
+  push and no merge. That covers trigger (b) of Phase 2 step 1 exactly as trigger (a), while the
+  ancestry check's fetch, which updates refs and touches no branch, stays permitted under
+  `no-branch-writes` and in `report` mode. It withholds no write outside the head branch: a bot trigger comment and Phase 5.5's
+  `issueClose` stay governed by their own rules.
 
 ## `effective-delivery` stays out of this run
 
@@ -182,8 +184,9 @@ resolved merge conflict – inside the delegated `{{AGENT:merge-conflict-resolve
 Read this before loading the delivery and worktree integration fragment, because only a narrow
 part of that fragment applies here. One thing is used from it: provisioning a checkout for the Git
 write of Phase 2 step 1 – the same one checkout whether that merge applies cleanly or has to be
-resolved first. That is why the fragment is deferred until that step. The verified execution
-location with its two roots is **not** what this pointer brings: it reaches the run earlier, through
+resolved first, and whichever of its two triggers called for it: (a) the head branch reported
+`BEHIND` or `DIRTY`, or (b) a failing check with the ancestry check stating "behind". That is why
+the fragment is deferred until that step. The verified execution location with its two roots is **not** what this pointer brings: it reaches the run earlier, through
 the runtime-state write safety block, which includes `execution-location` eagerly and is itself
 loaded before the first write below `.effective-flow/`.
 
@@ -194,12 +197,12 @@ the deferred `worktree-integration` fragment is mandatory before that worktree i
 
 ```lazy-include
 worktree-integration
-when: Phase 2 step 1 must provision a checkout because the fresh read reports the head branch `BEHIND` or `DIRTY`
+when: Phase 2 step 1 must provision a checkout because trigger (a) fired – the fresh read reports the head branch `BEHIND` or `DIRTY` – or trigger (b) fired – a failing check with the ancestry check stating "behind"
 ```
 
 ```lazy-include
 merge-gate-checkout-boundary
-when: Phase 2 step 1 must provision a checkout because the fresh read reports the head branch `BEHIND` or `DIRTY`, which is the same moment `worktree-integration` is loaded
+when: Phase 2 step 1 must provision a checkout because trigger (a) fired – the fresh read reports the head branch `BEHIND` or `DIRTY` – or trigger (b) fired – a failing check with the ancestry check stating "behind" – which is the same moment `worktree-integration` is loaded
 ```
 
 ```lazy-include
@@ -219,9 +222,18 @@ merge – `origin/<base>` merged into the head branch as a merge commit and push
 merge applies without a conflict – and the **conflict-resolving** base-into-head merge, where the
 same merge conflicts, `{{AGENT:merge-conflict-resolver}}` resolves the conflicted files, and the gate
 commits and pushes the result. Each is a **kind** of write, not a one-time allowance: either applies
-in every Phase-2 round whose fresh read calls for it, each occurrence is exactly one merge commit
-plus one normal push of the head branch, and no Git write of any other kind is permitted at any
-point.
+in every Phase-2 round in which one of step 1's two triggers calls for it – (a) a fresh read
+reporting `BEHIND` or `DIRTY`, until a base-merge-unavailable record exists, or (b) a failing
+check on a head the ancestry check states "behind",
+at most once per run – each occurrence is exactly one merge commit plus one normal push of the head
+branch, and no Git write of any other kind is permitted at any point.
+
+**The ancestry check of Phase 2 step 1 is a read, outside both kinds.** Neither of its fetches
+writes `FETCH_HEAD`; the base fetch is a read-side ref update limited to `refs/remotes/origin/<base>`,
+and the head fetch writes no ref at all. Both are ref operations rooted in
+`RUNTIME_STATE_ROOT` per `execution-location` that touch no working tree and no branch. Step 1's
+`ls-remote` reads of the head branch, which write nothing, and its mismatch classification's
+`refs/pull/<N>/head` fetch, made exactly as the ancestry check's, are reads in the same way.
 
 The second kind is bounded by `mergeGate.conflictResolution`: `off` and an `ask` nobody can answer
 make it unavailable, and the run then reports the conflict and makes **no commit and no push**, per
@@ -295,19 +307,21 @@ when: the base-into-head merge of Phase 2 step 1 has conflicted in the provision
 Read from the Effective Flow configuration (project setup ADR) per the loaded configuration
 building block. A missing line means the default.
 
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
-| `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
+| `delivery.mergeMethod`            | `squash`, `merge`, `rebase`           | `squash`  |
 
 Resolve whether the configuration contains a `mergeGate.bots` row before parsing its value. Row
 presence – including an empty or unreadable value – opens the configured-reviewer route; parsed
@@ -345,6 +359,23 @@ any reviewer entry, trigger, or check value.
   This workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
 - `mergeGate.botAccounts` lists non-reviewer bots: this gate never triggers, waits for, or assesses
   them. Phase 1's rule 1 owns what the list excludes and how a login matches it.
+- **`mergeGate.noCiPolicy.*`, the declared no-CI policy,** pre-answers an unreported check list –
+  Phase 2's question and condition 2's reported-at-all clause – and nothing else. Only where the
+  resolved configuration holds a `mergeGate.noCiPolicy.bases` row, a **policy read** for a
+  `pr-status-read` takes that read's `baseRef`, which must pass `git check-ref-format --branch`,
+  runs the ancestry check's base fetch (Phase 2 step 1, step 1 of that check) for it, and only then
+  makes the literal call
+  `node <skill-root>/scripts/config-resolve.mjs no-ci-policy <<< '{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<baseRef>"}'`
+  with `tool: "merge-gate"` and the `cwd` of this run's `resolve` call. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The policy is **active** for that read only where
+  `data.noCiPolicy.active` is `true` and the run is gated, relayed, or non-interactive with
+  `data.noCiPolicy.unattended` `true`. A non-interactive run without that grant stops as before: an
+  earlier merge instruction is never a waiver, and silence is never approval. The policy stays
+  inactive, with today's behavior, where no `bases` value is valid, the base is not listed, the read
+  states no `baseRef` or reports any check, the status read failed (`COMMAND_FAILED`,
+  `UNSUPPORTED_CAPABILITY` or any other structured error), the fetch or the call fails, or the base
+  blob is missing, unreadable or differs; an empty check list alone never activates it. Report each
+  `data.noCiPolicy.invalid` key once, and keep the latest not-applied cause for Phase 6: the
+  resolver's `reason` or the gate's own cause from Phase 6's list.
 - `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
   integrates a pull request.
 - **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
@@ -430,9 +461,9 @@ gate run inline generates it at the start. Use
   matching no `mergeGate.bots` entry, and not written by the login `viewer-read` returned: its login,
   its surface – top-level comment or review-thread item – and its comment or thread-item identifier,
   appended and keyed exactly like the identity-rule record above
-- per round: the round number, the check result, the merge state, what was delegated, and what came
-  back – for every delegation the identifier → durable-key map `build` returned, recorded before
-  dispatch, with its message path until the file is deleted, every refused item with its reason, and
+- per round: the round number, the check result, the merge state, which trigger of Phase 2 step 1
+  fired, if any, with the ancestry check's result, what was delegated, and what came back – for
+  every delegation the identifier → durable-key map `build` returned, recorded before dispatch, with its message path until the file is deleted, every refused item with its reason, and
   any sender-contract error code; and every returned outcome the receiver rule of `## Returned outcome record` in `merge-gate-configured-reviewer` counted, the
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
   `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
@@ -446,11 +477,26 @@ gate run inline generates it at the start. Use
   discarded wherever that value is discarded – a Phase-3 restart discards both together – and is
   consumed in no evaluation whose freshly read head does not equal it. It clears condition 2's
   reported-at-all clause alone and is never evidence that a check ran
-- per round, where the base-into-head merge conflicted: the observed merge state and which entry
-  point detected the conflict, the resolved `mergeGate.conflictResolution` mode with its source, the
-  conflicted paths with their risk classification, `{{AGENT:merge-conflict-resolver}}`'s per-file
+- per Phase-4 evaluation the declared no-CI policy pre-answered, the line
+  `no-ci-policy used: <base> @ <VERIFIED_HEAD_SHA>` and no waiver record; Phase 6 reads it and no
+  evaluation consumes it. It is discarded wherever `VERIFIED_HEAD_SHA` is, and a Phase-4
+  evaluation that does not pre-answer removes it, so it never names a head other than
+  `VERIFIED_HEAD_SHA`; and, where a configured policy did not apply, its latest cause
+- per round, where the base-into-head merge conflicted: the trigger that fired the merge, the
+  observed merge state and which entry point detected the conflict, the resolved
+  `mergeGate.conflictResolution` mode with its source, the conflicted paths with their risk classification, `{{AGENT:merge-conflict-resolver}}`'s per-file
   resolution record including every adjacent file with the check that demanded it, both verification
   verdicts, and the resulting merge commit or the abort reason
+- trigger (b)'s once-per-run record, written per Phase 2 step 1: its round and whether its merge
+  was clean, conflict-resolved or a no-op
+- an undetermined ancestry check, once per run, with its reason
+- every head-identity mismatch of Phase 2 step 1: its round, the read's `headSha` and the
+  provisioned tip
+- the base-merge-unavailable record, once per run, written per Phase 2 step 1: the trigger that
+  called for the merge, its round, its proof kind and its evidence – the `sameRepository`
+  statement, the `ls-remote` result, or both SHAs with the classification
+- an undetermined existence check, once per run, with its reason, and a run ended on local
+  divergence, with the reused checkout
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
   record ID and that record's last transition, plus this run's worktree-record exit self-check
   result
@@ -493,9 +539,9 @@ when: the forge preflight reports both `reviewThreadReplies` and `reviewThreadRe
 ```
 
 **`report` scopes the merge, not the run.** In both modes the gate waits for the checks, has failing
-checks repaired through `{{SKILL:iterate}}`, posts a configured bot trigger where a bot has **not
-started**, has the bot threads answered and resolved through `{{SKILL:iterate}}`, and – where the
-head branch conflicts with its base and `mergeGate.conflictResolution` allows it – resolves that
+checks repaired through `{{SKILL:iterate}}`, brings the head branch forward under either trigger
+of Phase 2 step 1, posts a configured bot trigger where a bot has **not started**, has the bot
+threads answered and resolved through `{{SKILL:iterate}}`, and – where the head branch conflicts with its base and `mergeGate.conflictResolution` allows it – resolves that
 conflict and pushes the resulting merge commit. `report` withholds exactly one action: the merge in
 Phase 5. What differs is the ending, not the work.
 
@@ -649,8 +695,9 @@ While the guard is active:
 - **the conflict resolution stays permitted** too, for the same reason and beside the same rule. A
   conflict with the merge target is an objective defect of the branch, not a position a reviewer is
   negotiating, and the repair is the one the gate already performs for a branch that is merely
-  `BEHIND` – which the guard has never blocked either. What the guard keeps blocking is unchanged:
-  the review-driven implementation and the merge. The resolution runs, the merge does not;
+  `BEHIND` – which the guard has never blocked either – and that trigger (b) of Phase 2 step 1
+  performs for a behind branch with a failing check, which the guard leaves running alike. What the
+  guard keeps blocking is unchanged: the review-driven implementation and the merge. The resolution runs, the merge does not;
 - **no thread reply, and no thread resolution, of any kind** – see the rule below.
 
 #### A deferred finding gets no thread reply
@@ -704,12 +751,108 @@ a re-read shows a new failure – the current round **ends** there and the run c
 round under "Round accounting". Every wait and every repair is therefore counted and bounded, and no
 run can push an unbounded number of commits onto someone's pull request.
 
-1. **Bring the head branch forward (`BEHIND` or `DIRTY`).** Both forge states are repaired by the
-   **same** local operation – merge `origin/<base>` into the head branch – and `DIRTY` only states in
-   advance that the operation will conflict. Provision a checkout of the existing head branch per
-   "Checkout provisioning boundary" (verified execution location, rooted operations), fetch the
-   base, and merge `origin/<base>` into the head branch as a **merge commit**. Use Git's default
-   merge-commit message; add no `Co-Authored-By` trailer and no AI attribution.
+1. **Bring the head branch forward.** One local operation – merge `origin/<base>` into the head
+   branch – has two triggers. First, before either is evaluated, where the wisdom file holds a
+   `different-commit` base-merge-unavailable record and the run's latest check result reports
+   `BEHIND` or `DIRTY`, apply the report-only run end. **Trigger (a):** the forge reports `BEHIND`
+   or `DIRTY` and the wisdom file holds no base-merge-unavailable record; `DIRTY` only states in
+   advance that the operation will conflict. **Trigger (b):** trigger (a) has not fired,
+   the run's latest check result shows at least one check failing as step 4 defines it, the
+   ancestry check below states "behind", and the wisdom file holds neither a trigger-(b) record
+   nor a base-merge-unavailable record. Step 4's
+   criterion is what keeps it off for checks that are only pending, `SKIPPED` or `NEUTRAL`, for
+   `checksReported: false`, and for a red optional check under `mergeGate.requireAllChecks: false`.
+   - **The run's latest check result** is the most recent `pr-status-read` of this run, whichever
+     step performed it – Phase 1, Entry step 4 on a re-dispatch, this step's post-push or mismatch
+     re-read, step 3's guard read, step 4, Phase 4, or the `host-pr-watch` pending or resume read. A `pr-checks-wait` result never supplies trigger (b)'s criterion or its
+     `headSha`: it carries no `headSha` and keeps superseded runs.
+   - **The ancestry check** uses that read's `headSha` and `baseRef` as `<base>`, runs rooted in
+     `RUNTIME_STATE_ROOT` with ref operations only and no working tree, and runs only once the
+     other conditions of trigger (b) hold:
+     1. `git fetch --no-write-fetch-head origin +refs/heads/<base>:refs/remotes/origin/<base>`;
+     2. `git fetch --no-write-fetch-head --refmap= origin refs/pull/<N>/head` with no destination
+        refspec – the empty `--refmap=` also disables the opportunistic remote-tracking update a
+        configured `remote.origin.fetch` would make – so it creates no local branch, no
+        `refs/pull/*` ref and no remote-tracking ref, and leaves the user's `FETCH_HEAD` untouched;
+     3. `git cat-file -e <headSha>^{commit}`, then `git rev-parse --is-shallow-repository`;
+     4. `git merge-base --is-ancestor origin/<base> <headSha>`.
+   - **Its result:** exit `0` from step 4 means the head contains the base: no trigger. Exit `1`
+     states "behind". Everything else is **undetermined**: the read states no `headSha` or no
+     `baseRef`, a fetch fails, the `headSha` commit is missing after the fetch, the base ref is
+     missing, `git rev-parse --is-shallow-repository` reports `true`, or step 4 exits with any other
+     code. Undetermined merges nothing and keeps the path to step 3; record it once per run in the
+     wisdom file, as step 2 records its question, and Phase 6 names it with its reason.
+   - **Trigger (b) provisions nothing before the ancestry check states "behind"**, so a head that
+     already contains the base never gets a worktree.
+   - **Trigger (b) fires at most once per run.** Its record in the wisdom file is written once
+     trigger (b)'s merge commit – clean or conflict-resolved – has been pushed and the push is
+     confirmed, or when its merge is a no-op, and in no other case: never on a `BLOCKED-USER` return, a controlled stop,
+     a rejected push or a head-identity mismatch. Once the record exists, no later round, relayed
+     run or re-dispatched run fires trigger (b) again. Trigger (a) is not limited by it and writes
+     none.
+   - **The base-merge-unavailable record** is written once per run, by either trigger, when a proof
+     below shows the base merge cannot be made here. It names the trigger that called for the
+     merge, its round, its **proof kind** – `fork`, `missing-branch` or `different-commit` – and
+     its evidence, and it keeps both triggers off for the rest of the run.
+   - **The report-only run end** applies to a `fork` or `missing-branch` record where that record
+     is written, whatever the merge state, and to a `different-commit` record wherever a read
+     reports `BEHIND` or `DIRTY`: (i) at the mismatch re-read that wrote it, (ii) at the start of
+     this step, and (iii) in step 3 against its fresh read. It means: **end the run here** – the
+     round already begun stays counted and no further round starts; the run merges,
+     commits, pushes and delegates nothing, its report lists the failing checks without delegating
+     them, and Phase 6 runs.
+   - **Before provisioning, once a trigger calls for the merge**, under `no-branch-writes` the run
+     ends per "Caller limits" before any new read – no `ls-remote`, no classification – so the
+     caller limit stays the blocking condition. Otherwise run these checks in order, as ref-only
+     reads rooted in `RUNTIME_STATE_ROOT`. Every read takes `<head>` from the `head` of Phase 0
+     step 1's pull-request resolution (Entry step 4 on a re-dispatch), validated with
+     `git check-ref-format --branch` and passed as one argument; it is never derived from
+     `pr-status-read`, which carries no head branch name. A name that fails validation reaches no
+     further command: provision nothing, write no base-merge-unavailable record, and **end the run
+     here** – the round stays counted, nothing is merged or delegated, the report names the invalid
+     head branch name, and Phase 6 runs.
+     1. **`fork`:** where Phase 0 step 1's resolution stated `sameRepository: false`, write the
+        base-merge-unavailable record with proof kind `fork` without any Git read, provision
+        nothing, and apply the report-only run end. An absent `sameRepository` is no proof:
+        continue with the next check.
+     2. **`missing-branch`:** run `git ls-remote --exit-code origin refs/heads/<head>`, which writes
+        no ref and no `FETCH_HEAD`. Exit `2` means absent: write the base-merge-unavailable record
+        with proof kind `missing-branch`, provision nothing, and apply the report-only run end. Exit
+        `0` with exactly one output ref, equal to `refs/heads/<head>`, means present: continue.
+        Anything else is an **undetermined existence check**: record it once per run, like an
+        undetermined ancestry check, write no base-merge-unavailable record, and continue
+        provisioning.
+   - **The operation is the same under both triggers**, and step 1 stays one step: provision a
+     checkout of the existing head branch per "Checkout provisioning boundary" (verified execution
+     location, rooted operations), fetch the base, and **check the head identity** – the
+     checkout's tip must equal the `headSha` of the `pr-status-read` that called for the merge.
+     Then merge `origin/<base>` into the head branch as a **merge commit**. Use Git's default
+     merge-commit message; add no `Co-Authored-By` trailer and no AI attribution. Every outcome
+     below applies to both triggers alike, except that a trigger-(b) round ends with its confirmed
+     push.
+   - **The tip is not that `headSha`** – the head moved after the read, or the branch of that name
+     on `origin` is not the pull request's head: merge nothing, commit nothing and push nothing,
+     withdraw an Effective Flow-owned worktree with one `worktree remove` call per
+     `merge-gate-checkout-boundary`, record the mismatch, perform one `pr-status-read`, and end
+     the round under "A round runs forward only". Where that re-read reports a different `headSha`,
+     the mismatch is transient and the next round decides from the moved head. Where it reports the
+     **same** `headSha`, whichever trigger called for the merge, the provisioned branch may not
+     carry the pull request's head: fetch `refs/pull/<N>/head` exactly as the ancestry check's step
+     2 does, read `origin`'s branch SHA with a fresh `ls-remote` of `refs/heads/<head>`, and
+     classify it:
+     - **forge lag** – it descends from `headSha`
+       (`git merge-base --is-ancestor <headSha> <origin SHA>` exits `0`) and differs from it:
+       transient, no record, and the next round decides again;
+     - **local divergence** – it equals `headSha`, so the checkout's tip diverged locally: end the
+       run here – the round already begun stays counted, nothing is merged or delegated, the report
+       names that checkout, and Phase 6 runs – and write no record;
+     - otherwise, an undetermined result included: write the base-merge-unavailable record with
+       proof kind `different-commit`. Where the re-read reports `BEHIND` or `DIRTY`, apply the
+       report-only run end here; with a merge state that is neither `BEHIND` nor `DIRTY`, the next
+       round's step 3 delegates the failing check to `{{SKILL:iterate}}`.
+   - **The merge is a no-op** ("Already up to date"): commit nothing and push nothing, withdraw an
+     Effective Flow-owned worktree with the same one `worktree remove` call, and continue with
+     step 2.
    - **The merge applies cleanly:** commit it and push the branch normally, then re-read the status.
    - **The merge conflicts:** continue with "Resolving a conflict with the base" per
      "Conflict-resolution boundary" before anything is committed or pushed. That path ends either in
@@ -719,13 +862,16 @@ run can push an unbounded number of commits onto someone's pull request.
      must be completed **before** any `{{SKILL:iterate}}` delegation in this or a later round.
    - **The conflict is discovered locally, never read from the forge.** `pr-status-read` reports
      `mergeState` and `mergeable` but no conflicted-file list, so `DIRTY` and `CONFLICTING` are an
-     advance warning and nothing more. A branch reported `BEHIND` whose merge conflicts anyway enters
-     exactly the same path, which is why this is one step and not two: the conflict appears in one
-     place either way.
+     advance warning and nothing more. A branch reported `BEHIND`, or brought forward by trigger (b),
+     whose merge conflicts anyway enters exactly the same path, which is why this is one step and
+     not two: the conflict appears in one place either way.
    - **Close the checkout's lifecycle in the same step.** Once the push is confirmed, an Effective
      Flow-owned worktree is withdrawn with one `worktree remove` call per
      `merge-gate-checkout-boundary`; a reused in-place checkout has no record to close. A later
      round that needs this step again provisions a checkout again.
+   - **A trigger-(b) round ends with its confirmed push** under "A round runs forward only": no
+     `{{SKILL:iterate}}` delegation follows in that round, and the next round waits for the checks
+     the merge started.
    - **A controlled stop on the conflict path** – `off`, an `ask` nobody answered, an `ABORT` from
      either verification role, or a conflict this run may not or cannot resolve – happens **before**
      the commit: the merge is still in progress, so end it with `git merge --abort` so the checkout
@@ -744,7 +890,11 @@ run can push an unbounded number of commits onto someone's pull request.
    step. Otherwise call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the provider watch or deterministic helper poller block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
-   form of that restriction.
+   form of that restriction. On **Forgejo**, where the policy read for the run's latest check result
+   finds the declared no-CI policy active, first perform one `pr-status-read`: where it states
+   `checksReported: false` with zero checks it replaces the wait, so an empty list waits for no
+   timeout; otherwise wait as above. A wait or read whose `checksReported` is `false` is the
+   unreported list, never pending checks: the loop exit below decides it.
    - On a **timeout result** or when the provider has no **`pullRequestChecksWait` capability**: do
      **not** fall back
      to a prompt-driven poll loop. Report the still-pending checks by name and ask the user **once
@@ -757,8 +907,18 @@ run can push an unbounded number of commits onto someone's pull request.
      repetition, not a repeated question.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
    - A **relayed** run asks through `BLOCKED-USER checks-pending` under the same once-per-run record.
-3. **Failed checks.** Delegate to `{{SKILL:iterate}} <PR>` an instruction derived from the failing
-   check names – failing as step 4 defines it, never a `SKIPPED` or `NEUTRAL` one – and their reported failure detail, which the helper frames as **free-text-only**. The instruction describes the failure only and carries no commit, push or other process directive: `{{SKILL:iterate}}` owns those mechanics. The human-comment guard does **not** block this delegation. Build, validate and
+3. **Failed checks.** First, where step 2's `pr-checks-wait` was the last read, perform one
+   `pr-status-read`; on the T3 path of `host-pr-watch` the pending read already is one. Where that
+   read shows a check failing as step 4 defines it, reports neither `BEHIND` nor `DIRTY`, and the
+   wisdom file holds neither a trigger-(b) record nor a base-merge-unavailable record, run step
+   1's ancestry check against that read's
+   `headSha` and `baseRef`. Where it states "behind", delegate nothing and end the round under "A
+   round runs forward only": the next round's step 1 fires trigger (b). An undetermined ancestry
+   check does not hold the delegation back. Where that read reports `BEHIND` or `DIRTY` and the
+   wisdom file holds the base-merge-unavailable record, delegate nothing and apply step 1's
+   report-only run end; this also covers a `host-pr-watch` checks resume that re-enters at step 2.
+   Otherwise delegate to `{{SKILL:iterate}} <PR>` an
+   instruction derived from the failing check names – failing as step 4 defines it, never a `SKIPPED` or `NEUTRAL` one – and their reported failure detail, which the helper frames as **free-text-only**. The instruction describes the failure only and carries no commit, push or other process directive: `{{SKILL:iterate}}` owns those mechanics. The human-comment guard does **not** block this delegation. Build, validate and
    dispatch it per "Building and dispatching a delegation" in `merge-gate-delegation-contract`, with no thread and no body item, so the
    message ends at the delimiter line. Where `build` refuses the instruction because a line of it
    could state protocol, delegate nothing and **end the run here**: the report names the failing
@@ -805,6 +965,10 @@ of taking the fast "stop and report the conflict" path. Where the check list its
 **unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
 report that and ask per step 2's rule – **once per run**, and a later round reports without asking
 again – before proceeding, and an unanswered or non-interactive run ends there without merging.
+**The declared no-CI policy skips that question:** where the read states `checksReported: false`
+with zero checks and the policy read for it finds the policy active, the loop proceeds without
+posing or returning `checks-pending` and without ending the run. The skip authorizes nothing and
+records nothing; Phase 4 decides on its own fresh read.
 
 Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
@@ -875,8 +1039,12 @@ returning condition unbounded the day it is added.
 1. the resolved completion mode is `merge`;
 2. the check criterion from `mergeGate.requireAllChecks` is satisfied, **and the fresh read reported
    a check list at all**. `checksReported: false` blocks this condition outright unless "The
-   no-check-list waiver" below cleared the reported-at-all clause for this evaluation. Without that
-   answer the rationale is unchanged: an unreported list is an unproven one, exactly as an unstated
+   no-check-list waiver" below cleared the reported-at-all clause for this evaluation, or the
+   declared no-CI policy pre-answered it. In every evaluation, make the policy read for the fresh
+   read; it pre-answers only where the policy is active for that read's `baseRef`, listed exactly
+   and case-sensitively in `bases`, it states `checksReported: false` with zero checks, and its head equals
+   `VERIFIED_HEAD_SHA`, a full object name. It writes no waiver record. Without either answer the
+   rationale is unchanged: an unreported list is an unproven one, exactly as an unstated
    requiredness and an absent `draft` flag are. The waiver reaches **only** that clause and never
    the check criterion — a check that has appeared makes `checksReported` true and takes the
    question off the table, and a pending or red check still blocks here whatever the operator
@@ -927,8 +1095,8 @@ When the configured-reviewer route is loaded and its effective reviewer list is 
 
 #### The no-check-list waiver
 
-Condition 2 blocks on `checksReported: false`, so on a repository that runs no CI it is
-unsatisfiable **by construction** and a hand merge forfeits this tool's whole post-merge tail. The
+Condition 2 blocks on `checksReported: false`, so on a repository that runs no CI it is,
+absent the declared no-CI policy, unsatisfiable **by construction** and a hand merge forfeits this tool's whole post-merge tail. The
 question can arise only in a Phase-4 evaluation whose fresh read states `checksReported: false`,
 and one operator answer then satisfies exactly one clause of one condition.
 
@@ -984,8 +1152,8 @@ that fragment's report-and-stop path.
    instead. The merge itself is visible on the pull request anyway. Report:
    - the resolved pull request, the resolved mode with its source, and every caller limit in force;
    - the check outcome per round;
-   - **every conflict with the base this run met**: the resolved `mergeGate.conflictResolution` mode
-     with its source, the conflicted paths with their risk classification, the resolver's per-file
+   - **every conflict with the base this run met**: the trigger that fired the merge, the resolved
+     `mergeGate.conflictResolution` mode with its source, the conflicted paths with their risk classification, the resolver's per-file
      record – the side kept, the sides merged, or the generated file regenerated – every **adjacent**
      non-conflicted file with the named check that demanded it **and that check's verbatim pre-change
      failure output**, both verification verdicts with the checks each layer actually executed, and
@@ -996,6 +1164,17 @@ that fragment's report-and-stop path.
      everything went well;
    - per round, the provisioned-checkout line from the wisdom record with this run's
      worktree-record exit self-check result;
+   - a trigger-(b) merge of Phase 2 step 1 with its round, any undetermined ancestry check or
+     existence check with its reason, every head-identity mismatch with its round, the read's
+     `headSha` and the provisioned tip, a run ended on local divergence with the reused checkout,
+     and a run ended on an invalid head branch name with that name;
+   - wherever the base-merge-unavailable record exists, whichever path ended the run: its round,
+     its proof kind and evidence – the `sameRepository` statement, the `ls-remote` result, or both
+     SHAs and the classification – that the base must be merged, or the conflict resolved, where
+     the head lives, and the failing checks not delegated; name a fork only where
+     `sameRepository: false` was stated. Where the run did not end with the report-only run end,
+     state for a `different-commit` record, instead of the undelegated checks, that the failing
+     check is handed to `{{SKILL:iterate}}` without the base merge;
    - the delegated `{{SKILL:iterate}}` rounds and their results, including the summary content each
      one handed back instead of posting, which carries that round's worktree-record exit self-check
      result relayed verbatim; every item or instruction `build` refused, with its reason;
@@ -1054,6 +1233,20 @@ that fragment's report-and-stop path.
      could not pose, and a report-mode run as the question that was not posed because the completion
      mode is not `merge`. Without this entry a merged pull request with no check list anywhere reads
      exactly like one whose checks all passed;
+   - **the declared no-CI policy**, where the wisdom file holds a `no-ci-policy used:` line: one line
+     naming `mergeGate.noCiPolicy`, the matched base and the residual risk – no check was verified,
+     and a check that attached after the fresh Phase-4 read, or CI this pull request introduces,
+     looks exactly like none. Where the configuration holds `mergeGate.noCiPolicy.bases` and the
+     policy was not used, one line naming why: the base is not listed, a check was reported, a read
+     error, a failed policy read (the base fetch or the resolver call, such as `GIT_FAILED` or
+     `INVALID_INPUT`), no `baseRef`, a base blob missing, unreadable or different, a non-interactive run without
+     `mergeGate.noCiPolicy.unattended: true`, or a completion mode that is not `merge`. Where such a
+     GitHub run ended on `COMMAND_FAILED` in Phase 2 under `mergeGate.requireAllChecks: true`, name
+     `mergeGate.requireAllChecks: false` as the setting the policy needs there. A `pr-merge` that
+     failed under the policy, with the pull request unmerged on a fresh read, reads "merge not performed under the no-CI policy" with the helper's
+     code, and "refused by the forge (HTTP <status>)" only where the helper stated
+     `mutationMayHaveSucceeded: false`; otherwise name the state Phase 5's re-read showed, such as a
+     GitHub `mergeState` of `BLOCKED`, and claim no refusal. No question follows;
    - when the configured-reviewer route is loaded, finish
      `## Phase 6 configured-reviewer report items` in that fragment with unmatched-review and
      unmatched-thread items;
@@ -1103,6 +1296,10 @@ that fragment's report-and-stop path.
 - Leave no checkout mid-merge: a controlled stop aborts the in-progress merge and sets its lifecycle
   record `aborted`, an error sets it `failed`, and no run ends with an `active` record.
 - Make **one** resolution attempt per round; `mergeGate.maxRounds` bounds how often the run returns.
+- Fire Phase 2 step 1's trigger (b) at most once per run, never before the ancestry check states
+  "behind"; merge the base into no provisioned tip other than the `headSha` of the read that called
+  for the merge.
+- Fire neither trigger of Phase 2 step 1 once the base-merge-unavailable record exists.
 - Never approve a pull request and never request changes, not even to unblock a merge.
 - Evaluate the guard in Phase 1's order across all three counting surfaces, and let its
   **exclusions** read authorship only: no exclusion rule reads a body, and none reads a thread's
@@ -1138,6 +1335,9 @@ that fragment's report-and-stop path.
   SHA guard makes the second merge fail closed rather than duplicate work.
 - Ask the entry gate exactly once, at the start; absent a `no-merge` caller limit, only `ask` or an
   unset `mergeGate.completion` in a non-interactive delegation behaves as `report`.
+- Let the declared no-CI policy reach only an unreported check list: Phase 2's skip authorizes
+  nothing, and condition 2's clause is pre-answered only on each fresh Phase-4 read. It never
+  satisfies the check criterion, writes no waiver record, and never bypasses branch protection.
 - Clear a `deferred` or `rejected` finding of conditions 7 and 10 only through "The set-aside
   confirmation", never where the resolved completion mode is not `merge`; a decline, an unanswered
   question, and a non-interactive delegated run each end the run with a report.

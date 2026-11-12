@@ -22,6 +22,7 @@ import {
   BOT_ACCOUNT_ROWS,
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  NO_CI_POLICY_SCENARIOS,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
   scenarioSetup,
 } from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
@@ -156,6 +157,7 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
         CONFIGURED_REVIEWER_SCENARIO,
         NON_INTERACTIVE_DISPATCH_SCENARIO,
         BOT_LOGIN_SCENARIO,
+        ...NO_CI_POLICY_SCENARIOS,
       ].includes(scenario)
     )
       continue;
@@ -164,6 +166,39 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
       { projectSetupRows: [], iterateEcho: false },
       `${scenario}: an existing scenario no longer has the shared no-reviewer setup`,
     );
+  }
+});
+
+// Invariant: the six declared no-CI policy scenarios are the only ones that state `mergeGate.noCiPolicy.*`
+// rows or `requireAllChecks: false`, and each differs from `no-ci-policy-unattended-merges` in the one
+// fact it is about. Stated literally, so a changed row is a visible diff here rather than a silent
+// change of what five archived runs observed.
+test('the no-CI policy scenarios state exactly the rows their one differing fact needs', () => {
+  const common = [
+    ['mergeGate.requireAllChecks', 'false'],
+    ['mergeGate.noCiPolicy.bases', 'develop'],
+  ];
+  const granted = ['mergeGate.noCiPolicy.unattended', 'true'];
+  const expected = {
+    'no-ci-policy-unattended-merges': [...common, granted],
+    'no-ci-policy-flag-absent-blocks': common,
+    'no-ci-policy-reported-check-blocks': [...common, granted],
+    'no-ci-policy-status-read-failure-blocks': [...common, granted],
+    'no-ci-policy-unlisted-base-blocks': [
+      ['mergeGate.requireAllChecks', 'false'],
+      ['mergeGate.noCiPolicy.bases', 'main'],
+      granted,
+    ],
+    'no-ci-policy-merge-failure-reports': [...common, granted],
+  };
+  assert.deepEqual([...NO_CI_POLICY_SCENARIOS].sort(), Object.keys(expected).sort());
+  for (const [scenario, rows] of Object.entries(expected)) {
+    assert.deepEqual(scenarioSetup(scenario), { projectSetupRows: rows, iterateEcho: false });
+    // The rows replace or append in the setup ADR without stating a key twice.
+    const adr = projectDocuments({ scenario, rows }).setupAdr;
+    for (const [key] of rows) {
+      assert.equal(adr.split('\n').filter((line) => line.startsWith(`| ${key} `)).length, 1, key);
+    }
   }
 });
 
@@ -408,6 +443,22 @@ function steppingClock() {
   return () => (elapsed += 60_000);
 }
 
+// Invariant: a provider command that exits non-zero is stated explicitly and nowhere else. A response
+// is a failed command only when it is an object whose keys are a subset of `exit`, `stdout` and
+// `stderr` and whose `exit` is a non-zero integer, so no provider payload a read could return is
+// mistaken for one; every other response is still delivered as a status-0 stdout. The shape exists
+// for the one scenario whose subject is a forge's refusal of the merge, which exits non-zero.
+function isFailedCommand(payload) {
+  return (
+    payload !== null &&
+    typeof payload === 'object' &&
+    !Array.isArray(payload) &&
+    Number.isInteger(payload.exit) &&
+    payload.exit !== 0 &&
+    Object.keys(payload).every((key) => ['exit', 'stdout', 'stderr'].includes(key))
+  );
+}
+
 function runnerFor(entry) {
   const responses = Array.isArray(entry.providers) ? entry.providers : [entry.provider];
   const repeat = !Array.isArray(entry.providers);
@@ -415,6 +466,9 @@ function runnerFor(entry) {
   const runner = async () => {
     const payload = repeat ? responses[0] : responses[index];
     index += 1;
+    if (isFailedCommand(payload)) {
+      return { status: payload.exit, stdout: payload.stdout ?? '', stderr: payload.stderr ?? '' };
+    }
     return {
       status: 0,
       stdout: typeof payload === 'string' ? payload : JSON.stringify(payload),
@@ -541,6 +595,27 @@ function runStub(operation, argv = [], env = {}) {
   return { ...result, envelope: JSON.parse(result.stdout) };
 }
 
+// Invariant: an `ok: false` envelope in a fixture is a scenario's stated subject, never an accident.
+// The corpus holds exactly two, each naming the operation, the mode and the code it is proven to
+// carry; any other failing envelope, and any listed one that goes missing, fails
+// `every stated failure envelope is allowed and accounted for` below. A listed failure is the only
+// place a stub exit of 1 and an undrained provider response are accepted.
+const STATED_FAILURES = Object.freeze({
+  'no-ci-policy-merge-failure-reports.json': [
+    { operation: 'pr-merge', apply: true, element: null, code: 'COMMAND_FAILED' },
+  ],
+  'no-ci-policy-status-read-failure-blocks.json': [
+    { operation: 'pr-status-read', apply: false, element: 2, code: 'INVALID_PAYLOAD' },
+  ],
+});
+
+function statedFailure(file, operation, apply, element) {
+  return (STATED_FAILURES[file] ?? []).find(
+    (failure) =>
+      failure.operation === operation && failure.apply === apply && failure.element === element,
+  );
+}
+
 for (const corpus of CORPORA)
   test(`${corpus.suite}: the suite ships at least one fixture`, () => {
     assert.ok(fixtureFiles(corpus.fixtures).length > 0, `no fixtures found in ${corpus.fixtures}`);
@@ -583,7 +658,10 @@ for (const corpus of CORPORA)
           );
           // Only the applied call issues every command a mutation has; a dry run returns its preview
           // before the first one, so its unconsumed responses say nothing.
-          if (apply) runner.assertDrained(`${file}: "${operation}"${label}`);
+          // A stated failure stops at its first failing command, so the later responses it carries
+          // are legitimately unconsumed; every other envelope still has to drain its responses.
+          if (apply && envelope.ok !== false)
+            runner.assertDrained(`${file}: "${operation}"${label}`);
         }
       }
     }
@@ -709,7 +787,11 @@ for (const corpus of CORPORA)
               EVAL_TRACKER_FIXTURE: fixturePath,
               EVAL_TRACKER_LOG: join(logDir, 'tracker-calls.jsonl'),
             });
-            assert.equal(status, 0, `${file}: the stub exited non-zero for "${operation}"`);
+            assert.equal(
+              status,
+              stated.ok === false ? 1 : 0,
+              `${file}: the stub exited ${status} for "${operation}"`,
+            );
             assert.deepEqual(
               envelope,
               stated,
@@ -733,6 +815,45 @@ for (const corpus of CORPORA)
       }
     }
   });
+
+test('every stated failure envelope is allowed and accounted for', () => {
+  const seen = new Set();
+  for (const file of fixtureFiles()) {
+    const fixture = loadFixture(file);
+    for (const [operation, entry] of Object.entries(fixture.operations)) {
+      const elements = isSequenced(entry) ? entry.sequence : [entry];
+      elements.forEach((element, index) => {
+        // A single `envelope` answers both modes and is checked once, as a dry run.
+        const stated =
+          element.envelope === undefined
+            ? [
+                [false, element.dryRunEnvelope],
+                [true, element.applyEnvelope],
+              ]
+            : [[false, element.envelope]];
+        for (const [mode, envelope] of stated) {
+          if (envelope?.ok !== false) continue;
+          const failure = statedFailure(
+            file,
+            operation,
+            mode,
+            isSequenced(entry) ? index + 1 : null,
+          );
+          assert.ok(
+            failure,
+            `${file}: "${operation}" states a failing envelope that STATED_FAILURES does not allow`,
+          );
+          assert.equal(envelope.error.code, failure.code, `${file}: "${operation}" failure code`);
+          seen.add(`${file}/${operation}`);
+        }
+      });
+    }
+  }
+  const listed = Object.entries(STATED_FAILURES).flatMap(([file, list]) =>
+    list.map((failure) => `${file}/${failure.operation}`),
+  );
+  assert.deepEqual([...seen].sort(), listed.sort(), 'a listed failure is no longer stated');
+});
 
 // The sequenced half of the test above. A sequenced entry is walked rather than called once: the
 // n-th call must receive the n-th element, so every element is asked for in order against one log,

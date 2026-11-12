@@ -725,6 +725,17 @@ correlated `complete` events are not additional calls.
 
 ## What this deliberately does not cover
 
+- **The six `no-ci-policy-*` scenarios carry two recorded deviations.** First,
+  `no-ci-policy-reported-check-blocks` is non-discriminating: a failing required check blocks with or
+  without the declared policy, so it cannot tell a gate that honours the policy's limits from one that
+  ignores the policy. Second, their `pr-checks-wait` entries restrict the wait with `requiredOnly: true`
+  and answer it with empty output, so the envelope reports `checksReported: false` with no checks
+  instead of `requiredChecksDefined: false`. The real normalizer sets that flag only for a non-zero
+  `gh` exit with a specific stderr, and a fixture's `provider` is delivered as a status-0 response.
+  (A provider response stated as `{"exit": n, "stderr": …}`, as the failing-merge scenario does,
+  now delivers a non-zero exit in the fidelity replay; adopting it for the wait is the remaining step.)
+  The gate takes its check criterion from `pr-status-read`, so the flag does not change what any of
+  the six asserts. Recording rounds for these scenarios remains evidence debt.
 - **Nine scenarios exist: one pair, one observer, two unreported-check-list refusals, one
   configured-reviewer refusal, two delegation scenarios, and one bot-account exclusion.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
   result from them proves that one refusal path holds and that the harness can reach a merge, and
@@ -949,6 +960,13 @@ held lock.
    `repeatLast` applies; see "How the stub works". A sequence needs a validity rule in its scenario's
    assertions for a run that never reaches the deciding position in time, as
    `unreported-checks-at-phase-four` has.
+
+   A provider response that stands for a **command that exits non-zero** is stated as
+   `{"exit": <non-zero integer>, "stdout": …, "stderr": …}` (any of the last two optional): the
+   fidelity replay delivers it as that exit, and the normalizer derives its failure envelope from it.
+   Only an object whose keys are a subset of those three is read this way. The one fixture that uses
+   it is `no-ci-policy-merge-failure-reports`, and `STATED_FAILURES` in
+   `test/eval-fixture-fidelity.test.mjs` names every failing envelope the corpus may hold.
 
    One entry costs real time to derive and to re-verify. `issue-state-wait` is a **blocking**
    operation: where the first read finds the issue open it sleeps out the helper's fixed 30-second

@@ -51,9 +51,16 @@ correction, incorporation, or current-scope correction pass is followed by a fre
 the next consumer. Input: `cwd`, `executionRoot`, `dir`, and `baselineTree` as retained, plus
 `scope` when "Path scope" below applies. The helper atomically replaces `diff.patch` and
 `paths.json` in `dir` and returns `diffPath`, `pathsPath`, `currentTree`, and `entries`
-(`status`, `path`, and `oldPath` for a rename).
+(`status`, `path`, and `oldPath` for a rename). Every render records its `currentTree` in `dir`.
 
-The latest render's `entries` are the run's **path list**. A path unchanged since capture never
+**Delta render.** Where the owning tool asks for the change since an earlier render, pass
+`sinceTree` with that render's `currentTree`, directly after a cumulative render with no write in
+between. The helper accepts only a tree an earlier render of the same `dir` recorded, otherwise
+`INVALID_INPUT`. It applies `scope` exactly as the cumulative render does, writes `delta.patch` and
+`delta-paths.json` in `dir`, and returns `deltaDiffPath`, `deltaPathsPath`, `currentTree`, and
+`deltaEntries`; it never touches `diff.patch` or `paths.json`. An equal tree yields an empty delta.
+
+The latest cumulative render's `entries` are the run's **path list**. A path unchanged since capture never
 appears, even when it was already edited or untracked before the run; ignored files, including
 everything below `.effective-flow/`, never appear. An empty list means no file changed, not an
 error. A failed render, for example a missing snapshot object or an `executionRoot` or
@@ -87,7 +94,7 @@ to documentation sync or the formatter as a file to edit.
 
 After success, call `discard` with `{ "cwd": "<RUNTIME_STATE_ROOT>", "dir": "<dir>" }` at the
 point the owning tool names. It removes the run's `diff-baseline/` directory with its private
-object store, and its `runs/<RUN_ID>/` parent only when that is left empty; snapshot content a Git
+object store, delta files and recorded trees, and its `runs/<RUN_ID>/` parent only when that is left empty; snapshot content a Git
 LFS clean filter copied into the repository's shared LFS store stays there, an accepted side
 effect. An aborted or escalated run keeps the directory; `{{SKILL:cleanup}}` lists it as a stale
 diff baseline and deletes it only after confirmation. The diff can carry working-tree secrets: never quote it into a tracker item,

@@ -18,10 +18,11 @@ import {
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test } from 'node:test';
+import { describe, test } from 'node:test';
 
 import {
   bindSelectionManifest,
+  committedRange,
   describeWorkingEndpoint,
   fastForwardUpstream,
   hiddenWorktreeChanges,
@@ -1890,4 +1891,629 @@ test('the mechanics base-branch fetch matches the upstream-status fetch argv and
   assert.equal(mechanics.timeoutMs, UPSTREAM_FETCH_TIMEOUT_MS);
   assert.equal(mechanics.processGroup, true);
   assert.equal(mechanics.timeout, undefined);
+});
+
+describe('committed-range', () => {
+  const range = (root, fields = {}) =>
+    committedRange(
+      { root, baseRef: 'origin/main', baseBranch: 'main', knownOids: [], ...fields },
+      { runner: upstreamRunner },
+    );
+  const refsAndConfig = (root) => ({
+    refs: ugit(root, 'for-each-ref', '--format=%(refname) %(objectname) %(symref)'),
+    config: readFileSync(join(root, '.git', 'config')),
+  });
+
+  test('lists the session range oldest first and marks unknown commits and merges foreign', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const baseOid = ugit(local, 'rev-parse', 'origin/main');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const first = localCommit(local, 'one.txt', 'one\n');
+    ugit(local, 'checkout', '--quiet', '-b', 'side', baseOid);
+    const side = localCommit(local, 'side.txt', 'side\n');
+    ugit(local, 'checkout', '--quiet', 'feature');
+    ugit(local, 'merge', '--quiet', '--no-ff', '-m', 'merge side\n\nbody line', 'side');
+    const merge = ugit(local, 'rev-parse', 'HEAD');
+    ugit(local, 'mv', 'one.txt', 'renamed.txt');
+    ugit(local, 'commit', '--quiet', '-m', 'rename one');
+    const rename = ugit(local, 'rev-parse', 'HEAD');
+    write(local, 'untracked.txt', 'never read\n');
+    const before = { ...checkoutSnapshot(local, ['untracked.txt']), ...refsAndConfig(local) };
+
+    const data = await range(local, { knownOids: [first, merge, rename, rename] });
+
+    assert.deepEqual(Object.keys(data), [
+      'branch',
+      'headOid',
+      'baseRef',
+      'baseOid',
+      'commits',
+      'paths',
+      'foreignOids',
+    ]);
+    assert.equal(data.branch, 'feature');
+    assert.equal(data.headOid, rename);
+    assert.equal(data.baseRef, 'refs/remotes/origin/main');
+    assert.equal(data.baseOid, baseOid);
+    const order = data.commits.map((commit) => commit.oid);
+    assert.deepEqual(
+      order,
+      ugit(local, 'rev-list', '--reverse', '--topo-order', `${baseOid}..HEAD`).split('\n'),
+    );
+    assert.deepEqual([...order].sort(), [first, side, merge, rename].sort());
+    assert.ok(order.indexOf(first) < order.indexOf(merge));
+    assert.ok(order.indexOf(side) < order.indexOf(merge));
+    assert.equal(order.at(-1), rename);
+    const byOid = Object.fromEntries(data.commits.map((commit) => [commit.oid, commit]));
+    assert.deepEqual(byOid[first], {
+      oid: first,
+      parents: [baseOid],
+      subject: 'local one.txt',
+      paths: ['one.txt'],
+    });
+    assert.deepEqual(byOid[merge].parents, [first, side]);
+    assert.equal(byOid[merge].subject, 'merge side');
+    assert.deepEqual(byOid[merge].paths, ['side.txt']);
+    assert.deepEqual(byOid[rename].paths, ['one.txt', 'renamed.txt']);
+    assert.deepEqual(data.paths, ['renamed.txt', 'side.txt']);
+    assert.deepEqual(
+      data.foreignOids,
+      data.commits.map((commit) => commit.oid).filter((oid) => oid === side || oid === merge),
+    );
+    assert.deepEqual(
+      { ...checkoutSnapshot(local, ['untracked.txt']), ...refsAndConfig(local) },
+      before,
+    );
+  });
+
+  test('an empty range succeeds and origin/HEAD resolves to the branch it points to', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const data = await range(local, { baseRef: 'origin/HEAD', baseBranch: 'trunk' });
+    assert.equal(data.baseRef, 'refs/remotes/origin/main');
+    assert.deepEqual([data.commits, data.paths, data.foreignOids], [[], [], []]);
+    const full = await range(local, { baseRef: 'refs/remotes/origin/main' });
+    assert.equal(full.baseRef, 'refs/remotes/origin/main');
+  });
+
+  test('a root commit without a merge base lists every path of the head tree', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '--orphan', 'island');
+    ugit(local, 'rm', '-r', '--quiet', '--cached', '.');
+    write(local, 'island.txt', 'alone\n');
+    ugit(local, 'add', 'island.txt');
+    ugit(local, 'commit', '--quiet', '-m', 'island');
+    const data = await range(local);
+    assert.equal(data.commits.length, 1);
+    assert.deepEqual(data.commits[0].parents, []);
+    assert.deepEqual(data.commits[0].paths, ['island.txt']);
+    assert.deepEqual(data.paths, ['island.txt']);
+    assert.deepEqual(data.foreignOids, [data.commits[0].oid]);
+  });
+
+  // The base-ref grammar: a missing, shadowed, option-like, revision, glob, or padded base ref is
+  // BASE_UNRESOLVED. Another remote's tracking ref has its own criterion test below.
+  test('a base ref that is no single origin tracking ref is BASE_UNRESOLVED and never shadowed', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    // A local branch named like the tracking ref never stands in for a missing one.
+    ugit(local, 'branch', 'origin/release');
+    for (const baseRef of [
+      'origin/release',
+      'refs/heads/origin/release',
+      'main',
+      '-c',
+      'origin/main~1',
+      'origin/main^{commit}',
+      'origin/ma*',
+      'origin/main ',
+    ]) {
+      const error = await rejection(range(local, { baseRef }));
+      assert.equal(error.code, 'BASE_UNRESOLVED', baseRef);
+      assert.equal(error.exitCode, 8);
+    }
+  });
+
+  // `%(symref)` names the end of a symbolic-ref chain, so the chain's final ref decides.
+  test('an origin/HEAD pointing outside origin or dangling is BASE_UNRESOLVED', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    localCommit(local, 'one.txt', 'one\n');
+    ugit(local, 'symbolic-ref', 'refs/remotes/origin/alias', 'refs/remotes/origin/HEAD');
+    // A chain that ends at an origin tracking ref resolves to that final ref.
+    assert.equal(
+      (await range(local, { baseRef: 'origin/alias' })).baseRef,
+      'refs/remotes/origin/main',
+    );
+
+    ugit(local, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/heads/main');
+    for (const baseRef of ['origin/HEAD', 'origin/alias']) {
+      const error = await rejection(range(local, { baseRef }));
+      assert.equal(error.code, 'BASE_UNRESOLVED', baseRef);
+      assert.equal(error.details.reason, 'not-origin', baseRef);
+    }
+
+    ugit(local, 'symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/gone');
+    for (const baseRef of ['origin/HEAD', 'refs/remotes/origin/HEAD', 'origin/alias']) {
+      const error = await rejection(range(local, { baseRef }));
+      assert.equal(error.code, 'BASE_UNRESOLVED', baseRef);
+    }
+  });
+
+  test('rejects a malformed payload, including abbreviated or uppercase known object ids', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const head = ugit(local, 'rev-parse', 'HEAD');
+    for (const fields of [
+      { knownOids: [head.slice(0, 12)] },
+      { knownOids: [head.toUpperCase()] },
+      { knownOids: head },
+      { knownOids: [null] },
+      { baseRef: '' },
+      { baseBranch: 7 },
+      { extra: true },
+    ]) {
+      const error = await rejection(range(local, fields));
+      assert.equal(error.code, 'INVALID_PAYLOAD', JSON.stringify(fields));
+    }
+    const missingKey = await rejection(
+      committedRange(
+        { root: local, baseRef: 'origin/main', baseBranch: 'main' },
+        { runner: upstreamRunner },
+      ),
+    );
+    assert.equal(missingKey.code, 'INVALID_PAYLOAD');
+  });
+
+  // Helper criterion: exactly one commit yields a range of one with its subject and paths.
+  test('exactly one commit yields a one-commit range with its subject and paths', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const baseOid = ugit(local, 'rev-parse', 'origin/main');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const only = localCommit(local, 'dir/only.txt', 'only\n');
+    const data = await range(local, { knownOids: [only] });
+    assert.deepEqual(data.commits, [
+      { oid: only, parents: [baseOid], subject: 'local dir/only.txt', paths: ['dir/only.txt'] },
+    ]);
+    assert.deepEqual(data.paths, ['dir/only.txt']);
+    assert.deepEqual(data.foreignOids, []);
+  });
+
+  // Helper criterion: several linear commits come back oldest first with per-commit and range paths.
+  test('several commits are listed oldest first with subjects and per-commit and range paths', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const a = localCommit(local, 'a.txt', 'a\n');
+    const b = localCommit(local, 'b.txt', 'b\n');
+    write(local, 'a.txt', 'a2\n');
+    write(local, 'c.txt', 'c\n');
+    ugit(local, 'add', 'a.txt', 'c.txt');
+    ugit(local, 'commit', '--quiet', '-m', 'touch a and add c');
+    const c = ugit(local, 'rev-parse', 'HEAD');
+    const data = await range(local, { knownOids: [a, b, c] });
+    assert.deepEqual(
+      data.commits.map(({ oid, subject, paths }) => ({ oid, subject, paths })),
+      [
+        { oid: a, subject: 'local a.txt', paths: ['a.txt'] },
+        { oid: b, subject: 'local b.txt', paths: ['b.txt'] },
+        { oid: c, subject: 'touch a and add c', paths: ['a.txt', 'c.txt'] },
+      ],
+    );
+    assert.deepEqual(data.commits[1].parents, [a]);
+    assert.deepEqual(data.paths, ['a.txt', 'b.txt', 'c.txt']);
+    assert.deepEqual(data.foreignOids, []);
+  });
+
+  // Helper criterion: a merge commit is foreign even when its object id is a known session OID.
+  test('a merge commit is foreign even when its object id is known', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const baseOid = ugit(local, 'rev-parse', 'origin/main');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const first = localCommit(local, 'one.txt', 'one\n');
+    ugit(local, 'checkout', '--quiet', '-b', 'side', baseOid);
+    const side = localCommit(local, 'side.txt', 'side\n');
+    ugit(local, 'checkout', '--quiet', 'feature');
+    ugit(local, 'merge', '--quiet', '--no-ff', '-m', 'merge side', 'side');
+    const merge = ugit(local, 'rev-parse', 'HEAD');
+    const data = await range(local, { knownOids: [first, side, merge] });
+    assert.deepEqual(data.foreignOids, [merge]);
+  });
+
+  // Helper criterion: a commit absent from knownOids is foreign; known ones are not.
+  test('a range containing a foreign commit lists exactly that commit as foreign', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const mine = localCommit(local, 'mine.txt', 'mine\n');
+    const theirs = localCommit(local, 'theirs.txt', 'theirs\n');
+    const later = localCommit(local, 'later.txt', 'later\n');
+    const data = await range(local, { knownOids: [mine, later] });
+    assert.equal(data.commits.length, 3);
+    assert.deepEqual(data.foreignOids, [theirs]);
+  });
+
+  // `git push` sends the real objects, so a replace graft must not hide a commit from the range.
+  test('a replace graft cannot hide a foreign commit that a push publishes', async (t) => {
+    const { local, remote } = createUpstreamFixture(t);
+    const baseOid = ugit(local, 'rev-parse', 'origin/main');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const foreign = localCommit(local, 'foreign.txt', 'foreign\n');
+    const session = localCommit(local, 'session.txt', 'session\n');
+    ugit(local, 'replace', '--graft', session, baseOid);
+    assert.equal(ugit(local, 'rev-list', `${baseOid}..HEAD`), session);
+
+    const data = await range(local, { knownOids: [session] });
+    assert.deepEqual(
+      data.commits.map(({ oid, parents, paths }) => ({ oid, parents, paths })),
+      [
+        { oid: foreign, parents: [baseOid], paths: ['foreign.txt'] },
+        { oid: session, parents: [foreign], paths: ['session.txt'] },
+      ],
+    );
+    assert.deepEqual(data.paths, ['foreign.txt', 'session.txt']);
+    assert.deepEqual(data.foreignOids, [foreign]);
+
+    ugit(local, 'push', '--quiet', 'origin', 'feature');
+    assert.equal(ugit(remote, 'cat-file', '-t', foreign), 'commit');
+  });
+
+  // For these UTF-8 and printable Latin-1 messages, the subject read from the raw commit object
+  // equals what `git log --format=%s` prints; exotic encodings are not held to that equality.
+  test('subjects equal git %s for wrapped, Latin-1, blank-led, and signed messages', async (t) => {
+    const { container, local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const commitFile = (name, bytes, ...config) => {
+      const file = join(container, `${name}.msg`);
+      writeFileSync(file, bytes);
+      write(local, `${name}.txt`, `${name}\n`);
+      ugit(local, 'add', `${name}.txt`);
+      ugit(local, ...config, 'commit', '--quiet', '--cleanup=verbatim', '-F', file);
+      return ugit(local, 'rev-parse', 'HEAD');
+    };
+    const wrapped = commitFile('wrapped', 'first line  \nsecond line\r\n\nbody\n');
+    const latin1 = commitFile(
+      'latin1',
+      Buffer.from('café naïve\n\nbody\n', 'latin1'),
+      '-c',
+      'i18n.commitEncoding=ISO-8859-1',
+    );
+    assert.match(ugit(local, 'cat-file', 'commit', latin1), /^encoding ISO-8859-1$/m);
+    const blankLed = commitFile('blank', '\n \n\t\nreal subject\n\nbody\n');
+    // A multi-line `gpgsig` header with a blank continuation line ` ` before the message.
+    const raw = [
+      `tree ${ugit(local, 'rev-parse', 'HEAD^{tree}')}`,
+      `parent ${blankLed}`,
+      'author A U Thor <author@example.invalid> 1700000000 +0000',
+      'committer A U Thor <author@example.invalid> 1700000000 +0000',
+      'gpgsig -----BEGIN PGP SIGNATURE-----',
+      ' ',
+      ' c2lnbmF0dXJl',
+      ' -----END PGP SIGNATURE-----',
+      '',
+      'signed subject',
+      '',
+      'body',
+      '',
+    ].join('\n');
+    const hashed = spawnSync('git', ['-C', local, 'hash-object', '-t', 'commit', '-w', '--stdin'], {
+      env: UPSTREAM_GIT_ENV,
+      input: raw,
+      encoding: 'utf8',
+    });
+    assert.equal(hashed.status, 0, hashed.stderr);
+    const signed = hashed.stdout.trim();
+    ugit(local, 'update-ref', 'refs/heads/feature', signed);
+
+    const data = await range(local, { knownOids: [wrapped, latin1, blankLed, signed] });
+    const subjects = data.commits.map(({ oid, subject }) => [oid, subject]);
+    assert.deepEqual(subjects, [
+      [wrapped, 'first line second line'],
+      [latin1, 'café naïve'],
+      [blankLed, 'real subject'],
+      [signed, 'signed subject'],
+    ]);
+    for (const [oid, subject] of subjects) {
+      assert.equal(subject, ugit(local, 'log', '-1', '--format=%s', oid), oid);
+    }
+  });
+
+  // Per-commit paths come from one `diff-tree --stdin` parse. An empty commit and an `-s ours`
+  // merge change nothing against their first parent, so neither prints a commit id; a path holding
+  // a newline or starting with `:` must stay one path and never pass for a raw metadata record.
+  test('per-commit paths equal git diff-tree for empty, ours-merge, newline, and colon cases', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const baseOid = ugit(local, 'rev-parse', 'origin/main');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    write(local, 'a\nb.txt', 'newline\n');
+    write(local, ':colon', 'colon\n');
+    ugit(local, '--literal-pathspecs', 'add', '--', 'a\nb.txt', ':colon');
+    ugit(local, 'commit', '--quiet', '-m', 'odd paths');
+    const odd = ugit(local, 'rev-parse', 'HEAD');
+    ugit(local, 'commit', '--quiet', '--allow-empty', '-m', 'empty');
+    const empty = ugit(local, 'rev-parse', 'HEAD');
+    ugit(local, 'checkout', '--quiet', '-b', 'side', baseOid);
+    const side = localCommit(local, 'side.txt', 'side\n');
+    ugit(local, 'checkout', '--quiet', 'feature');
+    ugit(local, 'merge', '--quiet', '--no-ff', '-s', 'ours', '-m', 'ours merge', 'side');
+    const ours = ugit(local, 'rev-parse', 'HEAD');
+
+    const data = await range(local, { knownOids: [odd, empty, side, ours] });
+    const byOid = Object.fromEntries(data.commits.map((commit) => [commit.oid, commit.paths]));
+    assert.deepEqual(byOid, {
+      [odd]: [':colon', 'a\nb.txt'],
+      [empty]: [],
+      [side]: ['side.txt'],
+      [ours]: [],
+    });
+    for (const commit of data.commits) {
+      const from = commit.parents.length === 0 ? '--root' : commit.parents[0];
+      const listed = spawnSync(
+        'git',
+        [
+          '-C',
+          local,
+          'diff-tree',
+          '-r',
+          '-z',
+          '--no-renames',
+          '--name-only',
+          '--no-commit-id',
+        ].concat([from, commit.oid]),
+        { env: UPSTREAM_GIT_ENV, encoding: 'utf8' },
+      );
+      assert.equal(listed.status, 0, listed.stderr);
+      const expected = listed.stdout.split('\0').filter((path) => path !== '');
+      assert.deepEqual(commit.paths, expected.sort(), commit.oid);
+    }
+  });
+
+  // The helper only reads: every Git call is a read-only subcommand, none brings an environment
+  // (as the upstream fetch does), and every history read ignores replace objects.
+  test('every Git call is a read-only subcommand and no call fetches', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const baseOid = ugit(local, 'rev-parse', 'origin/main');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    localCommit(local, 'one.txt', 'one\n');
+    ugit(local, 'checkout', '--quiet', '-b', 'side', baseOid);
+    localCommit(local, 'side.txt', 'side\n');
+    ugit(local, 'checkout', '--quiet', 'feature');
+    ugit(local, 'merge', '--quiet', '--no-ff', '-m', 'merge side', 'side');
+    const calls = [];
+    const capturing = async (call) => {
+      calls.push(call);
+      return await upstreamRunner(call);
+    };
+    const read = (fields = {}) =>
+      committedRange(
+        { root: local, baseRef: 'origin/main', baseBranch: 'main', knownOids: [], ...fields },
+        { runner: capturing },
+      );
+
+    assert.equal((await read()).commits.length, 3);
+    assert.equal((await rejection(read({ baseRef: 'origin/nope' }))).code, 'BASE_UNRESOLVED');
+    assert.equal((await read({ baseRef: 'origin/HEAD' })).baseRef, 'refs/remotes/origin/main');
+    ugit(local, 'checkout', '--quiet', '--orphan', 'island');
+    ugit(local, 'rm', '-r', '--quiet', '--cached', '.');
+    ugit(local, 'commit', '--quiet', '--allow-empty', '-m', 'island');
+    assert.equal((await read()).commits.length, 1);
+
+    const readOnly = new Set([
+      'rev-parse',
+      'symbolic-ref',
+      'check-ref-format',
+      'for-each-ref',
+      'rev-list',
+      'cat-file',
+      'diff-tree',
+      'merge-base',
+      'ls-tree',
+    ]);
+    const history = new Set(['rev-list', 'cat-file', 'diff-tree', 'merge-base', 'ls-tree']);
+    // The base peel `rev-parse --verify -q <ref>^{commit}` is a history read as well; the other
+    // `rev-parse` calls only read the repository layout and HEAD.
+    const isPeel = (subcommand, args) =>
+      subcommand === 'rev-parse' && args.at(-1).endsWith('^{commit}');
+    const seen = new Set();
+    let peels = 0;
+    for (const call of calls) {
+      assert.equal(call.executable, 'git');
+      assert.equal(call.env, undefined, call.args.join(' '));
+      assert.deepEqual(call.args.slice(0, 2), ['-C', local]);
+      const globals = [];
+      let index = 2;
+      while (call.args[index].startsWith('-')) globals.push(call.args[index++]);
+      const subcommand = call.args[index];
+      assert.ok(readOnly.has(subcommand), call.args.join(' '));
+      if (history.has(subcommand) || isPeel(subcommand, call.args)) {
+        assert.deepEqual(globals, ['--no-replace-objects'], call.args.join(' '));
+      }
+      if (isPeel(subcommand, call.args)) peels += 1;
+      seen.add(subcommand);
+    }
+    assert.deepEqual([...seen].sort(), [...readOnly].sort());
+    assert.ok(peels > 0, 'no base peel was captured');
+  });
+
+  // Helper criterion: a branch without upstream config still yields its range against origin/<base>.
+  // The range never depends on upstream configuration: setting one later changes nothing.
+  test('a no-upstream branch still yields its range against the origin base', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const one = localCommit(local, 'one.txt', 'one\n');
+    assert.equal((await status(local, false)).state, 'no-upstream');
+    const data = await range(local, { knownOids: [one] });
+    assert.equal(data.baseRef, 'refs/remotes/origin/main');
+    assert.deepEqual(
+      data.commits.map((commit) => commit.oid),
+      [one],
+    );
+    ugit(local, 'branch', '--quiet', '--set-upstream-to', 'origin/main');
+    assert.equal((await status(local, false)).state, 'ahead');
+    assert.deepEqual(await range(local, { knownOids: [one] }), data);
+  });
+
+  // Helper criterion: only origin tracking refs are valid bases; another remote never stands in.
+  test('a non-origin base ref is BASE_UNRESOLVED even when it exists', async (t) => {
+    const { local, remote } = createUpstreamFixture(t);
+    ugit(local, 'remote', 'add', 'upstream', remote);
+    ugit(local, 'fetch', '--quiet', 'upstream');
+    assert.ok(ugit(local, 'rev-parse', 'refs/remotes/upstream/main'));
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    localCommit(local, 'one.txt', 'one\n');
+    for (const baseRef of ['upstream/main', 'refs/remotes/upstream/main']) {
+      const error = await rejection(range(local, { baseRef }));
+      assert.equal(error.code, 'BASE_UNRESOLVED', baseRef);
+    }
+  });
+
+  // Helper criterion: each fail-closed error code surfaces through its own trigger.
+  test('each error code is reported for its own trigger', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const failure = async (fields) => {
+      const error = await rejection(range(local, fields));
+      return [error.code, error.exitCode];
+    };
+    // The current branch is the base ref's branch, then the caller's base branch.
+    assert.deepEqual(await failure({}), ['HEAD_IS_BASE', 8]);
+    ugit(local, 'checkout', '--quiet', '-b', 'trunk');
+    assert.deepEqual(await failure({ baseBranch: 'trunk' }), ['HEAD_IS_BASE', 8]);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    assert.deepEqual(await failure({ baseRef: 'origin/nope' }), ['BASE_UNRESOLVED', 8]);
+    assert.deepEqual(await failure({ knownOids: ['abc'] }), ['INVALID_PAYLOAD', 2]);
+    ugit(local, 'checkout', '--quiet', '--detach');
+    assert.deepEqual(await failure({}), ['DETACHED_HEAD', 8]);
+  });
+
+  // Scenario: clean checkout, one session commit ahead of its pushed origin/<branch>.
+  test('scenario: clean, one session commit ahead', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    ugit(local, 'push', '--quiet', '-u', 'origin', 'feature');
+    const session = localCommit(local, 'session.txt', 'session\n');
+    const state = await status(local, false);
+    assert.equal(state.state, 'ahead');
+    assert.equal(state.upstream, 'origin/feature');
+    const data = await range(local, { knownOids: [session] });
+    assert.deepEqual(
+      data.commits.map((commit) => commit.oid),
+      [session],
+    );
+    assert.deepEqual(data.foreignOids, []);
+  });
+
+  // Scenario: clean session branch that never got an upstream.
+  test('scenario: clean no-upstream session branch', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'session');
+    const a = localCommit(local, 'a.txt', 'a\n');
+    const b = localCommit(local, 'b.txt', 'b\n');
+    assert.equal((await status(local, false)).state, 'no-upstream');
+    const data = await range(local, { knownOids: [a, b] });
+    assert.deepEqual(
+      data.commits.map((commit) => commit.oid),
+      [a, b],
+    );
+    assert.deepEqual(data.foreignOids, []);
+  });
+
+  // Scenario: branch already pushed (up-to-date) still has a non-empty range against origin/main.
+  test('scenario: clean up-to-date after an earlier push', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const pushed = localCommit(local, 'pushed.txt', 'pushed\n');
+    ugit(local, 'push', '--quiet', '-u', 'origin', 'feature');
+    const state = await status(local, false);
+    assert.equal(state.state, 'up-to-date');
+    assert.equal(state.upstream, 'origin/feature');
+    const data = await range(local, { knownOids: [pushed] });
+    assert.deepEqual(
+      data.commits.map((commit) => commit.oid),
+      [pushed],
+    );
+    assert.deepEqual(data.foreignOids, []);
+  });
+
+  // Scenario: agent worktree branch tracks origin/main; the base moved, so upstream-status says
+  // diverged while the range against origin/main still lists only the session commits.
+  test('scenario: agent worktree tracking origin/main diverged after the base moved', async (t) => {
+    const { local, seed } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'agent', '--track', 'origin/main');
+    const session = localCommit(local, 'session.txt', 'session\n');
+    publish(seed, 'base moved', () => write(seed, 'moved.txt', 'moved\n'));
+    ugit(local, 'fetch', '--quiet', 'origin');
+    const state = await status(local, false);
+    assert.equal(state.state, 'diverged');
+    assert.equal(state.upstream, 'origin/main');
+    const data = await range(local, { knownOids: [session] });
+    assert.deepEqual(
+      data.commits.map((commit) => commit.oid),
+      [session],
+    );
+    assert.deepEqual(data.paths, ['session.txt']);
+    assert.deepEqual(data.foreignOids, []);
+  });
+
+  // Scenario: session branch forked from a local base with unpushed commits; those base commits
+  // are part of the range and foreign.
+  test('scenario: branch forked from a local base with unpushed commits', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const unpushed = localCommit(local, 'unpushed.txt', 'unpushed\n');
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const session = localCommit(local, 'session.txt', 'session\n');
+    const data = await range(local, { knownOids: [session] });
+    assert.deepEqual(
+      data.commits.map((commit) => commit.oid),
+      [unpushed, session],
+    );
+    assert.deepEqual(data.foreignOids, [unpushed]);
+  });
+
+  // Scenario: checkout on the base branch with local commits is refused, not delivered.
+  test('scenario: checkout on the base branch with local commits is HEAD_IS_BASE', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const commit = localCommit(local, 'local.txt', 'local\n');
+    const error = await rejection(range(local, { knownOids: [commit] }));
+    assert.equal(error.code, 'HEAD_IS_BASE');
+  });
+
+  // Scenario: the remote branch was deleted and pruned; upstream-status reports upstream-gone.
+  test('scenario: upstream-gone after the remote branch was deleted and pruned', async (t) => {
+    const { local, seed } = createUpstreamFixture(t);
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const session = localCommit(local, 'session.txt', 'session\n');
+    ugit(local, 'push', '--quiet', '-u', 'origin', 'feature');
+    ugit(seed, 'push', '--quiet', 'origin', '--delete', 'feature');
+    ugit(local, 'fetch', '--quiet', '--prune', 'origin');
+    const state = await status(local, false);
+    assert.equal(state.state, 'upstream-gone');
+    const data = await range(local, { knownOids: [session] });
+    assert.equal(data.commits.length, 1);
+  });
+
+  test('the CLI names the operation and reports failures with exit status 8', async (t) => {
+    const { local } = createUpstreamFixture(t);
+    const script = fileURLToPath(new URL('../src/scripts/delivery-selection.mjs', import.meta.url));
+    const cli = (input) =>
+      spawnSync(process.execPath, [script, 'committed-range'], {
+        input: JSON.stringify(input),
+        env: UPSTREAM_GIT_ENV,
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'pipe'],
+      });
+    const payload = { root: local, baseRef: 'origin/main', baseBranch: 'main', knownOids: [] };
+
+    const onBase = cli(payload);
+    assert.equal(onBase.status, 8);
+    assert.equal(JSON.parse(onBase.stdout).error.code, 'HEAD_IS_BASE');
+
+    ugit(local, 'checkout', '--quiet', '-b', 'feature');
+    const commit = localCommit(local, 'one.txt', 'one\n');
+    const ok = cli({ ...payload, knownOids: [commit] });
+    assert.equal(ok.status, 0, ok.stderr);
+    const envelope = JSON.parse(ok.stdout);
+    assert.equal(envelope.ok, true);
+    assert.equal(envelope.operation, 'committed-range');
+    assert.equal(envelope.dryRun, false);
+    assert.deepEqual(envelope.data.foreignOids, []);
+    assert.deepEqual(envelope.data.paths, ['one.txt']);
+  });
 });

@@ -570,12 +570,27 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   `delivery.baseBranch`, so on a feature branch a conflict with newer base content can still stop
   `transfer` later.
 
+  The helper's read-only `committed-range` operation (payload `{root, baseRef, baseBranch,
+knownOids}`, never fetching) serves the lazy `deliver-committed-range` route, which applies when
+  the reconciled candidate is empty and the checkout is clean. It lists `<baseRef>..HEAD` oldest
+  first, with each commit's parents, subject, and paths, the range's changed paths, and
+  `foreignOids`: every range commit outside the session-known `knownOids` plus every merge. It
+  fails closed with `DETACHED_HEAD`, `BASE_UNRESOLVED` (a missing ref, or one outside
+  `refs/remotes/origin/`), `HEAD_IS_BASE`, or `INVALID_PAYLOAD`. A clean range hands off to a plain
+  direct `pr` call; the fragment owns the conditions and outcomes. With a dirty checkout the
+  operation only feeds one notice that committed work is excluded, and only when the configured base
+  resolves to an `origin` remote-tracking ref and the checkout is attached to a non-base branch;
+  otherwise the read fails and a failed read adds no notice.
+
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
   group, and expected index-tree OID; the result reports enough exact Git state for the caller to
-  verify the parent, branch, commit tree, and remaining changes.
+  verify the parent, branch, commit tree, and remaining changes; the report names the full
+  40-character commit OID (64 in a SHA-256 repository), never an abbreviation.
 - `pr` owns only publication of commits from a prepared branch. A direct call requires a clean,
-  attached, non-base checkout. A returning delivery caller supplies the exact head, base, verified
+  attached, non-base checkout; `deliver`'s committed-range route makes exactly such a call for
+  session-made commits, and `pr`'s `push -u` (including its upstream-config write) stays `pr`'s own
+  write. A returning delivery caller supplies the exact head, base, verified
   head OID, and successful commit-only evidence. `pr` never creates or switches a branch, stages or
   commits files, or treats dirt in another checkout as PR content.
 
@@ -879,6 +894,23 @@ the assigned files as before. When
 an owned or affected file set, the item renders only that literal path scope, so a sibling's edits
 never enter its change.
 
+Every render records its `currentTree` in `rendered-trees.json`. A **delta render** passes
+`sinceTree`, which the helper accepts only when it equals a `currentTree` an earlier render of the
+same handle recorded; any other value is `INVALID_INPUT`. It applies `scope` exactly as the
+cumulative render does, writes `delta.patch` and `delta-paths.json`, and returns `deltaDiffPath`,
+`deltaPathsPath`, `currentTree` and `deltaEntries`; it never touches `diff.patch` or `paths.json`,
+and an equal tree yields an empty delta. The lazily loaded
+[`src/shared/review-depth.md`](../../src/shared/review-depth.md) fragment, included by `build`
+(Phase 6), `fix` (Phase 4) and `refactor` (Phase 4), builds on it: the `currentTree` of the render
+that fed the first review is retained as `reviewTree`; after the one incorporation pass, a
+cumulative render and a delta render with `sinceTree: reviewTree` define the changed areas for the
+scoped re-check. Triggers (a)–(d) widen only their own paths to a full pass, and the fixed floor
+(nine boundaries, classified per path from path and hunks, `uncertain` failing closed) applies to
+every correction no later review covers. Without a retained `reviewTree`, every affected routed
+reviewer runs a full pass on the cumulative path list. `fix` has no reviewer re-check by default:
+the orchestrator runs both renders and writes the report, and a floor hit or trigger starts
+`generic-product-reviewer` for the full pass.
+
 The directory lives at `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<RUN_ID>/diff-baseline/`, which
 is distinct from the worktree lifecycle records under `worktree-runs/`; the diff baseline owns only
 the `diff-baseline/` subdirectory of its run directory. A successful run discards it; an aborted or
@@ -958,9 +990,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 62 non-destructive or bounded rules, in three
+a prose removal of that state too. `setup` can write 63 non-destructive or bounded rules, in three
 families (seventeen runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan` and `ledger init|append|reconcile`, `config-resolve resolve`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan` and `ledger init|append|reconcile`, `config-resolve resolve|no-ci-policy`, and the 44 read-only `remote-tracker` operations), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

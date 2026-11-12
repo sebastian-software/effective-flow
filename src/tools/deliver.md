@@ -95,10 +95,9 @@ skill-discovery
 ## Project conventions
 
 Read the project's `AGENTS.md` before any mutation. Use the repository's configured base, branch
-prefix, setup, validation, language, and forge conventions. No external dependency is required: use
-the shipped dependency-free `scripts/delivery-selection.mjs` helper for its `inventory`,
-`upstream-status`, `fast-forward`, `bind-manifest`, `verify-source`, `transfer`, and `reconcile`
-operations.
+prefix, setup, validation, language, and forge conventions. Use the shipped, dependency-free
+`scripts/delivery-selection.mjs` helper for `upstream-status`, `fast-forward`, `bind-manifest`,
+`inventory`, `verify-source`, `transfer`, `reconcile`, and `committed-range` operations.
 
 ## Selection contract
 
@@ -111,6 +110,11 @@ that a path belongs to this session.
 For every candidate, show the exact repository-relative literal path, state, and selection origin in
 a stable order. A partially staged path exposes its staged state and full working-tree state as two
 different choices. Never collapse them or infer which one the user means.
+
+```lazy-include
+deliver-committed-range
+when: the reconciled candidate is empty and the source tree and index are clean, untracked paths included
+```
 
 If session and Git evidence are absent, incomplete, contradictory, or admit several scopes, interact
 with the user until the exact manifest is clear. The user may identify unstaged or untracked paths in
@@ -132,15 +136,15 @@ options:
 
 Confirmation binds the helper's internal ordered `selection: [{path, state}]` array, where `state`
 is exactly `staged` or `working`; it does not introduce a public structured-input syntax. Reject
-paths outside the repository, ignored paths, force-add
-behavior, directories, globs, aliases, and untracked symlinks. Preserve a tracked symlink as its link
-blob and mode without dereferencing it. Bind each selected state to source `HEAD`, source blob/mode or
-absence, selected content digest/blob/mode or tombstone, and both rename endpoints without printing
-file contents.
+paths outside the repository, ignored paths, force-add behavior, directories, globs, aliases, and
+untracked symlinks. Preserve a tracked symlink as its link blob and mode without dereferencing it.
+Bind each selected state to source `HEAD`, source blob/mode or absence, selected content
+digest/blob/mode or tombstone, and both rename endpoints without printing file contents.
 
 This manifest confirmation is the sole routine approval. Its only additions are the conditional
 questions of step 1.1, which alone can precede it: the resume and release questions for a retained
-`partial-diff` record and the upstream questions. An affirmative answer authorizes automatic
+`partial-diff` record and the upstream questions. The committed-range route replaces it with at most
+its provider question or its focused publish question. An affirmative answer authorizes automatic
 derivation, non-blocking display, validation, and sequential execution of coherent commit groups,
 subject to every drift check, invariant, verification step, and abort boundary below.
 
@@ -174,14 +178,13 @@ when: upstream-status reports behind, behind-overlap, or diverged
 Only after this check, record the source `HEAD`, branch or detached OID, complete index state, and
 worktree state.
 
-2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`,
-   `delivery.branchPrefix`, `worktree.baseDir`, and `worktree.setup` through the shared configuration
-   contract. `deliver` reports that its explicit PR intent replaces any different configured
-   `delivery.completion`; it does not change the stored value. Record whether hidden mode
-   (`visibility: hidden`, config locator step 0) is active: then no derived commit message, branch
-   name, or pull-request title or body may name Effective Flow or reference a path under
-   `.effective-flow/`, and this run hands that constraint on to `{{SKILL:commit}}` and
-   `{{SKILL:pr}}`.
+2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`, `delivery.branchPrefix`,
+   `worktree.baseDir`, and `worktree.setup` through the shared configuration contract. `deliver`
+   reports that its explicit PR intent replaces any different configured `delivery.completion`; it
+   does not change the stored value. Record whether hidden mode (`visibility: hidden`, config
+   locator step 0) is active: then no derived commit message, branch name, or pull-request title or
+   body may name Effective Flow or reference a path under `.effective-flow/`, and this run hands
+   that constraint on to `{{SKILL:commit}}` and `{{SKILL:pr}}`.
 3. Resolve and confirm the selection contract above. Invoke `bind-manifest` with
    `{sourceRoot, selection}` and retain the returned ephemeral manifest plus source receipt for every
    later comparison. Do not write it to tracked files or runtime state; only step 4.6 binds it
@@ -206,7 +209,10 @@ silently broaden the manifest, or restore a commit-group question as a fallback.
 ### 3. Create the isolated delivery branch
 
 1. Revalidate the source receipt and runtime root. Refresh the configured remote base and resolve its
-   exact OID before creating delivery artifacts.
+   exact OID before creating delivery artifacts. A non-empty `committed-range` read
+   `{root: sourceRoot, baseRef: <refreshed base ref>, baseBranch: <resolved local base branch>, knownOids: []}`
+   adds one notice line: that committed work is not included in this delivery and never enters or
+   replaces the manifest. A failed read adds no notice.
 2. Derive a collision-safe `<delivery.branchPrefix>/deliver/<slug>` name, or `deliver/<slug>` when
    the prefix is empty (the hidden-mode default), as `data.branch` of `named` from `node <skill-root>/scripts/effective-flow-mechanics.mjs delivery-branch-name` with one JSON object on stdin: `cwd` the repository root, `branchPrefix`, `skill: "deliver"`, `text` the confirmed delivery subject, `visibility` the resolver's `data.visibility`, passed verbatim, `excludeNames`. Report `data.originalSlug` and `data.slug` in one line when `data.sanitized`; `prefix-discloses` stops, naming `delivery.branchPrefix` and {{SKILL:setup}}; so do a nonzero exit, an unparsable envelope and `ok: false`, naming the error code — never derive the name by hand.
    Verify the branch and the absolute worktree path are unused in `git worktree list --porcelain`; a branch listed there goes into `excludeNames` for another call.
@@ -236,13 +242,11 @@ headOid}}` in its default redacted dry-run mode. Inspect the planned paths, mode
    three-way application and fails closed on unresolved content, binary, mode, rename, or
    delete/modify conflicts.
 3. Run the repository's established pre-commit validation in the isolated checkout under
-   `effective-delivery`'s repository-validation contract. Do not invent commands or duplicate its
-   validation playbook here.
-4. Immediately after validation, invoke
-   `reconcile {manifest, deliveryRoot, sourceRoot}` to compare every selected content digest/blob
-   and mode plus the complete changed-path set with the confirmed manifest. Any selected drift,
-   missing or extra path, different origin, or validation-produced change stops and requires a new
-   selection; never silently refresh or broaden the manifest.
+   `effective-delivery`'s repository-validation contract; never invent commands.
+4. Immediately after validation, invoke `reconcile {manifest, deliveryRoot, sourceRoot}` to compare
+   every selected content digest/blob and mode plus the complete changed-path set with the confirmed
+   manifest. Any selected drift, missing or extra path, different origin, or validation-produced
+   change stops and requires a new selection; never silently refresh or broaden the manifest.
 5. Revalidate that the source receipt, source `HEAD`, complete source index, and non-selected source
    paths are unchanged. A mismatch retains the delivery artifacts and blocks commit and PR.
 6. Call `ledger init` for the record with the bound manifest, step 2's groups in order (each with
@@ -308,10 +312,9 @@ was changed. Emit the `deliver` next-step block last unless this run itself rece
 
 ## Abort boundaries
 
-Every helper call must return its normalized `{ok, operation, data, dryRun}` envelope. A failure
-uses the helper's stable code, details, and exit code; report that structured diagnostic and stop at
-the operation's mutation boundary instead of guessing a recovery or calling an unrecognized
-operation.
+Every helper call must return its normalized `{ok, operation, data, dryRun}` envelope. On failure,
+report the helper's stable code, details, and exit code and stop at the operation's mutation
+boundary; never guess a recovery or call an unrecognized operation.
 
 - No meaningful selected diff against the refreshed base creates no commit or PR; clean up only
   empty artifacts proven current-run-owned.

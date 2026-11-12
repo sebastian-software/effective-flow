@@ -27,6 +27,7 @@ export const DELIVERY_SELECTION_OPERATIONS = Object.freeze([
   'reconcile',
   'upstream-status',
   'fast-forward',
+  'committed-range',
 ]);
 
 // Operations that only preview their write unless the caller passes `apply: true`.
@@ -42,6 +43,9 @@ export const DELIVERY_SELECTION_ERROR_CODES = Object.freeze([
   'TRANSFER_CONFLICT',
   'RECONCILIATION_FAILED',
   'COMMAND_FAILED',
+  'DETACHED_HEAD',
+  'BASE_UNRESOLVED',
+  'HEAD_IS_BASE',
 ]);
 
 const EXIT_CODES = Object.freeze({
@@ -54,6 +58,10 @@ const EXIT_CODES = Object.freeze({
   RECONCILIATION_FAILED: 5,
   COMMAND_FAILED: 6,
   UNSAFE_DELIVERY_CHECKOUT: 7,
+  // The checkout or the base cannot yield a committed range; the envelope code says which.
+  DETACHED_HEAD: 8,
+  BASE_UNRESOLVED: 8,
+  HEAD_IS_BASE: 8,
 });
 
 const FILE_MODES = new Set(['100644', '100755', '120000']);
@@ -2652,6 +2660,294 @@ export async function fastForwardUpstream(input, options = {}) {
   };
 }
 
+const ORIGIN_TRACKING_PREFIX = 'refs/remotes/origin/';
+
+const BASE_UNRESOLVED_MESSAGE = 'baseRef does not resolve to a commit under refs/remotes/origin/';
+
+function baseUnresolved(baseRef, reason) {
+  fail('BASE_UNRESOLVED', BASE_UNRESOLVED_MESSAGE, { baseRef, reason });
+}
+
+// Every object and history read of the committed range runs with `--no-replace-objects`: the
+// base peel `rev-parse --verify -q <ref>^{commit}`, `rev-list`, `cat-file`, `diff-tree`,
+// `merge-base`, and `ls-tree`. A `refs/replace/*` object or a `git replace --graft` changes what
+// these reads report, while `git push` still sends the real objects,
+// so only the real history is the range that a push publishes. The option stays after `-C <root>`,
+// where `scopedGitRunner` expects the root. A `.git/info/grafts` file and a shallow boundary are
+// not replace objects; they stay visible to the read and make that push fail instead.
+async function historyGit(runner, root, args, options = {}) {
+  return await git(runner, root, ['--no-replace-objects', ...args], options);
+}
+
+// Reads one exact ref and, for a symbolic ref, its target. `%(symref)` is the fully resolved
+// target: Git follows every link of a chain and names the final non-symbolic ref, and a dangling
+// symbolic ref is skipped as broken. A `for-each-ref` pattern also matches every ref below it, so
+// only the row whose refname equals the ref counts.
+async function exactRef(root, ref, runner) {
+  const result = await git(runner, root, ['for-each-ref', '--format=%(refname)%00%(symref)', ref]);
+  for (const line of asText(result.stdout).split('\n')) {
+    const [refname, symref] = line.split('\0');
+    if (refname === ref) return { ref: refname, symref: symref || null };
+  }
+  return null;
+}
+
+// Resolves `origin/<branch>` or `refs/remotes/origin/<branch>` to its full remote-tracking ref
+// without fetching. A short name is only ever looked up below `refs/remotes/`, so a local branch
+// or tag named like it cannot shadow the tracking ref. A symbolic ref such as `origin/HEAD`
+// resolves to the final ref of its chain, which has to stay under `refs/remotes/origin/` as well;
+// the second lookup only confirms that this ref exists and is not symbolic itself.
+async function resolveOriginBase(root, baseRef, runner) {
+  if (baseRef.startsWith('-')) baseUnresolved(baseRef, 'option-like');
+  if (/[\0-\x20\x7f]/.test(baseRef)) baseUnresolved(baseRef, 'malformed');
+  const candidate = baseRef.startsWith('refs/') ? baseRef : `refs/remotes/${baseRef}`;
+  if (!candidate.startsWith(ORIGIN_TRACKING_PREFIX)) baseUnresolved(baseRef, 'not-origin');
+  // `check-ref-format` turns away revision syntax (`~`, `^`, `:`, `@{`) and glob characters, so
+  // the value can only name one ref.
+  const format = await git(runner, root, ['check-ref-format', candidate], {
+    allowedStatus: [0, 1],
+  });
+  if (format.status !== 0) baseUnresolved(baseRef, 'malformed');
+  const found = await exactRef(root, candidate, runner);
+  if (found === null) baseUnresolved(baseRef, 'missing');
+  let fullRef = found.ref;
+  if (found.symref !== null) {
+    if (!found.symref.startsWith(ORIGIN_TRACKING_PREFIX)) baseUnresolved(baseRef, 'not-origin');
+    const target = await exactRef(root, found.symref, runner);
+    if (target === null || target.symref !== null) baseUnresolved(baseRef, 'missing');
+    fullRef = target.ref;
+  }
+  const peeled = await historyGit(
+    runner,
+    root,
+    ['rev-parse', '--verify', '-q', `${fullRef}^{commit}`],
+    { allowedStatus: [0, 1, 128] },
+  );
+  const baseOid = asText(peeled.stdout).trim();
+  if (peeled.status !== 0 || !OBJECT_ID.test(baseOid)) baseUnresolved(baseRef, 'not-a-commit');
+  return { ref: fullRef, branch: fullRef.slice(ORIGIN_TRACKING_PREFIX.length), oid: baseOid };
+}
+
+function requireKnownOids(value) {
+  requireArray(value, 'knownOids');
+  // Duplicates are accepted: the list is a membership set, never a count.
+  return new Set(value.map((oid, index) => requireObjectId(oid, `knownOids[${index}]`)));
+}
+
+// `<baseOid>..<headOid>`, oldest first, each commit with its full parent list.
+async function rangeCommits(root, baseOid, headOid, runner) {
+  const result = await historyGit(runner, root, [
+    'rev-list',
+    '--reverse',
+    '--topo-order',
+    '--parents',
+    `${baseOid}..${headOid}`,
+  ]);
+  const output = asText(result.stdout).trim();
+  if (output === '') return [];
+  return output.split('\n').map((line) => {
+    const [oid, ...parents] = line
+      .split(' ')
+      .map((value, index) => gitObjectId(value, index === 0 ? 'range commit' : 'parent'));
+    return { oid, parents };
+  });
+}
+
+// Git's whitespace for blank lines and trailing blanks: space, tab, line feed, carriage return.
+const GIT_BLANK_LINE = /^[ \t\r]*$/;
+const GIT_TRAILING_BLANKS = /[ \t\r]+$/;
+
+function decodeCommitMessage(bytes, encoding) {
+  // Git stores the message in the `encoding` header's charset and treats a missing header as
+  // UTF-8. Decoding follows the WHATWG `TextDecoder` label table, not Git's iconv: it reads
+  // ISO-8859-1, latin1, and US-ASCII as windows-1252, for example. A label TextDecoder does not
+  // know falls back to UTF-8; a byte-order mark stays text.
+  try {
+    return new TextDecoder(encoding ?? 'utf-8', { ignoreBOM: true }).decode(bytes);
+  } catch {
+    return new TextDecoder('utf-8', { ignoreBOM: true }).decode(bytes);
+  }
+}
+
+// The subject, a display aid shaped like `git log --format=%s` but not a byte-exact copy of it:
+// the message decoded by its `encoding` header, leading blank lines skipped, then every line of
+// the first paragraph without its trailing blanks, joined by single spaces. The text ends at the
+// first NUL, as Git reads the message as a C string. Decoding follows the WHATWG `TextDecoder`
+// (see `decodeCommitMessage`), so the result can differ from `%s`: Git cuts at the first NUL
+// before it decodes (a UTF-16LE message, say) and converts with iconv, and an invalid byte becomes
+// U+FFFD here. Callers only display it. The header ends at the first empty line; continuation
+// lines of a multi-line header such as `gpgsig` or `mergetag` start with a space, so they never
+// hold an empty line or an `encoding` header of their own.
+function commitSubject(content) {
+  const headerEnd = content.indexOf('\n\n');
+  if (headerEnd === -1) return '';
+  const encoding = content
+    .subarray(0, headerEnd)
+    .toString('latin1')
+    .split('\n')
+    .find((line) => line.startsWith('encoding '))
+    ?.slice('encoding '.length);
+  const lines = decodeCommitMessage(content.subarray(headerEnd + 2), encoding)
+    .split('\0', 1)[0]
+    .split('\n');
+  let index = 0;
+  while (index < lines.length && GIT_BLANK_LINE.test(lines[index])) index += 1;
+  const subject = [];
+  for (; index < lines.length && !GIT_BLANK_LINE.test(lines[index]); index += 1) {
+    subject.push(lines[index].replace(GIT_TRAILING_BLANKS, ''));
+  }
+  return subject.join(' ');
+}
+
+// The subject of every commit, read from the raw commit objects so that no log configuration
+// such as `log.showSignature` can add output. `cat-file --batch` frames each object with its
+// byte size.
+async function commitSubjects(root, oids, runner) {
+  const result = await historyGit(runner, root, ['cat-file', '--batch'], {
+    stdin: `${oids.join('\n')}\n`,
+  });
+  const output = asBuffer(result.stdout);
+  const subjects = new Map();
+  let offset = 0;
+  for (const oid of oids) {
+    const headerEnd = output.indexOf(0x0a, offset);
+    const header = headerEnd === -1 ? '' : output.subarray(offset, headerEnd).toString('utf8');
+    const [printedOid, type, sizeText] = header.split(' ');
+    const size = Number.parseInt(sizeText, 10);
+    const end = headerEnd + 1 + size;
+    if (printedOid !== oid || type !== 'commit' || !Number.isInteger(size) || end > output.length) {
+      fail('COMMAND_FAILED', 'git returned an invalid commit object', { oid });
+    }
+    subjects.set(oid, commitSubject(output.subarray(headerEnd + 1, end)));
+    offset = end + 1;
+  }
+  return subjects;
+}
+
+const DIFF_TREE_OPTIONS = ['-r', '-z', '--no-renames', '--ignore-submodules=none'];
+
+// The paths every commit changed, from one `diff-tree --stdin` call: a `<commit> <first-parent>`
+// line compares a commit, a merge included, with its first parent alone, and a lone `<commit>`
+// line compares a root commit with the empty tree (`--root`). Rename detection stays off so both
+// endpoints of a rename count. The output is a NUL-terminated commit id followed by the raw
+// `:<metadata>` and path record pairs of that commit; a commit that changed nothing prints no id.
+async function commitPaths(root, commits, runner) {
+  const result = await historyGit(
+    runner,
+    root,
+    ['diff-tree', '--stdin', '--root', ...DIFF_TREE_OPTIONS],
+    {
+      stdin: commits
+        .map((commit) =>
+          commit.parents.length === 0 ? `${commit.oid}\n` : `${commit.oid} ${commit.parents[0]}\n`,
+        )
+        .join(''),
+    },
+  );
+  const changed = new Map(commits.map((commit) => [commit.oid, new Set()]));
+  const records = asText(result.stdout).split('\0');
+  if (records.at(-1) === '') records.pop();
+  let current = null;
+  for (let index = 0; index < records.length; index += 1) {
+    if (records[index].startsWith(':')) {
+      index += 1;
+      if (current === null || index === records.length) {
+        fail('COMMAND_FAILED', 'git returned an invalid raw diff record');
+      }
+      current.add(records[index]);
+    } else {
+      current = changed.get(records[index]) ?? null;
+      if (current === null) fail('COMMAND_FAILED', 'git returned an unexpected commit id');
+    }
+  }
+  return new Map([...changed].map(([oid, paths]) => [oid, [...paths].sort()]));
+}
+
+// Paths of the whole range, from the merge base of base and head like `git diff base...head`.
+// Without a merge base every path of the head tree is part of the range.
+async function rangePaths(root, baseOid, headOid, runner) {
+  const mergeBase = await historyGit(runner, root, ['merge-base', baseOid, headOid], {
+    allowedStatus: [0, 1],
+  });
+  if (mergeBase.status === 0) {
+    const mergeBaseOid = gitObjectId(asText(mergeBase.stdout).trim(), 'merge base');
+    const diff = await historyGit(runner, root, [
+      'diff-tree',
+      ...DIFF_TREE_OPTIONS,
+      '--no-commit-id',
+      mergeBaseOid,
+      headOid,
+    ]);
+    return [...new Set(parseDiffTreeRaw(diff.stdout).map((change) => change.path))].sort();
+  }
+  const tree = await historyGit(runner, root, [
+    'ls-tree',
+    '-r',
+    '-z',
+    '--name-only',
+    '--full-tree',
+    headOid,
+  ]);
+  const paths = asText(tree.stdout).split('\0');
+  if (paths.at(-1) === '') paths.pop();
+  return [...new Set(paths)].sort();
+}
+
+// Read-only: lists the commits the attached branch holds beyond an `origin` remote-tracking base.
+// It never fetches and writes no ref, configuration, index, or worktree state.
+export async function committedRange(input, options = {}) {
+  exactKeys(input, ['root', 'baseRef', 'baseBranch', 'knownOids'], 'input');
+  const baseRefInput = requireString(input.baseRef, 'baseRef');
+  const baseBranch = requireString(input.baseBranch, 'baseBranch');
+  const knownOids = requireKnownOids(input.knownOids);
+  const runner = options.runner;
+  const context = await repositoryContext(input.root, runner);
+  const root = context.root;
+  const headOid = gitObjectId(context.headOid, 'HEAD');
+  const branch = await currentBranch(root, runner);
+  if (branch === null) {
+    fail('DETACHED_HEAD', 'HEAD is not attached to a branch', { headOid });
+  }
+  const base = await resolveOriginBase(root, baseRefInput, runner);
+  if (branch === baseBranch || branch === base.branch) {
+    fail('HEAD_IS_BASE', 'the current branch is the base branch', {
+      branch,
+      baseBranch,
+      baseRef: base.ref,
+    });
+  }
+
+  const range = await rangeCommits(root, base.oid, headOid, runner);
+  const subjects =
+    range.length === 0
+      ? new Map()
+      : await commitSubjects(
+          root,
+          range.map((c) => c.oid),
+          runner,
+        );
+  const paths = range.length === 0 ? new Map() : await commitPaths(root, range, runner);
+  const commits = range.map((commit) => ({
+    oid: commit.oid,
+    parents: commit.parents,
+    subject: subjects.get(commit.oid),
+    paths: paths.get(commit.oid),
+  }));
+  return {
+    branch,
+    headOid,
+    baseRef: base.ref,
+    baseOid: base.oid,
+    commits,
+    paths: commits.length === 0 ? [] : await rangePaths(root, base.oid, headOid, runner),
+    // A merge brings in commits whose content nobody reviewed as session work, so it is foreign
+    // even when the caller knows its object id.
+    foreignOids: commits
+      .filter((commit) => !knownOids.has(commit.oid) || commit.parents.length > 1)
+      .map((commit) => commit.oid),
+  };
+}
+
 export async function executeOperation(operation, input = {}, options = {}) {
   try {
     if (!DELIVERY_SELECTION_OPERATIONS.includes(operation)) {
@@ -2664,6 +2960,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
     else if (operation === 'transfer') data = await transferSelection(input, options);
     else if (operation === 'upstream-status') data = await upstreamStatus(input, options);
     else if (operation === 'fast-forward') data = await fastForwardUpstream(input, options);
+    else if (operation === 'committed-range') data = await committedRange(input, options);
     else data = await reconcileDelivery(input, options);
     return { ok: true, operation, data, dryRun: isDryRun(operation, options.apply) };
   } catch (error) {

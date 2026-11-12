@@ -1,6 +1,6 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 62
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 63
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
@@ -9,7 +9,8 @@ install's absolute path, so later runs call the helpers without a permission pro
   `commit create`, `review open-report`, `review write-report`, `worktree record-init`,
   `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
   `ledger init`, `ledger append` and `ledger reconcile`;
-- one for the `config-resolve` helper's `resolve` operation;
+- one for the `config-resolve` helper's `resolve` operation and one for its read-only `no-ci-policy`
+  operation;
 - one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
   and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`.
 
@@ -61,7 +62,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 62 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 63 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

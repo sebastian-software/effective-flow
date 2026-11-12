@@ -5,7 +5,7 @@ node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
 ```
 
 with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
-`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
+`config-resolve.mjs resolve` or `config-resolve.mjs no-ci-policy`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
 mutation.
 
 - Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
