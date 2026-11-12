@@ -570,12 +570,27 @@ Delivery is split across one orchestrator and two narrow leaf tools:
   `delivery.baseBranch`, so on a feature branch a conflict with newer base content can still stop
   `transfer` later.
 
+  The helper's read-only `committed-range` operation (payload `{root, baseRef, baseBranch,
+knownOids}`, never fetching) serves the lazy `deliver-committed-range` route, which applies when
+  the reconciled candidate is empty and the checkout is clean. It lists `<baseRef>..HEAD` oldest
+  first, with each commit's parents, subject, and paths, the range's changed paths, and
+  `foreignOids`: every range commit outside the session-known `knownOids` plus every merge. It
+  fails closed with `DETACHED_HEAD`, `BASE_UNRESOLVED` (a missing ref, or one outside
+  `refs/remotes/origin/`), `HEAD_IS_BASE`, or `INVALID_PAYLOAD`. A clean range hands off to a plain
+  direct `pr` call; the fragment owns the conditions and outcomes. With a dirty checkout the
+  operation only feeds one notice that committed work is excluded, and only when the configured base
+  resolves to an `origin` remote-tracking ref and the checkout is attached to a non-base branch;
+  otherwise the read fails and a failed read adds no notice.
+
 - `commit` owns only `git commit` for an already staged diff. It never selects, stages, unstages, or
   validates files. A delivery caller supplies a verified execution-location receipt, declared path
   group, and expected index-tree OID; the result reports enough exact Git state for the caller to
-  verify the parent, branch, commit tree, and remaining changes.
+  verify the parent, branch, commit tree, and remaining changes; the report names the full
+  40-character commit OID (64 in a SHA-256 repository), never an abbreviation.
 - `pr` owns only publication of commits from a prepared branch. A direct call requires a clean,
-  attached, non-base checkout. A returning delivery caller supplies the exact head, base, verified
+  attached, non-base checkout; `deliver`'s committed-range route makes exactly such a call for
+  session-made commits, and `pr`'s `push -u` (including its upstream-config write) stays `pr`'s own
+  write. A returning delivery caller supplies the exact head, base, verified
   head OID, and successful commit-only evidence. `pr` never creates or switches a branch, stages or
   commits files, or treats dirt in another checkout as PR content.
 

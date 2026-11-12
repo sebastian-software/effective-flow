@@ -90,8 +90,10 @@ names the base branch as its head. A direct invocation does not fabricate a deli
    verified branch, and its tree to equal the recorded staged-tree OID. A hook-created mismatch is
    reported with expected and actual values and is never amended or otherwise rewritten.
 9. Inventory the remaining staged, unstaged, and untracked paths without changing them. Report the
-   created commit OID, actual branch, commit tree OID, and residual state. A returning caller uses
-   this receipt to decide whether later groups or a pull request are safe.
+   created commit's full 40-character OID, never abbreviated (64 characters in a SHA-256
+   repository), plus the actual branch, commit tree
+   OID, and residual state. A returning caller uses this receipt to decide whether later groups or
+   a pull request are safe.
 10. Emit the next-step block per `next-steps` as the last element of that report, unless the caller
     passed the literal line `Next steps: suppressed`. The block needs a commit that `git commit`
     actually created on a branch other than the base branch; a run with nothing staged, a commit a

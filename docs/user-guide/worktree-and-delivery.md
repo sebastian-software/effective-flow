@@ -471,7 +471,10 @@ names the draft, and `pr` finishes it instead of leaving the reused pull request
 A direct `pr` call requires a clean, attached, non-base checkout whose branch contains at least one
 commit against the refreshed base. Staged, unstaged, or untracked content makes the invocation
 abort rather than silently excluding it. Use `deliver` when local content still needs selection or
-isolation.
+isolation. On a clean checkout with nothing left to select, `deliver` itself calls `pr` as a direct
+invocation for commits the session made (see
+[Publishing commits you already made](./tools-deliver.md#publishing-commits-you-already-made));
+`pr`'s `push -u` is then the only write, and `pr` owns it.
 
 ## Distinction: the apply-review-specific worktree
 

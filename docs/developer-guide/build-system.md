@@ -1467,6 +1467,12 @@ and directive syntax").
   states (`behind`, `behind-overlap`, `diverged`) rather than only on the one that offers a
   fast-forward. Because `deliver` is not reachable from `merge-gate`, the pointer does not widen
   the merge-gate eval identity.
+  `deliver-committed-range` is the single-consumer `deliver` fragment for the route that publishes
+  session-made commits when the reconciled candidate is empty. Its pointer sits before the manifest
+  display and fires when that candidate is empty and the source tree and index are clean, untracked
+  paths included; a dirty checkout never loads it. It nests lazy pointers to
+  `base-branch-resolution` (range-base derivation) and `remote-helper-contract` (the existing-PR
+  lookup), and holds the route's only `ask` fence, which is unscored.
   `deliver-partial-diff-resume` (the resume and release entry with its step map) is the single-consumer
   `deliver` fragment lazy from step 1.1, loaded only when `worktree inspect` lists a retained
   `partial-diff` record. `worktree-partial-diff-recovery` (ledger schema, size bound, proofs and call
