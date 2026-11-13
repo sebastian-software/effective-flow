@@ -102,7 +102,8 @@ test('Focus acceptance requires requalification for material shared-fragment and
 
 test('Focus binds runtime host qualification and fails closed for unqualified paths', () => {
   // Invariant: host capability is determined by the actual candidate-bound runtime path, never by
-  // the build target or a primitive spike, and every currently unqualified path returns a limitation.
+  // the build target or a primitive spike; the enabled T3 observed report-only row states only its
+  // runtime match, and every unmatched or unqualified path returns a limitation.
   const contract = source('src/shared/focus-session-contract.md');
   const qualification = boundedSlice(
     contract,
@@ -115,15 +116,37 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
   assert.match(qualification, /throwaway target/);
   assert.match(qualification, /T3 observed, report-only/);
   assert.match(qualification, /candidate-bound observed\/report-only acceptance/);
-  // Invariant: package report mode and confirmation cannot activate an unqualified snapshot.
+  // Invariant: the enabled report-only row matches only the admitted T3 observed path, checks no
+  // record at runtime, and an unmatched path still returns the missing qualification before reads.
   assert.match(
     qualification,
-    /T3 observed, report-only\s*\| Disabled pending snapshot-host requalification/,
+    /T3 observed, report-only\s*\| Matches only on a T3 observed path admitted from trusted host context, for report-only use; no record lookup at runtime\./,
   );
   assert.match(qualification, /Before any target or ancestry read/);
   assert.match(qualification, /no content access, analysis leaf or verdict about unread content/);
-  assert.match(qualification, /No snapshot execution route is currently qualified/);
-  assert.match(qualification, /configuration or developer confirmation cannot enable one/);
+  // Invariant: only the named non-sending paths execute, configuration or confirmation cannot enable
+  // another, and enabled rows integrate only with a passing candidate record (ADR-strict).
+  const gate = flat(qualification);
+  assert.match(
+    gate,
+    /The only executable paths are the T3 observed report-only snapshot, opted-in schedule creation and update, follow-up ticks, and the cleanup deletions \(`follow-up stop`, a tick's own-handle deletion, the failed-update cleanup\); none sends a message, and ordinary configuration or developer confirmation cannot enable any other path\./,
+  );
+  assert.match(gate, /all sends stay disabled/);
+  assert.match(
+    gate,
+    /Enabled rows reach `develop` only with a candidate record in the operator acceptance record whose differences from the current source are only binding drift\./,
+  );
+  assert.match(
+    gate,
+    /A focus-source change, or a rendered focus artifact change not documented as demonstrably nonbehavioral, brings a passing record or returns both T3 observed rows to disabled; a focus-source change is never exempt\./,
+  );
+  assert.match(
+    gate,
+    /A user confirmation, passing build, primitive rerun or historical spike unlocks nothing\./,
+  );
+  // Invariant: the shipped gate names no repository-only acceptance file, digest or SHA.
+  assert.doesNotMatch(qualification, /focus-host-acceptance/);
+  assert.doesNotMatch(qualification, /\b(?=[0-9a-f]*\d)[0-9a-f]{7,64}\b/);
   assert.match(qualification, /T3 delegated correction[\s\S]*?Disabled/);
   assert.match(qualification, /T3 idle top-level correction[\s\S]*?Disabled/);
   assert.match(qualification, /Codex desktop observed[\s\S]*?Disabled/);
@@ -133,76 +156,6 @@ test('Focus binds runtime host qualification and fails closed for unqualified pa
     /An admission failure instead returns a specific source\/missing-capability limitation/,
   );
   assert.doesNotMatch(contract, /build target.*qualif(?:y|ication)/i);
-});
-
-test('Focus states pending qualification on all hosts while no gate row is qualified', () => {
-  // Invariant: while every route is disabled, one gate sentence, not the table, tells every host,
-  // the catch-all row and every invocation without a session reference except `follow-up stop`
-  // included, that focus is pending qualification under the qualified #613 reference, first and
-  // once per reply, only in the three limitation outputs and never in a stop or in the excluded
-  // tick notices. Activating a route removes this sentence.
-  const contract = source('src/shared/focus-session-contract.md');
-  const qualification = boundedSlice(
-    contract,
-    '## Current qualification gate',
-    '## Reader admission and bounded evidence',
-  );
-  const opening =
-    'While no row of this table is qualified, `focus` is disabled on all hosts pending qualification (`sebastian-software/effective-flow#613`)';
-  const pending = flat(boundedSlice(qualification, opening, 'On a disabled path'));
-  assertPhrases(pending, [
-    opening,
-    'every row of this table',
-    'Codex CLI or other unqualified host',
-    'and for any invocation other than `follow-up stop` that has no session reference (for example `{{FLOW}} focus` or `{{FLOW}} focus follow-up`), which is refused before any selection is clarified',
-    'once per reply',
-    "first and followed by the row's missing capability",
-    "it never precedes or replaces a stop or a tick's deletion of its own handle",
-  ]);
-  assert.match(
-    pending,
-    /its own handle\.\s*$/,
-    'the sentence ends immediately before the disabled-path rule',
-  );
-  assert.doesNotMatch(
-    pending,
-    /never a `follow-up` form/,
-    'the retired follow-up exclusion is gone',
-  );
-  // One contiguous span fixes membership, order and both list boundaries.
-  assertPhrases(pending, [
-    "only in a snapshot refusal, a `follow-up` limitation reply other than `follow-up stop`, and a tick's disabled-row notice, and never in a `follow-up stop` reply, a checkpoint-only tick, the `handle:pending` statement or the invalid-checkpoint notice; it never precedes",
-  ]);
-  ordered(
-    flat(qualification),
-    '| Codex CLI or other unqualified host |',
-    flat(opening),
-    'On a disabled path return the stated missing capability before content access or dispatch.',
-  );
-
-  const authority = flat(
-    boundedSlice(contract, '## Authority before any host access', '## Current qualification gate'),
-  );
-  assert.match(
-    authority,
-    /Missing, ambiguous or conflicting selections are clarified before access, except that while no gate row is qualified the gate's pending refusal comes first where the gate says it precedes selection clarification;/,
-  );
-
-  const hint = frontmatter(source('src/tools/focus.md'))
-    .split('\n')
-    .find((line) => line.startsWith('catalogHint:'));
-  assertPhrases(hint, [
-    'Not yet available on any host',
-    'pending qualification',
-    'sebastian-software/effective-flow#613',
-  ]);
-  assert.doesNotMatch(
-    ['src/tools/focus.md', 'src/shared/focus-session-contract.md', 'src/shared/focus-follow-up.md']
-      .map(source)
-      .join('\n'),
-    /(?<![\w/-])#613\b/,
-    'only the qualified #613 reference ships',
-  );
 });
 
 test('Focus reader admission preserves exact-source and evidence boundaries', () => {
@@ -428,9 +381,9 @@ test('Focus follow-up loads lazily behind one pointer and stays mode-gated', () 
 });
 
 test('Focus follow-up offer requires the qualified follow-up gate row', () => {
-  // Invariant: gate stays closed — the offer exists only when the disabled-by-default gate row is
-  // qualified and matched from trusted host context; while disabled a snapshot gains nothing and
-  // only stop and a tick's own-handle deletion remain available.
+  // Invariant: the enabled follow-up gate row matches only from trusted host context with no runtime
+  // record lookup; when it does not match a snapshot gains nothing and only stop and a tick's
+  // own-handle deletion remain available.
   const contract = source('src/shared/focus-session-contract.md');
   const gate = flat(
     boundedSlice(
@@ -441,11 +394,11 @@ test('Focus follow-up offer requires the qualified follow-up gate row', () => {
   );
   assert.match(
     gate,
-    /\| T3 observed follow-up \(schedule_task, T3\/Codex\) \| Disabled until a candidate-bound row exists/,
+    /\| T3 observed follow-up \(schedule_task, T3\/Codex\) \| Matches only when trusted host context/,
   );
   assertPhrases(gate, [
-    'names provider instance `codex` for the observer thread, never a self-report',
-    "While disabled: no offer, resume or tick target read; `follow-up stop` and a tick's deletion of its own handle stay available.",
+    'names provider instance `codex` for the observer thread, never a self-report, on an admitted T3 observed path; no record lookup at runtime.',
+    "When the row does not match: no offer, resume or tick target read; `follow-up stop` and a tick's deletion of its own handle stay available.",
   ]);
   const focus = flat(source('src/tools/focus.md'));
   ordered(
@@ -482,6 +435,23 @@ test('Focus follow-up offer is bounded, disclosed, and opted into only by the ne
   ]);
 });
 
+test('Focus offers anew on every later snapshot meeting the eager offer condition, despite an earlier decline', () => {
+  // Invariant: declining or withdrawing a follow-up offer binds only that offer, never later
+  // snapshots of the same target, since an observer that read an earlier "no follow-up" as
+  // persistent omitted the owed offer from a complete snapshot (window 2 recording on 887ba1fd).
+  // The rule sits in the eager core before the lazy include: a model that wrongly treats the
+  // decline as binding never meets the include's condition and so never reads the fragment.
+  const core = flat(
+    boundedSlice(source('src/tools/focus.md'), '## Follow-up mode', '```lazy-include'),
+  );
+  assert.ok(
+    core.includes(
+      'A declined or withdrawn offer never suppresses the offer of a later snapshot that meets the eager offer condition.',
+    ),
+    'Focus must re-offer follow-up on every later snapshot that meets the eager offer condition',
+  );
+});
+
 test('Focus follow-up schedules exactly one handle-bound task', () => {
   // Invariant: single handle — one disabled-then-enabled schedule_task with fixed fields, a prompt
   // holding only the prefixed invocation, reference and handle, cleanup on a failed rewrite, and no
@@ -489,7 +459,7 @@ test('Focus follow-up schedules exactly one handle-bound task', () => {
   const text = followUp();
   assertPhrases(text, [
     'create exactly one task with `schedule_task` and only these fields: `title: "focus follow-up"`, `prompt: "$effective-flow focus follow-up tick <session-ref> handle:pending"`, `schedule: {type: \'interval\', everyMs: <interval in milliseconds>}`, `bindToCurrentThread: true` and `enabled: false`.',
-    'make one update by the returned ID that sets the prompt to `$effective-flow focus follow-up tick <session-ref> handle:<id>` and `enabled: true`; an unprefixed prompt does not load the skill.',
+    'make one update by the returned ID that sets the prompt to `$effective-flow focus follow-up tick <session-ref> handle:<id>` and `enabled: true`; a prompt without `$effective-flow` does not load the skill.',
     'Creating the task disabled is not the forbidden end-event disable.',
     'If the update fails, delete the task in that turn and report the failure; if that deletion fails too, the task stays disabled and the report names it for deletion in T3.',
     'List no schedule; read or write no other scheduler.',
@@ -500,6 +470,24 @@ test('Focus follow-up schedules exactly one handle-bound task', () => {
     "Focus's only host-persisted artifact is one T3 `schedule_task` per opted-in loop, bound to this observer thread, whose prompt holds only the tick invocation, the session reference and its own handle; focus never lists, reads or writes another schedule or scheduler.",
     "The only host writes are that follow-up task's creation, its one prompt-and-enable update in the creating turn, and deleting a handle under the follow-up deletion safeguard.",
   ]);
+});
+
+test('Focus follow-up handle is the complete scheduled-task ID passed verbatim', () => {
+  // Invariant: the handle is the complete ID returned by `schedule_task`, `scheduled-task:` prefix
+  // included, passed unchanged as `scheduledTaskId`. The follow-up fragment owns this once; a
+  // stripped prefix makes `delete_scheduled_task` fail with task_not_found while the schedule
+  // keeps firing.
+  assertPhrases(followUp(), [
+    'complete ID returned by `schedule_task`',
+    '`scheduled-task:` prefix',
+    'unchanged as `scheduledTaskId`',
+  ]);
+  for (const path of ['src/tools/focus.md', 'src/shared/focus-session-contract.md']) {
+    assert.ok(
+      !flat(source(path)).includes('scheduled-task:'),
+      `${path} must not restate the scheduled-task ID prefix`,
+    );
+  }
 });
 
 test('Focus follow-up grammar has three forms and a tick never offers', () => {
@@ -524,9 +512,13 @@ test('Focus follow-up grammar has three forms and a tick never offers', () => {
 test('Focus follow-up checkpoint is one exact v1 line with strict validity', () => {
   // Invariant: checkpoint v1 — the single-line format is exact, carries no evidence content, keeps
   // a numeric last served position, and is valid only in this observer's own assistant messages.
+  // Concrete endings exclude the observed stopped> suffix; this guards instructions, not model output.
   const text = followUp();
   assertPhrases(text, [
-    '`focus-follow-up v1 | target=<ref> | goal=<source>@<locator> | verdict=<v> | last=<position> | pattern=<loc>,<loc> | correction=<verdict>+<category>+<loc>,<loc> | mechanism=t3-schedule | interval=<minutes> | handle=<id> | started=<time> | ticks=<n> | backlog=<yes|no> | lag=<n> | state=<active|stopped>`',
+    '`focus-follow-up v1 | target=<ref> | goal=<source>@<locator> | verdict=<v> | last=<position> | pattern=<loc>,<loc> | correction=<verdict>+<category>+<loc>,<loc> | mechanism=t3-schedule | interval=<minutes> | handle=<id> | started=<time> | ticks=<n> | backlog=<yes|no> | lag=<n> | state=STATE`',
+    '`STATE` is literal `active` or `stopped`: the line ends exactly with `state=active` or `state=stopped`.',
+    'Emit no suffix, closing `>`, Markdown marker or trailing whitespace.',
+    'Reject any line with trailing characters as malformed; never trim it or accept only a valid prefix.',
     '`pattern=` holds at most two sorted locators or `none`; `correction=` is `none` when no correction stands. An explicit `goal:` argument is written `goal=arg@snapshot`.',
     "`started=` is the ISO-8601 UTC time of the creation result's next run time minus the interval and is informational only. `lag=` counts consecutive `backlog=yes` ticks.",
     'An invalid-path stopped line takes `target` and `handle` from the prompt and writes `-` for unknown fields, except `ticks=1` when no earlier count exists; later stopped ticks increment it, and with `interval=-` the cap is 48 ticks.',
@@ -647,6 +639,18 @@ test('Focus follow-up ticks never send and keep the confirmed-send path interact
   ]);
 });
 
+test('Focus follow-up reports failed end-event deletion without claiming host cleanup', () => {
+  // Invariant: a failed deletion must preserve the end-event report and stopped checkpoint while
+  // disclosing that host cleanup is unconfirmed; stopped describes the loop, not scheduler state.
+  const endEvents = boundedSlice(followUp(), '## End events', '## Stop and resume');
+  assertPhrases(endEvents, [
+    'If end-event deletion fails, including `task_not_found`, report the end event and the actual delete error without claiming successful deletion.',
+    'The one final notice states that deletion is not confirmed and that the schedule may still be active and must be deleted in T3 if present.',
+    'Emit the stopped checkpoint even when deletion fails; `state=stopped` ends observation and does not confirm removal of the host schedule.',
+    'Later stopped ticks retain the retry and notice-suppression rules above.',
+  ]);
+});
+
 test('Focus follow-up ends every loop by deleting exactly its own handle', () => {
   // Invariant: delete-only end — every end event deletes the prompt's handle under the safeguard
   // before one final notice, the cap is tick-countable, and a task is never disabled.
@@ -660,4 +664,25 @@ test('Focus follow-up ends every loop by deleting exactly its own handle', () =>
     'The final notice is posted after the delete call returns; the run continues after deleting its own task. A task is never disabled.',
     'An explicit resume re-admits the same target and creates a new schedule only after a new offer and opt-in; it never reuses an old handle.',
   ]);
+});
+
+test('Focus names sessions by exact inline-code reference, never as a host thread link, outside the raw checkpoint', () => {
+  // Invariant: visible focus output cites sessions by their exact reference in inline code, never as
+  // a host thread link or angle-bracketed URL, since an emitted T3 thread link was associated with an
+  // observed truncation (`< t3 >`) that lost the focus report or checkpoint; the checkpoint line
+  // keeps its raw `target=` so the naming rule cannot make it foreign or malformed.
+  const focus = flat(source('src/tools/focus.md'));
+  assert.ok(
+    focus.includes(
+      'Name every session in visible output, commentary included, by its exact reference in inline code (on T3 the bare thread ID, even if selected by link), never as a host thread link or angle-bracketed URL, even where the host asks for links.',
+    ),
+    'Focus must forbid host thread links and angle-bracketed URLs for session references',
+  );
+  const followUp = flat(source('src/shared/focus-follow-up.md'));
+  assert.ok(
+    followUp.includes(
+      "The line is exempt from focus's inline-code naming rule: `target=` holds the raw reference, never code or a link.",
+    ),
+    'The checkpoint line must keep its raw target reference',
+  );
 });

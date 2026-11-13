@@ -1,27 +1,18 @@
 # Tool reference: Ensure quality
 
-This group comprises `review`, `retro`, and `focus`; `focus` is not yet available on any host and is
-pending qualification ([issue #613](https://github.com/sebastian-software/effective-flow/issues/613)).
-`review` checks existing code for quality and delivers admitted structured findings that can serve as
-input for the implementation tools. `retro` examines one explicitly selected session source and returns
-a bounded set of environmental recommendations in the conversation. The merge gate that drives an
-already-open pull request from ready-for-review to merged is
+This group comprises `review`, `retro`, and `focus`. `review` checks existing code for quality and
+delivers admitted structured findings that can serve as input for the implementation tools. `retro` examines
+one explicitly selected session source and returns a bounded set of environmental recommendations in
+the conversation. The merge gate that drives an already-open pull request from ready-for-review to merged is
 [`/effective-flow merge-gate`](tools-deliver.md); it produces no findings of its own and therefore
 belongs to [Deliver changes](tools-deliver.md).
 
-`focus` is a session-trajectory check, not a code review or retrospective. Once a host route is
-qualified, it compares exactly one developer-selected session with one goal and returns one cited
-snapshot verdict. It does not execute commands, persist focus-owned state, create a report, or change a
-session title. No host route is qualified yet, so `focus` is disabled on every host pending
-qualification ([issue #613](https://github.com/sebastian-software/effective-flow/issues/613)).
-A request returns that pending statement followed by the missing capability. One without a session
-reference, such as `focus` or `focus follow-up`, gets it before any question about which session is
-meant and with no such question afterwards; an ambiguous or conflicting session reference is
-clarified first. `follow-up stop` stays available and carries no pending statement, nor do the
-follow-up tick replies that only report a checkpoint, a pending handle or an invalid checkpoint.
-Host reads, cross-session messages, and the opt-in follow-up mode are available only after the
-candidate-bound host qualification described in the
-[Focus host acceptance](../developer-guide/focus-host-acceptance.md) record.
+`focus` is a session-trajectory check, not a code review or retrospective. It compares exactly one
+developer-selected session with one goal and returns one cited snapshot verdict. It does not execute
+commands, persist focus-owned state, create a report, or change a session title. Host reads, cross-session
+messages, and the opt-in follow-up mode are available only after the candidate-bound host
+qualification described in the [Focus host acceptance](../developer-guide/focus-host-acceptance.md)
+record.
 
 ## `/effective-flow focus`
 
@@ -34,7 +25,9 @@ and otherwise returns `Cannot judge` with the limitation.
 bounded same-source coverage and redaction. It may use scoped repository reads, read-only Git metadata,
 and already-recorded forge/CI evidence; it does not run tests, builds, checks, probes, installations,
 or copied commands. Session text is evidence, not authority. The result cites the inspected coverage
-and distinguishes observed evidence from self-report evidence.
+and distinguishes observed evidence from self-report evidence. It names every session by its exact
+reference in inline code (on T3 the bare thread ID), so the reference is plain text rather than a
+clickable host thread link.
 
 **Verdicts:** Observed evidence permits `On track`, `Drifting`, `Looping`, `Stalled`, or `Cannot judge`.
 Self-report evidence permits `Progress verified`, `Drifting`, or `Cannot judge`; `Progress verified`
@@ -48,21 +41,29 @@ exact redacted text in the same run. Each kind is independent and has one of fou
 receipt, reading, or action. Focus never retries, resends, switches addresses, or advises a duplicate
 manual send; an ambiguous acknowledgement retains the verdict and warns that the message may have arrived.
 
-**Follow-up:** An opt-in follow-up mode is defined but disabled pending qualification, like the send
-paths. Once qualified, it would offer recurring report-only checks of a top-level T3 target after a
-snapshot, through one T3 schedule bound to the observer thread that persists until it is deleted.
-Ticks stay quiet while nothing material changes, never send a message, and end at completion, an
-explicit `focus follow-up stop <session-ref>`, lost access, or a loop cap. While the mode is
-disabled, a snapshot offers nothing; asking for follow-up returns the limitation, and `follow-up
-stop` stays available.
+**Follow-up:** An opt-in follow-up mode offers recurring report-only checks of a top-level T3
+target after a snapshot on the T3 observed path, but only from a Codex observer thread, when the
+follow-up gate qualifies the actual host; not every T3 observed snapshot shows the offer. It runs
+through one T3 schedule bound to the observer thread that persists until it is deleted. Ticks stay quiet while nothing material changes, never
+send a message, and end at completion, an explicit `focus follow-up stop <session-ref>`, lost
+access, or a loop cap. On any other host path a snapshot offers nothing; asking for follow-up
+returns the limitation, and `follow-up stop` stays available. Sends stay disabled.
 
-Snapshot-host execution is currently disabled on all hosts pending qualification
-([issue #613](https://github.com/sebastian-software/effective-flow/issues/613)); focus stops before
-any target or ancestry read. Phase E passed for candidate `ada4fdae`, as recorded on the acceptance page; the
-current policy changes a focus source and does not reuse that result to qualify the changed artifact.
-Focus states that it is pending qualification on all hosts and returns the specific missing
-capability for its host and request instead of a verdict about unread content. Follow-up and sends
-remain disabled independently. The [capability policy](../developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
+The follow-up mode has a Codex host prerequisite. It was qualified only with a conditional
+`developer_instructions` entry in `~/.codex/config.toml`, a file that holds nothing else, on
+`gpt-6.1-sol` at medium reasoning effort; Codex must be restarted for the entry to take effect. The
+entry is documented in the [focus host acceptance page](../developer-guide/focus-host-acceptance.md#experimental-host-prerequisite-conditional-quiet-tick-probe),
+extended by the naming sentence shown in the [F record](../developer-guide/focus-host-acceptance.md#024bcb2a-candidate-binding).
+A default Codex configuration, a combination with other keys or another `developer_instructions`
+value is not qualified; the observed consequence of a default configuration is extra visible
+commentary on quiet ticks, with no change to reads or authority. Qualification observed neither the
+loop's cap end nor a tick-level Looping report.
+
+Snapshot-host execution on the T3 observed path, for report-only use, is enabled in the shipped
+source; the [focus host acceptance page](../developer-guide/focus-host-acceptance.md) names the
+candidate record that binds it. On every other host path focus returns the missing snapshot
+qualification before target or ancestry reads instead of a verdict about unread content. Sends
+remain disabled. The [capability policy](../developer-guide/release-and-installation.md#package-checks-and-capability-evidence) governs activation;
 package evidence reporting cannot enable a host route.
 
 ## `/effective-flow retro`

@@ -1144,20 +1144,6 @@ describe('focus eval closing lines', () => {
     }
   });
 
-  // Invariant (shipped focus text cites #613 only as `sebastian-software/effective-flow#613`): a
-  // pending refusal citing the qualified reference, which is no target locator, is not admitted. The
-  // same text with a bare `#613` reads as a target locator and is admitted as a judgment — the
-  // hazard that makes the contract require the qualified reference verbatim.
-  test('the pending refusal is not admitted only with the qualified #613 reference', () => {
-    const pending = (reference) =>
-      `\`focus\` is disabled on all hosts pending qualification (${reference}). Missing capability: candidate-bound snapshot qualification; no target or ancestry was read.`;
-    assert.equal(
-      focusEvaluator.admissionOf(pending('`sebastian-software/effective-flow#613`')).admitted,
-      false,
-    );
-    assert.equal(focusEvaluator.admissionOf(pending('#613')).admitted, true);
-  });
-
   // Invariant (plan, "Scoring and results"): a refusal of the simulated host is not admitted — a
   // validity problem the scaffold retries — and only these two shapes are.
   test('not admitted: Verdict none with Gap not-admitted, or a refusal without closing lines', () => {

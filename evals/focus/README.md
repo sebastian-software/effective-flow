@@ -157,9 +157,10 @@ not stale focus evidence.
 CI reports all five suites identically on ordinary and release PRs under the
 [capability policy](../../docs/adr/pragmatic-test-release-policy.md). Strict manual verification
 still requires a complete current round; report mode fails integrity/errors without disguising
-missing/stale coverage or valid negatives as passes. Snapshot-host execution is disabled before
-target/ancestry reads pending current candidate-bound T3 observed/report-only acceptance. Follow-up
-and sends remain disabled independently; this suite's pure fixtures cannot qualify a real host.
+missing/stale coverage or valid negatives as passes. Snapshot-host execution and follow-up run only
+on the T3 observed report-only path bound on the
+[focus host acceptance page](../../docs/developer-guide/focus-host-acceptance.md); sends remain
+disabled, and this suite's pure fixtures cannot qualify a real host.
 
 ## Recording a round
 

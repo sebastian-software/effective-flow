@@ -85,8 +85,10 @@ visible for applicability/security triage. Known reachable security-critical def
 `pnpm eval <tool> verify --mode strict` retains full suite acceptance semantics. It remains a
 manual capability-qualification check, not a universal package-release prerequisite. Source drift
 does not become a pass, and no archive is re-stamped to hide debt. Planned-build workflow
-delegation uses the complete inline Quality path while unqualified. Focus snapshot execution,
-follow-up and sends remain disabled pending their own current acceptance.
+delegation uses the complete inline Quality path while unqualified. Focus snapshot execution and
+follow-up run only on the T3 observed report-only path bound on the
+[focus host acceptance page](focus-host-acceptance.md); focus sends remain disabled pending their
+own current acceptance.
 
 The former PR581 provisional CI branch is retired by this policy. Its bounded verifier and
 protected-host/security validation functions remain available under their original contracts;
