@@ -57,7 +57,7 @@ version 1 record has exactly this key set; strings are illustrative:
 
 `componentId` is the component identifier or `null`. `purpose` and `branchPolicy` are bound
 together: `delivery` and `partial-diff` at exactly `BASE_DIR/REPO_NAME/SESSION_ID` and
-`plan-publication` at `BASE_DIR/REPO_NAME/SESSION_ID-plan-publication` carry `retain`;
+`plan-publication` or `merge-gate` at `BASE_DIR/REPO_NAME/SESSION_ID-<purpose>` carry `retain`;
 `apply-review` at a direct child of its session directory, on branch
 `apply-review/<SESSION_ID>/<GROUP_NAME>`, carries `delete-after-integration`. `reason` is `null` for
 `active` and `cleanup-ready` and the exact reason otherwise. `creationOid` is the full commit OID at
@@ -65,7 +65,7 @@ which worktree and branch creation succeeded, captured once and never replaced. 
 immutable creation snapshot; fresh receipts are compared with it, never written into it. During
 `cleanup-in-progress` a cleanup claim, `cleanupRunId` and `claimedAt`, names its owner and
 timestamp. The helper refuses an unknown schema, a missing or extra key or an invalid value and never
-repairs, rewrites or deletes such a record.
+repairs or rewrites such a record; only cleanup's confirmed `invalid-record` item deletes one.
 
 ### State machine
 
@@ -85,6 +85,7 @@ repairs, rewrites or deletes such a record.
 | `aborted` or `failed`               | `active` (adoption)                     | `worktree transition` under the record lock, `adoption` `plan-pr-continuation` or `partial-diff-resume` |
 | `aborted` or `failed`               | `cleanup-ready` (release)               | `worktree transition` under the record lock, `release: "partial-diff"`                                  |
 | `cleanup-ready` or `cleanup-failed` | `cleanup-in-progress`                   | claim inside `worktree remove`, `cleanup apply`                                                         |
+| `aborted`/`failed` `merge-gate`     | `cleanup-in-progress`                   | claim inside `cleanup apply` only, after the no-unpushed-commits proof                                  |
 | `cleanup-in-progress`               | `cleanup-failed` or record deleted      | the claiming helper call reconciles                                                                     |
 
 A controlled user or workflow stop becomes `aborted`; an implementation, integration, validation,
@@ -99,7 +100,8 @@ The helper evaluates these conditions from fresh evidence under the record lock 
 failed one by number (`NOT_ELIGIBLE`, `conditions`):
 
 1. The record is schema-valid, `effective-flow-created`, and `cleanup-ready` or `cleanup-failed`
-   (`worktree remove` also accepts this session's `active` record).
+   (`worktree remove` also accepts this session's `active` record, cleanup a stopped `merge-gate`
+   record).
 2. Repository identity, `RUNTIME_STATE_ROOT`, path, branch, workflow, purpose and receipt snapshot
    match fresh evidence.
 3. Exactly one linked worktree in `git worktree list --porcelain -z` matches the path.
@@ -117,6 +119,11 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
 A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`) whose worktree is fully gone,
 unregistered and its path absent, is removable without conditions 3, 4, 5 and 7 and the toplevel
 part of 2; no Git call runs in the vanished path. A half-gone worktree keeps every condition.
+Cleanup's confirmed claim of a `merge-gate` record in any of its four removable statuses waives
+condition 6 for a no-unpushed-commits proof, re-derived under the lock without fetching: no merge,
+cherry-pick, revert, rebase or sequencer in progress and an empty
+`git rev-list HEAD --not --remotes`, or, fully gone (route above), a gone branch or that `rev-list`
+from its tip. A failed call blocks; failures are `blockers`.
 
 ### Helper operations
 
@@ -174,7 +181,7 @@ envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `r
 | `inspect` lists an orphan record lock or an orphan ledger                                    | A lock with no record, or no owner, or a ledger with no record: report it; never break or delete it.                                             |
 | item `ok`                                                                                    | Worktree and record gone; report the branch outcome.                                                                                             |
 | item `BRANCH_RETAINED`                                                                       | Worktree and record gone, branch kept: report `branch.branch`, `branch.reason` and `branch.unproven`.                                            |
-| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions, owner or reason; the record keeps its status.                                                     |
+| item `NOT_ELIGIBLE`, `LOCK_HELD`, `NOT_OWNER`, `RECORD_NOT_FOUND`, `INVALID_STATE`           | Nothing changed: report the failed conditions and `blockers`, owner or reason; the record keeps its status.                                      |
 | item `PREVIEW_MISMATCH` (`cleanup apply`)                                                    | The record changed after the dry run; nothing changed. Plan again.                                                                               |
 | item `REMOVE_FAILED`                                                                         | The record is `cleanup-failed` with Git's error (or `persisted: false`): report partial cleanup.                                                 |
 | item `UNSAFE_TARGET`, `WRITE_FAILED`, `GIT_FAILED`                                           | That item stopped; an in-flight claim or Git timeout is reconciled to `cleanup-failed`. Report the code and the status `worktree inspect` shows. |

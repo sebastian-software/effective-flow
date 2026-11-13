@@ -153,8 +153,8 @@ Codex and the portable build outside Claude Code write nothing. Source:
 ## Worktree lifecycle runtime state
 
 `worktree-runs/` is runtime bookkeeping, not project configuration. Every newly created
-Effective Flow delivery, partial-diff, plan-publication, or `apply-review` component worktree
-receives a versioned
+Effective Flow delivery, partial-diff, plan-publication, merge-gate, or `apply-review` component
+worktree receives a versioned
 lifecycle record at
 `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json`. The record binds the worktree to
 its verified repository, canonical path, branch, creation OID, workflow purpose, ownership,
@@ -164,7 +164,8 @@ harness-managed worktrees do not gain ownership through this store.
 Record creation, state changes, per-record locks, and deletion use the same just-in-time
 runtime-state safety checks described above. Writers resolve an absolute handle below the verified
 `RUNTIME_STATE_ROOT`, validate containment and Git state immediately before mutation, and fail
-closed on unknown schemas, foreign locks, mismatched receipts, or unsafe paths. A record remains
+closed on unknown schemas, foreign locks, mismatched receipts, or unsafe paths; the one deletion of a
+schema-invalid record is cleanup's confirmed `invalid-record` item. A record remains
 until worktree removal and any permitted branch follow-up are completely reverified; partial
 cleanup preserves enough state for a later reconciliation.
 

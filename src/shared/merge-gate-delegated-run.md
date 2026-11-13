@@ -190,10 +190,12 @@ the fragment is deferred until that step. The verified execution location with i
 the runtime-state write safety block, which includes `execution-location` eagerly and is itself
 loaded before the first write below `.effective-flow/`.
 
-Provision that checkout the way `{{SKILL:iterate}}` does: fetch the pull request's **existing** head
-branch and provide it in a clean checkout or isolated worktree, updated via fetch/pull. Never create
-a branch (no `-b` on `git worktree add`, no `git checkout -b`), never rebase, never force. Reading
-the deferred `worktree-integration` fragment is mandatory before that worktree is created.
+Provision that checkout from the pull request's **existing** head branch in a clean checkout or
+isolated worktree. Its lifecycle record uses purpose `merge-gate`, not `{{SKILL:iterate}}`'s
+`delivery`. The local head branch is created only per the provisioning sequence of
+`merge-gate-checkout-boundary`, from `refs/remotes/origin/<head>` and never under a new name; never
+rebase, never force. Reading the deferred `worktree-integration` fragment is mandatory before that
+worktree is created.
 
 ```lazy-include
 worktree-integration
@@ -234,6 +236,12 @@ and the head fetch writes no ref at all. Both are ref operations rooted in
 `RUNTIME_STATE_ROOT` per `execution-location` that touch no working tree and no branch. Step 1's
 `ls-remote` reads of the head branch, which write nothing, and its mismatch classification's
 `refs/pull/<N>/head` fetch, made exactly as the ancestry check's, are reads in the same way.
+
+**The provisioning ref updates are not a third kind of Git write.** The head fetch of the
+provisioning sequence, the explicit creation of `refs/heads/<head>` from
+`refs/remotes/origin/<head>` and its `--ff-only` update only bring the local head branch to
+`origin`'s state; they create no commit and push nothing. The two kinds above still govern every
+commit and every push.
 
 The second kind is bounded by `mergeGate.conflictResolution`: `off` and an `ask` nobody can answer
 make it unavailable, and the run then reports the conflict and makes **no commit and no push**, per
@@ -495,8 +503,9 @@ gate run inline generates it at the start. Use
 - the base-merge-unavailable record, once per run, written per Phase 2 step 1: the trigger that
   called for the merge, its round, its proof kind and its evidence – the `sameRepository`
   statement, the `ls-remote` result, or both SHAs with the classification
-- an undetermined existence check, once per run, with its reason, and a run ended on local
-  divergence, with the reused checkout
+- an undetermined existence check, once per run, with its reason, a failed provisioning fetch, with
+  its reason, and a run ended on local divergence, with the reused checkout or the retained head
+  branch with its commits not on `origin/<head>`
 - the provisioned checkout: reused in place, or the Effective Flow-owned worktree with its lifecycle
   record ID and that record's last transition, plus this run's worktree-record exit self-check
   result
@@ -845,7 +854,8 @@ run can push an unbounded number of commits onto someone's pull request.
        transient, no record, and the next round decides again;
      - **local divergence** – it equals `headSha`, so the checkout's tip diverged locally: end the
        run here – the round already begun stays counted, nothing is merged or delegated, the report
-       names that checkout, and Phase 6 runs – and write no record;
+       names the reused in-place checkout or, for a withdrawn worktree, the retained local head
+       branch and its commits not on `origin/<head>`, and Phase 6 runs – and write no record;
      - otherwise, an undetermined result included: write the base-merge-unavailable record with
        proof kind `different-commit`. Where the re-read reports `BEHIND` or `DIRTY`, apply the
        report-only run end here; with a merge state that is neither `BEHIND` nor `DIRTY`, the next
@@ -1165,9 +1175,10 @@ that fragment's report-and-stop path.
    - per round, the provisioned-checkout line from the wisdom record with this run's
      worktree-record exit self-check result;
    - a trigger-(b) merge of Phase 2 step 1 with its round, any undetermined ancestry check or
-     existence check with its reason, every head-identity mismatch with its round, the read's
-     `headSha` and the provisioned tip, a run ended on local divergence with the reused checkout,
-     and a run ended on an invalid head branch name with that name;
+     existence check or failed provisioning fetch with its reason, every head-identity mismatch with
+     its round, the read's `headSha` and the provisioned tip, a run ended on local divergence with
+     the reused checkout or the retained head branch with its commits not on `origin/<head>`, and a
+     run ended on an invalid head branch name with that name;
    - wherever the base-merge-unavailable record exists, whichever path ended the run: its round,
      its proof kind and evidence – the `sameRepository` statement, the `ls-remote` result, or both
      SHAs and the classification – that the base must be merged, or the conflict resolved, where

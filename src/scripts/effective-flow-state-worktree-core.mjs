@@ -35,9 +35,10 @@
 // Records live at `<cwd>/.effective-flow/worktree-runs/<RECORD_ID>.json` with the exact version 1
 // key set `build-run-core.mjs` checks with `exact()` (RECORD_KEYS), plus `cleanupRunId` and
 // `claimedAt` only while `cleanup-in-progress`. A record with unknown or missing keys, or any
-// invalid value, is never repaired or rewritten: it is INVALID_STATE, or ineligible (condition 1).
-// Every record write goes through `atomicWrite` (or `createNoClobber` for `record-init`), every
-// record path through the runtime-state guard.
+// invalid value, is never repaired or rewritten: it is INVALID_STATE, or ineligible (condition 1),
+// and it is deleted only through the confirmed `invalid-record:<RECORD_ID>` item of `cleanup apply`
+// (see below). Every record write goes through `atomicWrite` (or `createNoClobber` for
+// `record-init`), every record path through the runtime-state guard.
 //
 // The per-record lock is the directory `<RECORD_ID>.lock` with an `owner` file, created with
 // `mkdir` and released only by the actor whose token it holds. It is never broken and has no
@@ -66,10 +67,27 @@
 // out. Otherwise the branch stays, the record is still deleted, and the item is BRANCH_RETAINED
 // with the branch and its unproven commits. A `retain` branch is never touched.
 //
+// `cleanup plan` and `cleanup apply` alone may also claim a `merge-gate` record that a stopped run
+// left `aborted` or `failed` (`mergeGateRelease` of `evaluateEligibility`): condition 6 is waived,
+// and a fail-closed no-unpushed-commits proof, re-derived under the lock before the claim, guards
+// the removal instead. Its failures are the entry's `blockers`; the record is never rewritten
+// before the claim and its branch is retained.
+//
+// A record file `readRecord` reports invalid is the `invalid-record:<RECORD_ID>` class of `cleanup
+// plan` and `cleanup apply` (`assessInvalidRecord`), never a `worktree:` entry. Its proofs come
+// only from Git and the filesystem: a field of the invalid record may block (a non-terminal
+// `status`, a `worktreePath` another record names) but never authorizes. Its only action is
+// `absent` (path unregistered and ENOENT: only the record file is deleted). A worktree still
+// registered and present is `worktree-present` and never removed: nothing proves the checkout at
+// that path is still the one the record's run created, so the user removes it and reruns cleanup.
+// Every failed fact is a `blockers` entry. The record is never rewritten, its branch never
+// touched; a failed deletion leaves the file as it was.
+//
 // The multi-item operations return `{items: [...]}` with one result per item; a guard refusal of
 // one item (UNSAFE_TARGET, LEGACY_CHANGED, …) is that item's result and the others continue. Only
 // a root or input error (INVALID_ROOT, INVALID_INPUT, RUNTIME_STATE_UNSAFE) or a PREVIEW_MISMATCH
-// before the first write ends the whole call.
+// before the first write ends the whole call. `cleanup apply` items are `worktree:`,
+// `invalid-record:` (together at most MAX_RECORD_IDS), `legacy:` and `config:`.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
@@ -183,6 +201,7 @@ export const PURPOSES = Object.freeze([
   'partial-diff',
   'plan-publication',
   'apply-review',
+  'merge-gate',
 ]);
 export const BRANCH_POLICIES = Object.freeze(['retain', 'delete-after-integration']);
 export const SETUP_STATUSES = Object.freeze([
@@ -196,6 +215,14 @@ export const OWNERSHIP = 'effective-flow-created';
 // non-empty reason.
 const NULL_REASON_STATUSES = Object.freeze(['active', 'cleanup-ready']);
 export const CLAIMABLE_STATUSES = Object.freeze(['cleanup-ready', 'cleanup-failed']);
+// The statuses condition 1 accepts for a `merge-gate` record under the cleanup-only release
+// (`mergeGateRelease` of `evaluateEligibility`): a stopped run keeps its record `aborted` or
+// `failed`, and only `cleanup apply` may claim it from there.
+export const MERGE_GATE_RELEASE_STATUSES = Object.freeze([
+  'aborted',
+  'failed',
+  ...CLAIMABLE_STATUSES,
+]);
 // `from` → allowed `to` of `worktree transition`.
 export const TRANSITIONS = Object.freeze({
   active: Object.freeze(['cleanup-ready', 'aborted', 'failed']),
@@ -217,9 +244,56 @@ export const ADOPTIONS = Object.freeze([PLAN_PR_ADOPTION, RESUME_ADOPTION]);
 // The `core.fsmonitor=false` configuration of every Git call inside a proven worktree or source.
 const IN_WORKTREE_GIT_CONFIG = Object.freeze(['core.fsmonitor=false']);
 export const ELIGIBILITY_CONDITIONS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9]);
+// The closed vocabulary of the `blockers` array every blocked cleanup entry carries, in reporting
+// order: facts beyond the nine conditions that stop a removal. A new cleanup class adds its own
+// codes here; the `merge-gate` release reports the last three (`releaseBlockers`), the
+// `invalid-record` class every other one (`invalidRecordEntries`).
+export const BLOCKERS = Object.freeze([
+  'invalid-record-id',
+  'invalid-json',
+  'no-worktree-path',
+  'record-locked',
+  'ledger-present',
+  'unsafe-ledger-directory',
+  'status-not-terminal',
+  'recorded-elsewhere',
+  'half-gone',
+  'worktree-present',
+  'in-progress-operation',
+  'unpushed-commits',
+  'proof-unavailable',
+]);
+// The statuses an invalid record must carry for its `invalid-record` item: those of a run that
+// stopped or released its worktree. Any other value, a missing or unknown one included, is
+// `status-not-terminal`.
+export const INVALID_RECORD_TERMINAL_STATUSES = Object.freeze([
+  'aborted',
+  'failed',
+  'cleanup-ready',
+  'cleanup-failed',
+]);
+// The `readRecord` reasons of a record file that holds no JSON object (`invalid-json`).
+const INVALID_JSON_REASONS = Object.freeze([
+  'unreadable',
+  'not-regular',
+  'oversized',
+  'invalid-json',
+  'not-an-object',
+]);
+// The entries at `git rev-parse --git-path <name>` whose presence means a merge, cherry-pick,
+// revert, rebase or sequencer operation is in progress in that worktree.
+export const IN_PROGRESS_MARKERS = Object.freeze([
+  'MERGE_HEAD',
+  'CHERRY_PICK_HEAD',
+  'REVERT_HEAD',
+  'rebase-merge',
+  'rebase-apply',
+  'sequencer',
+]);
 
 export const DEFAULT_BASE_DIR = '.effective-flow/.worktrees';
 export const PLAN_PUBLICATION_SUFFIX = '-plan-publication';
+export const MERGE_GATE_SUFFIX = '-merge-gate';
 // The time bound of `worktree remove` and `cleanup apply`. No item starts once less than
 // ITEM_FLOOR_MS of DEFAULT_DEADLINE_MS is left, and every Git call of the operation is bounded by
 // what is left (in its own process group); the reconciliation of an in-flight claim may use
@@ -250,7 +324,7 @@ const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+
 const BRANCH_PATTERN =
   /^(?!-)(?!\/)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?!.*\/\.)(?!\.)(?!.*\.lock$)(?!.*[/.]$)[^\x00-\x20~^:?*[\\\x7f]+$/;
 export const ITEM_ID_PATTERN =
-  /^(?:worktree:[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}|legacy:\.(?:firmo|sf-plugin)|config:\.effective-flow\/config\.json)$/;
+  /^(?:(?:worktree|invalid-record):[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}|legacy:\.(?:firmo|sf-plugin)|config:\.effective-flow\/config\.json)$/;
 
 const PROBE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
 const OWNER_FLAGS = PROBE_FLAGS;
@@ -588,8 +662,8 @@ async function requiredLocation(context, bases, record) {
       parent: await canonicalOrSelf(context.fs, path.join(bases.applyReview, repo, session)),
     };
   }
-  const leaf =
-    record.purpose === 'plan-publication' ? `${session}${PLAN_PUBLICATION_SUFFIX}` : session;
+  const suffix = { 'plan-publication': PLAN_PUBLICATION_SUFFIX, 'merge-gate': MERGE_GATE_SUFFIX };
+  const leaf = `${session}${suffix[record.purpose] ?? ''}`;
   return { exact: await canonicalOrSelf(context.fs, path.join(bases.worktree, repo, leaf)) };
 }
 
@@ -598,17 +672,33 @@ async function requiredLocation(context, bases, record) {
 
 // Reads one record: `{state: 'missing'}`, `{state: 'invalid', reason}` or `{state: 'ok', record}`.
 export async function readRecord(context, paths, recordId) {
+  const read = await readRecordFile(context, paths, recordId);
+  if (read.state === 'invalid') return { state: 'invalid', reason: read.reason };
+  return read.state === 'ok' ? { state: 'ok', record: read.record } : { state: 'missing' };
+}
+
+// The classification of `readRecord` plus what the `invalid-record` class binds: the SHA-256 of
+// the file's bytes (null when unread) and, for an invalid record, its parsed `value` (a JSON
+// object, else null). The value is evidence that may only block, never authorize.
+async function readRecordFile(context, paths, recordId) {
   const read = await readBoundedFile(context.fs, paths.record, MAX_RECORD_BYTES);
   if (read.state === 'missing') return { state: 'missing' };
-  if (read.state !== 'ok') return { state: 'invalid', reason: read.state };
+  const invalid = (reason, value = null) => ({
+    state: 'invalid',
+    reason,
+    value,
+    sha256: read.sha256 ?? null,
+  });
+  if (read.state !== 'ok') return invalid(read.state);
   let value;
   try {
     value = JSON.parse(read.content.toString('utf8'));
   } catch {
-    return { state: 'invalid', reason: 'invalid-json' };
+    return invalid('invalid-json');
   }
   const problem = recordProblem(value, recordId);
-  return problem ? { state: 'invalid', reason: problem } : { state: 'ok', record: value };
+  if (problem) return invalid(problem, isObject(value) ? value : null);
+  return { state: 'ok', record: value, sha256: read.sha256 };
 }
 
 async function listRecordNames(context) {
@@ -619,6 +709,21 @@ async function listRecordNames(context) {
   } catch (error) {
     fail('UNSAFE_TARGET', `cannot list ${dir}: ${error?.code ?? error?.message}`);
   }
+}
+
+// Every record file below `worktree-runs/`: the record IDs of the `*.json` names that match
+// RECORD_ID_PATTERN (`ids`) and every other `*.json` name (`foreign`), both sorted. The guard's
+// temporary files end in `.tmp` and never count.
+async function listRecordFiles(context) {
+  const names = (await listRecordNames(context)).filter((name) => name.endsWith('.json')).sort();
+  const ids = [];
+  const foreign = [];
+  for (const name of names) {
+    const id = name.slice(0, -5);
+    if (RECORD_ID_PATTERN.test(id)) ids.push(id);
+    else foreign.push(name);
+  }
+  return { ids, foreign };
 }
 
 // Every `*.json` record ID below `worktree-runs/` (sorted); none when the directory is missing.
@@ -895,13 +1000,22 @@ export async function deferSignals(deps, recordId, fn) {
 // an index entry of the worktree, of any purpose, whose skip-worktree or assume-unchanged bit
 // hides bytes that neither its index nor HEAD holds, or such entries that cannot be established
 // (`hiddenChanges`): `git status` never compares their working tree.
+//
+// `mergeGateRelease` is the cleanup-only release of a `merge-gate` record, passed only by `cleanup
+// plan` and the item recompute, pre-lock gone gate and claim of `cleanup apply`, never by `worktree
+// remove`, `worktree inspect` or an adoption. For purpose `merge-gate` alone it replaces `statuses`
+// by MERGE_GATE_RELEASE_STATUSES and waives condition 6 (a force-push or reset after a stopped run
+// may leave `creationOid` off the branch); the no-unpushed-commits proof that guards it instead
+// is reported through `releaseBlockers`, never as a condition. Every other purpose ignores it.
 export function evaluateEligibility(
   facts,
-  { statuses = CLAIMABLE_STATUSES, removal = false } = {},
+  { statuses = CLAIMABLE_STATUSES, removal = false, mergeGateRelease = false } = {},
 ) {
   const failed = [];
-  const gone = removal && goneRemovable(facts);
-  if (!facts.schemaValid || !facts.ownershipCreated || !statuses.includes(facts.status)) {
+  const release = mergeGateReleaseApplies(facts, mergeGateRelease);
+  const accepted = release ? MERGE_GATE_RELEASE_STATUSES : statuses;
+  const gone = removal && goneRemovable(facts, release);
+  if (!facts.schemaValid || !facts.ownershipCreated || !accepted.includes(facts.status)) {
     failed.push(1);
   }
   if (!(gone ? facts.receiptFieldsMatch : facts.receiptMatches)) failed.push(2);
@@ -921,7 +1035,7 @@ export function evaluateEligibility(
   ) {
     failed.push(5);
   }
-  if (!facts.creationIsCommit || !facts.creationAncestor) failed.push(6);
+  if (!release && (!facts.creationIsCommit || !facts.creationAncestor)) failed.push(6);
   if (
     !gone &&
     (!facts.clean ||
@@ -946,13 +1060,137 @@ export function evaluateEligibility(
 // and 9 stay required, no Git call runs inside the vanished path, and the claim and removal
 // sequence is unchanged (the post-claim reconcile of an absent worktree). A half-gone worktree
 // (registered without its directory, or present without its registration) and every other purpose
-// keep the full conditions: cleanup never prunes.
-function goneRemovable(facts) {
+// keep the full conditions: cleanup never prunes. Under `mergeGateRelease` (`release`), a fully
+// gone `merge-gate` record in a MERGE_GATE_RELEASE_STATUSES status takes the same route with
+// condition 6 waived; its branch must be gone or pass the no-unpushed-commits proof instead.
+function goneRemovable(facts, release = false) {
+  if (facts.gone !== true) return false;
+  if (release) return MERGE_GATE_RELEASE_STATUSES.includes(facts.status);
+  return facts.purpose === 'partial-diff' && CLAIMABLE_STATUSES.includes(facts.status);
+}
+
+function mergeGateReleaseApplies(facts, mergeGateRelease) {
+  return mergeGateRelease === true && facts.purpose === 'merge-gate';
+}
+
+// Whether the no-unpushed-commits proof applies to a `merge-gate` record under the release: a
+// removable status and a worktree that is either present and proven ours or fully gone. Any other
+// record (an `active` one, a half-gone or foreign worktree) is blocked by conditions 1, 3 or 4
+// alone; no proof call runs for it and it carries no blocker.
+function releaseProofApplies(facts) {
   return (
-    facts.gone === true &&
-    facts.purpose === 'partial-diff' &&
-    CLAIMABLE_STATUSES.includes(facts.status)
+    MERGE_GATE_RELEASE_STATUSES.includes(facts.status) &&
+    (facts.commonDirMatches === true || facts.gone === true)
   );
+}
+
+// The `blockers` of the `merge-gate` release over `facts.releaseProof` (`releaseProof` of
+// `gatherFacts`), in BLOCKERS order; empty for every other purpose, without `mergeGateRelease`, and
+// where the proof does not apply (`releaseProofApplies`). Where it applies it fails closed: a
+// missing proof or one whose Git call failed or timed out (null) is `proof-unavailable`, never an
+// empty result.
+export function releaseBlockers(facts, { mergeGateRelease = false } = {}) {
+  if (!mergeGateReleaseApplies(facts, mergeGateRelease) || !releaseProofApplies(facts)) return [];
+  const proof = facts.releaseProof ?? null;
+  const found = new Set();
+  if (proof === null || proof.inProgress === null || proof.unpushed === null) {
+    found.add('proof-unavailable');
+  }
+  if (proof?.inProgress?.length > 0) found.add('in-progress-operation');
+  if (proof?.unpushed?.length > 0) found.add('unpushed-commits');
+  return BLOCKERS.filter((blocker) => found.has(blocker));
+}
+
+// The failed conditions and the blockers of `facts` together: `{conditions, blockers}`. A record is
+// removable only when both are empty.
+export function assessEligibility(facts, options = {}) {
+  return {
+    conditions: evaluateEligibility(facts, options),
+    blockers: releaseBlockers(facts, options),
+  };
+}
+
+// The in-progress operations of the proven worktree behind `inWorktree` (IN_PROGRESS_MARKERS that
+// exist at their `git rev-parse --git-path` location), or null when Git or `lstat` cannot establish
+// them. Only after the common-directory proof of that worktree.
+async function operationsInProgress(fs, inWorktree) {
+  const result = await inWorktree([
+    'rev-parse',
+    '--path-format=absolute',
+    ...IN_PROGRESS_MARKERS.flatMap((name) => ['--git-path', name]),
+  ]);
+  if (!gitOk(result)) return null;
+  const locations = gitStdout(result)
+    .split('\n')
+    .filter((line) => line !== '');
+  if (
+    locations.length !== IN_PROGRESS_MARKERS.length ||
+    !locations.every((location) => path.isAbsolute(location))
+  ) {
+    return null;
+  }
+  const found = [];
+  for (const [index, location] of locations.entries()) {
+    try {
+      await fs.lstat(location);
+      found.push(IN_PROGRESS_MARKERS[index]);
+    } catch (error) {
+      if (error?.code !== 'ENOENT') return null;
+    }
+  }
+  return found;
+}
+
+// The first commit of `rev-list <args> --not --remotes` run by `runner` (an empty list when every
+// commit is on a remote-tracking ref), or null when Git fails or times out. No fetch runs: every
+// commit the list leaves out stays reachable from a remote-tracking ref after the removal.
+async function unpushedCommits(runner, revision) {
+  const result = await runner(['rev-list', '--max-count=1', revision, '--not', '--remotes']);
+  if (!gitOk(result)) return null;
+  return gitStdout(result)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+// The tip of `refs/heads/<branch>` read from the main checkout: `{state: 'present', oid}`,
+// `{state: 'missing'}`, or null when Git fails or times out (a missing branch is an empty listing,
+// never a failed call).
+async function branchState(context, branch) {
+  const ref = `refs/heads/${branch}`;
+  const result = await runGit(context, context.cwd, [
+    'for-each-ref',
+    '--format=%(objectname) %(refname)',
+    ref,
+  ]);
+  if (!gitOk(result)) return null;
+  const line = gitStdout(result)
+    .split('\n')
+    .find((entry) => entry.endsWith(` ${ref}`));
+  if (line === undefined) return { state: 'missing' };
+  const oid = line.slice(0, line.indexOf(' '));
+  return OID_PATTERN.test(oid) ? { state: 'present', oid } : null;
+}
+
+// The no-unpushed-commits proof of the `merge-gate` release: `{inProgress, unpushed}`, each a list
+// or null when unestablished. A present worktree whose common directory is proven ours is read
+// inside it (`IN_PROGRESS_MARKERS`, then `rev-list HEAD --not --remotes`); a fully gone one runs no
+// Git in its vanished path, only from the main checkout: a deleted branch has nothing left to lose,
+// an existing one must pass the same `rev-list` from its tip. Only where `releaseProofApplies`.
+async function mergeGateReleaseProof(context, facts, record) {
+  if (facts.commonDirMatches) {
+    const inWorktree = guardedGit(context, record.worktreePath);
+    const inProgress = await operationsInProgress(context.fs, inWorktree);
+    const unpushed = await unpushedCommits(inWorktree, 'HEAD');
+    return { inProgress, unpushed };
+  }
+  // Defence in depth: a worktree neither proven ours nor fully gone never reaches the branch proof.
+  if (!facts.gone) return null;
+  const branch = await branchState(context, record.branch);
+  if (branch === null) return { inProgress: [], unpushed: null };
+  if (branch.state === 'missing') return { inProgress: [], unpushed: [] };
+  const unpushed = await unpushedCommits((args) => runGit(context, context.cwd, args), branch.oid);
+  return { inProgress: [], unpushed };
 }
 
 async function branchTip(context, branch) {
@@ -1097,13 +1335,14 @@ async function hiddenWorktreeEntries(context, roots, root) {
 }
 
 // Gathers the facts of one valid record. `worktrees` is a fresh porcelain list; `ownLock` the
-// token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID.
+// token this actor holds on the record lock (null when none); `ownClaim` this actor's claim ID;
+// `mergeGateRelease` adds the `releaseProof` of a `merge-gate` record (see `evaluateEligibility`).
 export async function gatherFacts(
   context,
   roots,
   worktrees,
   record,
-  { ownLock = null, ownClaim = null },
+  { ownLock = null, ownClaim = null, mergeGateRelease = false },
 ) {
   const { fs } = context;
   const target = record.worktreePath;
@@ -1204,6 +1443,9 @@ export async function gatherFacts(
     lock.present && !(ownLock && lock.owner.state === 'valid' && lock.owner.token === ownLock);
   facts.foreignClaim =
     record.status === 'cleanup-in-progress' && !(ownClaim && record.cleanupRunId === ownClaim);
+  if (mergeGateReleaseApplies(facts, mergeGateRelease) && releaseProofApplies(facts)) {
+    facts.releaseProof = await mergeGateReleaseProof(context, facts, record);
+  }
   return facts;
 }
 
@@ -1282,6 +1524,14 @@ function requireItems(value) {
     if (typeof items[id] !== 'string' || !SHA256_PATTERN.test(items[id])) {
       fail('INVALID_INPUT', `items.${id} must be a SHA-256 itemDigest`);
     }
+  }
+  // Every record item takes a record lock and may run a removal; the three legacy items do not.
+  const recordItems = ids.filter((id) => ['worktree', 'invalid-record'].includes(itemKind(id)));
+  if (recordItems.length > MAX_RECORD_IDS) {
+    fail(
+      'INVALID_INPUT',
+      `items must select at most ${MAX_RECORD_IDS} worktree and invalid-record items`,
+    );
   }
   return items;
 }
@@ -1656,14 +1906,27 @@ async function adoptionProofs(context, roots, record, input, held) {
 // ---------------------------------------------------------------------------------------------
 // worktree inspect
 
-async function inspectRecords(context, roots, { sessionId = null } = {}) {
+// `mergeGateRelease` is set only by `cleanup plan`: each valid record then carries the `blockers`
+// of `assessEligibility` beside its conditions. `worktree inspect` never sets it. `recordSet`
+// (`cleanup plan` only) is the one `readRecordSet` read of the record files: `records` then holds
+// its valid records alone, never re-read, and `cleanup plan` reports the invalid ones and the names
+// that are no record ID once, from the same read, as the `invalid-record` class.
+async function inspectRecords(
+  context,
+  roots,
+  { sessionId = null, mergeGateRelease = false, recordSet = null } = {},
+) {
   const worktrees = await listWorktrees(context);
   const records = [];
   const sources = new Map();
   const named = new Set();
-  for (const id of await listRecordIds(context)) {
+  const ids = recordSet === null ? await listRecordIds(context) : [...recordSet.valid.keys()];
+  for (const id of ids) {
     const paths = recordPaths(roots.cwd, id);
-    const read = await readRecord(context, paths, id);
+    const read =
+      recordSet === null
+        ? await readRecord(context, paths, id)
+        : { state: 'ok', record: recordSet.valid.get(id) };
     if (read.state !== 'ok') {
       if (sessionId === null) {
         records.push({
@@ -1679,7 +1942,11 @@ async function inspectRecords(context, roots, { sessionId = null } = {}) {
     const record = read.record;
     named.add(record.worktreePath);
     if (sessionId !== null && record.sessionId !== sessionId) continue;
-    const facts = await gatherFacts(context, roots, worktrees, record, {});
+    const facts = await gatherFacts(context, roots, worktrees, record, { mergeGateRelease });
+    const { conditions, blockers } = assessEligibility(facts, {
+      removal: true,
+      mergeGateRelease,
+    });
     sources.set(id, record);
     records.push({
       recordId: id,
@@ -1697,7 +1964,8 @@ async function inspectRecords(context, roots, { sessionId = null } = {}) {
         ? { cleanupRunId: record.cleanupRunId, claimedAt: record.claimedAt }
         : {}),
       tip: facts.branchTip,
-      conditions: evaluateEligibility(facts, { removal: true }),
+      conditions,
+      ...(mergeGateRelease ? { blockers } : {}),
       lock: facts.lock,
     });
   }
@@ -1759,6 +2027,7 @@ async function unrecordedWorktrees(context, roots, worktrees, named, sessionId, 
       [
         path.join(bases.worktree, repo, sessionId),
         path.join(bases.worktree, repo, `${sessionId}${PLAN_PUBLICATION_SUFFIX}`),
+        path.join(bases.worktree, repo, `${sessionId}${MERGE_GATE_SUFFIX}`),
         path.join(bases.applyReview, repo, sessionId),
       ].map((candidate) => canonicalOrSelf(context.fs, candidate)),
     );
@@ -1940,9 +2209,10 @@ async function preflightDirectories(context, roots, record, { gone = false } = {
   return [...new Set(directories)];
 }
 
-// Creates and removes one probe file per directory. Returns null, or the first denied directory.
-async function preflight(context, roots, record, deps, { gone = false } = {}) {
-  for (const directory of await preflightDirectories(context, roots, record, { gone })) {
+// Creates and removes one probe file in each of `directories`. Returns null, or the first denied
+// directory.
+async function probeDirectories(context, directories, deps) {
+  for (const directory of directories) {
     const probe = path.join(directory, `.effective-flow-probe-${randomHex(deps, 8)}`);
     let handle;
     try {
@@ -1958,6 +2228,15 @@ async function preflight(context, roots, record, deps, { gone = false } = {}) {
     }
   }
   return null;
+}
+
+// The sandbox preflight of `record`'s worktree removal (`preflightDirectories` takes `options`).
+async function preflight(context, roots, record, deps, options = {}) {
+  return probeDirectories(
+    context,
+    await preflightDirectories(context, roots, record, options),
+    deps,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2174,6 +2453,8 @@ async function worktreeGone(context, record) {
 //   allowActive   whether an `active` record is first moved to `cleanup-ready`
 //   integration   `{branch, excluded}` for the `apply-review` proof, or null
 //   expectDigest  the selected `itemDigest` re-checked under the lock (`cleanup apply`), or null
+//   mergeGateRelease  the cleanup-only `merge-gate` release (`cleanup apply` only; see
+//                 `evaluateEligibility`), for the pre-lock gone gate and the claim
 //   signals       the signal state of the call
 async function removeOne(context, roots, recordId, options, deps) {
   const paths = recordPaths(roots.cwd, recordId);
@@ -2191,13 +2472,24 @@ async function removeOne(context, roots, recordId, options, deps) {
   const proof = await proveOwnWorktree(context, roots, first.record);
   let gone = false;
   if (!proof.commonDirMatches) {
-    // Only a fully gone `partial-diff` worktree (`goneRemovable`) passes without the proof; it is
+    // Only a fully gone worktree that `goneRemovable` admits passes without the proof; it is
     // removed by the post-claim reconcile of an absent worktree, with no Git call in its path.
-    const facts = await gatherFacts(context, roots, await listWorktrees(context), first.record, {});
+    const mergeGateRelease = options.mergeGateRelease === true;
+    const facts = await gatherFacts(context, roots, await listWorktrees(context), first.record, {
+      mergeGateRelease,
+    });
     const statuses = options.allowActive ? ['active', ...CLAIMABLE_STATUSES] : CLAIMABLE_STATUSES;
-    const conditions = evaluateEligibility(facts, { statuses, removal: true });
-    if (conditions.length > 0 || !facts.gone) {
-      return itemFailure(recordId, 'NOT_ELIGIBLE', { status: first.record.status, conditions });
+    const { conditions, blockers } = assessEligibility(facts, {
+      statuses,
+      removal: true,
+      mergeGateRelease,
+    });
+    if (conditions.length > 0 || blockers.length > 0 || !facts.gone) {
+      return itemFailure(recordId, 'NOT_ELIGIBLE', {
+        status: first.record.status,
+        conditions,
+        blockers,
+      });
     }
     gone = true;
   }
@@ -2223,8 +2515,10 @@ async function removeOne(context, roots, recordId, options, deps) {
 // `cleanupRunId`, and only then does Git remove the worktree, without `--force` and without ever
 // pruning or unlinking the path. Every failure after the claim is persisted as `cleanup-failed`
 // with the exact reason, so the record stays the visible truth; only a gone worktree lets the
-// branch policy run and the record be deleted.
+// branch policy run and the record be deleted. The `merge-gate` release proof is re-derived here,
+// under the lock and before the claim.
 async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, held, options, deps) {
+  await phase(deps, 'underLock', { operation: options.operation, recordId });
   const read = await readRecord(context, paths, recordId);
   if (read.state === 'missing') return itemFailure(recordId, 'RECORD_NOT_FOUND');
   if (read.state === 'invalid') {
@@ -2234,17 +2528,25 @@ async function claimAndRemove(context, roots, paths, recordId, cleanupRunId, hel
   if (options.sessionId !== null && record.sessionId !== options.sessionId) {
     return itemFailure(recordId, 'NOT_OWNER', { reason: 'session-mismatch' });
   }
+  const mergeGateRelease = options.mergeGateRelease === true;
   const worktrees = await listWorktrees(context);
-  const facts = await gatherFacts(context, roots, worktrees, record, { ownLock: held.token });
+  const facts = await gatherFacts(context, roots, worktrees, record, {
+    ownLock: held.token,
+    mergeGateRelease,
+  });
   if (options.expectDigest !== null) {
     if (itemDigest(worktreeDigestInput(record, facts.branchTip)) !== options.expectDigest) {
       return itemFailure(recordId, 'PREVIEW_MISMATCH', { reason: 'digest' });
     }
   }
   const statuses = options.allowActive ? ['active', ...CLAIMABLE_STATUSES] : CLAIMABLE_STATUSES;
-  const conditions = evaluateEligibility(facts, { statuses, removal: true });
-  if (conditions.length > 0) {
-    return itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, conditions });
+  const { conditions, blockers } = assessEligibility(facts, {
+    statuses,
+    removal: true,
+    mergeGateRelease,
+  });
+  if (conditions.length > 0 || blockers.length > 0) {
+    return itemFailure(recordId, 'NOT_ELIGIBLE', { status: record.status, conditions, blockers });
   }
   // The ledger is deleted right before the record, so a `ledgers/` entry the guard refuses fails
   // the item here, before any write or removal (UNSAFE_TARGET): nothing is deleted through it.
@@ -2462,6 +2764,7 @@ export async function removeRecords(input, deps) {
           allowActive: true,
           integration,
           expectDigest: null,
+          mergeGateRelease: false,
           signals,
         },
         deps,
@@ -2754,19 +3057,245 @@ async function locatorStepOrNull(context, deps) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The `invalid-record` class
+
+// Every record file below `worktree-runs/`, read once: `valid` (record ID → record), `invalid`
+// (record ID → `{recordId, schemaReason, value, sha256}` of `readRecordFile`) and `foreign`, the
+// `*.json` names that are no record ID.
+async function readRecordSet(context, roots) {
+  const { ids, foreign } = await listRecordFiles(context);
+  const valid = new Map();
+  const invalid = new Map();
+  for (const id of ids) {
+    const read = await readRecordFile(context, recordPaths(roots.cwd, id), id);
+    if (read.state === 'ok') valid.set(id, read.record);
+    else if (read.state === 'invalid') {
+      invalid.set(id, {
+        recordId: id,
+        schemaReason: read.reason,
+        value: read.value,
+        sha256: read.sha256,
+      });
+    }
+  }
+  return { valid, invalid, foreign };
+}
+
+// Whether a canonical `candidates` path of the invalid record `selfId` is recorded elsewhere, from
+// the records alone: the `worktreePath` of a valid record or of another invalid record whose
+// status is not terminal, or the session directory of a valid `apply-review` record (its
+// `worktreePath`'s parent) or any path below it. Terminal invalid records sharing a path never
+// block each other; they retire one at a time.
+async function recordedElsewhere(context, set, selfId, candidates) {
+  const exact = new Set();
+  const parents = [];
+  const name = async (target) => {
+    exact.add(target);
+    exact.add(await canonicalOrSelf(context.fs, target));
+  };
+  for (const record of set.valid.values()) {
+    await name(record.worktreePath);
+    if (record.purpose === 'apply-review') {
+      const parent = path.dirname(record.worktreePath);
+      parents.push(parent, await canonicalOrSelf(context.fs, parent));
+    }
+  }
+  for (const other of set.invalid.values()) {
+    const value = other.value;
+    if (other.recordId === selfId || value === null) continue;
+    if (INVALID_RECORD_TERMINAL_STATUSES.includes(value.status)) continue;
+    // Any absolute path may block, a trailing `/` or other unnormalized form included.
+    if (isText(value.worktreePath) && path.isAbsolute(value.worktreePath)) {
+      await name(path.resolve(value.worktreePath));
+    }
+  }
+  return candidates.some(
+    (target) =>
+      exact.has(target) || parents.some((parent) => parent === target || isBelow(parent, target)),
+  );
+}
+
+// Assesses one invalid record file (`entry` of `readRecordSet`) from fresh facts: `{recordId,
+// schemaReason, action, blockers, evidence, worktreePath, paths, digest}`. `action` is `absent`,
+// or null when no path, a half-gone or a present worktree leaves none. Of the record only `status`
+// and a validated `worktreePath` are read, and both can only block; `evidence` holds the validated
+// path, the schema-problem code and facts the helper derived, never a free-text field. `ownLock`
+// is the token of the record lock this actor holds (null when none). The digest binds the record
+// file's bytes and the action.
+async function assessInvalidRecord(context, roots, worktrees, set, entry, { ownLock = null } = {}) {
+  const { fs } = context;
+  const found = new Set();
+  const paths = recordPaths(roots.cwd, entry.recordId);
+  const lock = await observeRecordLock(context, paths);
+  if (lock.present && !(ownLock && lock.owner.state === 'valid' && lock.owner.token === ownLock)) {
+    found.add('record-locked');
+  }
+  try {
+    if (await ledgerExists(context, roots.cwd, entry.recordId)) found.add('ledger-present');
+  } catch (error) {
+    if (!(error instanceof RuntimeStateError) || error.code !== 'UNSAFE_TARGET') throw error;
+    found.add('unsafe-ledger-directory');
+  }
+  const value = INVALID_JSON_REASONS.includes(entry.schemaReason) ? null : entry.value;
+  const target = isAbsolutePath(value?.worktreePath) ? value.worktreePath : null;
+  let action = null;
+  let candidates = [];
+  const evidence = { schemaReason: entry.schemaReason, worktreePath: target };
+  if (value === null) {
+    found.add('invalid-json');
+  } else {
+    if (!INVALID_RECORD_TERMINAL_STATUSES.includes(value.status)) found.add('status-not-terminal');
+    if (target === null) found.add('no-worktree-path');
+  }
+  if (target !== null) {
+    const real = await canonical(fs, target);
+    candidates = [...new Set([target, real ?? target])];
+    if (await recordedElsewhere(context, set, entry.recordId, candidates)) {
+      found.add('recorded-elsewhere');
+    }
+    const registrations = worktrees.filter((registration) =>
+      candidates.some((candidate) => matches(registration, candidate)),
+    );
+    const present = !(await pathAbsent(fs, target));
+    const registration = registrations.length === 1 ? registrations[0] : null;
+    Object.assign(evidence, {
+      registrations: registrations.length,
+      present,
+      head: registration?.head ?? null,
+      branch: registration?.branch?.startsWith('refs/heads/')
+        ? registration.branch.slice(11)
+        : null,
+    });
+    if (registrations.length === 0 && !present) action = 'absent';
+    else if (registrations.length > 0 && present) found.add('worktree-present');
+    else found.add('half-gone');
+  }
+  const blockers = BLOCKERS.filter((blocker) => found.has(blocker));
+  return {
+    recordId: entry.recordId,
+    schemaReason: entry.schemaReason,
+    action,
+    blockers,
+    evidence,
+    worktreePath: target,
+    paths: candidates,
+    digest: itemDigest({
+      kind: 'invalidRecord',
+      recordId: entry.recordId,
+      recordSha256: entry.sha256,
+      schemaReason: entry.schemaReason,
+      worktreePath: target,
+      action,
+    }),
+  };
+}
+
+// The `invalid-record` entries of `cleanup plan`: every invalid record file exactly once, as an
+// item or blocked with its `blockers` (and no `reason`), and every `*.json` name that is no record
+// ID blocked as `invalid-record-id` under the SHA-256 of its name, which is never echoed. `paths`
+// are the worktree paths these records name, which `unrecorded` leaves out. `set` is the plan's one
+// `readRecordSet` read, shared with `inspectRecords`.
+async function invalidRecordEntries(context, roots, worktrees, set) {
+  const items = [];
+  const blocked = [];
+  const paths = [];
+  for (const entry of set.invalid.values()) {
+    const assessed = await assessInvalidRecord(context, roots, worktrees, set, entry);
+    paths.push(...assessed.paths);
+    const shown = {
+      itemId: `invalid-record:${assessed.recordId}`,
+      kind: 'invalidRecord',
+      recordId: assessed.recordId,
+      schemaReason: assessed.schemaReason,
+      ...(assessed.action === null ? {} : { action: assessed.action }),
+      evidence: assessed.evidence,
+    };
+    if (assessed.blockers.length === 0) items.push({ ...shown, itemDigest: assessed.digest });
+    else blocked.push({ ...shown, blockers: assessed.blockers });
+  }
+  for (const name of set.foreign) {
+    blocked.push({
+      itemId: null,
+      kind: 'invalidRecord',
+      fileNameSha256: createHash('sha256').update(name).digest('hex'),
+      blockers: ['invalid-record-id'],
+    });
+  }
+  return { items, blocked, paths };
+}
+
+// Retires one selected invalid record under its record lock by deleting its record file. The
+// pre-lock recompute and the one under the lock re-derive the facts, and any difference from
+// `expectDigest` is this item's PREVIEW_MISMATCH with nothing written. Only `absent` is ever
+// actionable, so no Git call writes anything; a failed deletion is REMOVE_FAILED and keeps the file
+// as it was: the record is never rewritten.
+async function retireInvalidRecord(context, roots, recordId, expectDigest, signals, deps) {
+  const paths = recordPaths(roots.cwd, recordId);
+  const fresh = async (ownLock) => {
+    const set = await readRecordSet(context, roots);
+    const entry = set.invalid.get(recordId);
+    if (!entry) return null;
+    const worktrees = await listWorktrees(context);
+    return assessInvalidRecord(context, roots, worktrees, set, entry, { ownLock });
+  };
+  const mismatch = (assessed) => {
+    if (assessed === null) return { reason: 'unknown-item' };
+    if (assessed.blockers.length > 0)
+      return { reason: 'not-actionable', blockers: assessed.blockers };
+    return assessed.digest === expectDigest ? null : { reason: 'digest' };
+  };
+  const changed = mismatch(await fresh(null));
+  if (changed) return itemFailure(recordId, 'PREVIEW_MISMATCH', changed);
+  // Only the record directory is written (the lock, the file deletion), so only it is probed: the
+  // record's untrusted path names no directory to write to.
+  const denied = await probeDirectories(context, [paths.dir], deps);
+  if (denied) return itemFailure(recordId, 'SANDBOX_DENIED', denied);
+  const outcome = await withRecordLock(
+    context,
+    paths,
+    { operation: 'cleanup apply', runId: `cleanup-${randomHex(deps)}` },
+    deps,
+    async (held) => {
+      await phase(deps, 'underLock', { operation: 'cleanup apply', recordId });
+      const assessed = await fresh(held.token);
+      const moved = mismatch(assessed);
+      if (moved) return itemFailure(recordId, 'PREVIEW_MISMATCH', moved);
+      if (signals.signal) return itemFailure(recordId, 'INTERRUPTED', { signal: signals.signal });
+      const { action, worktreePath } = assessed;
+      try {
+        await guardedUnlink(context, paths.record);
+      } catch (error) {
+        return itemFailure(recordId, 'REMOVE_FAILED', {
+          action,
+          reason: `the record file could not be deleted: ${error?.message ?? String(error)}`,
+          recordKept: true,
+        });
+      }
+      return { recordId, ok: true, action, worktreePath, recordDeleted: true };
+    },
+  );
+  if (outcome instanceof StateOutcome) return itemFailure(recordId, outcome.code, outcome.details);
+  return outcome;
+}
+
 export async function cleanupPlan(input, deps) {
   const context = prepare('cleanup plan', input, deps);
   const decisions = requireDecisions(input.decisions);
   const roots = await openRoots(context, input);
+  // Every record file is read once, so each lands in exactly one class, however it changes meanwhile.
+  const recordSet = await readRecordSet(context, roots);
   const { worktrees, records, sources, named, orphanLocks, ledgerDirectory } = await inspectRecords(
     context,
     roots,
+    { mergeGateRelease: true, recordSet },
   );
+  const invalid = await invalidRecordEntries(context, roots, worktrees, recordSet);
   const items = [];
   const blocked = [];
   for (const record of records) {
     const itemId = `worktree:${record.recordId}`;
-    if (record.valid && record.conditions.length === 0) {
+    if (record.valid && record.conditions.length === 0 && record.blockers.length === 0) {
       // The digest binds the record exactly as its facts were derived; it is never re-read here,
       // so a record deleted or replaced since then cannot leak into the item.
       items.push({
@@ -2776,20 +3305,33 @@ export async function cleanupPlan(input, deps) {
         itemDigest: itemDigest(worktreeDigestInput(sources.get(record.recordId), record.tip)),
       });
     } else {
-      blocked.push({ itemId, kind: 'worktree', ...record });
+      blocked.push({ itemId, kind: 'worktree', blockers: [], ...record });
     }
   }
+  items.push(...invalid.items);
+  blocked.push(...invalid.blocked);
   for (const orphan of orphanLocks) {
-    blocked.push({ itemId: `worktree:${orphan.recordId}`, kind: 'orphanLock', ...orphan });
+    blocked.push({
+      itemId: `worktree:${orphan.recordId}`,
+      kind: 'orphanLock',
+      blockers: [],
+      ...orphan,
+    });
   }
   const locatorStep = await locatorStepOrNull(context, deps);
   const marker = await readMarker(context);
   for (const name of LEGACY_RUNTIME_DIRS) {
     const legacy = await legacyDirectoryItem(context, name, decisions, locatorStep, marker);
-    if (legacy) (legacy.actionable ? items : blocked).push(legacy.item);
+    if (legacy) {
+      if (legacy.actionable) items.push(legacy.item);
+      else blocked.push({ blockers: [], ...legacy.item });
+    }
   }
   const config = await legacyConfigItem(context, decisions, locatorStep);
-  if (config) (config.actionable ? items : blocked).push(config.item);
+  if (config) {
+    if (config.actionable) items.push(config.item);
+    else blocked.push({ blockers: [], ...config.item });
+  }
   return {
     runtimeStateRoot: roots.cwd,
     executionRoot: roots.executionRoot,
@@ -2798,14 +3340,24 @@ export async function cleanupPlan(input, deps) {
     decisions,
     items,
     blocked,
-    unrecorded: await unrecordedWorktrees(context, roots, worktrees, named, null, deps),
+    // A worktree an invalid record names is accounted for by its `invalid-record` entry.
+    unrecorded: await unrecordedWorktrees(
+      context,
+      roots,
+      worktrees,
+      new Set([...named, ...invalid.paths]),
+      null,
+      deps,
+    ),
     runs: await runInventory(context),
     // Only when the `ledgers/` entry is unsafe; `cleanup apply` then refuses every worktree item.
     ...(ledgerDirectory ? { ledgerDirectory } : {}),
   };
 }
 
-const ITEM_ORDER = Object.freeze({ worktree: 0, legacy: 1, config: 2 });
+// The order `cleanup apply` runs its items in: valid records first, then invalid records, then the
+// legacy directories and the legacy config file.
+const ITEM_ORDER = Object.freeze({ worktree: 0, 'invalid-record': 1, legacy: 2, config: 3 });
 
 function itemKind(itemId) {
   return itemId.slice(0, itemId.indexOf(':'));
@@ -2820,12 +3372,37 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
     const read = await readRecord(context, recordPaths(roots.cwd, key), key);
     if (read.state !== 'ok') return { reason: 'unknown-item' };
     shared.worktrees ??= await listWorktrees(context);
-    const facts = await gatherFacts(context, roots, shared.worktrees, read.record, {});
+    const facts = await gatherFacts(context, roots, shared.worktrees, read.record, {
+      mergeGateRelease: true,
+    });
     const digest = itemDigest(worktreeDigestInput(read.record, facts.branchTip));
-    const conditions = evaluateEligibility(facts, { removal: true });
+    const { conditions, blockers } = assessEligibility(facts, {
+      removal: true,
+      mergeGateRelease: true,
+    });
     // An item `cleanup plan` would list as blocked is never selectable, whatever digest it carries.
-    if (conditions.length > 0) return { reason: 'not-actionable', conditions, digest };
+    if (conditions.length > 0 || blockers.length > 0) {
+      return { reason: 'not-actionable', conditions, blockers, digest };
+    }
     return { digest, recordId: key };
+  }
+  if (kind === 'invalid-record') {
+    // Nothing is written during the first pass, so its items share one record set and one list.
+    shared.worktrees ??= await listWorktrees(context);
+    shared.recordSet ??= await readRecordSet(context, roots);
+    const entry = shared.recordSet.invalid.get(key);
+    if (!entry) return { reason: 'unknown-item' };
+    const assessed = await assessInvalidRecord(
+      context,
+      roots,
+      shared.worktrees,
+      shared.recordSet,
+      entry,
+    );
+    if (assessed.blockers.length > 0) {
+      return { reason: 'not-actionable', blockers: assessed.blockers, digest: assessed.digest };
+    }
+    return { digest: assessed.digest, invalidRecordId: key };
   }
   shared.locatorStep ??= await locatorStepOrNull(context, deps);
   if (kind === 'legacy') {
@@ -2901,8 +3478,9 @@ async function applyLegacy(context, roots, itemId, prepared, decisions, deps) {
 // `cleanup apply`: removes only the items the caller selected by `itemId` with the digest `cleanup
 // plan` showed. Every selected item is recomputed first and any difference (a changed digest, an
 // unknown item, or an item that is no longer actionable, `reason: "not-actionable"`) ends the
-// whole call as PREVIEW_MISMATCH before the first write; items then run worktrees first, legacy directories next,
-// the legacy config file last, each re-checked again under its own lock or listing. Nothing here
+// whole call as PREVIEW_MISMATCH before the first write; items then run in ITEM_ORDER, each
+// re-checked again under its own lock or listing (an `invalid-record` item's difference there is
+// its own PREVIEW_MISMATCH). Nothing here
 // breaks a lock, prunes, or forces a removal, and `decisions` can only discard carry-over entries,
 // never widen what the guard admits.
 export async function cleanupApply(input, deps) {
@@ -2924,6 +3502,7 @@ export async function cleanupApply(input, deps) {
         itemId,
         reason: fresh.reason,
         ...(fresh.conditions ? { conditions: fresh.conditions } : {}),
+        ...(fresh.blockers ? { blockers: fresh.blockers } : {}),
         ...(fresh.failures ? { failures: fresh.failures } : {}),
       });
     }
@@ -2944,8 +3523,20 @@ export async function cleanupApply(input, deps) {
           allowActive: false,
           integration: null,
           expectDigest: entry.digest,
+          mergeGateRelease: true,
           signals,
         },
+        deps,
+      );
+      return { itemId: entry.itemId, ...result };
+    }
+    if (entry.invalidRecordId) {
+      const result = await retireInvalidRecord(
+        context,
+        roots,
+        entry.invalidRecordId,
+        entry.digest,
+        signals,
         deps,
       );
       return { itemId: entry.itemId, ...result };

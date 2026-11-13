@@ -6,20 +6,24 @@
 // `effective-flow-state-git.test.mjs`.
 
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import {
   chmodSync,
+  cpSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
   readFileSync,
   readdirSync,
+  realpathSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
-import { open as openPath } from 'node:fs/promises';
+import { mkdir as makeDirectory, open as openPath } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
 import {
@@ -37,6 +41,12 @@ import {
   RECORD_KEYS,
   RECORD_STATUSES,
   TRANSITIONS,
+  BLOCKERS,
+  CLAIMABLE_STATUSES,
+  INVALID_RECORD_TERMINAL_STATUSES,
+  MAX_RECORD_IDS,
+  MERGE_GATE_RELEASE_STATUSES,
+  assessEligibility,
   canonicalJson,
   evaluateEligibility,
   itemDigest,
@@ -50,12 +60,14 @@ import { unreachableRunner } from './support/state-helper-fixtures.mjs';
 import {
   SESSION,
   addWorktree,
+  baseDir,
   call,
   expectError,
   expectOk,
   expectOutcome,
   git,
   initialized,
+  legacyRecord,
   lockFile,
   makeRecord,
   moveTo,
@@ -63,6 +75,7 @@ import {
   recordFile,
   repository,
   requiredPath,
+  writeRecordFile,
 } from './support/worktree-fixtures.mjs';
 
 const WORKTREE_OPERATIONS = Object.freeze([
@@ -692,7 +705,13 @@ test('transition: adoption with each proof failing alone', async (t) => {
 // Invariant: `record-init` accepts each purpose at exactly its required path and policy and writes
 // the record no-clobber; a second call is RECORD_EXISTS.
 test('record-init: each purpose at its required path', async (t) => {
-  for (const purpose of ['delivery', 'partial-diff', 'plan-publication', 'apply-review']) {
+  for (const purpose of [
+    'delivery',
+    'partial-diff',
+    'plan-publication',
+    'apply-review',
+    'merge-gate',
+  ]) {
     const root = repository(t);
     const worktree = addWorktree(root, { purpose });
     const record = makeRecord(root, worktree, { purpose });
@@ -861,8 +880,10 @@ test('remove: a multi-record call removes every record and keeps retain branches
   );
   // One lock hold per record: claim and removal of r1 finish before r2 is claimed.
   assert.deepEqual(phases, [
+    ['underLock', 'r1'],
     ['afterClaim', 'r1'],
     ['afterRemove', 'r1'],
+    ['underLock', 'r2'],
     ['afterClaim', 'r2'],
     ['afterRemove', 'r2'],
   ]);
@@ -1797,7 +1818,10 @@ test('inspect and cleanup plan report an orphan lock and never remove it', async
   );
   const planned = await plan(root);
   const orphan = planned.blocked.find((entry) => entry.itemId === 'worktree:orphan-1');
-  assert.deepEqual([orphan?.kind, orphan?.reason], ['orphanLock', 'orphan-lock']);
+  assert.deepEqual(
+    [orphan?.kind, orphan?.reason, orphan?.blockers],
+    ['orphanLock', 'orphan-lock', []],
+  );
   assert.ok(!planned.items.some((entry) => entry.itemId === 'worktree:orphan-1'));
   assert.ok(existsSync(lockFile(root, 'orphan-1')), 'the orphan lock is never removed');
 });
@@ -1888,4 +1912,1855 @@ test('remove: a foreign record path gets no Git call and no probe before the pro
   );
   assert.deepEqual(readFileSync(recordFile(root, 'foreign')), before);
   assert.deepEqual(lockDirs(root), []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// merge-gate purpose and its cleanup-only release
+
+// Invariant: `record-init` applies its generic rejections to the merge-gate purpose: a path other
+// than `<base>/<repo>/<SESSION_ID>-merge-gate`, a detached checkout and a tip that differs from
+// `creationOid` are NOT_ELIGIBLE with their proof, and `delete-after-integration` is INVALID_INPUT.
+test('record-init: a merge-gate record keeps the generic rejections', async (t) => {
+  const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+  const cases = [
+    [
+      'path',
+      (root) =>
+        makeRecord(root, addWorktree(root, { ...options, path: requiredPath(root) }), options),
+    ],
+    [
+      'head-not-on-branch',
+      (root) => {
+        const wt = addWorktree(root, options);
+        git(wt.worktreePath, 'switch', '-q', '--detach');
+        return makeRecord(root, wt, options);
+      },
+    ],
+    [
+      'tip-not-creation-oid',
+      (root) => {
+        const wt = addWorktree(root, options);
+        git(wt.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'later');
+        return makeRecord(root, wt, options);
+      },
+    ],
+  ];
+  for (const [proof, prepare] of cases) {
+    const root = repository(t);
+    const record = prepare(root);
+    const outcome = expectOutcome(
+      await call('worktree record-init', { cwd: root, executionRoot: root, record }),
+      'NOT_ELIGIBLE',
+    );
+    assert.ok(outcome.proofs.includes(proof), `${proof}: ${JSON.stringify(outcome)}`);
+    assert.equal(existsSync(recordFile(root)), false, proof);
+  }
+  const root = repository(t);
+  const record = makeRecord(root, addWorktree(root, options), {
+    ...options,
+    overrides: { branchPolicy: 'delete-after-integration' },
+  });
+  expectError(
+    await call('worktree record-init', { cwd: root, executionRoot: root, record }),
+    'INVALID_INPUT',
+  );
+});
+
+// Invariant: the release option widens condition 1 and waives condition 6 for purpose merge-gate
+// only; the defaults, every other purpose and the claimable set stay as they were, and a missing
+// or failed proof is `proof-unavailable`, never an empty result.
+test('evaluateEligibility: mergeGateRelease applies to merge-gate only and fails closed', () => {
+  const release = { removal: true, mergeGateRelease: true };
+  const proven = { inProgress: [], unpushed: [] };
+  const gate = {
+    ...PASSING_FACTS,
+    quarantineRetained: false,
+    ignoredEndpoints: [],
+    hiddenChanges: [],
+    purpose: 'merge-gate',
+    releaseProof: proven,
+  };
+  assert.deepEqual(CLAIMABLE_STATUSES, ['cleanup-ready', 'cleanup-failed']);
+  assert.deepEqual(MERGE_GATE_RELEASE_STATUSES, [
+    'aborted',
+    'failed',
+    'cleanup-ready',
+    'cleanup-failed',
+  ]);
+  for (const status of ['aborted', 'failed']) {
+    assert.deepEqual(evaluateEligibility({ ...gate, status }, { removal: true }), [1]);
+    assert.deepEqual(assessEligibility({ ...gate, status }, release), {
+      conditions: [],
+      blockers: [],
+    });
+    const delivery = { ...gate, status, purpose: 'delivery' };
+    assert.deepEqual(assessEligibility(delivery, release), { conditions: [1], blockers: [] });
+  }
+  const diverged = { ...gate, creationAncestor: false };
+  assert.deepEqual(evaluateEligibility(diverged, { removal: true }), [6]);
+  assert.deepEqual(evaluateEligibility(diverged, release), []);
+  assert.deepEqual(evaluateEligibility({ ...diverged, purpose: 'delivery' }, release), [6]);
+  assert.deepEqual(evaluateEligibility({ ...gate, status: 'active' }, release), [1]);
+  assert.deepEqual(BLOCKERS, [
+    'invalid-record-id',
+    'invalid-json',
+    'no-worktree-path',
+    'record-locked',
+    'ledger-present',
+    'unsafe-ledger-directory',
+    'status-not-terminal',
+    'recorded-elsewhere',
+    'half-gone',
+    'worktree-present',
+    'in-progress-operation',
+    'unpushed-commits',
+    'proof-unavailable',
+  ]);
+  for (const [releaseProof, blockers] of [
+    [undefined, ['proof-unavailable']],
+    [null, ['proof-unavailable']],
+    [{ inProgress: null, unpushed: [] }, ['proof-unavailable']],
+    [{ inProgress: [], unpushed: null }, ['proof-unavailable']],
+    [{ inProgress: ['MERGE_HEAD'], unpushed: [] }, ['in-progress-operation']],
+    [{ inProgress: [], unpushed: ['a'.repeat(40)] }, ['unpushed-commits']],
+  ]) {
+    const facts = { ...gate, releaseProof };
+    assert.deepEqual(assessEligibility(facts, release).blockers, blockers);
+    assert.deepEqual(assessEligibility(facts, { removal: true }).blockers, []);
+  }
+  // Where the proof does not apply (an `active` record, a half-gone or foreign worktree), the
+  // conditions block alone and no blocker is reported.
+  for (const change of [
+    { status: 'active' },
+    { commonDirMatches: false, gone: false },
+    { commonDirMatches: false },
+  ]) {
+    const facts = { ...gate, releaseProof: undefined, ...change };
+    assert.deepEqual(assessEligibility(facts, release).blockers, [], JSON.stringify(change));
+  }
+  assert.deepEqual(
+    assessEligibility({ ...gate, commonDirMatches: false, gone: true, releaseProof: null }, release)
+      .blockers,
+    ['proof-unavailable'],
+  );
+});
+
+// A merge-gate worktree and record moved to `status`; its branch tip is on a remote-tracking ref
+// unless `pushed` is false.
+async function mergeGateRecord(t, { status = 'aborted', pushed = true } = {}) {
+  const root = repository(t);
+  const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+  const { worktree, record } = await initialized(root, options);
+  if (pushed) git(root, 'update-ref', `refs/remotes/origin/${worktree.branch}`, worktree.head);
+  if (status !== 'active')
+    await moveTo(root, record, status, status === 'cleanup-ready' ? null : 'stopped');
+  return { root, worktree, record };
+}
+
+function planEntry(planned, recordId) {
+  const itemId = `worktree:${recordId}`;
+  return {
+    item: planned.items.find((entry) => entry.itemId === itemId),
+    blocked: planned.blocked.find((entry) => entry.itemId === itemId),
+  };
+}
+
+async function applyPlanned(root, planned, extra) {
+  return call(
+    'cleanup apply',
+    {
+      cwd: root,
+      executionRoot: root,
+      items: selection(
+        planned,
+        planned.items.map((item) => item.itemId),
+      ),
+    },
+    extra,
+  );
+}
+
+// Invariant: an aborted or failed merge-gate record whose present worktree is clean and holds no
+// unpushed commit is a cleanup candidate; `cleanup apply` removes the worktree without force, keeps
+// the head branch and deletes the record.
+test('cleanup releases a present aborted or failed merge-gate worktree with nothing unpushed', async (t) => {
+  for (const status of ['aborted', 'failed']) {
+    const { root, worktree, record } = await mergeGateRecord(t, { status });
+    const planned = await plan(root);
+    const { item } = planEntry(planned, record.recordId);
+    assert.ok(item, `${status}: ${JSON.stringify(planned.blocked)}`);
+    assert.deepEqual([item.purpose, item.status, item.blockers], ['merge-gate', status, []]);
+    const result = expectOk(await applyPlanned(root, planned));
+    assert.deepEqual(
+      result.items.map(({ itemId, ok, branch }) => [itemId, ok, branch?.outcome]),
+      [[`worktree:${record.recordId}`, true, 'retained']],
+    );
+    assert.equal(existsSync(worktree.worktreePath), false);
+    assert.equal(existsSync(recordFile(root)), false);
+    assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+  }
+});
+
+// Invariant: only cleanup passes the release option: `worktree remove` refuses an aborted
+// merge-gate record with condition 1 and `worktree inspect`, session-scoped or not, reports it.
+test('worktree remove and inspect never release an aborted merge-gate record', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const removed = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  );
+  assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+  assert.ok(removed.items[0].conditions.includes(1));
+  assert.deepEqual(removed.items[0].blockers, []);
+  for (const input of [{}, { sessionId: SESSION }]) {
+    const inspected = expectOk(
+      await call('worktree inspect', { cwd: root, executionRoot: root, ...input }),
+    );
+    assert.deepEqual(inspected.records[0].conditions, [1]);
+    assert.equal(Object.hasOwn(inspected.records[0], 'blockers'), false);
+  }
+  assert.ok(existsSync(worktree.worktreePath));
+  assert.equal(readRecord(root).status, 'aborted');
+});
+
+// Invariant: a fully gone merge-gate worktree (unregistered, path absent) is released whether its
+// branch still exists on a pushed tip or was deleted, and passes the pre-lock gone gate of
+// `cleanup apply` without a Git call in the vanished path.
+test('cleanup releases a fully gone merge-gate worktree whose branch is pushed or deleted', async (t) => {
+  for (const deleteBranch of [false, true]) {
+    const { root, worktree, record } = await mergeGateRecord(t);
+    git(root, 'worktree', 'remove', worktree.worktreePath);
+    if (deleteBranch) git(root, 'branch', '-q', '-D', worktree.branch);
+    const planned = await plan(root);
+    assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+    const result = expectOk(await applyPlanned(root, planned));
+    assert.deepEqual(
+      result.items.map(({ ok, reconciledAbsent }) => [ok, reconciledAbsent]),
+      [[true, true]],
+      JSON.stringify(result),
+    );
+    assert.equal(existsSync(recordFile(root)), false);
+  }
+});
+
+// Invariant: a fully gone merge-gate worktree whose surviving branch holds an unpushed commit stays
+// blocked; a half-gone one (directory deleted, still registered) keeps every condition.
+test('cleanup keeps a gone merge-gate record with an unpushed branch and a half-gone one', async (t) => {
+  const gone = await mergeGateRecord(t, { pushed: false });
+  git(gone.root, 'worktree', 'remove', gone.worktree.worktreePath);
+  const blocked = planEntry(await plan(gone.root), gone.record.recordId).blocked;
+  assert.deepEqual([blocked?.conditions, blocked?.blockers], [[], ['unpushed-commits']]);
+
+  const half = await mergeGateRecord(t);
+  rmSync(half.worktree.worktreePath, { recursive: true, force: true });
+  const halfBlocked = planEntry(await plan(half.root), half.record.recordId).blocked;
+  assert.ok(halfBlocked?.conditions.length > 0, JSON.stringify(halfBlocked));
+  assert.deepEqual(halfBlocked?.blockers, [], 'a half-gone worktree gets no proof and no blocker');
+
+  // An `active` merge-gate record is blocked by condition 1 alone: no proof runs for it, so its
+  // unpushed commits are not a blocker.
+  const active = await mergeGateRecord(t, { status: 'active', pushed: false });
+  const activeBlocked = planEntry(await plan(active.root), active.record.recordId).blocked;
+  assert.deepEqual([activeBlocked?.conditions, activeBlocked?.blockers], [[1], []]);
+});
+
+// Invariant: condition 6 is waived for the release: a branch rewritten off `creationOid` (a
+// force-push after the stopped run) is released when nothing on it is unpushed.
+test('cleanup releases a merge-gate branch diverged from creationOid with nothing unpushed', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t, { pushed: false });
+  const tree = git(worktree.worktreePath, 'rev-parse', 'HEAD^{tree}');
+  const rewritten = git(worktree.worktreePath, 'commit-tree', tree, '-m', 'rewritten');
+  git(worktree.worktreePath, 'reset', '-q', '--hard', rewritten);
+  git(root, 'update-ref', `refs/remotes/origin/${worktree.branch}`, rewritten);
+  const inspected = expectOk(await call('worktree inspect', { cwd: root, executionRoot: root }));
+  assert.ok(inspected.records[0].conditions.includes(6));
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+});
+
+// Invariant: an operation in progress blocks the release with `in-progress-operation`, and a proof
+// Git call that fails blocks it with `proof-unavailable`; neither is treated as proven.
+test('cleanup blocks a merge-gate release on an in-progress merge or an unavailable proof', async (t) => {
+  const merging = await mergeGateRecord(t);
+  const mergeHead = git(
+    merging.worktree.worktreePath,
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'MERGE_HEAD',
+  );
+  writeFileSync(mergeHead, `${merging.worktree.head}\n`);
+  const inProgress = planEntry(await plan(merging.root), merging.record.recordId).blocked;
+  assert.deepEqual([inProgress?.conditions, inProgress?.blockers], [[], ['in-progress-operation']]);
+
+  const failing = await mergeGateRecord(t);
+  const { runner } = interceptingRunner((args) =>
+    args.includes('rev-list') && args.includes('--remotes')
+      ? { status: 128, stdout: '', stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: failing.root, executionRoot: failing.root }, { runner }),
+  );
+  const unavailable = planEntry(planned, failing.record.recordId).blocked;
+  assert.deepEqual([unavailable?.conditions, unavailable?.blockers], [[], ['proof-unavailable']]);
+});
+
+// Invariant: the proof is re-derived from fresh evidence: an unpushed commit after the dry run
+// makes a fresh plan list the record blocked with `unpushed-commits`, and the earlier digest is a
+// whole-call PREVIEW_MISMATCH that carries the blockers.
+test('cleanup apply refuses a merge-gate item that gained an unpushed commit', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item);
+  git(worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local');
+  const fresh = planEntry(await plan(root), record.recordId).blocked;
+  assert.deepEqual(fresh?.blockers, ['unpushed-commits']);
+  const before = readFileSync(recordFile(root));
+  const outcome = expectOutcome(await applyPlanned(root, planned), 'PREVIEW_MISMATCH');
+  assert.deepEqual([outcome.reason, outcome.blockers], ['not-actionable', ['unpushed-commits']]);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+  assert.ok(existsSync(worktree.worktreePath));
+});
+
+// Invariant: the proof runs again under the record lock before the claim: a remote-tracking ref
+// deleted after the recompute fails the item with NOT_ELIGIBLE and `unpushed-commits`, and neither
+// the record nor the worktree changes.
+test('cleanup apply re-proves a merge-gate release under the record lock', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const planned = await plan(root);
+  const before = readFileSync(recordFile(root));
+  const result = expectOk(
+    await applyPlanned(root, planned, {
+      onPhase: (name) => {
+        if (name === 'underLock') {
+          git(root, 'update-ref', '-d', `refs/remotes/origin/${worktree.branch}`);
+        }
+      },
+    }),
+  );
+  assert.deepEqual(
+    result.items.map(({ code, blockers }) => [code, blockers]),
+    [['NOT_ELIGIBLE', ['unpushed-commits']]],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+  assert.ok(existsSync(worktree.worktreePath));
+  assert.equal(readRecord(root, record.recordId).status, 'aborted');
+});
+
+// Invariant: a failed removal of a released merge-gate worktree leaves the record `cleanup-failed`,
+// which the next cleanup plan still guards by the proof.
+test('a failed merge-gate removal is cleanup-failed and stays guarded by the proof', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const planned = await plan(root);
+  const { runner } = interceptingRunner((args) =>
+    args[0] === 'worktree' && args[1] === 'remove'
+      ? { status: 128, stdout: '', stderr: 'fatal: injected refusal\n' }
+      : undefined,
+  );
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.equal(result.items[0].code, 'REMOVE_FAILED', JSON.stringify(result));
+  assert.equal(readRecord(root).status, 'cleanup-failed');
+  git(worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local');
+  const blocked = planEntry(await plan(root), record.recordId).blocked;
+  assert.deepEqual(blocked?.blockers, ['unpushed-commits']);
+});
+
+// Invariant: `adoptionProofs` keeps rejecting every non-`delivery` record: an `aborted` or `failed`
+// merge-gate record is never adopted (`purpose` is its only failed proof) and stays untouched.
+test('transition: an aborted or failed merge-gate record is never adopted', async (t) => {
+  for (const status of ['aborted', 'failed']) {
+    const root = repository(t);
+    const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+    const { worktree, record } = await initialized(root, options);
+    await moveTo(root, record, status, 'stopped');
+    const before = readFileSync(recordFile(root));
+    const outcome = expectOutcome(
+      await call('worktree transition', {
+        cwd: root,
+        executionRoot: root,
+        recordId: record.recordId,
+        from: status,
+        to: 'active',
+        reason: null,
+        sessionId: 'build-fedcba9876543210',
+        branch: record.branch,
+        workflow: record.workflow,
+        fetchedHeadOid: record.creationOid,
+      }),
+      'NOT_ELIGIBLE',
+    );
+    assert.deepEqual([outcome.proofs, outcome.conditions], [['purpose'], []], status);
+    assert.deepEqual(readFileSync(recordFile(root)), before, `${status} wrote nothing`);
+    assert.ok(existsSync(worktree.worktreePath));
+    assert.deepEqual(lockDirs(root), []);
+  }
+});
+
+// Invariant: the session roots of `unrecordedWorktrees` include the dedicated
+// `<SESSION_ID>-merge-gate` leaf: a registered worktree there that no record names is reported for
+// its own session only.
+test('inspect: an unrecorded merge-gate worktree is reported for its session', async (t) => {
+  const root = repository(t);
+  const worktree = addWorktree(root, { purpose: 'merge-gate' });
+  const inspected = expectOk(
+    await call('worktree inspect', { cwd: root, executionRoot: root, sessionId: SESSION }),
+  );
+  assert.deepEqual(
+    inspected.unrecorded.map((entry) => entry.path),
+    [worktree.worktreePath],
+  );
+  assert.equal(worktree.worktreePath, requiredPath(root, { purpose: 'merge-gate' }));
+  const other = expectOk(
+    await call('worktree inspect', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: 'build-2222222222222222',
+    }),
+  );
+  assert.deepEqual(other.unrecorded, []);
+});
+
+// Invariant: every blocked `cleanup plan` entry carries a `blockers` array, and records of other
+// purposes stay blocked by condition 1 exactly as before: an `aborted` or `failed` record of any
+// purpose but merge-gate has no blockers, is never selectable, and a forged digest ends the call as
+// a not-actionable PREVIEW_MISMATCH whose `blockers` is empty.
+test('cleanup plan: blocked entries carry blockers and other purposes keep condition 1', async (t) => {
+  const root = repository(t);
+  const delivery = await initialized(root, { recordId: 'r-delivery' });
+  await moveTo(root, delivery.record, 'aborted', 'stopped');
+  const publication = await initialized(root, { purpose: 'plan-publication', recordId: 'r-plan' });
+  await moveTo(root, publication.record, 'failed', 'stopped');
+  mkdirSync(lockFile(root, 'orphan-1'));
+  const planned = await plan(root);
+  assert.deepEqual(planned.items, []);
+  assert.ok(planned.blocked.length >= 3, JSON.stringify(planned.blocked));
+  for (const entry of planned.blocked) {
+    assert.ok(Array.isArray(entry.blockers), `${entry.itemId}: ${JSON.stringify(entry)}`);
+    assert.deepEqual(entry.blockers, [], entry.itemId);
+  }
+  for (const id of ['r-delivery', 'r-plan']) {
+    assert.deepEqual(planEntry(planned, id).blocked?.conditions, [1], id);
+  }
+  const digest = itemDigest({
+    kind: 'worktree',
+    recordId: delivery.record.recordId,
+    worktreePath: delivery.record.worktreePath,
+    branch: delivery.record.branch,
+    tip: delivery.record.creationOid,
+    branchPolicy: delivery.record.branchPolicy,
+  });
+  const before = readFileSync(recordFile(root, 'r-delivery'));
+  const refused = expectOutcome(
+    await call('cleanup apply', {
+      cwd: root,
+      executionRoot: root,
+      items: { 'worktree:r-delivery': digest },
+    }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.deepEqual(
+    [refused.reason, refused.conditions, refused.blockers],
+    ['not-actionable', [1], []],
+  );
+  assert.deepEqual(readFileSync(recordFile(root, 'r-delivery')), before);
+  assert.ok(existsSync(delivery.worktree.worktreePath));
+});
+
+// Invariant: the release runs `git worktree remove` without `--force`, never deletes the branch,
+// and runs no fetch: its proof reads only local refs (`refs/remotes/*` as they are).
+test('cleanup releases a merge-gate worktree without force, branch deletion or fetch', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const { runner, calls } = interceptingRunner(() => undefined);
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+  );
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  const removals = calls.filter((args) => args[0] === 'worktree' && args[1] === 'remove');
+  assert.equal(removals.length, 1);
+  assert.deepEqual(removals[0], ['worktree', 'remove', worktree.worktreePath]);
+  assert.ok(!calls.some((args) => args.includes('fetch')), 'no fetch');
+  assert.ok(!calls.some((args) => args.some((arg) => arg === '--force' || arg === '-f')));
+  assert.ok(!calls.some((args) => args[0] === 'branch' || args[0] === 'push'));
+  assert.ok(!calls.some((args) => args[0] === 'update-ref'));
+  assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+  assert.equal(existsSync(recordFile(root)), false);
+});
+
+// Invariant: the fully gone release runs no Git call in the vanished path: the pre-lock gone gate
+// reads the filesystem and the registry from the runtime-state root only.
+test('cleanup releases a gone merge-gate worktree without a Git call in the vanished path', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const cwds = [];
+  const { runner, calls } = interceptingRunner((args, request) => {
+    cwds.push(request.cwd);
+    return undefined;
+  });
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+  );
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.deepEqual([result.items[0].ok, result.items[0].reconciledAbsent], [true, true]);
+  assert.ok(!cwds.includes(worktree.worktreePath), 'no Git call ran in the vanished path');
+  assert.ok(!calls.some((args) => args.includes('fetch')), 'no fetch');
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.ok(!calls.some((args) => args[0] === 'branch'), 'the branch is never deleted');
+  assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+});
+
+// Invariant: the in-progress detection covers directory markers and fails closed: a `rebase-merge/`
+// directory at its `--git-path` location is `in-progress-operation`, and a failed
+// `rev-parse --git-path` call is `proof-unavailable`.
+test('cleanup blocks a merge-gate release on a rebase directory or a failed git-path lookup', async (t) => {
+  const rebasing = await mergeGateRecord(t);
+  const marker = git(
+    rebasing.worktree.worktreePath,
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'rebase-merge',
+  );
+  mkdirSync(marker);
+  const rebase = planEntry(await plan(rebasing.root), rebasing.record.recordId).blocked;
+  assert.deepEqual([rebase?.conditions, rebase?.blockers], [[], ['in-progress-operation']]);
+
+  const failing = await mergeGateRecord(t);
+  const { runner } = interceptingRunner((args) =>
+    args.includes('rev-parse') && args.includes('--git-path')
+      ? { status: 128, stdout: '', stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: failing.root, executionRoot: failing.root }, { runner }),
+  );
+  const unavailable = planEntry(planned, failing.record.recordId).blocked;
+  assert.deepEqual([unavailable?.conditions, unavailable?.blockers], [[], ['proof-unavailable']]);
+});
+
+// Invariant: the fully-gone proof fails closed too: a failed branch lookup from the main checkout
+// blocks the record with `proof-unavailable`, and `cleanup apply` removes nothing.
+test('cleanup blocks a gone merge-gate record whose branch lookup fails', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const { runner } = interceptingRunner((args) =>
+    args[0] === 'for-each-ref' && args.includes(`refs/heads/${worktree.branch}`)
+      ? { status: 128, stdout: '', stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+  );
+  const blocked = planEntry(planned, record.recordId).blocked;
+  assert.deepEqual([blocked?.conditions, blocked?.blockers], [[], ['proof-unavailable']]);
+  const before = readFileSync(recordFile(root));
+  const clean = await plan(root);
+  const outcome = expectOutcome(await applyPlanned(root, clean, { runner }), 'PREVIEW_MISMATCH');
+  assert.deepEqual(outcome.blockers, ['proof-unavailable']);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+});
+
+// Invariant: a gone merge-gate record whose branch survives is re-proved at apply time: a
+// remote-tracking ref deleted after the dry run (tip unchanged) ends the call as PREVIEW_MISMATCH
+// with `unpushed-commits`, and the record stays.
+test('cleanup apply refuses a gone merge-gate record whose branch lost its remote-tracking ref', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  git(root, 'update-ref', '-d', `refs/remotes/origin/${worktree.branch}`);
+  const before = readFileSync(recordFile(root));
+  const outcome = expectOutcome(await applyPlanned(root, planned), 'PREVIEW_MISMATCH');
+  assert.deepEqual([outcome.reason, outcome.blockers], ['not-actionable', ['unpushed-commits']]);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+});
+
+// Invariant: every blocked `cleanup plan` entry carries a `blockers` array, a blocked legacy
+// runtime directory included (empty: its reasons stay in `failures`).
+test('cleanup plan gives a blocked legacy entry an empty blockers array', async (t) => {
+  const root = repository(t);
+  mkdirSync(join(root, '.firmo'));
+  writeFileSync(join(root, '.firmo', 'note.txt'), 'not carried over\n');
+  const planned = await plan(root);
+  const legacy = planned.blocked.find((entry) => entry.itemId === 'legacy:.firmo');
+  assert.ok(legacy, JSON.stringify(planned));
+  assert.ok(legacy.failures.length > 0);
+  assert.deepEqual(legacy.blockers, []);
+});
+
+// Invariant: the pre-lock gone gate of `cleanup apply` re-derives the proof itself: when the branch
+// lookup passes in the recompute and fails in the gate, the item is NOT_ELIGIBLE with
+// `proof-unavailable` before any lock, probe or write.
+test('cleanup apply: the pre-lock gone gate refuses a gone merge-gate record whose proof fails', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  let lookups = 0;
+  const { runner } = interceptingRunner((args) => {
+    if (args[0] !== 'for-each-ref' || !args.includes(`refs/heads/${worktree.branch}`)) {
+      return undefined;
+    }
+    lookups += 1;
+    return lookups === 2 ? { status: 128, stdout: '', stderr: 'fatal: injected\n' } : undefined;
+  });
+  const before = readFileSync(recordFile(root));
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.equal(lookups, 2, 'one lookup in the recompute, one in the pre-lock gate');
+  assert.deepEqual(
+    result.items.map(({ code, blockers }) => [code, blockers]),
+    [['NOT_ELIGIBLE', ['proof-unavailable']]],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(lockDirs(root), []);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+});
+
+// ---------------------------------------------------------------------------------------------
+// The `invalid-record` cleanup class
+
+// A linked worktree in the default base directory whose tip is on a remote-tracking ref, so
+// nothing on it is unpushed.
+function pushedWorktree(root, name = 'pr-123-conflict') {
+  const branch = `pr/${name}`;
+  const worktree = addWorktree(root, { path: join(baseDir(root), name), branch });
+  git(root, 'update-ref', `refs/remotes/origin/${branch}`, worktree.head);
+  return worktree;
+}
+
+// A worktree-shaped value for a path that never existed.
+function absentWorktree(root, name = 'pr-456-base-merge') {
+  return {
+    worktreePath: join(baseDir(root), name),
+    branch: `pr/${name}`,
+    head: git(root, 'rev-parse', 'HEAD'),
+  };
+}
+
+function invalidEntry(planned, recordId) {
+  const itemId = `invalid-record:${recordId}`;
+  return {
+    item: planned.items.find((entry) => entry.itemId === itemId),
+    blocked: planned.blocked.find((entry) => entry.itemId === itemId),
+  };
+}
+
+function applyItems(root, planned, ids, extra) {
+  return call(
+    'cleanup apply',
+    { cwd: root, executionRoot: root, items: selection(planned, ids) },
+    extra,
+  );
+}
+
+// Invariant: the issue's `pr-conflict-resolution` records, `failed` or `aborted`, whose worktree is
+// still registered and present are blocked as `worktree-present` without an action, however clean
+// and pushed: cleanup never removes that worktree, runs no Git call in it, and no free-text field
+// of the record reaches the plan. Once the user has run `git worktree remove <path>`, the next plan
+// offers the record as `absent`, and `cleanup apply` deletes only its file and keeps the branch.
+test('cleanup keeps the present worktree of a stopped pr-conflict-resolution record', async (t) => {
+  for (const status of ['failed', 'aborted']) {
+    const root = repository(t);
+    const worktree = pushedWorktree(root);
+    const record = legacyRecord(root, worktree, { status });
+    writeRecordFile(root, record.recordId, record);
+    const inside = [];
+    const { runner, calls } = interceptingRunner((args, request) => {
+      if (request.cwd === worktree.worktreePath) inside.push(args);
+      return undefined;
+    });
+    const planned = expectOk(
+      await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+    );
+    const { item, blocked } = invalidEntry(planned, record.recordId);
+    assert.equal(item, undefined, `${status}: not an item`);
+    assert.deepEqual(
+      blocked,
+      {
+        itemId: `invalid-record:${record.recordId}`,
+        kind: 'invalidRecord',
+        recordId: record.recordId,
+        schemaReason: 'purpose',
+        evidence: {
+          schemaReason: 'purpose',
+          worktreePath: worktree.worktreePath,
+          registrations: 1,
+          present: true,
+          head: worktree.head,
+          branch: worktree.branch,
+        },
+        blockers: ['worktree-present'],
+      },
+      `${status}: ${JSON.stringify(planned.blocked)}`,
+    );
+    assert.ok(
+      !planned.items.concat(planned.blocked).some((e) => e.itemId?.startsWith('worktree:')),
+    );
+    const shown = JSON.stringify(planned);
+    for (const text of [
+      record.reason,
+      record.workflow,
+      record.sessionId,
+      'pr-conflict-resolution',
+    ]) {
+      assert.ok(!shown.includes(text), `the plan never echoes ${text}`);
+    }
+    const before = readFileSync(recordFile(root, record.recordId));
+    const refused = expectOutcome(
+      await call(
+        'cleanup apply',
+        { cwd: root, executionRoot: root, items: { [blocked.itemId]: 'a'.repeat(64) } },
+        { runner },
+      ),
+      'PREVIEW_MISMATCH',
+    );
+    assert.deepEqual([refused.reason, refused.blockers], ['not-actionable', ['worktree-present']]);
+    assert.ok(existsSync(worktree.worktreePath), `${status}: the worktree stays`);
+    assert.deepEqual(readFileSync(recordFile(root, record.recordId)), before);
+    assert.deepEqual(inside, [], `${status}: no Git call runs in the worktree`);
+
+    // The user's manual step, then a rerun of cleanup.
+    git(root, 'worktree', 'remove', worktree.worktreePath);
+    const again = await plan(root);
+    const offered = invalidEntry(again, record.recordId).item;
+    assert.deepEqual(
+      [offered?.action, offered?.evidence.registrations, offered?.evidence.present],
+      ['absent', 0, false],
+      JSON.stringify(again.blocked),
+    );
+    const result = expectOk(await applyItems(root, again, [offered.itemId], { runner }));
+    assert.deepEqual(
+      result.items.map(({ itemId, ok, action, recordDeleted }) => [
+        itemId,
+        ok,
+        action,
+        recordDeleted,
+      ]),
+      [[offered.itemId, true, 'absent', true]],
+      JSON.stringify(result),
+    );
+    assert.equal(existsSync(recordFile(root, record.recordId)), false);
+    assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+    assert.ok(!calls.some((args) => args[0] === 'worktree' && args[1] === 'remove'));
+    assert.ok(!calls.some((args) => args.some((arg) => ['--force', '-f', 'prune'].includes(arg))));
+    assert.ok(!calls.some((args) => ['branch', 'update-ref', 'fetch'].includes(args[0])));
+    assert.deepEqual(lockDirs(root), []);
+  }
+});
+
+// Invariant: an invalid record whose path is unregistered and absent (the issue's
+// `base-into-head-merge` record, or one whose receipt carries `setupStatus: "completed"`) is an
+// `absent` item: `cleanup apply` deletes only the record file and runs no `git worktree remove`.
+test('cleanup deletes only the record file of an absent base-into-head-merge or setupStatus record', async (t) => {
+  const root = repository(t);
+  const merge = legacyRecord(root, absentWorktree(root), {
+    recordId: 'legacy-merge',
+    purpose: 'base-into-head-merge',
+    status: 'aborted',
+  });
+  writeRecordFile(root, merge.recordId, merge);
+  const setup = absentWorktree(root, 'build-setup');
+  const completed = makeRecord(root, setup, { recordId: 'legacy-setup' });
+  writeRecordFile(root, completed.recordId, {
+    ...completed,
+    receipt: { ...completed.receipt, setupStatus: 'completed' },
+    status: 'cleanup-ready',
+  });
+  const planned = await plan(root);
+  assert.deepEqual(
+    ['legacy-merge', 'legacy-setup'].map((id) => {
+      const { item } = invalidEntry(planned, id);
+      return [id, item?.schemaReason, item?.action, item?.evidence.present];
+    }),
+    [
+      ['legacy-merge', 'purpose', 'absent', false],
+      ['legacy-setup', 'receipt-setup-status', 'absent', false],
+    ],
+    JSON.stringify(planned.blocked),
+  );
+  const { runner, calls } = interceptingRunner(() => undefined);
+  const result = expectOk(
+    await applyItems(
+      root,
+      planned,
+      ['invalid-record:legacy-merge', 'invalid-record:legacy-setup'],
+      {
+        runner,
+      },
+    ),
+  );
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, action, recordDeleted }) => [
+      itemId,
+      ok,
+      action,
+      recordDeleted,
+    ]),
+    [
+      ['invalid-record:legacy-merge', true, 'absent', true],
+      ['invalid-record:legacy-setup', true, 'absent', true],
+    ],
+  );
+  assert.ok(!calls.some((args) => args[0] === 'worktree' && args[1] === 'remove'));
+  assert.equal(existsSync(recordFile(root, 'legacy-merge')), false);
+  assert.equal(existsSync(recordFile(root, 'legacy-setup')), false);
+});
+
+// Invariant: terminal invalid records that name one path never block each other: while its worktree
+// is present each is blocked by `worktree-present` alone, and once the user has removed it every
+// one is an `absent` item that one `cleanup apply` retires.
+test('terminal invalid records naming one path are retired together once it is gone', async (t) => {
+  const root = repository(t);
+  const worktree = pushedWorktree(root);
+  const ids = ['legacy-a', 'legacy-b', 'legacy-c'];
+  for (const [index, recordId] of ids.entries()) {
+    const status = ['failed', 'aborted', 'cleanup-failed'][index];
+    writeRecordFile(root, recordId, legacyRecord(root, worktree, { recordId, status }));
+  }
+  const planned = await plan(root);
+  assert.deepEqual(
+    ids.map((id) => invalidEntry(planned, id).blocked?.blockers),
+    [['worktree-present'], ['worktree-present'], ['worktree-present']],
+    JSON.stringify(planned.blocked),
+  );
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const again = await plan(root);
+  assert.deepEqual(
+    ids.map((id) => invalidEntry(again, id).item?.action),
+    ['absent', 'absent', 'absent'],
+    JSON.stringify(again.blocked),
+  );
+  const itemIds = ids.map((id) => `invalid-record:${id}`);
+  const result = expectOk(await applyItems(root, again, itemIds));
+  assert.deepEqual(
+    result.items.map(({ itemId, ok }) => [itemId, ok]),
+    itemIds.map((itemId) => [itemId, true]),
+    JSON.stringify(result),
+  );
+  for (const id of ids) assert.equal(existsSync(recordFile(root, id)), false, id);
+  assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+  assert.deepEqual(lockDirs(root), []);
+});
+
+// Invariant: an invalid record appears exactly once, as an `invalid-record` item or a blocked
+// `invalid-record` entry with `schemaReason` and `blockers` but no `reason`, never as a `worktree:`
+// entry; a `*.json` name that is no record ID is blocked under the hash of its name, which is never
+// echoed; the guard's temporary files are not record files. `worktree inspect` and `worktree remove`
+// keep their behavior for an invalid record.
+test('cleanup plan lists each invalid record once and never echoes a foreign file name', async (t) => {
+  const root = repository(t);
+  const live = legacyRecord(root, absentWorktree(root), {
+    recordId: 'legacy-live',
+    status: 'active',
+  });
+  writeRecordFile(root, live.recordId, live);
+  const foreignName = 'not a record id.json';
+  const dir = join(root, '.effective-flow', 'worktree-runs');
+  writeFileSync(join(dir, foreignName), '{}\n');
+  writeFileSync(join(dir, '.legacy-live.json.0123456789abcdef.tmp'), '{}\n');
+  const planned = await plan(root);
+  const { item, blocked } = invalidEntry(planned, live.recordId);
+  assert.equal(item, undefined);
+  assert.deepEqual(blocked, {
+    itemId: 'invalid-record:legacy-live',
+    kind: 'invalidRecord',
+    recordId: 'legacy-live',
+    schemaReason: 'purpose',
+    action: 'absent',
+    evidence: {
+      schemaReason: 'purpose',
+      worktreePath: live.worktreePath,
+      registrations: 0,
+      present: false,
+      head: null,
+      branch: null,
+    },
+    blockers: ['status-not-terminal'],
+  });
+  assert.equal(Object.hasOwn(blocked, 'reason'), false);
+  const foreign = planned.blocked.filter((entry) => entry.itemId === null);
+  assert.deepEqual(foreign, [
+    {
+      itemId: null,
+      kind: 'invalidRecord',
+      fileNameSha256: createHash('sha256').update(foreignName).digest('hex'),
+      blockers: ['invalid-record-id'],
+    },
+  ]);
+  const shown = JSON.stringify(planned);
+  assert.ok(!shown.includes('not a record id'), 'the foreign name is never echoed');
+  assert.ok(!planned.blocked.some((entry) => entry.itemId === 'worktree:legacy-live'));
+  const inspected = expectOk(await call('worktree inspect', { cwd: root, executionRoot: root }));
+  assert.ok(
+    inspected.records.some((entry) => entry.recordId === 'legacy-live' && entry.valid === false),
+    'worktree inspect still reports the invalid record',
+  );
+  const removed = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: ['legacy-live'],
+    }),
+  );
+  assert.equal(removed.items[0].code, 'INVALID_STATE');
+  assert.ok(existsSync(recordFile(root, 'legacy-live')));
+});
+
+// Invariant: `cleanup plan` reads every record file once, so a record that turns schema-invalid
+// mid-plan still lands in exactly one class: the `worktree:` item of the bytes it read, never also
+// an `invalid-record:` entry.
+test('cleanup plan classifies a record that turns invalid mid-plan exactly once', async (t) => {
+  const { root } = await readyWorktrees(t, 1);
+  const expected = await plan(root);
+  let opens = 0;
+  const racing = {
+    open: async (target, ...rest) => {
+      const handle = await openPath(target, ...rest);
+      if (target !== recordFile(root, 'r1') || ++opens > 1) return handle;
+      const content = await handle.readFile();
+      const stat = await handle.stat({ bigint: true });
+      await handle.close();
+      // Same inode, new bytes: any later read of the record would find it invalid.
+      writeFileSync(target, '{"schemaVersion": 1,');
+      return { stat: async () => stat, readFile: async () => content, close: async () => {} };
+    },
+  };
+  const result = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { fs: racing }),
+  );
+  assert.equal(opens, 1, 'the record was read exactly once');
+  const listed = [...result.items, ...result.blocked].filter((entry) =>
+    ['worktree:r1', 'invalid-record:r1'].includes(entry.itemId),
+  );
+  assert.deepEqual(
+    listed.map(({ itemId, itemDigest }) => [itemId, itemDigest]),
+    expected.items
+      .filter((entry) => entry.itemId === 'worktree:r1')
+      .map(({ itemId, itemDigest }) => [itemId, itemDigest]),
+  );
+  assert.equal(invalidEntry(await plan(root), 'r1').blocked?.schemaReason, 'invalid-json');
+});
+
+// Invariant: only `cleanup plan` (no session) leaves a worktree an invalid record names out of
+// `unrecorded`, since its `invalid-record` entry accounts for it; session-scoped `worktree inspect`
+// keeps reporting that worktree under `unrecorded`.
+test('only cleanup plan leaves a worktree an invalid record names out of unrecorded', async (t) => {
+  const root = repository(t);
+  const worktree = addWorktree(root);
+  writeRecordFile(root, 'legacy-1', legacyRecord(root, worktree, { status: 'active' }));
+  const planned = await plan(root);
+  assert.deepEqual(planned.unrecorded, []);
+  assert.ok(invalidEntry(planned, 'legacy-1').blocked);
+  const inspected = expectOk(
+    await call('worktree inspect', { cwd: root, executionRoot: root, sessionId: SESSION }),
+  );
+  assert.deepEqual(
+    inspected.unrecorded.map((entry) => entry.path),
+    [worktree.worktreePath],
+  );
+});
+
+// One blocker case: `setup(t)` returns the root, the record ID and optional `extra` deps; the
+// plan must list the record blocked with every `blockers` entry in `expected` and `action`.
+async function expectBlocked(t, name, setup, expected, action) {
+  const { root, recordId, extra } = await setup(t);
+  const planned = expectOk(await call('cleanup plan', { cwd: root, executionRoot: root }, extra));
+  const { item, blocked } = invalidEntry(planned, recordId);
+  assert.equal(item, undefined, `${name}: not an item`);
+  assert.ok(blocked, `${name}: ${JSON.stringify(planned)}`);
+  for (const blocker of expected) {
+    assert.ok(blocked.blockers.includes(blocker), `${name}: ${JSON.stringify(blocked)}`);
+  }
+  assert.equal(blocked.action, action, `${name}: action`);
+  assert.equal(Object.hasOwn(blocked, 'reason'), false, `${name}: no reason`);
+  return { root, planned, blocked };
+}
+
+// A root with one `failed` legacy record naming `worktree` (default: a pushed present worktree).
+async function legacyAt(t, worktreeOf = pushedWorktree, overrides = {}) {
+  const root = repository(t);
+  const worktree = worktreeOf(root);
+  const record = legacyRecord(root, worktree, { overrides });
+  writeRecordFile(root, record.recordId, record);
+  return { root, recordId: record.recordId, worktree, record };
+}
+
+// Invariant: each file- and field-level fact blocks both actions alone: unreadable JSON, a missing
+// or unnormalized path, a held record lock, a ledger, an unsafe ledger directory and a status that
+// is not terminal (missing and unknown included). Each names the action it was evaluated for.
+test('invalid-record blockers that apply to both actions block an absent record', async (t) => {
+  for (const [name, setup, expected, action] of [
+    [
+      'invalid-json',
+      async (t2) => {
+        const root = repository(t2);
+        writeRecordFile(root, 'legacy-1', '{"schemaVersion": 1,');
+        return { root, recordId: 'legacy-1' };
+      },
+      ['invalid-json'],
+      undefined,
+    ],
+    [
+      'non-object JSON',
+      async (t2) => {
+        const root = repository(t2);
+        writeRecordFile(root, 'legacy-1', '[]\n');
+        return { root, recordId: 'legacy-1' };
+      },
+      ['invalid-json'],
+      undefined,
+    ],
+    [
+      'no-worktree-path',
+      async (t2) => legacyAt(t2, absentWorktree, { worktreePath: 'relative/path' }),
+      ['no-worktree-path'],
+      undefined,
+    ],
+    [
+      'no-worktree-path (not normalized)',
+      async (t2) => {
+        const fixture = await legacyAt(t2, absentWorktree);
+        writeRecordFile(fixture.root, fixture.recordId, {
+          ...fixture.record,
+          worktreePath: `${fixture.record.worktreePath}/../x/`,
+        });
+        return fixture;
+      },
+      ['no-worktree-path'],
+      undefined,
+    ],
+    [
+      'record-locked',
+      async (t2) => {
+        const fixture = await legacyAt(t2, absentWorktree);
+        mkdirSync(lockFile(fixture.root, fixture.recordId));
+        return fixture;
+      },
+      ['record-locked'],
+      'absent',
+    ],
+    [
+      'ledger-present',
+      async (t2) => {
+        const fixture = await legacyAt(t2, absentWorktree);
+        const ledgers = join(fixture.root, '.effective-flow', 'worktree-runs', 'ledgers');
+        mkdirSync(ledgers);
+        writeFileSync(join(ledgers, `${fixture.recordId}.ledger`), '{}\n');
+        return fixture;
+      },
+      ['ledger-present'],
+      'absent',
+    ],
+    [
+      'unsafe-ledger-directory',
+      async (t2) => {
+        const fixture = await legacyAt(t2, absentWorktree);
+        writeFileSync(join(fixture.root, '.effective-flow', 'worktree-runs', 'ledgers'), 'x\n');
+        return fixture;
+      },
+      ['unsafe-ledger-directory'],
+      'absent',
+    ],
+    [
+      'status-not-terminal (missing)',
+      async (t2) => {
+        const fixture = await legacyAt(t2, absentWorktree);
+        const { status, ...rest } = fixture.record;
+        writeRecordFile(fixture.root, fixture.recordId, rest);
+        return fixture;
+      },
+      ['status-not-terminal'],
+      'absent',
+    ],
+    [
+      'status-not-terminal (unknown)',
+      async (t2) => legacyAt(t2, absentWorktree, { status: 'completed' }),
+      ['status-not-terminal'],
+      'absent',
+    ],
+  ]) {
+    const { blocked } = await expectBlocked(t, name, setup, expected, action);
+    if (name.startsWith('status') || name === 'record-locked' || name.startsWith('ledger')) {
+      assert.deepEqual(blocked.blockers, expected, `${name}: alone`);
+    }
+  }
+  assert.deepEqual(INVALID_RECORD_TERMINAL_STATUSES, [
+    'aborted',
+    'failed',
+    'cleanup-ready',
+    'cleanup-failed',
+  ]);
+});
+
+// Invariant: `recorded-elsewhere` is computed from the records alone: a valid record's path, a
+// non-terminal invalid record's path, or a path in a valid `apply-review` record's session
+// directory blocks the item; a fresh worktree is never removed on the strength of an invalid record.
+test('an invalid record whose path another record names is recorded-elsewhere', async (t) => {
+  // A valid (active) record names the same, present worktree.
+  const validRoot = repository(t);
+  const { worktree } = await initialized(validRoot);
+  writeRecordFile(validRoot, 'legacy-1', legacyRecord(validRoot, worktree));
+  const valid = await expectBlocked(
+    t,
+    'valid record',
+    async () => ({ root: validRoot, recordId: 'legacy-1' }),
+    ['recorded-elsewhere'],
+    undefined,
+  );
+  assert.ok(existsSync(worktree.worktreePath));
+  assert.deepEqual(planEntry(valid.planned, 'record-1').blocked?.conditions, [1]);
+
+  // A non-terminal invalid record blocks a terminal one naming its path, not the other way round.
+  const sharedRoot = repository(t);
+  const absent = absentWorktree(sharedRoot);
+  writeRecordFile(
+    sharedRoot,
+    'legacy-done',
+    legacyRecord(sharedRoot, absent, { recordId: 'legacy-done' }),
+  );
+  writeRecordFile(
+    sharedRoot,
+    'legacy-live',
+    legacyRecord(sharedRoot, absent, { recordId: 'legacy-live', status: 'active' }),
+  );
+  const shared = await expectBlocked(
+    t,
+    'non-terminal invalid record',
+    async () => ({ root: sharedRoot, recordId: 'legacy-done' }),
+    ['recorded-elsewhere'],
+    'absent',
+  );
+  assert.deepEqual(invalidEntry(shared.planned, 'legacy-live').blocked?.blockers, [
+    'status-not-terminal',
+  ]);
+
+  // The unnormalized path of a non-terminal invalid record (a trailing `/`) still blocks.
+  const slashRoot = repository(t);
+  const slashed = absentWorktree(slashRoot);
+  writeRecordFile(
+    slashRoot,
+    'legacy-done',
+    legacyRecord(slashRoot, slashed, { recordId: 'legacy-done' }),
+  );
+  writeRecordFile(
+    slashRoot,
+    'legacy-live',
+    legacyRecord(
+      slashRoot,
+      { ...slashed, worktreePath: `${slashed.worktreePath}/` },
+      { recordId: 'legacy-live', status: 'active' },
+    ),
+  );
+  const slash = await expectBlocked(
+    t,
+    'unnormalized non-terminal path',
+    async () => ({ root: slashRoot, recordId: 'legacy-done' }),
+    ['recorded-elsewhere'],
+    'absent',
+  );
+  assert.deepEqual(slash.blocked.blockers, ['recorded-elsewhere']);
+
+  // A path below a valid apply-review record's session directory.
+  const reviewRoot = repository(t);
+  await initialized(reviewRoot, { purpose: 'apply-review', component: 'c1', recordId: 'r1' });
+  const sibling = {
+    worktreePath: requiredPath(reviewRoot, { purpose: 'apply-review', component: 'c2' }),
+    branch: 'pr/sibling',
+    head: git(reviewRoot, 'rev-parse', 'HEAD'),
+  };
+  writeRecordFile(reviewRoot, 'legacy-1', legacyRecord(reviewRoot, sibling));
+  const review = await expectBlocked(
+    t,
+    'apply-review session directory',
+    async () => ({ root: reviewRoot, recordId: 'legacy-1' }),
+    ['recorded-elsewhere'],
+    'absent',
+  );
+  assert.deepEqual(review.blocked.blockers, ['recorded-elsewhere']);
+});
+
+// Invariant: a half-gone worktree (registered without its directory, or a directory without a
+// registration) leaves no action and blocks; cleanup never prunes it.
+test('an invalid record whose worktree is half gone is blocked without an action', async (t) => {
+  await expectBlocked(
+    t,
+    'registered without directory',
+    async (t2) => {
+      const fixture = await legacyAt(t2);
+      rmSync(fixture.worktree.worktreePath, { recursive: true, force: true });
+      return fixture;
+    },
+    ['half-gone'],
+    undefined,
+  );
+  await expectBlocked(
+    t,
+    'directory without registration',
+    async (t2) => {
+      const fixture = await legacyAt(t2, absentWorktree);
+      mkdirSync(fixture.record.worktreePath, { recursive: true });
+      return fixture;
+    },
+    ['half-gone'],
+    undefined,
+  );
+});
+
+// Invariant: a worktree an invalid record names that is still registered and present is
+// `worktree-present` whatever it looks like and whatever the record claims (`cleanup-ready`, its
+// own ownership, a branch to delete): clean and pushed, dirty, with unpushed commits, outside the
+// base directories, the main checkout, the linked execution root, a locked registration, several
+// registrations or a symlinked path. It has no action, and a selection of it with a made-up digest
+// ends before any write with the worktree and the record file as they were.
+test('an invalid record whose worktree is present is worktree-present and never removed', async (t) => {
+  const claims = {
+    status: 'cleanup-ready',
+    ownership: 'effective-flow-created',
+    branchPolicy: 'delete-after-integration',
+  };
+  const outside = (root) =>
+    addWorktree(root, { path: join(root, '.effective-flow', 'elsewhere', 'wt'), branch: 'pr/x' });
+  const mainCheckout = (root) => ({
+    worktreePath: root,
+    branch: 'main',
+    head: git(root, 'rev-parse', 'HEAD'),
+  });
+  const none = () => {};
+  for (const [name, worktreeOf, mutate, linkedExecutionRoot] of [
+    ['clean and pushed', pushedWorktree, none],
+    [
+      'dirty',
+      pushedWorktree,
+      ({ worktree }) => writeFileSync(join(worktree.worktreePath, 'late.txt'), 'x\n'),
+    ],
+    [
+      'unpushed commits',
+      pushedWorktree,
+      ({ worktree }) => git(worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local'),
+    ],
+    ['outside the base directories', outside, none],
+    ['the main checkout', mainCheckout, none],
+    ['the linked execution root', pushedWorktree, none, true],
+    [
+      'a locked registration',
+      pushedWorktree,
+      ({ root, worktree }) => git(root, 'worktree', 'lock', worktree.worktreePath),
+    ],
+    [
+      'several registrations',
+      pushedWorktree,
+      ({ worktree }) => {
+        const admin = git(
+          worktree.worktreePath,
+          'rev-parse',
+          '--path-format=absolute',
+          '--git-dir',
+        );
+        cpSync(admin, `${admin}-copy`, { recursive: true });
+      },
+    ],
+    [
+      'a symlinked path',
+      pushedWorktree,
+      ({ root, recordId, record, worktree }) => {
+        const alias = join(baseDir(root), 'alias');
+        symlinkSync(worktree.worktreePath, alias);
+        writeRecordFile(root, recordId, { ...record, worktreePath: alias });
+      },
+    ],
+  ]) {
+    const fixture = await legacyAt(t, worktreeOf, claims);
+    mutate(fixture);
+    const input = {
+      cwd: fixture.root,
+      executionRoot: linkedExecutionRoot ? fixture.worktree.worktreePath : fixture.root,
+    };
+    const planned = expectOk(await call('cleanup plan', input));
+    const { item, blocked } = invalidEntry(planned, fixture.recordId);
+    assert.equal(item, undefined, `${name}: not an item`);
+    assert.deepEqual(
+      [blocked?.blockers, Object.hasOwn(blocked ?? {}, 'action')],
+      [['worktree-present'], false],
+      `${name}: ${JSON.stringify(planned.blocked)}`,
+    );
+    const before = readFileSync(recordFile(fixture.root, fixture.recordId));
+    const refused = expectOutcome(
+      await call('cleanup apply', {
+        ...input,
+        items: { [`invalid-record:${fixture.recordId}`]: 'a'.repeat(64) },
+      }),
+      'PREVIEW_MISMATCH',
+    );
+    assert.deepEqual(
+      [refused.reason, refused.blockers],
+      ['not-actionable', ['worktree-present']],
+      name,
+    );
+    assert.ok(existsSync(fixture.worktree.worktreePath), `${name}: the worktree stays`);
+    assert.deepEqual(
+      readFileSync(recordFile(fixture.root, fixture.recordId)),
+      before,
+      `${name}: the record stays`,
+    );
+  }
+});
+
+// Regression: a stale invalid record whose worktree was removed by hand never authorizes the removal
+// of a checkout the user later created at the same path, inside the configured base directory,
+// clean and pushed, on a branch the record does not name. `cleanup plan` blocks it as
+// `worktree-present`; `cleanup apply` refuses it as PREVIEW_MISMATCH before any write, even with
+// the digest the plan offered while the path was absent, in its first pass and in the re-check
+// under the record lock alike. The checkout, its branch and the record file stay as they were.
+test('a user checkout at the path of a stale invalid record is worktree-present and untouched', async (t) => {
+  const stale = async (t2) => {
+    const fixture = await legacyAt(t2, absentWorktree);
+    const offered = await plan(fixture.root);
+    const itemId = `invalid-record:${fixture.recordId}`;
+    assert.equal(invalidEntry(offered, fixture.recordId).item?.action, 'absent', 'control');
+    const before = readFileSync(recordFile(fixture.root, fixture.recordId));
+    // The user's own checkout of this repository at that path.
+    const checkout = () => {
+      const user = addWorktree(fixture.root, {
+        path: fixture.record.worktreePath,
+        branch: 'user/own-work',
+      });
+      git(fixture.root, 'update-ref', 'refs/remotes/origin/user/own-work', user.head);
+      return user;
+    };
+    return { ...fixture, offered, itemId, before, checkout };
+  };
+  const untouched = (fixture, user, label) => {
+    assert.ok(existsSync(user.worktreePath), `${label}: the checkout stays`);
+    assert.equal(git(user.worktreePath, 'status', '--porcelain', '--ignored'), '', label);
+    assert.equal(git(user.worktreePath, 'rev-parse', 'HEAD'), user.head, label);
+    assert.equal(git(fixture.root, 'rev-parse', 'refs/heads/user/own-work'), user.head, label);
+    assert.deepEqual(
+      readFileSync(recordFile(fixture.root, fixture.recordId)),
+      fixture.before,
+      `${label}: the record stays`,
+    );
+    assert.deepEqual(lockDirs(fixture.root), [], label);
+  };
+
+  // The checkout exists before the plan and before the apply.
+  const fixture = await stale(t);
+  const user = fixture.checkout();
+  assert.equal(user.worktreePath, fixture.record.worktreePath, 'inside the base directory');
+  const { runner, calls } = interceptingRunner(() => undefined);
+  const input = { cwd: fixture.root, executionRoot: fixture.root };
+  const planned = expectOk(await call('cleanup plan', input, { runner }));
+  const { item, blocked } = invalidEntry(planned, fixture.recordId);
+  assert.equal(item, undefined);
+  assert.deepEqual(
+    [blocked?.blockers, blocked?.evidence.present, blocked?.evidence.branch],
+    [['worktree-present'], true, 'user/own-work'],
+    JSON.stringify(planned.blocked),
+  );
+  for (const digest of [
+    selection(fixture.offered, [fixture.itemId])[fixture.itemId],
+    'a'.repeat(64),
+  ]) {
+    const refused = expectOutcome(
+      await call('cleanup apply', { ...input, items: { [fixture.itemId]: digest } }, { runner }),
+      'PREVIEW_MISMATCH',
+    );
+    assert.deepEqual(
+      [refused.itemId, refused.reason, refused.blockers],
+      [fixture.itemId, 'not-actionable', ['worktree-present']],
+    );
+  }
+  assert.ok(!calls.some((args) => args[0] === 'worktree' && args[1] === 'remove'));
+  untouched(fixture, user, 'before the apply');
+
+  // The checkout appears between the first pass and the record lock.
+  const raced = await stale(t);
+  let late;
+  const result = expectOk(
+    await applyItems(raced.root, raced.offered, [raced.itemId], {
+      onPhase: (name) => {
+        if (name === 'underLock') late = raced.checkout();
+      },
+    }),
+  );
+  assert.deepEqual(
+    result.items.map(({ itemId, code, reason, blockers }) => [itemId, code, reason, blockers]),
+    [[raced.itemId, 'PREVIEW_MISMATCH', 'not-actionable', ['worktree-present']]],
+    JSON.stringify(result),
+  );
+  untouched(raced, late, 'under the lock');
+});
+
+// Invariant: the first-pass recompute binds the record file's bytes: a record file rewritten after
+// the dry run ends the whole call as PREVIEW_MISMATCH before any write.
+test('cleanup apply refuses a changed invalid record before any write', async (t) => {
+  const { root, recordId, record } = await legacyAt(t, absentWorktree);
+  const planned = await plan(root);
+  const itemId = `invalid-record:${recordId}`;
+  assert.ok(invalidEntry(planned, recordId).item);
+  writeRecordFile(root, recordId, `${JSON.stringify(record)}\n`);
+  const rewritten = readFileSync(recordFile(root, recordId));
+  const changed = expectOutcome(await applyItems(root, planned, [itemId]), 'PREVIEW_MISMATCH');
+  assert.deepEqual([changed.itemId, changed.reason], [itemId, 'digest']);
+  assert.deepEqual(readFileSync(recordFile(root, recordId)), rewritten);
+  assert.deepEqual(lockDirs(root), []);
+});
+
+// Invariant: under the record lock the facts are re-derived once more: a record file rewritten
+// after the first pass is that item's own PREVIEW_MISMATCH, and nothing is deleted or written.
+test('cleanup apply re-checks an invalid record under its lock as an item PREVIEW_MISMATCH', async (t) => {
+  const { root, recordId, record } = await legacyAt(t, absentWorktree);
+  const planned = await plan(root);
+  let rewritten;
+  const result = expectOk(
+    await applyItems(root, planned, [`invalid-record:${recordId}`], {
+      onPhase: (name) => {
+        if (name !== 'underLock') return;
+        writeRecordFile(root, recordId, `${JSON.stringify(record)}\n`);
+        rewritten = readFileSync(recordFile(root, recordId));
+      },
+    }),
+  );
+  assert.deepEqual(
+    result.items.map(({ code, reason }) => [code, reason]),
+    [['PREVIEW_MISMATCH', 'digest']],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(readFileSync(recordFile(root, recordId)), rewritten);
+  assert.deepEqual(lockDirs(root), []);
+});
+
+// Invariant: `worktree:` and `invalid-record:` items together are capped at MAX_RECORD_IDS and the
+// whole selection at MAX_RECORD_IDS + 3 (the three legacy items), checked before any Git call.
+test('cleanup apply caps worktree and invalid-record items together at MAX_RECORD_IDS', async () => {
+  const digest = 'a'.repeat(64);
+  const select = (worktrees, invalid, legacy) =>
+    Object.fromEntries([
+      ...Array.from({ length: worktrees }, (_, index) => [`worktree:w${index}`, digest]),
+      ...Array.from({ length: invalid }, (_, index) => [`invalid-record:i${index}`, digest]),
+      ...['legacy:.firmo', 'legacy:.sf-plugin', 'config:.effective-flow/config.json']
+        .slice(0, legacy)
+        .map((id) => [id, digest]),
+    ]);
+  const { executeOperation } = await import('../src/scripts/effective-flow-state-core.mjs');
+  const run = (items) =>
+    executeOperation(
+      'cleanup apply',
+      { cwd: '/nonexistent', executionRoot: '/nonexistent', items },
+      { runner: unreachableRunner() },
+    );
+  for (const [worktrees, invalid, legacy] of [
+    [MAX_RECORD_IDS / 2, MAX_RECORD_IDS / 2 + 1, 0],
+    [0, MAX_RECORD_IDS + 1, 0],
+  ]) {
+    const envelope = await run(select(worktrees, invalid, legacy));
+    const error = expectError(envelope, 'INVALID_INPUT');
+    assert.match(error.message, /worktree and invalid-record items/);
+  }
+  // At the boundary the input is accepted and the call fails only later, at the root.
+  for (const [worktrees, invalid] of [
+    [MAX_RECORD_IDS / 2, MAX_RECORD_IDS / 2],
+    [0, MAX_RECORD_IDS],
+  ]) {
+    const envelope = await run(select(worktrees, invalid, 3));
+    assert.equal(envelope.ok, false);
+    assert.notEqual(envelope.error?.code, 'INVALID_INPUT', JSON.stringify(envelope.error));
+  }
+});
+
+// Invariant: `invalid-record` items share the deadline and signal handling of `cleanup apply`:
+// once the item floor is reached or a signal arrived, no further item starts, and a signal seen
+// under the lock leaves that record file in place.
+test('cleanup apply: the deadline and a signal stop the remaining invalid-record items', async (t) => {
+  for (const stop of ['deadline', 'signal']) {
+    const root = repository(t);
+    for (const recordId of ['legacy-a', 'legacy-b']) {
+      const worktree = absentWorktree(root, recordId);
+      writeRecordFile(root, recordId, legacyRecord(root, worktree, { recordId }));
+    }
+    const planned = await plan(root);
+    const signalTarget = new EventEmitter();
+    let time = 0;
+    const result = expectOk(
+      await applyItems(root, planned, ['invalid-record:legacy-a', 'invalid-record:legacy-b'], {
+        signalTarget,
+        monotonicNow: () => time,
+        onPhase: (name, detail) => {
+          if (name !== 'underLock' || detail.recordId !== 'legacy-a') return;
+          if (stop === 'deadline') time += DEFAULT_DEADLINE_MS - 10_000;
+          else signalTarget.emit('SIGTERM');
+        },
+      }),
+    );
+    assert.deepEqual(
+      result.items.map(({ itemId, ok, code }) => [itemId, ok, code]),
+      stop === 'deadline'
+        ? [
+            ['invalid-record:legacy-a', true, undefined],
+            ['invalid-record:legacy-b', false, 'DEADLINE_REACHED'],
+          ]
+        : [
+            ['invalid-record:legacy-a', false, 'INTERRUPTED'],
+            ['invalid-record:legacy-b', false, 'INTERRUPTED'],
+          ],
+      stop,
+    );
+    assert.equal(existsSync(recordFile(root, 'legacy-a')), stop === 'signal');
+    assert.ok(existsSync(recordFile(root, 'legacy-b')), stop);
+    assert.deepEqual(lockDirs(root), [], stop);
+  }
+});
+
+// ---------------------------------------------------------------------------------------------
+// The `invalid-record` class: blockers, trust and apply-time races
+
+// Applies a selection that bypasses the dry run's items: `itemId` carries a made-up digest, as a
+// caller would send for an entry `cleanup plan` listed blocked. The call must end before any write.
+function applyBlocked(root, itemId) {
+  return call('cleanup apply', {
+    cwd: root,
+    executionRoot: root,
+    items: { [itemId]: 'a'.repeat(64) },
+  });
+}
+
+// Invariant: a record file that is oversized or a symlink is `invalid-json` and offers no action,
+// whatever its content claims: its fields are never consulted, the symlink is never followed, and
+// a selection of it ends as PREVIEW_MISMATCH with the link and its target untouched.
+test('an oversized or symlinked record file is invalid-json, never selectable and never followed', async (t) => {
+  for (const [kind, schemaReason] of [
+    ['oversized', 'oversized'],
+    ['symlinked', 'not-regular'],
+  ]) {
+    const root = repository(t);
+    const record = legacyRecord(root, absentWorktree(root));
+    const file = recordFile(root, record.recordId);
+    let target = file;
+    if (kind === 'oversized') {
+      // Valid JSON that would otherwise be an `absent` item: only its size blocks it.
+      writeRecordFile(root, record.recordId, { ...record, reason: 'x'.repeat(70 * 1024) });
+    } else {
+      mkdirSync(join(root, '.effective-flow', 'worktree-runs'), { recursive: true });
+      target = join(root, '.effective-flow', 'elsewhere.json');
+      writeFileSync(target, `${JSON.stringify(record)}\n`);
+      symlinkSync(target, file);
+    }
+    const planned = await plan(root);
+    const { item, blocked } = invalidEntry(planned, record.recordId);
+    assert.equal(item, undefined, `${kind}: not an item`);
+    assert.deepEqual(
+      [blocked?.schemaReason, blocked?.blockers, Object.hasOwn(blocked ?? {}, 'action')],
+      [schemaReason, ['invalid-json'], false],
+      `${kind}: ${JSON.stringify(planned.blocked)}`,
+    );
+    assert.equal(blocked.evidence.worktreePath, null, `${kind}: the path is not read`);
+    const before = readFileSync(target);
+    const refused = expectOutcome(
+      await applyBlocked(root, `invalid-record:${record.recordId}`),
+      'PREVIEW_MISMATCH',
+    );
+    assert.deepEqual([refused.reason, refused.blockers], ['not-actionable', ['invalid-json']]);
+    assert.ok(existsSync(file), `${kind}: the record file stays`);
+    assert.deepEqual(readFileSync(target), before, `${kind}: the target is unchanged`);
+  }
+});
+
+// Invariant: the file- and field-level blockers that apply to an absent record also block a present
+// worktree, each beside `worktree-present`.
+test('invalid-record blockers that apply to an absent record also block a present worktree', async (t) => {
+  for (const [name, setup, blocker] of [
+    [
+      'record-locked',
+      async (t2) => {
+        const fixture = await legacyAt(t2);
+        mkdirSync(lockFile(fixture.root, fixture.recordId));
+        return fixture;
+      },
+      'record-locked',
+    ],
+    [
+      'ledger-present',
+      async (t2) => {
+        const fixture = await legacyAt(t2);
+        const ledgers = join(fixture.root, '.effective-flow', 'worktree-runs', 'ledgers');
+        mkdirSync(ledgers);
+        writeFileSync(join(ledgers, `${fixture.recordId}.ledger`), '{}\n');
+        return fixture;
+      },
+      'ledger-present',
+    ],
+    [
+      'unsafe-ledger-directory',
+      async (t2) => {
+        const fixture = await legacyAt(t2);
+        writeFileSync(join(fixture.root, '.effective-flow', 'worktree-runs', 'ledgers'), 'x\n');
+        return fixture;
+      },
+      'unsafe-ledger-directory',
+    ],
+    [
+      'status-not-terminal',
+      async (t2) => legacyAt(t2, pushedWorktree, { status: 'active' }),
+      'status-not-terminal',
+    ],
+  ]) {
+    const { blocked } = await expectBlocked(t, name, setup, [blocker], undefined);
+    assert.deepEqual(blocked.blockers, [blocker, 'worktree-present'], name);
+  }
+});
+
+// Invariant: an invalid record never deletes a branch, even when its own `branch` field names a
+// branch of the repository and its `branchPolicy` asks for deletion: after its retirement every
+// branch still exists and no Git call writes a ref.
+test('retiring an invalid record keeps every branch whatever the record claims', async (t) => {
+  const root = repository(t);
+  const record = legacyRecord(root, absentWorktree(root), {
+    overrides: { branch: 'main', branchPolicy: 'delete-after-integration' },
+  });
+  writeRecordFile(root, record.recordId, record);
+  const planned = await plan(root);
+  assert.equal(invalidEntry(planned, record.recordId).item?.action, 'absent');
+  const branches = git(root, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/');
+  const { runner, calls } = interceptingRunner(() => undefined);
+  const result = expectOk(
+    await applyItems(root, planned, [`invalid-record:${record.recordId}`], { runner }),
+  );
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  assert.equal(existsSync(recordFile(root, record.recordId)), false, 'retired');
+  assert.equal(
+    git(root, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/'),
+    branches,
+    'no ref changed',
+  );
+  assert.ok(
+    !calls.some((args) => ['branch', 'update-ref', 'push', 'fetch', 'tag'].includes(args[0])),
+    'no Git call writes a ref',
+  );
+});
+
+// Invariant: a denied sandbox probe is SANDBOX_DENIED for an `invalid-record` item, found before
+// the lock or any write: the record file and the lock directories are exactly as the dry run saw
+// them.
+test('cleanup apply: a denied sandbox probe leaves an invalid record untouched', async (t) => {
+  const { root, recordId } = await legacyAt(t, absentWorktree);
+  const planned = await plan(root);
+  assert.equal(invalidEntry(planned, recordId).item?.action, 'absent');
+  const before = readFileSync(recordFile(root, recordId));
+  const probes = [];
+  const fs = {
+    open: async (target, ...rest) => {
+      if (target.includes('.effective-flow-probe-')) {
+        probes.push(target);
+        throw Object.assign(new Error('denied'), { code: 'EPERM' });
+      }
+      return openPath(target, ...rest);
+    },
+  };
+  const result = expectOk(await applyItems(root, planned, [`invalid-record:${recordId}`], { fs }));
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, code, errno }) => [itemId, ok, code, errno]),
+    [[`invalid-record:${recordId}`, false, 'SANDBOX_DENIED', 'EPERM']],
+    JSON.stringify(result),
+  );
+  assert.equal(probes.length, 1, 'the first denial ends the preflight');
+  assert.equal(result.items[0].directory, join(root, '.effective-flow', 'worktree-runs'));
+  assert.deepEqual(readFileSync(recordFile(root, recordId)), before);
+  assert.deepEqual(lockDirs(root), [], 'no lock');
+});
+
+// Invariant: an `absent` item writes only its record directory, so that is the only directory its
+// sandbox preflight probes: a record whose path lies below a directory the sandbox denies (here
+// every probe outside the record directory fails) is still retired, with no probe anywhere else.
+test('cleanup apply probes only the record directory for an absent invalid record', async (t) => {
+  const root = repository(t);
+  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-denied-')));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  const record = legacyRecord(root, {
+    worktreePath: join(elsewhere, 'gone', 'wt'),
+    branch: 'pr/gone',
+    head: git(root, 'rev-parse', 'HEAD'),
+  });
+  writeRecordFile(root, record.recordId, record);
+  const planned = await plan(root);
+  assert.equal(
+    invalidEntry(planned, record.recordId).item?.action,
+    'absent',
+    JSON.stringify(planned.blocked),
+  );
+  const recordDir = join(root, '.effective-flow', 'worktree-runs');
+  const probes = [];
+  const fs = {
+    open: async (target, ...rest) => {
+      if (target.includes('.effective-flow-probe-')) {
+        probes.push(target);
+        if (dirname(target) !== recordDir) {
+          throw Object.assign(new Error('denied'), { code: 'EACCES' });
+        }
+      }
+      return openPath(target, ...rest);
+    },
+  };
+  const result = expectOk(
+    await applyItems(root, planned, [`invalid-record:${record.recordId}`], { fs }),
+  );
+  assert.deepEqual(
+    result.items.map(({ ok, action }) => [ok, action]),
+    [[true, 'absent']],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(
+    probes.map((probe) => dirname(probe)),
+    [recordDir],
+  );
+  assert.equal(existsSync(recordFile(root, record.recordId)), false);
+  assert.deepEqual(readdirSync(elsewhere), [], 'nothing is written beside the recorded path');
+  assert.deepEqual(
+    readdirSync(recordDir).filter((name) => name.startsWith('.effective-flow-probe-')),
+    [],
+  );
+});
+
+// Invariant: the invalid-record class never runs Git in a path an invalid record names: a foreign
+// repository at a registered path is `worktree-present` and gets no Git call from `cleanup plan` or
+// `cleanup apply`, so its `core.fsmonitor` command never runs.
+test('the invalid-record class runs no Git call in a recorded path', async (t) => {
+  const foreign = await legacyAt(t);
+  const target = foreign.worktree.worktreePath;
+  rmSync(target, { recursive: true, force: true });
+  mkdirSync(target);
+  git(target, 'init', '-q', '--initial-branch=main');
+  writeFileSync(join(target, 'f.txt'), 'foreign\n');
+  git(target, 'add', 'f.txt');
+  git(target, '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'foreign');
+  const scratch = mkdtempSync(join(tmpdir(), 'effective-flow-fsmonitor-'));
+  t.after(() => rmSync(scratch, { recursive: true, force: true }));
+  const marker = join(scratch, 'fsmonitor-ran');
+  const hook = join(scratch, 'fsmonitor.sh');
+  writeFileSync(hook, `#!/bin/sh\ntouch '${marker}'\nexit 1\n`);
+  chmodSync(hook, 0o755);
+  git(target, 'config', 'core.fsmonitor', hook);
+  git(target, 'status', '--porcelain');
+  assert.ok(existsSync(marker), 'control: a plain status runs the fsmonitor command');
+  rmSync(marker);
+  const inside = [];
+  const { runner } = interceptingRunner((args, request) => {
+    if (request.cwd === target) inside.push(args);
+    return undefined;
+  });
+  const input = { cwd: foreign.root, executionRoot: foreign.root };
+  const planned = expectOk(await call('cleanup plan', input, { runner }));
+  const { blocked } = invalidEntry(planned, foreign.recordId);
+  assert.deepEqual(blocked?.blockers, ['worktree-present'], JSON.stringify(planned.blocked));
+  const refused = expectOutcome(
+    await call(
+      'cleanup apply',
+      { ...input, items: { [`invalid-record:${foreign.recordId}`]: 'a'.repeat(64) } },
+      { runner },
+    ),
+    'PREVIEW_MISMATCH',
+  );
+  assert.deepEqual(refused.blockers, ['worktree-present'], JSON.stringify(refused));
+  assert.equal(existsSync(marker), false, 'the foreign fsmonitor command never ran');
+  assert.deepEqual(inside, [], 'no Git call ran in the recorded path');
+  assert.ok(existsSync(join(target, 'f.txt')), 'the foreign repository is untouched');
+});
+
+// Invariant: a record lock that exists when `cleanup apply` starts ends the whole call as
+// PREVIEW_MISMATCH with `record-locked`, and one that another actor takes between the first pass
+// and this item's own lock is that item's LOCK_HELD. Either way nothing is written and the foreign
+// lock is never broken.
+test('cleanup apply: a held record lock blocks an invalid record and is never broken', async (t) => {
+  const first = await legacyAt(t, absentWorktree);
+  const plannedFirst = await plan(first.root);
+  assert.ok(invalidEntry(plannedFirst, first.recordId).item);
+  mkdirSync(lockFile(first.root, first.recordId));
+  const refused = expectOutcome(
+    await applyItems(first.root, plannedFirst, [`invalid-record:${first.recordId}`]),
+    'PREVIEW_MISMATCH',
+  );
+  assert.deepEqual([refused.reason, refused.blockers], ['not-actionable', ['record-locked']]);
+  assert.deepEqual(lockDirs(first.root), [`${first.recordId}.lock`], 'the lock stays');
+
+  const raced = await legacyAt(t, absentWorktree);
+  const plannedRaced = await plan(raced.root);
+  const before = readFileSync(recordFile(raced.root, raced.recordId));
+  const fs = {
+    // Another actor creates the lock first: the directory exists when this `mkdir` runs.
+    mkdir: async (target, ...rest) => {
+      if (target === lockFile(raced.root, raced.recordId)) {
+        await makeDirectory(target, ...rest);
+        throw Object.assign(new Error('exists'), { code: 'EEXIST' });
+      }
+      return makeDirectory(target, ...rest);
+    },
+  };
+  const result = expectOk(
+    await applyItems(raced.root, plannedRaced, [`invalid-record:${raced.recordId}`], { fs }),
+  );
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, code }) => [itemId, ok, code]),
+    [[`invalid-record:${raced.recordId}`, false, 'LOCK_HELD']],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(readFileSync(recordFile(raced.root, raced.recordId)), before);
+  assert.deepEqual(lockDirs(raced.root), [`${raced.recordId}.lock`], 'the lock stays');
+});
+
+// Invariant: a record file that cannot be deleted is REMOVE_FAILED with `recordKept: true` and its
+// reason, the lock is released, and once the file is readable again the next plan offers the record
+// as `absent` again.
+test('a record file that cannot be deleted is reported and then offered again', async (t) => {
+  const { root, recordId } = await legacyAt(t, absentWorktree);
+  const planned = await plan(root);
+  const file = recordFile(root, recordId);
+  const original = readFileSync(file);
+  let armed = false;
+  const fs = {
+    open: async (target, ...rest) => {
+      const handle = await openPath(target, ...rest);
+      if (!armed || target !== file) return handle;
+      armed = false;
+      const content = await handle.readFile();
+      const stat = await handle.stat({ bigint: true });
+      await handle.close();
+      // A directory in place of the file after its last read makes the guarded `unlink` fail.
+      rmSync(file);
+      mkdirSync(file);
+      return { stat: async () => stat, readFile: async () => content, close: async () => {} };
+    },
+  };
+  const result = expectOk(
+    await applyItems(root, planned, [`invalid-record:${recordId}`], {
+      fs,
+      onPhase: (name) => {
+        if (name === 'underLock') armed = true;
+      },
+    }),
+  );
+  assert.deepEqual(
+    result.items.map(({ code, action, recordKept }) => [code, action, recordKept]),
+    [['REMOVE_FAILED', 'absent', true]],
+    JSON.stringify(result),
+  );
+  assert.match(result.items[0].reason, /record file could not be deleted/);
+  assert.deepEqual(lockDirs(root), []);
+
+  rmSync(file, { recursive: true });
+  writeFileSync(file, original);
+  const again = await plan(root);
+  assert.equal(invalidEntry(again, recordId).item?.action, 'absent', JSON.stringify(again.blocked));
+  const retired = expectOk(await applyItems(root, again, [`invalid-record:${recordId}`]));
+  assert.deepEqual(
+    retired.items.map(({ ok, action, recordDeleted }) => [ok, action, recordDeleted]),
+    [[true, 'absent', true]],
+  );
+  assert.equal(existsSync(file), false);
 });
