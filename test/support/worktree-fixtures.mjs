@@ -4,7 +4,7 @@
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
 
@@ -113,6 +113,38 @@ export function makeRecord(root, worktree, options = {}) {
     reason: null,
   };
   return { ...record, ...options.overrides };
+}
+
+// A schema-invalid record of the shapes runs improvised before the helper owned the lifecycle: a
+// legacy purpose (`pr-conflict-resolution`, `base-into-head-merge`) the schema never allowed, with
+// Python `isoformat` timestamps (which the schema accepts) and a free-text `reason`.
+export function legacyRecord(root, worktree, options = {}) {
+  const purpose = options.purpose ?? 'pr-conflict-resolution';
+  const record = makeRecord(root, worktree, {
+    recordId: options.recordId ?? 'legacy-1',
+    purpose: 'merge-gate',
+    workflow: 'merge-gate',
+  });
+  return {
+    ...record,
+    purpose,
+    receipt: { ...record.receipt, purpose },
+    createdAt: '2026-10-21T08:15:30.123456+00:00',
+    updatedAt: '2026-10-21T09:02:11.654321+00:00',
+    status: options.status ?? 'failed',
+    reason: 'merge conflict needs a human decision',
+    ...options.overrides,
+  };
+}
+
+// Writes a record file as a prose-era run did, bypassing the helper: `value` as JSON, or a string
+// verbatim.
+export function writeRecordFile(root, recordId, value) {
+  mkdirSync(join(root, '.effective-flow', 'worktree-runs'), { recursive: true });
+  writeFileSync(
+    recordFile(root, recordId),
+    typeof value === 'string' ? value : `${JSON.stringify(value, null, 2)}\n`,
+  );
 }
 
 // Real Git through the shared process runner; `extra` injects test seams (`deadlineMs`, `onPhase`).

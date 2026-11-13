@@ -117,6 +117,13 @@ verified. If a crash happens between those steps, a later cleanup reconciles the
 path, branch policy, and claim. It removes only its own record when the result is complete;
 otherwise it reports partial cleanup and preserves the remaining state.
 
+A record that fails its schema is never repaired or rewritten. No field of it can authorize
+anything; its fields can only block. After your confirmation, `cleanup` retires it only when Git
+and the filesystem show that its worktree is gone: it then deletes only the record file and keeps
+every branch. A worktree such a record names that is still present is never removed by cleanup;
+remove it yourself with `git worktree remove <path>` and run cleanup again (see
+[`cleanup`](./tools-setup.md#effective-flow-cleanup)).
+
 ### Resuming or releasing a failed delivery
 
 A `deliver` run that fails after its first commit leaves a `partial-diff` record as `aborted` or

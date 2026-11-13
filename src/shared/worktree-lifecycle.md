@@ -65,7 +65,7 @@ which worktree and branch creation succeeded, captured once and never replaced. 
 immutable creation snapshot; fresh receipts are compared with it, never written into it. During
 `cleanup-in-progress` a cleanup claim, `cleanupRunId` and `claimedAt`, names its owner and
 timestamp. The helper refuses an unknown schema, a missing or extra key or an invalid value and never
-repairs, rewrites or deletes such a record.
+repairs or rewrites such a record; only cleanup's confirmed `invalid-record` item deletes one.
 
 ### State machine
 

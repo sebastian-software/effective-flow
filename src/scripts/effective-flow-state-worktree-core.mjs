@@ -35,9 +35,10 @@
 // Records live at `<cwd>/.effective-flow/worktree-runs/<RECORD_ID>.json` with the exact version 1
 // key set `build-run-core.mjs` checks with `exact()` (RECORD_KEYS), plus `cleanupRunId` and
 // `claimedAt` only while `cleanup-in-progress`. A record with unknown or missing keys, or any
-// invalid value, is never repaired or rewritten: it is INVALID_STATE, or ineligible (condition 1).
-// Every record write goes through `atomicWrite` (or `createNoClobber` for `record-init`), every
-// record path through the runtime-state guard.
+// invalid value, is never repaired or rewritten: it is INVALID_STATE, or ineligible (condition 1),
+// and it is deleted only through the confirmed `invalid-record:<RECORD_ID>` item of `cleanup apply`
+// (see below). Every record write goes through `atomicWrite` (or `createNoClobber` for
+// `record-init`), every record path through the runtime-state guard.
 //
 // The per-record lock is the directory `<RECORD_ID>.lock` with an `owner` file, created with
 // `mkdir` and released only by the actor whose token it holds. It is never broken and has no
@@ -72,10 +73,21 @@
 // the removal instead. Its failures are the entry's `blockers`; the record is never rewritten
 // before the claim and its branch is retained.
 //
+// A record file `readRecord` reports invalid is the `invalid-record:<RECORD_ID>` class of `cleanup
+// plan` and `cleanup apply` (`assessInvalidRecord`), never a `worktree:` entry. Its proofs come
+// only from Git and the filesystem: a field of the invalid record may block (a non-terminal
+// `status`, a `worktreePath` another record names) but never authorizes. Its only action is
+// `absent` (path unregistered and ENOENT: only the record file is deleted). A worktree still
+// registered and present is `worktree-present` and never removed: nothing proves the checkout at
+// that path is still the one the record's run created, so the user removes it and reruns cleanup.
+// Every failed fact is a `blockers` entry. The record is never rewritten, its branch never
+// touched; a failed deletion leaves the file as it was.
+//
 // The multi-item operations return `{items: [...]}` with one result per item; a guard refusal of
 // one item (UNSAFE_TARGET, LEGACY_CHANGED, …) is that item's result and the others continue. Only
 // a root or input error (INVALID_ROOT, INVALID_INPUT, RUNTIME_STATE_UNSAFE) or a PREVIEW_MISMATCH
-// before the first write ends the whole call.
+// before the first write ends the whole call. `cleanup apply` items are `worktree:`,
+// `invalid-record:` (together at most MAX_RECORD_IDS), `legacy:` and `config:`.
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
@@ -234,11 +246,39 @@ const IN_WORKTREE_GIT_CONFIG = Object.freeze(['core.fsmonitor=false']);
 export const ELIGIBILITY_CONDITIONS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9]);
 // The closed vocabulary of the `blockers` array every blocked cleanup entry carries, in reporting
 // order: facts beyond the nine conditions that stop a removal. A new cleanup class adds its own
-// codes here; the `merge-gate` release reports these three (`releaseBlockers`).
+// codes here; the `merge-gate` release reports the last three (`releaseBlockers`), the
+// `invalid-record` class every other one (`invalidRecordEntries`).
 export const BLOCKERS = Object.freeze([
+  'invalid-record-id',
+  'invalid-json',
+  'no-worktree-path',
+  'record-locked',
+  'ledger-present',
+  'unsafe-ledger-directory',
+  'status-not-terminal',
+  'recorded-elsewhere',
+  'half-gone',
+  'worktree-present',
   'in-progress-operation',
   'unpushed-commits',
   'proof-unavailable',
+]);
+// The statuses an invalid record must carry for its `invalid-record` item: those of a run that
+// stopped or released its worktree. Any other value, a missing or unknown one included, is
+// `status-not-terminal`.
+export const INVALID_RECORD_TERMINAL_STATUSES = Object.freeze([
+  'aborted',
+  'failed',
+  'cleanup-ready',
+  'cleanup-failed',
+]);
+// The `readRecord` reasons of a record file that holds no JSON object (`invalid-json`).
+const INVALID_JSON_REASONS = Object.freeze([
+  'unreadable',
+  'not-regular',
+  'oversized',
+  'invalid-json',
+  'not-an-object',
 ]);
 // The entries at `git rev-parse --git-path <name>` whose presence means a merge, cherry-pick,
 // revert, rebase or sequencer operation is in progress in that worktree.
@@ -284,7 +324,7 @@ const TIMESTAMP_PATTERN = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+
 const BRANCH_PATTERN =
   /^(?!-)(?!\/)(?!.*\.\.)(?!.*\/\/)(?!.*@\{)(?!.*\/\.)(?!\.)(?!.*\.lock$)(?!.*[/.]$)[^\x00-\x20~^:?*[\\\x7f]+$/;
 export const ITEM_ID_PATTERN =
-  /^(?:worktree:[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}|legacy:\.(?:firmo|sf-plugin)|config:\.effective-flow\/config\.json)$/;
+  /^(?:(?:worktree|invalid-record):[a-zA-Z0-9][a-zA-Z0-9_-]{0,79}|legacy:\.(?:firmo|sf-plugin)|config:\.effective-flow\/config\.json)$/;
 
 const PROBE_FLAGS = fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW;
 const OWNER_FLAGS = PROBE_FLAGS;
@@ -632,17 +672,33 @@ async function requiredLocation(context, bases, record) {
 
 // Reads one record: `{state: 'missing'}`, `{state: 'invalid', reason}` or `{state: 'ok', record}`.
 export async function readRecord(context, paths, recordId) {
+  const read = await readRecordFile(context, paths, recordId);
+  if (read.state === 'invalid') return { state: 'invalid', reason: read.reason };
+  return read.state === 'ok' ? { state: 'ok', record: read.record } : { state: 'missing' };
+}
+
+// The classification of `readRecord` plus what the `invalid-record` class binds: the SHA-256 of
+// the file's bytes (null when unread) and, for an invalid record, its parsed `value` (a JSON
+// object, else null). The value is evidence that may only block, never authorize.
+async function readRecordFile(context, paths, recordId) {
   const read = await readBoundedFile(context.fs, paths.record, MAX_RECORD_BYTES);
   if (read.state === 'missing') return { state: 'missing' };
-  if (read.state !== 'ok') return { state: 'invalid', reason: read.state };
+  const invalid = (reason, value = null) => ({
+    state: 'invalid',
+    reason,
+    value,
+    sha256: read.sha256 ?? null,
+  });
+  if (read.state !== 'ok') return invalid(read.state);
   let value;
   try {
     value = JSON.parse(read.content.toString('utf8'));
   } catch {
-    return { state: 'invalid', reason: 'invalid-json' };
+    return invalid('invalid-json');
   }
   const problem = recordProblem(value, recordId);
-  return problem ? { state: 'invalid', reason: problem } : { state: 'ok', record: value };
+  if (problem) return invalid(problem, isObject(value) ? value : null);
+  return { state: 'ok', record: value, sha256: read.sha256 };
 }
 
 async function listRecordNames(context) {
@@ -653,6 +709,21 @@ async function listRecordNames(context) {
   } catch (error) {
     fail('UNSAFE_TARGET', `cannot list ${dir}: ${error?.code ?? error?.message}`);
   }
+}
+
+// Every record file below `worktree-runs/`: the record IDs of the `*.json` names that match
+// RECORD_ID_PATTERN (`ids`) and every other `*.json` name (`foreign`), both sorted. The guard's
+// temporary files end in `.tmp` and never count.
+async function listRecordFiles(context) {
+  const names = (await listRecordNames(context)).filter((name) => name.endsWith('.json')).sort();
+  const ids = [];
+  const foreign = [];
+  for (const name of names) {
+    const id = name.slice(0, -5);
+    if (RECORD_ID_PATTERN.test(id)) ids.push(id);
+    else foreign.push(name);
+  }
+  return { ids, foreign };
 }
 
 // Every `*.json` record ID below `worktree-runs/` (sorted); none when the directory is missing.
@@ -1454,6 +1525,14 @@ function requireItems(value) {
       fail('INVALID_INPUT', `items.${id} must be a SHA-256 itemDigest`);
     }
   }
+  // Every record item takes a record lock and may run a removal; the three legacy items do not.
+  const recordItems = ids.filter((id) => ['worktree', 'invalid-record'].includes(itemKind(id)));
+  if (recordItems.length > MAX_RECORD_IDS) {
+    fail(
+      'INVALID_INPUT',
+      `items must select at most ${MAX_RECORD_IDS} worktree and invalid-record items`,
+    );
+  }
   return items;
 }
 
@@ -1828,15 +1907,26 @@ async function adoptionProofs(context, roots, record, input, held) {
 // worktree inspect
 
 // `mergeGateRelease` is set only by `cleanup plan`: each valid record then carries the `blockers`
-// of `assessEligibility` beside its conditions. `worktree inspect` never sets it.
-async function inspectRecords(context, roots, { sessionId = null, mergeGateRelease = false } = {}) {
+// of `assessEligibility` beside its conditions. `worktree inspect` never sets it. `recordSet`
+// (`cleanup plan` only) is the one `readRecordSet` read of the record files: `records` then holds
+// its valid records alone, never re-read, and `cleanup plan` reports the invalid ones and the names
+// that are no record ID once, from the same read, as the `invalid-record` class.
+async function inspectRecords(
+  context,
+  roots,
+  { sessionId = null, mergeGateRelease = false, recordSet = null } = {},
+) {
   const worktrees = await listWorktrees(context);
   const records = [];
   const sources = new Map();
   const named = new Set();
-  for (const id of await listRecordIds(context)) {
+  const ids = recordSet === null ? await listRecordIds(context) : [...recordSet.valid.keys()];
+  for (const id of ids) {
     const paths = recordPaths(roots.cwd, id);
-    const read = await readRecord(context, paths, id);
+    const read =
+      recordSet === null
+        ? await readRecord(context, paths, id)
+        : { state: 'ok', record: recordSet.valid.get(id) };
     if (read.state !== 'ok') {
       if (sessionId === null) {
         records.push({
@@ -2119,9 +2209,10 @@ async function preflightDirectories(context, roots, record, { gone = false } = {
   return [...new Set(directories)];
 }
 
-// Creates and removes one probe file per directory. Returns null, or the first denied directory.
-async function preflight(context, roots, record, deps, { gone = false } = {}) {
-  for (const directory of await preflightDirectories(context, roots, record, { gone })) {
+// Creates and removes one probe file in each of `directories`. Returns null, or the first denied
+// directory.
+async function probeDirectories(context, directories, deps) {
+  for (const directory of directories) {
     const probe = path.join(directory, `.effective-flow-probe-${randomHex(deps, 8)}`);
     let handle;
     try {
@@ -2137,6 +2228,15 @@ async function preflight(context, roots, record, deps, { gone = false } = {}) {
     }
   }
   return null;
+}
+
+// The sandbox preflight of `record`'s worktree removal (`preflightDirectories` takes `options`).
+async function preflight(context, roots, record, deps, options = {}) {
+  return probeDirectories(
+    context,
+    await preflightDirectories(context, roots, record, options),
+    deps,
+  );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -2957,15 +3057,240 @@ async function locatorStepOrNull(context, deps) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------
+// The `invalid-record` class
+
+// Every record file below `worktree-runs/`, read once: `valid` (record ID → record), `invalid`
+// (record ID → `{recordId, schemaReason, value, sha256}` of `readRecordFile`) and `foreign`, the
+// `*.json` names that are no record ID.
+async function readRecordSet(context, roots) {
+  const { ids, foreign } = await listRecordFiles(context);
+  const valid = new Map();
+  const invalid = new Map();
+  for (const id of ids) {
+    const read = await readRecordFile(context, recordPaths(roots.cwd, id), id);
+    if (read.state === 'ok') valid.set(id, read.record);
+    else if (read.state === 'invalid') {
+      invalid.set(id, {
+        recordId: id,
+        schemaReason: read.reason,
+        value: read.value,
+        sha256: read.sha256,
+      });
+    }
+  }
+  return { valid, invalid, foreign };
+}
+
+// Whether a canonical `candidates` path of the invalid record `selfId` is recorded elsewhere, from
+// the records alone: the `worktreePath` of a valid record or of another invalid record whose
+// status is not terminal, or the session directory of a valid `apply-review` record (its
+// `worktreePath`'s parent) or any path below it. Terminal invalid records sharing a path never
+// block each other; they retire one at a time.
+async function recordedElsewhere(context, set, selfId, candidates) {
+  const exact = new Set();
+  const parents = [];
+  const name = async (target) => {
+    exact.add(target);
+    exact.add(await canonicalOrSelf(context.fs, target));
+  };
+  for (const record of set.valid.values()) {
+    await name(record.worktreePath);
+    if (record.purpose === 'apply-review') {
+      const parent = path.dirname(record.worktreePath);
+      parents.push(parent, await canonicalOrSelf(context.fs, parent));
+    }
+  }
+  for (const other of set.invalid.values()) {
+    const value = other.value;
+    if (other.recordId === selfId || value === null) continue;
+    if (INVALID_RECORD_TERMINAL_STATUSES.includes(value.status)) continue;
+    // Any absolute path may block, a trailing `/` or other unnormalized form included.
+    if (isText(value.worktreePath) && path.isAbsolute(value.worktreePath)) {
+      await name(path.resolve(value.worktreePath));
+    }
+  }
+  return candidates.some(
+    (target) =>
+      exact.has(target) || parents.some((parent) => parent === target || isBelow(parent, target)),
+  );
+}
+
+// Assesses one invalid record file (`entry` of `readRecordSet`) from fresh facts: `{recordId,
+// schemaReason, action, blockers, evidence, worktreePath, paths, digest}`. `action` is `absent`,
+// or null when no path, a half-gone or a present worktree leaves none. Of the record only `status`
+// and a validated `worktreePath` are read, and both can only block; `evidence` holds the validated
+// path, the schema-problem code and facts the helper derived, never a free-text field. `ownLock`
+// is the token of the record lock this actor holds (null when none). The digest binds the record
+// file's bytes and the action.
+async function assessInvalidRecord(context, roots, worktrees, set, entry, { ownLock = null } = {}) {
+  const { fs } = context;
+  const found = new Set();
+  const paths = recordPaths(roots.cwd, entry.recordId);
+  const lock = await observeRecordLock(context, paths);
+  if (lock.present && !(ownLock && lock.owner.state === 'valid' && lock.owner.token === ownLock)) {
+    found.add('record-locked');
+  }
+  try {
+    if (await ledgerExists(context, roots.cwd, entry.recordId)) found.add('ledger-present');
+  } catch (error) {
+    if (!(error instanceof RuntimeStateError) || error.code !== 'UNSAFE_TARGET') throw error;
+    found.add('unsafe-ledger-directory');
+  }
+  const value = INVALID_JSON_REASONS.includes(entry.schemaReason) ? null : entry.value;
+  const target = isAbsolutePath(value?.worktreePath) ? value.worktreePath : null;
+  let action = null;
+  let candidates = [];
+  const evidence = { schemaReason: entry.schemaReason, worktreePath: target };
+  if (value === null) {
+    found.add('invalid-json');
+  } else {
+    if (!INVALID_RECORD_TERMINAL_STATUSES.includes(value.status)) found.add('status-not-terminal');
+    if (target === null) found.add('no-worktree-path');
+  }
+  if (target !== null) {
+    const real = await canonical(fs, target);
+    candidates = [...new Set([target, real ?? target])];
+    if (await recordedElsewhere(context, set, entry.recordId, candidates)) {
+      found.add('recorded-elsewhere');
+    }
+    const registrations = worktrees.filter((registration) =>
+      candidates.some((candidate) => matches(registration, candidate)),
+    );
+    const present = !(await pathAbsent(fs, target));
+    const registration = registrations.length === 1 ? registrations[0] : null;
+    Object.assign(evidence, {
+      registrations: registrations.length,
+      present,
+      head: registration?.head ?? null,
+      branch: registration?.branch?.startsWith('refs/heads/')
+        ? registration.branch.slice(11)
+        : null,
+    });
+    if (registrations.length === 0 && !present) action = 'absent';
+    else if (registrations.length > 0 && present) found.add('worktree-present');
+    else found.add('half-gone');
+  }
+  const blockers = BLOCKERS.filter((blocker) => found.has(blocker));
+  return {
+    recordId: entry.recordId,
+    schemaReason: entry.schemaReason,
+    action,
+    blockers,
+    evidence,
+    worktreePath: target,
+    paths: candidates,
+    digest: itemDigest({
+      kind: 'invalidRecord',
+      recordId: entry.recordId,
+      recordSha256: entry.sha256,
+      schemaReason: entry.schemaReason,
+      worktreePath: target,
+      action,
+    }),
+  };
+}
+
+// The `invalid-record` entries of `cleanup plan`: every invalid record file exactly once, as an
+// item or blocked with its `blockers` (and no `reason`), and every `*.json` name that is no record
+// ID blocked as `invalid-record-id` under the SHA-256 of its name, which is never echoed. `paths`
+// are the worktree paths these records name, which `unrecorded` leaves out. `set` is the plan's one
+// `readRecordSet` read, shared with `inspectRecords`.
+async function invalidRecordEntries(context, roots, worktrees, set) {
+  const items = [];
+  const blocked = [];
+  const paths = [];
+  for (const entry of set.invalid.values()) {
+    const assessed = await assessInvalidRecord(context, roots, worktrees, set, entry);
+    paths.push(...assessed.paths);
+    const shown = {
+      itemId: `invalid-record:${assessed.recordId}`,
+      kind: 'invalidRecord',
+      recordId: assessed.recordId,
+      schemaReason: assessed.schemaReason,
+      ...(assessed.action === null ? {} : { action: assessed.action }),
+      evidence: assessed.evidence,
+    };
+    if (assessed.blockers.length === 0) items.push({ ...shown, itemDigest: assessed.digest });
+    else blocked.push({ ...shown, blockers: assessed.blockers });
+  }
+  for (const name of set.foreign) {
+    blocked.push({
+      itemId: null,
+      kind: 'invalidRecord',
+      fileNameSha256: createHash('sha256').update(name).digest('hex'),
+      blockers: ['invalid-record-id'],
+    });
+  }
+  return { items, blocked, paths };
+}
+
+// Retires one selected invalid record under its record lock by deleting its record file. The
+// pre-lock recompute and the one under the lock re-derive the facts, and any difference from
+// `expectDigest` is this item's PREVIEW_MISMATCH with nothing written. Only `absent` is ever
+// actionable, so no Git call writes anything; a failed deletion is REMOVE_FAILED and keeps the file
+// as it was: the record is never rewritten.
+async function retireInvalidRecord(context, roots, recordId, expectDigest, signals, deps) {
+  const paths = recordPaths(roots.cwd, recordId);
+  const fresh = async (ownLock) => {
+    const set = await readRecordSet(context, roots);
+    const entry = set.invalid.get(recordId);
+    if (!entry) return null;
+    const worktrees = await listWorktrees(context);
+    return assessInvalidRecord(context, roots, worktrees, set, entry, { ownLock });
+  };
+  const mismatch = (assessed) => {
+    if (assessed === null) return { reason: 'unknown-item' };
+    if (assessed.blockers.length > 0)
+      return { reason: 'not-actionable', blockers: assessed.blockers };
+    return assessed.digest === expectDigest ? null : { reason: 'digest' };
+  };
+  const changed = mismatch(await fresh(null));
+  if (changed) return itemFailure(recordId, 'PREVIEW_MISMATCH', changed);
+  // Only the record directory is written (the lock, the file deletion), so only it is probed: the
+  // record's untrusted path names no directory to write to.
+  const denied = await probeDirectories(context, [paths.dir], deps);
+  if (denied) return itemFailure(recordId, 'SANDBOX_DENIED', denied);
+  const outcome = await withRecordLock(
+    context,
+    paths,
+    { operation: 'cleanup apply', runId: `cleanup-${randomHex(deps)}` },
+    deps,
+    async (held) => {
+      await phase(deps, 'underLock', { operation: 'cleanup apply', recordId });
+      const assessed = await fresh(held.token);
+      const moved = mismatch(assessed);
+      if (moved) return itemFailure(recordId, 'PREVIEW_MISMATCH', moved);
+      if (signals.signal) return itemFailure(recordId, 'INTERRUPTED', { signal: signals.signal });
+      const { action, worktreePath } = assessed;
+      try {
+        await guardedUnlink(context, paths.record);
+      } catch (error) {
+        return itemFailure(recordId, 'REMOVE_FAILED', {
+          action,
+          reason: `the record file could not be deleted: ${error?.message ?? String(error)}`,
+          recordKept: true,
+        });
+      }
+      return { recordId, ok: true, action, worktreePath, recordDeleted: true };
+    },
+  );
+  if (outcome instanceof StateOutcome) return itemFailure(recordId, outcome.code, outcome.details);
+  return outcome;
+}
+
 export async function cleanupPlan(input, deps) {
   const context = prepare('cleanup plan', input, deps);
   const decisions = requireDecisions(input.decisions);
   const roots = await openRoots(context, input);
+  // Every record file is read once, so each lands in exactly one class, however it changes meanwhile.
+  const recordSet = await readRecordSet(context, roots);
   const { worktrees, records, sources, named, orphanLocks, ledgerDirectory } = await inspectRecords(
     context,
     roots,
-    { mergeGateRelease: true },
+    { mergeGateRelease: true, recordSet },
   );
+  const invalid = await invalidRecordEntries(context, roots, worktrees, recordSet);
   const items = [];
   const blocked = [];
   for (const record of records) {
@@ -2983,6 +3308,8 @@ export async function cleanupPlan(input, deps) {
       blocked.push({ itemId, kind: 'worktree', blockers: [], ...record });
     }
   }
+  items.push(...invalid.items);
+  blocked.push(...invalid.blocked);
   for (const orphan of orphanLocks) {
     blocked.push({
       itemId: `worktree:${orphan.recordId}`,
@@ -3013,14 +3340,24 @@ export async function cleanupPlan(input, deps) {
     decisions,
     items,
     blocked,
-    unrecorded: await unrecordedWorktrees(context, roots, worktrees, named, null, deps),
+    // A worktree an invalid record names is accounted for by its `invalid-record` entry.
+    unrecorded: await unrecordedWorktrees(
+      context,
+      roots,
+      worktrees,
+      new Set([...named, ...invalid.paths]),
+      null,
+      deps,
+    ),
     runs: await runInventory(context),
     // Only when the `ledgers/` entry is unsafe; `cleanup apply` then refuses every worktree item.
     ...(ledgerDirectory ? { ledgerDirectory } : {}),
   };
 }
 
-const ITEM_ORDER = Object.freeze({ worktree: 0, legacy: 1, config: 2 });
+// The order `cleanup apply` runs its items in: valid records first, then invalid records, then the
+// legacy directories and the legacy config file.
+const ITEM_ORDER = Object.freeze({ worktree: 0, 'invalid-record': 1, legacy: 2, config: 3 });
 
 function itemKind(itemId) {
   return itemId.slice(0, itemId.indexOf(':'));
@@ -3048,6 +3385,24 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
       return { reason: 'not-actionable', conditions, blockers, digest };
     }
     return { digest, recordId: key };
+  }
+  if (kind === 'invalid-record') {
+    // Nothing is written during the first pass, so its items share one record set and one list.
+    shared.worktrees ??= await listWorktrees(context);
+    shared.recordSet ??= await readRecordSet(context, roots);
+    const entry = shared.recordSet.invalid.get(key);
+    if (!entry) return { reason: 'unknown-item' };
+    const assessed = await assessInvalidRecord(
+      context,
+      roots,
+      shared.worktrees,
+      shared.recordSet,
+      entry,
+    );
+    if (assessed.blockers.length > 0) {
+      return { reason: 'not-actionable', blockers: assessed.blockers, digest: assessed.digest };
+    }
+    return { digest: assessed.digest, invalidRecordId: key };
   }
   shared.locatorStep ??= await locatorStepOrNull(context, deps);
   if (kind === 'legacy') {
@@ -3123,8 +3478,9 @@ async function applyLegacy(context, roots, itemId, prepared, decisions, deps) {
 // `cleanup apply`: removes only the items the caller selected by `itemId` with the digest `cleanup
 // plan` showed. Every selected item is recomputed first and any difference (a changed digest, an
 // unknown item, or an item that is no longer actionable, `reason: "not-actionable"`) ends the
-// whole call as PREVIEW_MISMATCH before the first write; items then run worktrees first, legacy directories next,
-// the legacy config file last, each re-checked again under its own lock or listing. Nothing here
+// whole call as PREVIEW_MISMATCH before the first write; items then run in ITEM_ORDER, each
+// re-checked again under its own lock or listing (an `invalid-record` item's difference there is
+// its own PREVIEW_MISMATCH). Nothing here
 // breaks a lock, prunes, or forces a removal, and `decisions` can only discard carry-over entries,
 // never widen what the guard admits.
 export async function cleanupApply(input, deps) {
@@ -3170,6 +3526,17 @@ export async function cleanupApply(input, deps) {
           mergeGateRelease: true,
           signals,
         },
+        deps,
+      );
+      return { itemId: entry.itemId, ...result };
+    }
+    if (entry.invalidRecordId) {
+      const result = await retireInvalidRecord(
+        context,
+        roots,
+        entry.invalidRecordId,
+        entry.digest,
+        signals,
         deps,
       );
       return { itemId: entry.itemId, ...result };
