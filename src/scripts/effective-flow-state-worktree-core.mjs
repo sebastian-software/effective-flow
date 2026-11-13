@@ -76,12 +76,12 @@
 // A record file `readRecord` reports invalid is the `invalid-record:<RECORD_ID>` class of `cleanup
 // plan` and `cleanup apply` (`assessInvalidRecord`), never a `worktree:` entry. Its proofs come
 // only from Git and the filesystem: a field of the invalid record may block (a non-terminal
-// `status`, a `worktreePath` another record names) but never authorizes. Its action is `absent`
-// (path unregistered and ENOENT: only the record file is deleted) or `present-clean` (a registered,
-// clean worktree in a configured base directory, proven ours, with nothing in progress or unpushed:
-// `git worktree remove` without `--force`, then the record file is deleted). Every failed fact is a
-// `blockers` entry, and a proof Git call that fails is `proof-unavailable`. The record is never
-// rewritten, its branch never touched; a failed removal leaves the file as it was.
+// `status`, a `worktreePath` another record names) but never authorizes. Its only action is
+// `absent` (path unregistered and ENOENT: only the record file is deleted). A worktree still
+// registered and present is `worktree-present` and never removed: nothing proves the checkout at
+// that path is still the one the record's run created, so the user removes it and reruns cleanup.
+// Every failed fact is a `blockers` entry. The record is never rewritten, its branch never
+// touched; a failed deletion leaves the file as it was.
 //
 // The multi-item operations return `{items: [...]}` with one result per item; a guard refusal of
 // one item (UNSAFE_TARGET, LEGACY_CHANGED, …) is that item's result and the others continue. Only
@@ -247,7 +247,7 @@ export const ELIGIBILITY_CONDITIONS = Object.freeze([1, 2, 3, 4, 5, 6, 7, 8, 9])
 // The closed vocabulary of the `blockers` array every blocked cleanup entry carries, in reporting
 // order: facts beyond the nine conditions that stop a removal. A new cleanup class adds its own
 // codes here; the `merge-gate` release reports the last three (`releaseBlockers`), the
-// `invalid-record` class every one (`invalidRecordEntries`).
+// `invalid-record` class every other one (`invalidRecordEntries`).
 export const BLOCKERS = Object.freeze([
   'invalid-record-id',
   'invalid-json',
@@ -258,15 +258,7 @@ export const BLOCKERS = Object.freeze([
   'status-not-terminal',
   'recorded-elsewhere',
   'half-gone',
-  'outside-base-dir',
-  'base-dir-unresolved',
-  'main-or-execution-root',
-  'not-registered-here',
-  'registration-locked',
-  'registration-prunable',
-  'path-not-canonical',
-  'quarantine',
-  'dirty',
+  'worktree-present',
   'in-progress-operation',
   'unpushed-commits',
   'proof-unavailable',
@@ -2182,20 +2174,13 @@ async function nearestDirectory(fs, target, stop) {
 
 // The directories Git writes to when removing `record`'s worktree and, for a temporary branch,
 // deleting its ref. For a `gone` worktree no Git call runs in its vanished path: it has no
-// administrative directory left to probe. `guarded` runs the `--git-dir` probe with
-// `core.fsmonitor=false`, as the `invalid-record` class runs every Git call in its worktree.
-async function preflightDirectories(
-  context,
-  roots,
-  record,
-  { gone = false, guarded = false } = {},
-) {
+// administrative directory left to probe.
+async function preflightDirectories(context, roots, record, { gone = false } = {}) {
   const { fs } = context;
   const directories = [];
   const gitDir = gone
     ? null
     : await gitLine(context, record.worktreePath, [
-        ...(guarded ? IN_WORKTREE_GIT_CONFIG.flatMap((entry) => ['-c', entry]) : []),
         'rev-parse',
         '--path-format=absolute',
         '--git-dir',
@@ -3075,16 +3060,6 @@ async function locatorStepOrNull(context, deps) {
 // ---------------------------------------------------------------------------------------------
 // The `invalid-record` class
 
-// The base directories of `resolveBases`, or null when the configuration cannot resolve them: then
-// only a `present-clean` candidate is blocked (`base-dir-unresolved`), never the whole plan.
-async function resolveBasesOrNull(context, deps) {
-  try {
-    return await resolveBases(context, deps);
-  } catch {
-    return null;
-  }
-}
-
 // Every record file below `worktree-runs/`, read once: `valid` (record ID → record), `invalid`
 // (record ID → `{recordId, schemaReason, value, sha256}` of `readRecordFile`) and `foreign`, the
 // `*.json` names that are no record ID.
@@ -3141,104 +3116,14 @@ async function recordedElsewhere(context, set, selfId, candidates) {
   );
 }
 
-// Whether the index of the proven worktree behind `inWorktree` has an assume-unchanged (lowercase
-// tag) or skip-worktree (`S`) entry, whose bytes `git status` never compares; null when Git fails.
-async function flaggedIndexEntries(inWorktree) {
-  const result = await inWorktree(['ls-files', '-v', '-z']);
-  if (!gitOk(result)) return null;
-  return gitStdout(result)
-    .split('\0')
-    .filter((entry) => entry !== '')
-    .some((entry) => entry[0] === 'S' || (entry[0] >= 'a' && entry[0] <= 'z'));
-}
-
-// The `present-clean` facts of `target`, registered by `registrations` and present: every failed
-// one goes to `found`. The common-directory proof precedes every Git call inside the worktree, and
-// each of those runs with `core.fsmonitor=false`; a proof call that fails is `proof-unavailable`.
-async function presentCleanFacts(context, roots, worktrees, target, registrations, bases, found) {
-  const { fs } = context;
-  const real = await canonical(fs, target);
-  if (real !== target) found.add('path-not-canonical');
-  const physical = real ?? target;
-  if (bases === null) {
-    found.add('base-dir-unresolved');
-  } else {
-    const contained = [];
-    for (const base of [bases.worktree, bases.applyReview]) {
-      contained.push(isBelow(await canonicalOrSelf(fs, base), physical));
-    }
-    if (!contained.includes(true)) found.add('outside-base-dir');
-  }
-  const main = worktrees[0];
-  if (
-    [target, physical].some(
-      (candidate) =>
-        candidate === roots.cwd ||
-        candidate === roots.executionRoot ||
-        (main !== undefined && matches(main, candidate)),
-    )
-  ) {
-    found.add('main-or-execution-root');
-  }
-  if (registrations.some((entry) => entry.locked)) found.add('registration-locked');
-  if (registrations.some((entry) => entry.prunable)) found.add('registration-prunable');
-  const proof =
-    real === target
-      ? await proveRepositoryDirectory(context, roots, target, roots.common)
-      : { commonDirMatches: false };
-  if (registrations.length !== 1 || registrations[0].bare || !proof.commonDirMatches) {
-    found.add('not-registered-here');
-  }
-  if (!proof.commonDirMatches) return;
-  const inWorktree = guardedGit(context, target);
-  // A directory below the main checkout that lost its own `.git` passes the common-directory proof
-  // through the enclosing repository; only a worktree whose toplevel is the path itself is ours.
-  const top = await inWorktree(['rev-parse', '--show-toplevel']);
-  if (!gitOk(top)) {
-    found.add('proof-unavailable');
-    return;
-  }
-  if ((await canonical(fs, gitStdout(top).trim())) !== target) {
-    found.add('not-registered-here');
-    return;
-  }
-  const status = await inWorktree([
-    'status',
-    '--porcelain',
-    '--ignored',
-    '--untracked-files=all',
-    '--ignore-submodules=none',
-  ]);
-  if (!gitOk(status)) found.add('proof-unavailable');
-  else if (asBuffer(status.stdout).length > 0) found.add('dirty');
-  const flagged = await flaggedIndexEntries(inWorktree);
-  if (flagged === null) found.add('proof-unavailable');
-  else if (flagged) found.add('dirty');
-  if (await retainsQuarantine(fs, target)) found.add('quarantine');
-  const inProgress = await operationsInProgress(fs, inWorktree);
-  if (inProgress === null) found.add('proof-unavailable');
-  else if (inProgress.length > 0) found.add('in-progress-operation');
-  const unpushed = await unpushedCommits(inWorktree, 'HEAD');
-  if (unpushed === null) found.add('proof-unavailable');
-  else if (unpushed.length > 0) found.add('unpushed-commits');
-}
-
 // Assesses one invalid record file (`entry` of `readRecordSet`) from fresh facts: `{recordId,
 // schemaReason, action, blockers, evidence, worktreePath, paths, digest}`. `action` is `absent`,
-// `present-clean`, or null when no path or a half-gone worktree leaves none. Of the record only
-// `status` and a validated `worktreePath` are read, and both can only block; `evidence` holds the
-// validated path, the schema-problem code and facts the helper derived, never a free-text field.
-// `ownLock` is the token of the record lock this actor holds (null when none). The digest binds the
-// record file's bytes, the action and the registered `HEAD` and branch.
-async function assessInvalidRecord(
-  context,
-  roots,
-  worktrees,
-  set,
-  entry,
-  bases,
-  { ownLock = null } = {},
-) {
+// or null when no path, a half-gone or a present worktree leaves none. Of the record only `status`
+// and a validated `worktreePath` are read, and both can only block; `evidence` holds the validated
+// path, the schema-problem code and facts the helper derived, never a free-text field. `ownLock`
+// is the token of the record lock this actor holds (null when none). The digest binds the record
+// file's bytes and the action.
+async function assessInvalidRecord(context, roots, worktrees, set, entry, { ownLock = null } = {}) {
   const { fs } = context;
   const found = new Set();
   const paths = recordPaths(roots.cwd, entry.recordId);
@@ -3283,11 +3168,8 @@ async function assessInvalidRecord(
         : null,
     });
     if (registrations.length === 0 && !present) action = 'absent';
-    else if (registrations.length > 0 && present) action = 'present-clean';
+    else if (registrations.length > 0 && present) found.add('worktree-present');
     else found.add('half-gone');
-    if (action === 'present-clean') {
-      await presentCleanFacts(context, roots, worktrees, target, registrations, bases, found);
-    }
   }
   const blockers = BLOCKERS.filter((blocker) => found.has(blocker));
   return {
@@ -3305,8 +3187,6 @@ async function assessInvalidRecord(
       schemaReason: entry.schemaReason,
       worktreePath: target,
       action,
-      head: evidence.head ?? null,
-      branch: evidence.branch ?? null,
     }),
   };
 }
@@ -3316,13 +3196,12 @@ async function assessInvalidRecord(
 // ID blocked as `invalid-record-id` under the SHA-256 of its name, which is never echoed. `paths`
 // are the worktree paths these records name, which `unrecorded` leaves out. `set` is the plan's one
 // `readRecordSet` read, shared with `inspectRecords`.
-async function invalidRecordEntries(context, roots, worktrees, set, deps) {
-  const bases = await resolveBasesOrNull(context, deps);
+async function invalidRecordEntries(context, roots, worktrees, set) {
   const items = [];
   const blocked = [];
   const paths = [];
   for (const entry of set.invalid.values()) {
-    const assessed = await assessInvalidRecord(context, roots, worktrees, set, entry, bases);
+    const assessed = await assessInvalidRecord(context, roots, worktrees, set, entry);
     paths.push(...assessed.paths);
     const shown = {
       itemId: `invalid-record:${assessed.recordId}`,
@@ -3346,12 +3225,11 @@ async function invalidRecordEntries(context, roots, worktrees, set, deps) {
   return { items, blocked, paths };
 }
 
-// Retires one selected invalid record under its record lock. The pre-lock recompute proves the
-// path before the sandbox preflight runs Git in it; under the lock the facts are re-derived once
-// more, and any difference from `expectDigest` is this item's PREVIEW_MISMATCH with nothing
-// written. `present-clean` runs `git worktree remove <path>` without `--force`, then deletes the
-// record file; `absent` deletes the file only. A failed or unverified removal is REMOVE_FAILED and
-// keeps the file as it was: the record is never rewritten.
+// Retires one selected invalid record under its record lock by deleting its record file. The
+// pre-lock recompute and the one under the lock re-derive the facts, and any difference from
+// `expectDigest` is this item's PREVIEW_MISMATCH with nothing written. Only `absent` is ever
+// actionable, so no Git call writes anything; a failed deletion is REMOVE_FAILED and keeps the file
+// as it was: the record is never rewritten.
 async function retireInvalidRecord(context, roots, recordId, expectDigest, signals, deps) {
   const paths = recordPaths(roots.cwd, recordId);
   const fresh = async (ownLock) => {
@@ -3359,8 +3237,7 @@ async function retireInvalidRecord(context, roots, recordId, expectDigest, signa
     const entry = set.invalid.get(recordId);
     if (!entry) return null;
     const worktrees = await listWorktrees(context);
-    const bases = await resolveBasesOrNull(context, deps);
-    return assessInvalidRecord(context, roots, worktrees, set, entry, bases, { ownLock });
+    return assessInvalidRecord(context, roots, worktrees, set, entry, { ownLock });
   };
   const mismatch = (assessed) => {
     if (assessed === null) return { reason: 'unknown-item' };
@@ -3368,22 +3245,11 @@ async function retireInvalidRecord(context, roots, recordId, expectDigest, signa
       return { reason: 'not-actionable', blockers: assessed.blockers };
     return assessed.digest === expectDigest ? null : { reason: 'digest' };
   };
-  const before = await fresh(null);
-  const changed = mismatch(before);
+  const changed = mismatch(await fresh(null));
   if (changed) return itemFailure(recordId, 'PREVIEW_MISMATCH', changed);
-  // `absent` writes only the record directory (the lock, the file deletion), so only it is probed:
-  // the record's untrusted path names no directory to write to. `present-clean` probes the
-  // directories of the removal, its path proven by the recompute above.
-  const denied =
-    before.action === 'absent'
-      ? await probeDirectories(context, [paths.dir], deps)
-      : await preflight(
-          context,
-          roots,
-          { worktreePath: before.worktreePath, branchPolicy: 'retain' },
-          deps,
-          { guarded: true },
-        );
+  // Only the record directory is written (the lock, the file deletion), so only it is probed: the
+  // record's untrusted path names no directory to write to.
+  const denied = await probeDirectories(context, [paths.dir], deps);
   if (denied) return itemFailure(recordId, 'SANDBOX_DENIED', denied);
   const outcome = await withRecordLock(
     context,
@@ -3397,51 +3263,16 @@ async function retireInvalidRecord(context, roots, recordId, expectDigest, signa
       if (moved) return itemFailure(recordId, 'PREVIEW_MISMATCH', moved);
       if (signals.signal) return itemFailure(recordId, 'INTERRUPTED', { signal: signals.signal });
       const { action, worktreePath } = assessed;
-      if (action === 'present-clean') {
-        const removal = await runGit(context, roots.cwd, ['worktree', 'remove', worktreePath]);
-        if (!gitOk(removal)) {
-          const reason = gitFailureDetail(removal, 'git worktree remove failed');
-          return itemFailure(recordId, 'REMOVE_FAILED', { action, reason, recordKept: true });
-        }
-        let gone;
-        try {
-          ({ gone } = await worktreeGone(context, { worktreePath }));
-        } catch (error) {
-          // Git reported the removal, but its check failed (a Git failure, the deadline): whether
-          // the worktree went is unknown, so the record file stays for the next plan to assess.
-          if (!(error instanceof RuntimeStateError)) throw error;
-          const reason = `the removal could not be verified: ${error.message}`;
-          return itemFailure(recordId, 'REMOVE_FAILED', {
-            action,
-            reason,
-            removed: 'unknown',
-            recordKept: true,
-          });
-        }
-        if (!gone) {
-          const reason = 'the worktree is still present after its removal';
-          return itemFailure(recordId, 'REMOVE_FAILED', { action, reason, recordKept: true });
-        }
-        await phase(deps, 'afterRemove', { recordId });
-      }
       try {
         await guardedUnlink(context, paths.record);
       } catch (error) {
         return itemFailure(recordId, 'REMOVE_FAILED', {
           action,
           reason: `the record file could not be deleted: ${error?.message ?? String(error)}`,
-          removed: action === 'present-clean',
           recordKept: true,
         });
       }
-      return {
-        recordId,
-        ok: true,
-        action,
-        worktreePath,
-        removed: action === 'present-clean',
-        recordDeleted: true,
-      };
+      return { recordId, ok: true, action, worktreePath, recordDeleted: true };
     },
   );
   if (outcome instanceof StateOutcome) return itemFailure(recordId, outcome.code, outcome.details);
@@ -3459,7 +3290,7 @@ export async function cleanupPlan(input, deps) {
     roots,
     { mergeGateRelease: true, recordSet },
   );
-  const invalid = await invalidRecordEntries(context, roots, worktrees, recordSet, deps);
+  const invalid = await invalidRecordEntries(context, roots, worktrees, recordSet);
   const items = [];
   const blocked = [];
   for (const record of records) {
@@ -3559,7 +3390,6 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
     // Nothing is written during the first pass, so its items share one record set and one list.
     shared.worktrees ??= await listWorktrees(context);
     shared.recordSet ??= await readRecordSet(context, roots);
-    if (!Object.hasOwn(shared, 'bases')) shared.bases = await resolveBasesOrNull(context, deps);
     const entry = shared.recordSet.invalid.get(key);
     if (!entry) return { reason: 'unknown-item' };
     const assessed = await assessInvalidRecord(
@@ -3568,7 +3398,6 @@ async function recomputeItem(context, roots, itemId, decisions, shared, deps) {
       shared.worktrees,
       shared.recordSet,
       entry,
-      shared.bases,
     );
     if (assessed.blockers.length > 0) {
       return { reason: 'not-actionable', blockers: assessed.blockers, digest: assessed.digest };

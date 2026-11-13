@@ -119,9 +119,9 @@ otherwise it reports partial cleanup and preserves the remaining state.
 
 A record that fails its schema is never repaired or rewritten. No field of it can authorize
 anything; its fields can only block. After your confirmation, `cleanup` retires it only when Git
-and the filesystem alone prove that this loses nothing: the recorded worktree is gone, or it is a
-clean checkout of this repository in a configured base directory with no unpushed commit. It then deletes the record file, after an
-ordinary `git worktree remove` for a present worktree, and keeps every branch (see
+and the filesystem show that its worktree is gone: it then deletes only the record file and keeps
+every branch. A worktree such a record names that is still present is never removed by cleanup;
+remove it yourself with `git worktree remove <path>` and run cleanup again (see
 [`cleanup`](./tools-setup.md#effective-flow-cleanup)).
 
 ### Resuming or releasing a failed delivery

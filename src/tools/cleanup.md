@@ -1,5 +1,5 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits and schema-invalid lifecycle records whose worktree is absent or proven clean with nothing unpushed; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits and the files of schema-invalid lifecycle records whose worktree is already gone; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
 catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included."
 ---
 
@@ -284,8 +284,8 @@ Before any deletion, list exactly what will be removed — **without** deleting 
 6. Show worktree candidates as their own class: path, checkout identity, status, owner
    workflow/purpose, and branch policy. State that eligibility is checked again under an exclusive
    record lock immediately before removal. An `invalid-record:` candidate shows its path,
-   `schemaReason`, action and `evidence` instead, never a record field: `absent` deletes only the
-   record file, `present-clean` the worktree, then the file.
+   `schemaReason`, action and `evidence` instead, never a record field: its only action, `absent`,
+   deletes only the record file; a worktree it names that is still present is never removed.
 7. List retained and recordless worktrees separately with their concrete reason. They are not
    offered for confirmation.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
@@ -395,8 +395,8 @@ Report to the user:
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
 - worktrees removed successfully, with their checkout identities and branch outcomes, every stopped
   `merge-gate` worktree released after its no-unpushed-commits proof with its kept head branch,
-  every retired `invalid-record:` item with its action and kept `evidence.branch` (none for
-  `absent`), and every `BRANCH_RETAINED` branch with its unproven commits
+  every retired `invalid-record:` item with its path, and every `BRANCH_RETAINED` branch with its
+  unproven commits
 - failed removal attempts and partial cleanup, including exact record, lock, branch, or command
   state that remains
 - every remaining linked worktree other than the main worktree, one entry per worktree, with a
@@ -429,8 +429,8 @@ Retention reasons and their safe next steps:
 - reused, user-managed, foreign, or `harness-managed`: not Effective Flow-owned; the harness or
   user manages it
 - no lifecycle record: ownership cannot be proven; reconcile manually
-- an invalid schema: an `invalid-record:` item once its proof passes. Blocked by `dirty`: commit or
-  discard; by `unpushed-commits`: push; then rerun cleanup. Any other blocker: reconcile manually
+- an invalid schema: an `invalid-record:` item once its worktree is gone; for `worktree-present`,
+  run `git worktree remove <path>` (never `--force`), then rerun cleanup; else reconcile manually
 - `cleanup-failed`: include the recorded removal failure; rerun cleanup once it is eligible again
 - an orphan record lock (no record, or no owner): report its path; never break it
 

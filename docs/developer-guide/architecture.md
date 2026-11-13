@@ -723,35 +723,30 @@ exactly once: as an `invalid-record:<RECORD_ID>` item (`kind: invalidRecord`) wi
 `blockers` and no `reason`. A file name that is no record ID is blocked with `itemId: null`,
 `fileNameSha256` and `invalid-record-id`, and its name is never echoed. Evidence is limited to
 helper-derived facts, the validated `worktreePath` and the schema-problem code. The item's `blockers`
-come from the single closed `BLOCKERS` vocabulary in `effective-flow-state-worktree-core.mjs`. Both
-actions check the file and its surroundings (`invalid-json`, `no-worktree-path`, `record-locked`,
-`ledger-present`, `unsafe-ledger-directory`, `status-not-terminal`, `recorded-elsewhere`,
-`half-gone`); only `present-clean` adds the Git proofs (`outside-base-dir`, `base-dir-unresolved`,
-`main-or-execution-root`, `not-registered-here`, `registration-locked`, `registration-prunable`,
-`path-not-canonical`, `quarantine`, `dirty`, `in-progress-operation`, `unpushed-commits`,
-`proof-unavailable`). `recorded-elsewhere` is computed from the records alone, without the base
-directories: the path of a valid record, of a non-terminal invalid one, or the parent of a valid
-`apply-review` record's path or anything below it. Terminal invalid records that share a path do
-not block each other; after the first `present-clean` removal the rest are `absent`.
+come from the single closed `BLOCKERS` vocabulary in `effective-flow-state-worktree-core.mjs`:
+`invalid-json`, `no-worktree-path`, `record-locked`, `ledger-present`, `unsafe-ledger-directory`,
+`status-not-terminal`, `recorded-elsewhere`, `half-gone` and `worktree-present`.
+`recorded-elsewhere` is computed from the records alone: the path of a valid record, of a
+non-terminal invalid one, or the parent of a valid `apply-review` record's path or anything below
+it. Terminal invalid records that share a path do not block each other.
 
-The action is `absent` when the path is unregistered and `lstat` reports ENOENT: only the record
-file is deleted. It is `present-clean` when the worktree is registered here and passes conditions 3,
-4, 7 and 8 with the common-directory proof before any in-worktree Git call (`core.fsmonitor=false`),
-an empty `git status --porcelain --ignored --untracked-files=all`, no skip-worktree or
-assume-unchanged entry, no operation in progress, physical containment in `worktree.baseDir` or
-`applyReview.worktree.baseDir`, and an empty `git rev-list HEAD --not --remotes`. Removal is then
-`git worktree remove` without `--force` and deletion of the record file; branches are never touched.
-Unresolvable base directories block only the `present-clean` candidates, never `cleanup plan`. A
-worktree an invalid record names leaves `unrecorded` only in `cleanup plan`, where `sessionId` is
-null, so session-scoped `worktree inspect` still reports it.
+The only action is `absent`: the path is unregistered and `lstat` reports ENOENT, and only the
+record file is deleted. A path that is registered and present is blocked as `worktree-present`, one
+that is only registered or only present as `half-gone`; neither has an action. The class runs no
+Git call in the recorded path and never removes a worktree: an invalid record proves nothing about
+who owns the checkout now at its path, which may be a user's own checkout at a reused path. The user
+removes a present worktree with `git worktree remove <path>` and reruns cleanup, which then offers
+the record as `absent`. Branches are never touched. A worktree an invalid record names leaves
+`unrecorded` only in `cleanup plan`, where `sessionId` is null, so session-scoped `worktree inspect`
+still reports it.
 
 `cleanup apply` re-derives an `invalid-record:` item from fresh evidence, then again under the
-record's own lock right before the removal. An item that differs fails as its own `PREVIEW_MISMATCH`
-(carrying its `blockers` once it is blocked); a difference found before the first write still ends
-the whole call. A failed `git worktree remove` or record deletion is `REMOVE_FAILED` with the record
-kept, and `removed: "unknown"` when the removal cannot be verified afterwards. A call selects at
-most 64 `worktree:` and `invalid-record:` items together, and the helper runs them in the order
-`worktree:`, `invalid-record:`, `legacy:`, `config:`.
+record's own lock right before the deletion; its sandbox preflight probes only the record directory.
+An item that differs fails as its own `PREVIEW_MISMATCH` (carrying its `blockers` once it is
+blocked, `worktree-present` for a worktree that appeared meanwhile); a difference found before the
+first write still ends the whole call. A failed record deletion is `REMOVE_FAILED` with the record
+kept. A call selects at most 64 `worktree:` and `invalid-record:` items together, and the helper
+runs them in the order `worktree:`, `invalid-record:`, `legacy:`, `config:`.
 
 An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
 claims `cleanup-ready` or `cleanup-failed` (in `cleanup apply`, also a stopped `merge-gate` record)

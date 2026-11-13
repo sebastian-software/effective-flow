@@ -195,7 +195,7 @@ Retention is intentional whenever Effective Flow cannot prove that normal remova
 | `cleanup-in-progress` or lifecycle lock         | Another cleanup actor claimed the record, or a previous attempt stopped after claiming it.                                                                                                                                    | Inspect the recorded owner and timestamp. Do not break the lock or claim merely because it looks old.                                                                                      |
 | Prunable or missing worktree path               | Git registration and the filesystem no longer agree.                                                                                                                                                                          | Inspect `git worktree list --porcelain` and reconcile the Git metadata manually. Cleanup never runs a broad `git worktree prune`.                                                          |
 | Missing lifecycle record                        | Effective Flow cannot prove ownership or a safe completed run.                                                                                                                                                                | Treat the worktree as user-managed. Inspect and resolve it manually; cleanup does not adopt legacy worktrees from a path or branch pattern.                                                |
-| Schema-invalid lifecycle record                 | The record file fails its schema, so nothing in it is trusted. Cleanup normally retires it itself; a blocked entry shows its `schemaReason` and `blockers`.                                                                   | Resolve a blocker as described below the table, then run cleanup again. For a blocker not described there, reconcile manually.                                                             |
+| Schema-invalid lifecycle record                 | The record file fails its schema, so nothing in it is trusted. Cleanup retires it itself once its worktree is gone; a blocked entry shows its `schemaReason` and `blockers`.                                                  | Resolve a blocker as described below the table, then run cleanup again. For a blocker not described there, reconcile manually.                                                             |
 | Receipt, branch, commit, or repository mismatch | Current Git state no longer matches the record that created the worktree.                                                                                                                                                     | Verify the repository and checkout history manually. Preserve the worktree until you understand the mismatch.                                                                              |
 | Harness-managed or user-created                 | Effective Flow does not own cleanup for this checkout.                                                                                                                                                                        | Use the owning harness or your normal Git workflow to manage it.                                                                                                                           |
 | Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                                                                                                                                                   | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                                                         |
@@ -214,22 +214,20 @@ worktree and its head branch and reports a `blockers` entry for each failed chec
 
 See [Merge-gate checkout](./worktree-and-delivery.md#merge-gate-checkout) for what the proof checks.
 
-A schema-invalid lifecycle record usually needs nothing from you: when its worktree is gone, or is a
-clean checkout with no unpushed commit, [`cleanup`](./tools-setup.md#effective-flow-cleanup) offers
-it as an `invalid-record` item and retires it after your confirmation, keeping every branch. Only a
-blocked one needs manual work. Its entry carries `blockers`; for these two, cleanup keeps the
-worktree and the record file:
+A schema-invalid lifecycle record whose worktree is gone needs nothing from you:
+[`cleanup`](./tools-setup.md#effective-flow-cleanup) offers it as an `invalid-record` item and
+deletes only the record file after your confirmation, keeping every branch. Only a blocked one needs
+manual work. Its entry carries `blockers`:
 
-- `dirty`: the worktree holds uncommitted, untracked or ignored files, or a hidden (skip-worktree
-  or assume-unchanged) change. Commit or discard them deliberately.
-- `unpushed-commits`: the checked-out commits are on no remote-tracking ref. Push the branch, or drop
-  the commits deliberately.
+- `worktree-present`: the recorded worktree is still registered and present. Cleanup never removes
+  it, because nothing in an invalid record proves that the checkout at that path is still the one
+  its run created. Inspect it with `git -C <path> status`, secure anything you still need, remove it
+  with `git worktree remove <path>` (without `--force`; Git refuses a worktree with changes), then
+  run cleanup again. It now offers the record as `absent`.
 
-Fix it, then run cleanup again. `in-progress-operation` and `proof-unavailable` read as in the list
-above. Any other blocker, for example `recorded-elsewhere`, `half-gone`, `outside-base-dir` or
-`record-locked`, means cleanup cannot prove that retiring the record is safe: reconcile the Git
-registration, the directory and the record by hand, and never break a lock merely because it looks
-old.
+Any other blocker, for example `recorded-elsewhere`, `half-gone` or `record-locked`, means cleanup
+cannot prove that retiring the record is safe: reconcile the Git registration, the directory and the
+record by hand, and never break a lock merely because it looks old.
 
 An `aborted` or `failed` worktree that a run on a
 [published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)

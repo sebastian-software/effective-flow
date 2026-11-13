@@ -558,20 +558,21 @@ a record. When the proof fails, the report keeps the worktree and lists a `block
 A lifecycle record that fails its schema (an unknown schema, a missing or extra key, an invalid
 value) cannot make a worktree a candidate, and cleanup never repairs or rewrites it. It offers the
 record as its own `invalid-record` item instead, proven from Git and the filesystem alone: no field
-of the record authorizes anything. The preview shows the `schemaReason` and one of two actions:
+of the record authorizes anything. The preview shows the `schemaReason` and the one action, `absent`:
+the recorded path is unregistered and gone, and cleanup deletes only the record file. Every branch
+is kept.
 
-- `absent`: the recorded path is unregistered and gone. Cleanup deletes only the record file.
-- `present-clean`: the path is a registered worktree of this repository inside a configured
-  `worktree.baseDir` or `applyReview.worktree.baseDir`. It is clean (ignored files included) with
-  no hidden change, no operation in progress and no unpushed commit. Cleanup runs
-  `git worktree remove` without `--force`, then deletes the record file.
+Cleanup never removes a worktree on the strength of an invalid record. Nothing in such a record can
+prove that the checkout now at its path is still the one its run created; it may be your own
+checkout at a reused path. A record whose worktree is still registered and present is therefore
+listed as blocked with `worktree-present`. Check that nothing in that worktree is still needed,
+remove it yourself with `git worktree remove <path>` (without `--force`), and run cleanup again,
+which then offers the record as `absent`.
 
-Every branch is kept. A record whose proof fails is listed once as blocked with its `blockers`
-instead, as is a record whose status is not `aborted`, `failed`, `cleanup-ready` or `cleanup-failed`
-and one whose path another record names. A file that no record ID names is blocked with
-`invalid-record-id` and its name is not shown. If cleanup cannot resolve the base directories, only
-`present-clean` records are blocked, with `base-dir-unresolved`. A worktree that an invalid record
-names is not also listed as recordless.
+A record is also listed once as blocked with its `blockers` when its status is not `aborted`,
+`failed`, `cleanup-ready` or `cleanup-failed`, when another record names its path, or when its
+worktree is half gone. A file that no record ID names is blocked with `invalid-record-id` and its
+name is not shown. A worktree that an invalid record names is not also listed as recordless.
 
 Cleanup also lists **stale diff baselines**: the `.effective-flow/runs/<RUN_ID>/diff-baseline/`
 directories that an aborted `build`, `fix`, or `refactor` run left behind (see
