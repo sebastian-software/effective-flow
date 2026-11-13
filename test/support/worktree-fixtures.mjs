@@ -58,6 +58,7 @@ export function baseDir(root) {
 export function requiredPath(root, { purpose = 'delivery', session = SESSION, component } = {}) {
   if (purpose === 'apply-review') return join(baseDir(root), session, component ?? 'component-1');
   if (purpose === 'plan-publication') return join(baseDir(root), `${session}-plan-publication`);
+  if (purpose === 'merge-gate') return join(baseDir(root), `${session}-merge-gate`);
   return join(baseDir(root), session);
 }
 

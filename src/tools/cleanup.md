@@ -1,6 +1,6 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
-catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones included."
 ---
 
 # Effective Flow Cleanup
@@ -151,8 +151,9 @@ are discarded), `discard` (single `.firmo/<path>` or `.sf-plugin/<path>` entries
 (`".effective-flow/config.json"`, `".firmo/config.json"` or `".sf-plugin/config.json"` →
 `"complete"` once its values are in the ADR, `"discarded"` when the user drops them). `cleanup plan`
 is read-only and returns `items` (actionable, each with `itemId` and `itemDigest`), `blocked` (with
-`failures`), and `unrecorded` registered worktrees; item IDs are `worktree:<RECORD_ID>`,
-`legacy:.firmo`, `legacy:.sf-plugin` and `config:.effective-flow/config.json`.
+`conditions` or `failures`, and a `blockers` array), and `unrecorded` registered worktrees; item IDs
+are `worktree:<RECORD_ID>` (a stopped `merge-gate` record included), `legacy:.firmo`,
+`legacy:.sf-plugin` and `config:.effective-flow/config.json`.
 
 ### Phase 1: Discovery / inventory
 
@@ -285,8 +286,8 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    offered for confirmation.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
    `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
-   reports it as `BRANCH_RETAINED`. Delivery and partial-diff branches remain. Cleanup never runs
-   `git worktree prune` or `git branch -D`.
+   reports it as `BRANCH_RETAINED`. Delivery, partial-diff and merge-gate branches remain. Cleanup
+   never runs `git worktree prune` or `git branch -D`.
 9. If there are no deletable migration artifacts, stale diff baselines, or worktree removal candidates, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
@@ -311,7 +312,7 @@ options:
 ```ask
 when: there is at least one verified worktree removal candidate
 header: Worktrees
-question: Remove the verified Effective Flow worktrees listed in the dry run now, after checking every proof again under its lifecycle lock?
+question: Remove the verified Effective Flow worktrees listed in the dry run now, stopped merge-gate worktrees with no unpushed commits included, after checking every proof again under its lifecycle lock?
 options:
   - label: Remove all verified
     description: Revalidate and remove every still-eligible listed worktree with ordinary git worktree remove
@@ -354,8 +355,9 @@ Execute per class:
 `cleanup apply` outcomes:
 
 - `PREVIEW_MISMATCH` (`itemId`, `reason`), whole call: a selected item changed since the dry run
-  (`digest`), vanished (`unknown-item`) or is no longer actionable (`not-actionable`), and nothing
-  was written. Call `cleanup plan` again, show the new dry run, and ask again.
+  (`digest`), vanished (`unknown-item`) or is no longer actionable (`not-actionable`), which then
+  carries its `conditions` and `blockers`, and nothing was written. Call `cleanup plan` again, show
+  the new dry run, and ask again.
 - `result.items[]`, one per selected item: worktree items follow the lifecycle outcome table, where
   `BRANCH_RETAINED` keeps an `apply-review` branch Git refused to delete. A legacy item reports
   `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and `WRITE_FAILED` stop
@@ -385,8 +387,9 @@ Report to the user:
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
   hidden mode's active ignore entry that this run left untouched
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
-- worktrees removed successfully, with their checkout identities and branch outcomes, and every
-  `BRANCH_RETAINED` branch with its unproven commits
+- worktrees removed successfully, with their checkout identities and branch outcomes, every
+  stopped `merge-gate` worktree released after its no-unpushed-commits proof with its kept head
+  branch, and every `BRANCH_RETAINED` branch with its unproven commits
 - failed removal attempts and partial cleanup, including exact record, lock, branch, or command
   state that remains
 - every remaining linked worktree other than the main worktree, one entry per worktree, with a
@@ -407,7 +410,10 @@ Retention reasons and their safe next steps:
 - `aborted` or `failed`: the owning run stopped or failed before cleanup readiness; inspect and
   recover its work. For a `partial-diff` record, the next step is `{{SKILL:deliver}}` in its source
   checkout, whose start offers to resume it or release it for cleanup; cleanup then removes it, also
-  when its worktree is fully gone
+  when its worktree is fully gone. A `merge-gate` record is offered by cleanup itself once its
+  proof passes; otherwise resolve its `blockers` and rerun cleanup: `unpushed-commits` – push the
+  head branch or drop those commits; `in-progress-operation` – finish or abort that merge,
+  cherry-pick, revert or rebase; `proof-unavailable` – a proof Git call failed or timed out
 - `cleanup-in-progress` or an existing lock: cleanup is claimed, active, or may have been
   interrupted; include known owner and timestamp and let the owner finish
 - dirty: clean the checkout before rerunning cleanup; locked: ask the known owner before unlocking
@@ -419,7 +425,9 @@ Retention reasons and their safe next steps:
 - `cleanup-failed`: include the recorded removal failure; rerun cleanup once it is eligible again
 - an orphan record lock (no record, or no owner): report its path; never break it
 
-Cleanup never breaks a lock or upgrades a retained lifecycle status to make it eligible.
+Cleanup never breaks a lock or upgrades a retained lifecycle status to make it eligible; its one
+claim from a retained status is the confirmed cleanup-only claim of an `aborted` or `failed`
+`merge-gate` record, with condition 6 waived, after its no-unpushed-commits proof.
 
 Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
 row when this run staged deletions, the configuration row when it only referred config values on. A

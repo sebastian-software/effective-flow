@@ -615,7 +615,7 @@ action.
 ## Persisted worktree lifecycle
 
 [`src/shared/worktree-lifecycle.md`](../../src/shared/worktree-lifecycle.md) is the common lifecycle
-contract for every Effective Flow-created delivery, partial-diff, plan-publication, and
+contract for every Effective Flow-created delivery, partial-diff, plan-publication, merge-gate, and
 `apply-review` component worktree. It consumes the canonical execution-location receipt and runtime-state safety contracts
 instead of restating repository identity, path containment, ignore, or tracked-state rules. The
 delivery and component-worktree creation paths both register through this shared contract;
@@ -635,10 +635,11 @@ the helper returns the session's records, which the caller filters to the run's 
 registered worktrees under its session paths that no record names. The self-check accepts only a deleted record with an unregistered worktree, or a record in `cleanup-ready`,
 `aborted`, `failed` or `cleanup-failed`. It sets a record left `active` to `aborted` or `failed`
 once, reports an unrecorded registered worktree as a manual-reconciliation defect, and never
-removes or claims a worktree or backfills a record. `iterate`'s pull-request checkout follows the
-same adapter as `merge-gate`: in place when the invocation checkout is clean and on the head
-branch, otherwise one owned worktree for the existing head branch without `-b`, recorded at once
-and closed through the handback after the push. A guard test in
+removes or claims a worktree or backfills a record. `iterate`'s pull-request checkout shares the
+in-place and stop-if-held rules with `merge-gate`: in place when the invocation checkout is clean
+and on the head branch, otherwise one owned worktree for the existing head branch without `-b`
+under purpose `delivery`, recorded at once and closed through the handback after the push.
+`merge-gate`'s own sequence is described below. A guard test in
 `test/worktree-lifecycle-contract.test.mjs` derives the host set from every tool that includes
 `worktree-integration` eagerly, lazily or transitively, and requires the eager obligation include
 in each.
@@ -687,8 +688,37 @@ former's internals and is never imported by it ([Build system](build-system.md#r
 `deliver` side is a lazy resume entry at step 1.1, `src/shared/deliver-partial-diff-resume.md`, whose
 step map lists what a resume skips and reruns; the proofs and call shapes are in
 `src/shared/worktree-partial-diff-recovery.md`.
+
+`merge-gate`'s own checkout carries the `merge-gate` purpose: path
+`BASE_DIR/REPO_NAME/SESSION_ID-merge-gate`, `retain`, on the pull request's existing head branch.
+[`src/shared/merge-gate-checkout-boundary.md`](../../src/shared/merge-gate-checkout-boundary.md)
+fixes its provisioning order: an explicit-refspec head fetch with `--no-write-fetch-head`,
+`git worktree add` of the existing local branch or `--track -b <head>` from
+`refs/remotes/origin/<head>`, the `creationOid` read, `worktree record-init`,
+`git merge --ff-only`, then the `headSha` identity check. A failed fast-forward withdraws the
+worktree and its record, keeps the branch and ends at local divergence; a failed provisioning fetch
+provisions nothing and ends the round with its reason recorded. A reused clean in-place checkout
+runs the fetch, the fast-forward and the identity check without a record.
+
+A stopped `merge-gate` record stays `aborted` or `failed` and is released only by `cleanup plan` and
+`cleanup apply`, which pass `mergeGateRelease` to `evaluateEligibility` in
+`effective-flow-state-worktree-core.mjs`. For that purpose the flag adds `aborted` and `failed` to
+the claimable statuses and waives condition 6 (`creationOid` ancestry), and a fail-closed
+no-unpushed-commits proof guards the removal instead; the proof applies only to a record in one of
+the four removable statuses whose worktree is proven ours or fully gone, and any other record gets
+`blockers: []`. A present worktree needs the other conditions, no merge, cherry-pick, revert, rebase
+or sequencer operation in progress, and an empty `git rev-list HEAD --not --remotes`. A fully gone
+worktree needs conditions 1, 8 and 9 and the receipt fields of 2, and its branch gone or passing the
+same `rev-list` from its tip. No fetch runs, and the proof is re-derived under the record lock
+before the claim. Every blocked cleanup entry carries a `blockers` array from the closed vocabulary
+`unpushed-commits`, `in-progress-operation` and `proof-unavailable`; a proof Git call that fails or
+times out yields `proof-unavailable`. `worktree remove`, `worktree inspect` and adoption never set
+the flag, the record is not rewritten before the claim, and removal never forces, never prunes and
+keeps the head branch.
+
 An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
-claims `cleanup-ready` or `cleanup-failed` as `cleanup-in-progress` with its run ID and timestamp.
+claims `cleanup-ready` or `cleanup-failed` (in `cleanup apply`, also a stopped `merge-gate` record)
+as `cleanup-in-progress` with its run ID and timestamp.
 A failed normal removal returns to `cleanup-failed`; complete and reverified worktree and branch
 cleanup removes only that actor's record. A `delete-after-integration` branch that `git branch -d`
 refuses is kept and the item reports `BRANCH_RETAINED` with the unproven commits, its worktree and
