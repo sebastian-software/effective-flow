@@ -466,8 +466,9 @@ options:
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
      merge it is the release signal — and the literal line `Next steps: suppressed` on its own
      line, because `{{SKILL:pr}}` returns its result here and the implementing workflow is the one
-     that closes this run. Hand the base over typed rather than as one bare value: pass **both**
-     recorded results, the resolved base ref and the resolved local base branch, each named as
+     that closes this run. A verification producer (`build`, `fix`, `refactor`) also passes its
+     `Verification evidence:` line verbatim on its own line; every other caller passes no `Verification evidence:` line. Hand
+     the base over typed rather than as one bare value: pass **both** recorded results, the resolved base ref and the resolved local base branch, each named as
      such, so the delegated run recomputes neither and needs no arm name beside them —
      "Base-branch resolution" states how a pair identifies the arm that produced it. Freshness is
      the one thing that pair cannot carry: the resolved base ref is a mutable remote-tracking

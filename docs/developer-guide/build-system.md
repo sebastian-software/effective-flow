@@ -455,7 +455,7 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Fourteen subsystems and 49 runtime scripts carry this today: the pairs
+  misread as one. Fifteen subsystems and 51 runtime scripts carry this today: the pairs
   `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
   `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
@@ -463,7 +463,8 @@ The build aborts with an error message if any of these guards is violated:
   `effective-flow-mechanics.mjs`/`effective-flow-mechanics-core.mjs`,
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
-  `setup-status.mjs`/`setup-status-core.mjs`; the
+  `setup-status.mjs`/`setup-status-core.mjs`,
+  `verification-evidence.mjs`/`verification-evidence-core.mjs`; the
   runtime-state helper, a twelve-file family whose entry point `effective-flow-state.mjs` sits over
   `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
   `effective-flow-state-harness-core.mjs`, `effective-flow-state-commit-core.mjs`,
@@ -783,8 +784,8 @@ The owning contract also requires bounded complete history reachable from the ex
 snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
 identity through completion; changed history or closure requires a fresh attempt.
 
-Fourteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 49 files: eleven two-file subsystems, the runtime-state helper's twelve-file family,
+Fifteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 51 files: twelve two-file subsystems, the runtime-state helper's twelve-file family,
 the remote tracker's seven-file family, the pilot measurement three-file family, the two
 protected-validation helper modules, and the shared `process-runner.mjs`,
 `runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
@@ -1082,6 +1083,37 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
   returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
   transport helpers, forge CLI calls).
+- **Verification evidence.** Invoke it as `node <skill-root>/scripts/verification-evidence.mjs <operation>`
+  with one closed-schema JSON object on standard input; the operation is the only argument, and an
+  unknown one is rejected before stdin is read. The operations are `evidence-build`,
+  `evidence-parse` and `evidence-render`; it emits one JSON envelope and exits nonzero with
+  `ok: false` on failure. It is read-only: every Git call carries `GIT_OPTIONAL_LOCKS=0`, runs with
+  replace objects and lazy fetch disabled (`--no-replace-objects`, `GIT_NO_REPLACE_OBJECTS=1`,
+  `GIT_NO_LAZY_FETCH=1`) and only reads objects, and `evidence-build` may read the verified tree from a private object store
+  (`objectDirectory`, such as the diff-baseline one) with the real store as alternate. A record
+  binds results to content, not to a commit: its `contentDigest` is the SHA-256 over the sorted
+  `git ls-tree -r` entries of the verified tree, excluding the run's own plan file and its archive
+  path (`planPaths`, validated against `planDir`, always empty in hidden mode). `evidence-render`
+  resolves `<head>^{tree}` itself, accepts no caller tree, and returns `current` with the results
+  table only on an equal digest, otherwise `stale` with one notice line. The record is a closed,
+  versioned schema, canonical JSON as unpadded base64url, limited to 20 checks, text fields of at most
+  80 (`check`), 160 (`scope`) and 160 (`limitation`) characters, and 6144 encoded bytes. Text
+  fails closed and is never redacted: a field that spans several lines, carries a control, invisible
+  format or private-use character, or breaks one of the ordered forbidden-token rules
+  (`FORBIDDEN_TOKEN_RULES`) rejects the record. Those rules cover absolute, home-relative and
+  `file:` paths, URLs with credentials, `@` mentions, `Release-As:`, issue-closing keywords,
+  breaking-change footers, HTML and comments, `|`, backticks, a leading `#`, AI attribution, review
+  finding IDs, and secret-, assignment-, timestamp- and stack-frame-shaped values. In hidden mode a
+  normalized copy of the field is also checked for workflow names, `.effective-flow` and the plan
+  directory. Relative paths and plain URLs are allowed. A content
+  problem is `ok: true` with `data.status: "rejected"` and a structured `data.reason` that never
+  carries the offending value; only a malformed call, a Git failure or an unreadable object is an
+  `ok: false` envelope (`INVALID_INPUT`, `GIT_FAILED`, `MISSING_OBJECT`, `INTERNAL`). Callers fail
+  closed to a gap: an error, a nonzero exit or a `rejected` status never blocks a commit or a pull
+  request and never passes on a partial record. The core imports only Node.js built-ins and
+  `runtime-state-guard.mjs`; the CLI injects `process-runner.mjs`. The lazily loaded
+  `src/shared/verification-evidence.md` fragment owns the handoff line, the trust rule, the
+  producer mapping and the rendering placement.
 - **Mechanics.** Invoke it as `node <skill-root>/scripts/effective-flow-mechanics.mjs <operation>`
   with one closed-schema JSON object on standard input (at most 64 KiB); the operation is always
   the only argument, so each operation is its own command prefix. The operations are
@@ -1384,7 +1416,7 @@ and directive syntax").
   `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `planning-batch`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
-  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.
+  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`, `verification-evidence`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its

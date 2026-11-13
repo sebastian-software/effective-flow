@@ -128,6 +128,11 @@ const SPAWN_MENTION_ALLOWLIST = [
   ],
   ['tools/pr.md', '**Bounds:** it starts no sub-agent', 'handoff of pr/body-draft'],
   [
+    'shared/verification-evidence.md',
+    'Its only source is the per-command outcomes',
+    'result handling: maps outcomes the producer already received from its validator and test-writer spawns; starts nothing',
+  ],
+  [
     'tools/apply-review.md',
     'Each pre-analysis sub-agent receives',
     'handoff of apply-review/finding-pre-analysis',

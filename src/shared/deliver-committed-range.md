@@ -116,6 +116,7 @@ call below only through the answer **Publish via pr**.
 Before calling `pr`, re-check that the source `HEAD` equals `headOid` and that the tree and index
 are still clean, untracked paths included; otherwise end with one notice. Then call
 `{{SKILL:pr}}` as a plain direct invocation from the source checkout: no `Next steps: suppressed`
-line and no committed-handoff receipt, with the explicit provider when the provider question was
-answered. Print nothing afterwards: `pr` owns the final report and the next-step block, and its
-hidden-mode rules apply unchanged.
+line and no committed-handoff receipt, but the literal line `Verification evidence: none` (this
+route carries no trusted verification evidence), with the explicit provider when the provider
+question was answered. Print nothing afterwards: `pr` owns the final report and the next-step
+block, and its hidden-mode rules apply unchanged.
