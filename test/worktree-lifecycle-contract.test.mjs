@@ -26,7 +26,7 @@ import {
   RESUME_OPERATION_PROOFS,
   RESUME_PROOFS,
 } from '../src/scripts/effective-flow-state-recovery-core.mjs';
-import { PURPOSES } from '../src/scripts/effective-flow-state-worktree-core.mjs';
+import { MAX_RECORD_IDS, PURPOSES } from '../src/scripts/effective-flow-state-worktree-core.mjs';
 import { spliceDelegatedRun } from './support/merge-gate-source.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -999,5 +999,101 @@ test('no merge-gate fragment names delivery as its record purpose', () => {
   assert.match(
     run,
     /lifecycle record uses purpose `merge-gate`, not `\{\{SKILL:iterate\}\}`'s `delivery`/,
+  );
+});
+
+// --- Schema-invalid record cleanup (#657) ---
+
+const flatCleanup = cleanup.replace(/\s+/g, ' ');
+const flatLifecycle = lifecycle.replace(/\s+/g, ' ');
+
+// Invariant: cleanup names the `invalid-record:<RECORD_ID>` candidate class everywhere a user or
+// the orchestrator meets it: the catalog text, the item IDs with the blocked file name case, both
+// actions in the dry run, and the Worktrees ask, which must say that schema-invalid records are
+// part of what the confirmation removes.
+test('cleanup names the invalid-record item, both actions and the schema-invalid Worktrees ask', () => {
+  const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
+  assert.match(
+    frontmatter,
+    /schema-invalid lifecycle records whose worktree is absent or proven clean/,
+  );
+  assert.match(frontmatter, /catalogHint: "[^"\n]*schema-invalid records included/);
+  assertClauses(flatCleanup, [
+    [/`invalid-record:<RECORD_ID>` \(with `schemaReason`, `action` and `evidence`;/, 'item ID'],
+    [
+      /`blocked` \(with `conditions`, `failures` or, for `invalid-record`, `schemaReason`, and a `blockers` array\)/,
+      'blocked entry fields',
+    ],
+    [
+      /a file named by no record ID is blocked as `itemId: null` with `fileNameSha256`/,
+      'blocked file name entry',
+    ],
+    [
+      /An `invalid-record:` candidate shows its path, `schemaReason`, action and `evidence` instead, never a record field: `absent` deletes only the record file, `present-clean` the worktree, then the file\./,
+      'both actions in the dry run',
+    ],
+    [
+      /"Remove all verified" every `worktree:` and `invalid-record:` item/,
+      'ask selects invalid-record items',
+    ],
+    [
+      new RegExp(
+        `one\\*\\* \`cleanup apply\` call \\(at most ${MAX_RECORD_IDS} \`worktree:\` and ` +
+          '`invalid-record:` items; the rest after a fresh `cleanup plan`\\)',
+      ),
+      'apply batch cap (MAX_RECORD_IDS)',
+    ],
+  ]);
+  assert.match(
+    cleanup,
+    /header: Worktrees\nquestion: [^\n]*schema-invalid records included/,
+    'the Worktrees ask mentions schema-invalid records',
+  );
+});
+
+// Invariant: an `invalid-record:` item that changed by its turn is its own PREVIEW_MISMATCH, a failed
+// removal keeps the record file, and the completion report names every retired item with its action
+// and the branch it kept.
+test('cleanup reports invalid-record outcomes: item PREVIEW_MISMATCH, kept record file, retired items', () => {
+  assertClauses(flatCleanup, [
+    [
+      /An `invalid-record:` item changed by its turn is its own `PREVIEW_MISMATCH`; its `REMOVE_FAILED` keeps the record file/,
+      'apply outcomes',
+    ],
+    [
+      /every retired `invalid-record:` item with its action and kept `evidence\.branch` \(none for `absent`\)/,
+      'completion report',
+    ],
+  ]);
+});
+
+// Invariant: the invalid-schema retention advice no longer sends every invalid record to manual
+// reconciliation: a record whose proof passes is an item, `dirty` and `unpushed-commits` name their
+// own steps, and only any other blocker is reconciled manually.
+test('the invalid-schema retention advice sends only blocked records to manual reconciliation', () => {
+  assert.match(
+    flatCleanup,
+    /an invalid schema: an `invalid-record:` item once its proof passes\. Blocked by `dirty`: commit or discard; by `unpushed-commits`: push; then rerun cleanup\. Any other blocker: reconcile manually/,
+  );
+  assert.match(flatCleanup, /no lifecycle record: ownership cannot be proven; reconcile manually/);
+  assert.doesNotMatch(
+    flatCleanup,
+    /unknown\/invalid schema: ownership cannot be proven/,
+    'an invalid schema is no longer retained as unprovable ownership',
+  );
+});
+
+// Invariant: the lifecycle contract states that an invalid record is never repaired or rewritten
+// and is deleted only through cleanup's confirmed `invalid-record` item, never by the helper's
+// other operations or by prose.
+test('the lifecycle contract states an invalid record is deleted only through the invalid-record item', () => {
+  assert.match(
+    flatLifecycle,
+    /never repairs or rewrites such a record; only cleanup's confirmed `invalid-record` item deletes one/,
+  );
+  assert.doesNotMatch(
+    flatLifecycle,
+    /never repairs, rewrites or deletes such a record/,
+    'the blanket never-deletes wording left no way to retire an invalid record',
   );
 });

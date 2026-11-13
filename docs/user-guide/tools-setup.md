@@ -555,6 +555,24 @@ proof and repeats it under the record lock before it removes anything. Only `cle
 a record. When the proof fails, the report keeps the worktree and lists a `blockers` entry:
 `unpushed-commits`, `in-progress-operation` or `proof-unavailable`. The head branch is kept.
 
+A lifecycle record that fails its schema (an unknown schema, a missing or extra key, an invalid
+value) cannot make a worktree a candidate, and cleanup never repairs or rewrites it. It offers the
+record as its own `invalid-record` item instead, proven from Git and the filesystem alone: no field
+of the record authorizes anything. The preview shows the `schemaReason` and one of two actions:
+
+- `absent`: the recorded path is unregistered and gone. Cleanup deletes only the record file.
+- `present-clean`: the path is a registered worktree of this repository inside a configured
+  `worktree.baseDir` or `applyReview.worktree.baseDir`. It is clean (ignored files included) with
+  no hidden change, no operation in progress and no unpushed commit. Cleanup runs
+  `git worktree remove` without `--force`, then deletes the record file.
+
+Every branch is kept. A record whose proof fails is listed once as blocked with its `blockers`
+instead, as is a record whose status is not `aborted`, `failed`, `cleanup-ready` or `cleanup-failed`
+and one whose path another record names. A file that no record ID names is blocked with
+`invalid-record-id` and its name is not shown. If cleanup cannot resolve the base directories, only
+`present-clean` records are blocked, with `base-dir-unresolved`. A worktree that an invalid record
+names is not also listed as recordless.
+
 Cleanup also lists **stale diff baselines**: the `.effective-flow/runs/<RUN_ID>/diff-baseline/`
 directories that an aborted `build`, `fix`, or `refactor` run left behind (see
 [Implement a change](tools-implement.md)). They can contain working-tree content, including
@@ -594,7 +612,9 @@ inspection status, a specific reason for keeping it, and a safe next step. When 
 linked worktree, that current execution worktree is reported as in use by the cleanup run. Active,
 aborted, failed, dirty, locked, prunable, harness-managed, mismatched, and lifecycle-less worktrees
 stay intact; the only `aborted` or `failed` worktree cleanup may release is a `merge-gate` one that
-passes its proof.
+passes its proof. A blocked `invalid-record` item is reported like any other retained worktree, with
+its `blockers` and a next step (see
+[Cleanup keeps a linked worktree](troubleshooting.md#cleanup-keeps-a-linked-worktree)).
 An `active` record may represent either work still in progress or a run interrupted by a crash;
 there is no timeout or heartbeat that guesses which one it is.
 

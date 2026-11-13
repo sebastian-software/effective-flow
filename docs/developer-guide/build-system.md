@@ -1223,10 +1223,11 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   sequence. `worktree record-init`, `transition` and `inspect` create, change and read records;
   `worktree remove` withdraws the listed records of one session. `cleanup plan` is read-only: it
   classifies every record and returns actionable `items` (`worktree:<RECORD_ID>`,
-  `legacy:.firmo`, `legacy:.sf-plugin`, `config:.effective-flow/config.json`) each with an
-  `itemDigest`, the SHA-256 of the item's key-sorted evidence, plus `blocked` and `unrecorded`
-  entries. `cleanup apply` takes the user's selected `items` with their digests, recomputes each
-  under its lock and answers `PREVIEW_MISMATCH` without writing when one differs; it removes
+  `invalid-record:<RECORD_ID>`, `legacy:.firmo`, `legacy:.sf-plugin`,
+  `config:.effective-flow/config.json`) each with an `itemDigest`, the SHA-256 of the item's
+  key-sorted evidence, plus `blocked` and `unrecorded` entries. `cleanup apply` takes the user's
+  selected `items` with their digests, recomputes each under its lock and answers
+  `PREVIEW_MISMATCH` without writing when one differs; it removes
   worktrees through the lifecycle claim and legacy items (guard classes `legacyRuntimeDirectory`
   and `legacyConfigFile`) bottom-up without following a link. Both destructive operations run
   under a 90 s deadline, so the caller sets a 120000 ms Bash timeout and, in Codex, requests

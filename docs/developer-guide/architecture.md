@@ -710,11 +710,48 @@ the four removable statuses whose worktree is proven ours or fully gone, and any
 or sequencer operation in progress, and an empty `git rev-list HEAD --not --remotes`. A fully gone
 worktree needs conditions 1, 8 and 9 and the receipt fields of 2, and its branch gone or passing the
 same `rev-list` from its tip. No fetch runs, and the proof is re-derived under the record lock
-before the claim. Every blocked cleanup entry carries a `blockers` array from the closed vocabulary
-`unpushed-commits`, `in-progress-operation` and `proof-unavailable`; a proof Git call that fails or
-times out yields `proof-unavailable`. `worktree remove`, `worktree inspect` and adoption never set
-the flag, the record is not rewritten before the claim, and removal never forces, never prunes and
-keeps the head branch.
+before the claim. Every blocked cleanup entry carries a `blockers` array, and a `merge-gate` entry
+draws it from `unpushed-commits`, `in-progress-operation` and `proof-unavailable`; a proof Git call
+that fails or times out yields `proof-unavailable`. `worktree remove`, `worktree inspect` and
+adoption never set the flag, the record is not rewritten before the claim, and removal never
+forces, never prunes and keeps the head branch.
+
+A record that fails `readRecord`'s schema is a third cleanup class, `invalid-record`, which rewrites
+nothing and lets no field of the record authorize an action. `cleanup plan` returns each such record
+exactly once: as an `invalid-record:<RECORD_ID>` item (`kind: invalidRecord`) with `schemaReason`,
+`action` and `itemDigest`, or as a blocked entry with the same `itemId`, `schemaReason` and
+`blockers` and no `reason`. A file name that is no record ID is blocked with `itemId: null`,
+`fileNameSha256` and `invalid-record-id`, and its name is never echoed. Evidence is limited to
+helper-derived facts, the validated `worktreePath` and the schema-problem code. The item's `blockers`
+come from the single closed `BLOCKERS` vocabulary in `effective-flow-state-worktree-core.mjs`. Both
+actions check the file and its surroundings (`invalid-json`, `no-worktree-path`, `record-locked`,
+`ledger-present`, `unsafe-ledger-directory`, `status-not-terminal`, `recorded-elsewhere`,
+`half-gone`); only `present-clean` adds the Git proofs (`outside-base-dir`, `base-dir-unresolved`,
+`main-or-execution-root`, `not-registered-here`, `registration-locked`, `registration-prunable`,
+`path-not-canonical`, `quarantine`, `dirty`, `in-progress-operation`, `unpushed-commits`,
+`proof-unavailable`). `recorded-elsewhere` is computed from the records alone, without the base
+directories: the path of a valid record, of a non-terminal invalid one, or the parent of a valid
+`apply-review` record's path or anything below it. Terminal invalid records that share a path do
+not block each other; after the first `present-clean` removal the rest are `absent`.
+
+The action is `absent` when the path is unregistered and `lstat` reports ENOENT: only the record
+file is deleted. It is `present-clean` when the worktree is registered here and passes conditions 3,
+4, 7 and 8 with the common-directory proof before any in-worktree Git call (`core.fsmonitor=false`),
+an empty `git status --porcelain --ignored --untracked-files=all`, no skip-worktree or
+assume-unchanged entry, no operation in progress, physical containment in `worktree.baseDir` or
+`applyReview.worktree.baseDir`, and an empty `git rev-list HEAD --not --remotes`. Removal is then
+`git worktree remove` without `--force` and deletion of the record file; branches are never touched.
+Unresolvable base directories block only the `present-clean` candidates, never `cleanup plan`. A
+worktree an invalid record names leaves `unrecorded` only in `cleanup plan`, where `sessionId` is
+null, so session-scoped `worktree inspect` still reports it.
+
+`cleanup apply` re-derives an `invalid-record:` item from fresh evidence, then again under the
+record's own lock right before the removal. An item that differs fails as its own `PREVIEW_MISMATCH`
+(carrying its `blockers` once it is blocked); a difference found before the first write still ends
+the whole call. A failed `git worktree remove` or record deletion is `REMOVE_FAILED` with the record
+kept, and `removed: "unknown"` when the removal cannot be verified afterwards. A call selects at
+most 64 `worktree:` and `invalid-record:` items together, and the helper runs them in the order
+`worktree:`, `invalid-record:`, `legacy:`, `config:`.
 
 An eligible cleanup actor serializes a fresh read and validation with a per-record lock, then
 claims `cleanup-ready` or `cleanup-failed` (in `cleanup apply`, also a stopped `merge-gate` record)

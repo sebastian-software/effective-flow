@@ -2469,7 +2469,7 @@ try {
     'apply-review': 1071,
     'apply-issues': 984,
     'merge-gate': 922,
-    cleanup: 835,
+    cleanup: 844,
     refactor: 972,
     deliver: 805,
     'plan-issue': 799,

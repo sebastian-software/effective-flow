@@ -1,6 +1,6 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
-catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones included."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits and schema-invalid lifecycle records whose worktree is absent or proven clean with nothing unpushed; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included."
 ---
 
 # Effective Flow Cleanup
@@ -151,8 +151,10 @@ are discarded), `discard` (single `.firmo/<path>` or `.sf-plugin/<path>` entries
 (`".effective-flow/config.json"`, `".firmo/config.json"` or `".sf-plugin/config.json"` →
 `"complete"` once its values are in the ADR, `"discarded"` when the user drops them). `cleanup plan`
 is read-only and returns `items` (actionable, each with `itemId` and `itemDigest`), `blocked` (with
-`conditions` or `failures`, and a `blockers` array), and `unrecorded` registered worktrees; item IDs
-are `worktree:<RECORD_ID>` (a stopped `merge-gate` record included), `legacy:.firmo`,
+`conditions`, `failures` or, for `invalid-record`, `schemaReason`, and a `blockers` array), and
+`unrecorded` registered worktrees; item IDs are `worktree:<RECORD_ID>` (a stopped `merge-gate`
+record included), `invalid-record:<RECORD_ID>` (with `schemaReason`, `action` and `evidence`; a
+file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), `legacy:.firmo`,
 `legacy:.sf-plugin` and `config:.effective-flow/config.json`.
 
 ### Phase 1: Discovery / inventory
@@ -167,12 +169,12 @@ are `worktree:<RECORD_ID>` (a stopped `merge-gate` record included), `legacy:.fi
    eligibility conditions; the main worktree and this cleanup's own execution worktree are
    excluded as removal candidates.
 3. Classify every linked worktree other than the main worktree into exactly one preliminary
-   result: a **removal candidate** (`worktree:` item), **retained** with its first failed condition
-   or status (a `blocked` record: `active`, `aborted`, `failed`, `cleanup-in-progress`, dirty,
-   locked, prunable, missing, mismatched, unknown or invalid schema), or **recordless** (an
-   `unrecorded` entry: foreign, harness-managed, user-managed or created before lifecycle
-   recording). A call that is not `ok` makes the worktrees **not reliably checkable**: retained,
-   never silently skipped.
+   result: a **removal candidate** (`worktree:` or `invalid-record:` item), **retained** with its
+   first failed condition, status or blocker (a `blocked` record: `active`, `aborted`, `failed`,
+   `cleanup-in-progress`, dirty, locked, prunable, missing, mismatched, or an invalid schema with
+   its `blockers`), or **recordless** (an `unrecorded` entry: foreign, harness-managed,
+   user-managed or created before lifecycle recording). A call that is not `ok` makes the
+   worktrees **not reliably checkable**: retained, never silently skipped.
 4. **Stale diff baselines:** list every `<RUNTIME_STATE_ROOT>/.effective-flow/runs/*/diff-baseline/`
    directory read-only, without following a symlink.
 5. Capture the existing legacy remnants in the project root:
@@ -281,7 +283,9 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    `registrations`); deleting the directory is never a substitute for removing a worktree.
 6. Show worktree candidates as their own class: path, checkout identity, status, owner
    workflow/purpose, and branch policy. State that eligibility is checked again under an exclusive
-   record lock immediately before removal.
+   record lock immediately before removal. An `invalid-record:` candidate shows its path,
+   `schemaReason`, action and `evidence` instead, never a record field: `absent` deletes only the
+   record file, `present-clean` the worktree, then the file.
 7. List retained and recordless worktrees separately with their concrete reason. They are not
    offered for confirmation.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
@@ -312,7 +316,7 @@ options:
 ```ask
 when: there is at least one verified worktree removal candidate
 header: Worktrees
-question: Remove the verified Effective Flow worktrees listed in the dry run now, stopped merge-gate worktrees with no unpushed commits included, after checking every proof again under its lifecycle lock?
+question: Remove the verified Effective Flow worktrees listed in the dry run now, stopped merge-gate worktrees with no unpushed commits and schema-invalid records included, after checking every proof again under its lifecycle lock?
 options:
   - label: Remove all verified
     description: Revalidate and remove every still-eligible listed worktree with ordinary git worktree remove
@@ -339,11 +343,12 @@ Execute per class:
 
 - **Tracked files:** remove via `git rm` (staged, **no** commit).
 - **Untracked/gitignored legacy items and worktrees:** "Yes, remove as listed" selects every
-  `legacy:` and `config:` item of the dry run; "Remove all verified" every `worktree:` item,
-  "Select individually" the chosen ones. Send all selected items in **one** `cleanup apply` call
-  with the dry run's `decisions` and each item's `itemDigest`; give it an explicit Bash timeout of
-  120000 ms and, in Codex, request sandbox escalation for it up front. The helper re-proves every
-  selected item from fresh evidence before it removes anything.
+  `legacy:` and `config:` item of the dry run; "Remove all verified" every `worktree:` and
+  `invalid-record:` item, "Select individually" the chosen ones. Send all selected items in **one**
+  `cleanup apply` call (at most 64 `worktree:` and `invalid-record:` items; the rest after a fresh
+  `cleanup plan`) with the dry run's `decisions` and each item's `itemDigest`; give it an explicit
+  Bash timeout of 120000 ms and, in Codex, request sandbox escalation for it up front. The helper
+  re-proves every selected item from fresh evidence before it removes anything.
 - **Stale diff baselines:** for each confirmed directory, revalidate the receipt and `RUNTIME_STATE_ROOT`, apply runtime-state safety to its exact handle,
   and remove it only through `node <skill-root>/scripts/diff-baseline.mjs discard` with
   `{ "cwd": "<RUNTIME_STATE_ROOT>", "dir": "<its absolute handle>" }` on stdin, as
@@ -359,12 +364,13 @@ Execute per class:
   carries its `conditions` and `blockers`, and nothing was written. Call `cleanup plan` again, show
   the new dry run, and ask again.
 - `result.items[]`, one per selected item: worktree items follow the lifecycle outcome table, where
-  `BRANCH_RETAINED` keeps an `apply-review` branch Git refused to delete. A legacy item reports
-  `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and `WRITE_FAILED` stop
-  that item with the partial state (`removedEntries`, `stoppedAt`), the plan codes of Phase 4 block
-  it, and `DEADLINE_REACHED` or `INTERRUPTED` leave it for a later run. Every other item continues.
-  After `git rm` of tracked remnants, rerun cleanup so the untracked rest of a mixed legacy
-  directory is planned.
+  `BRANCH_RETAINED` keeps an `apply-review` branch Git refused to delete. An `invalid-record:` item
+  changed by its turn is its own `PREVIEW_MISMATCH`; its `REMOVE_FAILED` keeps the record file. A
+  legacy item reports `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and
+  `WRITE_FAILED` stop that item with the partial state (`removedEntries`, `stoppedAt`), the plan codes
+  of Phase 4 block it, and `DEADLINE_REACHED` or `INTERRUPTED` leave it for a later run. Every other
+  item continues. After `git rm` of tracked remnants, rerun cleanup so the untracked rest of a mixed
+  legacy directory is planned.
 - A denied or refused call, another nonzero exit, an `error` (`INVALID_ROOT`, `INVALID_INPUT`,
   `RUNTIME_STATE_UNSAFE`, `GIT_FAILED`): nothing beyond the reported items changed; report it and
   retain every selected artifact.
@@ -387,9 +393,10 @@ Report to the user:
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
   hidden mode's active ignore entry that this run left untouched
 - which `firmo-` labels were detached from how many issues (or that the label class was skipped)
-- worktrees removed successfully, with their checkout identities and branch outcomes, every
-  stopped `merge-gate` worktree released after its no-unpushed-commits proof with its kept head
-  branch, and every `BRANCH_RETAINED` branch with its unproven commits
+- worktrees removed successfully, with their checkout identities and branch outcomes, every stopped
+  `merge-gate` worktree released after its no-unpushed-commits proof with its kept head branch,
+  every retired `invalid-record:` item with its action and kept `evidence.branch` (none for
+  `absent`), and every `BRANCH_RETAINED` branch with its unproven commits
 - failed removal attempts and partial cleanup, including exact record, lock, branch, or command
   state that remains
 - every remaining linked worktree other than the main worktree, one entry per worktree, with a
@@ -421,7 +428,9 @@ Retention reasons and their safe next steps:
   condition and reconcile manually
 - reused, user-managed, foreign, or `harness-managed`: not Effective Flow-owned; the harness or
   user manages it
-- no lifecycle record or an unknown/invalid schema: ownership cannot be proven; reconcile manually
+- no lifecycle record: ownership cannot be proven; reconcile manually
+- an invalid schema: an `invalid-record:` item once its proof passes. Blocked by `dirty`: commit or
+  discard; by `unpushed-commits`: push; then rerun cleanup. Any other blocker: reconcile manually
 - `cleanup-failed`: include the recorded removal failure; rerun cleanup once it is eligible again
 - an orphan record lock (no record, or no owner): report its path; never break it
 
