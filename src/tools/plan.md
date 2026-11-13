@@ -208,11 +208,11 @@ On a revision run:
 - **Ask everything before the move; after the move, only write.** Every question this revision owes
   the user — the revision question above, and the unclear-status confirmation below — is asked and
   answered before the plan is moved, and no question is posed once it has been. The exceptions are
-  Phase 6b's deep-review question and the Phase 7 publication question: this revision does not owe
-  them, so they follow the move. This is the general rule the two orderings above are instances
-  of, and it is what makes a decline safe at every point: before the move a decline changes nothing
-  because nothing has been written, and declining either question after the move leaves the moved
-  plan valid. Posing the unclear-status question after the move would leave
+  the `planning-batch` round with its bounded second round, Phase 6b's deep-review question and the
+  Phase 7 publication question: this revision does not owe them, so they follow the move. This is
+  the general rule the two orderings above are instances of, and it is what makes a decline safe at
+  every point: before the move a decline changes nothing because nothing has been written, and
+  after the move a decline or "Decide later" leaves the moved plan valid, with open points. Posing the unclear-status question after the move would leave
   the declining user a plan sitting in `<plan.dir>/` without a valid status marker — visible only
   in `{{SKILL:open-plans}}`'s status-unclear list rather than among the open plans, and answering
   the same question again on the next `{{SKILL:apply}}`.
@@ -444,6 +444,14 @@ Rules:
 
 ### Phase 4: Gap analysis
 
+```lazy-include
+planning-batch
+when: the Phase 4 gap analysis starts, or a later phase defers, batches or works in a decision
+```
+
+Its roles here: gap step Phase 4, validation step Phase 5, internal review step Phase 6, open-points
+section `## Open points` / `## Offene Punkte`.
+
 The gap judgment rests with `effective-delivery` (see "Delegating the domain judgment to
 central skills"). Apply the skill to the plan and let it assess the generic gaps —
 over-engineering, scope creep, unspoken assumptions, missing or non-measurable acceptance
@@ -452,9 +460,9 @@ concrete plan crosses a declared specialist boundary (product, design, browser/a
 architecture, legal …), bring in the responsible owner via the relevance gate; a narrow
 engineering plan stays narrow.
 
-Incorporate the reported gaps into the plan and clean it up before you report it as complete. If
-`effective-delivery` is missing, the minimal generic fallback from the building block applies
-(a short core checklist), **not** a second plan-quality handbook.
+Incorporate directly resolvable gaps and clean up the plan; defer each decision-requiring gap per
+`planning-batch`. If `effective-delivery` is missing, the minimal generic fallback from the
+building block applies (a short core checklist), **not** a second plan-quality handbook.
 
 ### Phase 5: Plan validation
 
@@ -472,14 +480,14 @@ the judgment, Effective Flow the artifact form):
 | Workflow recommendation | Feature, Bugfix, Refactoring, or Documentation is justified and fits the scope                                                                                                                                  |
 | Doc target              | documentation plans contain the matching German or English target-path field, plus the doc-category field unless `Doc categories` sanctions its omission; a present category is consistent with its target path |
 
-If a criterion is not met, revise the plan or ask the user for the missing information.
+If a criterion is not met, revise the plan; a missing decision joins the batch per `planning-batch`.
 
 ```lazy-include
 plan-lint
 when: the plan file is written and its mechanical check runs in Phase 5 or reruns in Phase 7
 ```
 
-**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to a fresh Phase 3 `name-allocate` result); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.
+**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to a fresh Phase 3 `name-allocate` result); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: here it may hold points pending the batch and points the user deliberately deferred; the Phase 7 rerun accepts every open point without the pending marker (deferred by the user, left open by the batch round, or written blocking by an unattended site), and an entry still carrying the marker is converted like an unanswered point: a concrete open point (blocking in an unattended run) with a re-entry note, its marker removed, without a new round. A failed lint stops the run before the completion report.
 
 ### Phase 6: Plan review
 
@@ -508,13 +516,16 @@ Classify the findings reported by the skill into the Effective Flow severity (ar
 
 Approach:
 
-1. Obtain the review judgment via `effective-delivery` (plus relevant specialists).
+1. Obtain the review judgment via `effective-delivery` (plus relevant specialists); it receives the pending points as known open points and does not report them again.
 2. Incorporate all critical findings directly into the plan.
-3. Incorporate important findings or document in the matching `## Plan-Review` / `## Plan review` section why they are deliberately not implemented.
+3. A decision-requiring important finding joins the batch; incorporate the other important findings or document in the matching `## Plan-Review` / `## Plan review` section why they are deliberately not implemented.
 4. Update that language-matching review section with the result, summary, and findings.
-5. If critical findings still remain after the revision, ask the user for the missing decision and do not complete the plan.
+5. If critical findings still remain after the revision, they join the batch; do not report the plan ready while one stays undecided.
+6. Run the batch round and the planning ladder per `planning-batch` before Phase 6b.
 
 ### Phase 6b: Deep interactive plan review
+
+This review is user-requested depth (`planning-batch`).
 
 For a cross-agent review handoff, verify actual transport eligibility and the selected canonical
 plan-review receiver/root marker before adding optional progress context; otherwise send the
@@ -561,9 +572,10 @@ On `No`: Continue with Phase 7; the next-step block of that phase carries the re
    - on a revision run that brought a plan back from `<plan.dir>/archive/`: the unstaged move and
      its Git effect, per the revision-mode reporting rule of Phase 1
    - the publication line, when the publication contract was loaded
-5. Emit the next-step block per `next-steps` as the last element of the report. A deep review that
-   returned `Revision required` or a nonzero blocking open-point count takes the open-points row,
-   not the ready one — implementation comes after those points are closed.
+5. Emit the next-step block per `next-steps` as the last element of the report. Any
+   `Revision required` result or nonzero blocking open-point count, whether from Phase 6, the batch
+   or the deep review, takes the open-points row, not the ready one — implementation comes after
+   those points are closed.
 
 ```lazy-include
 plan-publication

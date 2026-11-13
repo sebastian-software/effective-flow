@@ -1381,7 +1381,7 @@ and directive syntax").
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
   `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
-  `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `source-upstream-sync`, `setup-profiles`,
+  `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `planning-batch`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
   `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.

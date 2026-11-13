@@ -963,7 +963,8 @@ cumulative render does, writes `delta.patch` and `delta-paths.json`, and returns
 `deltaPathsPath`, `currentTree` and `deltaEntries`; it never touches `diff.patch` or `paths.json`,
 and an equal tree yields an empty delta. The lazily loaded
 [`src/shared/review-depth.md`](../../src/shared/review-depth.md) fragment, included by `build`
-(Phase 6), `fix` (Phase 4) and `refactor` (Phase 4), builds on it: the `currentTree` of the render
+(Phase 6), `fix` (Phase 4) and `refactor` (Phase 4), builds on it (`planning-batch` is a fourth
+loader that uses only its triggers and floor boundaries, for the planning ladder): the `currentTree` of the render
 that fed the first review is retained as `reviewTree`; after the one incorporation pass, a
 cumulative render and a delta render with `sinceTree: reviewTree` define the changed areas for the
 scoped re-check. Triggers (a)–(d) widen only their own paths to a full pass, and the fixed floor
