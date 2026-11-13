@@ -9151,9 +9151,7 @@ test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys 
 
   // The block-9 wizard table pairs each dotted key with its default. Sliced from its own header
   // row inclusively, so the Default column can be located by name rather than by position.
-  const tableStart = setup.indexOf('| Key                              | Values');
-  assert.notEqual(tableStart, -1, 'missing the block-9 configuration table in setup');
-  const table = setup.slice(tableStart, setup.indexOf('\n\n', tableStart));
+  const table = setupMergeGateKeyTable();
   for (const [key, value] of [
     ['mergeGate.completion', '`ask`'],
     // The default is `auto`, and it must read the same here, in the shared configuration
@@ -9166,6 +9164,8 @@ test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys 
     ['mergeGate.botWaitMinutes', '`10`'],
     ['mergeGate.bots', '`(empty)`'],
     ['mergeGate.botAccounts', '`(empty)`'],
+    ['mergeGate.noCiPolicy.bases', 'unset'],
+    ['mergeGate.noCiPolicy.unattended', '`false`'],
   ]) {
     assert.equal(
       defaultCell(table, `\`${key}\``),
@@ -12964,13 +12964,26 @@ test('external done-state configuration mirrors the started state and never abor
   );
 });
 
-test('the completion offer adds no mergeGate.* key: all four key tables agree on the same ten rows', () => {
+// The block-9 wizard table of `setup-advanced-settings`, sliced from its header row to the blank line
+// after it. The header row is matched by its first two column names rather than by its padded
+// literal, because the formatter re-pads every cell whenever a longer key joins the table.
+function setupMergeGateKeyTable() {
+  const setup = source('src/shared/setup-advanced-settings.md');
+  const start = setup.search(/\| Key +\| Values/);
+  assert.notEqual(start, -1, 'missing the block-9 configuration table in setup');
+  const end = setup.indexOf('\n\n', start);
+  assert.notEqual(end, -1, 'the block-9 configuration table must end at a blank line');
+  return setup.slice(start, end);
+}
+
+test('the completion offer adds no mergeGate.* key: all four key tables agree on the same twelve rows, the no-CI policy rows included', () => {
   // The operator chose "report, transition nothing" for the non-interactive case, so there is no
   // mode to configure and setup.md's "The gate is safe without any of these keys" stays true. A
   // further row would be a fifth place to keep in sync and a guarantee that quietly became
   // configurable — which is why the row set is asserted rather than only its length. The tenth
-  // row, `mergeGate.botAccounts`, was added deliberately by the bot-accounts feature; the invariant
-  // is that the four tables carry the identical row set, whatever its size.
+  // row, `mergeGate.botAccounts`, was added deliberately by the bot-accounts feature, and the two
+  // `mergeGate.noCiPolicy.*` rows by the declared no-CI policy; the invariant is that the four
+  // tables carry the identical row set, whatever its size.
   //
   // The gate's own Configuration table is the fourth copy and was, until this assertion, the one
   // nobody compared: the configuration split gave `merge-gate` a table of its own precisely so it
@@ -12986,6 +12999,8 @@ test('the completion offer adds no mergeGate.* key: all four key tables agree on
     '`mergeGate.bots.<login>.trigger`',
     '`mergeGate.bots.<login>.check`',
     '`mergeGate.botAccounts`',
+    '`mergeGate.noCiPolicy.bases`',
+    '`mergeGate.noCiPolicy.unattended`',
   ];
   const bare = prefixed.map((key) => key.replace('mergeGate.', ''));
 
@@ -13009,12 +13024,8 @@ test('the completion offer adds no mergeGate.* key: all four key tables agree on
     prefixed,
   );
 
-  const setup = source('src/shared/setup-advanced-settings.md');
   assert.deepEqual(
-    keyRows(
-      setup.slice(setup.indexOf('| Key                              | Values')),
-      'src/shared/setup-advanced-settings.md',
-    ),
+    keyRows(setupMergeGateKeyTable(), 'src/shared/setup-advanced-settings.md'),
     prefixed,
   );
 
@@ -13046,14 +13057,7 @@ test('mergeGate.botAccounts is one comma-list row with an empty default in all f
       '\n### ',
     ),
     section(mergeGateSource(), '## Configuration', '\n## '),
-    boundedSlice(
-      section(
-        source('src/shared/setup-advanced-settings.md'),
-        '### Block 9: the merge gate (`mergeGate.*`)',
-      ),
-      '| Key                              | Values',
-      '\n\n',
-    ),
+    setupMergeGateKeyTable(),
   ];
   for (const table of tables) {
     assert.equal(defaultCell(table, '`mergeGate.botAccounts`'), '`(empty)`');
@@ -15622,6 +15626,429 @@ test('the no-check-list waiver clears one clause of condition 2 and nothing else
       300,
     ),
     "the waiver must say why no read could decide this in the operator's place",
+  );
+});
+
+// Invariant: the declared no-CI policy is the operator's advance answer to exactly one question, an
+// unreported check list, for the bases the operator listed. Every assertion below keeps one of its
+// bounds: it pre-answers rather than waives, only a fresh Phase-4 read decides, a non-interactive
+// run needs the literal `true`, and the forge stays the enforcer of required checks.
+test('the declared no-CI policy section pre-answers the check-list question, records no waiver and names its residual risk', () => {
+  const fragment = source('src/shared/merge-gate-check-list-waiver.md');
+  const policyRaw = section(fragment, '### Declared no-CI policy', '\n### ');
+  const bullet = (lead, stop) => prose(boundedSlice(policyRaw, lead, stop));
+
+  // A pre-answer, not a waiver: the question is not posed, no `BLOCKED-USER` is relayed, and the
+  // only trace is the one wisdom line Phase 6 reads.
+  const preAnswer = bullet('- **It pre-answers; it records no waiver.**', '- **Only the fresh');
+  assert.match(preAnswer, /the waiver is not posed/);
+  assert.match(preAnswer, /a relayed run returns no `BLOCKED-USER check-list-waiver`/);
+  assert.match(preAnswer, /No waiver record is written/);
+  assert.match(
+    preAnswer,
+    /the wisdom file holds only `no-ci-policy used: <base> @ <VERIFIED_HEAD_SHA>`/,
+  );
+  assert.match(preAnswer, /no later evaluation reads it/);
+  assert.match(preAnswer, /An operator's `Waive` keeps its meaning above/);
+
+  // Decided on the fresh Phase-4 read only, again in every evaluation. The terms themselves
+  // (exact base, zero checks, the verified head) are owned by condition 2 and pinned there, so this
+  // bullet must point at them rather than restate a second copy that could drift.
+  const fresh = bullet('- **Only the fresh Phase-4 read decides,**', '- **Unattended means');
+  assert.match(fresh, /in every Phase-4 evaluation again/);
+  assert.match(fresh, near("on condition 2's terms", 'exact base match', 60));
+  // Phase 2's skip is not an answer that survives into Phase 4.
+  assert.match(
+    fresh,
+    near(
+      "Phase 2's skip of `checks-pending`",
+      'authorizes nothing and carries nothing into this evaluation',
+      80,
+    ),
+  );
+
+  // Unattended is the literal `true`, nothing looser.
+  const unattended = bullet('- **Unattended means literal `true`.**', '- **The forge still');
+  assert.match(unattended, /`mergeGate\.noCiPolicy\.unattended` decoded to `true`/);
+  assert.match(unattended, /otherwise it blocks and reports/);
+
+  // The forge stays the enforcer: the policy reaches neither the check criterion nor branch protection.
+  const forge = bullet('- **The forge still enforces required checks.**', '- **Residual risk:**');
+  assert.match(forge, /reaches neither the check criterion nor a pending or failing check/);
+  assert.match(forge, /the gate never bypasses branch protection/);
+  assert.match(forge, /a base that requires checks refuses the merge server-side/);
+
+  // The residual risk is named, with what the operator accepted and where it is reported.
+  const risk = prose(policyRaw.slice(policyRaw.indexOf('- **Residual risk:**')));
+  assert.match(risk, /a check that attaches after the fresh read/);
+  assert.match(risk, /CI that the pull request itself introduces/);
+  assert.match(risk, /indistinguishable from no CI/);
+  assert.match(risk, /Phase 6 names it whenever the policy was used/);
+});
+
+// Invariant: the policy is added to the waiver fragment as its own section and costs `### Waiver
+// rules` one pointer line, so every operator-waiver guard keeps reading the same rules; the policy
+// is mentioned nowhere else inside them.
+test('### Waiver rules gains only a one-line pointer to the declared no-CI policy', () => {
+  const rules = section(source('src/shared/merge-gate-check-list-waiver.md'), '### Waiver rules');
+  const pointerLines = rules.split('\n').filter((line) => /no-CI policy|noCiPolicy/i.test(line));
+  assert.equal(
+    pointerLines.length,
+    1,
+    'the pointer must be the only line of the waiver rules that mentions the policy',
+  );
+  const pointer = prose(pointerLines[0]);
+  assert.match(pointer, /^- A declared no-CI policy pre-answers this question:/);
+  // Precedence is the point of the pointer: the bullets above it would otherwise read as binding.
+  assert.match(
+    pointer,
+    near("where condition 2's policy clause holds", 'do not apply', 200),
+    'the pointer must state that the policy takes precedence over the bullets above it',
+  );
+  assert.match(pointer, /Phase 2's question/);
+  assert.match(pointer, /non-interactive run/);
+  assert.match(pointer, /Forgejo wait/);
+  assert.match(pointer, /see "Declared no-CI policy" below/);
+  assert.equal(
+    flat(rules)
+      .replace(flat(pointerLines[0]), '')
+      .match(/no-CI|noCiPolicy/i),
+    null,
+    'nothing but the pointer may mention the policy inside the waiver rules',
+  );
+});
+
+// Invariant: the delegated run owns the whole policy read and each place it takes effect, so the
+// lazily loaded waiver fragment is not needed to apply it: the read, the Forgejo single status
+// read, the Phase-2 skip, the condition-2 pre-answer, the wisdom line, the Phase 6 lines and the
+// rule that restates the bound.
+test('the delegated run defines the declared no-CI policy read: base fetch before the literal call, unattended only on true, inactive on every failure', () => {
+  const run = source('src/shared/merge-gate-delegated-run.md');
+  const bullet = prose(
+    boundedSlice(
+      section(run, '## Configuration', '\n## '),
+      '- **`mergeGate.noCiPolicy.*`, the declared no-CI policy,**',
+      '- `delivery.mergeMethod` is a delivery property',
+    ),
+  );
+
+  assert.match(bullet, /pre-answers an unreported check list/);
+  assert.match(bullet, /and nothing else/);
+  // The policy read runs only for a `pr-status-read`, with the base ref validated and fetched before the call.
+  assert.match(
+    bullet,
+    /where the resolved configuration holds a `mergeGate\.noCiPolicy\.bases` row/,
+  );
+  assert.match(bullet, /`baseRef`, which must pass `git check-ref-format --branch`/);
+  ordered(
+    bullet,
+    '`git check-ref-format --branch`',
+    "ancestry check's base fetch",
+    'and only then makes the literal call',
+    'config-resolve.mjs no-ci-policy',
+  );
+  assert.match(
+    bullet,
+    /node <skill-root>\/scripts\/config-resolve\.mjs no-ci-policy <<< '\{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<baseRef>"\}'/,
+  );
+  assert.match(bullet, /no shell variable, no pipe, no trailing command, no compound command/);
+  // Active only on the resolver's `active` verdict and a run allowed to use it.
+  assert.match(bullet, /`data\.noCiPolicy\.active` is `true`/);
+  assert.match(
+    bullet,
+    /the run is gated, relayed, or non-interactive with `data\.noCiPolicy\.unattended` `true`/,
+  );
+  assert.match(
+    bullet,
+    /an earlier merge instruction is never a waiver, and silence is never approval/,
+  );
+  // Inactive, with today's behavior, on every failure; an empty list alone never activates it.
+  assert.match(bullet, /The policy stays inactive, with today's behavior/);
+  assert.match(
+    bullet,
+    near(
+      'the status read failed \\(`COMMAND_FAILED`, `UNSUPPORTED_CAPABILITY`',
+      'any other structured error',
+      80,
+    ),
+  );
+  assert.match(bullet, /the fetch or the call fails/);
+  assert.match(bullet, /the base blob is missing, unreadable or differs/);
+  assert.match(bullet, /an empty check list alone never activates it/);
+  assert.match(bullet, /Report each `data\.noCiPolicy\.invalid` key once/);
+  // The literal call is spelled once across every merge-gate source, here in the Configuration
+  // bullet; every other place refers to "the policy read" instead of repeating the command.
+  const literal = 'config-resolve.mjs no-ci-policy';
+  const holders = [
+    'src/tools/merge-gate.md',
+    'src/shared/merge-gate-delegated-run.md',
+    'src/shared/merge-gate-check-list-waiver.md',
+    'src/shared/host-pr-watch.md',
+  ].filter((path) => source(path).includes(literal));
+  assert.deepEqual(holders, ['src/shared/merge-gate-delegated-run.md']);
+  assert.equal(run.split(literal).length - 1, 1, 'the literal call must appear exactly once');
+  assert.ok(
+    section(run, '## Configuration', '\n## ').includes(literal),
+    'the single literal call must sit in the Configuration section',
+  );
+});
+
+test('Phase 2 carries the Forgejo single pr-status-read path and the unreported-list rule in the core, and its loop exit skips the question without authorizing anything', () => {
+  const run = source('src/shared/merge-gate-delegated-run.md');
+  const phase2 = section(run, '### Phase 2', '\n### ');
+
+  // Forgejo single status read: replaces the wait only on `checksReported: false` with zero checks.
+  const forgejo = prose(
+    boundedSlice(phase2, 'On **Forgejo**, where the policy read', 'On a **timeout result**'),
+  );
+  assert.match(
+    forgejo,
+    /the policy read for the run's latest check result finds the declared no-CI policy active/,
+  );
+  assert.match(forgejo, /first perform one `pr-status-read`/);
+  assert.match(
+    forgejo,
+    /where it states `checksReported: false` with zero checks it replaces the wait, so an empty list waits for no timeout/,
+  );
+  assert.match(forgejo, /otherwise wait as above/);
+  // An unreported list is never mistaken for pending checks, from either kind of read.
+  assert.match(
+    forgejo,
+    /A wait or read whose `checksReported` is `false` is the unreported list, never pending checks/,
+  );
+  // The wait itself is still `pr-checks-wait`: the single read does not replace it elsewhere.
+  assert.match(phase2, /call `pr-checks-wait` with `mergeGate\.checkWaitMinutes` as its timeout/);
+
+  // The loop exit skips the question in the core, authorizing and recording nothing.
+  const skip = prose(
+    boundedSlice(
+      phase2,
+      '**The declared no-CI policy skips that question:**',
+      'Record the head SHA of that last read',
+    ),
+  );
+  assert.match(skip, /where the read states `checksReported: false` with zero checks/);
+  assert.match(skip, /the policy read for it finds the policy active/);
+  assert.match(skip, /without posing or returning `checks-pending` and without ending the run/);
+  assert.match(skip, /The skip authorizes nothing and records nothing/);
+  assert.match(skip, /Phase 4 decides on its own fresh read/);
+  assert.ok(
+    !source('src/shared/merge-gate-check-list-waiver.md').includes('without posing or returning'),
+    'the Phase-2 skip lives in the core, not in the lazily loaded fragment',
+  );
+});
+
+test('condition 2 pre-answers an unreported list only on the exact base, zero checks and the verified head, and writes no waiver record', () => {
+  const run = source('src/shared/merge-gate-delegated-run.md');
+  const condition2 = prose(mergeCondition(mergeConditions(run), 2));
+  assert.match(condition2, /or the declared no-CI policy pre-answered it/);
+  assert.match(condition2, /In every evaluation, make the policy read for the fresh read/);
+  // The four terms of the pre-answer, each of which must fail the evaluation when removed: the
+  // policy active for this read's base, an exact case-sensitive listing, zero checks, the verified head.
+  const terms = prose(
+    boundedSlice(
+      mergeCondition(mergeConditions(run), 2),
+      'it pre-answers only where',
+      'It writes no waiver record',
+    ),
+  );
+  assert.match(terms, /the policy is active for that read's `baseRef`/);
+  assert.match(terms, /listed exactly and case-sensitively in `bases`/);
+  assert.match(terms, /`checksReported: false` with zero checks/);
+  assert.match(terms, near('its head equals `VERIFIED_HEAD_SHA`', 'a full object name', 40));
+  assert.match(condition2, /It writes no waiver record/);
+  // Still only the reported-at-all clause: the check criterion is not reached.
+  assert.match(condition2, /The waiver reaches only that clause and never the check criterion/);
+
+  // The wisdom entry is one line and no record, consumed by Phase 6 alone.
+  const wisdom = prose(
+    boundedSlice(
+      section(run, '## Wisdom accumulation', '\n## '),
+      '- per Phase-4 evaluation the declared no-CI policy pre-answered',
+      '- per round, where the base-into-head merge conflicted',
+    ),
+  );
+  assert.match(
+    wisdom,
+    /the line `no-ci-policy used: <base> @ <VERIFIED_HEAD_SHA>` and no waiver record/,
+  );
+  assert.match(wisdom, /Phase 6 reads it and no evaluation consumes it/);
+  // Like the head it names, the line goes wherever `VERIFIED_HEAD_SHA` goes, and an evaluation the
+  // policy did not pre-answer removes it, so Phase 6 never reports a stale policy use.
+  assert.match(wisdom, /discarded wherever `VERIFIED_HEAD_SHA` is/);
+  assert.match(wisdom, /a Phase-4 evaluation that does not pre-answer removes it/);
+  assert.match(wisdom, /never names a head other than `VERIFIED_HEAD_SHA`/);
+
+  // The waiver heading's "unsatisfiable by construction" holds only absent the policy.
+  assert.match(
+    prose(section(run, '#### The no-check-list waiver', '\n#')),
+    near('absent the declared no-CI policy', 'unsatisfiable by construction', 40),
+  );
+
+  // The rule restates the bound once for the whole run.
+  const rule = prose(
+    boundedSlice(
+      section(run, '## Rules', '\n## '),
+      '- Let the declared no-CI policy reach only an unreported check list',
+      '- Clear a `deferred`',
+    ),
+  );
+  assert.match(rule, /Phase 2's skip authorizes nothing/);
+  assert.match(rule, /pre-answered only on each fresh Phase-4 read/);
+  assert.match(
+    rule,
+    /never satisfies the check criterion, writes no waiver record, and never bypasses branch protection/,
+  );
+});
+
+test('Phase 6 reports a used no-CI policy with its base and residual risk, and names why a configured one did not apply', () => {
+  const run = source('src/shared/merge-gate-delegated-run.md');
+  const phase6 = section(run, '### Phase 6', '\n## ');
+  const report = prose(
+    boundedSlice(
+      phase6,
+      '**the declared no-CI policy**, where the wisdom file holds',
+      '- when the configured-reviewer route is loaded, finish',
+    ),
+  );
+  assert.match(report, /where the wisdom file holds a `no-ci-policy used:` line/);
+  assert.match(report, /naming `mergeGate\.noCiPolicy`, the matched base and the residual risk/);
+  assert.match(report, /no check was verified/);
+  assert.match(report, /CI this pull request introduces, looks exactly like none/);
+  // The not-applied reasons: each is a distinct cause the operator can act on.
+  assert.match(report, /the policy was not used, one line naming why/);
+  for (const reason of [
+    'the base is not listed',
+    'a check was reported',
+    'a read error',
+    'no `baseRef`',
+    'a base blob missing, unreadable or different',
+    'a non-interactive run without `mergeGate.noCiPolicy.unattended: true`',
+    'a completion mode that is not `merge`',
+  ]) {
+    assert.ok(report.includes(reason), `Phase 6 must name the not-applied reason: ${reason}`);
+  }
+  // The GitHub-only hint, and the refusal wording that needs the helper's own statement.
+  assert.match(
+    report,
+    near(
+      '`COMMAND_FAILED` in Phase 2 under `mergeGate\\.requireAllChecks: true`',
+      'name `mergeGate\\.requireAllChecks: false`',
+      80,
+    ),
+  );
+  assert.match(report, /merge not performed under the no-CI policy/);
+  assert.match(
+    report,
+    near(
+      'refused by the forge',
+      'only where the helper stated `mutationMayHaveSucceeded: false`',
+      60,
+    ),
+  );
+  assert.match(report, /otherwise name the state Phase 5's re-read showed/);
+  assert.match(report, /claim no refusal/);
+  assert.match(report, /No question follows/);
+});
+
+// Invariant: the policy is an explicit operator choice everywhere setup can write it. Profile and
+// Express never enable it, removing `bases` revokes `unattended` in the same confirmed write, and the
+// two settings the policy depends on in practice are named where the operator decides.
+test('setup records the no-CI policy only on an explicit choice, removes unattended with bases, and hints the two dependent settings', () => {
+  const advanced = prose(
+    boundedSlice(
+      source('src/shared/setup-advanced-settings.md'),
+      '- `mergeGate.noCiPolicy.bases` and `mergeGate.noCiPolicy.unattended`, the **declared no-CI',
+      '`delivery.mergeMethod` (block 5)',
+    ),
+  );
+  // An opt-in offered last: the operator is asked about the repository first, `bases` only on a yes.
+  assert.match(advanced, /offered last as an opt-in/);
+  assert.match(
+    advanced,
+    near(
+      'first ask whether the repository intentionally runs no CI',
+      'ask `bases` only on a yes',
+      60,
+    ),
+  );
+  assert.match(advanced, /record, change or remove it only on the operator's explicit choice/);
+  assert.match(advanced, /`bases` is a comma list of exact, case-sensitive base branch names/);
+  assert.match(advanced, /Ask `unattended` only once `bases` is set/);
+  assert.match(
+    advanced,
+    /the policy applies only once the same rows are on the base branch, so a pull request cannot grant it to itself/,
+  );
+  assert.match(advanced, /unattended merging also needs `mergeGate\.completion: merge`/);
+  assert.match(
+    advanced,
+    /a GitHub repository without CI also needs `mergeGate\.requireAllChecks: false`/,
+  );
+  assert.match(
+    advanced,
+    /a late-attaching check, or CI a pull request introduces, looks like no CI/,
+  );
+  assert.match(advanced, /Removing `bases` also removes `unattended` in the same confirmed write/);
+
+  const targeted = prose(
+    boundedSlice(
+      source('src/shared/setup-targeted-change.md'),
+      '- `mergeGate.noCiPolicy.*` changes only on a request that explicitly names the policy',
+      '- Adding a login to either `mergeGate.bots`',
+    ),
+  );
+  assert.match(
+    targeted,
+    /a vaguer one \("no CI", "skip checks"\) gets the focused question, never a guessed write/,
+  );
+  assert.match(
+    targeted,
+    /Setting `unattended` with no `bases` recorded or requested also asks block 9's `bases` question/,
+  );
+  assert.match(
+    targeted,
+    /removing `mergeGate\.noCiPolicy\.bases` also removes `mergeGate\.noCiPolicy\.unattended` in the same preview/,
+  );
+  assert.match(targeted, /block 9's `completion` and `requireAllChecks` hints/);
+
+  const catalogue = prose(source('src/tools/setup.md'));
+  assert.match(
+    catalogue,
+    /recorded, changed or removed only on an explicit operator choice in Guided block 9 or a Targeted change; Profile and Express never enable it/,
+  );
+});
+
+// Invariant: the caller-facing question table must not promise a question the delegated run no
+// longer poses; the two rows the policy can silence say so in the table the caller renders from.
+test("merge-gate's question table says the active no-CI policy silences checks-pending and check-list-waiver in gated and relayed runs", () => {
+  const table = section(source('src/tools/merge-gate.md'), '| Question id', '\n\n');
+  const pending = prose(tableRow(table, '`checks-pending`'));
+  const waiver = prose(tableRow(table, '`check-list-waiver`'));
+  assert.match(
+    pending,
+    /never for that list in a gated or relayed run the active `mergeGate\.noCiPolicy` covers/,
+  );
+  assert.match(waiver, /never in a gated or relayed run the active `mergeGate\.noCiPolicy` covers/);
+});
+
+// Invariant: the T3 pending read never turns an unreported check list into a pending set, so the
+// list reaches Phase 2's loop-exit rule, which is where the declared no-CI policy's skip lives.
+test('the T3 pending read sends an unreported check list to the Phase 2 loop exit, including the no-CI policy skip', () => {
+  const read = prose(
+    boundedSlice(source('src/shared/host-pr-watch.md'), '**Pending read**', '**Bot order**'),
+  );
+  assert.match(
+    read,
+    near(
+      'An unreported check list \\(`checksReported: false`\\) never suspends',
+      'continues like an empty set',
+      80,
+    ),
+  );
+  assert.match(read, /Phase 2's loop-exit rule for an unreported list decides it/);
+  assert.match(
+    read,
+    near('once-per-run `checks-pending` handling', "declared no-CI policy's skip", 40),
   );
 });
 

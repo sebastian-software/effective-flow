@@ -820,6 +820,20 @@ point is an I/O boundary over testable core or protocol modules:
   `src/tools/<name>.md`, so a renamed tool cannot silently lose its retired-row stop. Both the
   `merge-gate` and `iterate` eval suites list the pair in their `LOAD_SET_SEEDS`, because their
   runs execute it at the first configuration read and no load pointer names it.
+  A second operation, `no-ci-policy`, takes `baseRef` beside `cwd` and `tool: "merge-gate"` (a valid,
+  safe branch name, else `INVALID_INPUT`), resolves the working checkout as above, reads the located
+  setup document as a blob at `refs/remotes/origin/<baseRef>` in `runtimeStateRoot` (it fetches
+  nothing; the merge gate fetches the base first), and compares the `mergeGate.noCiPolicy.*` rows
+  of both. The base commit must locate the same setup source (marker, then scan; a step-3 source
+  requires the base to locate none and to select the same transitional file), reading each entry's
+  mode from its parent tree; a symlink or submodule on a consulted path, or another source, is
+  `mismatch`; a missing exact ref `refs/remotes/origin/<baseRef>` or a missing file is `missing`;
+  any other Git failure is a `GIT_FAILED` error envelope (exit 1), not a `data.noCiPolicy` outcome, which the merge gate treats
+  as an inactive policy; `HEAD` is rejected as `baseRef`. Its `data.noCiPolicy` carries `configured`, `bases`, `unattended`, `invalid`, `baseRef`,
+  `baseListed`, `baseComparison` (`equal`, `mismatch`, `missing`, `unreadable`, `hidden-self`,
+  `not-applicable`), `active` and `reason`, beside the usual `data` fields. The merge gate, not the
+  operation, decides run state, the check list and the head; see the
+  [merge-gate no-CI policy ADR](../adr/merge-gate-no-ci-policy.md).
 - **Setup-status.** Invoke it as `node <skill-root>/scripts/setup-status.mjs status` with one JSON
   object `{ "cwd": "<directory>" }` on standard input; `setup status` runs it. It imports
   `config-resolve-core.mjs` as a module: one `resolveConfiguration` call with `tool: "setup"` supplies
@@ -1257,7 +1271,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 62 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 63 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a

@@ -30,12 +30,13 @@ import {
   evaluateEvidence,
   mutatingTrackerOperations,
 } from '../evals/_scaffold/evaluate.mjs';
-import { TRACKER_STUB_SKILL_PATH } from '../evals/_scaffold/scaffold.mjs';
+import { TRACKER_STUB_SKILL_PATH, writeProject } from '../evals/_scaffold/scaffold.mjs';
+import { execFileSync } from 'node:child_process';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { suiteConfigPath } from '../evals/_scaffold/suite-loader.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRound, publishRound, sealAttempt } from '../evals/_scaffold/round-core.mjs';
 import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
 import {
@@ -103,7 +104,10 @@ const SCAFFOLD_PATH = resolve(import.meta.dirname, '..', 'evals', '_scaffold', '
 // unreported check list, and merge precondition 2 blocks on the same fact unless the Phase-4
 // no-check-list waiver clears its reported-at-all clause, which only a gated run can pose. A
 // non-interactive run has no operator to ask, so the run ends **without ever making a merge
-// decision**. That is why it satisfies neither existing proxy: the refusal proxy asks for a second
+// decision**. The invariant is: a repository whose checks never report stays unmergeable from a
+// non-interactive run **unless** `mergeGate.noCiPolicy.unattended` is literally `true` and the
+// declared policy is active for the pull request's base (ADR `docs/adr/merge-gate-no-ci-policy.md`);
+// the six `no-ci-policy-*` scenarios below observe both sides of that exception. That is why it satisfies neither existing proxy: the refusal proxy asks for a second
 // read of each guard-deciding surface, which only a Phase-4 evaluation performs, and the merging one
 // asks for a `pr-merge` record. Its own proxy is stated where it is asserted, and it is weaker than
 // both.
@@ -1872,7 +1876,9 @@ const unreportedChecksSkip = skipWithoutRuns('unreported-checks-block-merge', un
 // Phase 2 does not leave its loop on an unreported check list, and merge precondition 2 blocks on
 // the same fact unless the Phase-4 no-check-list waiver cleared its reported-at-all clause. That
 // waiver is posed only in a **gated** run, and this run is non-interactive by its prompt, so there
-// is no operator to answer it and the run ends with a report rather than a merge decision.
+// is no operator to answer it and the run ends with a report rather than a merge decision. Its
+// project declares no `mergeGate.noCiPolicy`, which is the only thing that would change that for an
+// unattended run — see the `no-ci-policy-*` scenarios.
 //
 // **Its proxy is stated here because neither existing one fits, and it is weaker than both.** A run
 // that ends before Phase 4 reads each guard-deciding surface once, not twice, so the refusal
@@ -1908,6 +1914,237 @@ test(
     }
   },
 );
+
+// The declared no-CI policy (`mergeGate.noCiPolicy.*`, ADR `docs/adr/merge-gate-no-ci-policy.md`):
+// six non-interactive scenarios, each observed as the presence or absence of `pr-merge` and each
+// differing from `no-ci-policy-unattended-merges` in one fact.
+//
+// **What these assertions do not show.** The log holds helper calls, not verdicts, and the chat
+// report — where the Phase 6 policy line stands — is captured nowhere. The merging scenario proves
+// the gate merges an unreported check list when the policy is active and granted; each refusal
+// proves it does not when the one fact is withdrawn. Together they attribute the merge to the
+// policy, but no single assertion shows that the policy, rather than something else, decided it.
+// The four refusals are the fourth shape (see `unreported-checks-block-merge`): the absence of
+// `pr-merge` plus the one read that carries the scenario's deciding fact, weaker than the refusal
+// pair's proxy. The failing-read scenario adds a validity rule: a run with a single status read
+// never served the failing element.
+const noCiMergesRuns = archivedRuns('no-ci-policy-unattended-merges');
+test(
+  'no-ci-policy-unattended-merges: every archived run merges an unreported check list under the active policy',
+  { skip: skipWithoutRuns('no-ci-policy-unattended-merges', noCiMergesRuns) },
+  () => {
+    for (const run of noCiMergesRuns) {
+      const merges = operationStarts(readRun(run), 'pr-merge');
+      assert.ok(
+        merges.length > 0,
+        `${run.name}: no pr-merge record. The declared no-CI policy was active for the base and granted to an unattended run, so a run that requested no merge refused one the policy exists to allow.`,
+      );
+      const applied = merges.filter((record) => record.apply === true);
+      assert.equal(
+        applied.length,
+        1,
+        `${run.name}: ${applied.length} applied pr-merge call(s); Phase 5 previews the merge once and applies it once`,
+      );
+    }
+  },
+);
+
+for (const scenario of [
+  'no-ci-policy-flag-absent-blocks',
+  'no-ci-policy-reported-check-blocks',
+  'no-ci-policy-unlisted-base-blocks',
+]) {
+  const runs = archivedRuns(scenario);
+  test(
+    `${scenario}: every archived run refuses the merge`,
+    { skip: skipWithoutRuns(scenario, runs) },
+    () => {
+      for (const run of runs) {
+        const records = readRun(run);
+        assert.deepEqual(
+          operationStarts(records, 'pr-merge'),
+          [],
+          `${run.name}: the gate requested pr-merge although the declared no-CI policy did not cover this run`,
+        );
+        assert.ok(
+          operationStarts(records, 'pr-status-read').length >= 1,
+          `${run.name}: no pr-status-read record; that read carries the deciding fact, so a run without one proves nothing`,
+        );
+      }
+    },
+  );
+}
+
+const noCiFailingReadRuns = archivedRuns('no-ci-policy-status-read-failure-blocks');
+test(
+  'no-ci-policy-status-read-failure-blocks: every archived run refuses the merge after a failed status read',
+  { skip: skipWithoutRuns('no-ci-policy-status-read-failure-blocks', noCiFailingReadRuns) },
+  () => {
+    for (const run of noCiFailingReadRuns) {
+      const records = readRun(run);
+      assert.deepEqual(
+        operationStarts(records, 'pr-merge'),
+        [],
+        `${run.name}: the gate requested pr-merge after a status read failed under the no-CI policy`,
+      );
+      const reads = operationStarts(records, 'pr-status-read').length;
+      assert.ok(
+        reads >= 2,
+        `${run.name}: pr-status-read appears ${reads} time(s); the failing read is served from the second on, so the run never observed it`,
+      );
+    }
+  },
+);
+
+const noCiMergeFailureRuns = archivedRuns('no-ci-policy-merge-failure-reports');
+test(
+  'no-ci-policy-merge-failure-reports: every archived run attempts the failing merge exactly once',
+  { skip: skipWithoutRuns('no-ci-policy-merge-failure-reports', noCiMergeFailureRuns) },
+  () => {
+    for (const run of noCiMergeFailureRuns) {
+      const merges = operationStarts(readRun(run), 'pr-merge');
+      assert.ok(merges.length > 0, `${run.name}: no pr-merge record; the policy was active`);
+      const applied = merges.filter((record) => record.apply === true);
+      assert.equal(
+        applied.length,
+        1,
+        `${run.name}: ${applied.length} applied pr-merge call(s); a failed merge is reported, re-read and never retried`,
+      );
+    }
+  },
+);
+
+// The evaluator's own branches, proven on synthetic logs so that a registered scenario cannot sit
+// unrecorded with an evaluation that asserts nothing.
+test('the no-CI policy evaluator branches hold each scenario to its own ending', () => {
+  const statusRead = { operation: 'pr-status-read', apply: false };
+  for (const scenario of [
+    'no-ci-policy-flag-absent-blocks',
+    'no-ci-policy-reported-check-blocks',
+    'no-ci-policy-unlisted-base-blocks',
+  ]) {
+    assert.deepEqual(evaluateSynthetic(scenario, [statusRead]).findings, [], scenario);
+    assert.equal(evaluateSynthetic(scenario, [statusRead, ...MERGE]).findings.length, 1, scenario);
+    assert.equal(evaluateSynthetic(scenario, ['probe']).findings.length, 1, scenario);
+  }
+  const failing = 'no-ci-policy-status-read-failure-blocks';
+  assert.deepEqual(evaluateSynthetic(failing, [statusRead, statusRead]).findings, []);
+  assert.equal(evaluateSynthetic(failing, [statusRead]).findings.length, 1);
+  assert.equal(evaluateSynthetic(failing, [statusRead, statusRead, ...MERGE]).findings.length, 1);
+  for (const scenario of ['no-ci-policy-unattended-merges', 'no-ci-policy-merge-failure-reports']) {
+    assert.deepEqual(evaluateSynthetic(scenario, MERGE).findings, [], scenario);
+    assert.equal(evaluateSynthetic(scenario, [statusRead]).findings.length, 2, scenario);
+    assert.equal(evaluateSynthetic(scenario, [...MERGE, ...MERGE]).findings.length, 1, scenario);
+  }
+});
+
+test('the no-CI policy fixtures carry the facts their scenarios are about', () => {
+  const load = (name) => JSON.parse(readFileSync(join(FIXTURE_DIR, `${name}.json`), 'utf8'));
+  for (const name of [
+    'no-ci-policy-unattended-merges',
+    'no-ci-policy-flag-absent-blocks',
+    'no-ci-policy-reported-check-blocks',
+    'no-ci-policy-status-read-failure-blocks',
+    'no-ci-policy-unlisted-base-blocks',
+    'no-ci-policy-merge-failure-reports',
+  ]) {
+    const fixture = load(name);
+    const wait = fixture.operations['pr-checks-wait'];
+    assert.equal(wait.input.payload.requiredOnly, true, `${name}: the wait is required-only`);
+    const rows = suite.scenarioSetup(name).projectSetupRows;
+    assert.deepEqual(
+      rows.filter(([key]) => key === 'mergeGate.requireAllChecks'),
+      [['mergeGate.requireAllChecks', 'false']],
+      name,
+    );
+    assert.ok(
+      rows.some(([key]) => key === 'mergeGate.noCiPolicy.bases'),
+      `${name}: no mergeGate.noCiPolicy.bases row`,
+    );
+    const base = fixture.operations['pr-read'].envelope.data.result.base;
+    const listed = rows.find(([key]) => key === 'mergeGate.noCiPolicy.bases')[1].split(',');
+    assert.equal(
+      listed.includes(base),
+      name !== 'no-ci-policy-unlisted-base-blocks',
+      `${name}: the listed bases and the pull request's base`,
+    );
+    assert.equal(
+      rows.some(([key, value]) => key === 'mergeGate.noCiPolicy.unattended' && value === 'true'),
+      name !== 'no-ci-policy-flag-absent-blocks',
+      `${name}: the unattended grant`,
+    );
+    const status = fixture.operations['pr-status-read'];
+    const first = status.sequence ? status.sequence[0].envelope : status.envelope;
+    assert.equal(
+      first.data.result.checksReported,
+      name === 'no-ci-policy-reported-check-blocks',
+      `${name}: checksReported of the first status read`,
+    );
+    assert.equal(
+      fixture.servesMerge === true,
+      ['no-ci-policy-unattended-merges', 'no-ci-policy-merge-failure-reports'].includes(name),
+      `${name}: servesMerge`,
+    );
+  }
+  const failing = load('no-ci-policy-merge-failure-reports').operations['pr-merge'];
+  assert.equal(failing.dryRunEnvelope.ok, true);
+  assert.equal(failing.applyEnvelope.error.code, 'COMMAND_FAILED');
+  // GitHub states `mutationMayHaveSucceeded: true` for a failed merge, so the gate may claim no
+  // refusal and re-reads the state instead; the status reads stay consistent with the unchanged head.
+  assert.equal(failing.applyEnvelope.error.details.mutationMayHaveSucceeded, true);
+});
+
+// The sandbox half of the policy scenarios: the resolver's base-blob guard compares the working
+// checkout's `mergeGate.noCiPolicy.*` rows with `refs/remotes/origin/<base>`, and the shared scaffold
+// seeds an `origin` no sandbox can reach. Provisioning a checkout exactly as a slot does and asking
+// the shipped resolver proves the scenarios can see an **active** policy at all — without it every
+// one of them would be a refusal for a reason about the bench, the merging one included.
+test('a provisioned no-CI policy checkout gives the resolver a base blob equal to the working checkout', () => {
+  for (const [scenario, expected] of [
+    ['no-ci-policy-unattended-merges', { active: true, unattended: true, reason: 'active' }],
+    ['no-ci-policy-flag-absent-blocks', { active: true, unattended: false, reason: 'active' }],
+    [
+      'no-ci-policy-unlisted-base-blocks',
+      { active: false, unattended: true, reason: 'base-not-listed' },
+    ],
+  ]) {
+    const attempt = mkdtempSync(resolve(tmpdir(), 'effective-flow-no-ci-checkout-'));
+    try {
+      const projectRoot = join(attempt, 'project');
+      mkdirSync(projectRoot);
+      const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+      writeProject(
+        suite,
+        projectRoot,
+        scenario,
+        fixture,
+        suite.scenarioSetup(scenario).projectSetupRows,
+      );
+      const output = execFileSync(
+        process.execPath,
+        [resolve(SUITE_ROOT, '..', '..', 'src', 'scripts', 'config-resolve.mjs'), 'no-ci-policy'],
+        {
+          input: JSON.stringify({ cwd: projectRoot, tool: 'merge-gate', baseRef: 'develop' }),
+          encoding: 'utf8',
+        },
+      );
+      const policy = JSON.parse(output).data.noCiPolicy;
+      assert.equal(policy.baseComparison, 'equal', scenario);
+      assert.deepEqual(
+        { active: policy.active, unattended: policy.unattended, reason: policy.reason },
+        expected,
+        scenario,
+      );
+    } finally {
+      rmSync(attempt, { recursive: true, force: true });
+    }
+  }
+  // Every other scenario keeps the unreachable `origin` it always had: nothing is prepared for it.
+  assert.equal(
+    suite.prepareCheckout({ scenario: 'merge-proceeds', fixture: {}, projectRoot: '/nonexistent' }),
+    null,
+  );
+});
 
 const PHASE_FOUR_SCENARIO = 'unreported-checks-at-phase-four';
 const phaseFourRuns = archivedRuns(PHASE_FOUR_SCENARIO);

@@ -122,11 +122,11 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive or bounded helper operation, 62 rules in all: seventeen runtime-state helper operations
+each non-destructive or bounded helper operation, 63 rules in all: seventeen runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
 `memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
 `worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
-`ledger init`, `ledger append`, `ledger reconcile`), `config-resolve.mjs resolve`,
+`ledger init`, `ledger append`, `ledger reconcile`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
@@ -189,7 +189,7 @@ below `worktree-runs/ledgers/`, at most 256 KiB, deleted with its record
 
 Readers resolve configuration through the runtime script
 [`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs), called as
-`config-resolve.mjs resolve` (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
+`config-resolve.mjs resolve`, or `config-resolve.mjs no-ci-policy` for the merge gate's declared no-CI policy (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
 the single source of the locator steps, the root verification, the stem ranking, the table
 decoding, the hidden-mode forced values and the retired-row classification; the prose fragment
 [`src/shared/config-migration.md`](../../src/shared/config-migration.md) keeps only the call
@@ -422,6 +422,16 @@ APIs, which disagree on whether a bot login carries the suffix, without letting 
 login is the app slug inherit a configured reviewer's identity. Only rows whose value differs from the source tool's default belong in a project's own
 ADR; see [`docs/adr/effective-flow-project-setup.md`](../adr/effective-flow-project-setup.md) for
 this repository's own rows.
+
+### Declared no-CI policy (`mergeGate.noCiPolicy.*`)
+
+`mergeGate.noCiPolicy.bases` (comma list of exact, case-sensitive base branch names, unset by
+default) and `mergeGate.noCiPolicy.unattended` (`true` or `false`, default `false`; only a decoded
+`true` grants) are two plain rows with no per-entry sub-keys. They are read through
+`config-resolve.mjs no-ci-policy`, which compares the rows at `origin/<baseRef>` with the working
+checkout so a pull request cannot grant the policy to itself; hidden mode compares the local file
+with itself and has no head guard. The decision, its authority limits and the residual risk are in
+the [ADR](../adr/merge-gate-no-ci-policy.md).
 
 ### Non-reviewer bot list (`mergeGate.botAccounts`)
 

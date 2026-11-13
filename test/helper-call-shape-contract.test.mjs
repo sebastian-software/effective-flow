@@ -43,11 +43,13 @@ const includesLazily = (text, name) =>
   new RegExp(`^\`\`\`lazy-include\\n${name}\\n`, 'm').test(text);
 const fragment = readFileSync(join(SOURCE_DIR, 'shared', `${FRAGMENT}.md`), 'utf8');
 
-// The literal shape per helper, with exactly the argv the helper accepts.
+// The literal shape per helper, with exactly the argv the helper accepts: `config-resolve.mjs`
+// takes `resolve` or `no-ci-policy` (CONFIG_RESOLVE_OPERATIONS).
 const SHAPES = {
   'effective-flow-state':
     /^node <skill-root>\/scripts\/effective-flow-state\.mjs (?:<group> <operation>|[a-z]+ [a-z-]+) <<< '.*'$/,
-  'config-resolve': /^node <skill-root>\/scripts\/config-resolve\.mjs resolve <<< '.*'$/,
+  'config-resolve':
+    /^node <skill-root>\/scripts\/config-resolve\.mjs (?:resolve|no-ci-policy) <<< '.*'$/,
   'remote-tracker':
     /^node <skill-root>\/scripts\/remote-tracker\.mjs (?:<operation>|[a-z-]+)(?: --apply)? <<< '.*'$/,
 };

@@ -31,6 +31,16 @@ from unittest import mock
 HERE = Path(__file__).resolve().parents[1]
 SOURCE = Path(os.environ.get('D3_SOURCE_ROOT', str(HERE.parents[1])))
 SUITES = ('merge-gate', 'iterate', 'next-steps')
+# Invariant: the host-driver stage authenticates a frozen corpus (nine merge-gate, seven iterate and
+# fifteen next-steps scenarios, five slots each), so the synthetic frozen source is built from these
+# names and never from the live registries. A scenario registered after the freeze does not enter the
+# frozen corpus: its absence here is the pinned protocol, not an omission. Only the merge-gate names
+# registered later (`no-ci-policy-*`) are excluded from the live registry below.
+FROZEN_EXCLUDED = {'merge-gate': {name for name in (
+    'no-ci-policy-flag-absent-blocks', 'no-ci-policy-merge-failure-reports',
+    'no-ci-policy-reported-check-blocks', 'no-ci-policy-status-read-failure-blocks',
+    'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks')}}
+FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
 POLICY = ('workspace-write;approval-never;network-disabled;isolated-home;'
           'attempt-root-writable;ignore-user-config;ignore-rules')
 STAGE_ID = 'iterate-duplicated-control-line-aborts-slots-1-5-v1'
@@ -160,10 +170,15 @@ class StageFixture:
             suite_root.mkdir()
             for name in ('scenario-registry.mjs', 'suite.config.mjs'):
                 shutil.copyfile(SOURCE / 'evals' / suite / name, suite_root / name)
-            registry_text = (suite_root / 'scenario-registry.mjs').read_text()
+            live_text = (suite_root / 'scenario-registry.mjs').read_text()
+            live_names = re.findall(r"'([a-z0-9-]+)'", live_text.split('Object.freeze([', 1)[1])
             # Original discoverSuite/selectScenarios orders names canonically, not by registry export.
-            names = sorted(re.findall(r"'([a-z0-9-]+)'", registry_text.split('Object.freeze([', 1)[1]))
-            assert len(names) == {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}[suite]
+            names = sorted(name for name in live_names if name not in FROZEN_EXCLUDED.get(suite, ()))
+            assert len(names) == FROZEN_COUNTS[suite]
+            # The synthetic frozen registry states the frozen names only, in the names-only format the
+            # driver parses, so a live registry that has grown cannot enlarge the frozen corpus.
+            (suite_root / 'scenario-registry.mjs').write_text(
+                'export const SCENARIOS = Object.freeze([\n' + ''.join("  '%s',\n" % name for name in names) + ']);\n')
             base = self.output / suite
             round_root = base / 'round-model-free'
             build = round_root / 'build/dist/portable/effective-flow'
@@ -558,6 +573,21 @@ class OriginalSealFixture(StageFixture):
         shutil.copytree(SOURCE / 'src/scripts', self.source / 'src/scripts')
         for suite in SUITES:
             shutil.copytree(SOURCE / 'evals' / suite / '_scaffold', self.source / 'evals' / suite / '_scaffold')
+            if suite == 'merge-gate':
+                # Invariant: the frozen corpus is authenticated with the evaluator it was frozen with,
+                # whose branch list names exactly the frozen scenarios (`discoverSuite` parity). The
+                # live evaluator also branches on scenarios registered after the freeze, so those
+                # names are dropped from the synthetic copy's list, which keeps the parity contract
+                # honest instead of widening the frozen registry.
+                evaluator = self.source / 'evals/merge-gate/_scaffold/evaluate.mjs'
+                text = evaluator.read_text()
+                head, marker, tail = text.partition('export const BRANCHED_SCENARIOS = Object.freeze([')
+                assert marker
+                body, close, rest = tail.partition(']);')
+                kept = [line for line in body.split('\n')
+                        if not re.match(r'\s*NO_CI_[A-Z_]+_SCENARIO,\s*$', line)]
+                assert len(body.split('\n')) - len(kept) == len(FROZEN_EXCLUDED['merge-gate'])
+                evaluator.write_text(head + marker + '\n'.join(kept) + close + rest)
             for record in (r for r in self.records if r['task']['suite'] == suite):
                 task = record['task']
                 original = SOURCE / 'evals' / suite / 'fixtures' / (task['scenario'] + '.json')

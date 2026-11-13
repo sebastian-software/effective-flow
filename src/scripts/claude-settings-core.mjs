@@ -7,7 +7,7 @@
 // One rule shape per allowlisted operation of three JSON helpers (see RULE_ENTRIES):
 //
 //   Bash(node <skillRoot>/scripts/effective-flow-state.mjs <group> <operation> *)
-//   Bash(node <skillRoot>/scripts/config-resolve.mjs resolve *)
+//   Bash(node <skillRoot>/scripts/config-resolve.mjs <operation> *)
 //   Bash(node <skillRoot>/scripts/remote-tracker.mjs <operation> *)
 //
 // `<skillRoot>` is the loaded skill's directory in its symlinked install form. The trailing `*`
@@ -95,8 +95,9 @@ export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'cleanup apply',
 ]);
 
-// `config-resolve.mjs` has one operation, and it reads only.
-export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze(['resolve']);
+// Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy`, which also reads
+// one Git blob of the base branch's remote-tracking ref.
+export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze(['resolve', 'no-ci-policy']);
 
 // The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
 // computations, and `thread-ledger-lookup`, a local read of runtime state. Never a mutation, never

@@ -315,19 +315,21 @@ when: the base-into-head merge of Phase 2 step 1 has conflicted in the provision
 Read from the Effective Flow configuration (project setup ADR) per the loaded configuration
 building block. A missing line means the default.
 
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
-| `delivery.mergeMethod`           | `squash`, `merge`, `rebase`        | `squash`  |
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
+| `delivery.mergeMethod`            | `squash`, `merge`, `rebase`           | `squash`  |
 
 Resolve whether the configuration contains a `mergeGate.bots` row before parsing its value. Row
 presence – including an empty or unreadable value – opens the configured-reviewer route; parsed
@@ -365,6 +367,23 @@ any reviewer entry, trigger, or check value.
   This workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
 - `mergeGate.botAccounts` lists non-reviewer bots: this gate never triggers, waits for, or assesses
   them. Phase 1's rule 1 owns what the list excludes and how a login matches it.
+- **`mergeGate.noCiPolicy.*`, the declared no-CI policy,** pre-answers an unreported check list –
+  Phase 2's question and condition 2's reported-at-all clause – and nothing else. Only where the
+  resolved configuration holds a `mergeGate.noCiPolicy.bases` row, a **policy read** for a
+  `pr-status-read` takes that read's `baseRef`, which must pass `git check-ref-format --branch`,
+  runs the ancestry check's base fetch (Phase 2 step 1, step 1 of that check) for it, and only then
+  makes the literal call
+  `node <skill-root>/scripts/config-resolve.mjs no-ci-policy <<< '{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<baseRef>"}'`
+  with `tool: "merge-gate"` and the `cwd` of this run's `resolve` call. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. The policy is **active** for that read only where
+  `data.noCiPolicy.active` is `true` and the run is gated, relayed, or non-interactive with
+  `data.noCiPolicy.unattended` `true`. A non-interactive run without that grant stops as before: an
+  earlier merge instruction is never a waiver, and silence is never approval. The policy stays
+  inactive, with today's behavior, where no `bases` value is valid, the base is not listed, the read
+  states no `baseRef` or reports any check, the status read failed (`COMMAND_FAILED`,
+  `UNSUPPORTED_CAPABILITY` or any other structured error), the fetch or the call fails, or the base
+  blob is missing, unreadable or differs; an empty check list alone never activates it. Report each
+  `data.noCiPolicy.invalid` key once, and keep the latest not-applied cause for Phase 6: the
+  resolver's `reason` or the gate's own cause from Phase 6's list.
 - `delivery.mergeMethod` is a delivery property, not a gate property: it describes how this project
   integrates a pull request.
 - **`mergeGate.*` is not `delivery.prReview`.** The pre-existing `delivery.prReview` decides whether a
@@ -466,6 +485,11 @@ gate run inline generates it at the start. Use
   discarded wherever that value is discarded – a Phase-3 restart discards both together – and is
   consumed in no evaluation whose freshly read head does not equal it. It clears condition 2's
   reported-at-all clause alone and is never evidence that a check ran
+- per Phase-4 evaluation the declared no-CI policy pre-answered, the line
+  `no-ci-policy used: <base> @ <VERIFIED_HEAD_SHA>` and no waiver record; Phase 6 reads it and no
+  evaluation consumes it. It is discarded wherever `VERIFIED_HEAD_SHA` is, and a Phase-4
+  evaluation that does not pre-answer removes it, so it never names a head other than
+  `VERIFIED_HEAD_SHA`; and, where a configured policy did not apply, its latest cause
 - per round, where the base-into-head merge conflicted: the trigger that fired the merge, the
   observed merge state and which entry point detected the conflict, the resolved
   `mergeGate.conflictResolution` mode with its source, the conflicted paths with their risk classification, `{{AGENT:merge-conflict-resolver}}`'s per-file
@@ -876,7 +900,11 @@ run can push an unbounded number of commits onto someone's pull request.
    step. Otherwise call `pr-checks-wait` with `mergeGate.checkWaitMinutes` as its timeout and let
    the provider watch or deterministic helper poller block; the run consumes no tokens while CI runs. Restrict the wait to the forge's own
    required checks exactly when `mergeGate.requireAllChecks` is `false`; the helper owns the provider
-   form of that restriction.
+   form of that restriction. On **Forgejo**, where the policy read for the run's latest check result
+   finds the declared no-CI policy active, first perform one `pr-status-read`: where it states
+   `checksReported: false` with zero checks it replaces the wait, so an empty list waits for no
+   timeout; otherwise wait as above. A wait or read whose `checksReported` is `false` is the
+   unreported list, never pending checks: the loop exit below decides it.
    - On a **timeout result** or when the provider has no **`pullRequestChecksWait` capability**: do
      **not** fall back
      to a prompt-driven poll loop. Report the still-pending checks by name and ask the user **once
@@ -947,6 +975,10 @@ of taking the fast "stop and report the conflict" path. Where the check list its
 **unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
 report that and ask per step 2's rule – **once per run**, and a later round reports without asking
 again – before proceeding, and an unanswered or non-interactive run ends there without merging.
+**The declared no-CI policy skips that question:** where the read states `checksReported: false`
+with zero checks and the policy read for it finds the policy active, the loop proceeds without
+posing or returning `checks-pending` and without ending the run. The skip authorizes nothing and
+records nothing; Phase 4 decides on its own fresh read.
 
 Record the head SHA of that last read as
 **`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
@@ -1017,8 +1049,12 @@ returning condition unbounded the day it is added.
 1. the resolved completion mode is `merge`;
 2. the check criterion from `mergeGate.requireAllChecks` is satisfied, **and the fresh read reported
    a check list at all**. `checksReported: false` blocks this condition outright unless "The
-   no-check-list waiver" below cleared the reported-at-all clause for this evaluation. Without that
-   answer the rationale is unchanged: an unreported list is an unproven one, exactly as an unstated
+   no-check-list waiver" below cleared the reported-at-all clause for this evaluation, or the
+   declared no-CI policy pre-answered it. In every evaluation, make the policy read for the fresh
+   read; it pre-answers only where the policy is active for that read's `baseRef`, listed exactly
+   and case-sensitively in `bases`, it states `checksReported: false` with zero checks, and its head equals
+   `VERIFIED_HEAD_SHA`, a full object name. It writes no waiver record. Without either answer the
+   rationale is unchanged: an unreported list is an unproven one, exactly as an unstated
    requiredness and an absent `draft` flag are. The waiver reaches **only** that clause and never
    the check criterion — a check that has appeared makes `checksReported` true and takes the
    question off the table, and a pending or red check still blocks here whatever the operator
@@ -1069,8 +1105,8 @@ When the configured-reviewer route is loaded and its effective reviewer list is 
 
 #### The no-check-list waiver
 
-Condition 2 blocks on `checksReported: false`, so on a repository that runs no CI it is
-unsatisfiable **by construction** and a hand merge forfeits this tool's whole post-merge tail. The
+Condition 2 blocks on `checksReported: false`, so on a repository that runs no CI it is,
+absent the declared no-CI policy, unsatisfiable **by construction** and a hand merge forfeits this tool's whole post-merge tail. The
 question can arise only in a Phase-4 evaluation whose fresh read states `checksReported: false`,
 and one operator answer then satisfies exactly one clause of one condition.
 
@@ -1208,6 +1244,20 @@ that fragment's report-and-stop path.
      could not pose, and a report-mode run as the question that was not posed because the completion
      mode is not `merge`. Without this entry a merged pull request with no check list anywhere reads
      exactly like one whose checks all passed;
+   - **the declared no-CI policy**, where the wisdom file holds a `no-ci-policy used:` line: one line
+     naming `mergeGate.noCiPolicy`, the matched base and the residual risk – no check was verified,
+     and a check that attached after the fresh Phase-4 read, or CI this pull request introduces,
+     looks exactly like none. Where the configuration holds `mergeGate.noCiPolicy.bases` and the
+     policy was not used, one line naming why: the base is not listed, a check was reported, a read
+     error, a failed policy read (the base fetch or the resolver call, such as `GIT_FAILED` or
+     `INVALID_INPUT`), no `baseRef`, a base blob missing, unreadable or different, a non-interactive run without
+     `mergeGate.noCiPolicy.unattended: true`, or a completion mode that is not `merge`. Where such a
+     GitHub run ended on `COMMAND_FAILED` in Phase 2 under `mergeGate.requireAllChecks: true`, name
+     `mergeGate.requireAllChecks: false` as the setting the policy needs there. A `pr-merge` that
+     failed under the policy, with the pull request unmerged on a fresh read, reads "merge not performed under the no-CI policy" with the helper's
+     code, and "refused by the forge (HTTP <status>)" only where the helper stated
+     `mutationMayHaveSucceeded: false`; otherwise name the state Phase 5's re-read showed, such as a
+     GitHub `mergeState` of `BLOCKED`, and claim no refusal. No question follows;
    - when the configured-reviewer route is loaded, finish
      `## Phase 6 configured-reviewer report items` in that fragment with unmatched-review and
      unmatched-thread items;
@@ -1296,6 +1346,9 @@ that fragment's report-and-stop path.
   SHA guard makes the second merge fail closed rather than duplicate work.
 - Ask the entry gate exactly once, at the start; absent a `no-merge` caller limit, only `ask` or an
   unset `mergeGate.completion` in a non-interactive delegation behaves as `report`.
+- Let the declared no-CI policy reach only an unreported check list: Phase 2's skip authorizes
+  nothing, and condition 2's clause is pre-answered only on each fresh Phase-4 read. It never
+  satisfies the check criterion, writes no waiver record, and never bypasses branch protection.
 - Clear a `deferred` or `rejected` finding of conditions 7 and 10 only through "The set-aside
   confirmation", never where the resolved completion mode is not `merge`; a decline, an unanswered
   question, and a non-interactive delegated run each end the run with a report.
