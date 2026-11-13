@@ -153,8 +153,8 @@ Codex and the portable build outside Claude Code write nothing. Source:
 ## Worktree lifecycle runtime state
 
 `worktree-runs/` is runtime bookkeeping, not project configuration. Every newly created
-Effective Flow delivery, partial-diff, plan-publication, or `apply-review` component worktree
-receives a versioned
+Effective Flow delivery, partial-diff, plan-publication, merge-gate, or `apply-review` component
+worktree receives a versioned
 lifecycle record at
 `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/<RECORD_ID>.json`. The record binds the worktree to
 its verified repository, canonical path, branch, creation OID, workflow purpose, ownership,

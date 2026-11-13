@@ -26,6 +26,7 @@ import {
   RESUME_OPERATION_PROOFS,
   RESUME_PROOFS,
 } from '../src/scripts/effective-flow-state-recovery-core.mjs';
+import { PURPOSES } from '../src/scripts/effective-flow-state-worktree-core.mjs';
 import { spliceDelegatedRun } from './support/merge-gate-source.mjs';
 
 const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
@@ -683,9 +684,10 @@ test('no prose owns a lifecycle record lock', () => {
 const recovery = readShared('worktree-partial-diff-recovery');
 const flatRecovery = recovery.replace(/\s+/g, ' ');
 
-// Invariant: the state machine lists exactly two ways out of `aborted` or `failed`, each selected by
-// its explicit discriminator: the adoption (`plan-pr-continuation` or `partial-diff-resume`) and
-// the partial-diff release to `cleanup-ready`.
+// Invariant: the state machine lists exactly two transitions out of `aborted` or `failed`, each
+// selected by its explicit discriminator: the adoption (`plan-pr-continuation` or
+// `partial-diff-resume`) and the partial-diff release to `cleanup-ready`. The only other exit, the
+// claim of a stopped `merge-gate` record, has its own row, only inside `cleanup apply`.
 test('the state machine names the resume adoption and the partial-diff release', () => {
   const rows = lifecycle.split('\n').filter((line) => line.startsWith('| `aborted` or `failed`'));
   assert.equal(rows.length, 2, 'aborted or failed has exactly the adoption and the release row');
@@ -698,6 +700,14 @@ test('the state machine names the resume adoption and the partial-diff release',
     rows[1],
     /`cleanup-ready` \(release\)[^\n]*`release: "partial-diff"`/,
     'the release row names its discriminator',
+  );
+  const claim = lifecycle
+    .split('\n')
+    .find((line) => line.startsWith('| `aborted`/`failed` `merge-gate`'));
+  assert.match(
+    claim ?? '',
+    /`cleanup-in-progress`[^\n]*claim inside `cleanup apply` only, after the no-unpushed-commits proof/,
+    'the merge-gate claim row names its only caller and the proof',
   );
   assert.doesNotMatch(
     lifecycle,
@@ -916,4 +926,78 @@ test('cleanup routes a retained partial-diff record to the deliver release route
   ]) {
     assert.ok(hint.includes(token), `the cleanup hint states: ${token}`);
   }
+});
+
+// Invariant: a merge-gate worktree has its own purpose, bound to its own path leaf and to
+// `retain`, so its record can never collide with a `delivery` or `partial-diff` worktree of the
+// same session and cleanup can release it; the helper's purpose list and the lifecycle purpose
+// table carry the same binding the checkout boundary states.
+test('the merge-gate checkout boundary names its purpose, path, branch policy and setup statuses', () => {
+  const boundary = readShared('merge-gate-checkout-boundary').replace(/\s+/g, ' ');
+  for (const token of [
+    'purpose `merge-gate`',
+    'path `<worktree.baseDir>/<REPO_NAME>/<SESSION_ID>-merge-gate`',
+    '`branchPolicy: retain`',
+    '`setupStatus` of `pending`, `complete`, `skipped` or `externally managed`',
+    "no new branch name; the head branch is the pull request's existing branch",
+  ]) {
+    assert.ok(boundary.includes(token), `the checkout boundary states: ${token}`);
+  }
+  const table = lifecycle.replace(/\s+/g, ' ');
+  assert.ok(
+    table.includes(
+      '`plan-publication` or `merge-gate` at `BASE_DIR/REPO_NAME/SESSION_ID-<purpose>` carry `retain`',
+    ),
+    'the lifecycle purpose table binds merge-gate to its path and retain',
+  );
+  assert.ok(PURPOSES.includes('merge-gate'), 'the helper accepts the merge-gate purpose');
+});
+
+// Invariant: the head branch is created explicitly from the fetched remote-tracking ref before the
+// record is written, the record captures the tip it was created at, the fast-forward runs only after
+// `record-init` (so a divergence withdraws a recorded worktree), and the existing head-identity check
+// against `headSha` comes last.
+test('the merge-gate provisioning sequence runs explicit branch, record-init, fast-forward, headSha check in order', () => {
+  const boundary = readShared('merge-gate-checkout-boundary').replace(/\s+/g, ' ');
+  const steps = [
+    'git fetch --no-write-fetch-head origin +refs/heads/<head>:refs/remotes/origin/<head>',
+    'git worktree add --track -b <head> <path> refs/remotes/origin/<head>',
+    'Read `creationOid` as the branch tip',
+    'Run `worktree record-init`',
+    'git merge --ff-only refs/remotes/origin/<head>',
+    'withdraw the record with the one `worktree remove` call',
+    'head-identity check against `headSha`',
+  ];
+  let from = 0;
+  for (const step of steps) {
+    const at = boundary.indexOf(step, from);
+    assert.notEqual(at, -1, `the provisioning sequence names, in order: ${step}`);
+    from = at + step.length;
+  }
+  assert.match(boundary, /never use `--force`, `--detach` or Git's implicit tracking guess/);
+});
+
+// Invariant: no merge-gate fragment provisions its checkout under iterate's `delivery` purpose,
+// which `plan-pr-continuation` could adopt and which cleanup could never release from `aborted` or
+// `failed`; the delegated run names `merge-gate` as the record purpose.
+test('no merge-gate fragment names delivery as its record purpose', () => {
+  const fragments = [
+    ['tools/merge-gate.md', readSource('tools', 'merge-gate.md')],
+    ...readdirSync(join(SOURCE_DIR, 'shared'))
+      .filter((name) => /merge-gate/.test(name) && name.endsWith('.md'))
+      .map((name) => [`shared/${name}`, readSource('shared', name)]),
+  ];
+  assert.ok(fragments.length > 2, 'the merge-gate fragments are found');
+  for (const [name, text] of fragments) {
+    assert.doesNotMatch(
+      text.replace(/\s+/g, ' '),
+      /purpose:? `delivery`|`delivery` (?:purpose|record)/,
+      `${name} must not name delivery as its record purpose`,
+    );
+  }
+  const run = readShared('merge-gate-delegated-run').replace(/\s+/g, ' ');
+  assert.match(
+    run,
+    /lifecycle record uses purpose `merge-gate`, not `\{\{SKILL:iterate\}\}`'s `delivery`/,
+  );
 });

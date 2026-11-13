@@ -547,6 +547,14 @@ only when all independent checks agree: Effective Flow created it, its lifecycle
 path, branch, purpose, and registration, and the checkout is clean, unlocked, and not prunable.
 The repository's main worktree and the worktree running `cleanup` are never removal candidates.
 
+One stopped worktree is the exception. A `merge-gate` checkout left `aborted` or `failed` (see
+[Merge-gate checkout](worktree-and-delivery.md#merge-gate-checkout)) is also a candidate, with the
+branch-ancestry check waived, once cleanup proves that removing it loses no commit: nothing is in
+progress in it and every commit is already on a remote-tracking ref. Cleanup does not fetch for this
+proof and repeats it under the record lock before it removes anything. Only `cleanup` releases such
+a record. When the proof fails, the report keeps the worktree and lists a `blockers` entry:
+`unpushed-commits`, `in-progress-operation` or `proof-unavailable`. The head branch is kept.
+
 Cleanup also lists **stale diff baselines**: the `.effective-flow/runs/<RUN_ID>/diff-baseline/`
 directories that an aborted `build`, `fix`, or `refactor` run left behind (see
 [Implement a change](tools-implement.md)). They can contain working-tree content, including
@@ -575,9 +583,9 @@ dry-run preview of each deletion class. It removes tracked legacy files via `git
 through Git history), removes untracked or gitignored legacy directories physically and
 irreversibly after explicit confirmation, and removes an eligible worktree with ordinary
 `git worktree remove <path>` only after confirmation. It never uses `--force`, broad
-`git worktree prune`, or `git branch -D`. Delivery branches remain in the repository; a temporary
-`apply-review` branch may be removed only with `git branch -d` when its lifecycle proves that the
-component was integrated safely.
+`git worktree prune`, or `git branch -D`. Delivery, partial-diff and merge-gate branches remain in
+the repository; a temporary `apply-review` branch may be removed only with `git branch -d` when its
+lifecycle proves that the component was integrated safely.
 
 The final report is always produced, even when no migration remnant or removable worktree exists.
 It separates removed worktrees from failed removal attempts and lists every remaining linked
@@ -585,7 +593,8 @@ worktree except the main worktree. Each entry includes its path, checkout identi
 inspection status, a specific reason for keeping it, and a safe next step. When cleanup runs in a
 linked worktree, that current execution worktree is reported as in use by the cleanup run. Active,
 aborted, failed, dirty, locked, prunable, harness-managed, mismatched, and lifecycle-less worktrees
-stay intact.
+stay intact; the only `aborted` or `failed` worktree cleanup may release is a `merge-gate` one that
+passes its proof.
 An `active` record may represent either work still in progress or a run interrupted by a crash;
 there is no timeout or heartbeat that guesses which one it is.
 

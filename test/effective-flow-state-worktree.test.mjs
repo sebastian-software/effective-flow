@@ -37,6 +37,10 @@ import {
   RECORD_KEYS,
   RECORD_STATUSES,
   TRANSITIONS,
+  BLOCKERS,
+  CLAIMABLE_STATUSES,
+  MERGE_GATE_RELEASE_STATUSES,
+  assessEligibility,
   canonicalJson,
   evaluateEligibility,
   itemDigest,
@@ -692,7 +696,13 @@ test('transition: adoption with each proof failing alone', async (t) => {
 // Invariant: `record-init` accepts each purpose at exactly its required path and policy and writes
 // the record no-clobber; a second call is RECORD_EXISTS.
 test('record-init: each purpose at its required path', async (t) => {
-  for (const purpose of ['delivery', 'partial-diff', 'plan-publication', 'apply-review']) {
+  for (const purpose of [
+    'delivery',
+    'partial-diff',
+    'plan-publication',
+    'apply-review',
+    'merge-gate',
+  ]) {
     const root = repository(t);
     const worktree = addWorktree(root, { purpose });
     const record = makeRecord(root, worktree, { purpose });
@@ -861,8 +871,10 @@ test('remove: a multi-record call removes every record and keeps retain branches
   );
   // One lock hold per record: claim and removal of r1 finish before r2 is claimed.
   assert.deepEqual(phases, [
+    ['underLock', 'r1'],
     ['afterClaim', 'r1'],
     ['afterRemove', 'r1'],
+    ['underLock', 'r2'],
     ['afterClaim', 'r2'],
     ['afterRemove', 'r2'],
   ]);
@@ -1797,7 +1809,10 @@ test('inspect and cleanup plan report an orphan lock and never remove it', async
   );
   const planned = await plan(root);
   const orphan = planned.blocked.find((entry) => entry.itemId === 'worktree:orphan-1');
-  assert.deepEqual([orphan?.kind, orphan?.reason], ['orphanLock', 'orphan-lock']);
+  assert.deepEqual(
+    [orphan?.kind, orphan?.reason, orphan?.blockers],
+    ['orphanLock', 'orphan-lock', []],
+  );
   assert.ok(!planned.items.some((entry) => entry.itemId === 'worktree:orphan-1'));
   assert.ok(existsSync(lockFile(root, 'orphan-1')), 'the orphan lock is never removed');
 });
@@ -1888,4 +1903,600 @@ test('remove: a foreign record path gets no Git call and no probe before the pro
   );
   assert.deepEqual(readFileSync(recordFile(root, 'foreign')), before);
   assert.deepEqual(lockDirs(root), []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// merge-gate purpose and its cleanup-only release
+
+// Invariant: `record-init` applies its generic rejections to the merge-gate purpose: a path other
+// than `<base>/<repo>/<SESSION_ID>-merge-gate`, a detached checkout and a tip that differs from
+// `creationOid` are NOT_ELIGIBLE with their proof, and `delete-after-integration` is INVALID_INPUT.
+test('record-init: a merge-gate record keeps the generic rejections', async (t) => {
+  const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+  const cases = [
+    [
+      'path',
+      (root) =>
+        makeRecord(root, addWorktree(root, { ...options, path: requiredPath(root) }), options),
+    ],
+    [
+      'head-not-on-branch',
+      (root) => {
+        const wt = addWorktree(root, options);
+        git(wt.worktreePath, 'switch', '-q', '--detach');
+        return makeRecord(root, wt, options);
+      },
+    ],
+    [
+      'tip-not-creation-oid',
+      (root) => {
+        const wt = addWorktree(root, options);
+        git(wt.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'later');
+        return makeRecord(root, wt, options);
+      },
+    ],
+  ];
+  for (const [proof, prepare] of cases) {
+    const root = repository(t);
+    const record = prepare(root);
+    const outcome = expectOutcome(
+      await call('worktree record-init', { cwd: root, executionRoot: root, record }),
+      'NOT_ELIGIBLE',
+    );
+    assert.ok(outcome.proofs.includes(proof), `${proof}: ${JSON.stringify(outcome)}`);
+    assert.equal(existsSync(recordFile(root)), false, proof);
+  }
+  const root = repository(t);
+  const record = makeRecord(root, addWorktree(root, options), {
+    ...options,
+    overrides: { branchPolicy: 'delete-after-integration' },
+  });
+  expectError(
+    await call('worktree record-init', { cwd: root, executionRoot: root, record }),
+    'INVALID_INPUT',
+  );
+});
+
+// Invariant: the release option widens condition 1 and waives condition 6 for purpose merge-gate
+// only; the defaults, every other purpose and the claimable set stay as they were, and a missing
+// or failed proof is `proof-unavailable`, never an empty result.
+test('evaluateEligibility: mergeGateRelease applies to merge-gate only and fails closed', () => {
+  const release = { removal: true, mergeGateRelease: true };
+  const proven = { inProgress: [], unpushed: [] };
+  const gate = {
+    ...PASSING_FACTS,
+    quarantineRetained: false,
+    ignoredEndpoints: [],
+    hiddenChanges: [],
+    purpose: 'merge-gate',
+    releaseProof: proven,
+  };
+  assert.deepEqual(CLAIMABLE_STATUSES, ['cleanup-ready', 'cleanup-failed']);
+  assert.deepEqual(MERGE_GATE_RELEASE_STATUSES, [
+    'aborted',
+    'failed',
+    'cleanup-ready',
+    'cleanup-failed',
+  ]);
+  for (const status of ['aborted', 'failed']) {
+    assert.deepEqual(evaluateEligibility({ ...gate, status }, { removal: true }), [1]);
+    assert.deepEqual(assessEligibility({ ...gate, status }, release), {
+      conditions: [],
+      blockers: [],
+    });
+    const delivery = { ...gate, status, purpose: 'delivery' };
+    assert.deepEqual(assessEligibility(delivery, release), { conditions: [1], blockers: [] });
+  }
+  const diverged = { ...gate, creationAncestor: false };
+  assert.deepEqual(evaluateEligibility(diverged, { removal: true }), [6]);
+  assert.deepEqual(evaluateEligibility(diverged, release), []);
+  assert.deepEqual(evaluateEligibility({ ...diverged, purpose: 'delivery' }, release), [6]);
+  assert.deepEqual(evaluateEligibility({ ...gate, status: 'active' }, release), [1]);
+  assert.deepEqual(BLOCKERS, ['in-progress-operation', 'unpushed-commits', 'proof-unavailable']);
+  for (const [releaseProof, blockers] of [
+    [undefined, ['proof-unavailable']],
+    [null, ['proof-unavailable']],
+    [{ inProgress: null, unpushed: [] }, ['proof-unavailable']],
+    [{ inProgress: [], unpushed: null }, ['proof-unavailable']],
+    [{ inProgress: ['MERGE_HEAD'], unpushed: [] }, ['in-progress-operation']],
+    [{ inProgress: [], unpushed: ['a'.repeat(40)] }, ['unpushed-commits']],
+  ]) {
+    const facts = { ...gate, releaseProof };
+    assert.deepEqual(assessEligibility(facts, release).blockers, blockers);
+    assert.deepEqual(assessEligibility(facts, { removal: true }).blockers, []);
+  }
+  // Where the proof does not apply (an `active` record, a half-gone or foreign worktree), the
+  // conditions block alone and no blocker is reported.
+  for (const change of [
+    { status: 'active' },
+    { commonDirMatches: false, gone: false },
+    { commonDirMatches: false },
+  ]) {
+    const facts = { ...gate, releaseProof: undefined, ...change };
+    assert.deepEqual(assessEligibility(facts, release).blockers, [], JSON.stringify(change));
+  }
+  assert.deepEqual(
+    assessEligibility({ ...gate, commonDirMatches: false, gone: true, releaseProof: null }, release)
+      .blockers,
+    ['proof-unavailable'],
+  );
+});
+
+// A merge-gate worktree and record moved to `status`; its branch tip is on a remote-tracking ref
+// unless `pushed` is false.
+async function mergeGateRecord(t, { status = 'aborted', pushed = true } = {}) {
+  const root = repository(t);
+  const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+  const { worktree, record } = await initialized(root, options);
+  if (pushed) git(root, 'update-ref', `refs/remotes/origin/${worktree.branch}`, worktree.head);
+  if (status !== 'active')
+    await moveTo(root, record, status, status === 'cleanup-ready' ? null : 'stopped');
+  return { root, worktree, record };
+}
+
+function planEntry(planned, recordId) {
+  const itemId = `worktree:${recordId}`;
+  return {
+    item: planned.items.find((entry) => entry.itemId === itemId),
+    blocked: planned.blocked.find((entry) => entry.itemId === itemId),
+  };
+}
+
+async function applyPlanned(root, planned, extra) {
+  return call(
+    'cleanup apply',
+    {
+      cwd: root,
+      executionRoot: root,
+      items: selection(
+        planned,
+        planned.items.map((item) => item.itemId),
+      ),
+    },
+    extra,
+  );
+}
+
+// Invariant: an aborted or failed merge-gate record whose present worktree is clean and holds no
+// unpushed commit is a cleanup candidate; `cleanup apply` removes the worktree without force, keeps
+// the head branch and deletes the record.
+test('cleanup releases a present aborted or failed merge-gate worktree with nothing unpushed', async (t) => {
+  for (const status of ['aborted', 'failed']) {
+    const { root, worktree, record } = await mergeGateRecord(t, { status });
+    const planned = await plan(root);
+    const { item } = planEntry(planned, record.recordId);
+    assert.ok(item, `${status}: ${JSON.stringify(planned.blocked)}`);
+    assert.deepEqual([item.purpose, item.status, item.blockers], ['merge-gate', status, []]);
+    const result = expectOk(await applyPlanned(root, planned));
+    assert.deepEqual(
+      result.items.map(({ itemId, ok, branch }) => [itemId, ok, branch?.outcome]),
+      [[`worktree:${record.recordId}`, true, 'retained']],
+    );
+    assert.equal(existsSync(worktree.worktreePath), false);
+    assert.equal(existsSync(recordFile(root)), false);
+    assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+  }
+});
+
+// Invariant: only cleanup passes the release option: `worktree remove` refuses an aborted
+// merge-gate record with condition 1 and `worktree inspect`, session-scoped or not, reports it.
+test('worktree remove and inspect never release an aborted merge-gate record', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const removed = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  );
+  assert.equal(removed.items[0].code, 'NOT_ELIGIBLE', JSON.stringify(removed));
+  assert.ok(removed.items[0].conditions.includes(1));
+  assert.deepEqual(removed.items[0].blockers, []);
+  for (const input of [{}, { sessionId: SESSION }]) {
+    const inspected = expectOk(
+      await call('worktree inspect', { cwd: root, executionRoot: root, ...input }),
+    );
+    assert.deepEqual(inspected.records[0].conditions, [1]);
+    assert.equal(Object.hasOwn(inspected.records[0], 'blockers'), false);
+  }
+  assert.ok(existsSync(worktree.worktreePath));
+  assert.equal(readRecord(root).status, 'aborted');
+});
+
+// Invariant: a fully gone merge-gate worktree (unregistered, path absent) is released whether its
+// branch still exists on a pushed tip or was deleted, and passes the pre-lock gone gate of
+// `cleanup apply` without a Git call in the vanished path.
+test('cleanup releases a fully gone merge-gate worktree whose branch is pushed or deleted', async (t) => {
+  for (const deleteBranch of [false, true]) {
+    const { root, worktree, record } = await mergeGateRecord(t);
+    git(root, 'worktree', 'remove', worktree.worktreePath);
+    if (deleteBranch) git(root, 'branch', '-q', '-D', worktree.branch);
+    const planned = await plan(root);
+    assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+    const result = expectOk(await applyPlanned(root, planned));
+    assert.deepEqual(
+      result.items.map(({ ok, reconciledAbsent }) => [ok, reconciledAbsent]),
+      [[true, true]],
+      JSON.stringify(result),
+    );
+    assert.equal(existsSync(recordFile(root)), false);
+  }
+});
+
+// Invariant: a fully gone merge-gate worktree whose surviving branch holds an unpushed commit stays
+// blocked; a half-gone one (directory deleted, still registered) keeps every condition.
+test('cleanup keeps a gone merge-gate record with an unpushed branch and a half-gone one', async (t) => {
+  const gone = await mergeGateRecord(t, { pushed: false });
+  git(gone.root, 'worktree', 'remove', gone.worktree.worktreePath);
+  const blocked = planEntry(await plan(gone.root), gone.record.recordId).blocked;
+  assert.deepEqual([blocked?.conditions, blocked?.blockers], [[], ['unpushed-commits']]);
+
+  const half = await mergeGateRecord(t);
+  rmSync(half.worktree.worktreePath, { recursive: true, force: true });
+  const halfBlocked = planEntry(await plan(half.root), half.record.recordId).blocked;
+  assert.ok(halfBlocked?.conditions.length > 0, JSON.stringify(halfBlocked));
+  assert.deepEqual(halfBlocked?.blockers, [], 'a half-gone worktree gets no proof and no blocker');
+
+  // An `active` merge-gate record is blocked by condition 1 alone: no proof runs for it, so its
+  // unpushed commits are not a blocker.
+  const active = await mergeGateRecord(t, { status: 'active', pushed: false });
+  const activeBlocked = planEntry(await plan(active.root), active.record.recordId).blocked;
+  assert.deepEqual([activeBlocked?.conditions, activeBlocked?.blockers], [[1], []]);
+});
+
+// Invariant: condition 6 is waived for the release: a branch rewritten off `creationOid` (a
+// force-push after the stopped run) is released when nothing on it is unpushed.
+test('cleanup releases a merge-gate branch diverged from creationOid with nothing unpushed', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t, { pushed: false });
+  const tree = git(worktree.worktreePath, 'rev-parse', 'HEAD^{tree}');
+  const rewritten = git(worktree.worktreePath, 'commit-tree', tree, '-m', 'rewritten');
+  git(worktree.worktreePath, 'reset', '-q', '--hard', rewritten);
+  git(root, 'update-ref', `refs/remotes/origin/${worktree.branch}`, rewritten);
+  const inspected = expectOk(await call('worktree inspect', { cwd: root, executionRoot: root }));
+  assert.ok(inspected.records[0].conditions.includes(6));
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+});
+
+// Invariant: an operation in progress blocks the release with `in-progress-operation`, and a proof
+// Git call that fails blocks it with `proof-unavailable`; neither is treated as proven.
+test('cleanup blocks a merge-gate release on an in-progress merge or an unavailable proof', async (t) => {
+  const merging = await mergeGateRecord(t);
+  const mergeHead = git(
+    merging.worktree.worktreePath,
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'MERGE_HEAD',
+  );
+  writeFileSync(mergeHead, `${merging.worktree.head}\n`);
+  const inProgress = planEntry(await plan(merging.root), merging.record.recordId).blocked;
+  assert.deepEqual([inProgress?.conditions, inProgress?.blockers], [[], ['in-progress-operation']]);
+
+  const failing = await mergeGateRecord(t);
+  const { runner } = interceptingRunner((args) =>
+    args.includes('rev-list') && args.includes('--remotes')
+      ? { status: 128, stdout: '', stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: failing.root, executionRoot: failing.root }, { runner }),
+  );
+  const unavailable = planEntry(planned, failing.record.recordId).blocked;
+  assert.deepEqual([unavailable?.conditions, unavailable?.blockers], [[], ['proof-unavailable']]);
+});
+
+// Invariant: the proof is re-derived from fresh evidence: an unpushed commit after the dry run
+// makes a fresh plan list the record blocked with `unpushed-commits`, and the earlier digest is a
+// whole-call PREVIEW_MISMATCH that carries the blockers.
+test('cleanup apply refuses a merge-gate item that gained an unpushed commit', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item);
+  git(worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local');
+  const fresh = planEntry(await plan(root), record.recordId).blocked;
+  assert.deepEqual(fresh?.blockers, ['unpushed-commits']);
+  const before = readFileSync(recordFile(root));
+  const outcome = expectOutcome(await applyPlanned(root, planned), 'PREVIEW_MISMATCH');
+  assert.deepEqual([outcome.reason, outcome.blockers], ['not-actionable', ['unpushed-commits']]);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+  assert.ok(existsSync(worktree.worktreePath));
+});
+
+// Invariant: the proof runs again under the record lock before the claim: a remote-tracking ref
+// deleted after the recompute fails the item with NOT_ELIGIBLE and `unpushed-commits`, and neither
+// the record nor the worktree changes.
+test('cleanup apply re-proves a merge-gate release under the record lock', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const planned = await plan(root);
+  const before = readFileSync(recordFile(root));
+  const result = expectOk(
+    await applyPlanned(root, planned, {
+      onPhase: (name) => {
+        if (name === 'underLock') {
+          git(root, 'update-ref', '-d', `refs/remotes/origin/${worktree.branch}`);
+        }
+      },
+    }),
+  );
+  assert.deepEqual(
+    result.items.map(({ code, blockers }) => [code, blockers]),
+    [['NOT_ELIGIBLE', ['unpushed-commits']]],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+  assert.ok(existsSync(worktree.worktreePath));
+  assert.equal(readRecord(root, record.recordId).status, 'aborted');
+});
+
+// Invariant: a failed removal of a released merge-gate worktree leaves the record `cleanup-failed`,
+// which the next cleanup plan still guards by the proof.
+test('a failed merge-gate removal is cleanup-failed and stays guarded by the proof', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const planned = await plan(root);
+  const { runner } = interceptingRunner((args) =>
+    args[0] === 'worktree' && args[1] === 'remove'
+      ? { status: 128, stdout: '', stderr: 'fatal: injected refusal\n' }
+      : undefined,
+  );
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.equal(result.items[0].code, 'REMOVE_FAILED', JSON.stringify(result));
+  assert.equal(readRecord(root).status, 'cleanup-failed');
+  git(worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'local');
+  const blocked = planEntry(await plan(root), record.recordId).blocked;
+  assert.deepEqual(blocked?.blockers, ['unpushed-commits']);
+});
+
+// Invariant: `adoptionProofs` keeps rejecting every non-`delivery` record: an `aborted` or `failed`
+// merge-gate record is never adopted (`purpose` is its only failed proof) and stays untouched.
+test('transition: an aborted or failed merge-gate record is never adopted', async (t) => {
+  for (const status of ['aborted', 'failed']) {
+    const root = repository(t);
+    const options = { purpose: 'merge-gate', workflow: 'merge-gate' };
+    const { worktree, record } = await initialized(root, options);
+    await moveTo(root, record, status, 'stopped');
+    const before = readFileSync(recordFile(root));
+    const outcome = expectOutcome(
+      await call('worktree transition', {
+        cwd: root,
+        executionRoot: root,
+        recordId: record.recordId,
+        from: status,
+        to: 'active',
+        reason: null,
+        sessionId: 'build-fedcba9876543210',
+        branch: record.branch,
+        workflow: record.workflow,
+        fetchedHeadOid: record.creationOid,
+      }),
+      'NOT_ELIGIBLE',
+    );
+    assert.deepEqual([outcome.proofs, outcome.conditions], [['purpose'], []], status);
+    assert.deepEqual(readFileSync(recordFile(root)), before, `${status} wrote nothing`);
+    assert.ok(existsSync(worktree.worktreePath));
+    assert.deepEqual(lockDirs(root), []);
+  }
+});
+
+// Invariant: the session roots of `unrecordedWorktrees` include the dedicated
+// `<SESSION_ID>-merge-gate` leaf: a registered worktree there that no record names is reported for
+// its own session only.
+test('inspect: an unrecorded merge-gate worktree is reported for its session', async (t) => {
+  const root = repository(t);
+  const worktree = addWorktree(root, { purpose: 'merge-gate' });
+  const inspected = expectOk(
+    await call('worktree inspect', { cwd: root, executionRoot: root, sessionId: SESSION }),
+  );
+  assert.deepEqual(
+    inspected.unrecorded.map((entry) => entry.path),
+    [worktree.worktreePath],
+  );
+  assert.equal(worktree.worktreePath, requiredPath(root, { purpose: 'merge-gate' }));
+  const other = expectOk(
+    await call('worktree inspect', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: 'build-2222222222222222',
+    }),
+  );
+  assert.deepEqual(other.unrecorded, []);
+});
+
+// Invariant: every blocked `cleanup plan` entry carries a `blockers` array, and records of other
+// purposes stay blocked by condition 1 exactly as before: an `aborted` or `failed` record of any
+// purpose but merge-gate has no blockers, is never selectable, and a forged digest ends the call as
+// a not-actionable PREVIEW_MISMATCH whose `blockers` is empty.
+test('cleanup plan: blocked entries carry blockers and other purposes keep condition 1', async (t) => {
+  const root = repository(t);
+  const delivery = await initialized(root, { recordId: 'r-delivery' });
+  await moveTo(root, delivery.record, 'aborted', 'stopped');
+  const publication = await initialized(root, { purpose: 'plan-publication', recordId: 'r-plan' });
+  await moveTo(root, publication.record, 'failed', 'stopped');
+  mkdirSync(lockFile(root, 'orphan-1'));
+  const planned = await plan(root);
+  assert.deepEqual(planned.items, []);
+  assert.ok(planned.blocked.length >= 3, JSON.stringify(planned.blocked));
+  for (const entry of planned.blocked) {
+    assert.ok(Array.isArray(entry.blockers), `${entry.itemId}: ${JSON.stringify(entry)}`);
+    assert.deepEqual(entry.blockers, [], entry.itemId);
+  }
+  for (const id of ['r-delivery', 'r-plan']) {
+    assert.deepEqual(planEntry(planned, id).blocked?.conditions, [1], id);
+  }
+  const digest = itemDigest({
+    kind: 'worktree',
+    recordId: delivery.record.recordId,
+    worktreePath: delivery.record.worktreePath,
+    branch: delivery.record.branch,
+    tip: delivery.record.creationOid,
+    branchPolicy: delivery.record.branchPolicy,
+  });
+  const before = readFileSync(recordFile(root, 'r-delivery'));
+  const refused = expectOutcome(
+    await call('cleanup apply', {
+      cwd: root,
+      executionRoot: root,
+      items: { 'worktree:r-delivery': digest },
+    }),
+    'PREVIEW_MISMATCH',
+  );
+  assert.deepEqual(
+    [refused.reason, refused.conditions, refused.blockers],
+    ['not-actionable', [1], []],
+  );
+  assert.deepEqual(readFileSync(recordFile(root, 'r-delivery')), before);
+  assert.ok(existsSync(delivery.worktree.worktreePath));
+});
+
+// Invariant: the release runs `git worktree remove` without `--force`, never deletes the branch,
+// and runs no fetch: its proof reads only local refs (`refs/remotes/*` as they are).
+test('cleanup releases a merge-gate worktree without force, branch deletion or fetch', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  const { runner, calls } = interceptingRunner(() => undefined);
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+  );
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.equal(result.items[0].ok, true, JSON.stringify(result));
+  const removals = calls.filter((args) => args[0] === 'worktree' && args[1] === 'remove');
+  assert.equal(removals.length, 1);
+  assert.deepEqual(removals[0], ['worktree', 'remove', worktree.worktreePath]);
+  assert.ok(!calls.some((args) => args.includes('fetch')), 'no fetch');
+  assert.ok(!calls.some((args) => args.some((arg) => arg === '--force' || arg === '-f')));
+  assert.ok(!calls.some((args) => args[0] === 'branch' || args[0] === 'push'));
+  assert.ok(!calls.some((args) => args[0] === 'update-ref'));
+  assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+  assert.equal(existsSync(recordFile(root)), false);
+});
+
+// Invariant: the fully gone release runs no Git call in the vanished path: the pre-lock gone gate
+// reads the filesystem and the registry from the runtime-state root only.
+test('cleanup releases a gone merge-gate worktree without a Git call in the vanished path', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const cwds = [];
+  const { runner, calls } = interceptingRunner((args, request) => {
+    cwds.push(request.cwd);
+    return undefined;
+  });
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+  );
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.deepEqual([result.items[0].ok, result.items[0].reconciledAbsent], [true, true]);
+  assert.ok(!cwds.includes(worktree.worktreePath), 'no Git call ran in the vanished path');
+  assert.ok(!calls.some((args) => args.includes('fetch')), 'no fetch');
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.ok(!calls.some((args) => args[0] === 'branch'), 'the branch is never deleted');
+  assert.equal(git(root, 'rev-parse', `refs/heads/${worktree.branch}`), worktree.head);
+});
+
+// Invariant: the in-progress detection covers directory markers and fails closed: a `rebase-merge/`
+// directory at its `--git-path` location is `in-progress-operation`, and a failed
+// `rev-parse --git-path` call is `proof-unavailable`.
+test('cleanup blocks a merge-gate release on a rebase directory or a failed git-path lookup', async (t) => {
+  const rebasing = await mergeGateRecord(t);
+  const marker = git(
+    rebasing.worktree.worktreePath,
+    'rev-parse',
+    '--path-format=absolute',
+    '--git-path',
+    'rebase-merge',
+  );
+  mkdirSync(marker);
+  const rebase = planEntry(await plan(rebasing.root), rebasing.record.recordId).blocked;
+  assert.deepEqual([rebase?.conditions, rebase?.blockers], [[], ['in-progress-operation']]);
+
+  const failing = await mergeGateRecord(t);
+  const { runner } = interceptingRunner((args) =>
+    args.includes('rev-parse') && args.includes('--git-path')
+      ? { status: 128, stdout: '', stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: failing.root, executionRoot: failing.root }, { runner }),
+  );
+  const unavailable = planEntry(planned, failing.record.recordId).blocked;
+  assert.deepEqual([unavailable?.conditions, unavailable?.blockers], [[], ['proof-unavailable']]);
+});
+
+// Invariant: the fully-gone proof fails closed too: a failed branch lookup from the main checkout
+// blocks the record with `proof-unavailable`, and `cleanup apply` removes nothing.
+test('cleanup blocks a gone merge-gate record whose branch lookup fails', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const { runner } = interceptingRunner((args) =>
+    args[0] === 'for-each-ref' && args.includes(`refs/heads/${worktree.branch}`)
+      ? { status: 128, stdout: '', stderr: 'fatal: injected\n' }
+      : undefined,
+  );
+  const planned = expectOk(
+    await call('cleanup plan', { cwd: root, executionRoot: root }, { runner }),
+  );
+  const blocked = planEntry(planned, record.recordId).blocked;
+  assert.deepEqual([blocked?.conditions, blocked?.blockers], [[], ['proof-unavailable']]);
+  const before = readFileSync(recordFile(root));
+  const clean = await plan(root);
+  const outcome = expectOutcome(await applyPlanned(root, clean, { runner }), 'PREVIEW_MISMATCH');
+  assert.deepEqual(outcome.blockers, ['proof-unavailable']);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+});
+
+// Invariant: a gone merge-gate record whose branch survives is re-proved at apply time: a
+// remote-tracking ref deleted after the dry run (tip unchanged) ends the call as PREVIEW_MISMATCH
+// with `unpushed-commits`, and the record stays.
+test('cleanup apply refuses a gone merge-gate record whose branch lost its remote-tracking ref', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  git(root, 'update-ref', '-d', `refs/remotes/origin/${worktree.branch}`);
+  const before = readFileSync(recordFile(root));
+  const outcome = expectOutcome(await applyPlanned(root, planned), 'PREVIEW_MISMATCH');
+  assert.deepEqual([outcome.reason, outcome.blockers], ['not-actionable', ['unpushed-commits']]);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
+});
+
+// Invariant: every blocked `cleanup plan` entry carries a `blockers` array, a blocked legacy
+// runtime directory included (empty: its reasons stay in `failures`).
+test('cleanup plan gives a blocked legacy entry an empty blockers array', async (t) => {
+  const root = repository(t);
+  mkdirSync(join(root, '.firmo'));
+  writeFileSync(join(root, '.firmo', 'note.txt'), 'not carried over\n');
+  const planned = await plan(root);
+  const legacy = planned.blocked.find((entry) => entry.itemId === 'legacy:.firmo');
+  assert.ok(legacy, JSON.stringify(planned));
+  assert.ok(legacy.failures.length > 0);
+  assert.deepEqual(legacy.blockers, []);
+});
+
+// Invariant: the pre-lock gone gate of `cleanup apply` re-derives the proof itself: when the branch
+// lookup passes in the recompute and fails in the gate, the item is NOT_ELIGIBLE with
+// `proof-unavailable` before any lock, probe or write.
+test('cleanup apply: the pre-lock gone gate refuses a gone merge-gate record whose proof fails', async (t) => {
+  const { root, worktree, record } = await mergeGateRecord(t);
+  git(root, 'worktree', 'remove', worktree.worktreePath);
+  const planned = await plan(root);
+  assert.ok(planEntry(planned, record.recordId).item, JSON.stringify(planned.blocked));
+  let lookups = 0;
+  const { runner } = interceptingRunner((args) => {
+    if (args[0] !== 'for-each-ref' || !args.includes(`refs/heads/${worktree.branch}`)) {
+      return undefined;
+    }
+    lookups += 1;
+    return lookups === 2 ? { status: 128, stdout: '', stderr: 'fatal: injected\n' } : undefined;
+  });
+  const before = readFileSync(recordFile(root));
+  const result = expectOk(await applyPlanned(root, planned, { runner }));
+  assert.equal(lookups, 2, 'one lookup in the recompute, one in the pre-lock gate');
+  assert.deepEqual(
+    result.items.map(({ code, blockers }) => [code, blockers]),
+    [['NOT_ELIGIBLE', ['proof-unavailable']]],
+    JSON.stringify(result),
+  );
+  assert.deepEqual(lockDirs(root), []);
+  assert.deepEqual(readFileSync(recordFile(root)), before);
 });

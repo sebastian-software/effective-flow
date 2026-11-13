@@ -529,8 +529,9 @@ below), the gate does not attempt it and the run ends with a report instead.
 
 What the run does with a conflict:
 
-1. **Resolves it in a delegated worker.** The gate provisions a checkout, starts the merge, and hands
-   the conflicted files to a dedicated resolver. That worker classifies each conflicted file's risk,
+1. **Resolves it in a delegated worker.** The gate provisions a
+   [checkout](worktree-and-delivery.md#merge-gate-checkout), starts the merge, and hands the
+   conflicted files to a dedicated resolver. That worker classifies each conflicted file's risk,
    regenerates generated and lock files from their source rather than merging their text, and removes
    every conflict marker. Where the two sides make contradictory statements that cannot be reconciled
    without a new product or architecture decision, it **aborts and names the contradiction** rather

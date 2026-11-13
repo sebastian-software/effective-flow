@@ -7571,8 +7571,14 @@ test('local divergence after a head-identity mismatch ends the run naming the ch
   assert.ok(outcome, 'the local-divergence sub-bullet states its outcome after the condition');
   assert.match(outcome, new RegExp(`^${ENDS_THE_RUN} here`, 'i'));
   assert.match(outcome, near('round already begun', 'counted', 30));
-  assert.match(outcome, near('nothing is merged or delegated', 'report names that checkout', 80));
-  assert.match(outcome, near('report names that checkout', 'Phase 6 runs', 40));
+  assert.match(
+    outcome,
+    near('nothing is merged or delegated', 'report names the reused in.place checkout', 80),
+  );
+  // A withdrawn worktree leaves no checkout to name: its report names the retained local head
+  // branch and the commits it holds that `origin/<head>` lacks.
+  assert.match(outcome, near('retained local head branch', 'commits not on `origin/<head>`', 40));
+  assert.match(outcome, near('commits not on `origin/<head>`', 'Phase 6 runs', 40));
   assert.match(
     outcome,
     new RegExp(`and ${NO_RECORD}[;.]?$`, 'i'),
@@ -7812,8 +7818,8 @@ test('the Rules section fires neither trigger once the base-merge-unavailable re
 
 // Invariant (F4): the checkout boundary states what a `fork` or `missing-branch` proof leaves behind -
 // nothing provisioned, no worktree and no worktree lifecycle record - and refers to the
-// local-divergence end of Phase 2 step 1 instead of redefining it: the run ends with a report naming
-// the reused in-place checkout, which has no record to close. Each statement is pinned in its own
+// local-divergence end of Phase 2 step 1 instead of redefining it: a reused in-place checkout has no
+// record to close, and the report itself stays owned by the local-divergence bullet of step 1. Each statement is pinned in its own
 // sentence group, so the local-divergence end cannot be met by the proof sentence or the other way
 // round.
 test('the checkout boundary provisions nothing on a fork or missing-branch proof and refers to the local-divergence end of step 1', () => {
@@ -7832,10 +7838,15 @@ test('the checkout boundary provisions nothing on a fork or missing-branch proof
     'On the local-divergence end',
     ' When `git worktree list',
   );
-  assert.match(divergence, /^On the local-divergence end of Phase 2 step 1,/);
-  assert.match(divergence, new RegExp(`the ${ENDS_THE_RUN} with a report`, 'i'));
-  assert.match(divergence, near('report naming that', 'reused in.place checkout', 20));
-  assert.match(divergence, /reused in.place checkout, which has no record to close\.$/);
+  assert.match(
+    divergence,
+    /^On the local-divergence end of Phase 2 step 1, a reused in.place checkout has no record to close\.$/,
+  );
+  assert.doesNotMatch(
+    divergence,
+    /report/i,
+    'the local-divergence report is owned by step 1 of the delegated run, not restated here',
+  );
   assert.doesNotMatch(
     boundary,
     /local divergence[^.]{0,80}(?:when|if|where)[^.]{0,80}reused/i,
@@ -8007,6 +8018,27 @@ test('the Git write boundary keeps two kinds, treats the ancestry fetch and the 
   assert.match(binding, near('trigger \\(b\\)', 'Phase 2 step 1', 100));
   assert.match(binding, near('ancestry check', 'stays permitted', 200));
   assert.match(binding, near('stays permitted', '`no-branch-writes`', 100));
+});
+
+// Invariant: provisioning the merge-gate checkout moves refs – the head fetch into
+// `refs/remotes/origin/<head>`, the explicit creation of `refs/heads/<head>` and its `--ff-only`
+// update – without becoming a third kind of Git write, and the two kinds keep governing every commit
+// and push. Sliced to its own paragraph so the two-kinds count above cannot satisfy it.
+test('the Git write boundary classifies the provisioning ref updates as no third kind of write', () => {
+  const boundary = prose(section(mergeGateSource(), '## Git write boundary', '\n## '));
+  const provisioning = boundedSlice(
+    boundary,
+    'The provisioning ref updates',
+    'The second kind is bounded',
+  );
+  assert.match(provisioning, /are not a third kind of Git write/);
+  assert.match(provisioning, near('head fetch', 'explicit creation of `refs/heads/<head>`', 120));
+  assert.match(
+    provisioning,
+    near('explicit creation of `refs/heads/<head>`', '`--ff-only` update', 120),
+  );
+  assert.match(provisioning, near('create no commit', 'push nothing', 40));
+  assert.match(provisioning, near('two kinds', 'every commit and every push', 80));
 });
 
 test('only the bot threads this run implemented can block the merge', () => {
