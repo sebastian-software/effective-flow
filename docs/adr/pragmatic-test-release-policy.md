@@ -4,6 +4,11 @@
 
 Accepted, November 4, 2026.
 
+Status note, November 13, 2026: for `focus`, the applicable acceptance is the host acceptance record
+alone, the [F record for candidate `024bcb2a`](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-024bcb2a).
+The `focus` and `build-context` eval rounds are post-merge debt and decide no activation. The
+decision below is unchanged.
+
 ## Context
 
 Package acceptance and experimental execution qualification answer different questions. A

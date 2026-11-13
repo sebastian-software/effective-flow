@@ -49,6 +49,16 @@ send a message, and end at completion, an explicit `focus follow-up stop <sessio
 access, or a loop cap. On any other host path a snapshot offers nothing; asking for follow-up
 returns the limitation, and `follow-up stop` stays available. Sends stay disabled.
 
+The follow-up mode has a Codex host prerequisite. It was qualified only with a conditional
+`developer_instructions` entry in `~/.codex/config.toml`, a file that holds nothing else, on
+`gpt-6.1-sol` at medium reasoning effort; Codex must be restarted for the entry to take effect. The
+entry is documented in the [focus host acceptance page](../developer-guide/focus-host-acceptance.md#experimental-host-prerequisite-conditional-quiet-tick-probe),
+extended by the naming sentence shown in the [F record](../developer-guide/focus-host-acceptance.md#024bcb2a-candidate-binding).
+A default Codex configuration, a combination with other keys or another `developer_instructions`
+value is not qualified; the observed consequence of a default configuration is extra visible
+commentary on quiet ticks, with no change to reads or authority. Qualification observed neither the
+loop's cap end nor a tick-level Looping report.
+
 Snapshot-host execution on the T3 observed path, for report-only use, is enabled in the shipped
 source; the [focus host acceptance page](../developer-guide/focus-host-acceptance.md) names the
 candidate record that binds it. On every other host path focus returns the missing snapshot

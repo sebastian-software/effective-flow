@@ -4,6 +4,12 @@
 
 Active
 
+Status note, November 13, 2026: the report-only snapshot path and the opt-in report-only follow-up
+path are enabled on the T3 observed path, the follow-up path under the documented host prerequisite
+and with the limitations of the [F record for candidate `024bcb2a`](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-024bcb2a):
+F3, where Looping was not reproducibly reported, and F12, where the loop cap and the cap tick's
+deletion were not observed. All sends stay disabled. The decision below is unchanged.
+
 ## Context
 
 A session that drifts cannot see its own drift. The planned `effective-flow focus` tool is an outside
