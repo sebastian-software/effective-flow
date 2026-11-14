@@ -480,6 +480,20 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // stranger's comment as its own.
     case 'viewer-read':
       return mutationPlan('tea', ['api', 'user', '--include', '--login', repository.login ?? host]);
+    // Class A: raw API JSON (`modules/structs.RepoCollaboratorPermission`), whose `permission` and
+    // `role_name` tags are the same keys GitHub's endpoint states, so both providers share one
+    // normalizer in `remote-tracker-core.mjs`. The login reaches a path segment, so only a Forgejo
+    // username shape (alphanumerics plus single `-`, `_` or `.` separators) is admitted. A 404 is
+    // mapped to `TARGET_NOT_FOUND` by `teaApiSuccess`, as `runChecked` maps GitHub's.
+    case 'collaborator-permission-read': {
+      const login = requireString(input.login, 'login');
+      if (
+        !/^[A-Za-z0-9](?:[A-Za-z0-9._-]{0,38}[A-Za-z0-9])?$/.test(login) ||
+        /[._-]{2}/.test(login)
+      )
+        fail('INVALID_PAYLOAD', 'login must be a valid Forgejo login');
+      return teaApiReadPlan(repository, apiEndpoint(`collaborators/${login}/permission`));
+    }
     // Class A: raw API JSON (`modules/structs.PullRequest`, `CombinedStatus`, `Commit`).
     // Call 1 of three, and the only one this builder can answer. The head SHA it returns is what
     // addresses calls 2 and 3, so they are not knowable before it has run;

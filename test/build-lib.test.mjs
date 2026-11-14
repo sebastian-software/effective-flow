@@ -26,8 +26,10 @@ import {
   LEGACY_AGENT_MODEL_FIELDS,
   collectSpawnSiteMarkers,
   parseSpawnSiteTable,
+  validatePanelModelAllowlist,
   reconcileSpawnSites,
   renderSpawnSiteLine,
+  findRenderedSpawnSiteLines,
   renderSpawnSiteMarkers,
   renderModelTierRoleDefaults,
   renderModelTierTable,
@@ -1153,11 +1155,11 @@ test('the projection follows named spawn roles and ignores prohibition and descr
   const spawnSites = parseSpawnSiteTable(
     [
       '## Spawn sites',
-      '| Site | Spawn | Tier | Down |',
-      '| --- | --- | --- | --- |',
-      '| `build/routed` | Routed implementation or tests | `role:test-writer,docs-writer` | `yes` |',
-      '| `verification/check` | Conditional validation | `role:code-validator` | `yes` |',
-      '| `concept/analysis` | Generic analysis | `deep` | `no` |',
+      '| Site | Spawn | Tier | Down | Panel |',
+      '| --- | --- | --- | --- | --- |',
+      '| `build/routed` | Routed implementation or tests | `role:test-writer,docs-writer` | `yes` | `no` |',
+      '| `verification/check` | Conditional validation | `role:code-validator` | `yes` | `no` |',
+      '| `concept/analysis` | Generic analysis | `deep` | `no` | `no` |',
     ].join('\n'),
     { agentTiers: new Map([...agentSources.keys()].map((name) => [name, 'standard'])) },
   );
@@ -7242,14 +7244,14 @@ const spawnAgentTiers = new Map([
   ['nodejs-implementer', 'deep'],
 ]);
 
-function spawnTable(rows, { header = '| Site | Spawn | Tier | Down |' } = {}) {
+function spawnTable(rows, { header = '| Site | Spawn | Tier | Down | Panel |' } = {}) {
   return [
     '# Model tiers',
     '',
     '## Spawn sites',
     '',
     header,
-    '| ---- | ----- | ---- | ---- |',
+    '| ---- | ----- | ---- | ---- | ----- |',
     ...rows,
     '',
     '## After',
@@ -7270,10 +7272,10 @@ test('parseSpawnSiteTable accepts an empty table', () => {
 
 test('parseSpawnSiteTable resolves literal tiers and role tiers in table order', () => {
   const sites = parseSites([
-    '| `build/explore` | Explore fan-out | `standard` | `yes` |',
-    '| `cleanup/scan` | Inventory scan | `mechanical` | `no` |',
-    '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
-    '| `build/mixed` | Implementer then validator | `role:nodejs-implementer,code-validator` | `yes` |',
+    '| `build/explore` | Explore fan-out | `standard` | `yes` | `no` |',
+    '| `cleanup/scan` | Inventory scan | `mechanical` | `no` | `no` |',
+    '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` | `no` |',
+    '| `build/mixed` | Implementer then validator | `role:nodejs-implementer,code-validator` | `yes` | `no` |',
   ]);
   assert.deepEqual(
     sites.map(({ id, spawn, clauses, downAllowed }) => ({ id, spawn, clauses, downAllowed })),
@@ -7319,11 +7321,11 @@ test('parseSpawnSiteTable rejects a missing heading, a wrong header and a missin
   );
   assert.throws(
     () => parseSites([], { header: '| Site | Spawn | Tier |' }),
-    /Spawn-site table header must be Site \| Spawn \| Tier \| Down/,
+    /Spawn-site table header must be Site \| Spawn \| Tier \| Down \| Panel/,
   );
   assert.throws(
     () =>
-      parseSpawnSiteTable('## Spawn sites\n\n| Site | Spawn | Tier | Down |\n', {
+      parseSpawnSiteTable('## Spawn sites\n\n| Site | Spawn | Tier | Down | Panel |\n', {
         agentTiers: spawnAgentTiers,
       }),
     /needs a separator row/,
@@ -7333,26 +7335,29 @@ test('parseSpawnSiteTable rejects a missing heading, a wrong header and a missin
 test('parseSpawnSiteTable rejects a malformed row', () => {
   assert.throws(
     () => parseSites(['| `build/explore` | Explore | `standard` |']),
-    /Spawn-site table row must have 4 cells \(in shared\/model-tiers\.md:7\)/,
+    /Spawn-site table row must have 5 cells \(in shared\/model-tiers\.md:7\)/,
   );
   assert.throws(
-    () => parseSites(['| build/explore | Explore | `standard` | `yes` |']),
+    () => parseSites(['| build/explore | Explore | `standard` | `yes` | `no` |']),
     /Spawn-site Site cell must be one inline code span/,
   );
   assert.throws(
-    () => parseSites(['| `build` | Explore | `standard` | `yes` |']),
+    () => parseSites(['| `build` | Explore | `standard` | `yes` | `no` |']),
     /Malformed spawn-site id "build"/,
   );
   assert.throws(
     () =>
       parseSites([
-        '| `build/explore` | Explore | `standard` | `yes` |',
-        '| `build/explore` | Again | `standard` | `yes` |',
+        '| `build/explore` | Explore | `standard` | `yes` | `no` |',
+        '| `build/explore` | Again | `standard` | `yes` | `no` |',
       ]),
     /Duplicate spawn-site row "build\/explore"/,
   );
   assert.throws(
-    () => parseSites(['| `build/explore` | Uses {{AGENT:code-validator}} | `standard` | `yes` |']),
+    () =>
+      parseSites([
+        '| `build/explore` | Uses {{AGENT:code-validator}} | `standard` | `yes` | `no` |',
+      ]),
     /needs a plain Spawn description without placeholders/,
   );
 });
@@ -7360,38 +7365,96 @@ test('parseSpawnSiteTable rejects a malformed row', () => {
 test('parseSpawnSiteTable rejects a malformed tier', () => {
   for (const tier of ['`premium`', '`role:`', '`role:Code-Validator`', 'standard']) {
     assert.throws(
-      () => parseSites([`| \`build/explore\` | Explore | ${tier} | \`yes\` |`]),
+      () => parseSites([`| \`build/explore\` | Explore | ${tier} | \`yes\` | \`no\` |`]),
       /Unknown spawn-site tier|must be one inline code span/,
       tier,
     );
   }
   assert.throws(
-    () => parseSites(['| `build/explore` | Explore | `role:unknown-agent` | `yes` |']),
+    () => parseSites(['| `build/explore` | Explore | `role:unknown-agent` | `yes` | `no` |']),
     /names unknown role "unknown-agent"/,
   );
   assert.throws(
-    () => parseSites(['| `build/explore` | Explore | `role:test-writer,test-writer` | `yes` |']),
+    () =>
+      parseSites(['| `build/explore` | Explore | `role:test-writer,test-writer` | `yes` | `no` |']),
     /repeats a role/,
   );
 });
 
 test('parseSpawnSiteTable rejects a malformed Down value and a deep site that may move down', () => {
   assert.throws(
-    () => parseSites(['| `build/explore` | Explore | `standard` | `maybe` |']),
+    () => parseSites(['| `build/explore` | Explore | `standard` | `maybe` | `no` |']),
     /Down must be `yes` or `no`/,
   );
   assert.throws(
-    () => parseSites(['| `build/plan-review` | Plan review | `deep` | `yes` |']),
+    () => parseSites(['| `build/plan-review` | Plan review | `deep` | `yes` | `no` |']),
     /resolves to tier "deep", which never moves down/,
   );
   assert.throws(
-    () => parseSites(['| `build/implement` | Implementer | `role:nodejs-implementer` | `yes` |']),
+    () =>
+      parseSites([
+        '| `build/implement` | Implementer | `role:nodejs-implementer` | `yes` | `no` |',
+      ]),
     /resolves to tier "deep", which never moves down/,
   );
 });
 
+// Invariant: only a literal `deep`, `Down: no` site may be a panel site, and its rendered line
+// defers the model to `model-selection`, so no prose ever names a panel model.
+test('parseSpawnSiteTable reads the Panel column and restricts panel sites to literal deep', () => {
+  const [site] = parseSites(['| `audit/panel` | Panel member | `deep` | `no` | `yes` |']);
+  assert.equal(site.panel, true);
+  assert.equal(parseSites(['| `audit/scan` | Scan | `deep` | `no` | `no` |'])[0].panel, false);
+  assert.throws(
+    () => parseSites(['| `audit/panel` | Panel member | `deep` | `no` | `maybe` |']),
+    /Panel must be `yes` or `no`/,
+  );
+  for (const tier of ['`standard`', '`role:nodejs-implementer`']) {
+    assert.throws(
+      () => parseSites([`| \`audit/panel\` | Panel member | ${tier} | \`no\` | \`yes\` |`]),
+      /panel site, which must name the literal tier `deep`/,
+      tier,
+    );
+  }
+  for (const harness of ['claude', 'codex', 'portable']) {
+    const line = renderSpawnSiteLine(site, harness, { mappings: MODEL_TIER_MAPPINGS });
+    assert.match(
+      line,
+      /^Tier `deep` panel member: .*model-selection.* \(rules: `model-tiers`\)\.$/,
+    );
+    assert.doesNotMatch(line, /model: /);
+    assert.deepEqual(findRenderedSpawnSiteLines(line), [1]);
+  }
+});
+
+test('validatePanelModelAllowlist requires both harnesses and rejects the primary deep model', () => {
+  const valid = { claude: ['fable'], codex: [] };
+  assert.equal(validatePanelModelAllowlist(valid, MODEL_TIER_MAPPINGS), valid);
+  assert.throws(
+    () => validatePanelModelAllowlist({ claude: [] }, MODEL_TIER_MAPPINGS),
+    /missing "codex"/,
+  );
+  assert.throws(
+    () => validatePanelModelAllowlist({ claude: ['opus'], codex: [] }, MODEL_TIER_MAPPINGS),
+    /equals the claude deep model/,
+  );
+  assert.throws(
+    () => validatePanelModelAllowlist({ claude: [], codex: ['gpt-6.1-sol'] }, MODEL_TIER_MAPPINGS),
+    /equals the codex deep model/,
+  );
+  assert.throws(
+    () =>
+      validatePanelModelAllowlist({ claude: ['fable', 'fable'], codex: [] }, MODEL_TIER_MAPPINGS),
+    /repeats a model/,
+  );
+  assert.throws(
+    () => validatePanelModelAllowlist({ claude: ['Bad Name'], codex: [] }, MODEL_TIER_MAPPINGS),
+    /invalid model name/,
+  );
+});
+
 test('reconcileSpawnSites requires every marker to be unique and known, and every row marked', () => {
-  const sites = parseSites(['| `build/explore` | Explore | `standard` | `yes` |']);
+  const sites = parseSites(['| `build/explore` | Explore | `standard` | `yes` | `no` |']);
   const marker = (id, context = 'tools/build.md', line = 3) => ({ id, context, line });
   assert.doesNotThrow(() => reconcileSpawnSites(sites, [marker('build/explore')]));
   assert.throws(
@@ -7420,7 +7483,7 @@ const renderSite = (row, harness) =>
   renderSpawnSiteLine(parseSites([row])[0], harness, { mappings: MODEL_TIER_MAPPINGS });
 
 test('renderSpawnSiteLine renders the target form for a standard site', () => {
-  const row = '| `build/explore` | Explore | `standard` | `yes` |';
+  const row = '| `build/explore` | Explore | `standard` | `yes` | `no` |';
   assert.equal(
     renderSite(row, 'claude'),
     'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`).',
@@ -7437,15 +7500,15 @@ test('renderSpawnSiteLine renders the target form for a standard site', () => {
 
 test('renderSpawnSiteLine flags a Down: no standard site and never a deep or mechanical one', () => {
   assert.equal(
-    renderSite('| `build/validate` | Validator | `standard` | `no` |', 'claude'),
+    renderSite('| `build/validate` | Validator | `standard` | `no` | `no` |', 'claude'),
     'Tier `standard`: pass `model: sonnet` and `effort: medium` on the Agent tool (rules: `model-tiers`, no downward move).',
   );
   assert.equal(
-    renderSite('| `build/plan-review` | Plan review | `deep` | `no` |', 'codex'),
+    renderSite('| `build/plan-review` | Plan review | `deep` | `no` | `no` |', 'codex'),
     'Tier `deep`: pass `model: gpt-6.1-sol` and `reasoning_effort: high` on the spawn (rules: `model-tiers`).',
   );
   assert.equal(
-    renderSite('| `cleanup/scan` | Scan | `mechanical` | `no` |', 'claude'),
+    renderSite('| `cleanup/scan` | Scan | `mechanical` | `no` | `no` |', 'claude'),
     'Tier `mechanical`: pass `model: haiku` and `effort: low` on the Agent tool (rules: `model-tiers`).',
   );
 });
@@ -7453,12 +7516,12 @@ test('renderSpawnSiteLine flags a Down: no standard site and never a deep or mec
 test('renderSpawnSiteLine renders several roles of one tier once and differing tiers per role', () => {
   assert.equal(
     renderSite(
-      '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` |',
+      '| `build/validate` | Validators | `role:code-validator,test-writer` | `no` | `no` |',
       'codex',
     ),
     'Tier `standard`: select the named role’s configured sidecar (rules: `model-tiers`, no downward move).',
   );
-  const mixed = '| `build/mixed` | Both | `role:nodejs-implementer,code-validator` | `no` |';
+  const mixed = '| `build/mixed` | Both | `role:nodejs-implementer,code-validator` | `no` | `no` |';
   assert.equal(
     renderSite(mixed, 'claude'),
     'Tier `deep` for {{AGENT:nodejs-implementer}}: pass `model: opus` and `effort: high` on the Agent tool. ' +
@@ -7476,7 +7539,7 @@ test('renderSpawnSiteLine renders several roles of one tier once and differing t
 
 test('renderSpawnSiteMarkers replaces each marker line, keeps its indentation, and rejects an unknown site', () => {
   const sites = new Map(
-    parseSites(['| `build/explore` | Explore | `standard` | `yes` |']).map((site) => [
+    parseSites(['| `build/explore` | Explore | `standard` | `yes` | `no` |']).map((site) => [
       site.id,
       site,
     ]),
@@ -7571,7 +7634,7 @@ const GENERATED = {
 };
 
 test('findProviderModelNames exempts only build-generated tier text in portable mode', () => {
-  const site = renderSite('| `build/explore` | Explore | `standard` | `no` |', 'portable');
+  const site = renderSite('| `build/explore` | Explore | `standard` | `no` | `no` |', 'portable');
   const generated = [
     'Intro.',
     renderModelTierTable('portable', MODEL_TIER_MAPPINGS),

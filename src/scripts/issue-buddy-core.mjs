@@ -43,6 +43,11 @@ const LIFECYCLE = [
   'firmo-issue-done',
 ];
 const NEEDS_PLANNING = ['effective-flow-needs-planning', 'firmo-needs-planning'];
+// Backlog-audit artifacts carry text derived from authors this pass never vetted, so they are
+// excluded by consumer: a goal epic or an obsolete mark is reported under `lifecycle-label`, and a
+// split hand-off, which belongs to `plan-issue`, under `plan-issue-comment`.
+const GOAL_AUDIT_LABELS = ['effective-flow-goal-epic', 'effective-flow-goal-obsolete'];
+const BACKLOG_AUDIT_SPLIT_MARKER = '<!-- effective-flow-backlog-audit-split ';
 const reportKeys = [
   'schemaVersion',
   'passId',
@@ -975,9 +980,16 @@ async function currentReads(context, input, repository) {
     const matching = pulls.filter(
       (pr) => pr.state === 'open' && prReference(pr, issue.number, repository, headRef),
     );
-    if (issue.labels.some((label) => LIFECYCLE.includes(label))) candidate.skip = 'lifecycle-label';
+    if (
+      issue.labels.some((label) => LIFECYCLE.includes(label) || GOAL_AUDIT_LABELS.includes(label))
+    )
+      candidate.skip = 'lifecycle-label';
     else if (
-      comments.some((comment) => comment.body.startsWith('<!-- effective-flow-plan-issues -->'))
+      comments.some(
+        (comment) =>
+          comment.body.startsWith('<!-- effective-flow-plan-issues -->') ||
+          comment.body.startsWith(BACKLOG_AUDIT_SPLIT_MARKER),
+      )
     )
       candidate.skip = 'plan-issue-comment';
     else if (matching.length) {

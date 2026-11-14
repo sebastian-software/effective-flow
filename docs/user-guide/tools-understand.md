@@ -1,9 +1,10 @@
 # Tool reference: Understand what needs doing
 
-This group covers analysis and planning – **before** any code is written. The five tools either
+This group covers analysis and planning – **before** any code is written. The tools either
 read only or keep their writes within the designated planning surfaces
-(`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, issue comments and labels, or
-approved native sub-issues); none changes source code, tests, or configuration. The one write
+(`.effective-flow/investigation/`, `<concept.dir>/`, `<plan.dir>/`, issue comments and labels,
+approved native sub-issues, or `backlog-audit`'s goal epic); none changes source code, tests, or
+configuration. The one write
 beyond those surfaces is `plan`'s optional
 [publication as a draft pull request](#publishing-the-plan-as-a-draft-pull-request), which commits
 the plan file alone onto a new branch from a temporary worktree and never touches your checkout.
@@ -393,6 +394,75 @@ completed dry run recommends `--publish` only when the repository is public.
 
 **Arguments:** `--publish`, `--max-judgments <n>`, and `--max-plans <n>`. Each flag is accepted once;
 numeric limits are positive decimal integers without leading zeroes.
+
+## `/effective-flow backlog-audit`
+
+**Purpose:** Audits every open tracker issue and open local plan in scope against **one goal you
+name**. A deep read-only assessment gives each item one verdict (`core`, `supporting`, `drift`,
+`oversized`, `overlap`, `obsolete-architecture` or `unclear`) and orders the `core` and `oversized`
+items as the **minimal goal path**. After one confirmation it maintains a single goal epic, hands
+oversized issues to `/effective-flow plan-issue`, and marks obsolete issues one by one. It never
+deletes, closes or unlabels anything, writes no code and commits nothing; local plans stay read-only.
+
+**Typical calls:**
+
+```text
+/effective-flow backlog-audit "Ship offline sync for the mobile app"
+/effective-flow backlog-audit "Ship offline sync" --label mobile --issues-only
+/effective-flow backlog-audit "Ship offline sync" --plans-only --panel
+```
+
+**Arguments:** the goal is required, one line of at most 300 characters; without one the tool asks
+once. It is your own instruction and is never read as an issue reference, even when it contains `#123`.
+
+| Flag                 | Effect                                                                               |
+| -------------------- | ------------------------------------------------------------------------------------ |
+| `--panel[=<models>]` | Adds second opinions from other models; without a list, `backlogAudit.panel` is used |
+| `--label <label>`    | Limits the issues in scope to one label                                              |
+| `--issues-only`      | Skips local plans                                                                    |
+| `--plans-only`       | Skips assessing tracker issues                                                       |
+
+Each flag occurs at most once, and `--issues-only` and `--plans-only` exclude each other. A panel
+member must come from the panel allowlist described in the
+[per-spawn model tiers ADR](../adr/per-spawn-model-tiers.md); a member that is not allowed or
+unavailable is reported as skipped and never replaces the primary verdict.
+
+**Flow:** the run is interactive and refuses to start from another workflow.
+
+1. **Entry.** It proves that you have write permission on the tracker before reading any issue, then
+   offers to bind an existing goal epic, create a new one under the slug it shows, or write none.
+2. **Inventory and assessment.** It snapshots the items in scope and stops, rather than truncating,
+   when the scope exceeds the bounds in [`backlogAudit`](configuration.md#block-backlogaudit); narrow
+   it with `--label`, `--issues-only` or `--plans-only`.
+3. **Report.** A report under `.effective-flow/backlog-audit/` and a chat summary show the goal, drift,
+   the minimal goal path, one table per verdict, and items flagged because an author or commenter has
+   no proven write permission.
+4. **Decisions.** Disputed or `unclear` verdicts are asked in one batched round; you can keep or
+   change each merged verdict.
+5. **Bundled gate.** One gate shows every epic and split entry with its exact payload; apply all, a
+   subset by entry id, or none.
+6. **Obsolete confirmation.** Each `obsolete-architecture` issue is asked separately with its
+   rationale, the cited repository files, or that you decided it without citations, and the exact
+   comment. Only a yes posts the comment and adds the label `effective-flow-goal-obsolete`; the issue
+   stays open.
+
+**Targets:** GitHub and Forgejo issues, or an external tracker through the connection you already
+have (see [Remote tracker](remote-tracker.md)). With `tracker.mode` local, unset or hidden, or when
+write permission cannot be proven, the run says why and falls back to a run that audits plans only
+and writes nothing, which is stricter than the `--plans-only` flag; `--issues-only` or `--label`
+then stops the run.
+
+**Trust threshold:** issue, comment and plan text is treated as quoted data that carries no
+instructions, and the orchestrator never reads it directly; an external tracker's issues pass it
+only unchanged into the helper, at intake and in the re-read before each write. Unlike the unattended tools, the audit
+also reads text from authors without write permission, because a goal audit that skips them would be
+incomplete; the permission of the person running it is the threshold, and every write is shown at the
+gate first. See the [input trust boundary ADR](../adr/input-trust-boundary.md).
+
+**Interplay:** a written goal epic continues with `/effective-flow apply <epic>`, a split hand-off with
+`/effective-flow plan-issue <split issue>`, and a recommended plan revision with
+`/effective-flow plan <plan-file>`; see [Tool flow](tool-flow.md). `issue-buddy` skips goal epics,
+obsolete marks and an issue with a backlog-audit split-marker comment.
 
 ## Further reading
 

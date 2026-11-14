@@ -455,8 +455,8 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Fourteen subsystems and 49 runtime scripts carry this today: the pairs
-  `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
+  misread as one. Fifteen subsystems and 51 runtime scripts carry this today: the pairs
+  `backlog-audit.mjs`/`backlog-audit-core.mjs`, `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
   `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`,
@@ -783,8 +783,8 @@ The owning contract also requires bounded complete history reachable from the ex
 snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
 identity through completion; changed history or closure requires a fresh attempt.
 
-Fourteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 49 files: eleven two-file subsystems, the runtime-state helper's twelve-file family,
+Fifteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 51 files: twelve two-file subsystems, the runtime-state helper's twelve-file family,
 the remote tracker's seven-file family, the pilot measurement three-file family, the two
 protected-validation helper modules, and the shared `process-runner.mjs`,
 `runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
@@ -1283,6 +1283,18 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   and the step the other setup modes offer are described in
   [Configuration](configuration.md#claude-code-allow-rules).
 
+- **Backlog audit.** Invoke it as `node <skill-root>/scripts/backlog-audit.mjs <operation>` with one
+  closed-schema JSON object on standard input; `BACKLOG_AUDIT_OPERATIONS` lists the operations
+  (permission proof, epic candidates, inventory, bounds, verdict validation with the panel merge,
+  write-set build and apply, the external call check, snapshot cleanup); a large input instead
+  arrives as `{"inputFile": …}`, a file below `.effective-flow/backlog-audit/inputs/` the helper
+  reads and removes. It emits one `{ ok, operation, data }` envelope and returns no third-party
+  issue or comment text: that text reaches assessors only as quoted files in a per-run snapshot
+  below `.effective-flow/backlog-audit/snapshots/`. Forge access goes through the remote-tracker
+  core; an external tracker is never contacted, its items arrive from the caller, its writes leave
+  as an ordered call list, and each call is cleared against the target the caller re-read. Every
+  write comes from a hash-bound write set with a closed action vocabulary. The `backlog-audit` source tool owns orchestration and the user gates.
+
 - **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
   closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
   verdict, report, and fingerprint operations; it emits one stable JSON envelope and fails closed
@@ -1302,7 +1314,7 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 42 identical, usable scripts,
+checks prove that all three installed payloads contain all 51 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, that
 `effective-flow-mechanics` allocates a suffixed report name and resolves a plan by slug in every
@@ -1675,6 +1687,13 @@ resolves dispatch settings from it, enforcing allowed moves and retry floors. Ev
 spawn marker adds its exact selection-site ID and a pointer to `shared/model-selection.md`.
 No second provider mapping or project configuration is introduced.
 
+The contract also carries `panelModels` and a per-site `panel` flag. `PANEL_MODEL_ALLOWLIST` in
+`build.mjs` lists, per harness, the models a panel member may use; `validatePanelModelAllowlist`
+rejects a repeated or invalid name and a model equal to that harness's `deep` model, and the
+provider-name guard treats allowlisted names like mapped ones. `select` requires `panelModel` at a
+panel site, rejects it elsewhere, and takes the effort from the `deep` mapping. See the
+[scoped exception](../adr/per-spawn-model-tiers.md).
+
 `select` emits the role/parameters, normalized expected model/effort and contract digest. `verify`
 recomputes that selection and reads a supported independent execution source. The initial adapter
 reads only an explicitly supplied exact Codex rollout file: no session discovery or directory
@@ -1700,12 +1719,14 @@ native eligibility and measurement owner.
   A mechanical variant is never a new retry default; deep roles have no tier variants. Named Codex
   roles must not be overridden with spawn model or effort parameters because the role file wins.
 - **Spawn sites.** `src/shared/model-tiers.md` holds the `## Spawn sites` table with the columns
-  `Site | Spawn | Tier | Down`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
+  `Site | Spawn | Tier | Down | Panel`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
   placeholders, `Tier` one of `` `mechanical` ``, `` `standard` ``, `` `deep` `` or
   `` `role:<agent>[,<agent>…]` `` (worker spawns resolve to the agents' `tier:`), and `Down`
   `` `yes` `` or `` `no` ``. `no` marks a site whose one-step margin may not move down; a site
   resolving only to `deep` must say `no`. A `standard` site with `Down: no` renders "no downward
-  move". Differing role tiers at one site render one clause per role. At the two Fast-adopting
+  move". `Panel` is `` `yes` `` or `` `no` ``; a `yes` site (today `backlog-audit/panel`) must be the
+  literal `deep` tier with `Down: no`, and takes its model from the panel allowlist instead of the tier
+  mapping. Differing role tiers at one site render one clause per role. At the two Fast-adopting
   initial-implementation sites the marker follows a sentence binding the rendered line to the
   Quality selectors; a Fast spawn's own values are owned by `execution-profiles`.
 - **Reconciliation.** Each marker id must be `<owner>/<id>` with the owner equal to the

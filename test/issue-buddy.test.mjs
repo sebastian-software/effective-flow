@@ -304,6 +304,38 @@ for (const reason of SKIP_REASONS.slice(0, 7))
     };
     await skip(t, reason, states[reason]);
   });
+// Invariant: backlog-audit artifacts never reach the unattended pass. Goal epics and obsolete
+// marks skip as lifecycle labels; a split hand-off skips like a plan-issues comment.
+for (const [name, values, reason] of [
+  [
+    'goal epic',
+    { issues: [issue(1, { labels: ['effective-flow-goal-epic'] })] },
+    'lifecycle-label',
+  ],
+  [
+    'obsolete mark',
+    { issues: [issue(1, { labels: ['effective-flow-goal-obsolete'] })] },
+    'lifecycle-label',
+  ],
+  [
+    'split marker',
+    {
+      comments: {
+        1: [
+          {
+            id: 1,
+            body: `<!-- effective-flow-backlog-audit-split date=2026-11-13 body=${'a'.repeat(64)} -->\nSplit.`,
+            user: { login: 'owner' },
+          },
+        ],
+      },
+    },
+    'plan-issue-comment',
+  ],
+])
+  test(`a backlog-audit ${name} skips the issue as ${reason}`, async (t) => {
+    await skip(t, reason, values);
+  });
 for (const [reason, verdict, currentMode] of [
   ['failed-exhausted', 'failed', 'publish'],
   ['unchanged-not-ready', 'not-ready', 'publish'],

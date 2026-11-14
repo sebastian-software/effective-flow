@@ -79,6 +79,11 @@ durable-follow-up-gate
 when: planning is about to propose a derived child issue
 ```
 
+```lazy-include
+backlog-audit-split
+when: Phase 2 step 1 reads a comment whose first line starts with `<!-- effective-flow-backlog-audit-split `
+```
+
 ## Project conventions
 
 If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning and user follow-up questions.
@@ -261,7 +266,8 @@ For each chosen issue in turn:
    carrying `<!-- effective-flow-plan-issues -->` or the backward-compatible
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such
-   a comment exists.
+   a comment exists. An issue labeled `effective-flow-goal-obsolete` is reported with that mark and
+   planned only after the user explicitly overrides it in this run; otherwise skip it unchanged.
    <!-- spawn-site:plan-issue/codebase-examination -->
 2. Apply the clarification methodology from `{{SKILL:plan}}` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
 3. Repeat the clarification until a reliable basis exists. Document unimportant remaining points as assumptions instead of blocking the process.
@@ -287,6 +293,7 @@ For each chosen issue in turn:
    safely. Labels pass through the same secret boundary and are rejected rather than redacted when
    sensitive. Do not attach `effective-flow-needs-planning`: every proposed child must already pass
    the implementation clarity gate. Admission alone does not make an unclear child implementable.
+   An issue with a backlog-audit split marker follows "Backlog-audit split" for its children.
    Allocate stable keys such as
    `child-01` once per parent and preserve existing keys on re-entry. If the target lacks any
    applicable guarantee, report decomposition as unavailable without creating a checklist or
