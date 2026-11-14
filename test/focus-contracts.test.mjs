@@ -647,8 +647,9 @@ test('Focus follow-up reports only material changes under the existing verdict r
 test('Focus follow-up repetition rule applies Looping to a repeated step', () => {
   // Invariant: a retry of the pattern= step after its reported failure or blocker without new
   // evidence is a Looping round under focus's own rule, judged by the leaf against the observer's
-  // own earlier report of the first locator and never overridden by the observer; new evidence and
-  // requested or waiting retries are exempt, and a Looping verdict from the leaf is reported once.
+  // own earlier report of the first locator and never overridden by the observer; the blocker tick
+  // sets the first pattern= locator; new evidence, waits and retries a later request explicitly
+  // names are exempt, a bare continuation is not, and a Looping verdict is reported once.
   const text = followUp();
   const rule = boundedSlice(text, '- **Repeated step:**', '- **No repeated correction:**');
   assertPhrases(rule, [
@@ -656,7 +657,10 @@ test('Focus follow-up repetition rule applies Looping to a repeated step', () =>
     'a repeated failure with new evidence, such as a different error, is not Looping.',
     "The comparison uses the observer's own earlier report of the first `pattern=` locator in this observer conversation;",
     "where that report names it but not the failure's cause, the tick reads the first `pattern=` locator within the page budget.",
-    "A retry the target's request explicitly asks for stays exempt, as do the waits above.",
+    'A tick reporting a newly actionable failure or blocker writes its locator as the first `pattern=` locator, never `none`.',
+    'A retry stays exempt only when a request after the reported failure explicitly asks to retry or rerun that step;',
+    'a bare continuation such as "Continue" asks for neither.',
+    'The waits above stay exempt.',
     "A tick dispatching the analysis leaf always hands it the `pattern=` locators, that earlier report and this rule as an application of Looping, and never overrides the leaf's verdict.",
     'When the leaf returns Looping, the tick reports it once and keeps `pattern=`; later ticks stay quiet while it holds.',
   ]);

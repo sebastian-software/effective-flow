@@ -178,16 +178,19 @@ reported once with its coverage gap; an unchanged Cannot judge is not repeated.
   evidence is reported once as a needed decision; a later tick treats it as reported when an assistant message of this loop reported it after the
   target's last change, and stays quiet until it changes or the cap ends the
   loop.
-- **Repeated step:** applying focus's Looping rule, a retry of the `pattern=` step after the reported
-  failure or blocker with no new evidence (same failing step, same reported cause) is a repeated
-  round, not a blocker wait; a repeated failure with new evidence, such as a different error, is not
-  Looping. The comparison uses the observer's own earlier report of the first `pattern=` locator in
-  this observer conversation; where that report names it but not the failure's cause, the tick
-  reads the first `pattern=` locator within the page budget. A retry the target's request
-  explicitly asks for stays exempt, as do the waits above. A tick dispatching the analysis leaf
-  always hands it the `pattern=` locators, that earlier report and this rule as an application of
-  Looping, and never overrides the leaf's verdict. When the leaf returns Looping, the tick reports
-  it once and keeps `pattern=`; later ticks stay quiet while it holds.
+- **Repeated step:** applying focus's Looping rule, a retry of the `pattern=` step after the
+  reported failure or blocker with no new evidence (same failing step, same reported cause) is a
+  repeated round, not a blocker wait; a repeated failure with new evidence, such as a different
+  error, is not Looping. A tick reporting a newly actionable failure or blocker writes its locator
+  as the first `pattern=` locator, never `none`. The comparison uses the observer's own earlier
+  report of the first `pattern=` locator in this observer conversation; where that report names it
+  but not the failure's cause, the tick reads the first `pattern=` locator within the page budget. A
+  retry stays exempt only when a request after the reported failure explicitly asks to retry or
+  rerun that step; a bare continuation such as "Continue" asks for neither. The waits above stay
+  exempt. A tick dispatching the analysis leaf always hands it the `pattern=` locators, that earlier
+  report and this rule as an application of Looping, and never overrides the leaf's verdict. When
+  the leaf returns Looping, the tick reports it once and keeps `pattern=`; later ticks stay quiet
+  while it holds.
 - **No repeated correction:** an equal `correction=` value on unchanged evidence is not repeated.
   After a correction, the next report first assesses whether the evidence changed.
 - **Ticks never send:** a warranted correction is shown once with a pointer to an interactive
