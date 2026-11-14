@@ -103,6 +103,7 @@ const EXPECTED_TOOLS = [
   'apply-review',
   'apply-review-commit-mechanics',
   'apply-review-remote',
+  'backlog-audit',
   'build',
   'cleanup',
   'commit',
@@ -131,6 +132,8 @@ const EXPECTED_TOOLS = [
 ];
 
 const EXPECTED_RUNTIME_SCRIPTS = [
+  'backlog-audit-core.mjs',
+  'backlog-audit.mjs',
   'build-run-core.mjs',
   'build-run.mjs',
   'claude-settings-core.mjs',
@@ -926,11 +929,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 51);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 53);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 51 approved runtime scripts',
+    'build.mjs must register exactly the 53 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

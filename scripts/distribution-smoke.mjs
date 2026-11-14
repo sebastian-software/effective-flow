@@ -31,6 +31,8 @@ import { stageDelivery } from './stage-delivery.mjs';
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
 const AGENT_PREFIX = 'effective-flow-';
 const RUNTIME_SCRIPT_FILES = [
+  'backlog-audit.mjs',
+  'backlog-audit-core.mjs',
   'delegation-envelope.mjs',
   'delegation-envelope-core.mjs',
   'build-run-core.mjs',

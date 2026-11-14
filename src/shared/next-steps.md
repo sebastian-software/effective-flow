@@ -134,57 +134,60 @@ backstop for one that carries open points.
 
 <!-- next-steps-table:start -->
 
-| Tool        | Condition                                                    | Then                                 | Or                                      |
-| ----------- | ------------------------------------------------------------ | ------------------------------------ | --------------------------------------- |
-| concept     | deep review declined                                         | {{SKILL:review}} <concept-file>      | —                                       |
-| concept     | deep review done, ready                                      | {{SKILL:plan}} <work package>        | {{SKILL:review}} <concept-file>         |
-| concept     | deep review done, open points remain                         | {{SKILL:review}} <concept-file>      | —                                       |
-| investigate | admitted defect with a clear cause                           | {{SKILL:fix}} <report>               | —                                       |
-| investigate | admitted structural problem                                  | {{SKILL:refactor}} <report>          | —                                       |
-| investigate | admitted missing functionality                               | {{SKILL:build}} <report>             | —                                       |
-| investigate | admitted pure documentation gap or behavior to be documented | {{SKILL:docs}} <report>              | —                                       |
-| plan        | deep review declined                                         | {{SKILL:apply}} <plan-file>          | {{SKILL:review}} <plan-file>            |
-| plan        | deep review done, ready                                      | {{SKILL:apply}} <plan-file>          | {{SKILL:plan}} <plan-file>              |
-| plan        | deep review done, open points remain                         | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
-| open-plans  | at least one open plan                                       | {{SKILL:apply}}                      | —                                       |
-| plan-issue  | released                                                     | {{SKILL:apply}} #<issue>             | {{SKILL:plan-issue}} <issue>            |
-| plan-issue  | retained for planning                                        | {{SKILL:plan-issue}} <issue>         | —                                       |
-| issue-buddy | dry run; would-publish issue in public repository            | {{SKILL:issue-buddy}} --publish      | —                                       |
-| issue-buddy | draft plan PR published; restore plan file from branch first | {{SKILL:build}} <plan-file>          | —                                       |
-| apply       | plan clarity gate failed                                     | {{SKILL:plan}} <plan-file>           | {{SKILL:review}} <plan-file>            |
-| apply       | findings applied, PR opened                                  | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <remaining source>      |
-| apply       | findings applied, delivery branch retained, no PR            | {{SKILL:pr}}                         | {{SKILL:apply}} <remaining source>      |
-| apply       | issues processed, PR opened                                  | {{SKILL:merge-gate}} <PR>            | {{SKILL:plan-issue}} <skipped issue>    |
-| apply       | issues skipped, no PR                                        | {{SKILL:plan-issue}} <skipped issue> | —                                       |
-| build       | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <findings report>       |
-| build       | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <findings report>       |
-| fix         | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <findings report>       |
-| fix         | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <findings report>       |
-| refactor    | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <findings report>       |
-| refactor    | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <findings report>       |
-| docs        | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
-| docs        | delivery branch retained, no PR                              | {{SKILL:pr}}                         | —                                       |
-| maintain    | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <offloaded report>      |
-| maintain    | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <offloaded report>      |
-| iterate     | PR mode                                                      | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
-| iterate     | local mode, delivery branch retained                         | {{SKILL:pr}}                         | —                                       |
-| review      | local report written                                         | {{SKILL:apply}} <report>             | —                                       |
-| review      | direct admitted findings published to a tracker              | {{SKILL:apply}} #<finding>…          | {{SKILL:apply}} <local security report> |
-| review      | plan file mode, ready                                        | {{SKILL:apply}} <plan-file>          | —                                       |
-| review      | plan file mode, open points remain                           | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
-| review      | concept file mode, ready                                     | {{SKILL:plan}} <work package>        | —                                       |
-| review      | concept file mode, open points remain                        | {{SKILL:review}} <concept-file>      | —                                       |
-| review      | pull-request mode                                            | {{SKILL:merge-gate}} <PR>            | {{SKILL:iterate}} <PR>                  |
-| deliver     | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | —                                       |
-| commit      | commit created on a non-base branch                          | {{SKILL:pr}}                         | —                                       |
-| pr          | always                                                       | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
-| merge-gate  | blocked by review notes                                      | {{SKILL:iterate}} <PR>               | {{SKILL:merge-gate}} <PR>               |
-| merge-gate  | merged but at least one linked issue is open or unobservable | {{SKILL:merge-gate}} <PR>            | —                                       |
-| merge-gate  | merged                                                       | {{SKILL:open-plans}}                 | —                                       |
-| setup       | staged changes exist                                         | {{SKILL:commit}}                     | —                                       |
-| setup       | status report found a setup-fixable problem                  | {{SKILL:setup}} <setup argument>     | {{SKILL:setup}} <second setup argument> |
-| cleanup     | staged removals exist                                        | {{SKILL:commit}}                     | {{SKILL:setup}}                         |
-| cleanup     | config values referred to setup                              | {{SKILL:setup}}                      | —                                       |
+| Tool          | Condition                                                    | Then                                 | Or                                      |
+| ------------- | ------------------------------------------------------------ | ------------------------------------ | --------------------------------------- |
+| concept       | deep review declined                                         | {{SKILL:review}} <concept-file>      | —                                       |
+| concept       | deep review done, ready                                      | {{SKILL:plan}} <work package>        | {{SKILL:review}} <concept-file>         |
+| concept       | deep review done, open points remain                         | {{SKILL:review}} <concept-file>      | —                                       |
+| investigate   | admitted defect with a clear cause                           | {{SKILL:fix}} <report>               | —                                       |
+| investigate   | admitted structural problem                                  | {{SKILL:refactor}} <report>          | —                                       |
+| investigate   | admitted missing functionality                               | {{SKILL:build}} <report>             | —                                       |
+| investigate   | admitted pure documentation gap or behavior to be documented | {{SKILL:docs}} <report>              | —                                       |
+| plan          | deep review declined                                         | {{SKILL:apply}} <plan-file>          | {{SKILL:review}} <plan-file>            |
+| plan          | deep review done, ready                                      | {{SKILL:apply}} <plan-file>          | {{SKILL:plan}} <plan-file>              |
+| plan          | deep review done, open points remain                         | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
+| open-plans    | at least one open plan                                       | {{SKILL:apply}}                      | —                                       |
+| plan-issue    | released                                                     | {{SKILL:apply}} #<issue>             | {{SKILL:plan-issue}} <issue>            |
+| plan-issue    | retained for planning                                        | {{SKILL:plan-issue}} <issue>         | —                                       |
+| issue-buddy   | dry run; would-publish issue in public repository            | {{SKILL:issue-buddy}} --publish      | —                                       |
+| issue-buddy   | draft plan PR published; restore plan file from branch first | {{SKILL:build}} <plan-file>          | —                                       |
+| backlog-audit | goal epic written                                            | {{SKILL:apply}} <epic>               | {{SKILL:plan-issue}} <split issue>      |
+| backlog-audit | split handed off, no epic written                            | {{SKILL:plan-issue}} <split issue>   | —                                       |
+| backlog-audit | plan revision recommended                                    | {{SKILL:plan}} <plan-file>           | —                                       |
+| apply         | plan clarity gate failed                                     | {{SKILL:plan}} <plan-file>           | {{SKILL:review}} <plan-file>            |
+| apply         | findings applied, PR opened                                  | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <remaining source>      |
+| apply         | findings applied, delivery branch retained, no PR            | {{SKILL:pr}}                         | {{SKILL:apply}} <remaining source>      |
+| apply         | issues processed, PR opened                                  | {{SKILL:merge-gate}} <PR>            | {{SKILL:plan-issue}} <skipped issue>    |
+| apply         | issues skipped, no PR                                        | {{SKILL:plan-issue}} <skipped issue> | —                                       |
+| build         | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <findings report>       |
+| build         | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <findings report>       |
+| fix           | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <findings report>       |
+| fix           | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <findings report>       |
+| refactor      | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <findings report>       |
+| refactor      | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <findings report>       |
+| docs          | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
+| docs          | delivery branch retained, no PR                              | {{SKILL:pr}}                         | —                                       |
+| maintain      | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | {{SKILL:apply}} <offloaded report>      |
+| maintain      | delivery branch retained, no PR                              | {{SKILL:pr}}                         | {{SKILL:apply}} <offloaded report>      |
+| iterate       | PR mode                                                      | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
+| iterate       | local mode, delivery branch retained                         | {{SKILL:pr}}                         | —                                       |
+| review        | local report written                                         | {{SKILL:apply}} <report>             | —                                       |
+| review        | direct admitted findings published to a tracker              | {{SKILL:apply}} #<finding>…          | {{SKILL:apply}} <local security report> |
+| review        | plan file mode, ready                                        | {{SKILL:apply}} <plan-file>          | —                                       |
+| review        | plan file mode, open points remain                           | {{SKILL:review}} <plan-file>         | {{SKILL:plan}} <plan-file>              |
+| review        | concept file mode, ready                                     | {{SKILL:plan}} <work package>        | —                                       |
+| review        | concept file mode, open points remain                        | {{SKILL:review}} <concept-file>      | —                                       |
+| review        | pull-request mode                                            | {{SKILL:merge-gate}} <PR>            | {{SKILL:iterate}} <PR>                  |
+| deliver       | PR opened                                                    | {{SKILL:merge-gate}} <PR>            | —                                       |
+| commit        | commit created on a non-base branch                          | {{SKILL:pr}}                         | —                                       |
+| pr            | always                                                       | {{SKILL:merge-gate}} <PR>            | {{SKILL:review}} <PR>                   |
+| merge-gate    | blocked by review notes                                      | {{SKILL:iterate}} <PR>               | {{SKILL:merge-gate}} <PR>               |
+| merge-gate    | merged but at least one linked issue is open or unobservable | {{SKILL:merge-gate}} <PR>            | —                                       |
+| merge-gate    | merged                                                       | {{SKILL:open-plans}}                 | —                                       |
+| setup         | staged changes exist                                         | {{SKILL:commit}}                     | —                                       |
+| setup         | status report found a setup-fixable problem                  | {{SKILL:setup}} <setup argument>     | {{SKILL:setup}} <second setup argument> |
+| cleanup       | staged removals exist                                        | {{SKILL:commit}}                     | {{SKILL:setup}}                         |
+| cleanup       | config values referred to setup                              | {{SKILL:setup}}                      | —                                       |
 
 <!-- next-steps-table:end -->
 

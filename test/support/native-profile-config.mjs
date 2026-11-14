@@ -76,3 +76,14 @@ export const MODEL_TIER_MAPPINGS = (() => {
     ),
   );
 })();
+
+// The per-harness panel-model allowlist, in the shape `validatePanelModelAllowlist` accepts.
+export const PANEL_MODEL_ALLOWLIST = (() => {
+  const text = declaration('PANEL_MODEL_ALLOWLIST');
+  const list = (harness) => {
+    const match = text.match(new RegExp(`${harness}: Object\\.freeze\\(\\[([^\\]]*)\\]\\)`));
+    assert.ok(match, `build.mjs must declare the ${harness} panel models`);
+    return Object.freeze([...match[1].matchAll(/'([^']+)'/g)].map(([, model]) => model));
+  };
+  return Object.freeze({ claude: list('claude'), codex: list('codex') });
+})();

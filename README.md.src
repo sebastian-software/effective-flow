@@ -15,6 +15,9 @@ session changes into coherent commits on a fresh branch and opens a pull request
 `issue-buddy` reviews trusted GitHub issues into implementation plans, defaults to a local dry run,
 and publishes draft, plan-only pull requests with `--publish` only for public repositories; private
 and unknown repositories remain dry-run-only. See the [Issue Buddy guide](docs/user-guide/tools-understand.md#effective-flow-issue-buddy).
+`backlog-audit` checks every open issue and open plan against one goal you name, marks drift and the
+minimal path to that goal, and, after your confirmation, maintains one goal epic; it deletes and closes
+nothing. See the [Backlog Audit guide](docs/user-guide/tools-understand.md#effective-flow-backlog-audit).
 `/effective-flow retro` reviews the current visible conversation, one supplied transcript export, or,
 when the running host supports it and an exact identity plus granted account/project scope are available,
 one native historical session, then returns a small, evidence-backed set of environmental improvements

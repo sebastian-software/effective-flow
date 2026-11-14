@@ -15,6 +15,9 @@ the host's model catalog, the parent model, a worker name, or a remembered table
    use `false`. A missing model in the host's advertised catalog does not change the selection.
    For an unnamed handoff with no declared site, use explicit `fallback: true` and a `reason`;
    this resolves the existing standard fallback. Never use it to bypass an unknown site or role.
+   A panel site (`Panel: yes` in `model-tiers`) requires `panelModel`: one model from the
+   contract's panel allowlist for that harness. The helper rejects it at any other site, outside
+   the allowlist, or equal to the harness's `deep` model, and takes the effort from `deep`.
 2. Omit `tier` for the default. A permitted move supplies `tier` and a concrete `reason`, retained
    in the handoff and run summary. A new attempt after failure supplies `retry: true`; a resume
    of the same attempt is not a retry and retains its selection. The helper enforces the owning

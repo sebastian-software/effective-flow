@@ -7,6 +7,7 @@ issue, or emitting an executable outward handoff. A direct user request, the act
 and a roadmap commitment explicitly authorized before the observation are primary work and do not
 pass through this gate. An observation cannot authorize itself by being renamed as roadmap work;
 only a later user-initiated explicit instruction can establish new primary scope.
+A valid backlog-audit split marker (`backlog-audit-split`) is such a user-confirmed instruction.
 Primary/current-scope status does not exempt the approach from outcome-continuation reassessment;
 admission and permission to continue are separate decisions.
 

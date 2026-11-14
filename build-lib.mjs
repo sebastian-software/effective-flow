@@ -342,6 +342,44 @@ export function validateModelTierMappings(mappings, { context } = {}) {
   return mappings;
 }
 
+// The host-native models a panel site may name, per harness (`PANEL_MODEL_ALLOWLIST` in build.mjs).
+// A panel member assesses beside the primary `deep` assessor, so a model equal to that harness's
+// deep model would only repeat it and is rejected; an empty list disables the panel there.
+export function validatePanelModelAllowlist(allowlist, mappings, { context } = {}) {
+  assertExactKeys(
+    allowlist,
+    Object.keys(MODEL_TIER_HARNESS_KEYS),
+    'Panel model allowlist',
+    context,
+  );
+  for (const harness of Object.keys(MODEL_TIER_HARNESS_KEYS)) {
+    const models = allowlist[harness];
+    if (!Array.isArray(models)) {
+      throw new Error(
+        `Panel model allowlist for ${harness} must be an array${contextSuffix(context)}`,
+      );
+    }
+    if (new Set(models).size !== models.length) {
+      throw new Error(
+        `Panel model allowlist for ${harness} repeats a model${contextSuffix(context)}`,
+      );
+    }
+    for (const model of models) {
+      if (typeof model !== 'string' || !/^[a-z][a-z0-9.-]{0,63}$/.test(model)) {
+        throw new Error(
+          `Panel model allowlist for ${harness} holds an invalid model name${contextSuffix(context)}`,
+        );
+      }
+      if (model === mappings.deep[harness].model) {
+        throw new Error(
+          `Panel model "${model}" equals the ${harness} deep model${contextSuffix(context)}; a panel member must differ from the primary assessor`,
+        );
+      }
+    }
+  }
+  return allowlist;
+}
+
 // Resolve an agent source's default tier from its frontmatter. The tier is the single source of
 // the native sidecar's model and effort, so a missing, unknown or duplicate `tier:` and any legacy
 // per-harness model/effort field fail.
@@ -424,7 +462,7 @@ export function collectSpawnSiteMarkers(text, { owner, context } = {}) {
 }
 
 export const MODEL_TIER_SPAWN_SITES_HEADING = '## Spawn sites';
-export const SPAWN_SITE_TABLE_HEADERS = Object.freeze(['Site', 'Spawn', 'Tier', 'Down']);
+export const SPAWN_SITE_TABLE_HEADERS = Object.freeze(['Site', 'Spawn', 'Tier', 'Down', 'Panel']);
 const SPAWN_SITE_SEPARATOR_CELL_RE = /^:?-{3,}:?$/;
 
 function spawnSiteTableCells(line, where) {
@@ -450,8 +488,10 @@ function spawnSiteCode(cell, column, where) {
 
 // Parse the `## Spawn sites` table of model-tiers.md into resolved sites. `agentTiers` maps every
 // agent source name to its `tier:`; a `role:` row resolves to those tiers. An empty table (header
-// and separator only) is valid. Each site becomes `{ id, spawn, clauses, downAllowed, line }`,
-// where `clauses` lists `{ role, tier }` (`role` null for a literal tier) in table order.
+// and separator only) is valid. Each site becomes `{ id, spawn, clauses, downAllowed, panel, line }`,
+// where `clauses` lists `{ role, tier }` (`role` null for a literal tier) in table order. A panel
+// site (`Panel: yes`) starts an additional assessor on a host-native model from the build's panel
+// allowlist, so it must be the literal `deep` tier and never move down.
 export function parseSpawnSiteTable(markdown, { agentTiers, context } = {}) {
   if (!(agentTiers instanceof Map)) {
     throw new Error(`parseSpawnSiteTable requires agentTiers${contextSuffix(context)}`);
@@ -495,7 +535,8 @@ export function parseSpawnSiteTable(markdown, { agentTiers, context } = {}) {
   const separator = table[1];
   if (
     !separator ||
-    spawnSiteTableCells(separator.text, at(separator.line)).length !== 4 ||
+    spawnSiteTableCells(separator.text, at(separator.line)).length !==
+      SPAWN_SITE_TABLE_HEADERS.length ||
     !spawnSiteTableCells(separator.text, at(separator.line)).every((cell) =>
       SPAWN_SITE_SEPARATOR_CELL_RE.test(cell),
     )
@@ -510,10 +551,12 @@ export function parseSpawnSiteTable(markdown, { agentTiers, context } = {}) {
   for (const { text, line } of table.slice(2)) {
     const where = at(line);
     const cells = spawnSiteTableCells(text, where);
-    if (cells.length !== 4) {
-      throw new Error(`Spawn-site table row must have 4 cells (in ${where}): ${text}`);
+    if (cells.length !== SPAWN_SITE_TABLE_HEADERS.length) {
+      throw new Error(
+        `Spawn-site table row must have ${SPAWN_SITE_TABLE_HEADERS.length} cells (in ${where}): ${text}`,
+      );
     }
-    const [siteCell, spawn, tierCell, downCell] = cells;
+    const [siteCell, spawn, tierCell, downCell, panelCell] = cells;
     const id = spawnSiteCode(siteCell, 'Site', where);
     if (!SPAWN_SITE_ID_RE.test(id)) {
       throw new Error(`Malformed spawn-site id "${id}" (in ${where}); expected <owner>/<id>`);
@@ -556,7 +599,19 @@ export function parseSpawnSiteTable(markdown, { agentTiers, context } = {}) {
         `Spawn-site "${id}" resolves to tier "deep", which never moves down; its Down must be \`no\` (in ${where})`,
       );
     }
-    sites.push({ id, spawn, clauses, downAllowed: down === 'yes', line });
+    const panel = spawnSiteCode(panelCell, 'Panel', where);
+    if (panel !== 'yes' && panel !== 'no') {
+      throw new Error(`Spawn-site "${id}" Panel must be \`yes\` or \`no\` (in ${where}): ${panel}`);
+    }
+    if (
+      panel === 'yes' &&
+      (clauses.length !== 1 || clauses[0].role !== null || clauses[0].tier !== 'deep')
+    ) {
+      throw new Error(
+        `Spawn-site "${id}" is a panel site, which must name the literal tier \`deep\` (in ${where})`,
+      );
+    }
+    sites.push({ id, spawn, clauses, downAllowed: down === 'yes', panel: panel === 'yes', line });
   }
   return sites;
 }
@@ -606,6 +661,25 @@ function tierValuesPhrase(tier, harness, mappings, context) {
   throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
 }
 
+// A panel site's model is chosen per member from the build's panel allowlist through
+// `model-selection`, so its line names only the deep effort and never a model.
+function panelValuesPhrase(harness, mappings, context) {
+  const { claude, codex } = mappings.deep;
+  if (harness === 'claude') {
+    return `pass the \`model-selection\` panel model and \`effort: ${claude.effort}\` on the Agent tool`;
+  }
+  if (harness === 'codex') {
+    return `pass the \`model-selection\` panel model and \`reasoning_effort: ${codex.reasoning_effort}\` on the spawn`;
+  }
+  if (harness === 'portable') {
+    return (
+      `the \`model-selection\` panel model; Claude Code Agent tool \`effort: ${claude.effort}\`; ` +
+      `Codex spawn \`reasoning_effort: ${codex.reasoning_effort}\``
+    );
+  }
+  throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+}
+
 // The shape of a rendered spawn-site line; the portable provider-name guard exempts inside it only
 // the exact two-harness values phrases rendered from the mappings.
 const RENDERED_SPAWN_SITE_LINE_RE =
@@ -625,6 +699,9 @@ export function renderSpawnSiteLine(site, harness, { mappings, context } = {}) {
   const tiers = [...new Set(site.clauses.map(({ tier }) => tier))];
   const noDown = !site.downAllowed && tiers.includes('standard');
   const suffix = ` (rules: \`model-tiers\`${noDown ? ', no downward move' : ''}).`;
+  if (site.panel) {
+    return `Tier \`deep\` panel member: ${panelValuesPhrase(harness, mappings, context)}${suffix}`;
+  }
   const values = (tier, role) =>
     harness === 'codex' && role
       ? 'select the named role’s configured sidecar'
