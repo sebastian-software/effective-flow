@@ -475,6 +475,12 @@ gate run inline generates it at the start. Use
   any sender-contract error code; and every returned outcome the receiver rule of `## Returned outcome record` in `merge-gate-configured-reviewer` counted, the
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
   `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
+- per "Repair checkpoints": the once-per-run scope record (merge-base SHA, head SHA, paths) or the
+  undetermined scope read with its code; per delegated round its `before` and `after` heads, the
+  `scopeIdentifiers`, and `record`'s round data – attribution with foreign commits, post-check,
+  attempts, inert entries; the latest repair state with that call's `data.counts`, replaced on every
+  call and never edited by hand; and every wait and gate base merge since the previous call, as
+  `events` for the next `evaluate`
 - when the configured-reviewer route is loaded, the additional records under
   `## Configured reviewer wisdom records` in that fragment
 - per round, the **no-check-list waiver** of Phase 4: whether it was posed, skipped because the
@@ -760,8 +766,9 @@ a re-read shows a new failure – the current round **ends** there and the run c
 round under "Round accounting". Every wait and every repair is therefore counted and bounded, and no
 run can push an unbounded number of commits onto someone's pull request.
 
-1. **Bring the head branch forward.** One local operation – merge `origin/<base>` into the head
-   branch – has two triggers. First, before either is evaluated, where the wisdom file holds a
+1. **Bring the head branch forward.** First apply the stop check of "Repair checkpoints". One local
+   operation – merge `origin/<base>` into the head branch – has two triggers. Then, before either is
+   evaluated, where the wisdom file holds a
    `different-commit` base-merge-unavailable record and the run's latest check result reports
    `BEHIND` or `DIRTY`, apply the report-only run end. **Trigger (a):** the forge reports `BEHIND`
    or `DIRTY` and the wisdom file holds no base-merge-unavailable record; `DIRTY` only states in
@@ -917,7 +924,8 @@ run can push an unbounded number of commits onto someone's pull request.
      repetition, not a repeated question.
    - An **unanswered or non-interactive** run ends there with a report and never merges.
    - A **relayed** run asks through `BLOCKED-USER checks-pending` under the same once-per-run record.
-3. **Failed checks.** First, where step 2's `pr-checks-wait` was the last read, perform one
+3. **Failed checks.** First apply the stop check of "Repair checkpoints". Then, where step 2's
+   `pr-checks-wait` was the last read, perform one
    `pr-status-read`; on the T3 path of `host-pr-watch` the pending read already is one. Where that
    read shows a check failing as step 4 defines it, reports neither `BEHIND` nor `DIRTY`, and the
    wisdom file holds neither a trigger-(b) record nor a base-merge-unavailable record, run step
@@ -1009,6 +1017,77 @@ merge.
 
 On the T3 path of `host-pr-watch`, a resume consumes rounds as that fragment's "Resume" states; its
 same-round re-suspensions for a progress or unchanged wake are the exceptions to this section.
+
+**Repair attempts are accounted separately and change nothing above.** A repair attempt is a
+returned `{{SKILL:iterate}}` commit the helper attributes to one minted identifier: one per
+`implemented` reviewer item with its own SHA in the attributed range, and one per failing check a
+free-text CI repair with a returned SHA names. A CI wait, a bot wait, a review resubmission, a
+resolved delegation without a head movement, and a gate base merge – either trigger, or a conflict
+resolution – consume **zero** attempts, and correction-bucket commits count for no cause. CI
+attempts are counted and reported and never stop the run. A reviewer cause whose **second**
+verified attempt is still blocking stops it per "Repair checkpoints" step 4. The repair state lives
+in the wisdom file for this run only; a new invocation starts fresh.
+
+#### Repair checkpoints
+
+Every call is `node <skill-root>/scripts/repair-attempt.mjs <operation>` with one JSON object on
+standard input, `cwd` `RUNTIME_STATE_ROOT` and `base` the pull request's base branch; `state` is
+the stored repair state, absent before the first `record`. After every `record` and `evaluate`,
+store `data.state` with that call's `data.counts`, replacing the previous pair. A run that never
+delegates makes none. Both calls join on one encoding: `reviewer` is the configured login as
+"Matching a configured login" in `merge-gate-configured-reviewer` collapsed it, and a durable key is
+the one string given to `build` as `durableKey` – a thread's forge thread ID, or a body finding's
+review id, written `<review id>#<ordinal>` with the 1-based finding ordinal where the review carries
+several.
+
+1. **Scope read, once.** Immediately before the run's first delegation is built, run the ancestry
+   check's fetches 1 and 2, then `scope-read` with `head` the `headSha` of the run's latest check
+   result, or with the stored record as `stored` on a resume or re-dispatch, which never recomputes it.
+   Store `data.scope` – PR paths with their `mergeBase` and `head` – as the once-per-run scope record
+   and give it to every `build` as `authorizedScope`. `undetermined` or a failed call blocks
+   delegation only: record the code once, and every later delegation site then delegates nothing,
+   as Phase 3 does under an active human-comment guard, while the run otherwise proceeds. The cause
+   that needed the delegation stays open and keeps blocking the merge, so the existing paths end
+   the run without one; a run that needs no delegation merges as today. Phase 6 names the code.
+2. **Head before dispatch.** Immediately before each dispatch, record the `headSha` of one fresh
+   `pr-status-read` as `before`, except that the dispatch consuming an `iterate-approval` answer
+   keeps the `before` stored for the dispatch that returned the question.
+3. **Record after each round.** After every return of a dispatched round, `ABORT` included and
+   `BLOCKED-USER` excepted – its round is recorded once, on the return of the dispatch consuming
+   its answer –, take
+   `after` from the next fresh `pr-status-read` and run the ancestry check's fetches 1 and 2. Run
+   `record` with `scope`, `round`, `before`, `after`, `gateMerges` (every base-merge SHA this run pushed),
+   `minted`
+   `{"items":[{"identifier","key","reviewer","outcome"}],"freeText","correction"}` – per delegated
+   item its identifier, `key` its `durableKey` from the `build` map, its configured reviewer and its
+   outcome under the receiver rule, and `freeText` and `correction` from `scopeIdentifiers` –, a CI
+   repair's failing check names as `ciChecks`, and the return's entries as `returned` and
+   `scopeExpansion`, with `scopeLineMissing` per the delegation contract's receiver rule. Store
+   `data.round` too. The helper attributes
+   `git rev-list <before>..<after> --not origin/<base>` (anything but returned SHAs and gate merges is
+   foreign) and post-checks the paths of every commit actually made, returned or foreign, against
+   the scope – a foreign commit that passes only leaves the round `uncertain`; `decision: stop` or a
+   failed call ends the run per step 4. Where `data.round.reasons` is exactly
+   `["returned-outside-range"]`, a lagging forge head may have cut the range short: re-read
+   `pr-status-read` once and, on a moved `headSha`, repeat fetch 2 and run the same `record` again
+   with it as `after`. The helper replaces the round only when the new head descends from the old;
+   otherwise the round stays `uncertain`.
+4. **Stop check and run end.** Where the stored state carries a `stop` – it is sticky – end the run.
+   Ending the run at any repair checkpoint means no further delegation, base merge or merge, no
+   revert and no force push, and Phase 6 reports why. A stop never merges. Phase 2 step 1 runs this
+   check before either trigger, Phase 2 step 3 before its delegation, and configured-reviewer
+   Phase 3 step 5 before its own.
+5. **Evaluate.** "Repair evaluation per configured reviewer" runs `evaluate` with `head`, `events`
+   `[{"type","sha"}]` – `type` one of `ci-wait`, `bot-wait`, `review-wait`, `review-resubmission`
+   and `base-merge`, `sha` only for a base merge –, and `observations`
+   `[{"reviewer","head","findings":[{"key","anchor"}]}]`, `anchor` `null` or
+   `{"path","line","startLine","lineOutdated"}` from the normalized thread read, `startLine` only
+   where it states one. `decision: stop` or a failed call ends the run per step 4.
+
+None of this relaxes open blocking findings, the verified-head merge guard, the required
+independent review – a newly touched "Fixed floor" boundary of `shared/review-depth.md` is no
+expansion and keeps its pre-commit review – `mergeGate.completion`, or write and publication
+authority.
 
 ### Phase 3: Automatic reviewer round
 
@@ -1153,6 +1232,11 @@ reservation exactly once. On the T3 path of `host-pr-watch`, step 1 keeps the wi
 `SUSPENDED host-pr-watch` return as on `BLOCKED-USER`, and a report naming a pending wait follows
 that fragment's report-and-stop path.
 
+```lazy-include
+merge-gate-repair-report
+when: Phase 6 reports a run whose repair state carries a stop, before step 1 deletes the wisdom file
+```
+
 1. Delete the wisdom file – except on a `BLOCKED-USER` return – and every delegation message file
    and snapshot this run wrote that is still present – after a sender stop, the one whose delegation
    never went out.
@@ -1191,6 +1275,9 @@ that fragment's report-and-stop path.
      result relayed verbatim; every item or instruction `build` refused, with its reason;
      and, where a delegation could not be built or validated, the sender-side stop with the helper's
      error code;
+   - beside them, the repair attempts per reviewer cause and the CI attempts per check from the
+     latest call's `data.counts`, every `uncertain` round with its reasons, and an undetermined scope
+     read as the reason delegation was blocked;
    - **every inert returned outcome** – one naming an identifier no round recorded – by its
      identifier and a count, bounded and never reproduced verbatim per `## Returned outcome record` in `merge-gate-configured-reviewer`; it
      blocked nothing and nothing went back onto the pull request about it, so this summary is where
@@ -1322,7 +1409,8 @@ that fragment's report-and-stop path.
   write **onto the pull request's discussion**; the head **branch** is bounded by "Git write
   boundary".
 - Give every `build` input `summaryComment: suppressed`, `reviewGuard: established`,
-  `nextSteps: suppressed`, this run's `runState` and its `languageContext`, plus an approval round's
+  `nextSteps: suppressed`, this run's `runState`, its `languageContext` and the stored scope record
+  as `authorizedScope`, plus an approval round's
   `approvedOutcomes` whenever it delegates a thread or body item; the helper places each control line, the `Boundary token:` line and the
   whole item manifest **above** the body delimiter and every caller-supplied body **below** it. The
   gate writes none of those lines itself.
@@ -1363,6 +1451,9 @@ that fragment's report-and-stop path.
   a later round that times out again reports the pending checks and asks nothing.
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – every wait, repair, Phase-2 restart, and Phase-4 return into Phase 3 consumes one.
+- Account repair attempts only through `repair-attempt` per "Repair checkpoints": read the scope
+  once before the first delegation and never recompute it, record every delegated round, and end
+  the run on a stop per its step 4.
 - Post no summary comment of your own; the run summary goes to the user in chat.
 - In hidden mode (`visibility: hidden`), publish no text naming Effective Flow, and leave
   `{{SKILL:iterate}}`'s processed-thread ledger in place: it is not a delegation message.

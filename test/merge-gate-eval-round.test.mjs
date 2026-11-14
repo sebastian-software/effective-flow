@@ -18,7 +18,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { test } from 'node:test';
 import { pathToFileURL } from 'node:url';
 import {
@@ -312,6 +312,12 @@ function copyRestampedResults(resultsDir) {
         const metadataPath = stampPath.replace(/\.build\.json$/, '.metadata.json');
         const metadata = JSON.parse(readFileSync(metadataPath, 'utf8'));
         metadata.buildDigest = identity.digest;
+        // The stamp now names the working tree's fixture, and `verify` requires the metadata to
+        // bind the same fixture digest as its stamp. Left at the archived digest, any fixture edit
+        // in the working tree turns every re-stamped run of that scenario into invalid evidence,
+        // which is not what these tests are about.
+        metadata.fixtureDigest =
+          identity.scenario_inputs.files[`evals/merge-gate/fixtures/${scenario}.json`];
         // The archive was recorded under whatever profile the suite pinned at the time, and the
         // publication path holds every carried-forward slot to the current pin. Rewriting both
         // copies — sealing keeps them equal — keeps these tests about the stamps they re-point.
@@ -341,11 +347,104 @@ const UNRECORDED_SCENARIO_LOGS = Object.freeze({
   // The two that attempt the merge: a preview, then exactly one applied call.
   'no-ci-policy-unattended-merges': ['pr-merge', { operation: 'pr-merge', apply: true }],
   'no-ci-policy-merge-failure-reports': ['pr-merge', { operation: 'pr-merge', apply: true }],
+  // The two repair scenarios run head-indexed, sequenced fixtures, so their logs are lifecycle logs,
+  // and each run pairs a repair trace: two delegations, plus the one gate push between them where the
+  // composition holds one. The merging one applies its merge after the second delegation; the
+  // stopping one reads the threads after it and merges nothing.
+  'repair-after-base-merge-merges': {
+    operations: ['pr-merge', { operation: 'pr-merge', apply: true }],
+    trace: ['dispatch:seed>repair-1', 'push:repair-1>base-merge', 'dispatch:base-merge>repair-2'],
+  },
+  'repeated-ineffective-repair-stops': {
+    operations: ['review-threads-read'],
+    trace: ['dispatch:seed>repair-1', 'dispatch:repair-1>repair-2'],
+  },
 });
 
+const SYNTHETIC_REPAIR_THREADS = ['PRRT_kwDOrepairCauseOne', 'PRRT_kwDOrepairCauseTwo'];
+
+// One synthetic repair trace line per `kind:before>after` step, in the shape the echo writes.
+function syntheticRepairTrace(steps, projectRoot) {
+  let dispatch = 0;
+  return steps.map((step, index) => {
+    const [kind, heads] = step.split(':');
+    const [before, after] = heads.split('>');
+    const common = {
+      schema: 'effective-flow/merge-gate-repair-trace/v1',
+      seq: index + 1,
+      kind,
+      at: `2026-10-16T00:00:0${index + 1}.000Z`,
+    };
+    if (kind === 'push') {
+      return {
+        ...common,
+        cwd: resolve(dirname(projectRoot), 'remote.git'),
+        ref: 'refs/heads/effective-flow/build/sync-retry-limits',
+        merge: true,
+        firstParent: before,
+        secondParentIsBase: true,
+        label: after,
+      };
+    }
+    const identifier = String.fromCharCode(65 + dispatch).repeat(32);
+    const thread = SYNTHETIC_REPAIR_THREADS[dispatch];
+    dispatch += 1;
+    return {
+      ...common,
+      cwd: projectRoot,
+      pullRequest: 42,
+      itemFilter: `threads=${thread}`,
+      controls: {
+        summaryComment: 'suppressed',
+        nextSteps: 'suppressed',
+        reviewGuard: 'established',
+      },
+      items: [{ identifier, kind: 'thread', threadId: thread }],
+      scope: { valid: true, paths: ['src/limits.mjs'], head: 'seed', mergeBase: 'seed-base' },
+      body: {
+        spans: 0,
+        bytes: 0,
+        digest: `sha256:${createHash('sha256').update('').digest('hex')}`,
+      },
+      planned: true,
+      headBefore: before,
+      headAfter: after,
+      baseAdvanced: dispatch === 1,
+      outcomes: [{ identifier, outcome: 'implemented' }],
+    };
+  });
+}
+
+// A legacy call log, or for a lifecycle entry one start and one completion per call, timed after
+// every synthetic trace line.
+function syntheticCallLog(operations, projectRoot, lifecycle) {
+  const records = [];
+  operations.forEach((entry, index) => {
+    const operation = typeof entry === 'string' ? entry : entry.operation;
+    const apply = typeof entry === 'string' ? false : entry.apply;
+    const at = lifecycle ? `2026-10-16T00:01:0${index}.000Z` : '2026-10-16T00:00:00.000Z';
+    if (!lifecycle) {
+      records.push({ seq: records.length + 1, operation, apply, at, cwd: projectRoot });
+      return;
+    }
+    const callId = `synthetic-${index + 1}`;
+    records.push({
+      seq: records.length + 1,
+      event: 'start',
+      callId,
+      operation,
+      apply,
+      at,
+      cwd: projectRoot,
+    });
+    records.push({ seq: records.length + 1, event: 'complete', callId, at });
+  });
+  return records.map((record) => JSON.stringify(record)).join('\n');
+}
+
 function synthesizeUnrecordedScenario(directory, scenario, identity) {
-  const operations = UNRECORDED_SCENARIO_LOGS[scenario];
-  if (!operations) {
+  const entry = UNRECORDED_SCENARIO_LOGS[scenario];
+  if (!entry) {
     throw new Error(
       `${scenario} has no archived runs and no synthetic passing log in UNRECORDED_SCENARIO_LOGS; record its round or add one`,
     );
@@ -354,18 +453,16 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
   for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
     const projectRoot = `/tmp/effective-flow-merge-gate-eval/rounds/synthetic/slots/${scenario}/slot-${slot}/attempt-1/project`;
     const target = resolve(directory, `run-${slot}`);
-    const log = operations
-      .map((entry, index) =>
-        JSON.stringify({
-          seq: index + 1,
-          operation: typeof entry === 'string' ? entry : entry.operation,
-          apply: typeof entry === 'string' ? false : entry.apply,
-          at: '2026-10-16T00:00:00.000Z',
-          cwd: projectRoot,
-        }),
-      )
-      .join('\n');
+    const repair = !Array.isArray(entry);
+    const log = syntheticCallLog(repair ? entry.operations : entry, projectRoot, repair);
     writeFileSync(`${target}.jsonl`, `${log}\n`);
+    if (repair) {
+      const trace = syntheticRepairTrace(entry.trace, projectRoot);
+      writeFileSync(
+        `${target}.iterate.jsonl`,
+        `${trace.map((record) => JSON.stringify(record)).join('\n')}\n`,
+      );
+    }
     writeFileSync(`${target}.build.json`, `${JSON.stringify(identity, null, 2)}\n`);
     const prompt = `synthetic prompt for ${scenario} slot ${slot}\n`;
     writeFileSync(`${target}.prompt.txt`, prompt);
@@ -3259,12 +3356,14 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
   // nested-spawn fallback, whose inline gate merges the same pull request.
   // The two no-CI policy scenarios that attempt the merge: the unattended grant merges, and the
   // failing-merge scenario applies exactly one merge the forge then refuses.
+  // The repair scenario that merges after its second repair resolved the finding.
   const merging = [
     'merge-proceeds',
     'bot-login-excluded',
     'nested-spawn-abort-runs-inline',
     'no-ci-policy-unattended-merges',
     'no-ci-policy-merge-failure-reports',
+    'repair-after-base-merge-merges',
   ];
   for (const scenario of suite.scenarios) {
     assert.deepEqual(decisive(scenario, []), [], `${scenario}: an empty partial log`);

@@ -8,6 +8,7 @@ export const SCENARIOS = Object.freeze([
   'manifest-span-mismatch-aborts',
   'relayed-run-state-clean-done',
   'review-in-flight-aborts',
+  'unparseable-authorized-scope-aborts',
   'unparseable-item-filter-aborts',
   'unparseable-run-state-aborts',
 ]);

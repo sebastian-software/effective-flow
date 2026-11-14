@@ -24,6 +24,7 @@ import {
   CONFIGURED_REVIEWER_SCENARIO,
   NO_CI_POLICY_SCENARIOS,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
+  REPAIR_SCENARIOS,
   scenarioSetup,
 } from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
 import { projectDocuments } from '../evals/merge-gate/_scaffold/project-setup.mjs';
@@ -41,8 +42,14 @@ import { buildEnvelope, validateStructure } from '../src/scripts/delegation-enve
 // ships for exactly this — a static import would have it read standard input as a side effect of
 // asking what the predicate is.
 process.env.EVAL_TRACKER_NO_MAIN = '1';
-const { isSequenced, resolveEnvelope, sequencedEntryProblem, servesMerge } =
-  await import('../evals/_scaffold/remote-tracker.mjs');
+const {
+  isOriginHeadFixture,
+  isSequenced,
+  originHeadsProblem,
+  resolveEnvelope,
+  sequencedEntryProblem,
+  servesMerge,
+} = await import('../evals/_scaffold/remote-tracker.mjs');
 
 // WP2 of docs/plan/2026-09-02-merge-gate-behavioural-evals.md. The eval suite stubs the whole forge
 // input surface of a `merge-gate` run at one subprocess, which is only worth something while the
@@ -130,7 +137,7 @@ function runIterateEcho(message, sandbox = null) {
 // scenario alone adds reviewer rows and the echo, the non-interactive dispatch scenario alone changes
 // one base row, and every other scenario keeps the shared setup, so a difference in outcome stays
 // attributable to the one fact each scenario changes.
-test('only the configured-reviewer scenario opts into resolved reviewer rows and the iterate echo', () => {
+test('only the configured-reviewer and repair scenarios opt into resolved reviewer rows and the iterate echo', () => {
   assert.deepEqual(scenarioSetup(CONFIGURED_REVIEWER_SCENARIO), {
     projectSetupRows: [
       ['mergeGate.bots', 'recensor'],
@@ -150,6 +157,19 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
     iterateEcho: false,
   });
   assert.deepEqual(BOT_ACCOUNT_ROWS, [['mergeGate.botAccounts', 'coverage-reporter']]);
+  // The two repair scenarios configure the same reviewer, receive the same echo, and raise the
+  // round cap so it can never be what ends either run.
+  for (const scenario of REPAIR_SCENARIOS) {
+    assert.deepEqual(scenarioSetup(scenario), {
+      projectSetupRows: [
+        ['mergeGate.bots', 'recensor'],
+        ['mergeGate.bots.recensor.trigger', '@recensor review'],
+        ['mergeGate.bots.recensor.check', 'recensor'],
+        ['mergeGate.maxRounds', '8'],
+      ],
+      iterateEcho: true,
+    });
+  }
   for (const file of fixtureFiles()) {
     const scenario = file.slice(0, -'.json'.length);
     if (
@@ -158,6 +178,7 @@ test('only the configured-reviewer scenario opts into resolved reviewer rows and
         NON_INTERACTIVE_DISPATCH_SCENARIO,
         BOT_LOGIN_SCENARIO,
         ...NO_CI_POLICY_SCENARIOS,
+        ...REPAIR_SCENARIOS,
       ].includes(scenario)
     )
       continue;
@@ -511,6 +532,13 @@ function statedEnvelopes(file, operation, entry) {
 // rather than as a confusing normalizer mismatch.
 function fixtureElements(file, fixture) {
   const elements = [];
+  if (isOriginHeadFixture(fixture)) {
+    assert.equal(
+      originHeadsProblem(fixture),
+      null,
+      `${file}: the originHeads declaration is malformed`,
+    );
+  }
   for (const [operation, entry] of Object.entries(fixture.operations)) {
     const resolved = resolveEnvelope(fixture, operation, false, 1);
     assert.doesNotMatch(
@@ -776,6 +804,12 @@ for (const corpus of CORPORA)
       const fixture = loadFixture(file, corpus.fixtures);
       const fixturePath = join(corpus.fixtures, file);
       const logDir = mkdtempSync(join(tmpdir(), 'ef-eval-stub-'));
+      // A head-indexed fixture is answered from a real bare `origin`, which this test has none of;
+      // `test/merge-gate-eval-repair.test.mjs` walks those fixtures head by head against one.
+      if (isOriginHeadFixture(fixture)) {
+        rmSync(logDir, { recursive: true, force: true });
+        continue;
+      }
       try {
         const asked = [];
         for (const [operation, entry] of Object.entries(fixture.operations)) {
@@ -864,6 +898,9 @@ test('the stub walks every element of a sequenced fixture entry in order', () =>
   for (const file of fixtureFiles()) {
     const fixture = loadFixture(file);
     const fixturePath = join(FIXTURE_DIR, file);
+    // A head-indexed sequence is served by the origin's head, not by the call position; the repair
+    // test walks it head by head.
+    if (isOriginHeadFixture(fixture)) continue;
     for (const [operation, entry] of Object.entries(fixture.operations)) {
       if (!isSequenced(entry)) continue;
       walked += 1;
@@ -1654,7 +1691,7 @@ function applyMutation(built, mutation) {
 
 test('iterate: every stored delegation is genuine sender output changed in exactly its declared way', () => {
   const fixtures = iterateFixtures();
-  assert.equal(fixtures.length, 7, 'the iterate corpus is expected to hold its seven scenarios');
+  assert.equal(fixtures.length, 8, 'the iterate corpus is expected to hold its eight scenarios');
   for (const { scenario, fixture } of fixtures) {
     const { input, built, snapshot, mutation, message } = fixture.delegation ?? {};
     assert.equal(typeof built, 'string', `${scenario}: the fixture stores no built envelope`);
@@ -1695,14 +1732,18 @@ test('iterate: every stored delegation is genuine sender output changed in exact
 });
 
 // The minted values of one envelope, in the order the sender drew them: one identifier per manifest
-// line, then the boundary token. Everything else in the envelope is a function of the build input.
+// line, then the free-text and correction identifiers of an authorized-scope line, then the boundary
+// token. Everything else in the envelope is a function of the build input.
 function mintedValues(snapshot) {
   const identifiers = snapshot.manifestLines.map((line) => {
     const match = line.match(/^(?:Thread item|Item): ([A-Z0-9]+) \| /);
     assert.ok(match, `a manifest line carries no identifier: ${line}`);
     return match[1];
   });
-  return [...identifiers, snapshot.token];
+  const scopeLine = snapshot.controlValues['Authorized scope'];
+  const { freeText, correction } = JSON.parse(scopeLine ?? '{}');
+  const scopeIdentifiers = scopeLine === undefined ? [] : [freeText, correction];
+  return [...identifiers, ...scopeIdentifiers, snapshot.token];
 }
 
 // The envelope and its snapshot with every minted value replaced by its position, so two builds of

@@ -884,6 +884,56 @@ A finding the delegated run reports as **implemented** clears on its own, but on
 commit actually moved in that round. That is coarse on purpose – it proves a commit existed, never
 that the commit addressed the finding – and it closes the "claim implemented, change nothing" path.
 
+#### Repair attempts and when the gate stops repairing
+
+`mergeGate.maxRounds` bounds the whole run and keeps its meaning. Beside it the gate counts
+**repair attempts**: a commit that `iterate` returned for a reviewer finding it implemented, or for
+a failing check. Waiting is not repairing. A check wait, a bot wait, a review resubmission, a
+delegation that moved no head, and the gate's own base merges – either trigger, or a conflict
+resolution – use **no** repair attempt, so a base-only update followed by the same finding never
+counts against the finding. Commits the delegated run makes for a Phase-4 correction count for no
+cause. Every run reports attempt counts; a stop report lists every attempt and the waits and base
+changes between them.
+
+Two situations end automatic repair early, always before any further delegation, base merge or
+merge, and always with a report instead of a merge:
+
+- **The same blocking finding survives two repairs.** After the **second** repair of one reviewer
+  finding, the gate stops if that reviewer, running on a later head, still reports the same finding.
+  The first ineffective repair is recorded and the run may try once more. Only a configured
+  reviewer's finding stops the run this way. The rule is fixed; there is no setting for it.
+- **A repair would leave the authorized scope.** The scope is the pull request's changed paths plus
+  test files a repair **adds** during the run. The gate reads it once, just before the run's first
+  delegation, and passes it to `iterate`, which refuses to edit or commit a path outside it and
+  hands the paths back. The gate also checks the commits that were actually made, so a run that
+  ignored the scope still stops. Editing or deleting an _existing_ test file outside the pull
+  request's paths is an expansion, and so is one a base merge brought in; adding a new focused
+  test, or adjusting one this run added, is not. A path touching a sensitive boundary is no expansion on its own and keeps its usual
+  pre-commit review. If the scope cannot be read, the gate delegates
+  nothing and says why; a run that needs no delegation behaves as before.
+
+**CI repairs are counted and reported but never stop the run.** The gate sees only a check's name
+and conclusion, never why it failed, so it cannot tell a repeated failure from a new one. For CI,
+`mergeGate.maxRounds` stays the bound.
+
+**A finding the gate cannot place stays `uncertain`.** To call a re-reported finding the same one,
+the gate compares only the same reviewer's findings, by their thread or review identity, or by an
+anchor that overlaps a line the repair changed. It cannot do that for a finding written in a review
+body (no anchor), an outdated thread or one on the left side of the diff, a line another commit has
+since changed, and every thread on Forgejo, which exposes no reliable current line. Those findings
+neither add to nor clear a count, and `maxRounds` stays their bound. A genuinely new anchored
+finding gets a counter of its own and is no evidence against an earlier one.
+
+**The stop report** names the unresolved finding and its reviewer, every observed repair attempt
+(round, head before and after, outcome), the waits and base merges in between, commits the gate did
+not expect, out-of-scope paths with their commits, and the one decision you need to make – fix it by
+hand or change the approach, authorize the named paths and run the gate again, or inspect a returned
+merge commit or commits the gate could not verify before any further automatic repair. Pushed
+commits stay on the branch; nothing is reverted or force-pushed.
+
+**Every invocation starts with fresh counters** and reads the scope again before its first
+delegation, so running the gate again after a stop is not a resume of that stop.
+
 #### What the gate accepts back from a delegated run
 
 Every code change the gate wants is made by `/effective-flow iterate`, and the gate builds its

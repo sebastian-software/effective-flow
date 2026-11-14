@@ -455,7 +455,7 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Fourteen subsystems and 49 runtime scripts carry this today: the pairs
+  misread as one. Fifteen subsystems and 51 runtime scripts carry this today: the pairs
   `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
   `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
@@ -463,6 +463,7 @@ The build aborts with an error message if any of these guards is violated:
   `effective-flow-mechanics.mjs`/`effective-flow-mechanics-core.mjs`,
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
+  `repair-attempt.mjs`/`repair-attempt-core.mjs`,
   `setup-status.mjs`/`setup-status-core.mjs`; the
   runtime-state helper, a twelve-file family whose entry point `effective-flow-state.mjs` sits over
   `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
@@ -866,7 +867,7 @@ point is an I/O boundary over testable core or protocol modules:
   derives the item filter, and refuses a body carrying the delimiter, a body item whose review
   `url` or `author` is absent (`missing-provenance`, never a synthesized value), an empty body, or
   a protocol-shaped instruction. A present value the manifest cannot carry safely is not a refusal
-  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines, the manifest, the delimiter,
+  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines (plus the optional, version-neutral `Authorized scope:` line a gate delegation always carries), the manifest, the delimiter,
   and the body spans in one canonical order, checks its own output, and writes the message plus a
   manifest snapshot exclusively under `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/`. It
   returns the path, a `sha256:` digest, and the identifier → durable-key map. `validate` recomputes
@@ -875,6 +876,15 @@ point is an I/O boundary over testable core or protocol modules:
   back as stable error codes with a nonzero exit code. The canonical envelope shapes, and the
   rationale for the minting order, the absence-check scope, the token and the helper itself, live
   in the lazily loaded `delegation-envelope-examples` fragment.
+- **Repair-attempt.** Invoke it as `node <skill-root>/scripts/repair-attempt.mjs
+<scope-read|scope-check|attribute|post-check|record|evaluate>` with one JSON object on standard
+  input; it emits one `{ ok, operation, data }` envelope. `merge-gate` uses it for repair accounting
+  and the authorized scope (the pull request's changed paths plus added test files, with the test
+  globs owned here), and `iterate` calls `scope-check` in delegated mode. The core is pure; the CLI
+  runs the ref-only git reads through the injected `process-runner` and never fetches. Reads it
+  cannot complete return `undetermined` codes. The operations are listed in the header comment of
+  `repair-attempt-core.mjs`; the gate's call sequence is "Repair checkpoints" in
+  `merge-gate-delegated-run`, and the report layout is the lazily loaded `merge-gate-repair-report`.
 - **Delivery-selection.** `deliver` uses it to bind the selected staged or working-tree states to
   source `HEAD`, apply them to the refreshed base with conflict detection, and reconcile the exact
   resulting diff without emitting file content.
@@ -1380,7 +1390,7 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `merge-gate-repair-report`, `delegated-scope-return`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
