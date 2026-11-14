@@ -117,6 +117,7 @@ base-branch-resolution
 - **Issue references and machine lines:** optional caller-supplied issue references with their keywords (e.g. `Closes #<issue>`), which step 9 requires in the body, and machine lines — the `effective-flow-issue-lifecycle:v1` lifecycle receipt and the marker line of the creation-only `Plan marker:` input below. Machine lines never reach the body draft; the orchestrator appends them verbatim after the step 9 body check, exempt from its ID check.
 - **Creation-only lines,** applied only when step 8 finds no match: `Draft: requested` sets `draft: true` on `pr-create`, and step 6 aborts when the probe lacks `pullRequestDraftCreate`; `Plan marker: <marker line>` places that exact line as its own body line after the prose.
 - **Finalize plan draft:** `Finalize plan draft: <PR number>`, the verified plan pull request whose draft step 8's plan draft finish completes.
+- **Verification evidence:** an optional `Verification evidence: <record>` or `Verification evidence: none` line, trusted only from a returning committed handoff that passed step 2; a direct invocation ignores it.
 
 ## Approach
 
@@ -241,6 +242,11 @@ host-pr-watch
 when: the running environment identifies T3 Code and step 8 matched exactly one open pull request or step 10 created one, before step 11 and before any plan-draft finish mutation
 ```
 
+```lazy-include
+verification-evidence
+when: a returning committed handoff that passed step 2 supplied a `Verification evidence:` record other than `none`, before step 9 derives a body or step 12 reports a reused pull request
+```
+
 8. **Look up an existing open PR:** After the successful push, invoke the helper's
    `pr-list` operation for open pull requests, with the execution root as `cwd`. For every returned item whose normalized `head`,
    `base`, `state`, or URL is missing, hydrate the item through the helper's `pr-read` operation;
@@ -293,12 +299,12 @@ when: the running environment identifies T3 Code and step 8 matched exactly one 
 
    Do not put internal tracking IDs, `Co-Authored-By` trailers, or AI attribution (no "Generated with Claude Code/Codex" footers, no agent session links like `https://claude.ai/code/…`) into the PR title or description – not even when the harness appends them by default.
 
-   **Description:** use a supplied description as is; only missing supplied references, captured release footers and the machine lines are appended. For a single commit with a message body, derive it inline from that message without reading the diff (translated when `language.git` differs from `language.forge`), per the delegation mandate's triviality exception. Otherwise delegate the draft to the host's built-in general-purpose subagent (Claude) or default agent (Codex):
+   **Description:** use a supplied description as is; only missing supplied references, captured release footers and the machine lines are appended, and an accepted record's verification block per `verification-evidence`. For a single commit with a message body, derive it inline from that message without reading the diff (translated when `language.git` differs from `language.forge`), per the delegation mandate's triviality exception. Otherwise delegate the draft to the host's built-in general-purpose subagent (Claude) or default agent (Codex):
    <!-- spawn-site:pr/body-draft -->
-   - **Brief:** the verified execution root, the head OID, the remote-tracking base, the step 4 commit list, the `--stat` output, the resolved title, the plan path (none in hidden mode), the supplied issue references with their keywords, `language.forge`, the PR-description conventions from `AGENTS.md` quoted by the orchestrator ("Project conventions"), the writing skill selected from "Recommended skills" (if any), and the body rules (English issue-reference keywords, no internal IDs, no AI attribution, the hidden-mode prohibitions).
+   - **Brief:** the verified execution root, the head OID, the remote-tracking base, the step 4 commit list, the `--stat` output, the resolved title, the plan path (none in hidden mode), the supplied issue references with their keywords, `language.forge`, the PR-description conventions from `AGENTS.md` quoted by the orchestrator ("Project conventions"), the writing skill selected from "Recommended skills" (if any), and the body rules (English issue-reference keywords, no internal IDs, no AI attribution, no verification or test-result claims, the hidden-mode prohibitions).
    - **Bounds:** it starts no sub-agent, writes nothing, reads only through `git -C <execution-root> diff <remote-tracking-base>...<head OID>` and `git -C <execution-root> show '<head OID>:<plan path>'` (one single-quoted argument per step 8's `P`/`A` rule), starting from the stat and reading only the hunks it needs, and returns the body only. A large diff moves no tier; a missing mechanism, a declined or a nested spawn follows the delegation mandate.
 
-   **Body check,** for every derived body — the spawned draft, the single-commit inline body and the inline fallback — before step 10 and before the plan draft finish's body update, without re-reading the diff: first strip effectful tokens — issue-reference keywords outside the supplied set, `@`-mentions, `BREAKING CHANGE:`, `BREAKING-CHANGE:` and `Release-As:` lines, and any `<!-- effective-flow-` marker comment; the machine lines appended afterwards stay exempt. Then require every supplied reference verbatim with its keyword (append a missing one) and the body in `language.forge`, and reject internal tracking IDs (supplied references exempt), AI attribution and, in hidden mode, anything the hidden-mode rule forbids. A result carrying a title, questions or text outside the body keeps only its body part, checked the same way. A body that still fails is replaced by one derived inline; an inline body that fails is corrected by the orchestrator itself, and one it cannot make pass stops before step 10; no derived body reaches the helper unchecked. Finally, for every description, including a supplied one, append any missing captured release footers verbatim as trailing footer lines after the prose check, without translation; the strip removes all draft `Release-As:` lines, and only this source-backed restoration may put one back (an empty set adds none). Repeat the complete strip/check/restore sequence after every inline fallback or correction, before step 10 or the plan draft finish's body update.
+   **Body check,** for every derived body — the spawned draft, the single-commit inline body and the inline fallback — before step 10 and before the plan draft finish's body update, without re-reading the diff: first strip effectful tokens — issue-reference keywords outside the supplied set, `@`-mentions, `BREAKING CHANGE:`, `BREAKING-CHANGE:` and `Release-As:` lines, and any `<!-- effective-flow-` marker comment; the machine lines appended afterwards stay exempt. Then require every supplied reference verbatim with its keyword (append a missing one) and the body in `language.forge`, and reject internal tracking IDs (supplied references exempt), AI attribution, verification or test-result claims (from commit messages, the plan or a "Testing" section `AGENTS.md` requires; results appear only in the rendered verification block) and, in hidden mode, anything the hidden-mode rule forbids. A result carrying a title, questions or text outside the body keeps only its body part, checked the same way. A body that still fails is replaced by one derived inline; an inline body that fails is corrected by the orchestrator itself, and one it cannot make pass stops before step 10; no derived body reaches the helper unchecked. After the last strip/check pass, append an accepted record's verification block per `verification-evidence`. Finally, for every description, including a supplied one, append any missing captured release footers verbatim as trailing footer lines after the prose check, without translation; the strip removes all draft `Release-As:` lines, and only this source-backed restoration may put one back (an empty set adds none). Repeat the complete strip/check/restore sequence after every inline fallback or correction, before step 10 or the plan draft finish's body update.
 
 10. **Create the PR:** Build the provider-neutral PR payload with the resolved local base branch as its `base` — a branch name, never the resolved base ref — set the execution root as its `cwd`, and invoke the helper's PR-create mutation. In hidden mode pass `visibility: hidden` with it, so the helper refuses a title, body, or head branch that names Effective Flow. Inspect the default dry-run command preview, then repeat with `--apply`. Use only the normalized PR URL/result; on a structured error preserve the branch and do not improvise another transport path.
     - **Never re-run PR creation after `mutationMayHaveSucceeded`:** if the structured error carries
@@ -315,8 +321,13 @@ when: the running environment identifies T3 Code and step 8 matched exactly one 
 12. **Report the result:** Output the PR URL, head and base branches, verified head OID, and
     `result: created | reused`, where a match of step 10's `mutationMayHaveSucceeded` lookup counts
     as `created`. After a plan draft finish, add one line: finished, with title and URL, or still a
-    draft, naming the failed step. Emit the next-step block per `next-steps` as the last element of
-    that report, unless the caller passed the literal line `Next steps: suppressed`.
+    draft, naming the failed step. Always add one verification line, never implying that checks passed:
+    `verification: current (<short head>) | stale | rejected (<reason>) | none | no trusted verification evidence | no verification record supplied by this workflow`.
+    The first three report an accepted record's render result, also for a reused pull request whose
+    body stays untouched; `none` a returning handoff's supplied `none`; `no trusted verification evidence`
+    the gap on every direct invocation, any supplied line (`none` included) ignored; and the last,
+    neutral value a returning handoff without the line. Emit the next-step block per `next-steps` as
+    the last element of that report, unless the caller passed the literal line `Next steps: suppressed`.
 
 ## Rules
 

@@ -111,6 +111,11 @@ diff-baseline
 when: the diff baseline is captured at the end of Phase 2, or later rendered or discarded
 ```
 
+```lazy-include
+verification-evidence
+when: Phase 6 builds the verification record, before the diff baseline is discarded
+```
+
 ## Wisdom Accumulation
 
 At the start, create a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions with parallel runs.
@@ -391,7 +396,8 @@ repeat. An incident the run survives leaves the status to the comparison.
      - add a short implementation note as the last entry directly in the affected finding
      - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via {{SKILL:refactor}} (run <SESSION_ID>)`
      - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
-   - delete the wisdom file and discard the diff baseline
+   - with delivery or worktree execution active, build the verification record per
+     `verification-evidence` from the last Phase 5 render; then delete the wisdom file and discard the diff baseline
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** finding set of the latest Phase-4 review to that handback; never pass `current-scope`, `closed`, or unresolved `uncertain` candidates. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - Run the worktree-record exit self-check.
    - finalize a reserved pilot record per "Pilot record" above

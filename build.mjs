@@ -177,6 +177,8 @@ const RUNTIME_SCRIPT_FILES = [
   'config-resolve-core.mjs',
   'setup-status.mjs',
   'setup-status-core.mjs',
+  'verification-evidence.mjs',
+  'verification-evidence-core.mjs',
 ];
 // Generated beside the runtime scripts in every target: the setup-status ownership projection.
 const SETUP_STATUS_PROJECTION_FILE = 'setup-status-owners.json';
@@ -2503,8 +2505,8 @@ try {
     'apply-issues': 994,
     'merge-gate': 922,
     cleanup: 844,
-    refactor: 972,
-    deliver: 805,
+    refactor: 975,
+    deliver: 808,
     'plan-issue': 813,
     'issue-buddy': 490,
     'backlog-audit': 389,
@@ -2519,9 +2521,9 @@ try {
     investigate: 544,
     retro: 215,
     focus: 414,
-    fix: 565,
+    fix: 568,
     'plan-review': 521,
-    pr: 507,
+    pr: 510,
     'concept-review': 409,
     'apply-review-remote': 382,
     concept: 408,
