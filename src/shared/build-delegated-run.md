@@ -86,6 +86,11 @@ diff-baseline
 when: the diff baseline is captured at the end of Phase 2, step 0, or later rendered or discarded
 ```
 
+```lazy-include
+verification-evidence
+when: Phase 7 step 5 builds the verification record, before the diff baseline is discarded
+```
+
 ```include
 build-run-contract
 ```
@@ -356,7 +361,7 @@ Rules for the findings report:
 - If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
 4. Delete the wisdom file after persisting the bounded required gate evidence per `build-run-contract`.
-5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use `{{AGENT:code-validator}}` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. Then discard the diff baseline.
+5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use `{{AGENT:code-validator}}` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render and only the checks this run observed; a step 1 repair without a fresh render before the passing validator run builds none. Then discard the diff baseline.
    <!-- spawn-site:build-delegated-run/completion-transform-check -->
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
    Under `Commit: caller-owned` (`caller-owned-commit`) no commit, completion action or worktree withdrawal of this step runs, no plan is switched or archived (a plan this run wrote stays untracked and is reported), and neither do the `build-run-contract` calls `seal-delivery` and `handoff` below. For delegated execution, at that existing handback's reconciled staged-tree boundary call `seal-delivery`; immediately after its verified commit and before worktree withdrawal call `handoff`. Hidden/private and in-place-without-delivery follow their bound variants. After handoff relay later delivery/publication questions through runtime-only checkpoints; preserve the original ordering and publication gates. Record an actual in-place checkout restore with `record-return`, never infer it from a branch name.
