@@ -293,9 +293,15 @@ test('the iterate echo records one bounded attributed handoff and returns deferr
   const { root, result, trace } = runIterateEcho(echoHandoff());
   try {
     assert.equal(result.status, 0, result.stderr);
+    // Both scoped-return lines of `shared/delegated-scope-return.md` come first, each once, ahead of
+    // the outcome record and the completion keyword: the gate delegates with `Authorized scope:` and
+    // stops with `scope-line-missing` on a return without a `Scope expansion:` line.
     assert.equal(
       result.stdout,
       [
+        'Returned commits: []',
+        'Scope expansion: []',
+        '',
         'Returned outcome record:',
         `- ${THREAD_IDENTIFIER}: deferred`,
         `- ${REVIEW_IDENTIFIER}: deferred`,
@@ -357,6 +363,37 @@ test('the iterate echo records one bounded attributed handoff and returns deferr
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
+});
+
+// The configured-reviewer fixture states its head as a real commit, the one
+// `configured-reviewer-origin.mjs` seeds, and the stub serves it unchanged, so every place the
+// fixture names that head has to name the same commit: the scope read resolves the status read's
+// head, the gate verifies the reviewer's review against it, and one stale copy would set the two
+// apart. The provisioning test checks that the seeded commit is this SHA.
+test('the configured-reviewer fixture names one head commit everywhere it states one', () => {
+  const fixture = loadFixture(`${CONFIGURED_REVIEWER_SCENARIO}.json`);
+  const { operations } = fixture;
+  const statusProvider = operations['pr-status-read'].provider.data.repository.pullRequest;
+  const stated = [
+    ['headSha', fixture.headSha],
+    ['pr-read provider head.sha', operations['pr-read'].provider.head.sha],
+    ['pr-status-read provider headRefOid', statusProvider.headRefOid],
+    ...statusProvider.commits.nodes.map((node, index) => [
+      `pr-status-read provider commit ${index}`,
+      node.commit.oid,
+    ]),
+    ['pr-status-read headSha', operations['pr-status-read'].envelope.data.result.headSha],
+    ...operations['pr-reviews-read'].provider
+      .flat()
+      .map((review) => [`pr-reviews-read provider ${review.id}`, review.commit_id]),
+    ...operations['pr-reviews-read'].envelope.data.result.map((review) => [
+      `pr-reviews-read ${review.id}`,
+      review.commitSha,
+    ]),
+  ];
+  assert.match(fixture.headSha, /^[0-9a-f]{40}$/);
+  for (const [where, sha] of stated) assert.equal(sha, fixture.headSha, where);
+  assert.equal(Object.hasOwn(fixture, 'originHeads'), false, 'the fixture would route to repair');
 });
 
 test('the iterate echo fails on missing, duplicate, or mismatched item attribution', () => {

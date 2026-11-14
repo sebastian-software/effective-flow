@@ -36,9 +36,10 @@ tracker stub, its `iterate`-echo overlay policy, its checkout preparation, its s
 the execution profile every round is pinned to, and the shared scaffold reads all of it from there
 rather than naming a tool. `prepareCheckout` prepares nothing beyond the shared seed for most
 scenarios, because a gate run reads the forge through the stub and never fetches; only the six
-no-CI policy scenarios (`no-ci-checkout.mjs`) and the two repair scenarios (`repair-origin.mjs`) get
-a local `origin`. The evaluator's `permitsEmptyCallLog` answers `false` for every scenario, because
-every gate scenario reads the forge before it can decide anything. `alwaysAllowedOperations` is a plain
+no-CI policy scenarios (`no-ci-checkout.mjs`), the two repair scenarios (`repair-origin.mjs`) and the
+configured-reviewer scenario (`configured-reviewer-origin.mjs`) get a local `origin`. The
+evaluator's `permitsEmptyCallLog` answers `false` for every scenario, because every gate scenario
+reads the forge before it can decide anything. `alwaysAllowedOperations` is a plain
 list here; the shared scaffold also accepts a function of the scenario, which the `iterate` suite
 uses. It is hashed as one of the suite's instrument files, because every one of those bindings
 decides what a slot sees — and, for the pin, so that changing the recording profile stales the
@@ -59,6 +60,7 @@ both halves, and neither is safe alone.
 | `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace; in a repair slot it also lands the planned repair and is the `origin`'s receive hook |
 | `_scaffold/no-ci-checkout.mjs`               | The local `origin` of the six no-CI policy scenarios                                                                                    |
 | `_scaffold/repair-origin.mjs`                | The real-commit `origin` of the two repair scenarios: seeded history, planned repairs, the receive hook                                 |
+| `_scaffold/configured-reviewer-origin.mjs`   | The local `origin` of the configured-reviewer scenario: a re-dated seed and the fixture's head commit, SHA for SHA                      |
 | `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in                                                  |
 | `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                                                                  |
 | `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                                                                 |
@@ -173,8 +175,23 @@ shared build is never overlaid; the other scenarios retain the base configuratio
 `iterate`. The echo accepts only the expected delimiter, minted boundary token, two-item attribution
 manifest, item filter, and suppression and review-guard controls. It retains reviewer text only as
 byte count and SHA-256 digest, then returns one controlled `deferred` outcome for each
-caller-minted identifier. Its build identity hashes the echo and the trace helper at the paths the
-run executes, in place of production `iterate`.
+caller-minted identifier, below empty `Returned commits: []` and `Scope expansion: []` lines in the
+format of `shared/delegated-scope-return.md`: the gate delegates with `Authorized scope:` and ends the
+run with `scope-line-missing` on a return without the second line. Its build identity hashes the echo
+and the trace helper at the paths the run executes, in place of production `iterate`.
+
+That delegation is preceded by the gate's mandatory repair scope read, which fetches `origin/develop`
+and `refs/pull/42/head` and resolves the merge base of the reported head. So the scenario's checkout
+is prepared by `configured-reviewer-origin.mjs`: the shared seed commit is re-made from its own tree
+with a fixed message, author, committer and date, `develop` is moved onto it, and one pull-request
+commit with a fixed date writes the file the fixture's review thread is anchored on, with the
+anchored line at the thread's line. A bare `remote.git` beside the project holds `develop`, the head
+branch and `refs/pull/42/head`, with no receive hook, and `origin` is rewritten to it for fetch and
+push alike. The project is left clean on `develop`. The fixture states that head commit's SHA
+wherever it names the head, and the stub serves it unchanged, since the fixture declares no
+`originHeads`; provisioning fails when the seeded head is another commit, so a change to the seeded
+tree or the thread anchor has to regenerate it. `test/merge-gate-eval-configured-origin.test.mjs`
+proves the scope read resolves on that checkout.
 
 The two repair scenarios, `repair-after-base-merge-merges` and `repeated-ineffective-repair-stops`,
 receive the same reviewer rows, echo, trace helper and empty trace, plus a `mergeGate.maxRounds: 8`

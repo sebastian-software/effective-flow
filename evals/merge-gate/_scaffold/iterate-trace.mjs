@@ -9,8 +9,10 @@
 //
 //   * **Configured-reviewer mode** — the fixture states no `originHeads`. Exactly one thread item and
 //     one review-body item, both returned `deferred`, under schema
-//     `effective-flow/merge-gate-iterate-echo/v1`. This is the mode the configured-reviewer scenario
-//     has always run, unchanged.
+//     `effective-flow/merge-gate-iterate-echo/v1`, with the empty `Returned commits: []` and
+//     `Scope expansion: []` lines of `shared/delegated-scope-return.md` above the outcome record.
+//     The configured-reviewer scenario runs this mode against the local `origin` of
+//     `configured-reviewer-origin.mjs`.
 //   * **Repair mode** — the fixture states `originHeads` (see "Origin-head mode" in the shared
 //     stub), and the slot has the real-commit `origin` of `repair-origin.mjs` beside it. The n-th
 //     delegation lands the n-th seeded repair: it moves `refs/heads/<head>` and `refs/pull/<N>/head`
@@ -640,8 +642,15 @@ function configuredReviewerDispatch(pullRequest, message) {
     fail(error?.message ?? 'iterate trace write failed');
   }
 
+  // The two scoped-return lines of `shared/delegated-scope-return.md`, in the form the repair mode
+  // writes them: the gate delegates with `Authorized scope:` and ends the run with
+  // `scope-line-missing` on a return without a `Scope expansion:` line. The echo commits nothing, so
+  // both lists are empty.
   process.stdout.write(
     [
+      'Returned commits: []',
+      'Scope expansion: []',
+      '',
       'Returned outcome record:',
       ...outcomes.map(({ identifier, outcome }) => `- ${identifier}: ${outcome}`),
       '',

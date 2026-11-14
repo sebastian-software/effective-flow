@@ -113,7 +113,7 @@ export const SEEDED_IDENTITY = Object.freeze({
   email: 'eval@example.invalid',
 });
 
-function sandboxGitEnv(date = null) {
+export function sandboxGitEnv(date = null) {
   return {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
     GIT_CONFIG_GLOBAL: devNull,
@@ -137,7 +137,7 @@ function sandboxGitEnv(date = null) {
   };
 }
 
-function git(cwd, args, { env = sandboxGitEnv(), input } = {}) {
+export function git(cwd, args, { env = sandboxGitEnv(), input } = {}) {
   return execFileSync('git', args, {
     cwd,
     encoding: 'utf8',
@@ -147,13 +147,13 @@ function git(cwd, args, { env = sandboxGitEnv(), input } = {}) {
   }).trim();
 }
 
-function forgeUrl(repository) {
+export function forgeUrl(repository) {
   return `https://${repository.host}/${repository.owner}/${repository.repository}.git`;
 }
 
 // One commit on `parent` that writes `files` over the parent's tree, made through a scratch index so
 // the checkout's working tree and index stay untouched.
-function seedCommit(projectRoot, parent, { message, date, files }) {
+export function seedCommit(projectRoot, parent, { message, date, files }) {
   const index = resolve(dirname(projectRoot), 'seed.index');
   const env = { ...sandboxGitEnv(date), GIT_INDEX_FILE: index };
   git(projectRoot, ['read-tree', parent], { env });

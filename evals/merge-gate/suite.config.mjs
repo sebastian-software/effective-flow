@@ -28,6 +28,7 @@ import {
   requiresIterateTrace,
   scenarioSetup,
 } from './_scaffold/configured-reviewer-scenario.mjs';
+import { prepareConfiguredReviewerOrigin } from './_scaffold/configured-reviewer-origin.mjs';
 import { prepareCheckout as prepareNoCiCheckout } from './_scaffold/no-ci-checkout.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
 import { prepareRepairOrigin } from './_scaffold/repair-origin.mjs';
@@ -141,6 +142,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SCAFFOLD, 'project-setup.mjs'),
   resolve(SCAFFOLD, 'no-ci-checkout.mjs'),
   resolve(SCAFFOLD, 'repair-origin.mjs'),
+  resolve(SCAFFOLD, 'configured-reviewer-origin.mjs'),
 ]);
 
 const suite = {
@@ -191,13 +193,19 @@ const suite = {
   },
   scenarioSetup,
   projectDocuments,
-  // No checkout preparation beyond the shared seed commit, except for two groups: a gate run reads
+  // No checkout preparation beyond the shared seed commit, except for three groups: a gate run reads
   // the forge through the stub and never fetches, so its sandbox keeps an `origin` no run reaches.
   // A no-CI policy read fetches the base ref and compares the setup ADR it finds there, so
   // `no-ci-checkout.mjs` gives exactly those six scenarios a local `origin`. A repair round reads and
   // writes real history, so `repair-origin.mjs` gives the two repair scenarios a real-commit
-  // `origin` whose head moves during the run. Each returns null for every scenario outside its group.
-  prepareCheckout: (input) => prepareRepairOrigin(input) ?? prepareNoCiCheckout(input),
+  // `origin` whose head moves during the run. The configured-reviewer run delegates, and its repair
+  // scope read resolves the reported head against `origin/develop` before it does, so
+  // `configured-reviewer-origin.mjs` gives that one scenario a local `origin` holding the fixture's
+  // head commit. Each returns null for every scenario outside its group.
+  prepareCheckout: (input) =>
+    prepareRepairOrigin(input) ??
+    prepareConfiguredReviewerOrigin(input) ??
+    prepareNoCiCheckout(input),
   evaluator,
   // Five discarded attempts on the sequenced Phase-4 scenario is a signal to stop and investigate
   // rather than to keep spending runs; every other scenario has no cap.
