@@ -115,27 +115,45 @@ function raiseBudget(checkout, tool) {
   );
 }
 
+// Each mutated case removes its own checkout copy and output when it ends, pass or fail, so the
+// suite's temporary-directory peak stays at a few concurrent copies instead of every case's copy
+// until the after() hook.
+function withCaseRoot(name, run) {
+  const caseRoot = join(sandbox, name);
+  try {
+    return run(caseRoot);
+  } finally {
+    rmSync(caseRoot, { recursive: true, force: true });
+  }
+}
+
 function assertMutatedBuildFails(name, mutate, expected) {
-  const caseRoot = join(sandbox, `invalid-${name}`);
-  const checkout = join(caseRoot, 'checkout');
-  const destination = join(caseRoot, 'output');
-  copyRepository(ROOT_DIR, checkout);
-  mutate(checkout);
-  const result = runBuild(checkout, destination);
-  assert.notEqual(result.status, 0, `${name}: build unexpectedly succeeded`);
-  assert.match(`${result.stdout}\n${result.stderr}`, expected, name);
-  assert.equal(existsSync(join(destination, 'dist')), false, `${name}: output swapped on failure`);
+  withCaseRoot(`invalid-${name}`, (caseRoot) => {
+    const checkout = join(caseRoot, 'checkout');
+    const destination = join(caseRoot, 'output');
+    copyRepository(ROOT_DIR, checkout);
+    mutate(checkout);
+    const result = runBuild(checkout, destination);
+    assert.notEqual(result.status, 0, `${name}: build unexpectedly succeeded`);
+    assert.match(`${result.stdout}\n${result.stderr}`, expected, name);
+    assert.equal(
+      existsSync(join(destination, 'dist')),
+      false,
+      `${name}: output swapped on failure`,
+    );
+  });
 }
 
 function assertMutatedBuildSucceeds(name, mutate) {
-  const caseRoot = join(sandbox, `valid-${name}`);
-  const checkout = join(caseRoot, 'checkout');
-  const destination = join(caseRoot, 'output');
-  copyRepository(ROOT_DIR, checkout);
-  mutate(checkout);
-  const result = runBuild(checkout, destination);
-  assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
-  assert.equal(existsSync(join(destination, 'dist')), true, `${name}: output was not swapped`);
+  withCaseRoot(`valid-${name}`, (caseRoot) => {
+    const checkout = join(caseRoot, 'checkout');
+    const destination = join(caseRoot, 'output');
+    copyRepository(ROOT_DIR, checkout);
+    mutate(checkout);
+    const result = runBuild(checkout, destination);
+    assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
+    assert.equal(existsSync(join(destination, 'dist')), true, `${name}: output was not swapped`);
+  });
 }
 
 before(() => {
@@ -816,8 +834,9 @@ test('a pilot Quality-mapping identity that differs from the deep tier fails bef
 // only, Codex values only, both for portable), the shipped model-tiers fragment carries the generated
 // role defaults and harness table for its target, and the portable guards accept exactly that
 // generated text.
-test('spawn-site markers and the model-tiers fragment render per target', () => {
+test('spawn-site markers and the model-tiers fragment render per target', (t) => {
   const caseRoot = join(sandbox, 'valid-spawn-sites');
+  t.after(() => rmSync(caseRoot, { recursive: true, force: true }));
   const checkout = join(caseRoot, 'checkout');
   const destination = join(caseRoot, 'output');
   copyRepository(ROOT_DIR, checkout);

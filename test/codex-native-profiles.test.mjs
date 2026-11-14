@@ -92,8 +92,13 @@ before(() => {
   const checkout = join(sandbox, 'checkout');
   const outputRoot = join(sandbox, 'output');
   copyRepository(ROOT_DIR, checkout);
-  const result = runBuild(checkout, outputRoot);
-  assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  try {
+    const result = runBuild(checkout, outputRoot);
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+  } finally {
+    // The tests read only the build output; the checkout copy is not needed past the build.
+    rmSync(checkout, { recursive: true, force: true });
+  }
   distRoot = join(outputRoot, 'dist');
 });
 

@@ -14,6 +14,12 @@ import path from 'node:path';
 import process from 'node:process';
 import test from 'node:test';
 
+import {
+  MEASURED_TEMPORARY_PEAK_BYTES,
+  MIN_TEMPORARY_FREE_BYTES,
+  evaluateTemporarySpace,
+} from '../scripts/test-capabilities.mjs';
+
 const ROOT = path.resolve(import.meta.dirname, '..');
 const CLI = path.join(ROOT, 'scripts', 'test-capabilities.mjs');
 const PACKAGE_JSON = path.join(ROOT, 'package.json');
@@ -55,6 +61,8 @@ test('host probe reports a successful, cleaned temporary-directory capability', 
   assert.equal(report.ok, true);
   assert.equal(check(report, 'temporary-directory').status, 'passed');
   assert.equal(check(report, 'loopback-tcp').status, 'passed');
+  assert.equal(check(report, 'git-checkout').status, 'passed');
+  assert.equal(check(report, 'temporary-directory-space').status, 'passed');
   if (process.platform === 'darwin') {
     assert.equal(check(report, 'macos-sandbox').status, 'passed');
   } else {
@@ -81,6 +89,53 @@ test('a file-valued TMPDIR is an observable blocked environment', (t) => {
   assert.equal(check(report, 'temporary-directory').status, 'failed');
   assert.equal(report.error?.code, 'TEST_ENVIRONMENT_UNSUPPORTED');
   assert.equal(readFileSync(filePath, 'utf8'), 'fixture');
+});
+
+// Invariant: a checkout whose Git metadata is invisible fails the preflight with one named check,
+// instead of letting the suite run into scattered Git-dependent failures.
+test('a checkout Git cannot read is an observable blocked environment', (t) => {
+  const tmpRoot = mkdtempSync(path.join(os.tmpdir(), 'effective-flow-capabilities-git-'));
+  t.after(() => rmSync(tmpRoot, { recursive: true, force: true }));
+
+  const result = runCli([], { TMPDIR: tmpRoot, GIT_DIR: path.join(tmpRoot, 'missing-git-dir') });
+  assert.equal(result.status, 1, result.stderr);
+  const report = parseSingleJson(result.stdout);
+  assert.equal(report.ok, false);
+  assert.equal(check(report, 'temporary-directory').status, 'passed');
+  assert.equal(check(report, 'git-checkout').status, 'failed');
+  assert.match(check(report, 'git-checkout').message, /^Git cannot read the checkout at /);
+  assert.equal(report.error?.code, 'TEST_ENVIRONMENT_UNSUPPORTED');
+});
+
+// Invariant: the free-space gate fails closed below the documented threshold and names both the
+// available and the required space, so the operator can size TMPDIR without reading the source.
+test('temporary free space below the documented threshold fails the check', () => {
+  assert.ok(Number.isSafeInteger(MIN_TEMPORARY_FREE_BYTES) && MIN_TEMPORARY_FREE_BYTES > 0);
+  const mib = 1024 * 1024;
+  // The measured peak came from a run with Git masked, so it is a lower bound: the threshold keeps
+  // at least twice that peak, in whole MiB.
+  assert.ok(MIN_TEMPORARY_FREE_BYTES >= 2 * MEASURED_TEMPORARY_PEAK_BYTES);
+  assert.equal(MIN_TEMPORARY_FREE_BYTES % mib, 0);
+
+  const enough = { id: 'temporary-directory-space', status: 'not-run' };
+  evaluateTemporarySpace(enough, {
+    directory: '/scratch',
+    availableBytes: MIN_TEMPORARY_FREE_BYTES,
+  });
+  assert.deepEqual(enough, { id: 'temporary-directory-space', status: 'passed' });
+
+  const short = { id: 'temporary-directory-space', status: 'not-run' };
+  evaluateTemporarySpace(short, {
+    directory: '/scratch',
+    availableBytes: 100 * mib,
+    requiredBytes: 300 * mib,
+  });
+  assert.equal(short.status, 'failed');
+  assert.match(
+    short.message,
+    /^os\.tmpdir\(\) \(\/scratch\) offers 100 MiB free, below the 300 MiB/,
+  );
+  assert.match(short.message, /TMPDIR/);
 });
 
 test('invalid arguments fail with the CLI validation exit code', () => {

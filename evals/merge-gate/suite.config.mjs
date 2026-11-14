@@ -28,7 +28,12 @@ import {
   requiresIterateTrace,
   scenarioSetup,
 } from './_scaffold/configured-reviewer-scenario.mjs';
-import { prepareCheckout } from './_scaffold/no-ci-checkout.mjs';
+import { prepareCheckout, requiresSealedObservation } from './_scaffold/run-state-seed.mjs';
+import {
+  captureSealedObservation,
+  SEALED_OBSERVATION_FILE,
+  SEALED_OBSERVATION_SUFFIX,
+} from './_scaffold/sealed-observation.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
 import * as evaluator from './_scaffold/evaluate.mjs';
 import { SCENARIOS } from './scenario-registry.mjs';
@@ -72,6 +77,12 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // `base-branch-resolution` fragment it embeds, that a provisioning run loads executes the shipped
 // `scripts/effective-flow-mechanics.mjs` (`base-branch-resolve`, `base-branch-fetch`,
 // `delivery-branch-name`), and nothing stubs it.
+//
+// The presence core is seeded for the same reason: every delegated run registers, refreshes, lists
+// and releases its run-presence marker through `effective-flow-state.mjs presence`, whose core loads
+// it on first use. So is the conflict-validation pair: a conflict round runs `ci-detect` and
+// `ci-integrity`, and Phase 4 condition 11 runs `ci-integrity` and `ci-evidence-match` wherever the
+// wisdom file records a quick-validated conflict commit.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/merge-gate.md',
@@ -93,6 +104,9 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/effective-flow-state-commit-core.mjs',
   'scripts/effective-flow-state-review-core.mjs',
   'scripts/effective-flow-state-worktree-core.mjs',
+  'scripts/effective-flow-state-presence-core.mjs',
+  'scripts/conflict-validation.mjs',
+  'scripts/conflict-validation-core.mjs',
   'scripts/review-report-render.mjs',
   'scripts/claude-settings-core.mjs',
   'scripts/runtime-file-primitives.mjs',
@@ -133,6 +147,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SCAFFOLD, 'configured-reviewer-scenario.mjs'),
   resolve(SCAFFOLD, 'project-setup.mjs'),
   resolve(SCAFFOLD, 'no-ci-checkout.mjs'),
+  resolve(SCAFFOLD, 'run-state-seed.mjs'),
 ]);
 
 const suite = {
@@ -181,13 +196,29 @@ const suite = {
     missingMessage: 'the run has no paired iterate trace',
     orphanMessage: 'an iterate trace is orphaned in a scenario without an echo',
   },
+  // What the seal itself observes, for the two scenarios whose subject the call log cannot show: the
+  // session's last message — the report — and every ref of the sandbox `origin`, where a push would
+  // land. `capturesLastMessage` makes exactly those scenarios' host receipts carry `lastMessagePath`,
+  // the file every pinned merge-gate launch writes through `--output-last-message` outside the
+  // attempt root; every other scenario's receipt and seal stay as they were.
+  sealedEvidence: {
+    fileName: SEALED_OBSERVATION_FILE,
+    archiveSuffix: SEALED_OBSERVATION_SUFFIX,
+    sealDigestKey: 'sealedObservation',
+    required: requiresSealedObservation,
+    capturesLastMessage: true,
+    capture: captureSealedObservation,
+    missingMessage: 'the run has no sealed observation of its report and origin',
+    orphanMessage: 'a sealed observation is orphaned in a scenario without one',
+  },
   scenarioSetup,
   projectDocuments,
-  // No checkout preparation beyond the shared seed commit, except for the declared no-CI policy
-  // scenarios: a gate run reads the forge through the stub and never fetches, so its sandbox keeps an
-  // `origin` no run reaches, but a policy read fetches the base ref and compares the setup ADR it
-  // finds there. `no-ci-checkout.mjs` gives exactly those scenarios a local `origin` and does nothing
-  // for any other.
+  // No checkout preparation beyond the shared seed commit, except for eight scenarios. A gate run
+  // reads the forge through the stub, so its sandbox keeps an `origin` no run reaches; but a policy
+  // read of the six declared no-CI policy scenarios fetches the base ref and compares the setup ADR
+  // it finds there (`no-ci-checkout.mjs`), and the two run-state scenarios find an earlier
+  // dispatch's record or another run's presence marker, the first with the history and `origin` its
+  // Phase-4 condition fetches (`run-state-seed.mjs`). Every other scenario gets nothing.
   prepareCheckout,
   evaluator,
   // Five discarded attempts on the sequenced Phase-4 scenario is a signal to stop and investigate

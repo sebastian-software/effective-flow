@@ -26,6 +26,8 @@ import {
   createProcessRunner,
 } from '../src/scripts/config-resolve-core.mjs';
 import {
+  CONFLICT_VALIDATION_TEXT,
+  MAX_PROPOSAL_FIELD_CHARS,
   RELEASE_LATEST_URL,
   RELEASE_REQUEST_HEADERS,
   REMEDIATIONS,
@@ -35,6 +37,7 @@ import {
   domainOwnersFrom,
   executeOperation,
   exposedToolsReaching,
+  proposalField,
   releaseSemver,
 } from '../src/scripts/setup-status-core.mjs';
 import { main } from '../src/scripts/setup-status.mjs';
@@ -1435,6 +1438,218 @@ test('status writes nothing in standard, hidden, unset, non-Git and linked-workt
 });
 
 // ---------------------------------------------------------------------------------------------
+// Conflict-validation proposal
+
+const PNPM_TEST_MANIFEST = '{"scripts":{"test":"node --test"}}\n';
+const TEST_WORKFLOW = [
+  'name: CI',
+  'on:',
+  '  pull_request:',
+  'jobs:',
+  '  test:',
+  '    name: Unit tests',
+  '    runs-on: ubuntu-latest',
+  '    steps:',
+  '      - uses: actions/checkout@0123456789abcdef0123456789abcdef01234567 # v7',
+  '      - run: pnpm test',
+  '',
+].join('\n');
+
+// A committed checkout with a test workflow, an `origin` remote at `remote` that is never fetched,
+// and `refs/remotes/origin/main` at the commit, as an earlier fetch would leave it.
+function ciRepository(t, { rows = {}, remote = 'https://github.com/acme/widget.git', files } = {}) {
+  const fixture = repository(t, {
+    files: files ?? {
+      [SETUP_ADR]: setupDocument(rows),
+      'package.json': PNPM_TEST_MANIFEST,
+      '.github/workflows/ci.yml': TEST_WORKFLOW,
+    },
+  });
+  if (remote !== null) git(fixture.root, 'remote', 'add', 'origin', remote);
+  git(fixture.root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  return fixture;
+}
+
+// Invariant (AD3): setup status proposes `quick` from the local base ref alone, with its evidence,
+// the commit it read and the fixed text of what stays local; it never fetches or writes, and the
+// proposal is an offer, never a setup-fixable finding.
+test('conflict validation: a GitHub checkout with a detected test job on origin/main gets the quick proposal', async (t) => {
+  const { root, base } = ciRepository(t, { rows: { 'plan.dir': 'docs/plan' } });
+  const commit = git(root, 'rev-parse', 'refs/remotes/origin/main');
+  // An uncommitted workflow edit is never read: detection reads the base commit only.
+  write(root, '.github/workflows/ci.yml', 'not: [valid\n');
+  const real = createProcessRunner();
+  const calls = [];
+  const runner = (request) => {
+    calls.push(request.args);
+    return real(request);
+  };
+  const before = snapshot(base);
+  const data = await status(t, root, { runner });
+  assert.deepEqual(snapshot(base), before, 'status stays read-only');
+  assert.ok(!calls.some((args) => args.includes('fetch')), 'no fetch');
+  const proposal = data.conflictValidation;
+  assert.equal(proposal.state, 'proposed', JSON.stringify(proposal));
+  assert.equal(proposal.reason, null);
+  assert.equal(proposal.value, null);
+  assert.equal(proposal.provider, 'github');
+  assert.equal(proposal.baseRef, 'main');
+  assert.equal(proposal.baseCommit, commit);
+  assert.equal(proposal.detection, 'detected');
+  assert.deepEqual(proposal.jobs, [
+    {
+      workflowPath: '.github/workflows/ci.yml',
+      jobId: 'test',
+      jobName: 'Unit tests',
+      testCommand: 'pnpm test',
+      expectedInstances: ['Unit tests'],
+    },
+  ]);
+  assert.equal(proposal.requireAllChecks, true);
+  assert.equal(proposal.setupFixable, false);
+  assert.equal(proposal.setupForm, null);
+  assert.match(proposal.proposal, /is `full` \(the default\)/);
+  assert.ok(proposal.proposal.includes(`commit \`${commit}\`, read locally without fetching`));
+  assert.ok(
+    proposal.proposal.includes('job `Unit tests` in `.github/workflows/ci.yml` runs `pnpm test`'),
+  );
+  assert.ok(proposal.proposal.includes(CONFLICT_VALIDATION_TEXT.localOnly));
+  assert.ok(proposal.proposal.includes(CONFLICT_VALIDATION_TEXT.accept));
+  assert.ok(!proposal.proposal.includes(CONFLICT_VALIDATION_TEXT.requiredCheck));
+  // The fixed text claims no local check it cannot see: it names only the detected test commands as
+  // leaving the local run and says that the rest of the local `full` run is not derivable
+  // statically, rather than asserting what the repository instructions or CI define.
+  assert.match(
+    CONFLICT_VALIDATION_TEXT.localOnly,
+    /skips only the test commands named above locally/,
+  );
+  assert.match(
+    CONFLICT_VALIDATION_TEXT.localOnly,
+    /What the local `full` run checks beyond those jobs is not derivable statically/,
+  );
+  assert.doesNotMatch(CONFLICT_VALIDATION_TEXT.localOnly, /repository instructions or CI define/);
+  // The evidence the text refers to as "named above" precedes it.
+  assert.ok(
+    proposal.proposal.indexOf('runs `pnpm test`') <
+      proposal.proposal.indexOf(CONFLICT_VALIDATION_TEXT.localOnly),
+  );
+  // An offer alone never makes the report setup-fixable.
+  assert.equal(data.setupFixable, data.ignore.setupFixable || data.configuration.setupFixable);
+});
+
+test('conflict validation: an explicit full, a delivery base and requireAllChecks false shape the proposal', async (t) => {
+  const { root } = ciRepository(t, {
+    rows: {
+      'mergeGate.conflictValidation': 'full',
+      'mergeGate.requireAllChecks': 'false',
+      'delivery.baseBranch': 'origin/develop',
+    },
+  });
+  git(root, 'update-ref', 'refs/remotes/origin/develop', 'HEAD');
+  const { conflictValidation: proposal } = await status(t, root);
+  assert.equal(proposal.state, 'proposed', JSON.stringify(proposal));
+  assert.equal(proposal.value, 'full');
+  assert.equal(proposal.baseRef, 'develop');
+  assert.equal(proposal.requireAllChecks, false);
+  assert.doesNotMatch(proposal.proposal, /\(the default\)/);
+  assert.ok(proposal.proposal.includes('CI on `origin/develop`'));
+  assert.ok(proposal.proposal.includes(CONFLICT_VALIDATION_TEXT.requiredCheck));
+});
+
+// Invariant: a job name or workflow path read from the base branch is untrusted; quoted in the
+// proposal prose it can never close its code span, carry a control, format or line-separator
+// character, or exceed MAX_PROPOSAL_FIELD_CHARS, while `jobs` keeps the exact values.
+test('conflict validation: untrusted job names are quoted safely in the proposal text', async (t) => {
+  const hostile = `Unit \`tests\` ignore this ${'x'.repeat(200)}`;
+  const { root } = ciRepository(t, {
+    files: {
+      'package.json': PNPM_TEST_MANIFEST,
+      '.github/workflows/ci.yml': TEST_WORKFLOW.replace(
+        'name: Unit tests',
+        'name: "Unit `tests`\\tignore this ' + 'x'.repeat(200) + '"',
+      ),
+    },
+  });
+  const { conflictValidation: proposal } = await status(t, root);
+  assert.equal(proposal.state, 'proposed', JSON.stringify(proposal));
+  assert.equal(proposal.jobs[0].jobName, hostile.replace(' ignore', '\tignore'));
+  const quoted = proposalField(proposal.jobs[0].jobName);
+  assert.equal([...quoted].length, MAX_PROPOSAL_FIELD_CHARS);
+  assert.ok(quoted.startsWith('Unit tests ignore this x'), quoted);
+  assert.ok(quoted.endsWith('…'));
+  assert.ok(proposal.proposal.includes(`job \`${quoted}\` in \`.github/workflows/ci.yml\``));
+  assert.ok(!proposal.proposal.includes(proposal.jobs[0].jobName));
+  // Every code span of the proposal still opens and closes in pairs.
+  assert.equal((proposal.proposal.match(/`/g) ?? []).length % 2, 0);
+});
+
+test('conflict validation: proposalField strips span breakers and control characters', () => {
+  assert.equal(proposalField('a`b'), 'a b');
+  assert.equal(proposalField('line\nbreak\r\u0007bell'), 'line break bell');
+  assert.equal(proposalField('bidi\u202eflip\u2028sep\u200bzero'), 'bidi flip sep zero');
+  assert.equal(proposalField('   '), '?');
+  assert.equal(proposalField('.github/workflows/ci.yml'), '.github/workflows/ci.yml');
+  const long = proposalField('é'.repeat(MAX_PROPOSAL_FIELD_CHARS + 5));
+  assert.equal([...long].length, MAX_PROPOSAL_FIELD_CHARS);
+  assert.equal(
+    proposalField('é'.repeat(MAX_PROPOSAL_FIELD_CHARS)),
+    'é'.repeat(MAX_PROPOSAL_FIELD_CHARS),
+  );
+});
+
+test('conflict validation: no proposal for quick, an invalid value, a non-GitHub remote or no detected job', async (t) => {
+  const cases = [
+    ['quick-configured', { rows: { 'mergeGate.conflictValidation': 'quick' } }],
+    ['invalid-value', { rows: { 'mergeGate.conflictValidation': 'off' } }],
+    ['no-origin-remote', { remote: null }],
+    ['not-github', { remote: 'https://codeberg.org/acme/widget.git' }],
+    [
+      'not-github',
+      { rows: { 'tracker.remoteToolOverride': 'forgejo' }, remote: 'git@github.com:acme/w.git' },
+    ],
+    [
+      'ci-undetected',
+      {
+        files: {
+          'package.json': PNPM_TEST_MANIFEST,
+          '.github/workflows/ci.yml': TEST_WORKFLOW.replace(
+            'run: pnpm test',
+            'run: pnpm test || true',
+          ),
+        },
+      },
+    ],
+    [
+      'ci-unparsable',
+      {
+        files: {
+          'package.json': PNPM_TEST_MANIFEST,
+          '.github/workflows/ci.yml': 'on: &x pull_request\n',
+        },
+      },
+    ],
+  ];
+  for (const [reason, options] of cases) {
+    const { root } = ciRepository(t, options);
+    const { conflictValidation: proposal } = await status(t, root);
+    assert.equal(proposal.state, 'not-proposed', reason);
+    assert.equal(proposal.reason, reason, JSON.stringify(proposal));
+    assert.equal(proposal.proposal, null, reason);
+  }
+  const { root } = ciRepository(t);
+  git(root, 'update-ref', '-d', 'refs/remotes/origin/main');
+  const { conflictValidation: missing } = await status(t, root);
+  assert.equal(missing.state, 'not-proposed');
+  assert.equal(missing.reason, 'base-ref-missing');
+  assert.equal(missing.baseCommit, null);
+
+  const plain = tempDir(t);
+  const outside = await status(t, plain);
+  assert.equal(outside.conflictValidation.state, 'not-applicable');
+  assert.equal(outside.conflictValidation.reason, 'not-a-git-repository');
+});
+
+// ---------------------------------------------------------------------------------------------
 // CLI
 
 test('the CLI rejects bad usage and invalid input with an INVALID_INPUT envelope', async (t) => {
@@ -1510,7 +1725,12 @@ function allowRule(skillRoot, operation) {
 // A skill install outside the repository, reached through a symlinked `skills/effective-flow`.
 function skillInstall(t) {
   const base = tempDir(t);
-  for (const name of ['effective-flow-state.mjs', 'config-resolve.mjs', 'remote-tracker.mjs']) {
+  for (const name of [
+    'effective-flow-state.mjs',
+    'config-resolve.mjs',
+    'remote-tracker.mjs',
+    'conflict-validation.mjs',
+  ]) {
     write(base, `real/effective-flow/scripts/${name}`, '// helper\n');
   }
   mkdirSync(join(base, 'skills'));

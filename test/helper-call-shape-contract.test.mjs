@@ -8,7 +8,7 @@ const ROOT_DIR = fileURLToPath(new URL('..', import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
 const FRAGMENT = 'helper-call-shape';
 const STATE_HELPER = 'effective-flow-state';
-const READ_HELPERS = ['config-resolve', 'remote-tracker'];
+const READ_HELPERS = ['config-resolve', 'remote-tracker', 'conflict-validation'];
 const HELPERS = [STATE_HELPER, ...READ_HELPERS];
 // The one sentence every source showing a read-helper call carries instead of the fragment; its
 // escape clause keeps untrusted text with a `'` from closing the here-string early.
@@ -44,18 +44,21 @@ const includesLazily = (text, name) =>
 const fragment = readFileSync(join(SOURCE_DIR, 'shared', `${FRAGMENT}.md`), 'utf8');
 
 // The literal shape per helper, with exactly the argv the helper accepts: `config-resolve.mjs`
-// takes `resolve` or `no-ci-policy` (CONFIG_RESOLVE_OPERATIONS).
+// takes `resolve`, `no-ci-policy` or `conflict-validation` (CONFIG_RESOLVE_OPERATIONS), and
+// `conflict-validation.mjs` one of CONFLICT_VALIDATION_OPERATIONS.
 const SHAPES = {
   'effective-flow-state':
     /^node <skill-root>\/scripts\/effective-flow-state\.mjs (?:<group> <operation>|[a-z]+ [a-z-]+) <<< '.*'$/,
   'config-resolve':
-    /^node <skill-root>\/scripts\/config-resolve\.mjs (?:resolve|no-ci-policy) <<< '.*'$/,
+    /^node <skill-root>\/scripts\/config-resolve\.mjs (?:resolve|no-ci-policy|conflict-validation) <<< '.*'$/,
   'remote-tracker':
     /^node <skill-root>\/scripts\/remote-tracker\.mjs (?:<operation>|[a-z-]+)(?: --apply)? <<< '.*'$/,
+  'conflict-validation':
+    /^node <skill-root>\/scripts\/conflict-validation\.mjs (?:ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan) <<< '.*'$/,
 };
 
 // Invariant: the Claude Code allow rules match only a literal single command, so no source may
-// show any of the three helpers behind a shell variable or a pipe; either shape prompts every time.
+// show any of the four helpers behind a shell variable or a pipe; either shape prompts every time.
 test('no source shows a helper call behind a shell variable or a pipe', () => {
   const violations = [];
   for (const { name, text } of sources) {
@@ -73,7 +76,7 @@ test('no source shows a helper call behind a shell variable or a pipe', () => {
   assert.deepEqual(violations, []);
 });
 
-// Invariant: every shown call line of the three helpers is the literal here-string shape with the
+// Invariant: every shown call line of the four helpers is the literal here-string shape with the
 // helper's permitted argv: `node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'`.
 test('every shown helper call uses the literal here-string shape', () => {
   const violations = sources.flatMap(({ name, text }) =>
@@ -111,6 +114,7 @@ test('every source showing a state-helper call has the call-shape fragment loade
   assert.deepEqual(hosts.map(({ name }) => name).sort(), [
     'src/shared/iterate-commit-fallback.md',
     'src/shared/memory-state.md',
+    'src/shared/merge-gate-delegated-run.md',
     'src/shared/review-write-report-fallback.md',
     'src/shared/setup-allowlist.md',
     'src/shared/worktree-lifecycle.md',
@@ -145,7 +149,8 @@ test('every source showing a state-helper call has the call-shape fragment loade
 });
 
 // Invariant: the read helpers' owning fragments are eager in many hosts, so they carry no
-// fragment include; every source that shows a `config-resolve` or `remote-tracker` call instead
+// fragment include; every source that shows a `config-resolve`, `remote-tracker` or
+// `conflict-validation` call instead
 // carries the one inline ban sentence, and the two owning fragments show their literal lines.
 test('every source showing a read-helper call carries the inline ban sentence', () => {
   const hosts = sources.filter(({ text }) =>
@@ -189,6 +194,8 @@ test('the call-shape fragment states the literal-command rule and its reason', (
   for (const argv of [
     '`effective-flow-state.mjs <group> <operation>`',
     '`config-resolve.mjs resolve`',
+    '`config-resolve.mjs conflict-validation`',
+    '`conflict-validation.mjs <operation>`',
     '`remote-tracker.mjs <operation>`, or `<operation> --apply` for a mutation',
   ]) {
     assert.ok(text.includes(argv), `names the argv ${argv}`);

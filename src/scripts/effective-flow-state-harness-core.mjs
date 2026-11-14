@@ -225,7 +225,7 @@ function refused(reason, details = {}) {
 
 // Returns `{ helperPaths }` when `skillRoot` may be named by a rule (the runtime-state helper in
 // its install form and its realpath), otherwise `{ refusal: { reason, path?, detail? } }`. Each of
-// the three helpers the rules name (RULE_SCRIPTS) must resolve to the file of the same name beside
+// the four helpers the rules name (RULE_SCRIPTS) must resolve to the file of the same name beside
 // the running helper, and every path on each of their resolution chains passes the same checks.
 async function checkSkillRoot(context, skillRoot, deps) {
   const { fs } = context;

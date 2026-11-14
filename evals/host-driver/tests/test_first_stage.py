@@ -35,11 +35,13 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 # fifteen next-steps scenarios, five slots each), so the synthetic frozen source is built from these
 # names and never from the live registries. A scenario registered after the freeze does not enter the
 # frozen corpus: its absence here is the pinned protocol, not an omission. Only the merge-gate names
-# registered later (`no-ci-policy-*`) are excluded from the live registry below.
+# registered later (`no-ci-policy-*`, `presence-notice-names-other-run` and
+# `quick-conflict-commit-without-ci-evidence-blocks`) are excluded from the live registry below.
 FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'no-ci-policy-flag-absent-blocks', 'no-ci-policy-merge-failure-reports',
     'no-ci-policy-reported-check-blocks', 'no-ci-policy-status-read-failure-blocks',
-    'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks')}}
+    'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks',
+    'presence-notice-names-other-run', 'quick-conflict-commit-without-ci-evidence-blocks')}}
 FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
 POLICY = ('workspace-write;approval-never;network-disabled;isolated-home;'
           'attempt-root-writable;ignore-user-config;ignore-rules')
@@ -550,7 +552,10 @@ for (const row of request.suites) {
       taskInput: 'rendered-prompt-only', completed: true, profile: task.profile};
     const seal = sealAttempt(suite, {handle: row.manifest, scenario: task.scenario, slot: task.slot,
       hostReceipt: receipt, base: row.base});
-    const sealedEvidenceText = suite.sealedEvidence ? readFileSync(resolve(trace, suite.sealedEvidence.fileName), 'utf8') : null;
+    // Sealed evidence is required per scenario, as the seal decides it: merge-gate requires it only
+    // for scenarios registered after the freeze, so no frozen merge-gate slot carries the file.
+    const sealedEvidenceText = suite.sealedEvidence?.required(task.scenario)
+      ? readFileSync(resolve(trace, suite.sealedEvidence.fileName), 'utf8') : null;
     const evidence = {scenario: task.scenario, logText, fixture, projectRoot: task.projectRoot,
       buildIdentity: json(resolve(trace, 'build-identity.json')), expectedBuildIdentity: manifest.identities[task.scenario],
       answerableOperations: new Set(Object.keys(fixture.operations ?? {})), auxiliaryText: auxiliary, sealedEvidenceText};
@@ -585,7 +590,7 @@ class OriginalSealFixture(StageFixture):
                 assert marker
                 body, close, rest = tail.partition(']);')
                 kept = [line for line in body.split('\n')
-                        if not re.match(r'\s*NO_CI_[A-Z_]+_SCENARIO,\s*$', line)]
+                        if not re.match(r'\s*(NO_CI_[A-Z_]+|PRESENCE_NOTICE|QUICK_COMMIT)_SCENARIO,\s*$', line)]
                 assert len(body.split('\n')) - len(kept) == len(FROZEN_EXCLUDED['merge-gate'])
                 evaluator.write_text(head + marker + '\n'.join(kept) + close + rest)
             for record in (r for r in self.records if r['task']['suite'] == suite):

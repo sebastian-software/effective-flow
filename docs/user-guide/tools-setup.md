@@ -200,7 +200,7 @@ route to take and still offers the remaining changes:
 
 `/effective-flow setup status` diagnoses the setup of the current checkout and changes nothing. It
 asks no question, writes no file, changes neither Git state nor `.effective-flow/`, and offers no inline
-fix; a non-interactive run produces the same report. The report has five sections:
+fix; a non-interactive run produces the same report. The report has six sections:
 
 - **Configuration:** where the configuration comes from (the project-setup ADR or the hidden local
   file) and its visibility, or that the project is not set up yet; every problem the configuration
@@ -230,6 +230,16 @@ fix; a non-interactive run produces the same report. The report has five section
 - **Allow rules:** in Claude Code, whether the [allow rules](#allow-rules-claude-code) for the
   runtime-state helper are `absent`, `current` or `stale`, with the missing and stale rules; in
   another harness, or when the state cannot be read, that it does not apply or could not be checked.
+- **Conflict validation:** whether setup would propose `mergeGate.conflictValidation: quick`. When
+  the key is `full` or unset, the remote is GitHub and the local `origin/<delivery.baseBranch>`
+  (read without fetching) carries a detected CI test job, the section shows the proposal with its
+  evidence: workflow file, job and test command, that what the local run checks beyond the job is
+  not derivable statically (status reads no repository instructions; a Guided or Targeted run
+  lists those checks where the instructions and CI make them derivable), and the required-check
+  condition under `mergeGate.requireAllChecks: false`. Otherwise it shows
+  one line with the state and the reason, such as `quick` already configured or no CI test job
+  detected. It is an offer, never a problem, so it adds nothing to the recommendation below;
+  accepting it is the Targeted request `/effective-flow setup set mergeGate.conflictValidation to quick`.
 
 Every problem comes with the setup form that would fix it, such as `/effective-flow setup` or
 `/effective-flow setup hidden`, or with the manual step when setup cannot fix it; a missing domain
@@ -243,13 +253,15 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 63 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 72 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
 `worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
-`ledger reconcile`), two for `config-resolve` (`resolve` and `no-ci-policy`), and 44 for the remote tracker's read-only operations:
-its forge reads, its pure local computations and `thread-ledger-lookup`. `worktree resume-check` and
+`ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`),
+three for `config-resolve` (`resolve`, `no-ci-policy` and `conflict-validation`), 44 for the remote tracker's read-only operations:
+its forge reads, its pure local computations and `thread-ledger-lookup`, and four for
+`conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check` and
 `ledger reconcile` only read. `ledger init` writes the delivery ledger once during an active
 `deliver` run, for that run's own record, and only within a size bound of 256 KiB; `ledger append`
 adds one proven commit to it. `worktree transition` stays within its bounds: its release restores
@@ -626,9 +638,17 @@ removes it. The same holds for the hidden local configuration `.effective-flow/p
 and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
 state, not leftovers. It may copy confirmed runtime files into
 `.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
-stale diff baseline; otherwise it preserves active runtime state. A true no-op means there are no
+stale diff baseline, or remove a merge-gate presence marker whose run is provably over; otherwise
+it preserves active runtime state. A true no-op means there are no
 migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
 report still appears.
+
+A running or waiting `merge-gate` run keeps a small presence marker below
+`.effective-flow/merge-gate-presence/`, so that another gate run on the repository can see it.
+Cleanup offers to remove such a marker only when its run's wisdom file
+(`.effective-flow/.wisdom-accumulation-<session>.tmp.md`) is gone, which proves the run is over.
+While that file exists the run may be suspended and its marker stays, however old it is, even one
+reported as possibly stale. This is a third deletion class with its own confirmation.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the

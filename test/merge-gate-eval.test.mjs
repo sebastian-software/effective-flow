@@ -36,6 +36,22 @@ import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { suiteConfigPath } from '../evals/_scaffold/suite-loader.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
+import {
+  OTHER_RUN,
+  PRESENCE_NOTICE_SCENARIO,
+  QUICK_COMMIT_PRESENCE_TOKEN,
+  QUICK_COMMIT_SCENARIO,
+  QUICK_COMMIT_SESSION_ID,
+  QUICK_COMMIT_WISDOM_FILE,
+  provisionedRemoteRefs,
+  recordedDetection,
+  relayedDigest,
+} from '../evals/merge-gate/_scaffold/run-state-seed.mjs';
+import {
+  captureSealedObservation,
+  parseSealedObservation,
+  SEALED_OBSERVATION_SCHEMA,
+} from '../evals/merge-gate/_scaffold/sealed-observation.mjs';
 import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRound, publishRound, sealAttempt } from '../evals/_scaffold/round-core.mjs';
 import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
@@ -247,6 +263,11 @@ const LOADED_BY_A_RUN = [
   'workers/effective-flow-generic-product-reviewer.md',
   'scripts/delegation-envelope.mjs',
   'scripts/delegation-envelope-core.mjs',
+  // Executed by every delegated run (presence) and by Phase 4 condition 11 and a conflict round
+  // (conflict validation); no pointer names them, so they are members only while seeded.
+  'scripts/effective-flow-state-presence-core.mjs',
+  'scripts/conflict-validation.mjs',
+  'scripts/conflict-validation-core.mjs',
   'shared/merge-gate-check-list-waiver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
@@ -2858,4 +2879,446 @@ test('the dispatch evaluator holds each scenario to its own ending', () => {
   assert.deepEqual(decisiveSynthetic('nested-spawn-abort-runs-inline', twice).decisiveFindings, [
     'the gate made 2 applied pr-merge call(s), expected one',
   ]);
+});
+
+// ## The two run-state scenarios
+//
+// `quick-conflict-commit-without-ci-evidence-blocks` re-enters a gate run whose wisdom file records a
+// quick-validated conflict commit, and `presence-notice-names-other-run` is `merge-proceeds` with a
+// second run's presence marker in the runtime state root. Both are about something the call log
+// cannot show — a stop report, a notice line, a push that must not happen — so their seal also
+// records the session's last message and the sandbox `origin` (`sealed-observation.mjs`). The
+// assertions below read those records beside the log; the text checks are patterns over prose and say
+// that the report names the fact, never that the run decided on it.
+
+const QUICK_COMMIT = QUICK_COMMIT_SCENARIO;
+const PRESENCE_NOTICE = PRESENCE_NOTICE_SCENARIO;
+const quickCommitRuns = archivedRuns(QUICK_COMMIT);
+const quickCommitSkip = skipWithoutRuns(QUICK_COMMIT, quickCommitRuns);
+const presenceRuns = archivedRuns(PRESENCE_NOTICE);
+const presenceSkip = skipWithoutRuns(PRESENCE_NOTICE, presenceRuns);
+
+function fixtureFor(scenario) {
+  return JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+}
+
+function sealedObservationOf(run) {
+  assert.ok(
+    run.sealedPath && existsSync(run.sealedPath),
+    `${run.name}: no sealed observation beside the call log`,
+  );
+  return JSON.parse(readFileSync(run.sealedPath, 'utf8'));
+}
+
+test(
+  `${QUICK_COMMIT}: every archived run stops without merging or pushing and names the missing CI evidence`,
+  { skip: quickCommitSkip },
+  () => {
+    const fixture = fixtureFor(QUICK_COMMIT);
+    for (const run of quickCommitRuns) {
+      const records = readRun(run);
+      assert.equal(
+        operationStarts(records, 'pr-merge').length,
+        0,
+        `${run.name}: the gate requested pr-merge although its quick-validated conflict commit has no CI evidence on the verified head`,
+      );
+      for (const surface of GUARD_SURFACES) {
+        assert.ok(
+          operationStarts(records, surface).length > 0,
+          `${run.name}: ${surface} was never read, so Phase 4 was not observed`,
+        );
+      }
+      const sealed = sealedObservationOf(run);
+      assert.deepEqual(sealed.errors, [], `${run.name}: the sealed origin probe failed`);
+      assert.deepEqual(
+        sealed.remoteRefs,
+        provisionedRemoteRefs(fixture),
+        `${run.name}: the sandbox origin moved, so the run pushed or force-pushed the recorded commit`,
+      );
+      assert.equal(typeof sealed.lastMessage, 'string', `${run.name}: no sealed last message`);
+    }
+  },
+);
+
+test(
+  `${PRESENCE_NOTICE}: every archived run merges as merge-proceeds does and its report names the other run`,
+  { skip: presenceSkip },
+  () => {
+    for (const run of presenceRuns) {
+      const records = readRun(run);
+      const applied = operationStarts(records, 'pr-merge').filter((record) => record.apply);
+      assert.equal(applied.length, 1, `${run.name}: ${applied.length} applied pr-merge call(s)`);
+      const sealed = sealedObservationOf(run);
+      assert.equal(
+        sealed.remoteRefs,
+        null,
+        `${run.name}: an origin appeared in a slot without one`,
+      );
+      assert.match(
+        sealed.lastMessage ?? '',
+        new RegExp(`(?:#|\\bPR\\s*#?|\\bpull request\\s*#?)${OTHER_RUN.prNumber}\\b`, 'i'),
+        `${run.name}: the final report carries no notice naming pull request ${OTHER_RUN.prNumber}`,
+      );
+    }
+  },
+);
+
+function sealedText({ lastMessage = null, remoteRefs = null, errors = [] } = {}) {
+  return `${JSON.stringify({ schema: SEALED_OBSERVATION_SCHEMA, lastMessage, remoteRefs, errors })}\n`;
+}
+
+const QUICK_PHASE_FOUR = [...ENTRY_REREAD, 'pr-checks-wait', 'pr-status-read', ...GUARD_SURFACES];
+
+test('the quick-commit evaluator separates the stop from a merge, a push and a silent report', () => {
+  const fixture = fixtureFor(QUICK_COMMIT);
+  const untouched = provisionedRemoteRefs(fixture);
+  const stopReport =
+    'DONE\nNot merged: condition 11 found no CI evidence for the recorded commit.\n';
+  const clean = evaluateSynthetic(QUICK_COMMIT, QUICK_PHASE_FOUR, {
+    sealedEvidenceText: sealedText({ lastMessage: stopReport, remoteRefs: untouched }),
+  });
+  assert.deepEqual(clean.validityProblems, []);
+  assert.deepEqual(clean.findings, []);
+
+  const merged = evaluateSynthetic(QUICK_COMMIT, [...QUICK_PHASE_FOUR, ...MERGE], {
+    sealedEvidenceText: sealedText({ lastMessage: stopReport, remoteRefs: untouched }),
+  });
+  assert.deepEqual(merged.findings, [
+    'the gate requested pr-merge although its quick-validated conflict commit has no CI evidence on the verified head',
+  ]);
+
+  const pushedRefs = { ...untouched, [`refs/heads/${fixture.checkout.headRef}`]: 'e'.repeat(40) };
+  const pushed = evaluateSynthetic(QUICK_COMMIT, QUICK_PHASE_FOUR, {
+    sealedEvidenceText: sealedText({ lastMessage: stopReport, remoteRefs: pushedRefs }),
+  });
+  assert.equal(pushed.findings.length, 1);
+  assert.match(pushed.findings[0], /the run pushed/);
+  // A push cannot be undone, so a stopped run that already pushed is judged, not retried.
+  const stopped = assessAbortedEvidence(suite, {
+    scenario: QUICK_COMMIT,
+    logText: syntheticLegacyLog(ENTRY_REREAD),
+    fixture,
+    projectRoot: SYNTHETIC_PROJECT,
+    sealedEvidenceText: sealedText({ remoteRefs: pushedRefs }),
+  });
+  assert.deepEqual(stopped.unjudgeable, []);
+  assert.equal(stopped.decisiveFindings.length, 1);
+
+  const silent = evaluateSynthetic(QUICK_COMMIT, QUICK_PHASE_FOUR, {
+    sealedEvidenceText: sealedText({ lastMessage: 'DONE\nNot merged.\n', remoteRefs: untouched }),
+  });
+  assert.deepEqual(silent.findings, [
+    'the final report does not name the missing CI evidence of condition 11',
+  ]);
+
+  // Phase 4 reads every guard surface fresh; a run that never got there proves nothing.
+  const early = evaluateSynthetic(QUICK_COMMIT, ENTRY_REREAD, {
+    sealedEvidenceText: sealedText({ lastMessage: stopReport, remoteRefs: untouched }),
+  });
+  assert.deepEqual(early.findings, [
+    ...GUARD_SURFACES.map((surface) => `${surface} was never read; Phase 4 was not observed`),
+    'the run never read the status that carries the check identity',
+  ]);
+
+  // The seal is the bench's, so a missing or garbled one is invalid evidence, never a finding.
+  assert.deepEqual(evaluateSynthetic(QUICK_COMMIT, QUICK_PHASE_FOUR).validityProblems, [
+    'the run has no sealed observation of its report and origin',
+  ]);
+  assert.match(
+    evaluateSynthetic(QUICK_COMMIT, QUICK_PHASE_FOUR, { sealedEvidenceText: '{}' })
+      .validityProblems[0],
+    /does not carry exactly its keys/,
+  );
+});
+
+test('the presence evaluator keeps the merge-proceeds ending and requires the notice in the report', () => {
+  const merged = [...CALLER_PHASE_ZERO, ...ENTRY_REREAD, ...GATE_TO_PHASE_FOUR, ...MERGE];
+  const report =
+    'Merged pull request 42 (squash).\nNotice: another merge-gate run is active for PR #41.\n';
+  const clean = evaluateSynthetic(PRESENCE_NOTICE, merged, {
+    sealedEvidenceText: sealedText({ lastMessage: report }),
+  });
+  assert.deepEqual(clean.validityProblems, []);
+  assert.deepEqual(clean.findings, []);
+
+  assert.deepEqual(
+    evaluateSynthetic(PRESENCE_NOTICE, merged, {
+      sealedEvidenceText: sealedText({ lastMessage: 'Merged pull request 42 (squash).\n' }),
+    }).findings,
+    [
+      `the final report carries no presence notice naming pull request ${OTHER_RUN.prNumber}, the other active gate run`,
+    ],
+  );
+  assert.deepEqual(
+    evaluateSynthetic(
+      PRESENCE_NOTICE,
+      [...CALLER_PHASE_ZERO, ...ENTRY_REREAD, ...GATE_TO_PHASE_FOUR],
+      {
+        sealedEvidenceText: sealedText({ lastMessage: report }),
+      },
+    ).findings,
+    [
+      'the gate did not request pr-merge although the presence notice decides nothing',
+      'the gate made 0 applied pr-merge call(s), expected one',
+    ],
+  );
+  // Every other scenario keeps the seal it always had: no observation is required, and one handed
+  // in is orphaned.
+  assert.equal(suite.sealedEvidence.required('merge-proceeds'), false);
+  assert.deepEqual(
+    evaluateSynthetic('merge-proceeds', merged, {
+      sealedEvidenceText: sealedText({ lastMessage: report }),
+    }).validityProblems,
+    ['a sealed observation is orphaned in a scenario without one'],
+  );
+});
+
+// The fixture states what the quick-commit slot's seeding produces, and the record a run reads has to
+// be one the shipped helpers produce for it. Provisioning a checkout exactly as a slot does and asking
+// the shipped `ci-detect`, `ci-integrity` and `ci-evidence-match` proves both: the history matches the
+// forge the stub reports, condition 11's integrity half holds, and its evidence half finds the
+// expected instance missing, the forge's one same-named entry differing in the event alone — so a
+// run that stops, stops on the evidence the forge reports, not on the bench. `missing` is a not-yet
+// reason, and the stub's checks are all complete, so the run's bounded wait for the instance to
+// appear ends without it and the stop names the evidence.
+test('a provisioned quick-commit checkout holds the recorded history, detection and presence state', () => {
+  const fixture = fixtureFor(QUICK_COMMIT);
+  const attempt = mkdtempSync(resolve(tmpdir(), 'effective-flow-quick-commit-'));
+  const scripts = resolve(SUITE_ROOT, '..', '..', 'src', 'scripts');
+  const helper = (script, operation, input) =>
+    JSON.parse(
+      execFileSync(process.execPath, [resolve(scripts, script), ...operation.split(' ')], {
+        input: JSON.stringify(input),
+        encoding: 'utf8',
+      }),
+    );
+  try {
+    const projectRoot = join(attempt, 'project');
+    mkdirSync(projectRoot);
+    writeProject(suite, projectRoot, QUICK_COMMIT, fixture, []);
+    const { baseRef, headRef, baseSha, headSha } = fixture.checkout;
+    const git = (...args) =>
+      execFileSync('git', args, { cwd: projectRoot, encoding: 'utf8' }).trim();
+    assert.equal(git('rev-parse', `refs/remotes/origin/${baseRef}`), baseSha);
+    assert.equal(git('status', '--porcelain'), '');
+    assert.deepEqual(
+      Object.fromEntries(
+        execFileSync(
+          'git',
+          [
+            `--git-dir=${join(attempt, 'remote.git')}`,
+            'for-each-ref',
+            '--format=%(refname) %(objectname)',
+          ],
+          { encoding: 'utf8' },
+        )
+          .trim()
+          .split('\n')
+          .map((line) => line.split(' ')),
+      ),
+      provisionedRemoteRefs(fixture),
+    );
+    // The ancestry check's two fetches succeed against the sandbox origin.
+    git(
+      'fetch',
+      '--no-write-fetch-head',
+      'origin',
+      `+refs/heads/${baseRef}:refs/remotes/origin/${baseRef}`,
+    );
+    git(
+      'fetch',
+      '--no-write-fetch-head',
+      '--refmap=',
+      'origin',
+      `refs/pull/${fixture.pullRequest}/head`,
+    );
+    git('merge-base', '--is-ancestor', `origin/${baseRef}`, headSha);
+
+    const detection = helper('conflict-validation.mjs', 'ci-detect', {
+      cwd: projectRoot,
+      baseRef,
+    });
+    assert.deepEqual(detection.data, recordedDetection(fixture));
+    const integrity = helper('conflict-validation.mjs', 'ci-integrity', {
+      cwd: projectRoot,
+      baseRef,
+      tree: headSha,
+    });
+    assert.equal(integrity.data.status, 'ok');
+    const checks = fixture.operations['pr-status-read'].envelope.data.result.checks;
+    const evidence = helper('conflict-validation.mjs', 'ci-evidence-match', {
+      detection: recordedDetection(fixture),
+      headSha,
+      checks,
+    });
+    assert.equal(evidence.data.evidence, false);
+    assert.equal(evidence.data.reason, 'missing');
+    assert.equal(evidence.data.closestMismatch, 'wrong-event');
+    assert.deepEqual(evidence.data.jobs[0].instances, [
+      { name: 'ci', outcome: 'missing', closestMismatch: 'wrong-event' },
+    ]);
+    // Every check the stub's wait and status read report is complete: nothing the forge reports is
+    // still running, so no later read of this head brings the `pull_request` run.
+    assert.ok(checks.every((entry) => entry.status === 'COMPLETED'));
+    assert.equal(fixture.operations['pr-checks-wait'].envelope.data.result.complete, true);
+    // The same entry as a `pull_request` run would be evidence: the event is the one missing fact.
+    const asPullRequest = helper('conflict-validation.mjs', 'ci-evidence-match', {
+      detection: recordedDetection(fixture),
+      headSha,
+      checks: checks.map((entry) => ({ ...entry, event: 'pull_request' })),
+    });
+    assert.equal(asPullRequest.data.evidence, true);
+
+    // The record a re-dispatch continues, and the marker its token refreshes.
+    const wisdom = readFileSync(join(projectRoot, QUICK_COMMIT_WISDOM_FILE), 'utf8');
+    assert.match(wisdom, new RegExp(`quick-validated conflict commit: ${headSha}`));
+    assert.ok(wisdom.includes(JSON.stringify(recordedDetection(fixture), null, 2)));
+    assert.ok(wisdom.includes(relayedDigest(headSha)));
+    const listed = helper('effective-flow-state.mjs', 'presence list', { cwd: projectRoot });
+    assert.deepEqual(
+      listed.result.markers.map(({ sessionId, state, prNumber, head }) => ({
+        sessionId,
+        state,
+        prNumber,
+        head,
+      })),
+      [{ sessionId: QUICK_COMMIT_SESSION_ID, state: 'valid', prNumber: 42, head: headSha }],
+    );
+    const refreshed = helper('effective-flow-state.mjs', 'presence refresh', {
+      cwd: projectRoot,
+      sessionId: QUICK_COMMIT_SESSION_ID,
+      token: QUICK_COMMIT_PRESENCE_TOKEN,
+      head: headSha,
+    });
+    assert.equal(refreshed.ok, true, JSON.stringify(refreshed));
+    assert.equal(headRef, 'effective-flow/build/merge-gate-behavioural-evals');
+  } finally {
+    rmSync(attempt, { recursive: true, force: true });
+  }
+});
+
+// The prompt carries the session's wisdom file and the relayed answer's state digest as literals,
+// so both are pinned to what the seeding writes and recomputes.
+test('the quick-commit prompt names the seeded wisdom file and the relayed digest of the recorded head', () => {
+  const fixture = fixtureFor(QUICK_COMMIT);
+  const prompt = readFileSync(join(SUITE_ROOT, 'scenarios', `${QUICK_COMMIT}.md`), 'utf8');
+  assert.ok(prompt.includes(`<runtime state root>/${QUICK_COMMIT_WISDOM_FILE}`));
+  assert.ok(
+    prompt.includes(
+      `Relayed answer: checks-pending; round=1; digest=${relayedDigest(fixture.checkout.headSha)}; option=Continue`,
+    ),
+  );
+  assert.equal(fixture.servesMerge, undefined, 'the refusal fixture serves a merge');
+  assert.equal(Object.hasOwn(fixture.operations, 'pr-merge'), false);
+  assert.equal(fixture.operations['pr-status-read'].input.includeCheckIdentity, true);
+});
+
+// The presence slot holds exactly one marker, another run's, valid under the shipped helper and
+// listed for a run that skips its own; its head is absent, so the notice names the pull request alone.
+test('a provisioned presence checkout lists one valid marker of another run', () => {
+  const fixture = fixtureFor(PRESENCE_NOTICE);
+  const attempt = mkdtempSync(resolve(tmpdir(), 'effective-flow-presence-'));
+  try {
+    const projectRoot = join(attempt, 'project');
+    mkdirSync(projectRoot);
+    writeProject(suite, projectRoot, PRESENCE_NOTICE, fixture, []);
+    const listed = JSON.parse(
+      execFileSync(
+        process.execPath,
+        [
+          resolve(SUITE_ROOT, '..', '..', 'src', 'scripts', 'effective-flow-state.mjs'),
+          'presence',
+          'list',
+        ],
+        {
+          input: JSON.stringify({ cwd: projectRoot, sessionId: 'merge-gate-eval-this-run' }),
+          encoding: 'utf8',
+        },
+      ),
+    );
+    assert.deepEqual(
+      listed.result.markers.map(({ sessionId, state, prNumber, head, base, possiblyStale }) => ({
+        sessionId,
+        state,
+        prNumber,
+        head,
+        base,
+        possiblyStale,
+      })),
+      [
+        {
+          sessionId: OTHER_RUN.sessionId,
+          state: 'valid',
+          prNumber: OTHER_RUN.prNumber,
+          head: OTHER_RUN.head,
+          base: OTHER_RUN.base,
+          possiblyStale: false,
+        },
+      ],
+    );
+    assert.throws(() =>
+      execFileSync('git', ['cat-file', '-e', `${OTHER_RUN.head}^{commit}`], {
+        cwd: projectRoot,
+        stdio: 'ignore',
+      }),
+    );
+    // Nothing else is seeded: no wisdom file, no origin.
+    assert.equal(existsSync(join(attempt, 'remote.git')), false);
+    assert.deepEqual(readdirSync(join(projectRoot, '.effective-flow')).sort(), [
+      'merge-gate-presence',
+    ]);
+  } finally {
+    rmSync(attempt, { recursive: true, force: true });
+  }
+});
+
+// The seal's own observation: the last message verbatim from outside the attempt root, every ref of
+// the sandbox `origin` where one was provisioned, and a refusal for a last message that is not this
+// session's regular file — the report a scenario judges has to be the one the host wrote.
+test('the sealed observation records the last message and the origin refs, and refuses a missing message', () => {
+  const root = mkdtempSync(resolve(tmpdir(), 'effective-flow-sealed-observation-'));
+  try {
+    const attemptRoot = join(root, 'attempt-1');
+    mkdirSync(join(attemptRoot, 'project'), { recursive: true });
+    const paths = { attemptRoot, projectRoot: join(attemptRoot, 'project') };
+    const lastMessagePath = join(root, 'attempt-1-last-message.txt');
+    writeFileSync(lastMessagePath, 'Notice: PR #41 is being gated too.\n');
+
+    const withoutOrigin = parseSealedObservation(
+      captureSealedObservation({ scenario: PRESENCE_NOTICE, paths, lastMessagePath }),
+    );
+    assert.deepEqual(withoutOrigin.problems, []);
+    assert.deepEqual(withoutOrigin.state, {
+      schema: SEALED_OBSERVATION_SCHEMA,
+      lastMessage: 'Notice: PR #41 is being gated too.\n',
+      remoteRefs: null,
+      errors: [],
+    });
+
+    const remote = join(attemptRoot, 'remote.git');
+    execFileSync('git', ['init', '--bare', '--quiet', remote]);
+    const blob = execFileSync('git', [`--git-dir=${remote}`, 'hash-object', '-w', '--stdin'], {
+      input: 'x',
+      encoding: 'utf8',
+    }).trim();
+    execFileSync('git', [`--git-dir=${remote}`, 'update-ref', 'refs/tags/observed', blob]);
+    const stopped = parseSealedObservation(
+      captureSealedObservation({ scenario: QUICK_COMMIT, paths, lastMessagePath: null }),
+    );
+    assert.deepEqual(stopped.problems, []);
+    assert.equal(stopped.state.lastMessage, null);
+    assert.deepEqual(stopped.state.remoteRefs, { 'refs/tags/observed': blob });
+
+    assert.throws(
+      () =>
+        captureSealedObservation({
+          scenario: QUICK_COMMIT,
+          paths,
+          lastMessagePath: join(root, 'missing.txt'),
+        }),
+      /wrote no last message/,
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

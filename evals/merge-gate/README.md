@@ -56,12 +56,15 @@ both halves, and neither is safe alone.
 | `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                                                                    |
 | `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`                                                        |
 | `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace                                                                         |
+| `_scaffold/run-state-seed.mjs`               | The runtime state and history of the two run-state scenarios, and the suite's checkout hook                                             |
+| `_scaffold/sealed-observation.mjs`           | The seal's record of the last message and the sandbox `origin` for those two scenarios, and its parser                                  |
 | `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in                                                  |
 | `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                                                                  |
 | `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                                                                 |
 | `results/<name>/run-<n>.prompt.txt`          | The exact rendered prompt supplied to the fresh session                                                                                 |
 | `results/<name>/run-<n>.metadata.json`       | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata                                                     |
 | `results/<name>/run-<n>.iterate.jsonl`       | Configured-reviewer handoff trace; required for that scenario, forbidden for any other                                                  |
+| `results/<name>/run-<n>.sealed.json`         | Sealed last message and `origin` refs; required for the two run-state scenarios, forbidden for any other                                |
 
 The shared half, for reference: `../eval.mjs` is the round lifecycle CLI and `../prepare.mjs` its
 deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs` (round, slot,
@@ -374,8 +377,10 @@ After a session finishes, create a host receipt with exactly these fields:
 
 The working root and profile must exactly match that attempt and its round. Do not add task, thread,
 or session IDs, account or email values, or links. One optional key exists: a scenario whose sealed
-evidence declares `capturesLastMessage: true` (only `focus` today) carries `lastMessagePath`, the
-absolute path of the session's last message, and no other receipt may. Seal only after the host task has ended:
+evidence declares `capturesLastMessage: true` carries `lastMessagePath`, the absolute path of the
+session's last message, and no other receipt may. Here that is `presence-notice-names-other-run` and
+`quick-conflict-commit-without-ci-evidence-blocks`: pass the path the launch wrote through
+`--output-last-message`, which lies outside the attempt root. Seal only after the host task has ended:
 
 ```sh
 pnpm eval merge-gate seal \
@@ -722,6 +727,35 @@ correlated `complete` events are not additional calls.
   always fails the outcome assertion and is never discarded as variance. If one round needs more than five
   discarded runs to reach five valid ones, stop and decide rather than keep re-running — the rule is
   then hiding a pattern rather than absorbing variance.
+
+## The two run-state scenarios
+
+`quick-conflict-commit-without-ci-evidence-blocks` and `presence-notice-names-other-run` are about
+state a gate run reads rather than state it writes, and about things the call log cannot show.
+`_scaffold/run-state-seed.mjs` provisions their slots, and their seal also writes
+`trace/sealed-observation.json`: the session's last message and every ref of the sandbox `origin`
+(`_scaffold/sealed-observation.mjs`). Their host receipts carry `lastMessagePath`; every other
+scenario's receipt and seal are unchanged.
+
+- **The quick-commit scenario enters at a re-dispatch, not at a fresh Phase 4.** The only path the
+  shipped gate offers into an existing wisdom file is a re-dispatch with a `Relayed answer:` line, so
+  the session is the delegated run itself, handed the input lines a caller writes after relaying
+  `BLOCKED-USER checks-pending` with `Continue`. The slot holds what the first dispatch left: the
+  record of a low-risk conflict validated in `quick` mode and pushed, this run's presence marker, and
+  a deterministic history with a reachable `origin` (base, head branch, `refs/pull/42/head`), whose
+  SHAs and `ci-detect` result the fixture's `checkout` block states. `test/merge-gate-eval.test.mjs`
+  provisions that checkout and asks the shipped helpers: the history matches the forge the stub
+  reports, `ci-integrity` holds, and `ci-evidence-match` fails on the event alone. The run's own
+  helper calls — fetches, `ci-integrity`, `ci-evidence-match` — run outside the stub and leave no
+  record. The setup ADR keeps the base rows (`mergeGate.conflictResolution: off`, no
+  `mergeGate.conflictValidation`), because `test/eval-fixture-fidelity.test.mjs` pins every
+  undeclared scenario to the base configuration; neither row is read on this path.
+- **What is asserted:** no `pr-merge`; a fresh read of the status and of every guard surface (one each,
+  because a re-dispatch need not repeat Phase 1); an `origin` exactly as provisioned, so nothing was
+  pushed or force-pushed; and a last message that names the missing CI evidence. For the presence
+  scenario: `merge-proceeds`' ending, and a last message that names pull request 41. The two text
+  checks are patterns over prose: they show that the report names the fact, never that the run
+  decided on it.
 
 ## What this deliberately does not cover
 

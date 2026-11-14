@@ -4,11 +4,12 @@
 // neither of those imports the other. This module reads only and imports no script but the
 // dependency-free `runtime-file-primitives.mjs`.
 //
-// One rule shape per allowlisted operation of three JSON helpers (see RULE_ENTRIES):
+// One rule shape per allowlisted operation of four JSON helpers (see RULE_ENTRIES):
 //
 //   Bash(node <skillRoot>/scripts/effective-flow-state.mjs <group> <operation> *)
 //   Bash(node <skillRoot>/scripts/config-resolve.mjs <operation> *)
 //   Bash(node <skillRoot>/scripts/remote-tracker.mjs <operation> *)
+//   Bash(node <skillRoot>/scripts/conflict-validation.mjs <operation> *)
 //
 // `<skillRoot>` is the loaded skill's directory in its symlinked install form. The trailing `*`
 // admits the here-string; each helper itself rejects any argv beyond its operation tokens, and
@@ -24,13 +25,15 @@ import { isObject, readBoundedFile, sameFileRead } from './runtime-file-primitiv
 export const HELPER_RELATIVE_PATH = 'scripts/effective-flow-state.mjs';
 export const CONFIG_RESOLVE_RELATIVE_PATH = 'scripts/config-resolve.mjs';
 export const REMOTE_TRACKER_RELATIVE_PATH = 'scripts/remote-tracker.mjs';
+export const CONFLICT_VALIDATION_RELATIVE_PATH = 'scripts/conflict-validation.mjs';
 export const SETTINGS_RELATIVE_PATH = '.claude/settings.local.json';
 
-// The three helpers an allow rule may name, by script name.
+// The four helpers an allow rule may name, by script name.
 export const RULE_SCRIPTS = Object.freeze({
   'effective-flow-state': HELPER_RELATIVE_PATH,
   'config-resolve': CONFIG_RESOLVE_RELATIVE_PATH,
   'remote-tracker': REMOTE_TRACKER_RELATIVE_PATH,
+  'conflict-validation': CONFLICT_VALIDATION_RELATIVE_PATH,
 });
 export const RULE_SCRIPT_NAMES = Object.freeze(Object.keys(RULE_SCRIPTS));
 
@@ -84,20 +87,46 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'ledger init',
   'ledger append',
   'ledger reconcile',
+  // The run-presence markers: `presence register` creates the calling session's own marker (at most
+  // MAX_MARKER_BYTES) no-clobber below `.effective-flow/merge-gate-presence/`, `refresh` and
+  // `release` rewrite or remove only that marker and only with its `token`, and `list` only reads.
+  // None of them changes or removes another run's marker (see
+  // `effective-flow-state-presence-core.mjs`).
+  'presence register',
+  'presence refresh',
+  'presence list',
+  'presence release',
 ]);
 // The runtime-state helper operations that never get a rule: destructive (`lock break`, the
-// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`) or
-// the writer of the rules itself. A rule that would also admit one of them is widened.
+// worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`, the
+// removal of other runs' presence markers by `presence prune`) or the writer of the rules itself.
+// A rule that would also admit one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock break',
   'harness allow-rules',
   'worktree remove',
   'cleanup apply',
+  'presence prune',
 ]);
 
-// Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy`, which also reads
-// one Git blob of the base branch's remote-tracking ref.
-export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze(['resolve', 'no-ci-policy']);
+// Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy` and
+// `conflict-validation`, which also read one Git blob of the base branch's remote-tracking ref.
+export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze([
+  'resolve',
+  'no-ci-policy',
+  'conflict-validation',
+]);
+
+// Every `conflict-validation.mjs` operation reads only: `ci-detect` and `ci-integrity` read Git
+// objects of the base branch's remote-tracking ref (and of the given tree) without fetching,
+// `ci-evidence-match` is a pure computation over its input, and `quick-marker-scan` reads the
+// commit messages between that ref's merge base and a given head.
+export const CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS = Object.freeze([
+  'ci-detect',
+  'ci-integrity',
+  'ci-evidence-match',
+  'quick-marker-scan',
+]);
 
 // The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
 // computations, and `thread-ledger-lookup`, a local read of runtime state. Never a mutation, never
@@ -181,6 +210,7 @@ export const ALLOWLISTED_BY_SCRIPT = Object.freeze({
   'effective-flow-state': ALLOWLISTED_OPERATIONS,
   'config-resolve': CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS,
   'remote-tracker': REMOTE_TRACKER_READ_OPERATIONS,
+  'conflict-validation': CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS,
 });
 
 // Every rule `harness allow-rules` writes, in write order: `{ script, operation }`.
@@ -204,6 +234,7 @@ const NEVER_ADMITTED_CALLS = Object.freeze({
       ? [`${operation} <<< '{}'`, `${operation} <<'EOF'`]
       : [`${operation} --apply <<< '{}'`, `${operation} --apply <<'EOF'`],
   ),
+  'conflict-validation': [],
 });
 
 export const MAX_SETTINGS_BYTES = 1024 * 1024;
@@ -224,6 +255,9 @@ const RULE_PATTERNS = Object.freeze({
   ),
   'remote-tracker': new RegExp(
     `^Bash\\(node ${ROOT_GROUP}/scripts/remote-tracker\\.mjs (${OPERATION_TOKEN}) \\*\\)$`,
+  ),
+  'conflict-validation': new RegExp(
+    `^Bash\\(node ${ROOT_GROUP}/scripts/conflict-validation\\.mjs (${OPERATION_TOKEN}) \\*\\)$`,
   ),
 });
 // A rule naming one of the helper files in any other form than its exact shape is widened.
@@ -274,7 +308,7 @@ export function parseHelperRule(rule) {
 // null. The widened rules are warned about and never removed: the user may have chosen them.
 //   any-command        `Bash` or `Bash(*)`
 //   any-node-command   `Bash(node *)`, `Bash(node:*)` or another bare `node` prefix
-//   helper-wildcard    a rule naming one of the three helper files that is not of its exact shape,
+//   helper-wildcard    a rule naming one of the four helper files that is not of its exact shape,
 //                      or any pattern that matches a never-admitted call (NEVER_ADMITTED_CALLS) of
 //                      a helper beside one of `helperPaths`, such as
 //                      `Bash(node <skillRoot>/scripts/*)` or `Bash(node ~/.claude/skills/*)`

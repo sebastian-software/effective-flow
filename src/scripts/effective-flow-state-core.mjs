@@ -11,8 +11,10 @@
 // read-only `worktree resume-check`, plus every `worktree transition` input that carries `release`
 // (the release of a retained `partial-diff` record) or `adoption: "partial-diff-resume"` (its
 // resume adoption) in `effective-flow-state-recovery-core.mjs`, whose ledger schema and
-// comparisons live in `effective-flow-state-ledger-core.mjs`; each imports this module and is
-// loaded on first use.
+// comparisons live in `effective-flow-state-ledger-core.mjs`, and the merge-gate run-presence
+// markers (`presence register`, `presence refresh`, `presence list`, `presence release`, `presence
+// prune`) in `effective-flow-state-presence-core.mjs`; each imports this module and is loaded on
+// first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
 //
@@ -106,6 +108,11 @@ export const STATE_OPERATIONS = Object.freeze([
   'ledger init',
   'ledger append',
   'ledger reconcile',
+  'presence register',
+  'presence refresh',
+  'presence list',
+  'presence release',
+  'presence prune',
 ]);
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
@@ -142,6 +149,15 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'ledger append': 'allowlisted',
   // Read-only, like `worktree resume-check`.
   'ledger reconcile': 'allowlisted',
+  // The run-presence markers: `register`, `refresh` and `release` write or remove only the
+  // caller's own marker of at most 2 KiB below `.effective-flow/merge-gate-presence/` (the latter
+  // two only with its token), and `list` only reads. `prune` removes other runs' markers, under the
+  // wisdom-file proof, and stays a confirmed cleanup step.
+  'presence register': 'allowlisted',
+  'presence refresh': 'allowlisted',
+  'presence list': 'allowlisted',
+  'presence release': 'allowlisted',
+  'presence prune': 'not-allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
@@ -192,6 +208,9 @@ export const OUTCOME_CODES = Object.freeze([
   'BRANCH_RETAINED',
   'DEADLINE_REACHED',
   'LEDGER_EXISTS',
+  'MARKER_EXISTS',
+  'MARKER_NOT_FOUND',
+  'MARKER_INVALID',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
@@ -364,6 +383,11 @@ export const OPERATION_KEYS = Object.freeze({
   ]),
   'ledger append': Object.freeze(['cwd', 'executionRoot', 'recordId', 'sessionId', 'commitOid']),
   'ledger reconcile': Object.freeze(['cwd', 'executionRoot', 'recordId', 'sessionId']),
+  'presence register': Object.freeze(['cwd', 'sessionId', 'prNumber', 'head', 'base']),
+  'presence refresh': Object.freeze(['cwd', 'sessionId', 'token', 'head']),
+  'presence list': Object.freeze(['cwd', 'sessionId']),
+  'presence release': Object.freeze(['cwd', 'sessionId', 'token']),
+  'presence prune': Object.freeze(['cwd', 'sessionIds']),
 });
 
 // The caller-supplied owner fields per lock. The helper adds `token`, `acquiredAt`, `host` and
@@ -1178,15 +1202,17 @@ async function decideBreak(context, lock, paths, tombstone, expected) {
   return removeThroughTombstone(context, lock, paths, observed, tombstone);
 }
 
-// The memory, harness, commit, review and worktree operations live in their own modules, which
-// import this one. They are loaded on first use through literal specifiers, so the import graph
-// stays acyclic, a lock call never loads them, and the build's dependency scan still sees all five.
+// The memory, harness, commit, review, worktree, recovery and presence operations live in their own
+// modules, which import this one. They are loaded on first use through literal specifiers, so the
+// import graph stays acyclic, a lock call never loads them, and the build's dependency scan still
+// sees all of them.
 const loadMemory = () => import('./effective-flow-state-memory-core.mjs');
 const loadHarness = () => import('./effective-flow-state-harness-core.mjs');
 const loadCommit = () => import('./effective-flow-state-commit-core.mjs');
 const loadReview = () => import('./effective-flow-state-review-core.mjs');
 const loadWorktree = () => import('./effective-flow-state-worktree-core.mjs');
 const loadRecovery = () => import('./effective-flow-state-recovery-core.mjs');
+const loadPresence = () => import('./effective-flow-state-presence-core.mjs');
 
 const HANDLERS = Object.freeze({
   'lock acquire': acquireLock,
@@ -1216,6 +1242,11 @@ const HANDLERS = Object.freeze({
   'ledger init': async (input, deps) => (await loadRecovery()).ledgerInit(input, deps),
   'ledger append': async (input, deps) => (await loadRecovery()).ledgerAppend(input, deps),
   'ledger reconcile': async (input, deps) => (await loadRecovery()).ledgerReconcile(input, deps),
+  'presence register': async (input, deps) => (await loadPresence()).presenceRegister(input, deps),
+  'presence refresh': async (input, deps) => (await loadPresence()).presenceRefresh(input, deps),
+  'presence list': async (input, deps) => (await loadPresence()).presenceList(input, deps),
+  'presence release': async (input, deps) => (await loadPresence()).presenceRelease(input, deps),
+  'presence prune': async (input, deps) => (await loadPresence()).presencePrune(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process

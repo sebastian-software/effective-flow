@@ -119,6 +119,9 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
   with no `bases` recorded or requested also asks block 9's `bases` question, and removing
   `mergeGate.noCiPolicy.bases` also removes `mergeGate.noCiPolicy.unattended` in the same preview,
   which carries block 9's `completion` and `requireAllChecks` hints.
+- A change touching `mergeGate.*` that does not itself set `mergeGate.conflictValidation` shows
+  Step 5's conflict-validation proposal in its preview where it holds, as an offer the write
+  excludes unless the user accepts it.
 - Adding a login to either `mergeGate.bots` or `mergeGate.botAccounts` first runs block 9's two-way
   overlap check against the other list and changes that list only with the user's answer.
 - Changing `tracker.mode` to `external` also touches the owner's external follow-ups
