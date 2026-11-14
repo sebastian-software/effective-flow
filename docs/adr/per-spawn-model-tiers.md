@@ -185,8 +185,8 @@ which the build validates and ships in the model-selection contract; `model-sele
 accepts `panelModel` only at a panel site and rejects a model outside the allowlist or equal to the
 harness's `deep` model. The effort comes from the `deep` mapping. Workflow prose still names only
 tiers: the panel line renders "the `model-selection` panel model", and the provider-name guard
-covers the allowlist. The Codex list is empty while its only `deep` model equals the primary
-assessor's.
+covers the allowlist. In v1 the Claude list names `fable` and the Codex list `gpt-6-astra`; each
+differs from its harness's `deep` model.
 
 ## Alternatives and tradeoffs
 

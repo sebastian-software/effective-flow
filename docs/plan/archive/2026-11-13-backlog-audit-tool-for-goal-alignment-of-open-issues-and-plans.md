@@ -490,8 +490,8 @@ selection with a host-native panel. It also adjusts `issue-buddy`, `plan-issue` 
   scope. It gets its own follow-up plan, which must disclose which provider receives which data.
 - The defaults `maxItems` of 80 and `maxSnapshotKiB` of 400 are assumptions about one deep
   handoff and can be configured.
-- The Codex panel allowlist is empty in v1, because the only Codex deep model equals the primary
-  assessor. A distinct Codex model can be added later without changing the mechanism.
+- The Codex panel allowlist names `gpt-6-astra` (Astra), the Codex model distinct from the
+  primary `deep` assessor; a Claude host still cannot reach it without the cross-provider plan.
 - External trackers differ in which write and decomposition capabilities they prove. Missing
   capabilities reduce the gate options and never fall back to emulation.
 - Children created by `plan-issue` from a split stay at today's interactive trust baseline. This

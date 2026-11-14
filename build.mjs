@@ -250,10 +250,10 @@ const MODEL_TIER_MAPPINGS = Object.freeze({
 });
 // The host-native models a panel spawn site (`Panel: yes` in src/shared/model-tiers.md) may name,
 // per harness. A panel member runs beside the primary `deep` assessor, so its model must differ
-// from that harness's deep model; Codex has no such model yet, so its list is empty.
+// from that harness's deep model.
 const PANEL_MODEL_ALLOWLIST = Object.freeze({
   claude: Object.freeze(['fable']),
-  codex: Object.freeze([]),
+  codex: Object.freeze(['gpt-6-astra']),
 });
 const ROUTE_PROFILE_CLASSIFICATION_ENTRIES = Object.freeze([
   Object.freeze(['excluded-generated-vendored', 'non-implementation']),
