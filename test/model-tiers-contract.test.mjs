@@ -12,7 +12,7 @@ import {
   parseSpawnSiteTable,
   resolveAgentTier,
 } from '../build-lib.mjs';
-import { MODEL_TIER_MAPPINGS } from './support/native-profile-config.mjs';
+import { MODEL_TIER_MAPPINGS, PANEL_MODEL_ALLOWLIST } from './support/native-profile-config.mjs';
 import { executeOperation } from '../src/scripts/model-selection-core.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -127,6 +127,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'handoff of apply-issues/issue-analysis',
   ],
   ['tools/pr.md', '**Bounds:** it starts no sub-agent', 'handoff of pr/body-draft'],
+  [
+    'shared/verification-evidence.md',
+    'Its only source is the per-command outcomes',
+    'result handling: maps outcomes the producer already received from its validator and test-writer spawns; starts nothing',
+  ],
   [
     'tools/apply-review.md',
     'Each pre-analysis sub-agent receives',
@@ -1078,9 +1083,10 @@ test('built worker bodies keep the leaf rule unqualified and the tier sentence n
 // The executable selector must receive precisely the same validated policy as the prompt renderer.
 test('every shipped selector resolves every generated site from the canonical build policy', async () => {
   const expectedRoles = Object.fromEntries(agentTiers());
-  const expectedSites = spawnSites().map(({ id, downAllowed, clauses }) => ({
+  const expectedSites = spawnSites().map(({ id, downAllowed, panel, clauses }) => ({
     id,
     downAllowed,
+    panel,
     clauses: clauses.map(({ role, tier }) => ({ role: role ?? null, tier })),
   }));
   for (const target of TARGETS) {
@@ -1092,11 +1098,31 @@ test('every shipped selector resolves every generated site from the canonical bu
       schemaVersion: 1,
       target,
       mappings: MODEL_TIER_MAPPINGS,
+      panelModels: PANEL_MODEL_ALLOWLIST,
       roles: expectedRoles,
       sites: expectedSites,
     });
     const harness = target === 'claude' ? 'claude' : 'codex';
     for (const site of contract.sites) {
+      // A panel site resolves only with a model from its harness allowlist; an empty list means
+      // the harness has no panel member to select.
+      if (site.panel) {
+        for (const panelModel of PANEL_MODEL_ALLOWLIST[harness]) {
+          const resolved = await executeOperation(
+            'select',
+            { harness, site: site.id, panelModel },
+            { contract },
+          );
+          assert.equal(resolved.ok, true, `${target} ${site.id} ${panelModel}`);
+          assert.deepEqual(resolved.data.expected, {
+            model: panelModel,
+            effort:
+              MODEL_TIER_MAPPINGS.deep[harness].reasoning_effort ??
+              MODEL_TIER_MAPPINGS.deep[harness].effort,
+          });
+        }
+        continue;
+      }
       for (const { role, tier } of site.clauses) {
         const request = {
           harness,
@@ -1213,6 +1239,7 @@ test('the initial-implementation tier line renders right after its Quality-only 
         {
           id: site,
           downAllowed: false,
+          panel: false,
           clauses: qualityRoles.map((role) => ({ role, tier: 'deep' })),
         },
       );
@@ -1329,9 +1356,10 @@ test('rendered tier text carries only its own provider in native targets and bot
           );
           assert.ok(!namesAny(line, CLAUDE_MODELS) && !/`effort:/.test(line), `${where}: ${line}`);
         } else {
+          // A panel site names no model in any target: its model comes from `model-selection`.
           assert.match(
             line,
-            /Claude Code Agent tool `model: [^`]+`, `effort: [^`]+`; Codex spawn/,
+            /Claude Code Agent tool `model: [^`]+`, `effort: [^`]+`; Codex spawn|the `model-selection` panel model; Claude Code Agent tool `effort: [^`]+`; Codex spawn `reasoning_effort: [^`]+`/,
             `${where}: ${line}`,
           );
         }

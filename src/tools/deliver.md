@@ -179,12 +179,12 @@ Only after this check, record the source `HEAD`, branch or detached OID, complet
 worktree state.
 
 2. Resolve `language.git` and `language.forge`. Read `delivery.baseBranch`, `delivery.branchPrefix`,
-   `worktree.baseDir`, and `worktree.setup` through the shared configuration contract. `deliver`
-   reports that its explicit PR intent replaces any different configured `delivery.completion`; it
-   does not change the stored value. Record whether hidden mode (`visibility: hidden`, config
-   locator step 0) is active: then no derived commit message, branch name, or pull-request title or
-   body may name Effective Flow or reference a path under `.effective-flow/`, and this run hands
-   that constraint on to `{{SKILL:commit}}` and `{{SKILL:pr}}`.
+   `plan.dir`, `worktree.baseDir`, and `worktree.setup` through the shared configuration contract.
+   `deliver` reports that its explicit PR intent replaces any different configured
+   `delivery.completion`; it does not change the stored value. Record whether hidden mode
+   (`visibility: hidden`, config locator step 0) is active: then no derived commit message, branch
+   name, or pull-request title or body may name Effective Flow or reference a path under
+   `.effective-flow/`, and this run hands that constraint on to `{{SKILL:commit}}` and `{{SKILL:pr}}`.
 3. Resolve and confirm the selection contract above. Invoke `bind-manifest` with
    `{sourceRoot, selection}` and retain the returned ephemeral manifest plus source receipt for every
    later comparison. Do not write it to tracked files or runtime state; only step 4.6 binds it
@@ -243,6 +243,12 @@ headOid}}` in its default redacted dry-run mode. Inspect the planned paths, mode
    delete/modify conflicts.
 3. Run the repository's established pre-commit validation in the isolated checkout under
    `effective-delivery`'s repository-validation contract; never invent commands.
+
+```lazy-include
+verification-evidence
+when: step 4.3 validation has run, to record its observed checks, and again when step 6 builds the verification record
+```
+
 4. Immediately after validation, invoke `reconcile {manifest, deliveryRoot, sourceRoot}` to compare
    every selected content digest/blob and mode plus the complete changed-path set with the confirmed
    manifest. Any selected drift, missing or extra path, different origin, or validation-produced
@@ -292,7 +298,7 @@ any not-`ok` item or failed call takes the lifecycle denial fallback to `cleanup
 
 Delegate to `{{SKILL:pr}}` from the verified `RUNTIME_STATE_ROOT` with the exact head branch, base
 branch, final verified head OID, successful committed-handoff evidence, strongest type/effect hint,
-and this literal line:
+the `Verification evidence:` line built per `verification-evidence`, and this literal line:
 
 `Next steps: suppressed`
 

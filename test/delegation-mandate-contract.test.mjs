@@ -37,6 +37,7 @@ const EXPECTED_EAGER_INCLUDE_TOOLS = new Set([
   'apply-review',
   'apply-issues',
   'issue-buddy',
+  'backlog-audit',
   'plan',
   'plan-issue',
   'investigate',
@@ -763,8 +764,8 @@ test('central-reasoning-delegation.md hands the judgment of the written artifact
   assert.ok(row, 'the judgment spawn site has its model-tiers row');
   assert.match(
     row,
-    /\|\s*`deep`\s*\|\s*`no`\s*\|$/,
-    'the judgment spawn site is deep and never moves down',
+    /\|\s*`deep`\s*\|\s*`no`\s*\|\s*`no`\s*\|$/,
+    'the judgment spawn site is deep, never moves down and is no panel site',
   );
 });
 
@@ -1109,7 +1110,11 @@ test('investigate Phase 3b runs a deep skeptic and Phase 4 folds its verdict con
     .split('\n')
     .find((line) => line.includes('`investigate/skeptic`'));
   assert.ok(row, 'the skeptic spawn site has its model-tiers row');
-  assert.match(row, /\|\s*`deep`\s*\|\s*`no`\s*\|$/, 'the skeptic is deep and never moves down');
+  assert.match(
+    row,
+    /\|\s*`deep`\s*\|\s*`no`\s*\|\s*`no`\s*\|$/,
+    'the skeptic is deep, never moves down and is no panel site',
+  );
 
   const challenge = flat(phase3b);
   assertClauses(challenge, [

@@ -11,7 +11,7 @@
 // leaf modules whose own imports are `node:` built-ins: `plan-lint-core` (plan-file contract, plan
 // roots, safe reader), `delivery-selection-core` (fetch hardening), `remote-tracker-shared-core`
 // (disclosure patterns and the visibility enum), and `dated-name-allocation` (the error class,
-// the local date, the directory containment and the first-free-name search, shared with the runtime-state helper). It spawns nothing: Git runs through the injected runner, which the CLI
+// the local date, the slug, the directory containment and the first-free-name search, shared with the runtime-state helper). It spawns nothing: Git runs through the injected runner, which the CLI
 // takes from `process-runner.mjs`. Every operation is a computation or a read, except that
 // `base-branch-fetch` updates remote-tracking refs through `git fetch`.
 
@@ -55,9 +55,10 @@ import {
   lstatOrNull,
   posixJoin,
   requireString,
+  slugify,
 } from './dated-name-allocation.mjs';
 
-export { MechanicsError, localDate };
+export { MechanicsError, localDate, slugify };
 
 export const MECHANICS_OPERATIONS = Object.freeze([
   'base-branch-resolve',
@@ -126,8 +127,6 @@ const NAME_INPUTS = ['text', 'issue', 'workflow', 'planSlug'];
 // The plan-numbering slug alphabet: `a–z`, `0–9`, inner hyphens.
 const SLUG = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/;
 
-const SLUG_MAX_LENGTH = 80;
-
 const EXIT_CODES = Object.freeze({ INVALID_INPUT: 2, UNSAFE_PATH: 3 });
 
 function fail(code, message, details = {}) {
@@ -164,39 +163,6 @@ export function recodeError(error) {
     return new MechanicsError('INTERNAL', error.message);
   }
   return new MechanicsError('INTERNAL', error?.message ?? 'unexpected mechanics failure');
-}
-
-// ---------------------------------------------------------------------------------------------
-// Slug and date
-
-const DIGRAPHS = Object.freeze({
-  ä: 'ae',
-  ö: 'oe',
-  ü: 'ue',
-  ß: 'ss',
-  Ä: 'Ae',
-  Ö: 'Oe',
-  Ü: 'Ue',
-  ẞ: 'SS',
-});
-
-// NFC, German digraphs, lowercase, NFKD without combining marks, non-`[a-z0-9]` runs to one
-// hyphen, edge hyphens trimmed, then capped at 80 characters at the last hyphen at or before the
-// cap (a hard cut when the head has none) and trimmed again.
-export function slugify(text) {
-  let slug = String(text)
-    .normalize('NFC')
-    .replace(/[äöüßÄÖÜẞ]/g, (character) => DIGRAPHS[character])
-    .toLowerCase()
-    .normalize('NFKD')
-    .replace(/\p{M}/gu, '')
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
-  if (slug.length > SLUG_MAX_LENGTH) {
-    const cut = slug.lastIndexOf('-', SLUG_MAX_LENGTH);
-    slug = (cut > 0 ? slug.slice(0, cut) : slug.slice(0, SLUG_MAX_LENGTH)).replace(/^-+|-+$/g, '');
-  }
-  return slug;
 }
 
 // ---------------------------------------------------------------------------------------------

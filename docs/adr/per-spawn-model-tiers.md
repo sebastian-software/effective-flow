@@ -178,6 +178,16 @@ User questions pause and continue the same runner by retained opaque handle. Tra
 
 Activation of the delegated-default route remains prohibited until behavioural scenarios, paired portable Quality measurements and both native Fast compatibility lanes satisfy the approved plan. Those measurements establish context/cost claims; structural guards alone do not. Acceptance must bind the candidate including its proposed activation edit; a disabled source cannot qualify a later enabled one. The current implementation remains a draft candidate: the Claude host probe is rate-limited, and the Codex nested/same-agent continuation probe has no workload measurements, so no reduction or release-readiness claim follows from the structural work.
 
+**Scoped exception: the panel site.** `backlog-audit/panel` is the one spawn site whose model is
+not the tier mapping's. It is marked `Panel: yes` in the spawn-site table, stays `deep`, and never
+moves. Each panel member runs on a model from `PANEL_MODEL_ALLOWLIST` in `build.mjs`, per harness,
+which the build validates and ships in the model-selection contract; `model-selection select`
+accepts `panelModel` only at a panel site and rejects a model outside the allowlist or equal to the
+harness's `deep` model. The effort comes from the `deep` mapping. Workflow prose still names only
+tiers: the panel line renders "the `model-selection` panel model", and the provider-name guard
+covers the allowlist. In v1 the Claude list names `fable` and the Codex list `gpt-6-astra`; each
+differs from its harness's `deep` model.
+
 ## Alternatives and tradeoffs
 
 - **Keep portable Quality-only.** Rejected: portable workers were where the unmanaged inheritance

@@ -9401,7 +9401,8 @@ test('the Forgejo probe gates the pull-request operations on the tea api transpo
   assert.equal(probe.capabilities.pullRequestStatus, true);
   assert.equal(probe.capabilities.pullRequestMerge, true);
   assert.equal(probe.capabilities.viewerRead, true);
-  assert.equal(probe.capabilities.collaboratorPermissionRead, probe.executable === 'gh');
+  // The permission read rides the same `tea api --include` transport as the identity read.
+  assert.equal(probe.capabilities.collaboratorPermissionRead, true);
   // The helper polls through the same status-aware `tea api` transport; no native watch is needed.
   assert.equal(probe.capabilities.pullRequestChecksWait, true);
   // The reads the adapter already supported stay untouched.
@@ -14084,6 +14085,78 @@ test('collaborator-permission-read is a read-only capability with normalized per
     { runner: fakeRunner([]), skipProbe: true },
   );
   assert.equal(unsupported.error.code, 'UNSUPPORTED_CAPABILITY');
+});
+
+// Invariant: Forgejo answers the same permission question over `tea api --include`, with the same
+// normalized result, a 404 as `TARGET_NOT_FOUND`, and a refusal that is never read as a permission.
+test('Forgejo collaborator-permission-read reads the raw API and normalizes like GitHub', async () => {
+  const plan = buildCommandPlan(
+    'collaborator-permission-read',
+    { login: 'Dev.Ops' },
+    forgejoRepository,
+  );
+  assert.deepEqual(plan.args, [
+    'api',
+    'repos/team/flow/collaborators/Dev.Ops/permission',
+    '--include',
+    '--login',
+    'work',
+    '--repo',
+    'team/flow',
+  ]);
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        permission: 'Write',
+        role_name: 'write',
+        user: { login: 'dev.ops' },
+      }),
+      stderr: TEA_OK,
+    },
+  ]);
+  const result = await executeOperation(
+    'collaborator-permission-read',
+    { repository: forgejoRepository, login: 'Dev.Ops' },
+    { runner, skipProbe: true },
+  );
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.result, {
+    login: 'dev.ops',
+    permission: 'write',
+    roleName: 'write',
+  });
+  const missing = await executeOperation(
+    'collaborator-permission-read',
+    { repository: forgejoRepository, login: 'ghost' },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: '{"message":"not found"}', stderr: 'HTTP/1.1 404 Not Found\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(missing.error.code, 'TARGET_NOT_FOUND');
+  const refused = await executeOperation(
+    'collaborator-permission-read',
+    { repository: forgejoRepository, login: 'other' },
+    {
+      runner: fakeRunner([
+        { status: 0, stdout: '{"message":"forbidden"}', stderr: 'HTTP/1.1 403 Forbidden\r\n' },
+      ]),
+      skipProbe: true,
+    },
+  );
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'COMMAND_FAILED');
+  for (const login of ['../bad', 'a..b', '-lead', 'x'.repeat(41)]) {
+    const malformed = await executeOperation(
+      'collaborator-permission-read',
+      { repository: forgejoRepository, login },
+      { runner: fakeRunner([]), skipProbe: true },
+    );
+    assert.equal(malformed.error.code, 'INVALID_PAYLOAD', login);
+  }
 });
 
 test('GitHub issue and PR list/read paths carry actual author/timestamps across two pagination pages', async () => {

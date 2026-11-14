@@ -97,6 +97,10 @@ confirmation round of its own and creates no branch, worktree, commit, or manife
   included. A local-only base, a detached checkout, or the base branch itself (`HEAD_IS_BASE`) adds
   no notice, because the range read fails and a failed read adds none; on the base branch the
   earlier upstream check's ahead notice is the signal.
+- **Verification:** this route carries no verification evidence in this version. `deliver` passes
+  `pr` the line `Verification evidence: none`, so the pull request gets no verification section and
+  the report says `no trusted verification evidence`. A positive path for this route is not part of
+  this version.
 - **Writes:** `deliver` itself pushes nothing. The only write is `pr`'s `push -u`, which also
   sets the branch's upstream configuration; `pr` owns it.
 
@@ -302,6 +306,67 @@ dry run first. On Forgejo, while the pull request is still a draft, the body is 
 the retitle and the ready transition are one final edit, so marking the pull request ready is always
 the last change. The first failure stops it, the pull request stays a draft, and the report names
 the failed step.
+
+**Verification section:** A new pull request, and a plan's draft that `pr` finishes, gets a
+"Verification" section in its description when the workflow that hands the branch over actually ran
+checks: the `build`, `fix` and `refactor` handbacks, and `deliver` after its own pre-commit
+validation. The section lists only checks that workflow observed in the run, never CI results,
+reviewer output or a command that was merely planned. It is bound to the content, not to a commit:
+`pr` compares the verified content with the content it publishes, ignoring the run's own plan file
+and its archived copy, so a plan archived after validation does not invalidate it. Equal content
+shows the results under "Verified on `<short head>`"; the same content after a rebase or amend still
+counts. Any other difference, such as a formatter run or a fix after the last check, replaces the
+results with one notice that the recorded results do not match the content of `<short head>` and
+are not reported. The section follows `language.forge`; check, scope and limitation text stays as
+the workflow wrote it. Derived description prose makes no test claims of its own, and a description
+you supplied stays unchanged, with the section following it.
+
+`pr` never starts validation and never invents evidence. When there is nothing trustworthy to show,
+the description carries no section and the final report says why on its verification line:
+
+- **Direct `pr` run:** `no trusted verification evidence`. A record pasted by you or read from saved
+  state is ignored, because only a returning workflow's checked handoff is trusted.
+- **Handoff without a record:** `no verification record supplied by this workflow` (for example
+  from `docs`, `maintain` or `iterate`), or `none` when a producer could not build one.
+- **Rejected record:** `rejected (<reason>)`, for a malformed or oversized record or a text field
+  that is too long, spans several lines or carries text unsafe to publish, for example an absolute
+  or home-relative path, a URL with credentials, a mention, an issue-closing keyword, HTML, a
+  credential-like or log-shaped value, and in hidden mode a workflow name or plan path. Relative
+  paths and plain URLs are allowed. A gap never blocks the commit or the pull request.
+
+A reused open pull request keeps its title and description. The report only states whether this
+run's record matches the current head (`verification: current (<short head>)`), is `stale`, or was
+rejected; an older section on that pull request keeps naming the head it was verified on.
+
+A section where every check passed:
+
+```markdown
+## Verification
+
+Verified on `3f9c2a1`.
+
+| Check | Outcome | Scope | Limitation |
+| --- | --- | --- | --- |
+| pnpm lint | passed | whole repository | — |
+| pnpm test | passed | unit and integration tests | — |
+| pnpm build | passed | production build | — |
+```
+
+A section with known limitations. A skipped or unavailable check is never shown as passed, and a
+failure that was already present is shown as a baseline failure with the first seven characters of
+the baseline tree it was compared against:
+
+```markdown
+## Verification
+
+Verified on `3f9c2a1`.
+
+| Check | Outcome | Scope | Limitation |
+| --- | --- | --- | --- |
+| pnpm lint | passed | whole repository | — |
+| pnpm test | baseline failure | payments package unit tests | unchanged against base 8d41e07 |
+| pnpm test:e2e | skipped | end-to-end tests | no browser available in the delivery checkout |
+```
 
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the

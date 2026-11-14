@@ -1,10 +1,11 @@
 // Dated name allocation with per-family collision suffixes, the part of `name-allocate` that
-// needs no other core: the error class and codes, the local date, the containment walk of a
-// cwd-relative directory and the first-free-name search. `effective-flow-mechanics-core.mjs`
+// needs no other core: the error class and codes, the local date, the name slug, the containment
+// walk of a cwd-relative directory and the first-free-name search. `effective-flow-mechanics-core.mjs`
 // builds every family on it, and the runtime-state helper's `review open-report` allocates the
 // `review-report-local` name through it, so both compute the same name for the same clock and
-// time zone without the state helper loading the mechanics core's imports. It imports `node:`
-// built-ins only and reads the filesystem through the injected synchronous `fs`.
+// time zone without the state helper loading the mechanics core's imports. `backlog-audit-core.mjs`
+// takes its goal slug from here for the same reason. It imports `node:` built-ins only and reads
+// the filesystem through the injected synchronous `fs`.
 
 import path from 'node:path';
 
@@ -41,6 +42,41 @@ export function localDate(instant = new Date(), timeZone = undefined) {
   }).formatToParts(instant);
   const part = (type) => parts.find((entry) => entry.type === type).value;
   return `${part('year')}-${part('month')}-${part('day')}`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Slug
+
+const SLUG_MAX_LENGTH = 80;
+
+const DIGRAPHS = Object.freeze({
+  ä: 'ae',
+  ö: 'oe',
+  ü: 'ue',
+  ß: 'ss',
+  Ä: 'Ae',
+  Ö: 'Oe',
+  Ü: 'Ue',
+  ẞ: 'SS',
+});
+
+// NFC, German digraphs, lowercase, NFKD without combining marks, non-`[a-z0-9]` runs to one
+// hyphen, edge hyphens trimmed, then capped at 80 characters at the last hyphen at or before the
+// cap (a hard cut when the head has none) and trimmed again.
+export function slugify(text) {
+  let slug = String(text)
+    .normalize('NFC')
+    .replace(/[äöüßÄÖÜẞ]/g, (character) => DIGRAPHS[character])
+    .toLowerCase()
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+  if (slug.length > SLUG_MAX_LENGTH) {
+    const cut = slug.lastIndexOf('-', SLUG_MAX_LENGTH);
+    slug = (cut > 0 ? slug.slice(0, cut) : slug.slice(0, SLUG_MAX_LENGTH)).replace(/^-+|-+$/g, '');
+  }
+  return slug;
 }
 
 // ---------------------------------------------------------------------------------------------

@@ -85,8 +85,10 @@ visible for applicability/security triage. Known reachable security-critical def
 `pnpm eval <tool> verify --mode strict` retains full suite acceptance semantics. It remains a
 manual capability-qualification check, not a universal package-release prerequisite. Source drift
 does not become a pass, and no archive is re-stamped to hide debt. Planned-build workflow
-delegation uses the complete inline Quality path while unqualified. Focus snapshot execution,
-follow-up and sends remain disabled pending their own current acceptance.
+delegation uses the complete inline Quality path while unqualified. Focus snapshot execution and
+follow-up run only on the T3 observed report-only path bound on the
+[focus host acceptance page](focus-host-acceptance.md); focus sends remain disabled pending their
+own current acceptance.
 
 The former PR581 provisional CI branch is retired by this policy. Its bounded verifier and
 protected-host/security validation functions remain available under their original contracts;
@@ -443,15 +445,15 @@ out a pull-request head or merge ref. Pull-request text is passed as data throug
 JavaScript context, not interpolated into shell code. Its token permissions are limited to
 reading repository contents and writing issues.
 
-Every target's minimal skill payload includes 49 dependency-free runtime scripts. The Issue Buddy
+Every target's minimal skill payload includes 51 dependency-free runtime scripts. The Issue Buddy
 pair is shipped as `scripts/issue-buddy.mjs` and `scripts/issue-buddy-core.mjs`; the thin CLI
 entry point accepts one JSON object on standard input and delegates deterministic collection,
 trust filtering, fingerprinting and pass-state operations to its core. The remaining named
 families include `scripts/remote-tracker.mjs`,
 `scripts/build-run.mjs`, `scripts/config-resolve.mjs`, `scripts/delivery-selection.mjs`, `scripts/delegation-envelope.mjs`,
 `scripts/diff-baseline.mjs`, `scripts/effective-flow-mechanics.mjs`, `scripts/model-selection.mjs`,
-`scripts/plan-lint.mjs`, `scripts/plan-publication.mjs`, `scripts/setup-status.mjs`, and
-`scripts/effective-flow-state.mjs`, each
+`scripts/plan-lint.mjs`, `scripts/plan-publication.mjs`, `scripts/setup-status.mjs`,
+`scripts/verification-evidence.mjs`, and `scripts/effective-flow-state.mjs`, each
 beside its importable `-core.mjs` sibling (the state helper also ships
 `effective-flow-state-memory-core.mjs`, `effective-flow-state-harness-core.mjs`, which writes the
 allow rules through `harness allow-rules`, `effective-flow-state-commit-core.mjs` (behind `commit create`),

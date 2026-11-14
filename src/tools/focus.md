@@ -1,6 +1,6 @@
 ---
-description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. No host route is currently qualified: every host path, the T3 observed report-only path included, stays disabled pending candidate-bound qualification (sebastian-software/effective-flow#613), and all sends stay disabled. No focus-owned persistent state; an opt-in follow-up mode is defined but disabled pending qualification."
-catalogHint: "Not yet available on any host – pending qualification (sebastian-software/effective-flow#613); checks one selected session's goal trajectory with a cited chat-only verdict."
+description: "Checks exactly one developer-selected session against its goal and returns one cited snapshot verdict with at most one correction. On the qualified T3 observed path snapshots are report-only, and an opt-in follow-up mode runs recurring report-only checks there. Unqualified host paths and all sends stay disabled. No focus-owned persistent state."
+catalogHint: "Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict."
 ---
 
 # Effective Flow Focus
@@ -27,7 +27,8 @@ initial verdict on an admitted top-level target on the T3 observed path, and the
 observed follow-up" is qualified for the actual host. While that row is disabled or unmatched, add
 nothing about follow-up to a snapshot; state the limitation only when the developer asks for
 follow-up or uses a `follow-up` form. A `follow-up` form loads the fragment below before any host
-access.
+access. A declined or withdrawn offer never suppresses the offer of a later snapshot that meets the
+eager offer condition.
 
 ```lazy-include
 focus-follow-up
@@ -102,9 +103,12 @@ unverifiable narration or no accepted self-report evidence yields Cannot judge.
 
 Return the admitted identity, goal anchor, evidence level, host/version and candidate qualification
 limits, inspected locators and consumed read budget, material omissions, actual owner use/fallback,
-one verdict and its cited rationale, and at most one redacted correction. Use host-provided event
-or report-item locators; invent no events, provenance or accuracy claims. Child briefs, statuses
-and outcomes in the parent record may show fan-out; they do not establish unseen child behavior.
+one verdict and its cited rationale, and at most one redacted correction. Use host-provided event or
+report-item locators; invent no events, provenance or accuracy claims. Name every session in visible
+output, commentary included, by its exact reference in inline code (on T3 the bare thread ID, even if
+selected by link), never as a host thread link or angle-bracketed URL, even where the host asks for
+links. Child briefs, statuses and outcomes in the parent record may show fan-out; they do not
+establish unseen child behavior.
 
 Apply the separate message-outcome contract even when delivery is disabled: report Not attempted
 and its precise limitation. A correction can be previewed as report-only, not as an invitation to

@@ -116,6 +116,11 @@ diff-baseline
 when: the diff baseline is captured at the end of Phase 3, step 0, or later rendered or discarded
 ```
 
+```lazy-include
+verification-evidence
+when: Phase 5 builds the verification record, before the diff baseline is discarded
+```
+
 ```include
 investigation-method
 ```
@@ -308,7 +313,8 @@ floor classification record and the three-part report. Document only
 3. If this fix resolved a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
-4. Delete the wisdom file and discard the diff baseline.
+4. With delivery or worktree execution active, first build the verification record per
+   `verification-evidence` from the last Phase 4 `reviewTree`. Delete the wisdom file and discard the diff baseline.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Run the worktree-record exit self-check.
 7. Summarize:

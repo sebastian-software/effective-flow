@@ -455,8 +455,8 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Fifteen subsystems and 51 runtime scripts carry this today: the pairs
-  `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
+  misread as one. Seventeen subsystems and 55 runtime scripts carry this today: the pairs
+  `backlog-audit.mjs`/`backlog-audit-core.mjs`, `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
   `protected-validation-core.mjs`, `config-resolve.mjs`/
   `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
   `diff-baseline.mjs`/`diff-baseline-core.mjs`,
@@ -464,7 +464,8 @@ The build aborts with an error message if any of these guards is violated:
   `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
   `plan-publication.mjs`/`plan-publication-core.mjs`,
   `repair-attempt.mjs`/`repair-attempt-core.mjs`,
-  `setup-status.mjs`/`setup-status-core.mjs`; the
+  `setup-status.mjs`/`setup-status-core.mjs`,
+  `verification-evidence.mjs`/`verification-evidence-core.mjs`; the
   runtime-state helper, a twelve-file family whose entry point `effective-flow-state.mjs` sits over
   `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
   `effective-flow-state-harness-core.mjs`, `effective-flow-state-commit-core.mjs`,
@@ -784,8 +785,8 @@ The owning contract also requires bounded complete history reachable from the ex
 snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
 identity through completion; changed history or closure requires a fresh attempt.
 
-Fourteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 49 files: eleven two-file subsystems, the runtime-state helper's twelve-file family,
+Fifteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+allowlist contains 51 files: twelve two-file subsystems, the runtime-state helper's twelve-file family,
 the remote tracker's seven-file family, the pilot measurement three-file family, the two
 protected-validation helper modules, and the shared `process-runner.mjs`,
 `runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
@@ -1092,6 +1093,37 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   has two additive options, both off by default, so remote-tracker behavior is unchanged: `stdoutBuffer`
   returns Git blob bytes unchanged, and `processGroup` bounds a call's whole process group (hooks,
   transport helpers, forge CLI calls).
+- **Verification evidence.** Invoke it as `node <skill-root>/scripts/verification-evidence.mjs <operation>`
+  with one closed-schema JSON object on standard input; the operation is the only argument, and an
+  unknown one is rejected before stdin is read. The operations are `evidence-build`,
+  `evidence-parse` and `evidence-render`; it emits one JSON envelope and exits nonzero with
+  `ok: false` on failure. It is read-only: every Git call carries `GIT_OPTIONAL_LOCKS=0`, runs with
+  replace objects and lazy fetch disabled (`--no-replace-objects`, `GIT_NO_REPLACE_OBJECTS=1`,
+  `GIT_NO_LAZY_FETCH=1`) and only reads objects, and `evidence-build` may read the verified tree from a private object store
+  (`objectDirectory`, such as the diff-baseline one) with the real store as alternate. A record
+  binds results to content, not to a commit: its `contentDigest` is the SHA-256 over the sorted
+  `git ls-tree -r` entries of the verified tree, excluding the run's own plan file and its archive
+  path (`planPaths`, validated against `planDir`, always empty in hidden mode). `evidence-render`
+  resolves `<head>^{tree}` itself, accepts no caller tree, and returns `current` with the results
+  table only on an equal digest, otherwise `stale` with one notice line. The record is a closed,
+  versioned schema, canonical JSON as unpadded base64url, limited to 20 checks, text fields of at most
+  80 (`check`), 160 (`scope`) and 160 (`limitation`) characters, and 6144 encoded bytes. Text
+  fails closed and is never redacted: a field that spans several lines, carries a control, invisible
+  format or private-use character, or breaks one of the ordered forbidden-token rules
+  (`FORBIDDEN_TOKEN_RULES`) rejects the record. Those rules cover absolute, home-relative and
+  `file:` paths, URLs with credentials, `@` mentions, `Release-As:`, issue-closing keywords,
+  breaking-change footers, HTML and comments, `|`, backticks, a leading `#`, AI attribution, review
+  finding IDs, and secret-, assignment-, timestamp- and stack-frame-shaped values. In hidden mode a
+  normalized copy of the field is also checked for workflow names, `.effective-flow` and the plan
+  directory. Relative paths and plain URLs are allowed. A content
+  problem is `ok: true` with `data.status: "rejected"` and a structured `data.reason` that never
+  carries the offending value; only a malformed call, a Git failure or an unreadable object is an
+  `ok: false` envelope (`INVALID_INPUT`, `GIT_FAILED`, `MISSING_OBJECT`, `INTERNAL`). Callers fail
+  closed to a gap: an error, a nonzero exit or a `rejected` status never blocks a commit or a pull
+  request and never passes on a partial record. The core imports only Node.js built-ins and
+  `runtime-state-guard.mjs`; the CLI injects `process-runner.mjs`. The lazily loaded
+  `src/shared/verification-evidence.md` fragment owns the handoff line, the trust rule, the
+  producer mapping and the rendering placement.
 - **Mechanics.** Invoke it as `node <skill-root>/scripts/effective-flow-mechanics.mjs <operation>`
   with one closed-schema JSON object on standard input (at most 64 KiB); the operation is always
   the only argument, so each operation is its own command prefix. The operations are
@@ -1293,6 +1325,18 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   and the step the other setup modes offer are described in
   [Configuration](configuration.md#claude-code-allow-rules).
 
+- **Backlog audit.** Invoke it as `node <skill-root>/scripts/backlog-audit.mjs <operation>` with one
+  closed-schema JSON object on standard input; `BACKLOG_AUDIT_OPERATIONS` lists the operations
+  (permission proof, epic candidates, inventory, bounds, verdict validation with the panel merge,
+  write-set build and apply, the external call check, snapshot cleanup); a large input instead
+  arrives as `{"inputFile": …}`, a file below `.effective-flow/backlog-audit/inputs/` the helper
+  reads and removes. It emits one `{ ok, operation, data }` envelope and returns no third-party
+  issue or comment text: that text reaches assessors only as quoted files in a per-run snapshot
+  below `.effective-flow/backlog-audit/snapshots/`. Forge access goes through the remote-tracker
+  core; an external tracker is never contacted, its items arrive from the caller, its writes leave
+  as an ordered call list, and each call is cleared against the target the caller re-read. Every
+  write comes from a hash-bound write set with a closed action vocabulary. The `backlog-audit` source tool owns orchestration and the user gates.
+
 - **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
   closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
   verdict, report, and fingerprint operations; it emits one stable JSON envelope and fails closed
@@ -1312,7 +1356,7 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 42 identical, usable scripts,
+checks prove that all three installed payloads contain all 51 identical, usable scripts,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, that
 `effective-flow-mechanics` allocates a suffixed report name and resolves a plan by slug in every
@@ -1391,10 +1435,10 @@ and directive syntax").
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
   `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `merge-gate-repair-report`, `delegated-scope-return`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
-  `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `source-upstream-sync`, `setup-profiles`,
+  `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `planning-batch`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
-  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`.
+  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`, `verification-evidence`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its
@@ -1685,6 +1729,13 @@ resolves dispatch settings from it, enforcing allowed moves and retry floors. Ev
 spawn marker adds its exact selection-site ID and a pointer to `shared/model-selection.md`.
 No second provider mapping or project configuration is introduced.
 
+The contract also carries `panelModels` and a per-site `panel` flag. `PANEL_MODEL_ALLOWLIST` in
+`build.mjs` lists, per harness, the models a panel member may use; `validatePanelModelAllowlist`
+rejects a repeated or invalid name and a model equal to that harness's `deep` model, and the
+provider-name guard treats allowlisted names like mapped ones. `select` requires `panelModel` at a
+panel site, rejects it elsewhere, and takes the effort from the `deep` mapping. See the
+[scoped exception](../adr/per-spawn-model-tiers.md).
+
 `select` emits the role/parameters, normalized expected model/effort and contract digest. `verify`
 recomputes that selection and reads a supported independent execution source. The initial adapter
 reads only an explicitly supplied exact Codex rollout file: no session discovery or directory
@@ -1710,12 +1761,14 @@ native eligibility and measurement owner.
   A mechanical variant is never a new retry default; deep roles have no tier variants. Named Codex
   roles must not be overridden with spawn model or effort parameters because the role file wins.
 - **Spawn sites.** `src/shared/model-tiers.md` holds the `## Spawn sites` table with the columns
-  `Site | Spawn | Tier | Down`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
+  `Site | Spawn | Tier | Down | Panel`. `Site` is `` `<tool>/<id>` ``, `Spawn` a short description without
   placeholders, `Tier` one of `` `mechanical` ``, `` `standard` ``, `` `deep` `` or
   `` `role:<agent>[,<agent>…]` `` (worker spawns resolve to the agents' `tier:`), and `Down`
   `` `yes` `` or `` `no` ``. `no` marks a site whose one-step margin may not move down; a site
   resolving only to `deep` must say `no`. A `standard` site with `Down: no` renders "no downward
-  move". Differing role tiers at one site render one clause per role. At the two Fast-adopting
+  move". `Panel` is `` `yes` `` or `` `no` ``; a `yes` site (today `backlog-audit/panel`) must be the
+  literal `deep` tier with `Down: no`, and takes its model from the panel allowlist instead of the tier
+  mapping. Differing role tiers at one site render one clause per role. At the two Fast-adopting
   initial-implementation sites the marker follows a sentence binding the rendered line to the
   Quality selectors; a Fast spawn's own values are owned by `execution-profiles`.
 - **Reconciliation.** Each marker id must be `<owner>/<id>` with the owner equal to the

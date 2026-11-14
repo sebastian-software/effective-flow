@@ -770,6 +770,24 @@ is separate from `mergeGate.checkWaitMinutes`, which controls pull-request check
 `/effective-flow merge-gate <PR>` again for observer-only re-entry when tracker automation needs
 longer.
 
+## Block `backlogAudit`
+
+Controls [`/effective-flow backlog-audit`](./tools-understand.md#effective-flow-backlog-audit). The
+rows are optional and are not part of the [safe defaults](#safe-defaults-at-a-glance); a rejected
+value or an unknown `backlogAudit.` key stops the run.
+
+| Key              | Values                      | Default   | Meaning                                                                       |
+| ---------------- | --------------------------- | --------- | ----------------------------------------------------------------------------- |
+| `panel`          | Comma-separated model names | `(empty)` | Panel members used by `--panel` without a list                                |
+| `maxItems`       | Integer from 1 to 1000      | `80`      | Most issues plus plans one run assesses; more stops the run before assessment |
+| `maxSnapshotKiB` | Integer from 1 to 16384     | `400`     | Largest snapshot of items, comments, plans and architecture summary, in KiB   |
+
+A run that exceeds a bound names the measured sizes and the narrowing options `--label`,
+`--issues-only` and `--plans-only`; it never shards or truncates. Each panel member must be on the
+panel allowlist for the running harness (see
+[Per-spawn model tiers](../adr/per-spawn-model-tiers.md)); the allowlist is build metadata and not
+configurable.
+
 ## Block `skills`
 
 Controls dynamic [skill discovery](./skill-discovery.md): whether and which host skills the tools

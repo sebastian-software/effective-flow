@@ -90,6 +90,8 @@ creates only the ones that are genuinely missing:
 | `effective-flow-issue-in-progress`                                                                | issue-backed implementation has started; removed after terminal closure is observed              |
 | `effective-flow-issue-done`                                                                       | implemented by `/effective-flow apply` (issue-driven), PR created                                |
 | `effective-flow-needs-planning`                                                                   | skipped, clarification via `/effective-flow plan-issue` needed                                   |
+| `effective-flow-goal-epic`                                                                        | goal epic maintained by `/effective-flow backlog-audit`                                          |
+| `effective-flow-goal-obsolete`                                                                    | contradicts the current architecture per `backlog-audit`; the issue stays open                   |
 
 Only `effective-flow-…` is newly created or set; when reading, listing, and deduplicating, the
 predecessor prefix `firmo-` additionally still counts as equivalent (one generation of
@@ -299,7 +301,7 @@ Effective Flow's classification strings stay canonical on an external target:
 `effective-flow-review-finding`,
 `effective-flow-review-epic`, the action labels, the severity labels, `wontfix`,
 `effective-flow-follow-up-closed`, `effective-flow-issue-done`, and
-`effective-flow-needs-planning` keep exactly the spellings listed
+`effective-flow-needs-planning`, `effective-flow-goal-epic` and `effective-flow-goal-obsolete` keep exactly the spellings listed
 under [Labels](#labels). A run stores them in whichever classification primitive your tool offers –
 labels, tags, workflow states, or a custom field – and reports which one it used. If the connection
 exposes no such primitive, the run aborts rather than creating findings without severity and action
@@ -924,6 +926,35 @@ skipped, whatever the ledger says.
 
 `merge-gate` publishes no text naming Effective Flow in hidden mode and leaves the ledger in place.
 `cleanup` treats it as current runtime state.
+
+## Backlog audit
+
+[`/effective-flow backlog-audit`](./tools-understand.md#effective-flow-backlog-audit) reads the open
+issues of the resolved target and writes only through one confirmed write set: labels, one goal epic,
+split comments and obsolete comments. It closes, deletes and unlabels nothing. Without a proven write
+permission, or in local, unset and hidden mode, it audits plans only.
+
+| Artifact       | Marker or label                                                                                                                                  | Written when                                               |
+| -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
+| Goal epic      | label `effective-flow-goal-epic`; managed section `<!-- effective-flow-backlog-audit goal=<slug> -->` … `<!-- /effective-flow-backlog-audit -->` | you confirm it at the write gate                           |
+| Split hand-off | first comment line `<!-- effective-flow-backlog-audit-split date=<date> body=<hash> -->`                                                         | you confirm it at the write gate, for an `oversized` issue |
+| Obsolete mark  | label `effective-flow-goal-obsolete` and first comment line `<!-- effective-flow-backlog-audit-obsolete -->`                                     | you confirm that one issue                                 |
+
+A rerun replaces only the managed section of the epic and keeps the rest of its body. The tool skips a
+write whose target changed since the gate, and an external tool without a needed capability shows the
+entry as unavailable instead of emulating it.
+
+The markers change how the issue-driven tools treat these issues:
+
+- **`/effective-flow issue-buddy`** skips goal epics and obsolete marks as `lifecycle-label`, and an
+  issue with a split comment as `plan-issue-comment`.
+- **`/effective-flow plan-issue`** and **`/effective-flow apply`** (issue mode) share one rule for
+  when a split comment counts and when it is still pending, the
+  [backlog-audit split rule](https://github.com/sebastian-software/effective-flow/blob/develop/src/shared/backlog-audit-split.md):
+  `plan-issue` builds its children from a pending split, and `apply` hands an issue with a pending
+  split to `plan-issue`, so `apply <epic>` never implements a pending split whole.
+- **`effective-flow-goal-obsolete`** issues are planned by `plan-issue` and implemented by `apply`
+  only after your explicit override in that run.
 
 ## Interplay with issue-driven tools
 

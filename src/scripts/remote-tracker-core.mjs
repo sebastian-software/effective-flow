@@ -2090,6 +2090,10 @@ function mutationMayHaveApplied(label) {
 // instead, and its message stops claiming a refusal nobody stated.
 function teaApiSuccess(result, label) {
   const response = readTeaApiResponse(result, label);
+  // The same mapping `runChecked` applies to GitHub's 404: the forge knows no such collaborator.
+  if (label === 'collaborator-permission-read' && response.status === 404) {
+    fail('TARGET_NOT_FOUND', 'collaborator permission was not found');
+  }
   if (response.status < 200 || response.status >= 300) {
     // Read tolerantly, because the status has already decided this. A forge behind a reverse proxy
     // answers a 502 with that proxy's HTML error page, and a strict parse of it would raise
@@ -2643,7 +2647,8 @@ export async function probeProvider(repository, runner, requestedCapabilities) {
       // from the locally configured login `tea logins list` reports. It rides on the same transport
       // probe as the gate reads.
       viewerRead: teaApiTransport,
-      collaboratorPermissionRead: false,
+      // A raw-API read on the same `tea api --include` transport, so it needs no probe of its own.
+      collaboratorPermissionRead: teaApiTransport,
       repositoryVisibilityRead: false,
       issues,
       issueRead: issues,

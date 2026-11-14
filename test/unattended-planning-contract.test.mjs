@@ -233,6 +233,12 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       ['P-VAL', 'The check for open or unclarified points is handled by the "clarification gate"'],
     ],
+    'shared/planning-batch.md': [
+      [
+        'P-BAT',
+        'format. Consecutive ask calls with no analysis in between count as one round when the host caps',
+      ],
+    ],
     'shared/pr-review-comments.md': [
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
@@ -275,6 +281,12 @@ const QUESTION_INVENTORY = Object.freeze(
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
         'header: PR review',
+      ],
+    ],
+    'shared/review-depth.md': [
+      [
+        'not-a-site: a reviewer re-check verifying a corrected finding, not a user question; P-BAT skips the ladder that loads it',
+        '- (c) the scoped re-check cannot confirm a corrected finding as resolved — triggering paths: that',
       ],
     ],
     'shared/security-disclosure-gate.md': [
@@ -422,18 +434,6 @@ const QUESTION_INVENTORY = Object.freeze(
         'P-CLR',
         '3. Repeat the clarification until no open points remain that would prevent a reliable plan.',
       ],
-      [
-        'P-VAL',
-        'If a criterion is not met, revise the plan or ask the user for the missing information.',
-      ],
-      [
-        'P-VAL',
-        '**Mechanical check:** run plan-lint on the written plan with `files: [<the plan path>]`. Fix every finding in the plan itself and do not report it to the user as a problem: a `status` other than `open`; a `language` other than the resolved plan language; any `placeholders` except the review-result value and the plan-review finding token that Phase 6 fills; an `acceptanceCriteria` other than `present`; an `openPoints` of `null` (add the section); non-empty `duplicates` on a new plan (rename it to a fresh Phase 3 `name-allocate` result); a missing `workflow`, or for a Documentation plan a missing `targetPath`. An `openPoints` greater than 0 is never resolved by assumption: ask the user as in Phase 2, or keep the points the user deliberately deferred. A failed lint stops the run before the completion report.',
-      ],
-      [
-        'P-CRT',
-        '5. If critical findings still remain after the revision, ask the user for the missing decision and do not complete the plan.',
-      ],
       ['P-DPR', 'ask the user whether the deep interactive plan review should be started now.'],
       ['P-DPR', '```ask'],
       ['P-DPR', 'header: Plan review'],
@@ -516,6 +516,7 @@ test('every mapped site has a stable row and literal anchor in the contract tabl
     'P-CLR',
     'P-VAL',
     'P-CRT',
+    'P-BAT',
     'P-DPR',
     'P-NUM',
     'P-JDG',

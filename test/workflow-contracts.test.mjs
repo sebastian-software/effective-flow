@@ -26351,3 +26351,530 @@ test('host-pr-watch Bounds hands a re-trigger-only bot wait at the unchanged-res
     'every other pending bot or check at the cap keeps report-and-stop',
   );
 });
+
+// ---------------------------------------------------------------------------------------------
+// Verification evidence (#661): producer handoffs, the pr trust rule, placement and the gap line.
+// The helper's own behavior is covered by test/verification-evidence.test.mjs; these tests pin the
+// prose contracts that carry a record from the workflow that ran the checks into the pull request.
+
+const VERIFICATION_EVIDENCE_PATH = 'src/shared/verification-evidence.md';
+const VERIFICATION_PRODUCER_SOURCES = {
+  fix: 'src/tools/fix.md',
+  refactor: 'src/tools/refactor.md',
+  'build-delegated-run': 'src/shared/build-delegated-run.md',
+  deliver: 'src/tools/deliver.md',
+};
+
+function verificationEvidence() {
+  return prose(source(VERIFICATION_EVIDENCE_PATH));
+}
+
+function verificationEvidenceSection(heading, stop) {
+  return boundedSlice(verificationEvidence(), heading, stop);
+}
+
+function prBodyCheck() {
+  return prose(
+    boundedSlice(source('src/tools/pr.md'), '**Body check,**', '10. **Create the PR:**'),
+  );
+}
+
+function prReport() {
+  return prose(boundedSlice(source('src/tools/pr.md'), '12. **Report the result:**', '\n## '));
+}
+
+test('every producer and pr load verification-evidence lazily, with a trigger, never eagerly', () => {
+  // Invariant: the record rules cost context only on a run that builds or accepts a record, so each
+  // consumer carries one lazy pointer with a `when:` trigger and never inlines the fragment.
+  const consumers = { ...VERIFICATION_PRODUCER_SOURCES, pr: 'src/tools/pr.md' };
+  for (const [name, path] of Object.entries(consumers)) {
+    const body = source(path);
+    const pointers = [...body.matchAll(LAZY_INCLUDE_RE)].filter(
+      (match) => match[1].trim() === 'verification-evidence',
+    );
+    assert.equal(
+      pointers.length,
+      1,
+      `${name} must carry exactly one verification-evidence pointer`,
+    );
+    assert.ok(
+      pointers[0][2]?.trim(),
+      `${name}: the verification-evidence pointer needs a when: line`,
+    );
+    assert.equal(
+      collectIncludeNames(body).eager.has('verification-evidence'),
+      false,
+      `${name} must not inline verification-evidence`,
+    );
+  }
+  assert.match(
+    source('src/tools/pr.md'),
+    /verification-evidence\nwhen: a returning committed handoff that passed step 2 supplied/,
+    'pr loads the fragment only for a record from a returning committed handoff',
+  );
+  assert.ok(existsSync(new URL(VERIFICATION_EVIDENCE_PATH, repositoryRoot)));
+});
+
+test('fix builds the record from the last Phase 4 reviewTree before the diff baseline is discarded', () => {
+  // Invariant: the verified snapshot is the one the last passing validation ran on, and the build
+  // happens while the diff baseline's private object store still exists.
+  const fix = prose(source('src/tools/fix.md'));
+  ordered(
+    fix,
+    'Then render the diff baseline, retain its `currentTree` as `reviewTree`',
+    'first build the verification record per `verification-evidence` from the last Phase 4 `reviewTree`',
+    'discard the diff baseline.',
+    'perform the handback per "Delivery and worktree integration"',
+  );
+  assert.ok(fix.includes('With delivery or worktree execution active'));
+});
+
+test('refactor builds the record from the last Phase 5 render before the diff baseline is discarded', () => {
+  // Invariant: same as fix, with the post-validation render of Phase 5 as the verified snapshot.
+  const refactor = prose(source('src/tools/refactor.md'));
+  ordered(
+    refactor,
+    '### Phase 5: Post-validation',
+    '### Phase 6: Before/after comparison and completion',
+    'build the verification record per `verification-evidence` from the last Phase 5 render',
+    'discard the diff baseline',
+    'perform the handback per "Delivery and worktree integration"',
+  );
+});
+
+test('build builds the record at Phase 7 step 5 from the step 1 render and builds none after an unrendered repair', () => {
+  // Invariant: a repair during final validation without a fresh render must not borrow the earlier
+  // render, so no record is built and the gap is reported; the build precedes the baseline discard.
+  const build = prose(
+    boundedSlice(
+      source('src/shared/build-delegated-run.md'),
+      '5. Render the diff baseline and, if a formatter',
+      '6. If delivery or worktree execution was active',
+    ),
+  );
+  ordered(
+    build,
+    'When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render',
+    'a step 1 repair without a fresh render before the passing validator run builds none',
+    'Then discard the diff baseline.',
+  );
+  assert.ok(build.includes('only the checks this run observed'));
+});
+
+test('the worktree handback passes the Verification evidence line verbatim, producers only', () => {
+  // Invariant: the record reaches pr through the one handback `pr` call and nowhere else, and only
+  // a verification producer supplies it.
+  const handback = boundedSlice(
+    prose(source('src/shared/worktree-integration.md')),
+    '- `pr`: resolve and record the final delivery-branch head OID',
+    'Hand the base over typed',
+  );
+  assert.ok(
+    handback.includes(
+      'A verification producer (`build`, `fix`, `refactor`) also passes its `Verification evidence:` line verbatim on its own line; every other caller passes no `Verification evidence:` line.',
+    ),
+  );
+  // Invariant: a non-producer never loads the fragment, so it cannot pass a `none` it was never
+  // told about; it omits the line, and pr reports the neutral value.
+  assert.equal(
+    handback.includes('every other caller passes none'),
+    false,
+    'a non-producer passes no Verification evidence line, not a `none` value',
+  );
+  assert.ok(handback.includes('the literal line `Next steps: suppressed`'));
+});
+
+test('the producer mapping never marks a plan, prose command, unrun CI or unobserved zero exit as executed', () => {
+  // Invariant: a record states only what this run observed; nothing inferred, planned or reviewed
+  // becomes evidence of a passing check.
+  const mapping = verificationEvidenceSection('### Producer mapping', '### Worktree producers');
+  assert.ok(mapping.includes('A producer maps only checks it observed in this run'));
+  for (const literal of [
+    'a check this run executed and whose outcome it observed: `passed` or `failed`, provenance `executed`',
+    '`skipped` or `unavailable`, provenance `not-run`',
+    '`baseline-failure`, provenance `baseline-compared`',
+    '"unchanged": true',
+    'A plan, a command named only in prose, CI that has not run, and a zero exit of an evidence-reporting tool without an observed outcome are never `executed`',
+    "Its only source is the per-command outcomes that this run's `{{AGENT:code-validator}}` and `{{AGENT:test-writer}}` reported (for deliver, its own step 4.3 commands)",
+    'qualitative reviewer output and review findings are never mapped',
+  ]) {
+    assert.ok(mapping.includes(literal), `producer mapping must state: ${literal}`);
+  }
+  // Invariant: `baseline-failure` claims a comparison that actually ran against the diff-baseline
+  // base; a failure without one is reported as `failed`, never softened.
+  ordered(
+    mapping,
+    'a failure proven unchanged by a comparison this run executed against the diff-baseline `baselineTree`',
+    '`baseline-failure`, provenance `baseline-compared`',
+    'without such a comparison the failure is `failed`',
+  );
+  // Invariant: producer writing guidance and helper enforcement stay distinct, and the helper
+  // rejects rather than redacts.
+  for (const literal of [
+    'Keep text fields to short single-line command and scope names, never log output',
+    'The helper rejects, never redacts, a field carrying among others an absolute, home-relative or `file:` path',
+    'a URL with credentials',
+    'an invisible character',
+  ]) {
+    assert.ok(mapping.includes(literal), `text-field rule must state: ${literal}`);
+  }
+});
+
+test('worktree producers build before the discard from the named snapshot per producer', () => {
+  // Invariant: the build reads the verified tree from the diff-baseline store before it is
+  // discarded, and the snapshot is named for each producer.
+  const producers = verificationEvidenceSection('### Worktree producers', '### Deliver');
+  for (const literal of [
+    'Before the diff baseline is discarded, call `evidence-build`',
+    'the `currentTree` of the last diff-baseline render preceding the last passing validator run',
+    '`objectDirectory` `<diff-baseline dir>/objects`',
+    '`fix`: the Phase 4 render, `reviewTree`',
+    '`refactor`: the Phase 5 render',
+    '`build`: the Phase 7 step 1 render',
+    'without one, build no record',
+    '`[]` without a plan file and always in hidden mode',
+    "Carry the resulting line to the handback's `{{SKILL:pr}}` call",
+  ]) {
+    assert.ok(producers.includes(literal), `worktree producers must state: ${literal}`);
+  }
+  assert.ok(
+    verificationEvidence().includes('`baseline-failure`, provenance `baseline-compared`') &&
+      verificationEvidence().includes('<diff-baseline baselineTree>'),
+    'a baseline failure names the diff-baseline baselineTree as its base',
+  );
+});
+
+test('non-producer handback callers pass no record and pr reports the neutral line', () => {
+  // Invariant: docs, maintain, iterate and merge-gate never hand over a record; a returning handoff
+  // without the line is a neutral report, not a failure.
+  for (const [name, text] of [
+    ['docs', prose(source('src/tools/docs.md'))],
+    ['maintain', prose(source('src/tools/maintain.md'))],
+    ['iterate', prose(source('src/tools/iterate.md'))],
+    ['merge-gate', prose(mergeGateSource())],
+  ]) {
+    assert.equal(text.includes('Verification evidence:'), false, `${name} must pass no record`);
+    assert.equal(
+      text.includes('verification-evidence'),
+      false,
+      `${name} must not load the fragment`,
+    );
+  }
+  assert.ok(
+    verificationEvidence().includes(
+      'A handback caller that is no producer (`docs`, `maintain`, `iterate`, and `merge-gate` through `iterate`) passes no such line.',
+    ),
+  );
+  assert.ok(
+    prReport().includes('and the last, neutral value a returning handoff without the line'),
+  );
+});
+
+test('a supplied description is kept unchanged and the verification block follows it', () => {
+  // Invariant: evidence never rewrites a caller's description; it is appended as its own block.
+  const description = prose(
+    boundedSlice(source('src/tools/pr.md'), '**Description:**', '**Body check,**'),
+  );
+  assert.ok(description.includes('use a supplied description as is'));
+  assert.ok(
+    description.includes(
+      "captured release footers and the machine lines are appended, and an accepted record's verification block per `verification-evidence`",
+    ),
+  );
+  assert.ok(
+    verificationEvidence().includes(
+      'A supplied description stays unchanged, the block following it.',
+    ),
+  );
+});
+
+test('plan draft finalization renders the record in step 9, before the hash-guarded body update', () => {
+  // Invariant: the section reaches the body only through step 9, so the hash-guarded update sends
+  // a body that already carries (or deliberately lacks) the rendered block.
+  const finish = prose(planDraftFinish(source('src/tools/pr.md')));
+  ordered(
+    finish,
+    'run step 9 for it',
+    'hash it with `body-hash`',
+    'the hash-guarded `pr-update-body`',
+  );
+  assert.ok(prBodyCheck().includes("before the plan draft finish's body update"));
+  const render = verificationEvidenceSection('Render. Call', '- Outcomes:');
+  ordered(
+    render,
+    'render in step 9 before any body is sent',
+    'before step 10 or before the hash-guarded `pr-update-body` dry run',
+  );
+});
+
+test('the verification block is placed after the last strip/check pass and before footers and machine lines', () => {
+  // Invariant: the block survives no strip pass that could damage it, while Release-As footers and
+  // lifecycle/marker lines stay last, restored only from source and byte-identical.
+  const check = prBodyCheck();
+  ordered(
+    check,
+    'first strip effectful tokens',
+    "After the last strip/check pass, append an accepted record's verification block per `verification-evidence`",
+    'append any missing captured release footers verbatim as trailing footer lines',
+    'Repeat the complete strip/check/restore sequence after every inline fallback or correction',
+  );
+  assert.ok(
+    check.includes(
+      'the strip removes all draft `Release-As:` lines, and only this source-backed restoration may put one back',
+    ),
+  );
+  const pr = prose(source('src/tools/pr.md'));
+  assert.ok(pr.includes('the orchestrator appends them verbatim after the step 9 body check'));
+  const placement = verificationEvidenceSection(
+    '- New pull request and plan draft finish:',
+    '- Outcomes:',
+  );
+  ordered(
+    placement,
+    'after the last derived-body strip/check pass, including one after an inline fallback or correction',
+    'before the restored release footers and the machine and lifecycle lines, which stay last and byte-identical',
+  );
+});
+
+test('derived prose makes no verification or test-result claims; results appear only in the rendered block', () => {
+  // Invariant: nothing in the body can imply that checks passed except the helper-rendered section
+  // that is bound to the head content.
+  const pr = prose(source('src/tools/pr.md'));
+  const brief = prose(boundedSlice(source('src/tools/pr.md'), '- **Brief:**', '- **Bounds:**'));
+  assert.ok(brief.includes('no verification or test-result claims'));
+  const check = prBodyCheck();
+  assert.ok(
+    check.includes(
+      'verification or test-result claims (from commit messages, the plan or a "Testing" section `AGENTS.md` requires; results appear only in the rendered verification block)',
+    ),
+  );
+  assert.ok(pr.includes('<!-- spawn-site:pr/body-draft -->'));
+});
+
+test('hidden mode keeps planPaths empty, reports a rejected record as a gap and never refuses the pull request', () => {
+  // Invariant: a hidden-mode violation rejects only the record; the PR is created, and the gap is
+  // reported locally without naming Effective Flow in the published section.
+  const text = verificationEvidence();
+  for (const literal of [
+    'always in hidden mode',
+    'and in hidden mode a workflow name or plan path',
+    'Hidden-mode violations reject the record, never the pull request',
+    '`rejected` or a failed call inserts nothing and is reported as the gap with its reason',
+    'it never blocks a commit or a pull request, and no partial record is ever passed on or published',
+  ]) {
+    assert.ok(text.includes(literal), `hidden-mode rules must state: ${literal}`);
+  }
+});
+
+test('a record on a direct invocation is ignored and pr reports no trusted verification evidence', () => {
+  // Invariant (trust rule): only a returning caller's committed handoff that passed step 2
+  // can supply a record; pasted or persisted records on a direct run are never rendered.
+  const input = prose(
+    boundedSlice(source('src/tools/pr.md'), '- **Verification evidence:**', '\n## Approach'),
+  );
+  assert.ok(
+    input.includes(
+      'trusted only from a returning committed handoff that passed step 2; a direct invocation ignores it',
+    ),
+  );
+  const trust = verificationEvidenceSection('Trust rule. `pr` accepts', 'Render. Call');
+  for (const literal of [
+    "`pr` accepts a record only on a returning caller's committed handoff that passed its step 2 (exact head branch, verified head OID, commit-only evidence)",
+    'A direct invocation ignores any supplied record, whether pasted, read from persisted state, or passed by a direct caller, and reports the gap',
+  ]) {
+    assert.ok(trust.includes(literal), `trust rule must state: ${literal}`);
+  }
+  assert.ok(
+    prReport().includes(
+      '`no trusted verification evidence` the gap on every direct invocation, any supplied line (`none` included) ignored',
+    ),
+    'step 12 reports a direct invocation as the gap, a supplied record ignored',
+  );
+});
+
+test('the step 12 gap line is eager in pr.md, outside the lazy pointer, and a reused PR keeps its body', () => {
+  // Invariant: the gap line fires on every run without evidence, so it cannot sit behind a pointer
+  // that loads only when a record exists; a reused pull request is reported on, never edited.
+  const pr = source('src/tools/pr.md');
+  const report = prReport();
+  for (const literal of [
+    'Always add one verification line, never implying that checks passed',
+    "The first three report an accepted record's render result, also for a reused pull request whose body stays untouched",
+    "`none` a returning handoff's supplied `none`",
+    '`no trusted verification evidence` the gap on every direct invocation',
+    'the last, neutral value a returning handoff without the line',
+  ]) {
+    assert.ok(report.includes(literal), `step 12 must state: ${literal}`);
+  }
+  const pointer = pr.indexOf('```lazy-include\nverification-evidence\n');
+  const report12 = pr.indexOf('12. **Report the result:**');
+  assert.ok(pointer !== -1 && report12 > pointer, 'the pointer precedes step 12');
+  for (const line of [
+    'no verification record supplied by this workflow',
+    'no trusted verification evidence',
+  ]) {
+    assert.equal(
+      verificationEvidence().includes(line),
+      false,
+      'the neutral and gap lines live only in pr.md, never in the lazily loaded fragment',
+    );
+  }
+  assert.ok(
+    verificationEvidence().includes(
+      '- Reused open pull request: its title and body stay untouched; render for the step 12 report only',
+    ),
+    'a reused pull request is rendered for the report only, never edited',
+  );
+});
+
+test('the step 12 verification line format is stated once, in pr.md step 12', () => {
+  // Invariant: one eager format for every outcome; neither the lazy fragment nor another pr step
+  // carries a second, divergent copy of it.
+  const format =
+    '`verification: current (<short head>) | stale | rejected (<reason>) | none | no trusted verification evidence | no verification record supplied by this workflow`';
+  const pr = source('src/tools/pr.md');
+  assert.equal(pr.split(format).length - 1, 1, 'pr.md states the format exactly once');
+  assert.ok(prReport().includes(format), 'the format sits in step 12');
+  assert.equal(
+    /verification: current/.test(source(VERIFICATION_EVIDENCE_PATH)),
+    false,
+    'the fragment carries no copy of the step 12 format',
+  );
+  // Invariant: step 9 refers to the fragment for placement and the head OID instead of restating
+  // them (the eager no-claims rule is pinned by its own test above).
+  assert.equal(
+    prBodyCheck().includes('rendered with the step 3 head OID'),
+    false,
+    'step 9 defers the head OID to the fragment',
+  );
+});
+
+test("deliver's single untyped base value does not disqualify its committed handoff", () => {
+  // Invariant (trust rule): pr's "complete" handoff means both typed base results; deliver's routine
+  // single-base handoff is incomplete in that sense yet still trusted once it passed step 2, so the
+  // trust rule must not require completeness.
+  const trust = verificationEvidenceSection('Trust rule. `pr` accepts', 'Render. Call');
+  assert.ok(
+    trust.includes('a single untyped base value, as deliver passes, does not disqualify it'),
+  );
+  assert.equal(
+    verificationEvidence().includes('complete committed handoff'),
+    false,
+    'the trust rule requires no complete (both-base) handoff',
+  );
+  const pr = prose(source('src/tools/pr.md'));
+  assert.ok(pr.includes('A handoff that supplies both results is complete'));
+  assert.equal(
+    /verification-evidence\nwhen: a returning complete/.test(source('src/tools/pr.md')),
+    false,
+  );
+  const deliver = prose(source('src/tools/deliver.md'));
+  ordered(
+    deliver,
+    'Delegate to `{{SKILL:pr}}` from the verified `RUNTIME_STATE_ROOT` with the exact head branch, base branch, final verified head OID',
+    'the `Verification evidence:` line built per `verification-evidence`',
+  );
+});
+
+test('the known-committed route passes Verification evidence: none on its direct pr call', () => {
+  // Invariant: v1 has no positive path for already committed ranges; the route reports the gap and
+  // never fabricates a record or forwards a committed-handoff receipt.
+  const range = prose(source('src/shared/deliver-committed-range.md'));
+  assert.ok(
+    range.includes(
+      'no committed-handoff receipt, but the literal line `Verification evidence: none` (this route carries no trusted verification evidence)',
+    ),
+  );
+  // Invariant: that `none` arrives on a direct invocation, so step 12 must report the gap, never
+  // `none`: the `none` value belongs only to a returning handoff, and a direct invocation ignores
+  // every supplied line, `none` included.
+  const report = prReport();
+  assert.ok(
+    report.includes("`none` a returning handoff's supplied `none`"),
+    'step 12 reserves `none` for a returning handoff',
+  );
+  assert.ok(
+    report.includes(
+      '`no trusted verification evidence` the gap on every direct invocation, any supplied line (`none` included) ignored',
+    ),
+    'a direct invocation that supplies `Verification evidence: none` reports no trusted verification evidence',
+  );
+});
+
+test('deliver records step 4.3, builds at step 6 from the final head tree and proves the chain', () => {
+  // Invariant: deliver binds only content it proved unchanged since its own validation, and a
+  // missing proof link degrades to `none` instead of an unproven record.
+  const deliver = prose(source('src/tools/deliver.md'));
+  ordered(
+    deliver,
+    "Run the repository's established pre-commit validation",
+    'step 4.3 validation has run, to record its observed checks, and again when step 6 builds the verification record',
+    'invoke `reconcile {manifest, deliveryRoot, sourceRoot}`',
+    '### 6. Publish only the verified commits',
+    'the `Verification evidence:` line built per `verification-evidence`',
+    'Next steps: suppressed',
+  );
+  const chain = verificationEvidenceSection('### Deliver', '### In pr');
+  for (const literal of [
+    "Deliver's checks are its own step 4.3 validation",
+    "a resumed delivery's evidence is its own fresh step 4.3 result, never an earlier run's",
+    'step 4.4 `reconcile` (on a partial-diff resume, `ledger reconcile` with `exact: true` and `staged.count` 0)',
+    'an empty residual after the last group (step 5.4)',
+    'the clean delivery worktree of step 6',
+    'the tree OID of the final head',
+    '`planPaths: []`',
+    'a missing link passes `Verification evidence: none`',
+  ]) {
+    assert.ok(chain.includes(literal), `deliver proof chain must state: ${literal}`);
+  }
+  assert.ok(chain.includes('no `objectDirectory`'), 'deliver reads the repository store only');
+  // Invariant: deliver's build call names every required evidence-build input, each traced to the
+  // step that produced it, so no value is guessed at step 6.
+  ordered(
+    chain,
+    'calls `evidence-build` with `cwd` the `RUNTIME_STATE_ROOT`',
+    '`tree` the tree OID of the final head',
+    'no `objectDirectory`',
+    '`planDir` the `plan.dir` step 1.2 read',
+    '`planPaths: []`',
+    '`visibility` `hidden` or `standard` as step 1.2 recorded',
+    '`producer` `deliver`',
+    '`checks` its step 4.3 results mapped as above',
+  );
+  // Invariant: the planDir value exists because step 1.2 reads `plan.dir` with the other keys.
+  const step12 = prose(
+    boundedSlice(
+      source('src/tools/deliver.md'),
+      '2. Resolve `language.git` and `language.forge`.',
+      '3. Resolve and confirm the selection contract',
+    ),
+  );
+  assert.ok(
+    step12.includes(
+      'Read `delivery.baseBranch`, `delivery.branchPrefix`, `plan.dir`, `worktree.baseDir`, and `worktree.setup`',
+    ),
+    'deliver step 1.2 reads plan.dir',
+  );
+  assert.ok(step12.includes('Record whether hidden mode (`visibility: hidden`'));
+});
+
+test('a resumed deliver run takes its own fresh step 4.3 result and ledger reconcile as the proof link', () => {
+  // Invariant: a resume never reuses an earlier run's evidence, and the exact, nothing-staged
+  // reconcile takes the place of step 4.4 in the proof chain.
+  const resume = prose(source('src/shared/deliver-partial-diff-resume.md'));
+  ordered(
+    resume,
+    "Step 4.3. Its fresh result is this delivery's only verification evidence.",
+    '`ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0',
+    'It is also the verification proof link.',
+    'Step 5 from group `resume.next`',
+  );
+});
+
+test('pr stays commit-only and starts no validation, with or without a record', () => {
+  // Invariant: the verification section reports what a producer observed; pr never runs checks.
+  const pr = prose(source('src/tools/pr.md'));
+  assert.ok(pr.includes('do not run project validation such as linting, tests, or build checks'));
+  assert.ok(pr.includes('Do not start project validation such as linting, tests, or build checks'));
+  assert.ok(verificationEvidence().includes('`pr` starts no validation'));
+});

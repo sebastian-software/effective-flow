@@ -26,7 +26,11 @@ import {
 } from '../build-lib.mjs';
 import { builtSkillIdentity } from '../evals/_scaffold/build-identity.mjs';
 import { PILOT_MEASUREMENT_QUALITY_MAPPING_IDENTITY } from '../src/scripts/pilot-measurement-protocol.mjs';
-import { AGENT_PROFILE_MAPPINGS, MODEL_TIER_MAPPINGS } from './support/native-profile-config.mjs';
+import {
+  AGENT_PROFILE_MAPPINGS,
+  MODEL_TIER_MAPPINGS,
+  PANEL_MODEL_ALLOWLIST,
+} from './support/native-profile-config.mjs';
 import { copyRepository } from './support/repository-copy.mjs';
 
 const ROOT_DIR = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -329,19 +333,20 @@ test('portable output contains only base workers and no native profile represent
         path,
       );
     }
-    // The generated executable contract carries exactly the canonical mapping, without allowing
-    // provider names anywhere else in its policy or in portable prompt text.
+    // The generated executable contract carries exactly the canonical mapping and panel allowlist,
+    // without allowing provider names anywhere else in its policy or in portable prompt text.
     let providerContent = content;
     if (path === join(portable, 'scripts/model-selection-contract.json')) {
       const contract = JSON.parse(content);
       assert.deepEqual(
         Object.keys(contract).sort(),
-        ['schemaVersion', 'target', 'mappings', 'roles', 'sites'].sort(),
+        ['schemaVersion', 'target', 'mappings', 'panelModels', 'roles', 'sites'].sort(),
       );
       assert.equal(contract.schemaVersion, 1);
       assert.equal(contract.target, 'portable');
       assert.deepEqual(contract.mappings, MODEL_TIER_MAPPINGS);
-      providerContent = JSON.stringify({ ...contract, mappings: {} });
+      assert.deepEqual(contract.panelModels, PANEL_MODEL_ALLOWLIST);
+      providerContent = JSON.stringify({ ...contract, mappings: {}, panelModels: {} });
     }
     assert.deepEqual(
       findProviderModelNames(providerContent, {
@@ -647,8 +652,8 @@ test('profile tokens are accepted only in the initial implementation sections', 
 // metadata, and every spawn-site marker resolves through exactly one model-tiers table row; each
 // broken case fails the build before the output swap.
 const PROBE_ROWS = [
-  '| `version/probe` | Probe sub-agent | `standard` | `no` |',
-  '| `version/mixed` | Probe implementer and validator | `role:nodejs-implementer,code-validator` | `yes` |',
+  '| `version/probe` | Probe sub-agent | `standard` | `no` | `no` |',
+  '| `version/mixed` | Probe implementer and validator | `role:nodejs-implementer,code-validator` | `yes` | `no` |',
 ];
 const PROBE_TOOL_TEXT = [
   '',
@@ -718,7 +723,7 @@ test('model-tier mapping, agent tier and spawn-site errors fail before swap', ()
   );
   assertMutatedBuildFails(
     'malformed-spawn-site-row',
-    (checkout) => addProbeRows(checkout, ['| `version/probe` | Probe | `fast` | `no` |']),
+    (checkout) => addProbeRows(checkout, ['| `version/probe` | Probe | `fast` | `no` | `no` |']),
     /Unknown spawn-site tier "fast" for "version\/probe"/,
   );
   assertMutatedBuildFails(
@@ -760,7 +765,7 @@ test('a spawn-site tier line in a worker fails before swap', () => {
     (checkout) => {
       appendFileSync(
         join(checkout, 'src/shared/model-tiers.md'),
-        '| `skill-discovery/probe` | Probe sub-agent | `standard` | `no` |\n',
+        '| `skill-discovery/probe` | Probe sub-agent | `standard` | `no` | `no` |\n',
       );
       appendFileSync(
         join(checkout, 'src/shared/skill-discovery.md'),

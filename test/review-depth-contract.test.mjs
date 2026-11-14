@@ -17,11 +17,13 @@ const delegatedRun = read('shared/build-delegated-run.md');
 const fix = read('tools/fix.md');
 const refactor = read('tools/refactor.md');
 const runContract = read('shared/build-run-contract.md');
+const planningBatch = read('shared/planning-batch.md');
 
 const LOADERS = {
   'shared/build-delegated-run.md': delegatedRun,
   'tools/fix.md': fix,
   'tools/refactor.md': refactor,
+  'shared/planning-batch.md': planningBatch,
 };
 
 const FLOOR = [
@@ -176,7 +178,7 @@ test('review-depth is loaded only through a lazy-include with a when line and ne
       `${name} copies the re-check sequence`,
     );
   }
-  // No source outside the three loaders may load it, eagerly or lazily.
+  // No source outside the four loaders may load it, eagerly or lazily.
   const srcRoot = new URL('../src/', import.meta.url);
   const others = readdirSync(srcRoot, { recursive: true })
     .map((entry) => entry.split('\\').join('/'))
