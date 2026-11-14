@@ -295,6 +295,8 @@ function record(
     base: 'develop',
     ...(state ? { state } : {}),
     scope,
+    // Each recorded round of these scenarios is a single dispatch, so the two numbers coincide.
+    dispatch: round,
     round,
     before,
     after,
