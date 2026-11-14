@@ -10,6 +10,14 @@ and with the limitations of the [F record for candidate `024bcb2a`](../developer
 F3, where Looping was not reproducibly reported, and F12, where the loop cap and the cap tick's
 deletion were not observed. All sends stay disabled. The decision below is unchanged.
 
+Status note, November 14, 2026: the report-only snapshot path and the opt-in report-only follow-up
+path stay enabled on the T3 observed path, now bound by the [F record for candidate `e0966ac7`](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-e0966ac7).
+It records a tick-level Looping report, so the F3 limitation of `024bcb2a` is resolved. The follow-up
+path runs under the documented host prerequisite and with the record's limitations: F2, where the
+first tick after an opt-in snapshot of an idle target skipped the one-time idle report, and F12,
+where the loop cap and the cap tick's deletion were not observed; with a global Codex `AGENTS.md`
+present it is untested. All sends stay disabled. The decision below is unchanged.
+
 ## Context
 
 A session that drifts cannot see its own drift. The planned `effective-flow focus` tool is an outside
