@@ -552,7 +552,8 @@ export const MANIFEST_FILES = Object.freeze([
 // Workflow evaluation
 
 // `ci-detect` reason codes. Workflow level: trigger, filters and defaults. Job level: everything that
-// makes the job's test result conditional, indirect or not statically enumerable.
+// makes the job's test result conditional, indirect, not statically enumerable or not provably a
+// result for the pull request's own checked-out tree.
 export const DETECTION_REASONS = Object.freeze([
   'base-ref-missing',
   'no-manifest-test-command',
@@ -588,6 +589,39 @@ export const DETECTION_REASONS = Object.freeze([
   'no-test-step',
   'test-command-not-bare',
   'test-in-local-action',
+  'no-checkout',
+  'multiple-checkouts',
+  'invalid-checkout-inputs',
+  'checkout-ref',
+  'checkout-repository',
+  'checkout-path',
+  'unknown-checkout-input',
+  'git-command-before-test',
+]);
+
+// A check run's head SHA names the pull request, not the tree its job tested. The test step counts
+// only after exactly one `actions/checkout` of the default pull request ref into the workspace, with
+// no Git command between them; inputs outside this list can redirect or narrow the checked-out tree.
+const CHECKOUT_ACTION = /^actions\/checkout@\S+$/i;
+const CHECKOUT_TREE_NEUTRAL_INPUTS = new Set([
+  'token',
+  'ssh-key',
+  'ssh-known-hosts',
+  'ssh-strict',
+  'ssh-user',
+  'persist-credentials',
+  'clean',
+  'fetch-depth',
+  'fetch-tags',
+  'show-progress',
+  'lfs',
+  'submodules',
+  'set-safe-directory',
+]);
+const CHECKOUT_INPUT_REASONS = new Map([
+  ['ref', 'checkout-ref'],
+  ['repository', 'checkout-repository'],
+  ['path', 'checkout-path'],
 ]);
 
 const EXPRESSION = /\$\{\{/;
@@ -758,8 +792,45 @@ function expectedInstances(job, displayName, reasons) {
   return combinations.map((combination) => `${displayName} (${combination.join(', ')})`);
 }
 
-function evaluateStep(step, index, command, context) {
+function isGitInvocation(token) {
+  return ['git', 'gh'].some((name) => token === name || token.endsWith(`/${name}`));
+}
+
+// Whether the steps before the test step leave the workspace at the pull request's checked-out tree.
+function checkoutReasons(steps, testIndex) {
   const reasons = [];
+  let checkouts = 0;
+  for (const step of steps.slice(0, testIndex)) {
+    if (!(step instanceof Map)) continue;
+    const run = step.get('run');
+    if (typeof run === 'string' && tokens(run).some(isGitInvocation)) {
+      reasons.push('git-command-before-test');
+    }
+    const uses = step.get('uses');
+    if (typeof uses !== 'string' || !CHECKOUT_ACTION.test(uses.trim())) continue;
+    checkouts += 1;
+    if (step.has('if')) reasons.push('step-condition');
+    if (step.has('continue-on-error')) reasons.push('continue-on-error');
+    if (!step.has('with')) continue;
+    const inputs = step.get('with');
+    if (inputs === null) continue;
+    if (!(inputs instanceof Map)) {
+      reasons.push('invalid-checkout-inputs');
+      continue;
+    }
+    for (const [key, value] of inputs) {
+      if (key === 'path' && normalizeDirectory(value) === '') continue;
+      if (CHECKOUT_INPUT_REASONS.has(key)) reasons.push(CHECKOUT_INPUT_REASONS.get(key));
+      else if (!CHECKOUT_TREE_NEUTRAL_INPUTS.has(key)) reasons.push('unknown-checkout-input');
+    }
+  }
+  if (checkouts === 0) reasons.push('no-checkout');
+  else if (checkouts > 1) reasons.push('multiple-checkouts');
+  return reasons;
+}
+
+function evaluateStep(step, index, command, context) {
+  const reasons = checkoutReasons(context.steps, index);
   if (step.has('if')) reasons.push('step-condition');
   if (step.has('continue-on-error')) reasons.push('continue-on-error');
   const stepShell = shellReason(step.get('shell'));
@@ -819,6 +890,7 @@ function evaluateJob(jobId, job, commands, workflowDefaults) {
     if (!Array.isArray(steps) || steps.length === 0) reasons.push('no-steps');
     else {
       const context = {
+        steps,
         workingDirectory:
           jobDirectory.value !== undefined ? jobDirectory.value : workflowDefaults.workingDirectory,
       };

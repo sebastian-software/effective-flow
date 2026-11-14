@@ -304,7 +304,13 @@ test('detect: the minimal workflow is detected with its single expected instance
 });
 
 test('detect: a job without a name is expected under its job id', () => {
-  const job = ['  unit:', '    runs-on: ubuntu-latest', '    steps:', '      - run: pnpm test'];
+  const job = [
+    '  unit:',
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    '      - uses: actions/checkout@v4',
+    '      - run: pnpm test',
+  ];
   const result = evaluate(workflow({ job: job.join('\n') }));
   assert.deepEqual(jobOf(result, 'unit').expectedInstances, ['unit']);
 });
@@ -527,6 +533,71 @@ test('detect: a test only inside a reusable workflow or composite action is excl
     workflow({ steps: ['      - uses: ./.github/actions/test'] }),
     'test-in-local-action',
   );
+});
+
+// Invariant: a check run's head SHA names the pull request, not the tree its job tested, so a test
+// step counts only after exactly one unconditional checkout of the default pull request ref into
+// the workspace with no Git command in between; a job that tests another ref, repository or
+// directory never yields evidence for a conflict commit it did not test.
+test('detect: the test step must run on the single default checkout of the pull request', () => {
+  const checkout = (inputs) =>
+    workflow({
+      steps: [
+        '        with:',
+        ...inputs.map((line) => `          ${line}`),
+        '      - run: pnpm test',
+      ],
+    });
+  assertUndetected(checkout(['ref: develop']), 'checkout-ref');
+  assertUndetected(checkout(['ref: ${{ github.event.pull_request.head.sha }}']), 'checkout-ref');
+  assertUndetected(checkout(['repository: other/project']), 'checkout-repository');
+  assertUndetected(checkout(['path: other']), 'checkout-path');
+  assertUndetected(checkout(['path: ${{ matrix.dir }}']), 'checkout-path');
+  assertUndetected(checkout(['sparse-checkout: src']), 'unknown-checkout-input');
+  assertUndetected(
+    workflow({ steps: ['        with: develop', '      - run: pnpm test'] }),
+    'invalid-checkout-inputs',
+  );
+  assert.equal(evaluate(checkout(['path: .'])).status, 'detected');
+  assert.equal(
+    evaluate(checkout(['fetch-depth: 0', 'token: ${{ secrets.CI_TOKEN }}', 'submodules: true']))
+      .status,
+    'detected',
+  );
+
+  const job = (steps) =>
+    workflow({ job: ['  test:', '    runs-on: ubuntu-latest', '    steps:', ...steps].join('\n') });
+  const CHECKOUT = '      - uses: actions/checkout@v4';
+  assertUndetected(job(['      - run: pnpm test']), 'no-checkout');
+  assertUndetected(job(['      - run: pnpm test', CHECKOUT]), 'no-checkout');
+  assertUndetected(job([CHECKOUT, CHECKOUT, '      - run: pnpm test']), 'multiple-checkouts');
+  assertUndetected(
+    job([CHECKOUT, '        if: always()', '      - run: pnpm test']),
+    'step-condition',
+  );
+  assertUndetected(
+    job([CHECKOUT, '        continue-on-error: true', '      - run: pnpm test']),
+    'continue-on-error',
+  );
+  assertUndetected(
+    job([
+      CHECKOUT,
+      '      - run: git fetch origin develop && git checkout FETCH_HEAD',
+      '      - run: pnpm test',
+    ]),
+    'git-command-before-test',
+  );
+  assertUndetected(
+    job([CHECKOUT, '      - run: |', '          gh pr checkout 1', '      - run: pnpm test']),
+    'git-command-before-test',
+  );
+  assert.equal(
+    evaluate(job([CHECKOUT, '      - run: pnpm test', '      - run: git status'])).status,
+    'detected',
+  );
+  const later = evaluate(job(['      - run: pnpm test', CHECKOUT, '      - run: pnpm test']));
+  assert.equal(later.status, 'detected');
+  assert.equal(jobOf(later).step.index, 2);
 });
 
 // ---------------------------------------------------------------------------------------------

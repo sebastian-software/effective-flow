@@ -122,10 +122,16 @@ exactly the bare manifest test invocation, matched by normalized script identity
 equals `pnpm run test`), as its only command; no shell other than `bash`, no `if:` and no
 `continue-on-error` on the step or job; any `working-directory` is the manifest's directory; any
 matrix is literal, without `include`, `exclude` or expressions, and the job name is not templated,
-so the expected instance set is static and non-empty; and the test runs in the job itself, not
-only inside a reusable workflow or composite action. `pr-status-read` adds typename, app slug,
-event, workflow file path and head SHA per entry only on `includeCheckIdentity: true`, so existing
-envelopes stay unchanged (AD4a).
+so the expected instance set is static and non-empty; the test runs in the job itself, not
+only inside a reusable workflow or composite action; and it runs on the pull request's own tree:
+exactly one `actions/checkout` step precedes it, without `if:` or `continue-on-error`, without a
+`ref`, a `repository` or a `path` other than the workspace root, and with no input beyond the
+credential, history, LFS, submodule and progress inputs that leave the checked-out tree unchanged,
+and no step before it runs `git` or `gh`. A check run's head SHA names the pull request whose
+event started the workflow, not the tree its job tested, so a job that checks out another ref or
+repository would otherwise pass as evidence for a conflict commit it never tested.
+`pr-status-read` adds typename, app slug, event, workflow file path and head SHA per entry only on
+`includeCheckIdentity: true`, so existing envelopes stay unchanged (AD4a).
 
 **The combined gate runs once under `quick` (AD5).** Under effective `quick` the resolver runs
 targeted checks for the conflicted and adjacent paths only, and the combined gate runs at most
