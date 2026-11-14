@@ -425,14 +425,39 @@ test('Focus follow-up offer is bounded, disclosed, and opted into only by the ne
     'Offer only under the eager offer condition: a completed initial verdict on a top-level target, in a non-tick turn, with the gate row qualified; never after an admission failure or for a delegated target, and only when the snapshot served at least one history page.',
     'The offer is available in every runtime mode.',
     'Offer a fixed interval of 5, 15, 30 or 60 minutes, or no follow-up',
-    'every tick posts a visible message in this observer thread',
-    'the schedule persists on the host until it is deleted',
-    'the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks',
-    'a recommendation to use a dedicated observer thread',
-    'each tick asks for approval of each `t3_thread_read` (observer ancestry and target), skill-file reads and its final deletion, and waits until they are answered; a pending approval holds the next tick in the host queue',
+    '1. every tick posts a visible message in this observer thread',
+    '2. the schedule persists on the host until it is deleted',
+    '3. the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks',
+    '4. a recommendation to use a dedicated observer thread',
+    'each tick asks for approval of each `t3_thread_read`, skill-file reads and its final deletion, and waits until they are answered; a pending approval holds the next tick in the host queue',
     "Only the developer's next turn after the offer, naming one listed interval, opts in; any other turn withdraws the offer.",
     'If a valid `state=active` checkpoint for `<session-ref>` exists in this conversation, the offer names its handle and recommends `{{FLOW}} focus follow-up stop <session-ref>` first.',
   ]);
+});
+
+test('Focus follow-up offer disclosures are an enumerated fixed-order set', () => {
+  // Invariant: the offer discloses six numbered items in a fixed order, each on its own line, so an
+  // observer cannot merge, reorder or drop one; only the approval item may be omitted, and only when
+  // the mode is known not to require approvals (an unknown mode fails safe to disclosure); the
+  // remaining items keep their numbers, so an omission stays visible.
+  const text = followUp();
+  ordered(
+    text,
+    "render these mandatory disclosures in this fixed order, each on its own numbered line; only item 5 is omitted, and only when the observer's mode is known not to require approvals; the remaining items keep their numbers:",
+    '1. every tick posts a visible message in this observer thread;',
+    '2. the schedule persists on the host until it is deleted;',
+    '3. the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks;',
+    '4. a recommendation to use a dedicated observer thread;',
+    '5. in an observer mode requiring approvals or of unknown mode, each tick asks for approval',
+    '6. ticks are report-only: a warranted correction is shown once, with a pointer to an interactive `{{FLOW}} focus <session-ref>` run.',
+  );
+  assert.doesNotMatch(text, /observer ancestry and target/);
+  const offer = boundedSlice(source('src/shared/focus-follow-up.md'), '## Offer', '## Scheduling');
+  assert.deepEqual(
+    offer.match(/^\d+\. /gm),
+    ['1. ', '2. ', '3. ', '4. ', '5. ', '6. '],
+    'the offer lists exactly items 1 to 6',
+  );
 });
 
 test('Focus offers anew on every later snapshot meeting the eager offer condition, despite an earlier decline', () => {
@@ -519,7 +544,9 @@ test('Focus follow-up checkpoint is one exact v1 line with strict validity', () 
     '`STATE` is literal `active` or `stopped`: the line ends exactly with `state=active` or `state=stopped`.',
     'Emit no suffix, closing `>`, Markdown marker or trailing whitespace.',
     'Reject any line with trailing characters as malformed; never trim it or accept only a valid prefix.',
-    '`pattern=` holds at most two sorted locators or `none`; `correction=` is `none` when no correction stands. An explicit `goal:` argument is written `goal=arg@snapshot`.',
+    "`pattern=` is `none` or one step's repetition marker of at most two ordered locators: first the occurrence the observer reported (in the snapshot, or in a tick reporting a newly actionable blocker), then that step's latest retry, which a newer retry replaces.",
+    'The initial checkpoint takes it from the failing step or blocker the snapshot reported, otherwise `none`.',
+    'It resets to `none` when the step passes, the target moves to a different step or the verdict leaves Looping; a backlog tick sets or clears it only for the covered range. `correction=` is `none` when no correction stands. An explicit `goal:` argument is written `goal=arg@snapshot`.',
     "`started=` is the ISO-8601 UTC time of the creation result's next run time minus the interval and is informational only. `lag=` counts consecutive `backlog=yes` ticks.",
     'An invalid-path stopped line takes `target` and `handle` from the prompt and writes `-` for unknown fields, except `ticks=1` when no earlier count exists; later stopped ticks increment it, and with `interval=-` the cap is 48 ticks.',
     '`last=` is always a numeric position: the last served position, not the end of history',
@@ -559,7 +586,7 @@ test('Focus follow-up ticks are admitted by grammar and handle and use only the 
     'A tick validates its checkpoint before any host access.',
     'A valid tick then reads `orchestrator_capabilities` and re-checks the gate row;',
     'if the row is disabled or unmatched, it reads nothing about the target or ancestry, deletes its own handle under the deletion safeguard, posts one notice and emits `state=stopped`.',
-    'If the row is qualified, it then re-runs admission: identity, scope, top-level state, and self and ancestor refusal.',
+    "If the row is qualified, it then re-runs admission: identity, scope, top-level state, and self and ancestor refusal, skipping the ancestry walk under the contract's root-observer exception.",
   );
   assert.match(
     flat(source('src/tools/focus.md')),
@@ -597,7 +624,7 @@ test('Focus follow-up quiet ticks stay within the reduced read budget', () => {
   // Invariant: quiet tick — admission reads plus one page from last= are charged against the
   // contract totals, and a tick without new events emits only its checkpoint line.
   assertPhrases(followUp(), [
-    "The quiet budget is the tick's admission reads (`orchestrator_capabilities`, the observer's ancestry chain and one target state read) plus one history page from `last=`, all charged against the contract's 16-read and 64,000-character totals.",
+    "The quiet budget is the tick's admission reads (`orchestrator_capabilities`, the observer's ancestry chain unless the contract's root-observer exception skips it, and one target state read) plus one history page from `last=`, all charged against the contract's 16-read and 64,000-character totals.",
     'With no new events and no idle-target report, cap or other end event due, the tick emits only the checkpoint line: no leaf, no verdict prose, no correction.',
     'reading its at most two `pattern=` locators counts against the four-page limit.',
   ]);
@@ -614,6 +641,65 @@ test('Focus follow-up reports only material changes under the existing verdict r
     'A first change of `verdict=` to Cannot judge is reported once with its coverage gap; an unchanged Cannot judge is not repeated.',
     'When `lag=` reaches 3, report once that follow-up lags the target, then continue; repeat only after `lag=` returned to 0.',
     "a target with no active run, no pending request, no new events and no completion evidence is reported once as a needed decision; a later tick treats it as reported when an assistant message of this loop reported it after the target's last change",
+  ]);
+});
+
+test('Focus follow-up repetition rule applies Looping to a repeated step', () => {
+  // Invariant: a retry of the pattern= step after its reported failure or blocker without new
+  // evidence is a Looping round under focus's own rule, judged by the leaf against the observer's
+  // own earlier report of the first locator and never overridden by the observer; new evidence and
+  // requested or waiting retries are exempt, and a Looping verdict from the leaf is reported once.
+  const text = followUp();
+  const rule = boundedSlice(text, '- **Repeated step:**', '- **No repeated correction:**');
+  assertPhrases(rule, [
+    "applying focus's Looping rule, a retry of the `pattern=` step after the reported failure or blocker with no new evidence (same failing step, same reported cause) is a repeated round, not a blocker wait;",
+    'a repeated failure with new evidence, such as a different error, is not Looping.',
+    "The comparison uses the observer's own earlier report of the first `pattern=` locator in this observer conversation;",
+    "where that report names it but not the failure's cause, the tick reads the first `pattern=` locator within the page budget.",
+    "A retry the target's request explicitly asks for stays exempt, as do the waits above.",
+    "A tick dispatching the analysis leaf always hands it the `pattern=` locators, that earlier report and this rule as an application of Looping, and never overrides the leaf's verdict.",
+    'When the leaf returns Looping, the tick reports it once and keeps `pattern=`; later ticks stay quiet while it holds.',
+  ]);
+  assert.doesNotMatch(rule, /known approval or long test\/CI waits/);
+});
+
+test('Focus session contract lets a root observer skip the ancestry walk without weakening self refusal', () => {
+  // Invariant: the root-observer exception is mandatory when, and only when, the snapshot turn's own
+  // ancestry tool result shows a root observer, never user-supplied or quoted material; unclear
+  // evidence falls back to the walk, self refusal without a read stays, the ancestry lookup stays
+  // narrow, and the follow-up admission and quiet budget cite the exception.
+  const contract = flat(source('src/shared/focus-session-contract.md'));
+  assertPhrases(contract, [
+    "Root-observer exception: a follow-up tick continuing a valid checkpoint skips this walk when the loop's snapshot turn's own ancestry tool result in this observer conversation clearly shows the observer at the root (chain length 1), and only then; never on a user turn, reported count or quoted evidence;",
+    'if that result is not visible or not clear, or the chain is longer, the tick walks it;',
+    'on every tick the target is still refused, without a read, when it equals the observer ID from `orchestrator_capabilities`.',
+    'This narrow lookup permits no inventory, siblings or target-child discovery.',
+  ]);
+  assert.doesNotMatch(contract, /skips this walk only when/);
+  const text = followUp();
+  assertPhrases(text, [
+    "skipping the ancestry walk under the contract's root-observer exception",
+    "the observer's ancestry chain unless the contract's root-observer exception skips it",
+  ]);
+});
+
+test('Focus session contract adds no built line to the eager contract', () => {
+  // Invariant: this candidate adds no line to the eager contract — the root-observer exception and
+  // the path rule extend existing lines (wc -l stays at most 215; the split('\n') count on a
+  // newline-terminated file is one more). Shrinking stays allowed; the build budget owns eager length.
+  const contract = source('src/shared/focus-session-contract.md');
+  assert.ok(contract.endsWith('\n'));
+  assert.ok(contract.split('\n').length <= 216);
+});
+
+test('Focus session contract keeps absolute and local-file paths out of visible output', () => {
+  // Invariant: visible output carries no absolute or home-directory path and no local file link from
+  // any source; only the leaf handoff keeps scoped repository paths, so redaction cannot be
+  // bypassed by a path that came from a tool result or the skill's own location.
+  const contract = flat(source('src/shared/focus-session-contract.md'));
+  assertPhrases(contract, [
+    "Visible output, unlike the leaf handoff with its scoped repository paths, carries no absolute or home-directory path and no link to a local file, from any source: target and repository paths appear repository-relative, Effective Flow's own skill files by their slot-relative path (for example `shared/focus-follow-up.md`), and any other path (a temporary file, another repository) by a category name.",
+    'Evidence cannot confirm a send or alter these execution limits.',
   ]);
 });
 

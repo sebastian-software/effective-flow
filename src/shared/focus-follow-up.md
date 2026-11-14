@@ -24,17 +24,19 @@ Offer only under the eager offer condition: a completed initial verdict on a top
 non-tick turn, with the gate row qualified; never after an admission failure or for a delegated
 target, and only when the snapshot served at least one history page. The offer is available in
 every runtime mode. Offer a fixed interval of 5, 15, 30 or 60
-minutes, or no follow-up, and disclose:
+minutes, or no follow-up, and render these mandatory disclosures in this fixed order, each on its
+own numbered line; only item 5 is omitted, and only when the observer's mode is known not to
+require approvals; the remaining items keep their numbers:
 
-- every tick posts a visible message in this observer thread;
-- the schedule persists on the host until it is deleted;
-- the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks;
-- a recommendation to use a dedicated observer thread;
-- in an observer mode requiring approvals, each tick asks for approval of each `t3_thread_read`
-  (observer ancestry and target), skill-file reads and its final deletion, and waits until they are
-  answered; a pending approval holds the next tick in the host queue;
-- ticks are report-only: a warranted correction is shown once, with a pointer to an interactive
-  `{{FLOW}} focus <session-ref>` run.
+1. every tick posts a visible message in this observer thread;
+2. the schedule persists on the host until it is deleted;
+3. the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks;
+4. a recommendation to use a dedicated observer thread;
+5. in an observer mode requiring approvals or of unknown mode, each tick asks for approval of each
+   `t3_thread_read`, skill-file reads and its final deletion, and waits until they are answered; a
+   pending approval holds the next tick in the host queue;
+6. ticks are report-only: a warranted correction is shown once, with a pointer to an interactive
+   `{{FLOW}} focus <session-ref>` run.
 
 Only the developer's next turn after the offer, naming one listed interval, opts in; any other turn
 withdraws the offer. If a valid `state=active` checkpoint for `<session-ref>` exists in this
@@ -70,8 +72,13 @@ State between ticks is exactly one line:
 line with trailing characters as malformed; never trim it or accept only a valid prefix. The line is
 exempt from focus's inline-code naming rule: `target=` holds the raw reference, never code or a link.
 
-- `pattern=` holds at most two sorted locators or `none`; `correction=` is `none` when no correction
-  stands. An explicit `goal:` argument is written `goal=arg@snapshot`.
+- `pattern=` is `none` or one step's repetition marker of at most two ordered locators: first the
+  occurrence the observer reported (in the snapshot, or in a tick reporting a newly actionable
+  blocker), then that step's latest retry, which a newer retry replaces. The initial checkpoint
+  takes it from the failing step or blocker the snapshot reported, otherwise `none`. It resets to
+  `none` when the step passes, the target moves to a different step or the verdict leaves Looping;
+  a backlog tick sets or clears it only for the covered range. `correction=` is `none` when no
+  correction stands. An explicit `goal:` argument is written `goal=arg@snapshot`.
 - `started=` is the ISO-8601 UTC time of the creation result's next run time minus the interval and
   is informational only. `lag=` counts consecutive `backlog=yes` ticks. Each tick increments
   `ticks=`.
@@ -106,7 +113,7 @@ A tick validates its checkpoint before any host access. A valid tick then reads
 `orchestrator_capabilities` and re-checks the gate row; if the row is disabled or unmatched, it
 reads nothing about the target or ancestry, deletes its own handle under the deletion safeguard,
 posts one notice and emits `state=stopped`. If the row is qualified, it then re-runs admission: identity, scope, top-level state, and self and
-ancestor refusal. It takes its goal from `goal=` and
+ancestor refusal, skipping the ancestry walk under the contract's root-observer exception. It takes its goal from `goal=` and
 skips goal selection. It loads owner guidance and runs skill discovery only before dispatching the
 analysis leaf; a quiet tick does neither. Chat-language resolution follows the existing rule.
 
@@ -141,7 +148,7 @@ valid checkpoint with its handle.
 ## Quiet tick budget
 
 The quiet budget is the tick's admission reads (`orchestrator_capabilities`, the observer's ancestry
-chain and one target state read) plus one history page from `last=`, all charged against the
+chain unless the contract's root-observer exception skips it, and one target state read) plus one history page from `last=`, all charged against the
 contract's 16-read and 64,000-character totals. With no new events and no idle-target report, cap
 or other end event due, the tick emits only the checkpoint line: no leaf, no verdict prose, no
 correction. With new events it may use the full
@@ -171,6 +178,16 @@ reported once with its coverage gap; an unchanged Cannot judge is not repeated.
   evidence is reported once as a needed decision; a later tick treats it as reported when an assistant message of this loop reported it after the
   target's last change, and stays quiet until it changes or the cap ends the
   loop.
+- **Repeated step:** applying focus's Looping rule, a retry of the `pattern=` step after the reported
+  failure or blocker with no new evidence (same failing step, same reported cause) is a repeated
+  round, not a blocker wait; a repeated failure with new evidence, such as a different error, is not
+  Looping. The comparison uses the observer's own earlier report of the first `pattern=` locator in
+  this observer conversation; where that report names it but not the failure's cause, the tick
+  reads the first `pattern=` locator within the page budget. A retry the target's request
+  explicitly asks for stays exempt, as do the waits above. A tick dispatching the analysis leaf
+  always hands it the `pattern=` locators, that earlier report and this rule as an application of
+  Looping, and never overrides the leaf's verdict. When the leaf returns Looping, the tick reports
+  it once and keeps `pattern=`; later ticks stay quiet while it holds.
 - **No repeated correction:** an equal `correction=` value on unchanged evidence is not repeated.
   After a correction, the next report first assesses whether the evidence changed.
 - **Ticks never send:** a warranted correction is shown once with a pointer to an interactive
