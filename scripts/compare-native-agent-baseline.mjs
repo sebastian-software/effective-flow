@@ -273,6 +273,72 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // The merge gate's conflict-commit scope replaces the validator's `quick` mapping, and an
+    // environment signature is reported without a suite split, base comparison or rerun; both
+    // paragraphs close the validation-mode section before the minimal fallback.
+    Object.freeze({
+      id: 'code-validator-conflict-commit-scope',
+      edits: Object.freeze([
+        Object.freeze({
+          from: 'subcommands merely to fill a report.\n\n## Minimal fallback\n',
+          to:
+            'subcommands merely to fill a report.\n\n' +
+            'A **conflict-commit scope** from the merge gate replaces the `quick` mapping: skip only the\n' +
+            'named excluded test command, by normalized script identity, as `SKIPPED (covered by CI)`; run every\n' +
+            'other established check for the assigned buckets; replace a mandated combined gate that contains\n' +
+            'the excluded command by its remaining established subcommands. Where those cannot run separately,\n' +
+            'run `full` and report why. Where the scope names several excluded test commands, this holds for\n' +
+            'each.\n\n' +
+            '**On an environment signature, report the check and its diagnostic; no suite split, no base\n' +
+            'comparison, no rerun.** An environment signature is one of the signature classes the handoff names;\n' +
+            "report it in the owner's result states. A timeout of your own host tool, or one you cannot\n" +
+            'attribute, is none of these.\n\n' +
+            '## Minimal fallback\n',
+        }),
+      ]),
+    }),
+    // The resolver is handed the validation mode and the environment-signature rule, runs only
+    // targeted checks under `quick` until it classifies a conflicted path high-risk, reports an
+    // environment signature without a suite split, base comparison or rerun, and reports the mode
+    // it applied.
+    Object.freeze({
+      id: 'merge-conflict-resolver-validation-mode',
+      edits: Object.freeze([
+        Object.freeze({
+          from:
+            'conflicted paths, the resolved language values, and whether this run is gated or a non-interactive\n' +
+            'delegation. Work only inside that checkout, and use its absolute root for every command and every\n' +
+            'path — never a relative path resolved against some other working directory.\n',
+          to:
+            'conflicted paths, the resolved language values, whether this run is gated or a non-interactive\n' +
+            'delegation, the validation mode (`full` or `quick`), and the environment-signature rule with its\n' +
+            'signature classes. Work only\n' +
+            'inside that checkout, and use its absolute root for every command and every path — never a\n' +
+            'relative path resolved against some other working directory.\n',
+        }),
+        Object.freeze({
+          from: '  check rests on, and a role-scoped subset that declines to run it leaves the commit ungated.\n',
+          to:
+            '  check rests on, and a role-scoped subset that declines to run it leaves the commit ungated.\n' +
+            '- **Under the validation mode `quick`, run targeted checks only:** the established checks for the\n' +
+            '  conflicted and adjacent paths, never the combined or top-level gate, which the independent\n' +
+            '  validator runs once. As soon as you classify a conflicted path high-risk, validate as under\n' +
+            '  `full`. Under `full`, or with no mode handed, the rules above apply unchanged.\n' +
+            '- **On an environment signature, report the check and its diagnostic; no suite split, no base\n' +
+            '  comparison, no rerun.** An environment signature is one of the signature classes the gate hands\n' +
+            '  you. A timeout of your own host tool, or one you cannot attribute, is none of these.\n',
+        }),
+        Object.freeze({
+          from:
+            '- the exact validation commands with their terminal results, including every check skipped with its\n' +
+            '  reason;\n',
+          to:
+            '- the validation mode you applied and the exact validation commands with their terminal results,\n' +
+            '  including every check skipped with its reason and every environment signature with its\n' +
+            '  diagnostic;\n',
+        }),
+      ]),
+    }),
   ]),
 });
 
