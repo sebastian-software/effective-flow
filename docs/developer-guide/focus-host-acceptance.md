@@ -2494,7 +2494,8 @@ the qualified configuration. No Codex app-server process was running at install
   `dalo-post.json` have the same digest).
 - **No schedule remains.** The host API listed no qualification schedule at the close
   (`window-1/window-close.json`, API). The T3 UI was not separately checked for the final empty
-  state. Whether the throwaway threads were archived is not captured in the evidence root.
+  state. The coordinator archived every throwaway session once its items were captured, and the F6
+  target was deleted; this is a host action outside the evidence root.
 - **Develop.** `origin/develop` stayed at `10205806` through the window and at the time of this
   record.
 
@@ -2768,8 +2769,7 @@ correction=Looping+missing-prerequisite+6,12 | … | ticks=3 | … | state=activ
 
 - **Setup:** the loop `H1` on `T` (window 1). After F3 the coordinator superseded the missing
   prerequisite (position 15, as the F14 resume snapshot reports) and told `T` to run `sleep 660`,
-  which produces no output while it runs. The request's exact time is not captured in the evidence
-  root.
+  which produces no output while it runs. The request was sent at 14:22:32.
 - **Trigger:** the scheduled ticks that fell inside the wait (prompts 14:26:53 and 14:31:53).
 - **Expected:** `src/shared/focus-follow-up.md` "Judging and reporting": long test, CI or approval
   waits are no Looping or Stalled verdict; a quiet tick passes.
@@ -2848,7 +2848,7 @@ Failed deletion, with the schedule deleted in the T3 UI before the tick.
 
 - **Setup:** `O` (window 1), loop `H3` on `T2` (window 1).
 - **Trigger:** the owner deleted `H3` in the T3 UI before `T2` completed (the order the plan
-  allows to remove timing pressure; the exact time of the UI deletion is not captured), and the
+  allows to remove timing pressure; the owner reported the deletion between 15:35:53 and 15:37), and the
   host API confirmed it gone. `T2` completed at about 15:37 after the coordinator's request for
   stages 2 and 3 (position 4), and the coordinator typed `H3`'s tick prompt into `O` (window 1) at
   15:37:11.
@@ -3175,8 +3175,7 @@ All six schedule updates in the scans carried the prefix as well.
   T3 server version is not independently captured, a sanitized `orchestrator_capabilities` result
   is not in the evidence root, and the per-call selections of F1's read ledger are not itemized.
   No snapshot states its redaction outcome; F1 passes without that field, and F3's blocker report
-  shows the redaction applied. The F10 hold was not announced in advance. Whether the throwaway
-  threads were archived is not captured.
+  shows the redaction applied. The F10 hold was not announced in advance.
 - **Scope.** The record binds the portable build only. Native maintainer builds are not qualified,
   which stays an accepted residual risk; so does the extra visible commentary on quiet ticks that a
   default Codex configuration produces. Other hosts and other models are not covered. The scenarios
