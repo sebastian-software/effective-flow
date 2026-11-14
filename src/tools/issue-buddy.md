@@ -151,6 +151,8 @@ repositoryVisibility, leftoverPlanFiles}`. No stale-attempt evidence is inferred
 Retain the exact result as `collect`, including `baseOid`, `eligible`, `eligibleCount`, `skipped`,
 `recovery` and `authorizedRecovery`. The helper persists authorization and excludes leftover issues
 before judgment counting/slicing and recovery authorization; preserve its eleven skip reasons.
+Goal epics and obsolete marks (`effective-flow-goal-epic`, `effective-flow-goal-obsolete`) skip as
+`lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`.
 Leftovers create no verdict, retry or recovery authority. Changed collection metadata cannot be
 replayed. Never fabricate a candidate, fingerprint or recovery record.
 

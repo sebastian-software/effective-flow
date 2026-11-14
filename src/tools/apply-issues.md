@@ -118,6 +118,11 @@ tracker-target
 when: the resolved tracker target is `external`
 ```
 
+```lazy-include
+backlog-audit-split
+when: Phase 2 reads an issue comment whose first line starts with `<!-- effective-flow-backlog-audit-split `
+```
+
 ```include
 apply-source-detection
 ```
@@ -202,6 +207,11 @@ Do not expose internal tracking IDs or session details in comments.
      the same container. If neither exists, the issue itself is a single work item.
 
 3. Skip work items that are already closed or carry the label `effective-flow-issue-done` (idempotency); on the forge target the legacy `firmo-issue-done` counts as equivalent, on an external target it is not looked up. For an item already in a native started/later-active state or carrying `effective-flow-issue-in-progress` without a retained PR-link comment or receipt, run the single exact-reference recovery from "Issue implementation lifecycle" before analysis. Only a unique verified PR restores bookkeeping; zero or multiple candidates stop that item before implementation without resetting its state.
+   An issue whose backlog-audit split is pending per "Backlog-audit split" is `insufficient`
+   without analysis, names that split as the missing detail and goes to `{{SKILL:plan-issue}}`.
+   An issue labeled `effective-flow-goal-obsolete` is reported with that mark and implemented only
+   after the user explicitly overrides it in this run; otherwise, and in a non-interactive
+   delegation, skip it without a label or comment.
 4. Deduplicate the work list (the same issue number only once, even if it is reachable via multiple containers).
 5. Result: a flat list of work-item issues, each with an optional epic reference. Record it in the wisdom file.
 6. Create a task per work item (task tracking with per-issue granularity) and give the user an overview:

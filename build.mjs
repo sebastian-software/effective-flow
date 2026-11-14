@@ -27,6 +27,7 @@ import {
   normalizeCodexSandboxMode,
   validateAgentProfileMappings,
   validateModelTierMappings,
+  validatePanelModelAllowlist,
   resolveAgentTier,
   collectSpawnSiteMarkers,
   parseSpawnSiteTable,
@@ -125,6 +126,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'backlog-audit.mjs',
+  'backlog-audit-core.mjs',
   'build-run.mjs',
   'build-run-core.mjs',
   'protected-validation-protocol.mjs',
@@ -247,6 +250,13 @@ const MODEL_TIER_MAPPINGS = Object.freeze({
     codex: Object.freeze({ model: 'gpt-6.1-sol', reasoning_effort: 'high' }),
   }),
 });
+// The host-native models a panel spawn site (`Panel: yes` in src/shared/model-tiers.md) may name,
+// per harness. A panel member runs beside the primary `deep` assessor, so its model must differ
+// from that harness's deep model.
+const PANEL_MODEL_ALLOWLIST = Object.freeze({
+  claude: Object.freeze(['fable']),
+  codex: Object.freeze(['gpt-6-astra']),
+});
 const ROUTE_PROFILE_CLASSIFICATION_ENTRIES = Object.freeze([
   Object.freeze(['excluded-generated-vendored', 'non-implementation']),
   Object.freeze(['documentation', 'quality-only-implementation']),
@@ -276,7 +286,15 @@ const TOOL_GROUPS = [
   {
     title: 'Understand what to do',
     when: 'Analysis & planning before code',
-    tools: ['concept', 'investigate', 'plan', 'open-plans', 'plan-issue', 'issue-buddy'],
+    tools: [
+      'concept',
+      'investigate',
+      'plan',
+      'open-plans',
+      'plan-issue',
+      'issue-buddy',
+      'backlog-audit',
+    ],
   },
   {
     title: 'Implement a change',
@@ -371,6 +389,7 @@ const WORKFLOW_POINTER_REFERENCES = [
   { from: 'apply-review-commit-mechanics', to: 'apply-review' }, // sub-file naming its host
   { from: 'plan', to: 'apply-plan' }, // the plan's later implementation, started by the user
   { from: 'plan-issue', to: 'apply-issues' }, // the issue's later implementation
+  { from: 'backlog-audit', to: 'apply-issues' }, // `tracker-target` names the issue-driven flow
   { from: 'refactor', to: 'apply-review' }, // findings applied later by the user
   { from: 'setup', to: 'apply-review' }, // the owner of the `applyReview` config keys
   { from: 'apply-review', to: 'apply-plan' }, // shared source classification, not execution
@@ -1125,6 +1144,9 @@ try {
     context: 'native execution-profile mappings',
   });
   validateModelTierMappings(MODEL_TIER_MAPPINGS, { context: 'MODEL_TIER_MAPPINGS (build.mjs)' });
+  validatePanelModelAllowlist(PANEL_MODEL_ALLOWLIST, MODEL_TIER_MAPPINGS, {
+    context: 'PANEL_MODEL_ALLOWLIST (build.mjs)',
+  });
   // The pilot protocol script is copied byte for byte and cannot import this file, so its
   // Quality-mapping identity is checked here: a drift would let one generation span a Quality change.
   const qualityMappingIdentity = `sha256:${createHash('sha256')
@@ -1923,10 +1945,12 @@ try {
           schemaVersion: 1,
           target: harness,
           mappings: MODEL_TIER_MAPPINGS,
+          panelModels: PANEL_MODEL_ALLOWLIST,
           roles: Object.fromEntries(agentTiers),
-          sites: spawnSites.map(({ id, downAllowed, clauses }) => ({
+          sites: spawnSites.map(({ id, downAllowed, panel, clauses }) => ({
             id,
             downAllowed,
+            panel,
             clauses: clauses.map(({ role, tier }) => ({ role: role ?? null, tier })),
           })),
         },
@@ -2251,8 +2275,17 @@ try {
     ...Object.values(MODEL_TIER_MAPPINGS),
     ...Object.values(AGENT_PROFILE_MAPPINGS),
   ];
-  const claudeModelNames = [...new Set(tierProfiles.map(({ claude }) => claude.model))];
-  const codexModelNames = [...new Set(tierProfiles.map(({ codex }) => codex.model))];
+  // Panel models are provider names too: no rendered prose may name one, since the panel line
+  // defers the model to `model-selection`.
+  const claudeModelNames = [
+    ...new Set([
+      ...tierProfiles.map(({ claude }) => claude.model),
+      ...PANEL_MODEL_ALLOWLIST.claude,
+    ]),
+  ];
+  const codexModelNames = [
+    ...new Set([...tierProfiles.map(({ codex }) => codex.model), ...PANEL_MODEL_ALLOWLIST.codex]),
+  ];
 
   // Repository-only reference guard (#497): the set is collected once from the
   // source tree by a filesystem walk (no Git), and the sources map lets each
@@ -2469,13 +2502,14 @@ try {
     iterate: 1771,
     setup: 1562,
     'apply-review': 1071,
-    'apply-issues': 984,
+    'apply-issues': 994,
     'merge-gate': 922,
     cleanup: 844,
     refactor: 975,
     deliver: 808,
-    'plan-issue': 809,
-    'issue-buddy': 488,
+    'plan-issue': 813,
+    'issue-buddy': 490,
+    'backlog-audit': 389,
     review: 878,
     plan: 795,
     'apply-review-commit-mechanics': 673,

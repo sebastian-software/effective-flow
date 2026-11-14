@@ -25,6 +25,7 @@ const CONTRACT = Object.freeze({
       codex: { model: 'gpt-6.1-sol', reasoning_effort: 'high' },
     },
   },
+  panelModels: { claude: ['fable'], codex: [] },
   roles: {
     'code-documenter': 'standard',
     'nodejs-implementer': 'deep',
@@ -33,17 +34,26 @@ const CONTRACT = Object.freeze({
     {
       id: 'apply-issues/issue-analysis',
       downAllowed: true,
+      panel: false,
       clauses: [{ role: null, tier: 'standard' }],
     },
     {
       id: 'apply-issues/code-documenter',
       downAllowed: true,
+      panel: false,
       clauses: [{ role: 'code-documenter', tier: 'standard' }],
     },
     {
       id: 'apply-issues/nodejs-implementer',
       downAllowed: false,
+      panel: false,
       clauses: [{ role: 'nodejs-implementer', tier: 'deep' }],
+    },
+    {
+      id: 'backlog-audit/panel',
+      downAllowed: false,
+      panel: true,
+      clauses: [{ role: null, tier: 'deep' }],
     },
   ],
 });
@@ -306,6 +316,75 @@ test('native Codex standard defaults use the base role and reasoned moves use ti
     role: 'effective-flow-code-documenter-tier-deep',
     parameters: {},
   });
+});
+
+// Invariant: a panel site names its model from the harness allowlist only, never the primary deep
+// model, and no other site accepts a panel model.
+test('panel sites require an allowlisted panelModel distinct from the deep model', async () => {
+  const claude = await executeOperation(
+    'select',
+    { harness: 'claude', site: 'backlog-audit/panel', panelModel: 'fable' },
+    CLAUDE_CONTRACT_OPTIONS,
+  );
+  assert.equal(claude.ok, true);
+  assert.equal(claude.data.tier, 'deep');
+  assert.deepEqual(claude.data.expected, { model: 'fable', effort: 'high' });
+  assert.deepEqual(claude.data.spawn, {
+    role: null,
+    parameters: { model: 'fable', effort: 'high' },
+  });
+  const rejectedPanel = async (input, code) => {
+    const envelope = await executeOperation('select', input, CLAUDE_CONTRACT_OPTIONS);
+    assert.equal(envelope.ok, false, JSON.stringify(input));
+    assert.equal(envelope.error.code, code, JSON.stringify(input));
+  };
+  await rejectedPanel({ harness: 'claude', site: 'backlog-audit/panel' }, 'INVALID_INPUT');
+  await rejectedPanel(
+    { harness: 'claude', site: 'backlog-audit/panel', panelModel: 'opus' },
+    'TIER_POLICY',
+  );
+  await rejectedPanel(
+    { harness: 'claude', site: 'backlog-audit/panel', panelModel: 'sonnet' },
+    'TIER_POLICY',
+  );
+  await rejectedPanel(
+    { harness: 'codex', site: 'backlog-audit/panel', panelModel: 'fable' },
+    'TIER_POLICY',
+  );
+  await rejectedPanel(
+    { harness: 'claude', site: 'apply-issues/issue-analysis', panelModel: 'fable' },
+    'INVALID_INPUT',
+  );
+  await rejectedPanel(
+    {
+      harness: 'claude',
+      site: 'backlog-audit/panel',
+      panelModel: 'fable',
+      tier: 'standard',
+      reason: 'cheaper',
+    },
+    'INVALID_INPUT',
+  );
+  // The selection is recomputable, so a verify call binds the panel model like any other.
+  const verified = await executeOperation(
+    'verify',
+    { selection: claude.data, ...SIMPLE_IDS },
+    CLAUDE_CONTRACT_OPTIONS,
+  );
+  assert.equal(verified.error.code, 'UNVERIFIED');
+  // A contract whose allowlist names the deep model is invalid, not silently honored.
+  const invalid = await executeOperation(
+    'select',
+    { harness: 'claude', site: 'apply-issues/issue-analysis' },
+    { contract: { ...CONTRACT, panelModels: { claude: ['opus'], codex: [] } } },
+  );
+  assert.equal(invalid.error.code, 'INVALID_CONTRACT');
+  const noPanels = await executeOperation(
+    'select',
+    { harness: 'claude', site: 'apply-issues/issue-analysis' },
+    { contract: { ...CONTRACT, panelModels: undefined } },
+  );
+  assert.equal(noPanels.error.code, 'INVALID_CONTRACT');
 });
 
 test('verify recomputes the selection and requires an exact child rollout proof', async () => {
