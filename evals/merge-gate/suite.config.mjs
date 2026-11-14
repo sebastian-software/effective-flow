@@ -28,8 +28,9 @@ import {
   requiresIterateTrace,
   scenarioSetup,
 } from './_scaffold/configured-reviewer-scenario.mjs';
-import { prepareCheckout } from './_scaffold/no-ci-checkout.mjs';
+import { prepareCheckout as prepareNoCiCheckout } from './_scaffold/no-ci-checkout.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
+import { prepareRepairOrigin } from './_scaffold/repair-origin.mjs';
 import * as evaluator from './_scaffold/evaluate.mjs';
 import { SCENARIOS } from './scenario-registry.mjs';
 
@@ -67,6 +68,10 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // the memory, harness, commit, review and settings cores it imports: a first memory write or an
 // item commit in either run executes it.
 //
+// The repair-attempt helper pair is seeded for the same reason: a run that delegates executes the
+// shipped `scripts/repair-attempt.mjs` at every repair checkpoint (scope read, record, evaluate), no
+// load pointer names it, and nothing stubs it. Its CLI imports the process runner seeded below.
+//
 // The mechanics helper is seeded for the same reason, with the four modules its core imports and the
 // process runner its CLI imports: the deferred `worktree-integration` fragment, with the
 // `base-branch-resolution` fragment it embeds, that a provisioning run loads executes the shipped
@@ -84,6 +89,8 @@ const LOAD_SET_SEEDS = Object.freeze([
   'workers/effective-flow-generic-product-reviewer.md',
   'scripts/delegation-envelope.mjs',
   'scripts/delegation-envelope-core.mjs',
+  'scripts/repair-attempt.mjs',
+  'scripts/repair-attempt-core.mjs',
   'scripts/config-resolve.mjs',
   'scripts/config-resolve-core.mjs',
   'scripts/effective-flow-state.mjs',
@@ -133,6 +140,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SCAFFOLD, 'configured-reviewer-scenario.mjs'),
   resolve(SCAFFOLD, 'project-setup.mjs'),
   resolve(SCAFFOLD, 'no-ci-checkout.mjs'),
+  resolve(SCAFFOLD, 'repair-origin.mjs'),
 ]);
 
 const suite = {
@@ -183,12 +191,13 @@ const suite = {
   },
   scenarioSetup,
   projectDocuments,
-  // No checkout preparation beyond the shared seed commit, except for the declared no-CI policy
-  // scenarios: a gate run reads the forge through the stub and never fetches, so its sandbox keeps an
-  // `origin` no run reaches, but a policy read fetches the base ref and compares the setup ADR it
-  // finds there. `no-ci-checkout.mjs` gives exactly those scenarios a local `origin` and does nothing
-  // for any other.
-  prepareCheckout,
+  // No checkout preparation beyond the shared seed commit, except for two groups: a gate run reads
+  // the forge through the stub and never fetches, so its sandbox keeps an `origin` no run reaches.
+  // A no-CI policy read fetches the base ref and compares the setup ADR it finds there, so
+  // `no-ci-checkout.mjs` gives exactly those six scenarios a local `origin`. A repair round reads and
+  // writes real history, so `repair-origin.mjs` gives the two repair scenarios a real-commit
+  // `origin` whose head moves during the run. Each returns null for every scenario outside its group.
+  prepareCheckout: (input) => prepareRepairOrigin(input) ?? prepareNoCiCheckout(input),
   evaluator,
   // Five discarded attempts on the sequenced Phase-4 scenario is a signal to stop and investigate
   // rather than to keep spending runs; every other scenario has no cap.

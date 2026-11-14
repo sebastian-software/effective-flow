@@ -1,8 +1,10 @@
 # Iterate echo — merge-gate eval instrument
 
-This file is an eval-only replacement for `tools/iterate.md`. It validates the configured-reviewer
-handoff and returns controlled outcomes; it does not classify findings, edit the checkout, call a
-forge, or stand in for production `iterate` behavior.
+This file is an eval-only replacement for `tools/iterate.md`. It validates the caller's handoff and
+returns controlled outcomes; it does not classify findings, edit the checkout, call a forge, or
+stand in for production `iterate` behavior. Where the scenario plans a repair for the handoff, the
+command below lands that planned commit on the pull request's head branch itself and names it in
+its output.
 
 The calling `merge-gate` gives this tool a resolved pull request and one complete handoff message.
 The Effective Flow skill root is the directory that holds the `tools/` directory this file was read
@@ -20,5 +22,6 @@ or normalize any line: the instrument itself validates the control lines, manife
 framing token, item attribution, and body spans.
 
 If the command exits successfully, return its standard output verbatim to `merge-gate` and say
-nothing else; that output already ends with the completion keyword `DONE`. If it exits unsuccessfully, return `ABORT: configured-reviewer iterate echo rejected
-the handoff` followed by its standard error. Never invent or repair an outcome yourself.
+nothing else; that output already ends with the completion keyword `DONE`. If it exits
+unsuccessfully, return `ABORT: iterate echo rejected the handoff` followed by its standard error.
+Never invent or repair an outcome yourself.

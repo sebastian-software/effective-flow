@@ -3866,6 +3866,7 @@ test('review-thread reads normalize file, line, author, text, and resolution', a
     path: 'src/a.mjs',
     line: 42,
     startLine: undefined,
+    lineOutdated: false,
     // The thread's own instant is its first comment's; the reply keeps its later one, because a bot
     // that answers after the head commit must count as newer than it.
     createdAt: '2026-07-28T20:30:00.000Z',
@@ -3978,6 +3979,67 @@ test('the Forgejo review-thread read walks the two documented raw-API routes', a
   // every table cell, so `PullReviewComment.ID` 5 was `'5'` there and stays `'5'` here.
   assert.equal(envelope.data.result[0].id, '5');
   assert.equal(envelope.data.result[0].comments[0].id, '5');
+  // A Forgejo `position` is never stated as current for the read head, so `merge-gate` cannot
+  // match a finding to a repair hunk on it.
+  assert.deepEqual(
+    envelope.data.result.map((thread) => thread.lineOutdated),
+    [true, true],
+  );
+});
+
+test('a GitHub review thread states lineOutdated from its own line before the originalLine fallback', async () => {
+  // Invariant: `merge-gate` treats a re-reported finding as the same repaired cause only on a
+  // current right-side line, so the flag is decided on the thread's own `line` and `diffSide` and
+  // never on the `originalLine` value the normalized `line` falls back to.
+  const node = (id, fields) => ({
+    id,
+    isResolved: false,
+    path: 'src/a.mjs',
+    ...fields,
+    comments: {
+      nodes: [{ id: `${id}-c`, body: 'Finding', path: 'src/a.mjs', line: null, originalLine: 9 }],
+    },
+  });
+  const runner = fakeRunner([
+    {
+      status: 0,
+      stdout: JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [
+                  node('current', { line: 12, diffSide: 'RIGHT' }),
+                  node('outdated', { line: null, diffSide: 'RIGHT' }),
+                  node('left', { line: 12, diffSide: 'LEFT' }),
+                  node('negative', { line: -12 }),
+                ],
+              },
+            },
+          },
+        },
+      }),
+      stderr: '',
+    },
+  ]);
+  const envelope = await executeOperation(
+    'review-threads-read',
+    { repository: githubRepository, pullRequest: 2 },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true);
+  assert.deepEqual(
+    envelope.data.result.map(({ id, line, lineOutdated }) => [id, line, lineOutdated]),
+    [
+      ['current', 12, false],
+      ['outdated', null, true],
+      ['left', 12, true],
+      ['negative', -12, true],
+    ],
+  );
+  // The comment keeps its `originalLine` fallback; the flag still marks the thread outdated.
+  assert.equal(envelope.data.result[1].comments[0].line, 9);
+  assert.match(runner.calls[0].stdin, /reviewThreads.*path line startLine diffSide/s);
 });
 
 test('a Forgejo review thread carries the id of the review it was read under', async () => {

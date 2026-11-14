@@ -34,10 +34,11 @@ The instrument is shared with every other behavioural eval suite and lives one l
 between the two: it is the single place this suite declares its load-set seeds, its evaluator, its
 tracker stub, its `iterate`-echo overlay policy, its checkout preparation, its sandbox namespace and
 the execution profile every round is pinned to, and the shared scaffold reads all of it from there
-rather than naming a tool. Two of those bindings are answered explicitly with "nothing" rather than
-omitted: `prepareCheckout` is `null`, because a gate run reads the forge through the stub and never
-fetches, and the evaluator's `permitsEmptyCallLog` answers `false` for every scenario, because every
-gate scenario reads the forge before it can decide anything. `alwaysAllowedOperations` is a plain
+rather than naming a tool. `prepareCheckout` prepares nothing beyond the shared seed for most
+scenarios, because a gate run reads the forge through the stub and never fetches; only the six
+no-CI policy scenarios (`no-ci-checkout.mjs`) and the two repair scenarios (`repair-origin.mjs`) get
+a local `origin`. The evaluator's `permitsEmptyCallLog` answers `false` for every scenario, because
+every gate scenario reads the forge before it can decide anything. `alwaysAllowedOperations` is a plain
 list here; the shared scaffold also accepts a function of the scenario, which the `iterate` suite
 uses. It is hashed as one of the suite's instrument files, because every one of those bindings
 decides what a slot sees — and, for the pin, so that changing the recording profile stales the
@@ -51,17 +52,19 @@ both halves, and neither is safe alone.
 | `scenarios/<name>.md`                        | One scenario: a prompt template plus its expected outcome as prose                                                                      |
 | `suite.config.mjs`                           | Everything the shared scaffold needs about this suite; hashed, because it binds all of it                                               |
 | `scenario-registry.mjs`                      | The scenario names, and nothing else — the one file kept out of the instrument                                                          |
-| `_scaffold/configured-reviewer-scenario.mjs` | Which scenario receives the configured-reviewer rows, the `iterate` echo, and its trace, which one changes a base configuration row, and which one appends a row |
+| `_scaffold/configured-reviewer-scenario.mjs` | Which scenarios receive the configured-reviewer rows, the `iterate` echo, and its trace, which one changes a base configuration row, and which one appends a row |
 | `_scaffold/project-setup.mjs`                | The sandbox checkout's `AGENTS.md` and the project-setup ADR a gate run reads                                                           |
 | `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                                                                    |
-| `_scaffold/iterate-echo.md`                  | The configured-reviewer scenario's replacement for the slot's `tools/iterate.md`                                                        |
-| `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace                                                                         |
+| `_scaffold/iterate-echo.md`                  | The configured-reviewer and repair scenarios' replacement for the slot's `tools/iterate.md`                                             |
+| `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace; in a repair slot it also lands the planned repair and is the `origin`'s receive hook |
+| `_scaffold/no-ci-checkout.mjs`               | The local `origin` of the six no-CI policy scenarios                                                                                    |
+| `_scaffold/repair-origin.mjs`                | The real-commit `origin` of the two repair scenarios: seeded history, planned repairs, the receive hook                                 |
 | `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in                                                  |
 | `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                                                                  |
 | `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                                                                 |
 | `results/<name>/run-<n>.prompt.txt`          | The exact rendered prompt supplied to the fresh session                                                                                 |
 | `results/<name>/run-<n>.metadata.json`       | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata                                                     |
-| `results/<name>/run-<n>.iterate.jsonl`       | Configured-reviewer handoff trace; required for that scenario, forbidden for any other                                                  |
+| `results/<name>/run-<n>.iterate.jsonl`       | Echo trace; required for the configured-reviewer and repair scenarios, forbidden for any other                                          |
 
 The shared half, for reference: `../eval.mjs` is the round lifecycle CLI and `../prepare.mjs` its
 deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs` (round, slot,
@@ -76,7 +79,7 @@ shipped helper and writing the call log. The stub is shared with the
 it as its own tracker stub and hashes it among its own instrument files, so a change to it stales
 both suites — see [How the stub works](#how-the-stub-works).
 
-Three test files in the ordinary `pnpm test` suite belong to this layer:
+Four test files in the ordinary `pnpm test` suite belong to this layer:
 
 - [`test/eval-fixture-fidelity.test.mjs`](../../test/eval-fixture-fidelity.test.mjs) proves every
   canned envelope is one the real `executeOperation` normalizer emits for the same provider payload,
@@ -85,6 +88,9 @@ Three test files in the ordinary `pnpm test` suite belong to this layer:
   assertions over the archived logs.
 - [`test/merge-gate-eval-round.test.mjs`](../../test/merge-gate-eval-round.test.mjs) exercises the
   round lifecycle, isolation, receipt validation, retries, publication locking, and crash recovery.
+- [`test/merge-gate-eval-repair.test.mjs`](../../test/merge-gate-eval-repair.test.mjs) provisions the
+  two repair scenarios' real-commit `origin` and plays both compositions through the stub, the
+  echo, a real push and the shipped `repair-attempt.mjs`.
 
 None runs a model, and none starts a gate run. `pnpm test` stays a pure file-and-transform
 suite. None of them answers whether the archived logs still describe the working tree either; that
@@ -169,6 +175,25 @@ manifest, item filter, and suppression and review-guard controls. It retains rev
 byte count and SHA-256 digest, then returns one controlled `deferred` outcome for each
 caller-minted identifier. Its build identity hashes the echo and the trace helper at the paths the
 run executes, in place of production `iterate`.
+
+The two repair scenarios, `repair-after-base-merge-merges` and `repeated-ineffective-repair-stops`,
+receive the same reviewer rows, echo, trace helper and empty trace, plus a `mergeGate.maxRounds: 8`
+row, so the round cap never ends either run. Their checkout is prepared by `repair-origin.mjs`. A
+bare `remote.git` beside the project holds the shared seed on `develop` and one pull-request commit
+on the head branch, with `refs/pull/42/head` beside it. It also holds the planned repairs as
+`refs/eval/dispatch/<n>` and, where the base moves during a delegation, `refs/eval/base/<n>`. Every
+seeded commit has a fixed author, committer and date. The project is left clean on the head branch,
+with `origin` rewritten to the bare repository for fetch and push alike. The bare repository's own
+`core.hooksPath` binds a `post-receive` hook that runs the slot's `scripts/iterate-trace.mjs
+--receive`. In these slots the echo lands the n-th planned repair at the n-th delegation: it moves
+the head branch and `refs/pull/42/head`, and where the gate's own base merge moved the head after
+seeding, it lands a commit with the same change, message, author, committer and dates on top of the
+current head. It returns that commit with `implemented` in the `Returned commits:` /
+`Scope expansion:` format of `shared/delegated-scope-return.md`. A delegation the plan does not hold
+lands nothing and returns `deferred`. The receive hook records every push the gate makes, moves
+`refs/pull/42/head` with the branch as a forge does, and labels a base merge onto the latest head.
+`test/merge-gate-eval-repair.test.mjs` plays both compositions through the shipped echo, a real
+push and the shipped `repair-attempt.mjs`.
 
 Because `suite.config.mjs` is hashed, editing the pin stales every archived stamp at once. The first
 round after a pin change therefore has to cover the full corpus: a subset round would carry forward
@@ -568,8 +593,8 @@ runs in CI, and package release reporting cannot activate an unqualified capabil
 ### Evidence units and invalid runs
 
 An ordinary published run is `run-<n>.jsonl` and `run-<n>.build.json` bound by `run-<n>.prompt.txt`
-and `run-<n>.metadata.json`. A configured-reviewer run additionally carries `run-<n>.iterate.jsonl`,
-and its call log, build stamp, and trace form one indivisible unit. Publication rejects a candidate
+and `run-<n>.metadata.json`. A configured-reviewer or repair run additionally carries
+`run-<n>.iterate.jsonl`, and its call log, build stamp, and trace form one indivisible unit. Publication rejects a candidate
 with a missing companion, an echo trace orphaned under another scenario, or a configured-reviewer
 call log without its trace, before it evaluates anything; `test/eval-fixture-fidelity.test.mjs`
 pins that pairing rule, and the scenario assertions require each call log's build stamp and, on the
@@ -585,7 +610,11 @@ configured-reviewer route, a trace whose records are unreadable, carry another s
 ran outside the slot project is invalid. An empty trace is not: it records a run that never
 delegated, which is a finding about the gate, as is any trace that is not exactly one echo record
 whose identifiers, attribution, controls, and controlled outcomes match the handoff. The sequenced
-Phase-4 scenario must have received its deciding status element before its fresh evaluation. An
+Phase-4 scenario must have received its deciding status element before its fresh evaluation. A
+repair trace uses its own schema, `effective-flow/merge-gate-repair-trace/v1`, with `dispatch`
+records from the slot project and `push` records from the bare `origin`. Records with another
+schema, another sequence or another working directory make the trace invalid. Which delegations and
+pushes it holds is a finding. An
 invalid run is retried as its whole unit; left in `results/`, the suite fails it rather than
 omitting it from the five-valid-run bar. A run that merged after a deciding fail-closed input is
 always a valid failure and is never discarded as variance.
@@ -736,8 +765,9 @@ correlated `complete` events are not additional calls.
   now delivers a non-zero exit in the fidelity replay; adopting it for the wait is the remaining step.)
   The gate takes its check criterion from `pr-status-read`, so the flag does not change what any of
   the six asserts. Recording rounds for these scenarios remains evidence debt.
-- **Nine scenarios exist: one pair, one observer, two unreported-check-list refusals, one
-  configured-reviewer refusal, two delegation scenarios, and one bot-account exclusion.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
+- **Seventeen scenarios exist: one pair, one observer, two unreported-check-list refusals, one
+  configured-reviewer refusal, two delegation scenarios, one bot-account exclusion, six no-CI
+  policy scenarios, and the repair-accounting pair.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
   result from them proves that one refusal path holds and that the harness can reach a merge, and
   nothing about the breadth of the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
   decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`
@@ -759,7 +789,17 @@ correlated `complete` events are not additional calls.
   of merging; the second that the caller completes the gate inline, once, after
   `ABORT nested-spawn-unavailable`. Both show the dispatch only through the delegated run's Entry
   re-read — exactly two `probe` starts ahead of the first guard read — and neither log can show which
-  agent ran Phases 1 to 6, which the per-slot nesting depth and its attestation decide. WP3 to WP6 of
+  agent ran Phases 1 to 6, which the per-slot nesting depth and its attestation decide. The
+  repair-accounting pair (#662) is modelled on #641 and #659. In
+  `repair-after-base-merge-merges` the first repair is ineffective, the forge then reports the
+  repaired head `BEHIND`, and the gate pushes its own base merge. The finding is re-reported on
+  that base-merge head, and the second repair resolves it. The base merge uses no repair attempt,
+  so the run merges, which makes it the positive control. In `repeated-ineffective-repair-stops`
+  both repairs are re-reported on the line they changed, and the gate must stop after the second:
+  no third delegation, no push and no merge. Their traces prove the delegations, the landed heads,
+  the scope each delegation carried and every push. The call log orders the merge, or the thread
+  read before the stop, after the second repair. The chat report, and so the repair-progress block
+  and the attempt counts, is captured nowhere. Recording rounds for both remains evidence debt. WP3 to WP6 of
   the plan — the guard's three ordered rules across its three
   counting surfaces, merge preconditions 1/2/3/8/9, the fail-closed input enumeration, and the round
   bound — are still to come. Read a green result as a proven mechanism, not as a net.
@@ -903,6 +943,17 @@ fixture. Four behaviours are load-bearing:
   one; deriving the applied one takes an ordered pair of provider responses, because `pr-merge`
   re-reads the pull-request status to check the head has not moved before it merges.
 
+- **A fixture that states `originHeads` is answered by the head of a real bare `origin`.** It
+  names the head branch and the heads in the order they are expected to appear, each with a
+  `label`, a `placeholder` SHA and a `source` (`seed`, `dispatch` or `gate-merge`). Whoever
+  creates a head labels it as `refs/eval/head/<label>` in the slot's `remote.git`: the provisioning
+  labels the seed, the echo labels a repair it lands, and the receive hook labels a gate base
+  merge. The stub only reads. Every sequenced entry of such a fixture holds one element per declared
+  head and serves the current head's element, whatever the call position. Every envelope states
+  the heads by placeholder, and the served copy carries the labelled heads' real SHAs in their place,
+  so the canned envelopes stay what the fidelity test proves. A head no label names fails the call
+  loudly, as does an unreadable `origin`. `EVAL_TRACKER_ORIGIN` overrides the repository's path for
+  the unit tests. A fixture without the field is served exactly as before.
 - **A sequenced entry answers the n-th call of its operation with its n-th element.** An entry may
   state an ordered list under `sequence` instead of a single envelope; that is what lets a status
   read answer differently in Phase 2 and in Phase 4. Each element is a complete single-envelope
@@ -959,7 +1010,8 @@ held lock.
    answer **successive calls** differently states a `sequence` of such shapes and declares whether
    `repeatLast` applies; see "How the stub works". A sequence needs a validity rule in its scenario's
    assertions for a run that never reaches the deciding position in time, as
-   `unreported-checks-at-phase-four` has.
+   `unreported-checks-at-phase-four` has. A scenario whose head moves through real commits states
+   `originHeads` instead, and its sequences are indexed by head; see "How the stub works".
 
    A provider response that stands for a **command that exits non-zero** is stated as
    `{"exit": <non-zero integer>, "stdout": …, "stderr": …}` (any of the last two optional): the

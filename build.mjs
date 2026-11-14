@@ -165,6 +165,8 @@ const RUNTIME_SCRIPT_FILES = [
   'remote-tracker-forgejo-core.mjs',
   'remote-tracker-github-core.mjs',
   'remote-tracker-ledger-core.mjs',
+  'repair-attempt.mjs',
+  'repair-attempt-core.mjs',
   'pilot-measurement.mjs',
   'pilot-measurement-core.mjs',
   'pilot-measurement-protocol.mjs',
@@ -2499,7 +2501,7 @@ try {
   // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
   // when a measurement points the same way.
   const CONTEXT_BUDGET_LINES = {
-    iterate: 1771,
+    iterate: 1798,
     setup: 1562,
     'apply-review': 1071,
     'apply-issues': 994,

@@ -4127,12 +4127,19 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           // `merge-gate`'s set-aside confirmation - has nowhere else to take it from, and a record
           // carrying the thread ID alone cannot supply one at all.
           const threadUrl = comments[0]?.url;
+          // Whether the provider fails to state a current right-side line on the head it was read
+          // for, decided on the thread's own `line` before any `originalLine` fallback below:
+          // GitHub nulls `line` on an outdated thread, and a LEFT-side or negative line names the
+          // base side. `merge-gate` matches a finding to a repair only on a current line.
+          const lineOutdated =
+            typeof thread.line !== 'number' || thread.line < 0 || thread.diffSide === 'LEFT';
           return {
             id: thread.id,
             isResolved: thread.isResolved === true,
             path: thread.path ?? thread.comments.nodes[0]?.path,
             line: thread.line ?? thread.comments.nodes[0]?.line,
             startLine: thread.startLine ?? thread.comments.nodes[0]?.startLine,
+            lineOutdated,
             ...(threadCreatedAt === undefined ? {} : { createdAt: threadCreatedAt }),
             ...(threadUrl === undefined ? {} : { url: threadUrl }),
             comments,
@@ -4165,6 +4172,9 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
           isResolved: Boolean(thread.resolver),
           path: thread.path,
           line,
+          // A Forgejo comment states no head its `position` is current for, so its line is never
+          // taken as current.
+          lineOutdated: true,
           ...(createdAt === undefined ? {} : { createdAt }),
           ...(url === undefined ? {} : { url }),
           comments: [

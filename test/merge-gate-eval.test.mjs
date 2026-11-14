@@ -230,10 +230,11 @@ test('the operation-support probe still distinguishes the shipped helper from an
 // legitimately grows the day the gate gains a pointer, and pinning the full list would turn every
 // such addition into a failure that carries no information.
 //
-// The two envelope scripts are not a sample and are listed in full. No pointer names them, so they
-// are in the set only for as long as `LOAD_SET_SEEDS` lists them explicitly, and dropping a seed is
-// the one drift this pair of lists exists to catch: a run executes the shipped helper, so a change
-// there changes what the run does while every archived stamp goes on reporting current.
+// The two envelope scripts and the two repair-attempt scripts are not a sample and are listed in
+// full. No pointer names them, so they are in the set only for as long as `LOAD_SET_SEEDS` lists
+// them explicitly, and dropping a seed is the one drift this pair of lists exists to catch: a run
+// executes the shipped helper, so a change there changes what the run does while every archived
+// stamp goes on reporting current.
 const LOADED_BY_A_RUN = [
   'SKILL.md',
   'tools/merge-gate.md',
@@ -247,6 +248,10 @@ const LOADED_BY_A_RUN = [
   'workers/effective-flow-generic-product-reviewer.md',
   'scripts/delegation-envelope.mjs',
   'scripts/delegation-envelope-core.mjs',
+  // The repair-attempt helper pair, for the same reason as the envelope pair: a delegating run
+  // executes it at every repair checkpoint, and no pointer names it.
+  'scripts/repair-attempt.mjs',
+  'scripts/repair-attempt-core.mjs',
   'shared/merge-gate-check-list-waiver.md',
   'shared/merge-gate-checkout-boundary.md',
   'shared/merge-gate-conflict-resolution.md',
