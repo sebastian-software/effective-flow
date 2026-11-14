@@ -2743,6 +2743,101 @@ test('a target changed after the gate skips only the entries it affects', async 
   assert.equal(mixed.applied.length, 1);
 });
 
+// Invariant: every split and obsolete mark is bound to the body that was assessed. A body
+// rewritten after the assessment, even between a mark comment and its label, is never marked.
+test('a body rewritten after the assessment skips every split and obsolete mark of that issue', async (t) => {
+  const owner = { login: 'owner' };
+  const primary = {
+    verdicts: [
+      verdict('#1', 'oversized'),
+      verdict('#2', 'obsolete-architecture', { citations: ['docs/adr/runtime.md'] }),
+      verdict('#3', 'drift'),
+    ],
+    path: ['#1'],
+    splits: [{ item: '#1', outline: 'A and B.' }],
+  };
+  const drafts = {
+    epic: { title: 'Goal' },
+    splits: [{ item: '#1', body: 'Split.' }],
+    obsolete: [{ item: '#2', body: 'Obsolete.' }],
+  };
+  const applyOnly = async ({ comments, change = () => {}, afterComment }, prefix) => {
+    const fixture = await writeSetFixture(t, {
+      issues: [issue(1), issue(2), issue(3)],
+      comments,
+      primary,
+      drafts,
+    });
+    change(fixture.fake);
+    // Stands in for an edit that lands after the mark comment and before its label.
+    const tracker = async (operation, input, options) => {
+      const result = await fixture.fake.tracker(operation, input, options);
+      if (operation === 'issue-comment' && afterComment) afterComment(fixture.fake);
+      return result;
+    };
+    const result = await ok(
+      'write-set-apply',
+      {
+        cwd: fixture.root,
+        target: FORGE,
+        permission: fixture.permission,
+        writeSet: fixture.built.data,
+        selected: selectAll(fixture.built.data, ({ id }) => id.startsWith(prefix)),
+      },
+      { tracker },
+    );
+    return { ...fixture, result };
+  };
+  const rewrite = (number) => (fake) => {
+    fake.state.issues.get(number).body = 'Rewritten.';
+  };
+  const labelAdds = (fake) =>
+    fake.mutations().filter(({ operation }) => operation === 'issue-label-add');
+  // Rewritten before the obsolete comment: neither the comment nor its label is written.
+  const before = await applyOnly({ change: rewrite(2) }, 'obsolete-');
+  assert.deepEqual(before.result.skipped, [
+    { id: 'obsolete-comment:#2', reason: 'target-changed' },
+    { id: 'obsolete-label:#2', reason: 'dependency-not-applied' },
+  ]);
+  assert.equal(before.fake.mutations().length, 0);
+  // Rewritten between the obsolete comment and its label: the label is skipped.
+  const between = await applyOnly({ afterComment: rewrite(2) }, 'obsolete-');
+  assert.deepEqual(
+    between.result.applied.map(({ id }) => id),
+    ['obsolete-comment:#2'],
+  );
+  assert.deepEqual(between.result.skipped, [{ id: 'obsolete-label:#2', reason: 'target-changed' }]);
+  assert.deepEqual(labelAdds(between.fake), []);
+  // Rewritten between the split comment and its label: the label is skipped.
+  const split = await applyOnly({ afterComment: rewrite(1) }, 'split-');
+  assert.deepEqual(
+    split.result.applied.map(({ id }) => id),
+    ['split-comment:#1'],
+  );
+  assert.deepEqual(split.result.skipped, [{ id: 'split-label:#1', reason: 'target-changed' }]);
+  assert.deepEqual(labelAdds(split.fake), []);
+  // A label repair under an existing marker is bound to the assessed body as well.
+  const marked = {
+    1: [{ id: 7, body: splitMarkerFor('SECRET body of issue 1'), author: owner }],
+    2: [{ id: 8, body: `${OBSOLETE_MARKER}\nAlready.`, author: owner }],
+  };
+  const repairObsolete = await applyOnly({ comments: marked, change: rewrite(2) }, 'obsolete-');
+  assert.deepEqual(repairObsolete.result.skipped, [
+    { id: 'obsolete-label:#2', reason: 'target-changed' },
+  ]);
+  const repairSplit = await applyOnly({ comments: marked, change: rewrite(1) }, 'split-');
+  assert.deepEqual(repairSplit.result.skipped, [
+    { id: 'split-label:#1', reason: 'target-changed' },
+  ]);
+  assert.deepEqual([...labelAdds(repairObsolete.fake), ...labelAdds(repairSplit.fake)], []);
+  // An unchanged body still repairs both labels.
+  const unchanged = await applyOnly({ comments: marked }, '');
+  assert.deepEqual(
+    unchanged.result.applied.map(({ id }) => id).filter((id) => id.includes('-label:')),
+    ['split-label:#1', 'obsolete-label:#2'],
+  );
+});
+
 // Invariant: every object the orchestrator hands back is one the helper produced. A model cannot
 // widen a capability, drop an item, edit a verdict or add a write by editing the JSON in between.
 test('proof, inventory, merged verdicts and write set each detect tampering by their own hash', async (t) => {
@@ -3280,8 +3375,8 @@ test('external-call-check decides each external write from the re-read target', 
     date: '2026-11-13',
     drafts: { obsolete: [{ item: 'ABC-2', body: 'Obsolete.' }] },
   });
-  const check = (id, current) =>
-    run('external-call-check', { permission, writeSet: set, id, current });
+  const check = (id, current, extra = {}) =>
+    run('external-call-check', { permission, writeSet: set, id, current, ...extra });
   const updateId = 'epic:update:ABC-40';
   const current = (body, comments = []) => ({ state: 'open', labels: [], body, comments });
   const proceed = await check(updateId, current(epicBody));
@@ -3303,6 +3398,14 @@ test('external-call-check decides each external write from the re-read target', 
     [genuineCheck.data.proceed, genuineCheck.data.reason],
     [false, 'marker-present'],
   );
+  // A body rewritten after the assessment is never marked obsolete from the stale verdict.
+  const rewritten = await check(obsoleteId, current('Rewritten.'));
+  assert.deepEqual([rewritten.data.proceed, rewritten.data.reason], [false, 'target-changed']);
+  // Rewritten after the comment was confirmed applied: its label is skipped as well.
+  const label = await check('obsolete-label:ABC-2', current('Rewritten.'), {
+    appliedIds: [obsoleteId],
+  });
+  assert.deepEqual([label.data.proceed, label.data.reason], [false, 'target-changed']);
   const unknown = await check('epic:create', current(''));
   assert.equal(unknown.error.code, 'INVALID_PAYLOAD');
   // A forge write set is never checked here.
@@ -3949,11 +4052,17 @@ test('external-call-check refuses unavailable and unconfirmed dependent calls', 
     assert.equal((await check(label.id, current(), { appliedIds })).error.code, 'INVALID_PAYLOAD');
   // The run's own obsolete marker, re-read without a stated permission, counts for its login only.
   const obsoleteLabel = 'obsolete-label:ABC-2';
-  const marked = current([{ author: own, body: `${OBSOLETE_MARKER}\nObsolete.` }]);
+  const marked = {
+    ...current([{ author: own, body: `${OBSOLETE_MARKER}\nObsolete.` }]),
+    body: 'SECRET ABC-2',
+  };
   const trusted = await check(obsoleteLabel, marked);
   assert.equal(trusted.data.proceed, true, JSON.stringify(trusted.error));
   const untrusted = await check(obsoleteLabel, marked, {}, strangerProof);
   assert.deepEqual([untrusted.data.proceed, untrusted.data.reason], [false, 'marker-missing']);
+  // The label repair is bound to the assessed body: a rewritten body is never labeled.
+  const rewritten = await check(obsoleteLabel, { ...marked, body: 'Rewritten.' });
+  assert.deepEqual([rewritten.data.proceed, rewritten.data.reason], [false, 'target-changed']);
 });
 
 // Invariant: the apply re-read needs a complete comment listing; anything else stops the write.
