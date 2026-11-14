@@ -1288,15 +1288,19 @@ test('supported-operation derivation includes composite operations and detects c
   );
 });
 
-// The limit matches its siblings because the time is spent in the subject, not in the harness. The
-// test runs `node build.mjs` 31 times, almost all of them serially: `createRound`, the restamp, and
-// the up to two builds — current and final — that each publication makes to prove nothing drifted. Locally those builds are about 22 s of a 28 s run. There is no fixed hold to cut:
-// every pause ends on a marker, recovery refuses a live lock without waiting, and the lock-wait
-// values set below are ceilings rather than sleeps. A shared CI runner roughly doubles the run, and
-// the 60 s limit failed there at 60.0 s on a runner where it last passed at 59.1 s.
+// The limit is twice its siblings' because the time is spent in the subject, not in the harness,
+// and it grows with the corpus. The test runs `node build.mjs` 31 times, almost all of them
+// serially: `createRound`, the restamp, and the up to two builds — current and final — that each
+// publication makes to prove nothing drifted. Each build is followed by an identity pass over every
+// discovered scenario, and a scenario that takes the `iterate` echo hashes its own full copy of the
+// built tree, so every added scenario, an overlaid one about five times more, lengthens all 31
+// passes. There is no fixed hold to cut: every pause ends on a marker, recovery refuses a live lock
+// without waiting, and the lock-wait values set below are ceilings rather than sleeps. Alone in a
+// two-CPU container the run takes 110–120 s, 79 s of it in the builds; shared CI runners took
+// 64–113 s at 15 scenarios, one of them overlaid, and timed out at 120 s at 17, three overlaid.
 test(
   'one immutable round provisions, seals, retries, and publishes isolated slots',
-  { timeout: 120_000 },
+  { timeout: 240_000 },
   async () => {
     const temporary = mkdtempSync(join(tmpdir(), 'effective-flow-round-test-'));
     // Release sentinels live beside `temporary`, never inside it: the `finally` removes `temporary`
