@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.74.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.73.0...effective-flow-v1.74.0) (2026-11-14)
+
+
+### Features
+
+* add backlog-audit tool for goal alignment of open issues and plans ([#667](https://github.com/sebastian-software/effective-flow/issues/667)) ([1020580](https://github.com/sebastian-software/effective-flow/commit/102058062c159ddf6d23d8e12b7087331bac8099))
+* add merge-gate worktree purpose and cleanup-only release ([#658](https://github.com/sebastian-software/effective-flow/issues/658)) ([ccf2d3a](https://github.com/sebastian-software/effective-flow/commit/ccf2d3a880f7410555b18d820113e20e1876c0d1)), closes [#657](https://github.com/sebastian-software/effective-flow/issues/657)
+* batch planning questions into one round and apply a planning ladder ([#660](https://github.com/sebastian-software/effective-flow/issues/660)) ([406413d](https://github.com/sebastian-software/effective-flow/commit/406413d4c1657eb1c5bac8cd6b1c7110e2d28737))
+* carry verified test evidence from delivery into the pull request ([#665](https://github.com/sebastian-software/effective-flow/issues/665)) ([489752e](https://github.com/sebastian-software/effective-flow/commit/489752ed6f3bc0ad607e174032e75442d2f0aabb))
+* **deliver:** hand known committed session work to pr ([#654](https://github.com/sebastian-software/effective-flow/issues/654)) ([61fbb37](https://github.com/sebastian-software/effective-flow/commit/61fbb3760c86abe2d1e26b864104b10344b0bc80))
+* **focus:** enable the T3 observed snapshot and follow-up candidate ([#625](https://github.com/sebastian-software/effective-flow/issues/625)) ([f03433a](https://github.com/sebastian-software/effective-flow/commit/f03433a0362771b183a662d4a36405562a140d81)), closes [#613](https://github.com/sebastian-software/effective-flow/issues/613)
+* **merge-gate:** honor an explicit no-CI policy for named base branches ([#655](https://github.com/sebastian-software/effective-flow/issues/655)) ([fe0624d](https://github.com/sebastian-software/effective-flow/commit/fe0624d4380ca73af863b903897b4c8486430b99))
+* retire schema-invalid worktree records through cleanup ([#659](https://github.com/sebastian-software/effective-flow/issues/659)) ([c979353](https://github.com/sebastian-software/effective-flow/commit/c9793539835ed97fb97fa59b29c42e2e3ddc533c))
+* run merge-gate orchestration at standard and review every gate code change at deep ([#641](https://github.com/sebastian-software/effective-flow/issues/641)) ([2ff3c0f](https://github.com/sebastian-software/effective-flow/commit/2ff3c0fd4d6ccedc87f1a31f6ace1c4116ffa82b))
+* scope implementation re-review and keep a fixed review floor ([#656](https://github.com/sebastian-software/effective-flow/issues/656)) ([8b97627](https://github.com/sebastian-software/effective-flow/commit/8b97627ddcea191893c7b087c2150d15c5d9af46))
+
+
+### Bug Fixes
+
+* bring a behind head with a failing check forward in merge-gate ([#647](https://github.com/sebastian-software/effective-flow/issues/647)) ([00810ca](https://github.com/sebastian-software/effective-flow/commit/00810caf6907b151b04e4c2386a7ff7594f93f9e))
+* **focus:** resolve follow-up offer, looping, ancestry and path limits ([#664](https://github.com/sebastian-software/effective-flow/issues/664)) ([90d5ed3](https://github.com/sebastian-software/effective-flow/commit/90d5ed3c6439ba63a5b4d479a61dd86a70a2737c)), closes [#663](https://github.com/sebastian-software/effective-flow/issues/663)
+* **merge-gate:** stop re-firing the base merge once the head cannot carry it ([#649](https://github.com/sebastian-software/effective-flow/issues/649)) ([acc0483](https://github.com/sebastian-software/effective-flow/commit/acc04830f2cd60bc26037ff169f6170bf0479294))
+* **test:** persist batch-two refusals before the coordinator blocks ([#671](https://github.com/sebastian-software/effective-flow/issues/671)) ([a54345d](https://github.com/sebastian-software/effective-flow/commit/a54345de48844b9fdb0f75a5909433c532739097))
+
 ## [1.73.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.72.0...effective-flow-v1.73.0) (2026-11-10)
 
 
