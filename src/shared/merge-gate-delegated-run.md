@@ -476,9 +476,9 @@ gate run inline generates it at the start. Use
   identifiers of the inert ones with their count, and any mismatch that ended the round; plus
   `VERIFIED_HEAD_SHA` once a round sets it, and its discard on a Phase-3 restart
 - per "Repair checkpoints": the once-per-run scope record (merge-base SHA, head SHA, paths) or the
-  undetermined scope read with its code; per delegated round its `before` and `after` heads, the
-  `scopeIdentifiers`, and `record`'s round data – attribution with foreign commits, post-check,
-  attempts, inert entries; the latest repair state with that call's `data.counts`, replaced on every
+  undetermined scope read with its code; per dispatch its `dispatch` number, its `before` and
+  `after` heads, the `scopeIdentifiers`, and `record`'s round data – attribution with foreign
+  commits, post-check, attempts, inert entries; the latest repair state with that call's `data.counts`, replaced on every
   call and never edited by hand; and every wait and gate base merge since the previous call, as
   `events` for the next `evaluate`
 - when the configured-reviewer route is loaded, the additional records under
@@ -1049,14 +1049,18 @@ several.
    as Phase 3 does under an active human-comment guard, while the run otherwise proceeds. The cause
    that needed the delegation stays open and keeps blocking the merge, so the existing paths end
    the run without one; a run that needs no delegation merges as today. Phase 6 names the code.
-2. **Head before dispatch.** Immediately before each dispatch, record the `headSha` of one fresh
-   `pr-status-read` as `before`, except that the dispatch consuming an `iterate-approval` answer
-   keeps the `before` stored for the dispatch that returned the question.
+2. **Head before dispatch.** Immediately before each dispatch, mint its `dispatch` number – one
+   more than the last this run minted, `1` for the first – and record it with the `headSha` of
+   one fresh `pr-status-read` as `before`. Every dispatch gets its own, so a Phase 2 step 3 CI
+   repair and each Phase 3 reviewer delegation of the same round are recorded apart. The dispatch
+   consuming an `iterate-approval` answer mints none: it keeps the `dispatch` and the `before`
+   stored for the dispatch that returned the question.
 3. **Record after each round.** After every return of a dispatched round, `ABORT` included and
-   `BLOCKED-USER` excepted – its round is recorded once, on the return of the dispatch consuming
+   `BLOCKED-USER` excepted – its dispatch is recorded once, on the return of the dispatch consuming
    its answer –, take
    `after` from the next fresh `pr-status-read` and run the ancestry check's fetches 1 and 2. Run
-   `record` with `scope`, `round`, `before`, `after`, `gateMerges` (every base-merge SHA this run pushed),
+   `record` with `scope`, `dispatch` and `before` from step 2, `round` the current round, `after`,
+   `gateMerges` (every base-merge SHA this run pushed),
    `minted`
    `{"items":[{"identifier","key","reviewer","outcome"}],"freeText","correction"}` – per delegated
    item its identifier, `key` its `durableKey` from the `build` map, its configured reviewer and its
@@ -1070,8 +1074,8 @@ several.
    failed call ends the run per step 4. Where `data.round.reasons` is exactly
    `["returned-outside-range"]`, a lagging forge head may have cut the range short: re-read
    `pr-status-read` once and, on a moved `headSha`, repeat fetch 2 and run the same `record` again
-   with it as `after`. The helper replaces the round only when the new head descends from the old;
-   otherwise the round stays `uncertain`.
+   – the same `dispatch` and `before` – with it as `after`. The helper replaces that dispatch's
+   record only when the new head descends from the old; otherwise it stays `uncertain`.
 4. **Stop check and run end.** Where the stored state carries a `stop` – it is sticky – end the run.
    Ending the run at any repair checkpoint means no further delegation, base merge or merge, no
    revert and no force push, and Phase 6 reports why. A stop never merges. Phase 2 step 1 runs this
@@ -1452,8 +1456,8 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
 - Never exceed `mergeGate.maxRounds`, never reset the counter, and never jump backwards inside a
   round – every wait, repair, Phase-2 restart, and Phase-4 return into Phase 3 consumes one.
 - Account repair attempts only through `repair-attempt` per "Repair checkpoints": read the scope
-  once before the first delegation and never recompute it, record every delegated round, and end
-  the run on a stop per its step 4.
+  once before the first delegation and never recompute it, record every dispatch under its own
+  `dispatch` number, and end the run on a stop per its step 4.
 - Post no summary comment of your own; the run summary goes to the user in chat.
 - In hidden mode (`visibility: hidden`), publish no text naming Effective Flow, and leave
   `{{SKILL:iterate}}`'s processed-thread ledger in place: it is not a delegation message.

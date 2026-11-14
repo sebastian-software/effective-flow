@@ -78,3 +78,40 @@ test('main runs the ref-only git reads through the injected runner', async () =>
   assert.ok(!calls.some(({ args }) => args.includes('fetch')), 'the helper never fetches');
   assert.equal(stdout.value.split('\n').filter(Boolean).length, 1);
 });
+
+// Invariant: the stored state round-trips through the CLI with each record keyed by its dispatch,
+// so a later dispatch of the same gate round is recorded apart and only its own replay is replayed.
+test('the CLI round-trips record state keyed by dispatch', () => {
+  const record = (input) => {
+    const result = spawnSync(process.execPath, [CLI, 'record'], {
+      input: JSON.stringify({
+        cwd: '/repo',
+        base: 'develop',
+        scope: SCOPE,
+        round: 1,
+        before: sha(2),
+        after: sha(2),
+        minted: { items: [], freeText: 'F'.repeat(32), correction: 'K'.repeat(32) },
+        returned: [],
+        scopeExpansion: [],
+        ...input,
+      }),
+      encoding: 'utf8',
+    });
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    return JSON.parse(result.stdout).data;
+  };
+  const first = record({ dispatch: 1 });
+  const second = record({ dispatch: 2, state: first.state });
+  assert.equal(second.replayed, undefined);
+  assert.deepEqual(
+    second.state.rounds.map(({ dispatch, round }) => [dispatch, round]),
+    [
+      [1, 1],
+      [2, 1],
+    ],
+  );
+  const replay = record({ dispatch: 1, state: second.state });
+  assert.equal(replay.replayed, true);
+  assert.deepEqual(replay.state, second.state);
+});

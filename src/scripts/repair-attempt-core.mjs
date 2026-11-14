@@ -45,12 +45,14 @@
 //   single-parent commit, `git diff-tree --no-commit-id --name-status -r -z -M <sha>`, then runs
 //   `scope-check` with its reads and `<sha>` as the tip. Not exactly one parent, a path outside the
 //   scope, or any undetermined read (`{ sha, path?, code }`) stops.
-// - `record` `{ cwd, base, state, scope, round, before, after, gateMerges?, minted, ciChecks?,
-//   returned?, scopeExpansion?, scopeLineMissing? }` -> `{ state, decision, stop, round,
+// - `record` `{ cwd, base, state, scope, dispatch, round, before, after, gateMerges?, minted,
+//   ciChecks?, returned?, scopeExpansion?, scopeLineMissing? }` -> `{ state, decision, stop, round,
 //   replayed?, rerecorded?, counts, report }`.
-//   Records one delegated round: `minted` is `{ items: [{ identifier, key, reviewer, outcome }],
-//   freeText, correction }` as `delegation-envelope build` minted it and the gate mapped the
-//   trusted outcomes;
+//   Records one dispatch: `dispatch` is the positive integer the gate minted for it, unique within
+//   the run and the record's key, so the dispatches of one gate `round` – a CI repair and reviewer
+//   repairs – each get their own record; `round` is the gate round it ran in, kept as data.
+//   `minted` is `{ items: [{ identifier, key, reviewer, outcome }], freeText, correction }` as
+//   `delegation-envelope build` minted it and the gate mapped the trusted outcomes;
 //   `returned` is iterate's `[{ identifier, shas }]`; `scopeExpansion` its `[{ identifier, paths }]`;
 //   `ciChecks` the failing check names of the free-text instruction. It applies the receiver rule –
 //   an entry under an unminted identifier is inert whatever its shape, listed by at most
@@ -58,19 +60,20 @@
 //   for all –, runs `attribute`, then `post-check` over the returned SHAs and, separately, over the
 //   foreign ones, so every commit actually made but the gate merges is checked once; it reads the
 //   hunks of every counted attempt (`git diff-tree -p -U0 -M <sha>`) and counts at most one attempt
-//   per cause per round, however many items alias it; that attempt lists every aliasing identifier
-//   and key. A foreign commit that passes leaves the round `uncertain` only; one that fails the
-//   post-check stops (`foreign-commit-unverified`, the stop carrying its `outside`, `mergeCommits`
-//   and `undetermined`). `scopeLineMissing: true` – the return carried no parseable
-//   `Scope expansion:` line – records the round and then stops it (`scope-line-missing`). A `round`
-//   already recorded with the same `before` and `after` returns that stored record with the state
-//   unchanged and reads nothing, so a replayed call never counts twice. The latest round, when it
-//   is `uncertain` solely by `returned-outside-range` and nothing was recorded after it, may be
-//   recorded again with the same `before` and a later `after` (a lagging forge head): when the
-//   stored `after` is an ancestor of the new one it is replaced (`rerecorded: true`) and runs the
-//   same full post-check, otherwise – or on an unreadable ancestry – the stored record is returned
-//   unchanged and the round stays `uncertain`. The same `round` with any other heads is refused as
-//   INVALID_INPUT.
+//   per cause per dispatch, however many items alias it; that attempt lists every aliasing
+//   identifier and key. A foreign commit that passes leaves the record `uncertain` only; one that
+//   fails the post-check stops (`foreign-commit-unverified`, the stop carrying its `outside`,
+//   `mergeCommits` and `undetermined`). `scopeLineMissing: true` – the return carried no parseable
+//   `Scope expansion:` line – records the dispatch and then stops (`scope-line-missing`). A
+//   `dispatch` already recorded with the same `before` and `after` returns that stored record with
+//   the state unchanged and reads nothing, so a replayed call never counts twice. The latest
+//   record, when it is `uncertain` solely by `returned-outside-range` and nothing was recorded
+//   after it, may be recorded again under its `dispatch` with the same `before` and a later `after`
+//   (a lagging forge head): when the stored `after` is an ancestor of the new one it is replaced
+//   (`rerecorded: true`) and runs the same full post-check, otherwise – or on an unreadable
+//   ancestry – the stored record is returned unchanged and stays `uncertain`. The same `dispatch`
+//   with any other heads is refused as INVALID_INPUT; another `dispatch` of the same `round` is a
+//   record of its own.
 // - `evaluate` `{ cwd, state, head, observations, events? }` -> `{ state, decision, stop,
 //   classifications, causes, counts, report }`. `observations` is `[{ reviewer, head, findings:
 //   [{ key, anchor }] }]` for each configured reviewer that has run; only an observation whose
@@ -757,9 +760,14 @@ export function normalizeState(value) {
     }
   });
   // A stored round's heads reach git argv on a re-record, and its reasons decide whether it may be.
+  // Its dispatch is the record's key, so two records under one dispatch are refused.
+  const dispatches = new Set();
   value.rounds.forEach((round, i) => {
     const label = `state.rounds[${i}]`;
     requireObject(round, label);
+    requirePositiveInteger(round.dispatch, `${label}.dispatch`);
+    if (dispatches.has(round.dispatch)) fail(`${label}.dispatch ${round.dispatch} is not unique`);
+    dispatches.add(round.dispatch);
     requirePositiveInteger(round.round, `${label}.round`);
     requireSha(round.before, `${label}.before`);
     requireSha(round.after, `${label}.after`);
@@ -979,10 +987,11 @@ export async function recordRound(input, reads) {
   if (state.stop !== null) return stopped(state, { round: null });
   const base = requireBase(input.base);
   const scope = normalizeScope(input.scope);
+  const dispatch = requirePositiveInteger(input.dispatch, 'dispatch');
   const round = requirePositiveInteger(input.round, 'round');
   const before = requireSha(input.before, 'before');
   const after = requireSha(input.after, 'after');
-  const stored = state.rounds.find((entry) => entry.round === round);
+  const stored = state.rounds.find((entry) => entry.dispatch === dispatch);
   const replay = () => ({
     state,
     decision: 'continue',
@@ -996,7 +1005,7 @@ export async function recordRound(input, reads) {
   if (stored) {
     if (stored.before === before && stored.after === after) return replay();
     if (stored.before !== before || !rerecordable(state, stored)) {
-      fail(`round ${round} is already recorded with other heads`);
+      fail(`dispatch ${dispatch} is already recorded with other heads`);
     }
     const descends = await reads.isAncestor(stored.after, after);
     if (!descends.ok || !descends.value) return replay();
@@ -1048,7 +1057,7 @@ export async function recordRound(input, reads) {
   const attempts = [];
   const ci = [];
   if (!uncertain) {
-    // Items aliasing one cause in this round make one attempt with all their SHAs.
+    // Items aliasing one cause in this dispatch make one attempt with all their SHAs.
     const perCause = new Map();
     for (const item of minted.items) {
       const shas = received.claims.get(item.identifier) ?? [];
@@ -1096,6 +1105,7 @@ export async function recordRound(input, reads) {
   }
 
   const record = {
+    dispatch,
     round,
     before,
     after,
@@ -1127,6 +1137,7 @@ export async function recordRound(input, reads) {
   state.lastRoundUncertain = uncertain;
   state.timeline.push({
     type: 'round',
+    dispatch,
     round,
     before,
     after,
@@ -1161,7 +1172,7 @@ export async function recordRound(input, reads) {
   };
 }
 
-// The latest round, uncertain only because a returned SHA lay outside its range, with nothing
+// The latest record, uncertain only because a returned SHA lay outside its range, with nothing
 // recorded after it: a lagging forge head may have cut that range short.
 function rerecordable(state, stored) {
   const last = state.timeline.at(-1);
@@ -1170,7 +1181,7 @@ function rerecordable(state, stored) {
     stored.reasons.length === 1 &&
     stored.reasons[0] === 'returned-outside-range' &&
     last?.type === 'round' &&
-    last.round === stored.round
+    last.dispatch === stored.dispatch
   );
 }
 

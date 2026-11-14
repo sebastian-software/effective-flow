@@ -105,6 +105,7 @@ test('an unreturned out-of-scope commit stops the round while a gate merge is ex
     base: 'main',
     state: null,
     scope,
+    dispatch: 1,
     round: 1,
     before: head,
     after: unreturned,

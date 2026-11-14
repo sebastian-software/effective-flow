@@ -234,8 +234,8 @@ test('merge-gate post-checks every delegated round eagerly and stops before the 
   );
   assert.match(
     checkpoints,
-    /[Rr]un `record`\s+with `scope`, `round`, `before`, `after`/,
-    'record carries the round',
+    /[Rr]un `record`\s+with `scope`, `dispatch` and `before` from step 2, `round` the current round, `after`/,
+    'record carries the dispatch it is keyed by, and the round as data',
   );
   const steps = section(delegatedRun, '#### Repair checkpoints');
   assert.match(
@@ -271,7 +271,7 @@ test('merge-gate post-checks every delegated round eagerly and stops before the 
   );
   assert.match(
     checkpoints,
-    /Immediately before each dispatch, record the `headSha` of one fresh `pr-status-read` as `before`/,
+    /Immediately before each dispatch, mint its `dispatch` number[^.]*and record it with the `headSha` of one fresh `pr-status-read` as `before`/,
     'the head must be recorded immediately before dispatch',
   );
   assert.match(
@@ -523,13 +523,13 @@ test('a BLOCKED-USER return is never recorded and a Phase-0 refusal counts nothi
   const checkpoints = flat(section(delegatedRun, '#### Repair checkpoints'));
   assert.match(
     checkpoints,
-    /`ABORT` included and `BLOCKED-USER` excepted – its round is recorded once, on the return of the dispatch consuming its answer/,
+    /`ABORT` included and `BLOCKED-USER` excepted – its dispatch is recorded once, on the return of the dispatch consuming its answer/,
     'the record step skips a BLOCKED-USER return',
   );
   assert.match(
     checkpoints,
-    /the dispatch consuming an `iterate-approval` answer keeps the `before` stored for the dispatch that returned the question/,
-    'the re-dispatched round keeps its original head before dispatch',
+    /The dispatch consuming an `iterate-approval` answer mints none: it keeps the `dispatch` and the `before` stored for the dispatch that returned the question/,
+    'the re-dispatched round keeps its original dispatch and head before dispatch',
   );
   assert.match(
     receiver,
@@ -559,8 +559,35 @@ test('a lagging forge head is re-read from the record result, never from returne
   );
   assert.match(
     recordStep,
-    /Where `data\.round\.reasons` is exactly `\["returned-outside-range"\]`[^.]*re-read `pr-status-read` once and, on a moved `headSha`, repeat fetch 2 and run the same `record` again with it as `after`/,
-    'the re-read is triggered by the record result and re-runs record',
+    /Where `data\.round\.reasons` is exactly `\["returned-outside-range"\]`[^.]*re-read `pr-status-read` once and, on a moved `headSha`, repeat fetch 2 and run the same `record` again – the same `dispatch` and `before` – with it as `after`/,
+    'the re-read is triggered by the record result and re-runs record under the same dispatch',
+  );
+});
+
+// Invariant: a repair record is keyed by its dispatch, never by the gate round. A Phase 2 step 3 CI
+// repair and the Phase 3 reviewer delegations of one round share the round counter; keyed by round,
+// a moved head would be refused and an unmoved one replayed past the later dispatch's own checks.
+test('every dispatch mints its own record identity immediately before it is sent', () => {
+  const headStep = flat(step(section(delegatedRun, '#### Repair checkpoints'), 2));
+  assert.match(
+    headStep,
+    /Immediately before each dispatch, mint its `dispatch` number – one more than the last this run minted, `1` for the first – and record it with the `headSha` of one fresh `pr-status-read` as `before`/,
+    'the dispatch number is minted per run and stored with the head before dispatch',
+  );
+  assert.match(
+    headStep,
+    /a Phase 2 step 3 CI repair and each Phase 3 reviewer delegation of the same round are recorded apart/,
+    'dispatches of one round get separate records',
+  );
+  assert.match(
+    flat(section(delegatedRun, '## Wisdom accumulation')),
+    /per dispatch its `dispatch` number, its `before` and `after` heads/,
+    'the wisdom file keeps the dispatch number beside its heads, so a resume reuses it',
+  );
+  assert.match(
+    flat(section(delegatedRun, '## Rules')),
+    /record every dispatch under its own `dispatch` number/,
+    'the rule names the record identity',
   );
 });
 

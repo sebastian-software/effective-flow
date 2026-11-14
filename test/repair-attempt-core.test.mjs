@@ -137,11 +137,14 @@ const item = (identifier, key, outcome = 'implemented', reviewer = BOT) => ({
   outcome,
 });
 
-const record = (w, state, { round, before, after, items = [], ...rest }) =>
+// `dispatch` defaults to `round`, one dispatch per round; a test of several dispatches in one gate
+// round passes it explicitly.
+const record = (w, state, { dispatch, round, before, after, items = [], ...rest }) =>
   run(w, 'record', {
     base: 'develop',
     state,
     scope: SCOPE,
+    dispatch: dispatch ?? round,
     round,
     before,
     after,
@@ -1093,6 +1096,7 @@ test('a malformed entry under an unminted name is inert, and the inert list is b
       cwd: '/repo',
       base: 'develop',
       scope: SCOPE,
+      dispatch: 1,
       round: 1,
       before: H0,
       after: S1,
@@ -1170,6 +1174,7 @@ test('a replayed record of a stored round counts nothing again', async () => {
       base: 'develop',
       state: first.state,
       scope: SCOPE,
+      dispatch: 1,
       round: 1,
       before: S1,
       after: S2,
@@ -1216,6 +1221,7 @@ test('a round cut short by a lagging forge head is recorded again with the later
       base: 'develop',
       state: again.state,
       scope: SCOPE,
+      dispatch: 1,
       round: 1,
       before: H0,
       after: S2,
@@ -1263,6 +1269,7 @@ test('a later head that does not descend, or an unreadable ancestry, keeps the r
       base: 'develop',
       state: foreign.state,
       scope: SCOPE,
+      dispatch: 1,
       round: 1,
       before: H0,
       after: S2,
@@ -1288,6 +1295,7 @@ test('a later head that does not descend, or an unreadable ancestry, keeps the r
       base: 'develop',
       state: waited.state,
       scope: SCOPE,
+      dispatch: 1,
       round: 1,
       before: H0,
       after: S1,
@@ -1296,6 +1304,192 @@ test('a later head that does not descend, or an unreadable ancestry, keeps the r
     { runner: x.runner },
   );
   assert.equal(late.error.code, 'INVALID_INPUT');
+});
+
+// Invariant: a record's identity is its dispatch, not the gate round. A Phase 2 step 3 CI repair
+// and the Phase 3 reviewer delegations of the same round each get their own record, so neither a
+// moved head is refused nor an unmoved one replayed into skipping the later dispatch's checks.
+test('two dispatches in one gate round are recorded apart, and each replays only itself', async () => {
+  const w = world();
+  w.range(H0, S1, [S1]);
+  w.commit(S1);
+  w.range(S1, S2, [S2]);
+  w.commit(S2);
+  const ci = {
+    dispatch: 1,
+    round: 1,
+    before: H0,
+    after: S1,
+    ciChecks: ['lint'],
+    returned: [{ identifier: FREE, shas: [S1] }],
+  };
+  const first = await record(w, null, ci);
+  const reviewer = {
+    dispatch: 2,
+    round: 1,
+    before: S1,
+    after: S2,
+    items: [item(X2, 'K1')],
+    returned: [{ identifier: X2, shas: [S2] }],
+  };
+  const second = await record(w, first.state, reviewer);
+  assert.equal(second.decision, 'continue');
+  assert.equal(second.replayed, undefined);
+  assert.deepEqual(
+    second.state.rounds.map(({ dispatch, round, before, after }) => [
+      dispatch,
+      round,
+      before,
+      after,
+    ]),
+    [
+      [1, 1, H0, S1],
+      [2, 1, S1, S2],
+    ],
+  );
+  assert.deepEqual(
+    second.state.timeline.map(({ type, dispatch, round }) => [type, dispatch, round]),
+    [
+      ['round', 1, 1],
+      ['round', 2, 1],
+    ],
+  );
+  assert.deepEqual(second.counts.ci, [{ check: 'lint', attempts: 1 }]);
+  assert.equal(causeCount(second, 'K1').attempts, 1);
+  // Replaying either dispatch returns its own record, reads nothing and counts nothing again.
+  const calls = w.calls.length;
+  for (const [input, own] of [
+    [ci, first.round],
+    [reviewer, second.round],
+  ]) {
+    const again = await record(w, second.state, input);
+    assert.equal(again.replayed, true);
+    assert.deepEqual(again.round, own);
+    assert.deepEqual(again.state, second.state);
+  }
+  assert.equal(w.calls.length, calls, 'a replay reads nothing');
+  // The same dispatch with other heads is still refused.
+  const clash = await executeOperation(
+    'record',
+    {
+      cwd: '/repo',
+      base: 'develop',
+      state: second.state,
+      scope: SCOPE,
+      dispatch: 1,
+      round: 1,
+      before: S1,
+      after: S2,
+      minted: { items: [], freeText: FREE, correction: CORR },
+    },
+    { runner: w.runner },
+  );
+  assert.equal(clash.error.code, 'INVALID_INPUT');
+  assert.match(clash.error.message, /^dispatch 1 is already recorded with other heads$/);
+  // A record without its dispatch is refused before any read.
+  const unkeyed = await executeOperation(
+    'record',
+    {
+      cwd: '/repo',
+      base: 'develop',
+      state: second.state,
+      scope: SCOPE,
+      round: 1,
+      before: S2,
+      after: S2,
+      minted: { items: [], freeText: FREE, correction: CORR },
+    },
+    { runner: w.runner },
+  );
+  assert.equal(unkeyed.error.code, 'INVALID_INPUT');
+  assert.equal(w.calls.length, calls);
+});
+
+test('a later dispatch of the round with the same heads is evaluated, so its own stop applies', async () => {
+  // The CI repair made no commit: before and after are the same head, and so are the next one's.
+  const ci = { dispatch: 1, round: 1, before: H0, after: H0, returned: [] };
+  for (const [extra, reason] of [
+    [{ scopeExpansion: [{ identifier: X1, paths: ['package.json'] }] }, 'scope-expansion-declared'],
+    [{ scopeLineMissing: true }, 'scope-line-missing'],
+  ]) {
+    const w = world();
+    const first = await record(w, null, ci);
+    assert.equal(first.decision, 'continue');
+    const later = await record(w, first.state, {
+      dispatch: 2,
+      round: 1,
+      before: H0,
+      after: H0,
+      items: [item(X1, 'K1')],
+      returned: [],
+      ...extra,
+    });
+    assert.equal(later.replayed, undefined, reason);
+    assert.equal(later.decision, 'stop', reason);
+    assert.equal(later.stop.reason, reason);
+    assert.deepEqual(
+      later.state.rounds.map(({ dispatch }) => dispatch),
+      [1, 2],
+    );
+  }
+});
+
+test("a lagging head is re-recorded under its own dispatch, leaving the round's earlier one", async () => {
+  const w = world();
+  w.range(H0, S1, [S1]);
+  w.commit(S1);
+  w.commit(S2);
+  const first = await record(w, null, {
+    dispatch: 1,
+    round: 1,
+    before: H0,
+    after: S1,
+    ciChecks: ['lint'],
+    returned: [{ identifier: FREE, shas: [S1] }],
+  });
+  // The forge still reported S1 after the reviewer dispatch: S2 lies outside the empty range.
+  const input = {
+    dispatch: 2,
+    round: 1,
+    before: S1,
+    items: [item(X2, 'K1')],
+    returned: [{ identifier: X2, shas: [S2] }],
+  };
+  const lagging = await record(w, first.state, { ...input, after: S1 });
+  assert.deepEqual(lagging.round.reasons, ['returned-outside-range']);
+  w.ancestor(S1, S2);
+  w.range(S1, S2, [S2]);
+  const again = await record(w, lagging.state, { ...input, after: S2 });
+  assert.equal(again.rerecorded, true);
+  assert.equal(again.round.uncertain, false);
+  assert.deepEqual(
+    again.state.rounds.map(({ dispatch, after }) => [dispatch, after]),
+    [
+      [1, S1],
+      [2, S2],
+    ],
+  );
+  assert.deepEqual(again.state.rounds[0], first.state.rounds[0], 'the earlier dispatch is kept');
+  assert.equal(again.state.timeline.filter((entry) => entry.type === 'round').length, 2);
+  assert.deepEqual(again.counts.ci, [{ check: 'lint', attempts: 1 }]);
+  assert.equal(causeCount(again, 'K1').attempts, 1);
+  // The earlier dispatch of the same round is no longer the latest record and is never re-recorded.
+  const refused = await executeOperation(
+    'record',
+    {
+      cwd: '/repo',
+      base: 'develop',
+      state: again.state,
+      scope: SCOPE,
+      dispatch: 1,
+      round: 1,
+      before: H0,
+      after: S2,
+      minted: { items: [], freeText: FREE, correction: CORR },
+    },
+    { runner: w.runner },
+  );
+  assert.equal(refused.error.code, 'INVALID_INPUT');
 });
 
 test('a return without a parseable Scope expansion line records the round and then stops', async () => {
@@ -1322,6 +1516,7 @@ test('a return without a parseable Scope expansion line records the round and th
       cwd: '/repo',
       base: 'develop',
       scope: SCOPE,
+      dispatch: 1,
       round: 1,
       before: H0,
       after: S1,
@@ -1376,6 +1571,9 @@ test("a stored round that is not the helper's own shape is refused before any re
     (round) => Object.assign(round, { after: S1.toUpperCase() }),
     (round) => Object.assign(round, { before: 'HEAD' }),
     (round) => Object.assign(round, { round: 0 }),
+    (round) => delete round.dispatch,
+    (round) => Object.assign(round, { dispatch: 0 }),
+    (round) => Object.assign(round, { dispatch: '1' }),
     (round) => Object.assign(round, { reasons: 'returned-outside-range' }),
     (round) => Object.assign(round, { reasons: ['returned-outside-range', 'made-up'] }),
   ]) {
@@ -1388,6 +1586,7 @@ test("a stored round that is not the helper's own shape is refused before any re
         base: 'develop',
         state: broken,
         scope: SCOPE,
+        dispatch: 1,
         round: 1,
         before: H0,
         after: S1,
@@ -1399,7 +1598,9 @@ test("a stored round that is not the helper's own shape is refused before any re
     assert.equal(envelope.ok, false, JSON.stringify(broken.rounds[0]));
     assert.equal(envelope.error.code, 'INVALID_INPUT');
   }
-  for (const rounds of [[null], ['round']]) {
+  // The dispatch is the record's key: two records under one dispatch are refused.
+  const twice = [lagging.state.rounds[0], { ...lagging.state.rounds[0], round: 2 }];
+  for (const rounds of [[null], ['round'], twice]) {
     const envelope = await executeOperation(
       'evaluate',
       { cwd: '/repo', state: { ...lagging.state, rounds }, head: S1, observations: [] },
