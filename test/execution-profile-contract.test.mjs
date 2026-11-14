@@ -180,6 +180,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'runtime-state-guard.mjs',
   'setup-status-core.mjs',
   'setup-status.mjs',
+  'verification-evidence-core.mjs',
+  'verification-evidence.mjs',
 ];
 
 function cloneContract() {
@@ -924,11 +926,11 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 49);
+  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 51);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 49 approved runtime scripts',
+    'build.mjs must register exactly the 51 approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

@@ -93,9 +93,9 @@ From the `resume` result the run continues without asking for the selection agai
      `effective-flow-created`, workflow `deliver`, purpose `partial-diff`, creation OID
      `resume.base.oid` (the record's `creationOid`), setup status `externally managed` (the
      original run finished setup; this run never repeats it), and expected `HEAD` `resume.tip`.
-  4. Step 4.3.
+  4. Step 4.3. Its fresh result is this delivery's only verification evidence.
   5. `ledger reconcile` in place of step 4.4: it must return `exact: true` and `staged.count` 0;
-     anything else is a failure that retains the artifacts.
+     anything else is a failure that retains the artifacts. It is also the verification proof link.
   6. Step 4.5.
   7. Step 5 from group `resume.next` over `resume.remainingGroups` in order, with `ledger append`
      after each verified commit.
