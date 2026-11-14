@@ -8339,6 +8339,196 @@ test('pr-status-read states supersededCheckCount right after checkCount, as 0 wh
   }
 });
 
+// `includeCheckIdentity: true` (AD4a of
+// docs/plan/2026-11-14-proportionate-merge-gate-conflict-validation-with-ci-backed-quick-mode.md).
+// The invariant: with the flag every check states which producer reported it — typename, app slug,
+// triggering event, workflow file path, and the head its rollup belongs to — each `null` when the
+// provider states none, so a caller can never accept a same-named status context, another app's
+// run, or a `push` run as evidence for the `pull_request` run it expects. Without the flag the plan
+// and the envelope stay byte-for-byte what they were, which is what keeps the canned eval envelopes
+// `test/eval-fixture-fidelity.test.mjs` compares valid.
+const CHECK_IDENTITY_KEYS = Object.freeze([
+  'typename',
+  'appSlug',
+  'event',
+  'workflowPath',
+  'headSha',
+]);
+
+// One `checkRun` as the identity query returns it: the workflow run additionally states its file.
+// `path: null` models `WorkflowRun.file: null`, which the schema allows.
+function identityCheckRun(name, path, options = {}) {
+  const node = checkRun(name, options);
+  const workflowRun = node.checkSuite.workflowRun;
+  return workflowRun === null
+    ? node
+    : {
+        ...node,
+        checkSuite: {
+          ...node.checkSuite,
+          workflowRun: { ...workflowRun, file: path === null ? null : { path } },
+        },
+      };
+}
+
+async function readStatusEnvelope(statusCheckRollup, input = {}) {
+  const runner = fakeRunner([
+    { status: 0, stdout: prStatusStdout(verifiedHead, { statusCheckRollup }), stderr: '' },
+  ]);
+  const envelope = await executeOperation(
+    'pr-status-read',
+    { repository: gateRepository, number: 12, ...input },
+    { runner, skipProbe: true },
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  return { envelope, runner };
+}
+
+test('pr-status-read selects the workflow file path only with includeCheckIdentity', () => {
+  const plain = buildCommandPlan('pr-status-read', { number: 12 }, githubRepository);
+  // `false` is the default spelled out, not a third shape.
+  assert.deepEqual(
+    buildCommandPlan(
+      'pr-status-read',
+      { number: 12, includeCheckIdentity: false },
+      githubRepository,
+    ),
+    plain,
+  );
+  assert.doesNotMatch(JSON.parse(plain.stdin).query, /\bfile\s*\{/);
+  const identity = buildCommandPlan(
+    'pr-status-read',
+    { number: 12, includeCheckIdentity: true },
+    githubRepository,
+  );
+  assert.deepEqual(identity.args, plain.args);
+  const { query, variables } = JSON.parse(identity.stdin);
+  assert.deepEqual(variables, JSON.parse(plain.stdin).variables);
+  // `WorkflowRun.file { path }` is the one added selection; the rest of the identity is already in
+  // the base query, so the two differ by exactly that field.
+  assert.match(query, /\bworkflowRun\s*\{[^}]*\bfile\s*\{\s*path\s*\}/);
+  assert.equal(query.replace(' file{path}', ''), JSON.parse(plain.stdin).query);
+});
+
+test('pr-status-read states the check identity of every entry with includeCheckIdentity', async () => {
+  const rollup = [
+    // Superseded by the next run of the same identity; the kept run still carries its identity.
+    identityCheckRun('test', '.github/workflows/ci.yml', {
+      databaseId: 10,
+      conclusion: 'FAILURE',
+    }),
+    identityCheckRun('test', '.github/workflows/ci.yml', { databaseId: 11 }),
+    identityCheckRun('test', '.github/workflows/ci.yml', { databaseId: 12, event: 'push' }),
+    // `WorkflowRun.file` is nullable; an unstated path is `null`, never derived from the name.
+    identityCheckRun('build', null, { databaseId: 13 }),
+    // A run outside GitHub Actions states its app but no event and no workflow file.
+    identityCheckRun('external', '.github/workflows/unused.yml', {
+      databaseId: 14,
+      workflow: null,
+      app: 'third-party-ci',
+    }),
+    {
+      __typename: 'StatusContext',
+      context: 'test',
+      state: 'SUCCESS',
+      targetUrl: 'https://ci.example.test/1',
+    },
+  ];
+  const { envelope } = await readStatusEnvelope(rollup, { includeCheckIdentity: true });
+  const result = envelope.data.result;
+  // The identity sits before `supersededRuns`, which `supersededRunsOf` pins as the last key.
+  assert.deepEqual(supersededRunsOf(result), [1, 0, 0, 0, 0]);
+  assert.deepEqual(
+    result.checks.map((check) =>
+      Object.fromEntries(CHECK_IDENTITY_KEYS.map((key) => [key, check[key]])),
+    ),
+    [
+      {
+        typename: 'CheckRun',
+        appSlug: 'github-actions',
+        event: 'pull_request',
+        workflowPath: '.github/workflows/ci.yml',
+        headSha: verifiedHead,
+      },
+      {
+        typename: 'CheckRun',
+        appSlug: 'github-actions',
+        event: 'push',
+        workflowPath: '.github/workflows/ci.yml',
+        headSha: verifiedHead,
+      },
+      {
+        typename: 'CheckRun',
+        appSlug: 'github-actions',
+        event: 'pull_request',
+        workflowPath: null,
+        headSha: verifiedHead,
+      },
+      {
+        typename: 'CheckRun',
+        appSlug: 'third-party-ci',
+        event: null,
+        workflowPath: null,
+        headSha: verifiedHead,
+      },
+      {
+        typename: 'StatusContext',
+        appSlug: null,
+        event: null,
+        workflowPath: null,
+        headSha: verifiedHead,
+      },
+    ],
+  );
+  // The shared fields are untouched: the identity only adds keys.
+  assert.deepEqual(result.checks[0].conclusion, 'SUCCESS');
+  assert.deepEqual(result.checks[4].name, 'test');
+});
+
+test('pr-status-read without includeCheckIdentity reports byte-for-byte what it reported before', async () => {
+  const rollup = [
+    identityCheckRun('test', '.github/workflows/ci.yml', { databaseId: 21 }),
+    { __typename: 'StatusContext', context: 'ci/legacy', state: 'FAILURE' },
+  ];
+  const absent = await readStatusEnvelope(rollup);
+  const disabled = await readStatusEnvelope(rollup, { includeCheckIdentity: false });
+  assert.equal(JSON.stringify(disabled.envelope), JSON.stringify(absent.envelope));
+  assert.equal(
+    absent.runner.calls[0].stdin,
+    buildCommandPlan('pr-status-read', { number: 12 }, githubRepository).stdin,
+  );
+  for (const check of absent.envelope.data.result.checks) {
+    for (const key of CHECK_IDENTITY_KEYS) {
+      assert.equal(Object.hasOwn(check, key), false, `${check.name} carries ${key}`);
+    }
+  }
+  // With the flag the envelope differs only by those keys on each check and by the query it sent.
+  const enabled = await readStatusEnvelope(rollup, { includeCheckIdentity: true });
+  const stripped = {
+    ...enabled.envelope.data.result,
+    checks: enabled.envelope.data.result.checks.map((check) =>
+      Object.fromEntries(
+        Object.entries(check).filter(([key]) => !CHECK_IDENTITY_KEYS.includes(key)),
+      ),
+    ),
+  };
+  assert.equal(JSON.stringify(stripped), JSON.stringify(absent.envelope.data.result));
+});
+
+test('pr-status-read rejects a non-boolean includeCheckIdentity before any provider call', async () => {
+  for (const value of ['true', 1, null, {}]) {
+    const runner = fakeRunner([]);
+    const envelope = await executeOperation(
+      'pr-status-read',
+      { repository: gateRepository, number: 12, includeCheckIdentity: value },
+      { runner, skipProbe: true },
+    );
+    assert.equal(envelope.ok, false, JSON.stringify(value));
+    assert.equal(envelope.error.code, 'INVALID_PAYLOAD');
+    assert.equal(runner.calls.length, 0);
+  }
+});
+
 test('pr-checks-wait neither collapses same-named checks nor reports their timestamps', async () => {
   // `gh pr checks` already reports the latest run per name, and its identity stays name-only. The
   // dedup and the timestamps belong to `pr-status-read` alone, although both reads share
@@ -10386,6 +10576,56 @@ test('Forgejo pr-status-read carries created_at as completedAt only and states s
   assert.equal(unreported.envelope.ok, true);
   assert.equal(unreported.envelope.data.result.checksReported, false);
   assert.equal(unreported.envelope.data.result.supersededCheckCount, 0);
+});
+
+// AD4a on Forgejo: a commit status is a status context and states neither an app, an event, nor a
+// workflow file, so with `includeCheckIdentity: true` those stay `null` — no evidence — while the
+// typename and the head SHA the statuses were addressed by are stated. The three reads are the same
+// with and without the flag, and without it the envelope is unchanged.
+test('Forgejo pr-status-read states only typename and head SHA as check identity', async () => {
+  const results = () =>
+    forgejoStatusResults({
+      statuses: [
+        {
+          id: 3,
+          context: 'CI / test (pull_request)',
+          status: 'success',
+          target_url: 'https://code.example.test/team/flow/actions/runs/7/jobs/0',
+          creator: { login: 'forgejo-actions' },
+        },
+      ],
+      totalCount: 1,
+    });
+  const absent = await forgejoStatus(results());
+  const disabled = await forgejoStatus(results(), { includeCheckIdentity: false });
+  const enabled = await forgejoStatus(results(), { includeCheckIdentity: true });
+  for (const { envelope } of [absent, disabled, enabled]) assert.equal(envelope.ok, true);
+  assert.equal(JSON.stringify(disabled.envelope), JSON.stringify(absent.envelope));
+  assert.deepEqual(enabled.envelope.data.commands, absent.envelope.data.commands);
+  assert.deepEqual(absent.envelope.data.result.checks, [
+    {
+      name: 'CI / test (pull_request)',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      url: 'https://code.example.test/team/flow/actions/runs/7/jobs/0',
+      supersededRuns: 0,
+    },
+  ]);
+  assert.deepEqual(enabled.envelope.data.result.checks, [
+    {
+      name: 'CI / test (pull_request)',
+      status: 'COMPLETED',
+      conclusion: 'SUCCESS',
+      url: 'https://code.example.test/team/flow/actions/runs/7/jobs/0',
+      // The event in the context text is prose, not a field, and is never parsed out of it.
+      typename: 'StatusContext',
+      appSlug: null,
+      event: null,
+      workflowPath: null,
+      headSha: verifiedHead,
+      supersededRuns: 0,
+    },
+  ]);
 });
 
 test('a Forgejo entry carrying only `state` still maps through the fallback', async () => {

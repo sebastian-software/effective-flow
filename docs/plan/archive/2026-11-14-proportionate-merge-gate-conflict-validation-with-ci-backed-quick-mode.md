@@ -1,6 +1,6 @@
 # Proportionate merge-gate conflict validation with CI-backed quick mode
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -529,3 +529,89 @@ or settled by user decisions. The table counts the deep interactive review.
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-14
+**Workflow:** `effective-flow build` (inline Quality route), continued on the plan pull request #669.
+
+### Implementation summary
+
+- **Configuration:** `mergeGate.conflictValidation` (`full` default, `quick`). The new
+  `config-resolve.mjs conflict-validation` operation confirms the row against the base through the
+  shared base-blob guard and returns a `ceiling`. Hidden mode is `hidden-self`.
+- **Helper pair `conflict-validation.mjs` / `-core.mjs`:** operations `ci-detect`, `ci-integrity`,
+  `ci-evidence-match` and `quick-marker-scan`. The tree reader is shared with `config-resolve-core.mjs`.
+- **`pr-status-read`:** optional `includeCheckIdentity: true` (typename, app slug, event, workflow
+  path, head SHA). Output without the flag is unchanged.
+- **State helper `presence` group:** `register`, `refresh`, `list`, `release`, `prune`. Markers live
+  under `.effective-flow/merge-gate-presence/`, refresh and release are token-bound, and `prune`
+  (cleanup only) removes a marker only when the run's wisdom file is absent.
+- **Prompt contracts:** conflict fragment, delegated run, resolver and validator implement AD2–AD9.
+  `setup`, `setup status`, Guided block 9 and Targeted changes carry the AD3 proposal. `cleanup`
+  removes markers through `presence prune`.
+- **Repository side:** hand-maintained counts and lists removed; repository copies skip
+  `evals/*/results/` and are removed per case; the preflight checks Git and free temporary space;
+  this repository's own setup ADR uses `quick`.
+- **Allowlist:** 72 rules.
+- **New ADR:** `docs/adr/merge-gate-conflict-validation.md`.
+
+### Deviations from the plan, decided during the build
+
+- **Durable quick marker (AD2b, new):** a later gate run could otherwise merge a `quick`-validated
+  commit without the CI-evidence check, because the run-scoped record is deleted at the end of a
+  run. Under effective `quick` the conflict merge commit therefore carries the trailer
+  `Effective-Flow-Conflict-Validation: quick`, checked before the push. Phase 4 of every gate run
+  with a base-confirmed `quick` ceiling scans `merge-base..VERIFIED_HEAD_SHA` for it. A failed scan
+  counts as found only under that ceiling, so repositories that did not opt in get no new fetch and
+  no new merge blocker. Accepted residual: a quick commit pushed earlier merges on ordinary checks
+  once the base-confirmed ceiling is switched back to `full`.
+- **`missing` evidence waits:** `missing` runs the check wait once inside the round and then stops
+  with that reason. `pending` starts a new bounded Phase 2 round. Condition 11 performs no return.
+- **YAML subset:** one-line flow sequences of plain scalars are accepted, because this repository's
+  own `ci.yml` uses `branches: [develop]`. `ci-detect` reads only `.github/workflows/`, because
+  evidence exists only for GitHub check runs.
+- **AD8:** proven for Claude Code one sub-agent level deep, not proven for Codex, never for portable.
+  Because the nested depth used by a delegated gate is unconfirmed, no build carries the
+  long-command execution fact yet.
+- **Presence markers:** an ownership `token` was added; the wisdom file exists before `register`, and
+  Phase 6 calls `release` before deleting it.
+- **Preflight threshold:** measured peak 74,198 KiB with Git masked, so a lower bound; the threshold
+  is set conservatively to 150 MiB.
+
+### Test results
+
+- `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`: passed.
+- `pnpm eval <suite> verify --mode report` for merge-gate, iterate, next-steps, build-context and
+  focus: passed, no integrity blockers; evidence debt reported.
+- Full `node --test` in the execution runner: 5594 tests, 5508 passed, 51 skipped, 35 failed. One
+  real failure (pinned Git argument vectors in `config-resolve-core.mjs`) was fixed and its targeted
+  suites pass (350/350). The other 34 fail only because Git is masked in the runner container.
+- `pnpm test:preflight` fails in the runner only on the new `git-checkout` check, by design.
+
+### Acceptance criteria still open
+
+- **Recorded eval evidence:** the two new merge-gate scenarios are authored and wired, but not
+  recorded (`absent 0/5`). A publishable merge-gate round needs at least 45 fresh sessions; a fully
+  current corpus needs 85 (`pnpm eval merge-gate prepare …`, `seal`, `publish`; see
+  `evals/merge-gate/README.md`).
+- **Manual throwaway-PR check:** a low-risk conflict under `quick` in this repository, with the
+  times from the Phase 6 conflict report line (at most 10 minutes) and the merge only after the CI
+  test job succeeded. This also confirms the nested AD8 depth.
+- **CI on the implementation PR:** `pnpm agent:check`, `node build.mjs`, `pnpm test`,
+  `pnpm test:distribution` and the behavioural eval evidence step on PR #669.
+
+## Review findings
+
+**Date:** 2026-11-14
+**Reviewer:** effective-flow-nodejs-reviewer, effective-flow-generic-product-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    38 |
+| Open / Not implemented |     0 |
+
+One note (re-measuring the preflight threshold with Git visible) was closed without implementation:
+the threshold uses a conservative bound and documents the limitation.

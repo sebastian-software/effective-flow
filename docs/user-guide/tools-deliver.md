@@ -636,9 +636,9 @@ What the run does with a conflict:
 
 2. **Verifies the result twice and has it reviewed, before anything is committed – and fails closed.** The resolver runs
    the repository's own checks on the resolved tree, and the gate then has that same uncommitted tree
-   checked independently by its validation role, in that role's `full` mode. `full` is what honours a
-   repository-mandated combined or top-level gate, and it is used here because this merge commit has
-   no other pre-commit check standing behind it. The resolution counts as verified only when the two
+   checked independently by its validation role. By default that role runs in `full` mode, which
+   honours a repository-mandated combined or top-level gate, because this merge commit has no other
+   pre-commit check standing behind it. The resolution counts as verified only when the two
    layers **together executed at least one** of the repository's own checks and every executed check
    passed. A failing verdict from either role, a verdict that is not an affirmative pass, and a run in
    which every applicable check came back skipped are all treated exactly as an abort: the merge is
@@ -648,6 +648,9 @@ What the run does with a conflict:
    the commit. A blocking finding from that review commits nothing, exactly like a failed
    verification. CI remains the final criterion
    afterwards, and a failure it catches is repaired through `/effective-flow iterate` as before.
+   Only a repository that opted in with `mergeGate.conflictValidation: quick` can validate less,
+   and only for a low-risk conflict; see
+   [CI-backed `quick` validation](#ci-backed-quick-validation-of-a-conflict-commit) below.
 3. **Reports it file by file – and that report is what a human audits.** The run's chat summary names
    every conflicted file with what was done to it, and every non-conflicted file the resolver had to
    touch to make a **named** failing check pass, with that check and its failure output as it
@@ -718,6 +721,88 @@ failing check on a behind head (see below); a genuine conflict on a head without
 still surfaces as a bounded loop ending in a report rather than as the fast conflict path. A
 conflict met through a failing check whose cause the base does not fix ends in a controlled stop
 without an `iterate` repair: the resolution's full verification runs into that red check.
+
+#### CI-backed `quick` validation of a conflict commit
+
+A gate run that resolves a conflict used to validate the merge commit in `full` mode every time, and the
+resolver ran the repository's combined gate on top of it, so a one-minute conflict could cost two full
+test-suite runs. `mergeGate.conflictValidation: quick` (default `full`) lets a repository whose pull
+request CI already runs its test suite skip that local run for a **low-risk** conflict. It governs only
+the conflict-resolution commit; `review.validation` and `applyReview.finalValidation` are untouched. The
+key is set in [Block `mergeGate`](configuration.md#block-mergegate).
+
+The configured value is a ceiling, and the run decides again in every conflict round. It validates in
+`quick` mode only when all of these hold before the push; otherwise it validates in `full` mode:
+
+- the same `mergeGate.conflictValidation: quick` row is on the base branch (read after the run's
+  fetch), so a pull request cannot lower its own validation; in hidden mode the local file counts;
+- the base branch has a CI job that runs the repository's bare test command on every pull request
+  that targets it, with no condition, filter or indirection the run cannot prove;
+- the pull request changes no workflow file, and no workflow it references;
+- the forge is GitHub, and the job is known to block the merge: either
+  `mergeGate.requireAllChecks: true`, or the job is reported as a required check;
+- the resolver rated no conflicted file high-risk.
+
+Under `quick` the resolver runs targeted checks for the conflicted and adjacent paths only, and the
+validator runs every established check except the detected CI test commands once. Where a mandated
+combined gate contains that command and its remaining parts cannot run separately, the run uses
+`full`. A conflict that needs an adjacent-file fix and surfaces that failure only in the validator
+aborts under `quick`; that is the accepted trade-off.
+
+Because the test command then runs only in CI, the **merge** needs proof. Before it merges, the gate
+checks on a fresh status read that the CI job's complete set of instances succeeded on the exact head
+it merges, from the detected workflow, and that the base has not changed its workflows since. A
+skipped, neutral, failed or ambiguous result is no evidence, and the check-list waiver and the no-CI
+policy never stand in for it. A job that has not appeared on the head yet, as right after the
+push, makes the gate wait once in the same round, for at most `mergeGate.checkWaitMinutes`; if it
+still has not appeared, the gate stops and says so. A job that is still running makes the gate wait
+in its next round, within `mergeGate.maxRounds` and `mergeGate.checkWaitMinutes`. A reviewer thread
+or verdict the run still has to assess goes first. Without the evidence the gate does not merge: it
+reports what is missing and leaves the pushed commit in place, with no force push and no local
+`full` run afterwards.
+
+The proof requirement travels with the commit, not with the run. A merge commit validated in `quick`
+mode carries the trailer line `Effective-Flow-Conflict-Validation: quick` in its message; a gate that
+cannot confirm the trailer before the push stops with "quick marker not verified" and pushes
+nothing. While `mergeGate.conflictValidation: quick` counts, as the first condition above states, every gate run looks
+for that trailer among the pull request's commits that are not on the base before it merges. So a
+later run, or a run that never saw the conflict, still demands the same CI evidence; when it cannot
+read the history, for example in a shallow clone, it demands the evidence anyway. Where no evidence
+can exist – on Forgejo, or once the base's CI test job is no longer detected – the gate does not
+merge: its report names the marked commits, and the way out is a merge by hand or a history rewrite
+that drops them.
+
+A repository that has not opted in is unaffected: under `full` the gate looks for no trailer and
+adds no merge condition. One limit follows from that: a `quick` commit pushed earlier merges on the
+ordinary checks alone once the base has switched back to `full`.
+
+While `mergeGate.conflictValidation` is `full` and the conditions above hold, the completion report
+carries one line proposing `quick`, with the workflow file, the job and the test command. The run
+never switches by itself and asks nothing during the run; `/effective-flow setup` makes the same
+offer.
+
+#### When the environment itself fails
+
+If a check cannot run because of the environment, not the change, the run stops instead of working
+around it. The signatures are: the execution environment's own wall-clock limit (a runner or container
+deadline or timeout), no space left on device, Git unavailable for a check that needs it, and a process
+whose termination could not be confirmed. A check with one of these counts as not executed. Both
+roles report the check and its diagnostic, and neither splits the suite, compares against the base or
+reruns it. The gate then ends the round before the commit and the push, reports the signature and the
+affected checks, and pushes nothing. A timeout of the agent's own tool, or one that cannot be
+attributed, is not a signature and keeps the previous behavior, so repositories with long suites run
+as before.
+
+#### Another gate on the same repository
+
+Each gate run keeps one small marker file below `.effective-flow/merge-gate-presence/`, named
+after its session, with its pull request number, head, base and last activity. At entry the run lists
+the other markers and shows one line per valid one, naming that run's pull request and the files both
+runs change. A marker with no activity for more than 24 hours is shown as possibly stale, never as
+active. The notice only informs: it changes no gate decision, and it is not a message to the other
+session. A run releases its marker when it ends, except when it returns a question to you or
+suspends, so a waiting run stays visible. [`cleanup`](tools-setup.md#effective-flow-cleanup) removes
+a marker only when its run's wisdom file is gone.
 
 #### A failing check on a behind head
 

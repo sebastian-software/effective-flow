@@ -221,6 +221,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | applyReview.worktree.setup           | auto                       |
 | mergeGate.completion                 | ask                        |
 | mergeGate.conflictResolution         | auto                       |
+| mergeGate.conflictValidation         | full                       |
 | mergeGate.requireAllChecks           | true                       |
 | mergeGate.checkWaitMinutes           | 20                         |
 | mergeGate.maxRounds                  | 10                         |
@@ -389,6 +390,7 @@ already-open pull request to merge-readiness and, if allowed, merges it.
 | ----------------------- | ------------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
 | `completion`            | `ask` / `merge` / `report` / `null`   | `ask`     | May the run merge at the end, or only report merge-readiness                                                  |
 | `conflictResolution`    | `off` / `ask` / `auto`                | `auto`    | May the run resolve a conflict between the head branch and its base                                           |
+| `conflictValidation`    | `full` / `quick`                      | `full`    | How the run validates its own conflict-resolution commit; `quick` defers the test command to CI               |
 | `requireAllChecks`      | `true` / `false`                      | `true`    | Require every check's latest run green, not only the forge-required ones                                      |
 | `checkWaitMinutes`      | Positive integer                      | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling; not applied on T3 Code |
 | `maxRounds`             | Positive integer                      | `10`      | Upper bound on check-gate rounds for the whole run                                                            |
@@ -488,6 +490,33 @@ under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-wit
 anyway is retired like any other `prReview.*` row (see below), with `mergeGate.conflictResolution` as
 its successor, and `/effective-flow setup` carries it over. Without one, a project whose legacy block
 setup migrates gets the default `auto` here.
+
+**`mergeGate.conflictValidation` decides how much a resolved conflict is validated locally.** It
+only affects the commit that resolves a conflict with the base; `review.validation` and
+`applyReview.finalValidation` stay untouched.
+
+- `full` (the default) validates the resolution locally with the repository's full checks, as
+  before.
+- `quick` is a ceiling, not a guarantee. The run validates a **low-risk** conflict commit locally
+  without the test command that a CI job on the base branch runs on every pull request, and then
+  merges only once that CI job succeeded on the pushed head. Every other check still runs
+  locally. The run falls back to `full` when CI is not detected, the pull request changes a
+  workflow, the forge is not GitHub, the job is not known to block the merge (it blocks under
+  `mergeGate.requireAllChecks: true` or as a required check), or the resolver rated a conflicted
+  file high-risk.
+- **Base confirmation.** `quick` counts only where the same row is on the base branch
+  (`origin/<base>`, read after the run's fetch), so a pull request cannot lower its own
+  validation. In hidden mode the local file cannot be changed by a pull request, so its `quick`
+  counts. A missing, invalid or unconfirmed value means `full`.
+- **Proposal.** `/effective-flow setup` never switches the key on its own. Where it is `full` or
+  unset, the remote is GitHub and the local `origin/<delivery.baseBranch>` (read without a fetch)
+  carries a detected CI test job, setup proposes `quick` with that evidence: in the advanced
+  merge-gate block, as a hint in the Guided summary when you skip the advanced settings, in a
+  Targeted change to a `mergeGate.*` key, and in `/effective-flow setup status`. A merge-gate run
+  that validated a conflict under `full` while those conditions held adds the same proposal to its
+  report.
+
+Decision record: [merge-gate conflict validation](../adr/merge-gate-conflict-validation.md).
 
 **Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
@@ -824,6 +853,7 @@ rows `plan.dir`, `concept.dir`, `tracker.mode`, and `delivery.prReview`, plus a
 | `applyReview.worktree.setup`        | `auto`                       |
 | `mergeGate.completion`              | `ask` (ask at run time)      |
 | `mergeGate.conflictResolution`      | `auto`                       |
+| `mergeGate.conflictValidation`      | `full`                       |
 | `mergeGate.requireAllChecks`        | `true`                       |
 | `mergeGate.checkWaitMinutes`        | `20`                         |
 | `mergeGate.maxRounds`               | `10`                         |

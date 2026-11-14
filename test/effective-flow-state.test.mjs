@@ -211,6 +211,11 @@ test('operations, locks and codes are frozen closed sets', () => {
       'ledger init',
       'ledger append',
       'ledger reconcile',
+      'presence register',
+      'presence refresh',
+      'presence list',
+      'presence release',
+      'presence prune',
     ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
@@ -253,6 +258,9 @@ test('operations, locks and codes are frozen closed sets', () => {
       'BRANCH_RETAINED',
       'DEADLINE_REACHED',
       'LEDGER_EXISTS',
+      'MARKER_EXISTS',
+      'MARKER_NOT_FOUND',
+      'MARKER_INVALID',
     ],
   );
   assert.deepEqual(

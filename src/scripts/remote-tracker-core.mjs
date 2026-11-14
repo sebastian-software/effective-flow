@@ -3352,6 +3352,35 @@ function statusCheck(item) {
   };
 }
 
+function statedIdentityField(value) {
+  return typeof value === 'string' && value.trim() !== '' ? value.trim() : null;
+}
+
+// The check identity `pr-status-read` adds on `includeCheckIdentity: true`, so a caller can tell
+// which producer reported a check before it accepts the check as evidence: a same-named status
+// context, another app's run, or a `push` run of the right workflow must never stand in for the
+// `pull_request` run it expects. Every field is always present and `null` when the provider states
+// no usable value, never a guess, so a caller reads `null` as "no evidence" rather than as a match.
+// `headSha` is the commit whose rollup the check came from. Both flatteners take the rollup only
+// from the commit addressed by the pull request's head — GitHub's by matching `oid` against
+// `headRefOid`, Forgejo's by reading `commits/{sha}/status` with the head SHA — and state that
+// commit as `rollupHeadSha`. A GitHub `StatusContext` states no app, event, or workflow file at all,
+// and a check run outside GitHub Actions (`workflowRun: null`) no event or workflow file. What a
+// Forgejo commit status provides is documented at `forgejoCheckRecord`.
+function checkIdentity(node, rollupHeadSha) {
+  const typename =
+    node.__typename === 'CheckRun' || node.__typename === 'StatusContext' ? node.__typename : null;
+  const suite = typename === 'CheckRun' ? node.checkSuite : undefined;
+  const run = suite?.workflowRun;
+  return {
+    typename,
+    appSlug: statedIdentityField(suite?.app?.slug),
+    event: statedIdentityField(run?.event),
+    workflowPath: statedIdentityField(run?.file?.path),
+    headSha: statedIdentityField(rollupHeadSha),
+  };
+}
+
 // The head commit is identified by its object name, never by its position in the commit list.
 // GitHub returns the first page of commits, so on a pull request with more than one page the last
 // entry is not the head — and a timestamp taken from the wrong commit would silently certify stale
@@ -3460,7 +3489,7 @@ function flattenPullRequestStatus(raw) {
   return {
     ...pullRequest,
     commits,
-    ...(rollup === undefined ? {} : { statusCheckRollup: rollup }),
+    ...(rollup === undefined ? {} : { statusCheckRollup: rollup, rollupHeadSha: headCommit.oid }),
   };
 }
 
@@ -3474,7 +3503,8 @@ function flattenPullRequestStatus(raw) {
 // `normalizeCheck` unchanged would be read through `pending = status !== 'COMPLETED'`, and
 // `success` is not `COMPLETED`, so a finished check would report as pending. Mapping it here keeps
 // one shape for both providers, and the record deliberately carries only `name`, `status`,
-// `conclusion`, `url`, and only a `completedAt` taken from `created_at`: no raw Gitea
+// `conclusion`, `url`, only a `completedAt` taken from `created_at`, and the `StatusContext`
+// typename tag explained in `forgejoCheckRecord`: no raw Gitea
 // key (`context`, `target_url`, `status`, `id`, `description`, `created_at`) survives into the
 // envelope. The combined status endpoint already returns one status per context, so nothing here
 // is superseded and `latestCheckRuns` leaves every record in place. The record's own `status` key
@@ -3524,7 +3554,22 @@ function forgejoCheckRecord(item, index) {
   // No `required`: Forgejo states no requiredness anywhere, so every check reports it as unstated
   // and `mergeGate.requireAllChecks: false` fails closed on each of them — stricter than the
   // default, never looser.
+  //
+  // The check identity `includeCheckIdentity: true` reports (see `checkIdentity`), as far as a
+  // Gitea/Forgejo commit status (`structs.CommitStatus`: `id`, `status`, `target_url`,
+  // `description`, `url`, `context`, `creator`, `created_at`, `updated_at`) can supply it:
+  // - `typename` is `StatusContext`: an entry of the combined commit status is a commit status, the
+  //   same kind of record GitHub's GraphQL calls a `StatusContext`; there are no check runs.
+  // - `appSlug` is `null`: `creator` is the user account that posted the status, not an app.
+  // - `event` and `workflowPath` are `null`: no field states them. Forgejo Actions spells the
+  //   triggering event into the `context` text (`<workflow> / <job> (<event>)`), and `target_url`
+  //   names the run page, not the workflow file; parsing either would be a guess from prose.
+  // - `headSha` is the head SHA the status read was addressed by (`rollupHeadSha`).
+  // The tag below changes nothing else: `statusCheck` reads a status context's single instant as
+  // `completedAt`, exactly what this record already carries, and `latestCheckRuns` collapses
+  // only `CheckRun`s.
   return {
+    __typename: 'StatusContext',
     name: item.context,
     status: mapped.status,
     ...(mapped.conclusion === undefined ? {} : { conclusion: mapped.conclusion }),
@@ -3600,14 +3645,20 @@ function flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt) {
     ...(browserUrl === '' ? {} : { url: browserUrl }),
     ...(pull.mergeable === true ? { mergeable: 'MERGEABLE' } : {}),
     ...(headCommittedAt === undefined ? {} : { headCommittedAt }),
-    ...(statuses === undefined ? {} : { statusCheckRollup: statuses }),
+    // The statuses were read by `commits/{sha}/status` with exactly this head SHA.
+    ...(statuses === undefined
+      ? {}
+      : {
+          statusCheckRollup: statuses,
+          ...(typeof pull.head?.sha === 'string' ? { rollupHeadSha: pull.head.sha.trim() } : {}),
+        }),
   };
 }
 
 // The merge state is read from the forge, never inferred from the check list: a protected branch can
 // additionally require an approval, an up-to-date branch, or linear history, so "all checks green"
 // and "mergeable" are different statements and both travel in this envelope.
-function normalizePullRequestStatus(item, repository) {
+function normalizePullRequestStatus(item, repository, { includeCheckIdentity = false } = {}) {
   if (!item || typeof item !== 'object') {
     fail('INVALID_PAYLOAD', 'provider returned an invalid pull-request status');
   }
@@ -3626,7 +3677,12 @@ function normalizePullRequestStatus(item, repository) {
   // field, and an unstated mergeability fails closed everywhere it is consumed.
   const mergeable = upperCaseField(item.mergeable);
   const { runs, supersededCount } = latestCheckRuns(Array.isArray(rollup) ? rollup : []);
-  const checks = runs.map(({ node, supersededRuns }) => ({ ...statusCheck(node), supersededRuns }));
+  // The identity sits before `supersededRuns`, which stays every check's last key.
+  const checks = runs.map(({ node, supersededRuns }) => ({
+    ...statusCheck(node),
+    ...(includeCheckIdentity ? checkIdentity(node, item.rollupHeadSha) : {}),
+    supersededRuns,
+  }));
   const headCommittedAt = headCommitTimestamp(item, headSha);
   return {
     number: requireNumber(item.number ?? item.index, 'provider pull-request number'),
@@ -4021,7 +4077,9 @@ function normalizeRemoteData(operation, raw, repository, input = {}, metadata = 
       };
     }
     case 'pr-status-read':
-      return normalizePullRequestStatus(flattenPullRequestStatus(flattened), repository);
+      return normalizePullRequestStatus(flattenPullRequestStatus(flattened), repository, {
+        includeCheckIdentity: input.includeCheckIdentity === true,
+      });
     // The wait reports its own outcome, so "the checks finished" and "the bound elapsed" stay
     // distinguishable for the caller: a timed-out wait is a result to report, never a green light.
     case 'pr-checks-wait': {
@@ -4542,6 +4600,7 @@ async function readForgejoPullRequestStatus(input, repository, runner, options =
     result: normalizePullRequestStatus(
       flattenForgejoPullRequestStatus(pull, statuses, headCommittedAt),
       repository,
+      { includeCheckIdentity: input.includeCheckIdentity === true },
     ),
     commands,
   };
@@ -5039,6 +5098,15 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // Validated before the first provider call, so a malformed filter never costs a probe or a read
     // and never reaches the list with the filter silently dropped.
     if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
+    if (
+      operation === 'pr-status-read' &&
+      input.includeCheckIdentity !== undefined &&
+      typeof input.includeCheckIdentity !== 'boolean'
+    ) {
+      fail('INVALID_PAYLOAD', 'includeCheckIdentity must be a boolean', {
+        field: 'includeCheckIdentity',
+      });
+    }
     const repository = await resolveRepositoryInput(input, runner);
     if (operation === 'repository-resolve') {
       return {

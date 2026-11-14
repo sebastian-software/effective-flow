@@ -3293,8 +3293,8 @@ test('the configured-reviewer route stays reachable through exact retained workf
   const conditions = mergeConditions(gate);
   assert.equal(
     conditions.length,
-    10,
-    'the retained Phase-4 list must keep all ten numbered shells',
+    11,
+    'the retained Phase-4 list must keep all eleven numbered shells, the CI-evidence condition 11 included',
   );
   for (const [number, heading] of [
     [5, headings[4]],
@@ -9121,6 +9121,7 @@ test("the merge gate's own Configuration table carries every key with its defaul
   for (const [key, value] of [
     ['mergeGate.completion', '`ask`'],
     ['mergeGate.conflictResolution', '`auto`'],
+    ['mergeGate.conflictValidation', '`full`'],
     ['mergeGate.requireAllChecks', '`true`'],
     ['mergeGate.checkWaitMinutes', '`20`'],
     ['mergeGate.maxRounds', '`10`'],
@@ -9158,6 +9159,9 @@ test('setup carries the mergeGate.* and delivery.mergeMethod configuration keys 
     // fragment, and in the user guide: a key whose three places disagree hands a project a
     // behavior nobody configured, and this one decides whether a gate run writes a merge commit.
     ['mergeGate.conflictResolution', '`auto`'],
+    // `full` is the default and the safe value alike: a missing, invalid or base-unconfirmed row
+    // keeps the full local validation of a conflict commit.
+    ['mergeGate.conflictValidation', '`full`'],
     ['mergeGate.requireAllChecks', '`true`'],
     ['mergeGate.checkWaitMinutes', '`20`'],
     ['mergeGate.maxRounds', '`10`'],
@@ -9259,6 +9263,7 @@ test("the user guide's two overview tables repeat the mergeGate.* defaults uncha
   const shared = [
     ['mergeGate.completion', 'ask'],
     ['mergeGate.conflictResolution', 'auto'],
+    ['mergeGate.conflictValidation', 'full'],
     ['mergeGate.requireAllChecks', 'true'],
     ['mergeGate.checkWaitMinutes', '20'],
     ['mergeGate.maxRounds', '10'],
@@ -12976,14 +12981,15 @@ function setupMergeGateKeyTable() {
   return setup.slice(start, end);
 }
 
-test('the completion offer adds no mergeGate.* key: all four key tables agree on the same twelve rows, the no-CI policy rows included', () => {
+test('the completion offer adds no mergeGate.* key: all four key tables agree on the same thirteen rows, the no-CI policy rows included', () => {
   // The operator chose "report, transition nothing" for the non-interactive case, so there is no
   // mode to configure and setup.md's "The gate is safe without any of these keys" stays true. A
   // further row would be a fifth place to keep in sync and a guarantee that quietly became
   // configurable — which is why the row set is asserted rather than only its length. The tenth
-  // row, `mergeGate.botAccounts`, was added deliberately by the bot-accounts feature, and the two
-  // `mergeGate.noCiPolicy.*` rows by the declared no-CI policy; the invariant is that the four
-  // tables carry the identical row set, whatever its size.
+  // row, `mergeGate.botAccounts`, was added deliberately by the bot-accounts feature, the two
+  // `mergeGate.noCiPolicy.*` rows by the declared no-CI policy, and `mergeGate.conflictValidation`
+  // by CI-backed conflict validation; the invariant is that the four tables carry the identical row
+  // set, whatever its size.
   //
   // The gate's own Configuration table is the fourth copy and was, until this assertion, the one
   // nobody compared: the configuration split gave `merge-gate` a table of its own precisely so it
@@ -12991,6 +12997,7 @@ test('the completion offer adds no mergeGate.* key: all four key tables agree on
   const prefixed = [
     '`mergeGate.completion`',
     '`mergeGate.conflictResolution`',
+    '`mergeGate.conflictValidation`',
     '`mergeGate.requireAllChecks`',
     '`mergeGate.checkWaitMinutes`',
     '`mergeGate.maxRounds`',
@@ -26873,4 +26880,51 @@ test('pr stays commit-only and starts no validation, with or without a record', 
   assert.ok(pr.includes('do not run project validation such as linting, tests, or build checks'));
   assert.ok(pr.includes('Do not start project validation such as linting, tests, or build checks'));
   assert.ok(verificationEvidence().includes('`pr` starts no validation'));
+});
+
+// Invariant: the conflict-validation proposal is an offer owned by Step 5 and surfaced only where
+// the user can accept it (Guided block 9, the Guided summary hint, a Targeted `mergeGate.*`
+// preview, the `setup status` report). Profile and Express never reach Step 5, so neither names
+// the proposal nor writes the key: an unattended path cannot lower a project's validation.
+test('the conflict-validation proposal is offered in Guided block 9, the summary hint, Targeted previews and setup status, never in Profile or Express', () => {
+  const setup = source('src/tools/setup.md');
+  const step5 = boundedSlice(setup, '### Step 5: Advanced settings', '### Step 6: Merge and write');
+  assert.match(step5, /#### The conflict-validation proposal/);
+
+  const advanced = prose(source('src/shared/setup-advanced-settings.md'));
+  assert.match(advanced, /Step 5's conflict-validation proposal holds, show it with this question/);
+
+  const targeted = prose(source('src/shared/setup-targeted-change.md'));
+  assert.match(
+    targeted,
+    near(
+      "shows Step 5's conflict-validation proposal in its preview",
+      'excludes unless the user accepts it',
+      120,
+    ),
+  );
+
+  const summary = prose(
+    boundedSlice(
+      setup,
+      '- which mode was chosen (Profile, Express',
+      '- the central behavior values',
+    ),
+  );
+  assert.match(summary, /Advanced `No`, Step 5's conflict-validation proposal as one hint line/);
+
+  const status = prose(source('src/shared/setup-status.md'));
+  assert.match(status, /Conflict validation[\s\S]{0,40}`data\.conflictValidation`/);
+  assert.match(status, /an offer, never a finding/);
+
+  // Profile and Express: no proposal wording, and the Express route skips Step 5 entirely.
+  const mention = /conflict[- ]validation|conflictValidation/i;
+  assert.doesNotMatch(source('src/shared/setup-profiles.md'), mention);
+  const express = boundedSlice(
+    setup,
+    '- **Express:** Build the target configuration',
+    '- **Guided:**',
+  );
+  assert.doesNotMatch(express, mention);
+  assert.match(express, /Jump directly to Step 6/);
 });

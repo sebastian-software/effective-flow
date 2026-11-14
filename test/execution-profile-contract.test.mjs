@@ -139,6 +139,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'claude-settings-core.mjs',
   'config-resolve-core.mjs',
   'config-resolve.mjs',
+  'conflict-validation-core.mjs',
+  'conflict-validation.mjs',
   'dated-name-allocation.mjs',
   'delegation-envelope-core.mjs',
   'delegation-envelope.mjs',
@@ -153,6 +155,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'effective-flow-state-harness-core.mjs',
   'effective-flow-state-ledger-core.mjs',
   'effective-flow-state-memory-core.mjs',
+  'effective-flow-state-presence-core.mjs',
   'effective-flow-state-recovery-core.mjs',
   'effective-flow-state-review-core.mjs',
   'effective-flow-state-worktree-core.mjs',
@@ -929,11 +932,10 @@ test('the build assertion precedes the actual atomic swap and only the adopted p
   const registeredRuntimeScripts = [...runtimeRegistration[1].matchAll(/'([^']+\.mjs)'/g)].map(
     (match) => match[1],
   );
-  assert.equal(EXPECTED_RUNTIME_SCRIPTS.length, 53);
   assert.deepEqual(
     registeredRuntimeScripts.sort(),
     EXPECTED_RUNTIME_SCRIPTS,
-    'build.mjs must register exactly the 53 approved runtime scripts',
+    'build.mjs must register exactly the approved runtime scripts',
   );
 
   const sourceRoot = fileURLToPath(new URL('src', ROOT));

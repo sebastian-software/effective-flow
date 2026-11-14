@@ -40,7 +40,13 @@ untouched.
 
 `pnpm test:preflight` probes the actual execution environment before the full test suite: it must
 create and clean a temporary fixture, bind an ephemeral loopback TCP listener, and, on macOS,
-apply a distinct nested Seatbelt policy that proves a real write is denied. `pnpm test` runs this
+apply a distinct nested Seatbelt policy that proves a real write is denied. It also proves that Git
+can read the checkout (`git rev-parse --is-inside-work-tree` in the repository root, so a missing
+binary or a hidden `.git` stops here) and that `os.tmpdir()` offers at least
+`MIN_TEMPORARY_FREE_BYTES` of free space (92,748 KiB: the measured peak of a full `node --test` run,
+74,198 KiB, plus 25 %; the derivation sits beside the constant in `scripts/test-capabilities.mjs`).
+A failing run names the directory and the free space, and the fix is a `TMPDIR` with more room.
+`pnpm test` runs this
 guard first, but a passing guard is prerequisite evidence only, not proof that the full suite is
 correct. Before pilot readiness, attempt allocation or product writes, qualify the selected executor
 lane under [the protected-validation contract](../../src/shared/protected-validation.md#executor-lanes-and-launch-qualification).
@@ -455,31 +461,13 @@ The build aborts with an error message if any of these guards is violated:
   byte-for-byte to native Claude, native Codex, and portable `scripts/` directories. The scan
   recognizes a static `import`/`export … from`, a side-effect `import`, and a dynamic
   `import()`, each anchored to the start of a statement so prose in a comment cannot be
-  misread as one. Sixteen subsystems and 53 runtime scripts carry this today: the pairs
-  `backlog-audit.mjs`/`backlog-audit-core.mjs`, `build-run.mjs`/`build-run-core.mjs` with `protected-validation-protocol.mjs` and
-  `protected-validation-core.mjs`, `config-resolve.mjs`/
-  `config-resolve-core.mjs`, `delegation-envelope.mjs`/`delegation-envelope-core.mjs`, `delivery-selection.mjs`/`delivery-selection-core.mjs`,
-  `diff-baseline.mjs`/`diff-baseline-core.mjs`,
-  `effective-flow-mechanics.mjs`/`effective-flow-mechanics-core.mjs`,
-  `model-selection.mjs`/`model-selection-core.mjs`, `plan-lint.mjs`/`plan-lint-core.mjs`,
-  `plan-publication.mjs`/`plan-publication-core.mjs`,
-  `setup-status.mjs`/`setup-status-core.mjs`,
-  `verification-evidence.mjs`/`verification-evidence-core.mjs`; the
-  runtime-state helper, a twelve-file family whose entry point `effective-flow-state.mjs` sits over
-  `effective-flow-state-core.mjs` (locks), `effective-flow-state-memory-core.mjs`,
-  `effective-flow-state-harness-core.mjs`, `effective-flow-state-commit-core.mjs`,
-  `effective-flow-state-review-core.mjs`, `effective-flow-state-worktree-core.mjs`,
-  `effective-flow-state-ledger-core.mjs`, `effective-flow-state-recovery-core.mjs`, its pure report renderer `review-report-render.mjs`, the shared `claude-settings-core.mjs` and
-  `runtime-file-primitives.mjs` (the bounded-read and JSON-object primitives the memory and
-  settings cores share), with `dated-name-allocation.mjs`, the dated-name allocation that
-  `effective-flow-mechanics-core.mjs` and the review core both import; the
-  Issue Buddy pair `issue-buddy.mjs`/`issue-buddy-core.mjs`; the
-  remote tracker, a seven-file family whose thin entry point `remote-tracker.mjs` sits over
-  `remote-tracker-core.mjs` and its five siblings `remote-tracker-shared-core.mjs`,
-  `remote-tracker-decomposition-core.mjs`, `remote-tracker-github-core.mjs`,
-  `remote-tracker-forgejo-core.mjs` and `remote-tracker-ledger-core.mjs` (the hidden-mode
-  processed-thread ledger); and the pilot measurement family `pilot-measurement.mjs`, `pilot-measurement-core.mjs` and
-  `pilot-measurement-protocol.mjs`. The shared `process-runner.mjs`, the remote tracker's
+  misread as one. `RUNTIME_SCRIPT_FILES` is the only list of shipped scripts, and this guide keeps
+  no copy of it. Structurally, a subsystem is a thin JSON CLI `<name>.mjs` over a testable
+  `<name>-core.mjs`, sometimes with further sibling modules: the runtime-state helper's entry
+  `effective-flow-state.mjs` sits over one core per operation group and the shared primitives they
+  import, the remote tracker's entry `remote-tracker.mjs` over its core and sibling cores layered so
+  none imports its core back, and the pilot measurement and protected-validation helpers add a
+  protocol module beside their core. The shared `process-runner.mjs`, the remote tracker's
   `createProcessRunner`, and `runtime-state-guard.mjs`, the runtime-state guard and write
   primitives, belong to no subsystem and carry the same guard. That only CLI entries
   (such as `remote-tracker.mjs`, `plan-publication.mjs` and `effective-flow-mechanics.mjs`) import it and inject the runner into their cores is
@@ -784,9 +772,9 @@ The owning contract also requires bounded complete history reachable from the ex
 snapshot and execution commits parented directly to that source HEAD, and immutable checkout/runner
 identity through completion; changed history or closure requires a fresh attempt.
 
-Fifteen dependency-free script subsystems ship as consumer runtime code in the skill payload. The
-allowlist contains 51 files: twelve two-file subsystems, the runtime-state helper's twelve-file family,
-the remote tracker's seven-file family, the pilot measurement three-file family, the two
+Dependency-free script subsystems ship as consumer runtime code in the skill payload. The
+`RUNTIME_SCRIPT_FILES` allowlist in `build.mjs` names every file: two-file subsystems, the
+runtime-state helper's family, the remote tracker's family, the pilot measurement family, the
 protected-validation helper modules, and the shared `process-runner.mjs`,
 `runtime-state-guard.mjs` and `dated-name-allocation.mjs`. Each entry
 point is an I/O boundary over testable core or protocol modules:
@@ -835,6 +823,40 @@ point is an I/O boundary over testable core or protocol modules:
   `not-applicable`), `active` and `reason`, beside the usual `data` fields. The merge gate, not the
   operation, decides run state, the check list and the head; see the
   [merge-gate no-CI policy ADR](../adr/merge-gate-no-ci-policy.md).
+- **Conflict-validation.** Invoke it as `node <skill-root>/scripts/conflict-validation.mjs
+<operation>` with one closed-schema JSON object on standard input; the operation is the only
+  argument. It prepares merge-gate's CI-backed `quick` validation of a conflict-resolution commit
+  and decides nothing itself. `ci-detect` (`{ cwd, baseRef, base? }`) reads `.github/workflows/`
+  and the root manifests of the commit of `refs/remotes/origin/<baseRef>`, never the pull-request
+  head, and reports per workflow its trigger evaluation for `base` (default `baseRef`), each job's
+  matched test step with its normalized command (`pnpm run test` is `pnpm test`), the static
+  expected instance set, the reasons that exclude a job, and overall `detected`, `undetected` or
+  `unparsable`. A job is detected only when its step runs exactly the bare manifest test command
+  (`package.json` `test` through npm, pnpm, yarn or `bun run`; `cargo test`, `go test`, `pytest`,
+  `make test`) on an unfiltered `pull_request` trigger, without a condition, `continue-on-error`,
+  a non-`bash` shell, another working directory, a dynamic matrix or a templated name.
+  `ci-integrity` (`{ cwd, baseRef, tree }`, `tree` a full commit or tree id or `index`) compares
+  the `mode type oid` entries of `.github/workflows/`, `.forgejo/workflows/`,
+  `.gitea/workflows/` and every local reusable workflow or composite action (`action.yml` and
+  `action.yaml`) they reference, recursively; the staged tree is read from `git ls-files -s`, never
+  through `git write-tree`. Its `status` is `ok`, `changed`, `unprovable` (an unparsable source, an
+  unsafe reference, an unmerged index entry) or `missing`. `ci-evidence-match` (`{ detection,
+checks, headSha }`) is pure: evidence holds only when every detected job's complete,
+  non-empty instance set appears once each as a completed `CheckRun` of the `github-actions` app
+  for `pull_request` from the detected workflow path on `headSha`, concluded exactly
+  `SUCCESS`. `quick-marker-scan` (`{ cwd, baseRef, headSha }`)
+  reports as `found` and `commits` the commits from the merge base of
+  `refs/remotes/origin/<baseRef>` and `headSha` up to `headSha` whose message ends with the trailer
+  paragraph line `Effective-Flow-Conflict-Validation: quick`, the durable marker of a
+  `quick`-validated conflict commit; a missing ref or head, no merge base, a shallow repository and
+  an oversized range are `ok: false`, which the gate treats as found. The gate runs the scan only
+  where its own record names such a commit or the base-confirmed ceiling is `quick`. Workflow text is parsed in a declared YAML subset only (block
+  mappings and sequences, one-line scalars and flow sequences of scalars, literal block scalars);
+  anchors, aliases, tags, flow mappings, folded scalars and several documents make a file
+  `unparsable`. Git access is read-only (`show-ref`, `rev-parse`, `ls-tree`, `cat-file -s`, `cat-file blob`,
+  `ls-files -s`, and `merge-base` and `log` for the marker scan) with replace objects and lazy fetch
+  disabled; the core imports `isSafeBaseRef` and the stripped Git
+  environment from `config-resolve-core.mjs`, and the CLI injects that module's runner.
 - **Setup-status.** Invoke it as `node <skill-root>/scripts/setup-status.mjs status` with one JSON
   object `{ "cwd": "<directory>" }` on standard input; `setup status` runs it. It imports
   `config-resolve-core.mjs` as a module: one `resolveConfiguration` call with `tool: "setup"` supplies
@@ -1169,13 +1191,19 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   argument. The operations are `lock acquire|release|inspect|break`, `memory
 reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report`, `harness
 allow-rules`, `worktree record-init|transition|inspect|resume-check|remove`, `ledger
-init|append|reconcile` and `cleanup plan|apply`. The
-  seventeen allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+init|append|reconcile`, `cleanup plan|apply` and `presence register|refresh|list|release|prune`. The
+  twenty-one allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
 reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`, `review
 open-report`, `review write-report`, `worktree record-init`, `worktree transition`, `worktree
-inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append` and `ledger reconcile`, are non-destructive,
-  bounded or read-only (`commit create` writes Git history; see below).
-  `lock break`, `worktree remove` and `cleanup apply` are destructive and
+inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`, `ledger reconcile`,
+  `presence register`, `presence refresh`, `presence list` and `presence release`, are non-destructive,
+  bounded or read-only (`commit create` writes Git history; see below). The `presence` group
+  (`effective-flow-state-presence-core.mjs`) keeps one run-presence marker per merge-gate run below
+  `.effective-flow/merge-gate-presence/`: `register` creates the caller's own marker no-clobber and
+  returns its `token`, `refresh` and `release` act only on that marker with that token, `list`
+  only reads, and `prune`, the cleanup path, removes another run's marker only while that run's
+  wisdom file is absent.
+  `lock break`, `worktree remove`, `cleanup apply` and `presence prune` are destructive and
   `harness allow-rules` writes the settings file that holds the rules; none is ever
   allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
   the conversation. The lock is named by a closed enum, `memory`,
@@ -1303,7 +1331,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 63 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 72 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1346,7 +1374,7 @@ retain ETags for diagnostics, but body writes are reported as non-atomic because
 support conditional requests for these unsafe endpoints. Forgejo list reads page until an empty
 page, and create results are normalized from the final URL that supported `tea` versions print
 after a successful issue or pull-request creation. CLI-level tests spawn the real entry points; the build and distribution
-checks prove that all three installed payloads contain all 51 identical, usable scripts,
+checks prove that all three installed payloads contain every allowlisted script, identical and usable,
 that the pilot helper reports its protocol from an isolated distribution, that
 `plan-lint lint` and `plan-publication scan` run against a fixture plan in every target, that
 `effective-flow-mechanics` allocates a suffixed report name and resolves a plan by slug in every

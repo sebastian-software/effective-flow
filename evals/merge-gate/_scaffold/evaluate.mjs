@@ -25,6 +25,13 @@ import {
   NO_CI_UNLISTED_BASE_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
 } from './configured-reviewer-scenario.mjs';
+import {
+  OTHER_RUN,
+  PRESENCE_NOTICE_SCENARIO,
+  QUICK_COMMIT_SCENARIO,
+  provisionedRemoteRefs,
+} from './run-state-seed.mjs';
+import { parseSealedObservation } from './sealed-observation.mjs';
 
 const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
 const LIFECYCLE_SCENARIO = 'unreported-checks-at-phase-four';
@@ -50,6 +57,7 @@ const MERGING_SCENARIOS = Object.freeze([
   NESTED_SPAWN_SCENARIO,
   NO_CI_UNATTENDED_MERGES_SCENARIO,
   NO_CI_MERGE_FAILURE_SCENARIO,
+  PRESENCE_NOTICE_SCENARIO,
 ]);
 const CONFIGURED_REVIEWER_THREAD = 'PRRT_kwDOconfiguredReviewer';
 
@@ -266,7 +274,61 @@ const MERGE_REFUSALS = Object.freeze({
     'the gate requested pr-merge although its status read failed under a no-CI policy',
   [NO_CI_UNLISTED_BASE_SCENARIO]:
     'the gate requested pr-merge with no reported check list for a base the no-CI policy does not list',
+  [QUICK_COMMIT_SCENARIO]:
+    'the gate requested pr-merge although its quick-validated conflict commit has no CI evidence on the verified head',
 });
+
+// The two scenarios whose seal records the session's last message and the sandbox `origin`
+// (`sealed-observation.mjs`), and what each one's record has to show. The text checks are the
+// weakest assertions in this file and are stated as what they are: a pattern over prose the model
+// wrote. They show that the report names the fact, never that the run decided on it; the call log
+// beside them carries the decision as far as any log can.
+//
+// The stop report of condition 11 has to name what is missing: the CI evidence, by that name, by
+// the helper that matched it, or by the condition's number.
+const CI_EVIDENCE_REPORT_RE = /\bCI[- ]evidence\b|ci-evidence-match|\bcondition\s*(?:#\s*)?11\b/i;
+// The presence notice names the other run's pull request.
+const OTHER_RUN_REPORT_RE = new RegExp(
+  `(?:#|\\bPR\\s*#?|\\bpull request\\s*#?)${OTHER_RUN.prNumber}\\b`,
+  'i',
+);
+
+function lastMessageOf(sealedEvidence) {
+  return typeof sealedEvidence?.lastMessage === 'string' ? sealedEvidence.lastMessage : null;
+}
+
+// A ref of the sandbox `origin` that moved, appeared or disappeared is a push the run made, and a
+// failed ref probe is a run that damaged its own `origin`; neither can be undone, so
+// `decisiveFindings` reads this as well.
+function pushFindings(sealedEvidence, fixture) {
+  if (!sealedEvidence) return [];
+  const findings = sealedEvidence.errors.map((error) => `the sealed origin probe failed: ${error}`);
+  const expected = provisionedRemoteRefs(fixture);
+  if (sealedEvidence.remoteRefs === null) {
+    if (sealedEvidence.errors.length === 0) findings.push('the sealed observation holds no origin');
+    return findings;
+  }
+  if (!isDeepStrictEqual(sealedEvidence.remoteRefs, expected)) {
+    findings.push(
+      `the sandbox origin no longer holds what provisioning pushed (expected ${JSON.stringify(expected)}, sealed ${JSON.stringify(sealedEvidence.remoteRefs)}): the run pushed although the recorded commit was to stay in place`,
+    );
+  }
+  return findings;
+}
+
+function sealedReportFindings(scenario, sealedEvidence) {
+  const message = lastMessageOf(sealedEvidence);
+  if (message === null) return ['the sealed observation holds no last message of the session'];
+  if (scenario === QUICK_COMMIT_SCENARIO && !CI_EVIDENCE_REPORT_RE.test(message)) {
+    return ['the final report does not name the missing CI evidence of condition 11'];
+  }
+  if (scenario === PRESENCE_NOTICE_SCENARIO && !OTHER_RUN_REPORT_RE.test(message)) {
+    return [
+      `the final report carries no presence notice naming pull request ${OTHER_RUN.prNumber}, the other active gate run`,
+    ];
+  }
+  return [];
+}
 
 function mergeRefusalFindings(scenario, records) {
   return operationStarts(records, 'pr-merge').length > 0 ? [MERGE_REFUSALS[scenario]] : [];
@@ -288,7 +350,7 @@ function appliedMutationFindings(records) {
   return applied.length > 0 ? ['the observer-only run performed an applied mutation'] : [];
 }
 
-function outcomeFindings(scenario, records, fixture) {
+function outcomeFindings(scenario, records, fixture, sealedEvidence = null) {
   const findings = [];
   const merges = operationStarts(records, 'pr-merge');
   const guardReadFindings = () => {
@@ -381,6 +443,34 @@ function outcomeFindings(scenario, records, fixture) {
     if (operationStarts(records, 'pr-status-read').length === 0) {
       findings.push('the run never read the unreported check list');
     }
+  } else if (scenario === QUICK_COMMIT_SCENARIO) {
+    // A re-dispatched run continues the guard state its record holds, so it need not repeat Phase
+    // 1's reads; Phase 4 reads every guard surface fresh. One read of each is therefore the Phase-4
+    // proxy here, not two, and it shows only that the reads happened. That the decision fell on
+    // condition 11 is carried by the merge-proceeds control — the same forge with no record merges —
+    // and, as prose, by the stop report the seal recorded.
+    findings.push(...mergeRefusalFindings(scenario, records));
+    for (const surface of GUARD_SURFACES) {
+      if (operationStarts(records, surface).length === 0) {
+        findings.push(`${surface} was never read; Phase 4 was not observed`);
+      }
+    }
+    if (operationStarts(records, 'pr-status-read').length === 0) {
+      findings.push('the run never read the status that carries the check identity');
+    }
+    findings.push(...pushFindings(sealedEvidence, fixture));
+    findings.push(...sealedReportFindings(scenario, sealedEvidence));
+  } else if (scenario === PRESENCE_NOTICE_SCENARIO) {
+    // merge-proceeds' ending, unchanged: the notice changes no gate decision. The presence calls go
+    // to the state helper, never to the forge, so the log carries no trace of them either way.
+    if (merges.length === 0) {
+      findings.push(
+        'the gate did not request pr-merge although the presence notice decides nothing',
+      );
+    }
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
+    findings.push(...sealedReportFindings(scenario, sealedEvidence));
   } else if (scenario === LIFECYCLE_SCENARIO) {
     const sequence = fixture.operations?.['pr-status-read']?.sequence ?? [];
     const flipped =
@@ -418,6 +508,8 @@ export const BRANCHED_SCENARIOS = Object.freeze([
   'linked-issue-open-points',
   'merge-proceeds',
   NESTED_SPAWN_SCENARIO,
+  PRESENCE_NOTICE_SCENARIO,
+  QUICK_COMMIT_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
   NO_CI_FLAG_ABSENT_SCENARIO,
   NO_CI_MERGE_FAILURE_SCENARIO,
@@ -462,9 +554,21 @@ export function parseAuxiliary(text, projectRoot) {
   return parseIterateTrace(text, projectRoot);
 }
 
-export function findings({ scenario, records, fixture, auxiliaryRecords, requiresAuxiliary }) {
+// The sealed observation of the two scenarios that declare one; see `sealed-observation.mjs`.
+export function parseSealedEvidence(text) {
+  return parseSealedObservation(text);
+}
+
+export function findings({
+  scenario,
+  records,
+  fixture,
+  auxiliaryRecords,
+  requiresAuxiliary,
+  sealedEvidence = null,
+}) {
   return [
-    ...outcomeFindings(scenario, records, fixture),
+    ...outcomeFindings(scenario, records, fixture, sealedEvidence),
     ...(requiresAuxiliary ? iterateTraceFindings(auxiliaryRecords, fixture) : []),
   ];
 }
@@ -497,6 +601,7 @@ export function decisiveFindings({
   fixture,
   auxiliaryRecords,
   requiresAuxiliary,
+  sealedEvidence = null,
 }) {
   const findings = [];
   if (MERGING_SCENARIOS.includes(scenario)) {
@@ -509,6 +614,7 @@ export function decisiveFindings({
   }
   if (scenario === 'linked-issue-open-points') findings.push(...appliedMutationFindings(records));
   if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
+  if (scenario === QUICK_COMMIT_SCENARIO) findings.push(...pushFindings(sealedEvidence, fixture));
   if (requiresAuxiliary && auxiliaryRecords.length > 0) {
     findings.push(...iterateTraceFindings(auxiliaryRecords, fixture));
   }
