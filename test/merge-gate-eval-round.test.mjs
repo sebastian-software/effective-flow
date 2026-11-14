@@ -3593,22 +3593,14 @@ test(
     const resultsDir = resolve(publicationRoot, 'results');
     mkdirSync(hostRoot);
     const scenario = 'guard-blocks-merge';
+    // The suite's own sealed observation, extended to the published scenario: the run-state
+    // scenarios in the copied corpus keep the declaration their archived runs were sealed under, so
+    // the corpus beside the published scenario stays valid.
     const declaring = {
       ...suite,
-      evaluator: {
-        ...suite.evaluator,
-        parseSealedEvidence: (text) => ({ problems: [], state: text }),
-      },
       sealedEvidence: {
-        fileName: 'last-message.txt',
-        archiveSuffix: 'last-message.txt',
-        sealDigestKey: 'lastMessage',
-        // Declared for the published scenario only, so the copied corpus beside it stays valid.
-        required: (name) => name === scenario,
-        capturesLastMessage: true,
-        capture: ({ lastMessagePath }) => readFileSync(lastMessagePath, 'utf8'),
-        missingMessage: 'missing last message',
-        orphanMessage: 'orphan last message',
+        ...suite.sealedEvidence,
+        required: (name) => name === scenario || suite.sealedEvidence.required(name),
       },
     };
     try {
@@ -3646,10 +3638,10 @@ test(
         const archived = resolve(resultsDir, scenario, `run-${slot}`);
         const metadata = JSON.parse(readFileSync(`${archived}.metadata.json`, 'utf8'));
         assert.equal(metadata.hostAttestation.lastMessagePath, lastMessages[slot - 1]);
-        assert.equal(
-          readFileSync(`${archived}.last-message.txt`, 'utf8'),
-          `last message of slot ${slot}\n`,
+        const observation = JSON.parse(
+          readFileSync(`${archived}.${declaring.sealedEvidence.archiveSuffix}`, 'utf8'),
         );
+        assert.equal(observation.lastMessage, `last message of slot ${slot}\n`);
       }
       const neighbour = JSON.parse(
         readFileSync(resolve(resultsDir, 'merge-proceeds', 'run-1.metadata.json'), 'utf8'),
