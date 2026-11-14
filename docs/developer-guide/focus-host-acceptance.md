@@ -2217,6 +2217,142 @@ recommendation" and "remove it again unless the full qualification owner explici
 use", which stays unedited as dated history. The entry applies to follow-up tick
 turns, so it is a prerequisite of the follow-up row. Its naming sentence also covers snapshots and is a prerequisite of the qualified naming, not of report-only correctness.
 
+### November 14 recording on candidate 01082a06 — failed repetition report
+
+**Result: failed; the `024bcb2a` record and its limitations stay in force.** Candidate `01082a06`
+carries #664's fixes for the four `024bcb2a` limitations. In its first install window, item 3 missed
+its Looping report on both allowed attempts. The recording plan counts a second miss as an observed
+defect, so the recording stopped under the #613 failure rule. No item F1–F16 is recorded as passed
+for `01082a06`. The activation status, acceptance matrix and ADRs remain unchanged. #664 remains a
+draft.
+
+#### 01082a06: binding
+
+The candidate was `01082a067bcc…`, the merge of `origin/develop` (`489752ed`) into #664's fix
+`068835bd`.
+
+- **Delta from `024bcb2a`:** among the focus sources and `build.mjs`, only
+  `src/shared/focus-follow-up.md`, `src/shared/focus-session-contract.md` and non-focus rows of
+  `build.mjs` changed. The built focus files were byte-identical to `068835bd`.
+- **Build:** portable build `1.73.0 (01082a0)`, focus at 414 of 414 budget lines.
+- **Validation on a clean, container-local checkout:**
+  - format, the focus contract tests (33) and the focus eval tests (88) passed;
+  - the build and the distribution suite passed;
+  - the eval evidence report passed for all five suites.
+- **CI:** run `43577036809` failed only in the focus digest guard, which is red by design (5,361
+  tests, 5,315 passed, 45 skipped, 1 failed).
+- **Host:** T3 Code 0.1.7 through provider instance `codex`, model `gpt-6.1-sol` at medium effort,
+  `full-access` observers, and one `approval-required` observer.
+- **Configuration:** the extended qualified entry was active (SHA-256 `c19e3da3…`). The global
+  Codex `AGENTS.md` was absent for the whole window, and its restored copy matched the hash taken
+  before removal.
+
+Install window 1 ran from 12:44:18 to 13:27:41 UTC. The installed tree matched its 199-entry
+manifest at installation and at the end. `diff -r` against the build was empty, and the
+configuration hash matched at both boundaries.
+
+| Candidate file                                                | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `f694d14058fa4a50bee7fd19b8540b06d98743fdceb83a8deec482ede19e9b78` |
+| `src/shared/focus-session-contract.md`                        | `f1230c8321f86283ec9101f76f69dc0f90da53fda59d865ecab3e8119df502e2` |
+| `src/shared/focus-follow-up.md`                               | `463ccbd8846b96869254c9288ecb5c7d45e32e4187cb4c2eee13e17677e9c095` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `79ec9029cf6b1aa08dc9215607a48de7674b7efa6da1d9790fc36b20ebd41821` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `06a2049b4c5478e8466a303bf5eeab07e60a3d5401427b12b2d0b13c3d96cdbb` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `088656883c4a9dbffb03f2ef0a94a321eca7d161012baad7ca01c87d4016a311` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+#### 01082a06: observations before the defect
+
+These observations are not recorded items, because the record binds only a complete pass:
+
+- **Snapshot and refusals (F1):**
+  - a positive snapshot with the offer; "no follow-up" created no schedule;
+  - complete self and ancestor refusals;
+  - a second snapshot of the same target carried a new offer, and the opt-in started the loop.
+- **Idle target (F2):** the one-time idle report, then a quiet tick.
+- **Negative control:** the control target received three explicitly requested retries of the
+  same failing step in three tick windows. Its observer reported the blocker once and never
+  reported Looping.
+- **Ancestry skip:** across 19 counted root-observer ticks, no tick walked the observer's ancestry.
+  Every snapshot read it.
+- **Offers:** all five offers carried their numbered disclosures in order. Item 5 appeared only in
+  the approval-mode observer's offer. One full-access offer was checked by hand after the offer scan
+  missed its list.
+- **Paths:** no visible observer message held an absolute path, a home path or a local-file link.
+  The blocker reports named the missing evidence file as a temporary file.
+- **Cap loop:** the cap-loop observer reached tick 7 of 48 before the stop.
+- **Host fault:** the first cap-loop observer's history read failed with a transport error of the
+  host's tool connection. The observer reported that it could not assess the target and made no offer. A fresh observer
+  replaced it.
+
+#### 01082a06: observed defect
+
+The item 3 target ran a byte-identical failing file read after the observer's blocker report. The
+coordinator only sent "Continue stage2.", and the target retried the same read on its own each
+time.
+
+- **Attempt 1:** the tick after the first retry dispatched the analysis leaf and reported Cannot
+  judge. The leaf judged the nudge an explicit retry request and applied the requested-retry
+  exemption. It then gave a Drifting verdict and ended with `ABORT`.
+- **Attempt 2:** the tick after the second retry was quiet with Cannot judge. The leaf again ruled
+  the retry explicitly authorized by "Continue stage2." and not Looping.
+
+The Codex records show two causes inside focus's own behaviour:
+
+- The tick that reported the new blocker wrote `pattern=none`, although the checkpoint rule takes
+  the reported occurrence in a tick reporting a newly actionable blocker. The control observer did
+  the same. The leaf therefore never received `pattern=` locators.
+- The exemption for a retry that the target's request explicitly asks for does not say whether a
+  bare continuation counts. The leaf counted it.
+
+No source fix or acceptance exception is claimed.
+
+#### 01082a06: restoration and evidence
+
+After the defect, no further scenario started:
+
+- the coordinator deleted the four qualification schedules through the host API, which then listed
+  none;
+- all throwaway sessions were archived.
+
+The guarded restore:
+
+- confirmed that the installed tree still matched the candidate manifest;
+- reinstated the original DALO slot link and all 185 baseline entries;
+- removed only the owned temporary configuration, after its hash matched;
+- signalled the app-server only after rechecking its executable and process-start identity. The
+  old process was absent afterwards.
+
+`dalo --json status --check` with `CLAUDE_CONFIG_DIR` unset matched the pre-install capture. The
+owner then restored the global `AGENTS.md`, and its hash matched.
+
+The recording plan remains unimplemented and unarchived. This failed entry changes no product
+source, fixture, activation status, ADR or PR readiness. A further candidate needs the owner's
+decision.
+
+| Evidence file                                             | SHA-256                                                            |
+| --------------------------------------------------------- | ------------------------------------------------------------------ |
+| `candidate-01082a06/window-1/F3-attempt-1.json`           | `df7f7b02adfe41e72e67844ea96c065fe35b0af7ca93b56949aba5700b1f644e` |
+| `candidate-01082a06/window-1/F3-attempt-2.json`           | `be72032a1b3469da3ec80869e73183e72a5923acfe59fc332a81c4d5d7e4663a` |
+| `candidate-01082a06/window-1/O2-attempt-1-transport.json` | `a726b07125515ab7647b9cf22ff3598eccedbf307608a7b47a27f46dde070f97` |
+| `candidate-01082a06/window-1/O5-offer-hand-check.json`    | `ae31dec899f888f7eb62ce496dac2f5beaf078019f6d3cbf2e9f03a1ab2c7594` |
+| `candidate-01082a06/window-1/scan-ext-w1-O.json`          | `e450bc60fede76feed619d3e06160e977d3c16a2b7c378c5057e1a92b8fa8196` |
+| `candidate-01082a06/window-1/scan-ext-w1-O2.json`         | `e669009685f10c63b4ae99262823141bfe7fb47914e0c433d7b12075ad82f4b3` |
+| `candidate-01082a06/window-1/scan-ext-w1-O4.json`         | `35803ded87f1102293e90792a848f721f479bd7070202937c24a8a8e25721651` |
+| `candidate-01082a06/window-1/scan-ext-w1-O5.json`         | `77ca87dded1a2e25bbb586f1015209f227a3b3a7fccccd32750e848c77fe33f3` |
+| `candidate-01082a06/qualified-config.toml`                | `c19e3da30e7256403e4a88881745026311c5127c3e35051cc656cff813680f42` |
+| `candidate-01082a06/candidate-digests.json`               | `6617311acc58764c411412688db1b836fd43844087c4b3f73ee86a62df80ac0a` |
+| `candidate-01082a06/step0-result.json`                    | `bb0956310534efb650d74b0fb71122c83d90f8c35d1162abafef1aecee194d9a` |
+| `candidate-01082a06/window-1/baseline.json`               | `99a7bf72fe040faa52c1c55ef0b01bfa60b9ad0f7a1d83dbf0d04212392cab79` |
+| `candidate-01082a06/window-1/restart-install.json`        | `9a361e8f2f1072766b5e509816683e7bf62c3509c5ac12cb6c3dd0f0db673310` |
+| `candidate-01082a06/window-1/restart-restore.json`        | `9cb4d92ced2797d1136e061b48219293b52b4132941e3111c6e13c0deabfa4d9` |
+| `candidate-01082a06/window-1/restore-state.json`          | `2892b46c71b006cb2df0de028d8645b9d2ffca606d129b9d111ad74c6f08bf57` |
+| `candidate-01082a06/window-1/dalo-post.json`              | `1afe38b548b5bdd2f960f0c607f1b42b6dd2b664d330f518fd996a112e653d32` |
+| `candidate-01082a06/window-1/window-close.json`           | `98b65a0f4bb50111f3da41f773595e7e2eba930d468d717240705fb10bfeb1fb` |
+| `candidate-01082a06/agents-md-window1-start.json`         | `2ce31b111dff9a0438420d88547d58447a98ce3bce8f3a1188d2fe1a013f0467` |
+| `candidate-01082a06/window-1/agents-md-restored.json`     | `f6a0c44bf76cc543c53d5ed97a9955b8f64c529d8d981f834f83ae124ad67d1e` |
+
 ## Acceptance matrix
 
 | Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | If unavailable                                                                                       |
