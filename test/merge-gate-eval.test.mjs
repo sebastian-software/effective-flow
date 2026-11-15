@@ -2165,9 +2165,14 @@ test('a provisioned no-CI policy checkout gives the resolver a base blob equal t
       rmSync(attempt, { recursive: true, force: true });
     }
   }
-  // Every other scenario keeps the unreachable `origin` it always had: nothing is prepared for it.
+  // A scenario outside every provisioning group keeps the unreachable `origin` it always had:
+  // nothing is prepared for it.
   assert.equal(
-    suite.prepareCheckout({ scenario: 'merge-proceeds', fixture: {}, projectRoot: '/nonexistent' }),
+    suite.prepareCheckout({
+      scenario: 'guard-blocks-merge',
+      fixture: {},
+      projectRoot: '/nonexistent',
+    }),
     null,
   );
 });
@@ -2901,6 +2906,7 @@ const PRESENCE_NOTICE = PRESENCE_NOTICE_SCENARIO;
 const quickCommitRuns = archivedRuns(QUICK_COMMIT);
 const quickCommitSkip = skipWithoutRuns(QUICK_COMMIT, quickCommitRuns);
 const presenceRuns = archivedRuns(PRESENCE_NOTICE);
+const presenceFixture = fixtureFor(PRESENCE_NOTICE);
 const presenceSkip = skipWithoutRuns(PRESENCE_NOTICE, presenceRuns);
 
 function fixtureFor(scenario) {
@@ -2953,11 +2959,24 @@ test(
       const records = readRun(run);
       const applied = operationStarts(records, 'pr-merge').filter((record) => record.apply);
       assert.equal(applied.length, 1, `${run.name}: ${applied.length} applied pr-merge call(s)`);
+      // The slot's merging `origin` (`merge-origin.mjs`) as provisioned: a merge goes through the
+      // stub and pushes nothing.
       const sealed = sealedObservationOf(run);
-      assert.equal(
-        sealed.remoteRefs,
-        null,
-        `${run.name}: an origin appeared in a slot without one`,
+      assert.deepEqual(sealed.errors, [], `${run.name}: the sealed origin probe failed`);
+      const { 'refs/heads/develop': base, ...heads } = sealed.remoteRefs ?? {};
+      assert.match(
+        base ?? '',
+        /^[0-9a-f]{40}$/,
+        `${run.name}: the sandbox origin holds no develop`,
+      );
+      assert.deepEqual(
+        heads,
+        {
+          [`refs/heads/${presenceFixture.operations['pr-read'].envelope.data.result.head}`]:
+            presenceFixture.headSha,
+          [`refs/pull/${presenceFixture.pullRequest}/head`]: presenceFixture.headSha,
+        },
+        `${run.name}: the sandbox origin moved, so the run pushed`,
       );
       assert.match(
         sealed.lastMessage ?? '',
@@ -3267,8 +3286,9 @@ test('a provisioned presence checkout lists one valid marker of another run', ()
         stdio: 'ignore',
       }),
     );
-    // Nothing else is seeded: no wisdom file, no origin.
-    assert.equal(existsSync(join(attempt, 'remote.git')), false);
+    // Nothing else is seeded beside the merging `origin` of `merge-origin.mjs`, which
+    // `test/merge-gate-eval-merge-origin.test.mjs` covers: no wisdom file.
+    assert.equal(existsSync(join(attempt, 'remote.git')), true);
     assert.deepEqual(readdirSync(join(projectRoot, '.effective-flow')).sort(), [
       'merge-gate-presence',
     ]);

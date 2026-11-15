@@ -3,7 +3,7 @@
   "description": "merge-proceeds with one valid presence marker of another session, for pull request 41, under .effective-flow/merge-gate-presence/. The notice changes no gate decision, so the gate must reach Phase 5 and request the merge exactly as in merge-proceeds.",
   "viewerLogin": "flow-gate",
   "humanLogin": "casey-reviewer",
-  "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+  "headSha": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
   "pullRequest": 42,
   "repository": {
     "host": "github.com",
@@ -133,7 +133,7 @@
         "labels": [],
         "head": {
           "ref": "effective-flow/build/merge-gate-behavioural-evals",
-          "sha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+          "sha": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b"
         },
         "base": {
           "ref": "develop"
@@ -236,12 +236,12 @@
               "mergeable": "MERGEABLE",
               "mergeStateStatus": "CLEAN",
               "baseRefName": "develop",
-              "headRefOid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "headRefOid": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
               "commits": {
                 "nodes": [
                   {
                     "commit": {
-                      "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                      "oid": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
                       "committedDate": "2026-09-01T09:00:00Z",
                       "statusCheckRollup": {
                         "contexts": {
@@ -293,7 +293,7 @@
             "title": "feat: add the merge-gate behavioural eval skeleton",
             "state": "open",
             "draft": false,
-            "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "headSha": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
             "headCommittedAt": "2026-09-01T09:00:00.000Z",
             "baseRef": "develop",
             "mergeState": "CLEAN",
@@ -453,7 +453,7 @@
               "login": "casey-reviewer",
               "type": "User"
             },
-            "commit_id": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "commit_id": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
             "state": "APPROVED",
             "body": "Looks good overall.",
             "submitted_at": "2026-09-01T10:15:00Z"
@@ -474,7 +474,7 @@
                 "isBot": false,
                 "authorType": "human"
               },
-              "commitSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "commitSha": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
               "state": "APPROVED",
               "body": "Looks good overall.",
               "submittedAt": "2026-09-01T10:15:00.000Z"
@@ -530,7 +530,7 @@
         "number": 42,
         "payload": {
           "method": "squash",
-          "expectedHeadSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+          "expectedHeadSha": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b"
         }
       },
       "providers": [
@@ -546,12 +546,12 @@
                 "mergeable": "MERGEABLE",
                 "mergeStateStatus": "CLEAN",
                 "baseRefName": "develop",
-                "headRefOid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                "headRefOid": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
                 "commits": {
                   "nodes": [
                     {
                       "commit": {
-                        "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                        "oid": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
                         "committedDate": "2026-09-01T09:00:00Z",
                         "statusCheckRollup": {
                           "contexts": {
@@ -616,7 +616,7 @@
               "example/flow",
               "--squash",
               "--match-head-commit",
-              "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+              "3f8f17ccb033366cc796ad1416bf2804c0c35f4b"
             ],
             "expectsJson": false
           },
@@ -635,7 +635,7 @@
             "repository": "example/flow",
             "merged": true,
             "method": "squash",
-            "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "headSha": "3f8f17ccb033366cc796ad1416bf2804c0c35f4b",
             "output": "Merged pull request #42 (feat: add the merge-gate behavioural eval skeleton)"
           },
           "command": {
@@ -648,7 +648,7 @@
               "example/flow",
               "--squash",
               "--match-head-commit",
-              "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+              "3f8f17ccb033366cc796ad1416bf2804c0c35f4b"
             ],
             "expectsJson": false
           },

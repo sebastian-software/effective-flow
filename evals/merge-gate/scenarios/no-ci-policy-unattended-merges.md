@@ -46,10 +46,12 @@ the scenario was composed to produce. Nothing here is handed to the agent, and n
 
 The sandbox's setup ADR states `mergeGate.completion: merge` and `mergeGate.requireAllChecks: false`
 — the setting a repository without any required check needs for the check wait to restrict itself to
-required checks — and the scenario's policy rows below. `no-ci-checkout.mjs` gives the sandbox the
-local `origin` the resolver's base-blob guard needs: a bare repository holding the seeded `develop`,
-whose setup ADR is the one in the working checkout, so `origin/develop` and the checkout carry the
-same `mergeGate.noCiPolicy.*` rows and the base comparison reads `equal`. The scenario is observed
+required checks — and the scenario's policy rows below. `merge-origin.mjs` gives the sandbox the
+local `origin` the resolver's base-blob guard and the Phase-4 quick-marker scan need: a bare
+repository holding the seeded `develop`, whose setup ADR is the one in the working checkout, so
+`origin/develop` and the checkout carry the same `mergeGate.noCiPolicy.*` rows and the base
+comparison reads `equal`, and the pull request's head commit, which carries no quick marker, on the
+head branch and `refs/pull/42/head`. The scenario is observed
 only as the presence or absence of `pr-merge` in the call log; the chat report, where the Phase 6
 policy line stands, is captured nowhere.
 

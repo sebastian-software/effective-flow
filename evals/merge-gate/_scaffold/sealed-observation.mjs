@@ -13,7 +13,7 @@
 //     path the host receipt names as `lastMessagePath`. A stopped attempt has no receipt and records
 //     `null`;
 //   * `remoteRefs` — every ref of `<attempt>/remote.git`, the only place a push from the sandbox can
-//     land, or `null` where provisioning made no such `origin` (the presence scenario).
+//     land, or `null` where provisioning made no such `origin`.
 //
 // **Who writes it, and what follows from that.** The seal writes the file and replaces whatever a
 // run left at its path, and the last message lies outside everything the run may write, so a run

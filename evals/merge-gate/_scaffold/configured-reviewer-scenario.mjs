@@ -39,8 +39,9 @@ export const BOT_ACCOUNT_ROWS = [['mergeGate.botAccounts', 'coverage-reporter']]
 // `mergeGate.requireAllChecks: false`, which is what a GitHub repository without any required check
 // needs, and a `mergeGate.noCiPolicy.bases` row — and differ in the single fact each one is about:
 // the `unattended` grant, the listed base, a reported check, a failing status read, a failing merge.
-// The rows live in the setup ADR of the checkout, and `no-ci-checkout.mjs` gives the sandbox the
-// `origin/<base>` copy of that same ADR the resolver's base-blob guard compares it with.
+// The rows live in the setup ADR of the checkout, and `no-ci-checkout.mjs` — for the two merging
+// scenarios `merge-origin.mjs` — gives the sandbox the `origin/<base>` copy of that same ADR the
+// resolver's base-blob guard compares it with.
 export const NO_CI_UNATTENDED_MERGES_SCENARIO = 'no-ci-policy-unattended-merges';
 export const NO_CI_FLAG_ABSENT_SCENARIO = 'no-ci-policy-flag-absent-blocks';
 export const NO_CI_REPORTED_CHECK_SCENARIO = 'no-ci-policy-reported-check-blocks';

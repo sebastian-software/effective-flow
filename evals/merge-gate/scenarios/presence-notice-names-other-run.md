@@ -55,8 +55,10 @@ one notice line naming pull request 41. That marker's head is not in the sandbox
 names the pull request alone, without a file overlap. Phase 6 releases this run's own marker and
 leaves the other one alone.
 
-The fixture is `merge-proceeds` byte for byte apart from its `name` and `description`. The slot is
-provisioned by `_scaffold/run-state-seed.mjs`, which writes the other run's marker and nothing else.
+The fixture is `merge-proceeds` byte for byte apart from its `name`, its `description` and its head
+SHA, which is the pull-request commit `_scaffold/merge-origin.mjs` seeds for this slot. The slot is
+provisioned by `_scaffold/run-state-seed.mjs`, which gives it that history and `origin`, as every
+merging scenario's Phase-4 quick-marker scan needs, and writes the other run's marker.
 
 ### What the evidence shows, stated exactly
 

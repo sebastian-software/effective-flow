@@ -161,6 +161,7 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SCAFFOLD, 'run-state-seed.mjs'),
   resolve(SCAFFOLD, 'repair-origin.mjs'),
   resolve(SCAFFOLD, 'configured-reviewer-origin.mjs'),
+  resolve(SCAFFOLD, 'merge-origin.mjs'),
 ]);
 
 const suite = {
@@ -226,18 +227,23 @@ const suite = {
   },
   scenarioSetup,
   projectDocuments,
-  // No checkout preparation beyond the shared seed commit, except for four groups: a gate run reads
-  // the forge through the stub and never fetches, so its sandbox keeps an `origin` no run reaches.
-  // A no-CI policy read fetches the base ref and compares the setup ADR it finds there, so
-  // `no-ci-checkout.mjs` gives exactly those six scenarios a local `origin`. A repair round reads and
-  // writes real history, so `repair-origin.mjs` gives the two repair scenarios a real-commit
-  // `origin` whose head moves during the run. The configured-reviewer run delegates, and its repair
-  // scope read resolves the reported head against `origin/develop` before it does, so
-  // `configured-reviewer-origin.mjs` gives that one scenario a local `origin` holding the fixture's
-  // head commit. The two run-state scenarios find an earlier dispatch's record or another run's
-  // presence marker, the first with the history and `origin` its Phase-4 condition fetches, so
+  // No checkout preparation beyond the shared seed commit, except for five groups: a gate run reads
+  // the forge through the stub, so a scenario that never reaches a fetch keeps an `origin` no run
+  // reaches. Every Phase 4 fetches the base and `refs/pull/<N>/head` and scans the range for quick
+  // markers, and a failed fetch or scan blocks the merge, so `merge-origin.mjs` gives the six merging
+  // scenarios without an `origin` of their own a local one holding the fixture's head commit. A
+  // no-CI policy read fetches the base ref and compares the setup ADR it finds there, so
+  // `no-ci-checkout.mjs` gives the four blocking policy scenarios a base-only local `origin`; the two
+  // merging ones are among the six. A repair round reads and writes real history, so
+  // `repair-origin.mjs` gives the two repair scenarios a real-commit `origin` whose head moves during
+  // the run. The configured-reviewer run delegates, and its repair scope read resolves the reported
+  // head against `origin/develop` before it does, so `configured-reviewer-origin.mjs` gives that one
+  // scenario a local `origin` holding the fixture's head commit. The two run-state scenarios find an
+  // earlier dispatch's record or another run's presence marker, the first with the history and
+  // `origin` its Phase-4 condition fetches, the second on top of its merging `origin`, so
   // `run-state-seed.mjs` seeds exactly those two and hands every other scenario on to
-  // `no-ci-checkout.mjs`. Each returns null for every scenario outside its group.
+  // `merge-origin.mjs`, then `no-ci-checkout.mjs`. Each returns null for every scenario outside its
+  // group.
   prepareCheckout: (input) =>
     prepareRepairOrigin(input) ??
     prepareConfiguredReviewerOrigin(input) ??

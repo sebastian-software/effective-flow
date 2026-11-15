@@ -20,6 +20,8 @@
 //     and not on a fetch the bench could not serve;
 //   * `presence-notice-names-other-run` is `merge-proceeds` with a second gate run already active on
 //     the same repository: one valid presence marker of another session for another pull request.
+//     Like `merge-proceeds` it is expected to merge, so its slot also gets the history and `origin`
+//     of `merge-origin.mjs` that the Phase-4 quick-marker scan fetches and reads.
 //
 // **The history is deterministic, and the fixture states it.** The seed commit is re-made at a fixed
 // instant with a fixed message, and every further commit has fixed content, identity and dates, so
@@ -39,6 +41,7 @@ import { devNull } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
+import { prepareMergeOrigin } from './merge-origin.mjs';
 import { prepareCheckout as prepareNoCiCheckout } from './no-ci-checkout.mjs';
 
 export const QUICK_COMMIT_SCENARIO = 'quick-conflict-commit-without-ci-evidence-blocks';
@@ -438,10 +441,14 @@ function seedOtherRunPresence({ projectRoot }) {
   return { marker: OTHER_RUN.sessionId };
 }
 
-// The suite's checkout hook: the two seeded scenarios here, the six no-CI policy scenarios in
-// `no-ci-checkout.mjs`, and nothing for any other scenario.
+// The suite's checkout hook after the repair and configured-reviewer origins: the two seeded
+// scenarios here, the presence one on top of its merging `origin`; the six merging scenarios'
+// `origin` in `merge-origin.mjs`, two of them no-CI policy scenarios; the four blocking no-CI policy
+// scenarios in `no-ci-checkout.mjs`; and nothing for any other scenario.
 export function prepareCheckout(args) {
   if (args.scenario === QUICK_COMMIT_SCENARIO) return seedQuickCommitRun(args);
-  if (args.scenario === PRESENCE_NOTICE_SCENARIO) return seedOtherRunPresence(args);
-  return prepareNoCiCheckout(args);
+  if (args.scenario === PRESENCE_NOTICE_SCENARIO) {
+    return { ...prepareMergeOrigin(args), ...seedOtherRunPresence(args) };
+  }
+  return prepareMergeOrigin(args) ?? prepareNoCiCheckout(args);
 }
