@@ -58,16 +58,13 @@ A default Codex configuration, a combination with other keys or another `develop
 value is not qualified; the observed consequence of a default configuration is extra visible
 commentary on quiet ticks, with no change to reads or authority.
 
-The current [F record](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-e0966ac7)
+The current [F record](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-87851907)
 observed a tick-level Looping report once on an unrequested repetition, while explicitly requested
 retries stayed On track; a bare "continue" does not count as a retry request. Offers list their
 disclosures as numbered items, and the approval item, the last one, appears only for an observer
 that may need approvals.
-Qualification did not observe the loop's cap end: the long loop compacted after 33 ticks and then
-stopped as the deletion safeguard requires. A loop that starts right after a snapshot of an idle
-target may skip the one-time idle report on its first tick. The record ran without a global Codex
-`AGENTS.md`; the follow-up mode is untested with such a file present, and the file can enlarge the
-observer's context.
+A 5-minute loop reached the 24-tick cap and deleted its own schedule. The record was made with one
+global Codex `AGENTS.md` present; other contents of that file are not qualified.
 
 Snapshot-host execution on the T3 observed path, for report-only use, is enabled in the shipped
 source; the [focus host acceptance page](../developer-guide/focus-host-acceptance.md) names the

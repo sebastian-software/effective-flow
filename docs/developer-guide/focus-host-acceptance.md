@@ -1,6 +1,6 @@
 # Focus host acceptance
 
-**Status: snapshot-host execution and the follow-up mode are enabled on the T3 observed path, the follow-up mode under the documented host prerequisite, bound by the [F record for candidate `e0966ac7`](#f-record-for-candidate-e0966ac7) with its recorded limitations; it resolves four limitations of the `024bcb2a` record. The `024bcb2a` record and phases D and E are history. Sends remain disabled independently. Activation follows [the capability policy](../adr/pragmatic-test-release-policy.md).**
+**Status: snapshot-host execution and the follow-up mode are enabled on the T3 observed path, the follow-up mode under the documented host prerequisite, bound by the [F record for candidate `87851907`](#f-record-for-candidate-87851907), which passed all 16 checklist items; it resolves the four #670 limitations of the `e0966ac7` record. The `e0966ac7` and `024bcb2a` records and phases D and E are history. Sends remain disabled independently. Activation follows [the capability policy](../adr/pragmatic-test-release-policy.md).**
 
 This page is the package-4 acceptance record for `/effective-flow focus`. It must be updated only
 from real end-to-end runs of the built candidate, using throwaway targets and the existing host
@@ -53,7 +53,7 @@ Before activating snapshot execution, the maintainer names the applicable record
 digest-bound file changed since that record, and the cause of each changed built file. Package
 reporting is not capability qualification; material rendered changes retain the requalification duty.
 
-**Recorded bindings.** F ([`e0966ac7`](#f-record-for-candidate-e0966ac7)) is the current binding for both T3 observed rows; F for `024bcb2a`, E and the D binding above are history. The
+**Recorded bindings.** F ([`87851907`](#f-record-for-candidate-87851907)) is the current binding for both T3 observed rows; F for `e0966ac7` and `024bcb2a`, E and the D binding above are history. The
 follow-up mode change (#613) edited `src/tools/focus.md`, `src/shared/focus-session-contract.md` and
 `build.mjs`, so the D digests no longer match the source, and the D requalification below binds only
 its recorded candidate.
@@ -3061,6 +3061,10 @@ loop compacted after 33 completed ticks, at the 34th fire.
 
 #### e0966ac7: limitations
 
+**Resolved by `87851907`.** The four #670 limitations below (F2, F12, the T3 UI offer numbering
+and the untested global Codex `AGENTS.md`, now narrowed to one recorded file) are resolved by
+the [F record for candidate `87851907`](#87851907-limitations).
+
 - **Resolved `024bcb2a` limitations.** The record shows four `024bcb2a` limitations resolved:
   - **offer disclosures:** every offer carried its numbered disclosures in the fixed order, with
     none omitted (see "Offers" below); on `024bcb2a` one offer omitted the report-only disclosure;
@@ -3188,17 +3192,929 @@ record ran without a global Codex `AGENTS.md`. A follow-up observer with such a 
 untested, and the file can enlarge the observer context; this is a stated limitation, not a change
 of the prerequisite.
 
+### F record for candidate 87851907
+
+**Result: passed.** On candidate `87851907`, all 16 checklist items passed, and no limitation from
+[#670](https://github.com/sebastian-software/effective-flow/issues/670) is left open. No defect and
+no host fault were observed. This record is the current binding for both T3 observed rows. It
+resolves the four #670 limitations of the `e0966ac7` record: the skipped idle report after an
+opt-in snapshot (F2), the cap that was never reached (F12), the offer numbering in the T3 UI, and
+the untested global Codex `AGENTS.md`, which is narrowed to the one recorded file. The F record for
+`e0966ac7` and the earlier entries of this section stay unchanged as history.
+
+The record was made on 2026-11-15 in two install windows: window 1 from 18:46 to 20:50 UTC for every
+item except F10, and window 2 from 21:27 to 22:16 UTC for F10, with the owner present.
+
+How to read it:
+
+- **Pseudonyms.** Observers and targets carry role letters and their window, for example `O`
+  (window 1) and `O4` (window 2). Window 2 holds only `O4` and `T4`; every other pseudonym names
+  window 1. `T2` (window 1) is the second target of `O`. Schedule handles are `H1` to `H7`, unique
+  across both windows. No thread ID, schedule ID, ID of a delegated task, absolute user path or
+  UUID is published. Quoted checkpoint lines and tick prompts carry pseudonyms in place of those
+  values.
+- **Allocation.** `O`/`T` carry the main items, `O2`/`TL` the cap loop, `O3` the invalid
+  checkpoint, `O4`/`T4` (window 2) approval-required mode, `O5`/`T5` the item 3 negative control,
+  `O6`/`T6` lost access and the early send, `P` and its delegated child the ancestor refusal, and
+  `T2` the second target of `O`.
+- **Handles.** `H1`: the first loop of `O` on `T` (F2–F4, F9, F11), ended by F14. `H2`: the loop of
+  `O` on `T` after the F14 resume (F2, F5). `H3`: the loop of `O` on `T2` (F2, F7, F8). `H4`: the cap
+  loop of `O2` on `TL` (F2, F12, F16). `H5`: the loop of `O6` on `T6` (F2, F15, F6). `H6`: the
+  control loop of `O5` on `T5` (F3). `H7`: the approval loop of `O4` on `T4` (window 2; F2, F10).
+- **Authorship and provenance.** Unless an item says otherwise, the coordinator authored every
+  scenario turn through the API under owner supervision (owner decision, 2026-11-06). On
+  2026-11-15 the owner also asked the coordinator to do everything it can itself. The coordinator
+  therefore performed this record's UI actions in an authenticated T3 UI preview tab: the rendering
+  check of F1, the deletion of `T6` for F6, the schedule deletion for F8, the empty-schedule check
+  of F12 and the "Send now" click for F15. The owner's only actions were the real approvals of
+  window 2 (F10). The T3 scheduler sends scheduled tick prompts; a tick prompt typed into an
+  observer (F7, F8) is a coordinator turn. Schedule and queue state is labelled "API" where it comes
+  from the host's `list_scheduled_tasks` or `t3_queue` listings, which the owner accepted as
+  schedule-state evidence (2026-11-13), and "UI" where the coordinator observed the authenticated
+  T3 UI. No API result is presented as a UI observation.
+- **Targets.** Targets are throwaway top-level threads in a dedicated throwaway project, running
+  the staged synthetic task of the earlier records: a three-part validation note (Scope, Evidence,
+  Delivery), with overall completion withheld until a stage 3 request. Synthetic targets mention no
+  threads or links.
+- **Output language.** The global Codex `AGENTS.md` asks for German chat, so all observer output
+  was German. Quotes below are short German excerpts, each with an English gloss. Checkpoint lines
+  and tick prompts are literal. Offer items and notices are judged by meaning; offer numbers and
+  order are judged literally.
+- **Expected output** cites the headings of `src/shared/focus-follow-up.md` (follow-up), of
+  `src/tools/focus.md` and of `src/shared/focus-session-contract.md` (the contract).
+
+#### 87851907: candidate binding
+
+The candidate was `87851907266699d0d53c7524cafad2ff1f7560bb`, the #670 fix. It sits on
+`origin/develop` `ac901d08` (#666), with the plan commit `d36cb540` in between. #672 was a draft at
+head `87851907`.
+
+- **Delta from `e0966ac7`:** among the four focus sources and `build.mjs`, only three files
+  changed. `src/shared/focus-follow-up.md` carries the fix: the tick-only idle clause in "Judging
+  and reporting", the flat cap of 24 ticks in "End events" and in the stopped-line rule of
+  "Checkpoint", and the offer order in "Offer", with the approval disclosure as the only omissible
+  item 6. `src/tools/focus.md` changed only by the inline-fallback clause in "One read-only analysis
+  leaf", fitted by rewrapping its paragraph. `build.mjs` changed in non-focus rows and in the
+  `focus` budget, from 414 to 416 lines. `src/shared/focus-session-contract.md` and both
+  `retro-native-sources.md` copies are byte-identical to `e0966ac7` (`candidate-digests.json`).
+- **Build:** target `portable`, version stamp `1.73.0 (8785190)`, focus at 416 of 416 budget lines.
+  The built `retro-native-sources.md` equals its source.
+- **Validation on a clean, container-local checkout (step 0):** the format check, the focus
+  contract tests (34 of 34), the focus eval tests (88 of 88), the build, the distribution suite and
+  `pnpm eval <suite> verify` for all five suites returned 0 (`step0-run.log`, `s0-*.log`).
+- **CI:** run `43725974088` on `87851907` failed only in the focus digest guard, which is red by
+  design until the fixture follows this record (5,556 tests, 5,504 passed, 1 failed).
+- **Calibration of the scans:** the offer scan keeps the whole-text parser of `e0966ac7` with the
+  expected sequence "items 1–5, plus item 6 only in approval or unknown mode". Before window 1 it
+  passed ten synthetic fixtures, among them default mode with items 1–5 (pass), approval mode with
+  items 1–6 (pass), approval and unknown mode without item 6 (fail), the old order 1–4 and 6 (fail),
+  the old order with approvals as item 5 (fail), a missing item (fail) and a swapped order (fail).
+  The remaining layout fixtures of `e0966ac7` (complete, other heading, blank line under the
+  heading, list after the interval line) and the German fixtures (a German offer passes, a German
+  approval offer without item 6 fails) were added after window 2 and replayed against the unchanged
+  rule. All 13 pass (`calibration/offer-fixtures-670.json`). The ancestry and path scans reproduced
+  the `e0966ac7` counts: 33 counted ticks of its `O2` and 17 of its `O4`, 0 chain walks, 0 path
+  hits (`calibration/calibration-result.json`).
+- **Host:** T3 Code through provider instance `codex`. The observers wrote "Hostversion nicht
+  ausgewiesen" (host version not reported), so the T3 server version is not captured. The Codex
+  harness version is `0.165.0`, as DALO reports it (the `provider_version` of the `codex` hook
+  target), identical before and after both installs (`window-1/dalo-preinstall.json`,
+  `window-1/dalo-post.json` and the same pair in `window-2/`).
+- **Trusted context:** every root observer called `orchestrator_capabilities` (F16 counts it on
+  every tick of `O2`; `thread-creation-scan.json` counts it per observer). A sanitized capture of
+  its result is not captured in the evidence root.
+- **Model and effort:** `gpt-6.1-sol` at medium effort for the observers. No analysis leaf ran (see
+  "Inline analysis"), so no leaf model applies.
+- **Modes:** observers in default interaction mode and `full-access` runtime mode, except `O4`
+  (window 2), which ran in approval-required mode.
+- **Sessions:** fresh top-level observers and targets in the dedicated throwaway project, plus `P`
+  and its delegated child for the ancestor refusal. The coordinator was a separate session.
+- **Inline analysis.** The global Codex `AGENTS.md` forbids native Codex subagents. Under the new
+  clause in `src/tools/focus.md` "One read-only analysis leaf", that counts as declined delegation,
+  and the leaf runs as the visible inline fallback. Every snapshot disclosed it, for example
+  "Analyse wegen des Subagent-Verbots selbst durchgeführt" (analysis performed by the observer
+  itself because of the subagent ban; `O`). The thread-creation scan found no `delegate_task`,
+  `t3_thread_launch`, `create_threads`, `t3_thread_send` or native subagent item in any snapshot,
+  opt-in, tick, stop or resume run of `O`, `O2`, `O3`, `O4`, `O5`, `O6` or the child of `P`. The
+  only `delegate_task` and subagent item is the operator turn of F11 in `O`, which the scenario
+  requested (`thread-creation-scan.json`). No analysis leaf was spawned in any run.
+
+The qualified configuration was the extended entry shown in `#### 024bcb2a: candidate binding`,
+unchanged, as the only key of the Codex configuration file, which did not exist before either
+install (`window-1/config-ownership.json`, `window-2/config-ownership.json`). SHA-256
+`c19e3da30e7256403e4a88881745026311c5127c3e35051cc656cff813680f42`, checked at each install
+(`window-*/install-state.json`) and at each window's end (`window-*/window-close.json`). The entry
+was active for every scenario below, and the report-only row's snapshots ran with it present.
+
+**Global Codex `AGENTS.md`.** By owner decision (2026-11-15, #670 point 4), the owner's global
+Codex `AGENTS.md` was present and unchanged during both windows. It replaces the 2026-11-13
+decision under which the `e0966ac7` window ran without it. SHA-256
+`70fc0d66d50f30526e3c07aff1d1d0e49abc74c8eec47e83f0fd38a804fd59a6`, 1,475 bytes, recorded at the
+start of window 1 (18:46:14, `window-1/agents-md-start.json`), at its close
+(`window-1/window-close.json`), at the start of window 2 (21:27:39, `window-2/agents-md-start.json`)
+and at its close (`window-2/window-close.json`). A slot guard checked the digest every minute and
+logged no event in either window (`window-*/slotguard.log`). Its content categories are: German
+chat language and compact wording; Europe/Berlin times; native Codex subagents forbidden, with
+`delegate_task` and `task_status` only; and a managed project-runtime block. Only this digest and
+these categories are published; a copy stays in the private evidence root. The file had three
+visible effects: German output, Central European times in the observers' prose while every
+`started=` value stayed ISO-8601 UTC (for example `2026-11-15T18:48:28.282Z`), and the inline
+analysis above. No host fault occurred.
+
+| Candidate file                                                | SHA-256                                                            |
+| ------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `src/tools/focus.md`                                          | `2a6be43d196f50b36791291c53b0c0db94d5e17ed83474c3d6a63ad78a1fc659` |
+| `src/shared/focus-session-contract.md`                        | `f1230c8321f86283ec9101f76f69dc0f90da53fda59d865ecab3e8119df502e2` |
+| `src/shared/focus-follow-up.md`                               | `a8b6344c9350067cb32e92ed7f1db223de98f31052a69ada60afb532c39e36e3` |
+| `src/shared/retro-native-sources.md`                          | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+| `build.mjs`                                                   | `0150947fb65cb2a042ee97c27a5660c1b8acbc298cf7b4835940cceeec3b564c` |
+| `dist/portable/effective-flow/tools/focus.md`                 | `58ca3e4c6c1d68ff8692203cfd70e9266a755b39da7b967d5d521b81da1a58fc` |
+| `dist/portable/effective-flow/shared/focus-follow-up.md`      | `2be933cd1e635bdacd9690493cd805701122559a001c984bf62fac98d4ba6087` |
+| `dist/portable/effective-flow/shared/retro-native-sources.md` | `bc41608b8a3d7bca2a18790b3fc1669ec0c8ba41fbace1a0554546e987a27dd3` |
+
+The commit that carries this record changes no digest-bound file; the four focus sources,
+`build.mjs` and the three built focus files keep the digests above.
+
+**Install windows.** Each window copied the portable build into the skill slot (no link) and wrote
+the qualified configuration. No Codex app-server process was running at either install
+(`NOTES.md`).
+
+| Window | Installed (UTC) | Restored (UTC) | Baseline restored against   |
+| ------ | --------------- | -------------- | --------------------------- |
+| 1      | 18:46:22        | 20:50:44       | its own pre-install capture |
+| 2      | 21:27:39        | 22:16:03       | its own pre-install capture |
+
+- **Install.** Each window captured its baseline first: the DALO slot link and its 185 entries
+  (`window-1/baseline.json` at 18:46:15, `window-2/baseline.json` at 21:27:39). The installed tree
+  was the 208-entry manifest of `window-*/candidate-manifest.json`. At install and at the end,
+  `diff -r` against the build was empty, the installed `tools/focus.md` and
+  `shared/focus-follow-up.md` matched the table and the configuration hash matched
+  (`window-*/window-close.json`).
+- **Close.** The restore put the slot link and its tree back to the baseline and removed the owned
+  configuration after its hash matched (`window-*/restore-state.json`). A guarded SIGTERM followed
+  after a recheck of the app-server's executable and process-start identity; the old process was
+  absent at 20:50:55 and at 22:16:10 (`window-*/restart-restore.json`). `dalo status --check` with
+  `CLAUDE_CONFIG_DIR` unset equalled the pre-install capture in both windows (`dalo-preinstall.json`
+  and `dalo-post.json` have the same digest).
+- **No schedule remains.** Window 1: the host API listed no schedule of the throwaway project at
+  20:49:4x (API), and the T3 UI's scheduled tasks showed no focus task at 20:50:00 (UI). Window 2:
+  the API listed none at 22:15:4x (API); a UI check of window 2's final state is not captured. The
+  coordinator archived every throwaway session once its items were captured, and the F6 target was
+  deleted; this is a host action outside the evidence root.
+- **Develop.** `origin/develop` stayed at `ac901d08` through window 1. When this record was written
+  it had moved to `aabe18ff` (#669), which changes no focus source, no fragment that `focus`
+  includes and no `focus` row of `build.mjs`. Bringing the branch up to date follows the
+  candidate-merge rule and is not part of this record.
+
+**Evidence files.** The raw evidence stays in a private evidence root under the main checkout's
+ignored `.effective-flow/` directory: pseudonym registers, unsanitized observer excerpts, the T3 UI
+capture, the approval records and scan results. The Codex session records and T3's state are read
+in place, not copied. The root's `FROZEN-manifest.json` (SHA-256
+`b029728af61ebe19e9e369d4c2372bf53049df1ec31da712c3efafad8c24d705`) lists all 103 frozen files, and
+the table lists every one of them by SHA-256, paths relative to the root. The copies of the ended
+candidate trees are covered by `window-*/candidate-manifest.json`.
+
+| Evidence file                                                  | SHA-256                                                            |
+| -------------------------------------------------------------- | ------------------------------------------------------------------ |
+| `candidate-87851907/NOTES.md`                                  | `28af617a6ef9aae818165d6141542a059b2509be27530156ee14274f313d6da1` |
+| `candidate-87851907/agents-md-copy.md`                         | `70fc0d66d50f30526e3c07aff1d1d0e49abc74c8eec47e83f0fd38a804fd59a6` |
+| `candidate-87851907/calibration/F16-cal-e0966ac7-O2.json`      | `de4e8fd95342a1edf520098ae2f817da293cefab7d3eb92e7b7dcef0f350d43f` |
+| `candidate-87851907/calibration/calibration-result.json`       | `db70a2e103b0165c3834a22b4c676668af14b77041b171eed5c3cd2418f073c1` |
+| `candidate-87851907/calibration/offer-fixtures-670.json`       | `6482c32cf551ebec3bdc9207f8c17acc6907536c529cb05bbf599640b54a6f54` |
+| `candidate-87851907/calibration/offer_cal.py`                  | `0577163faa5165f9dca3326c8f621b9e4984587db16653209eaf447533fbb91b` |
+| `candidate-87851907/calibration/scan-ext-cal-e0966ac7-O2.json` | `9bba57e4f38c8df8efbad6605d9739772454aa277cdbf6fef471d38610631fa8` |
+| `candidate-87851907/calibration/scan-ext-cal-e0966ac7-O4.json` | `748113af937cf177497614baedcdbfe9be594a41e7e8c2ae31078c0c5a0dc187` |
+| `candidate-87851907/candidate-digests.json`                    | `d3eebdd3daa3d12ea563d2b0ee2177ed1a8821ebe0dd66b1a5118c958afa9ec2` |
+| `candidate-87851907/clean-run.sh`                              | `97b35c525a7bc3072a807a44c301d8ba49440694692d409032ad676774b9727e` |
+| `candidate-87851907/extract.py`                                | `864fef0747f8a6926ab51ba2735b77ad08a58f46f815d46e7fd9c03d701b0ca7` |
+| `candidate-87851907/f16.py`                                    | `a37d864fc192c300f20172c5ef7ec130a5d22e36d5df9216b20eedb7e121e850` |
+| `candidate-87851907/f16_types.py`                              | `e464b22535dcbbed95c3afe858c4bdccaf730e56fdf333ee9c58a4c9c8325dae` |
+| `candidate-87851907/freeze.py`                                 | `632b5b8f9c828c82357efa91575c6b83cc89783fd9a5b7419c9232398455239d` |
+| `candidate-87851907/last.py`                                   | `01183fe837d90f6f23dd7a3f28f1dc7c9234ff1f7a893a8d647e490686c3b061` |
+| `candidate-87851907/ops.py`                                    | `685768ee9f789f3c2da0f4d40418fa01375bad8f3ed1d33c9b58bd3f2f5071d2` |
+| `candidate-87851907/qualified-config.toml`                     | `c19e3da30e7256403e4a88881745026311c5127c3e35051cc656cff813680f42` |
+| `candidate-87851907/record-facts.md`                           | `6c1ebd8cb39c4a7dee1c334ba2f8e0e00483869e44cb1b6d9ac0072876759b77` |
+| `candidate-87851907/register.json`                             | `21465422e37d2416910e974f5ac82995b9b11c6356c175298fc2a9fc654018b4` |
+| `candidate-87851907/s0-agent.log`                              | `9b8ee50162ab7bb75af56b3c0c7d71c40ba34cdc54e30e919ec4d01ff6947327` |
+| `candidate-87851907/s0-build.log`                              | `869d0a79a49a63a77f88b700decc9439c046b77030f9bdd61f9aee7df45a8900` |
+| `candidate-87851907/s0-dist.log`                               | `d112bb9bc2f66fbde790b2e6bc5e7a30e8360a8a6a4f35f614a0fa91ff6e0483` |
+| `candidate-87851907/s0-eval-build-context.log`                 | `2b905228589ae52cd9ffd2eca22f96634896b267e48571c7391d6e5c931777d6` |
+| `candidate-87851907/s0-eval-focus.log`                         | `a5e462bc6b6b2de990df55ce97c5dde7e5d5aef14e8f8bb1ad0af2c166625b3c` |
+| `candidate-87851907/s0-eval-iterate.log`                       | `0a7687412090cde30a3030ee81ddb88321514943722c23cf5d669318fdf92c33` |
+| `candidate-87851907/s0-eval-merge-gate.log`                    | `9bdf72d74981715b4c44ec06607ffb6b2022cc3e2b792ef8489ce62dc135b26e` |
+| `candidate-87851907/s0-eval-next-steps.log`                    | `1e5da5481e4eac2ba8f64c693eb9942b521811802ed0184ec8a85f105aaad53f` |
+| `candidate-87851907/s0-fc.log`                                 | `076ae8e73106ed68b7eb164d4b506a5213bbca951630559a6c80ddae8754c282` |
+| `candidate-87851907/s0-fe.log`                                 | `471f1a1cf312923208119bb845e55efb552d1a32fbf6d02c6284182e43afab63` |
+| `candidate-87851907/scan.py`                                   | `d9d57c60ca0998f60671f4a97532863f84a5849e0c364c0cda476d09b5bbceb0` |
+| `candidate-87851907/scan_ext.py`                               | `029edac214cda1ba24c685cf72b36979f31fbf0f5635d941fd0837398c34440d` |
+| `candidate-87851907/scan_sched.py`                             | `a2a441d038a9da3c42d8fcc41f238b0663dcee20563e01add527ab4cfe4df5a5` |
+| `candidate-87851907/slotguard.sh`                              | `d8aba41e34713f70def17f0eddf1d5facce369ffe8220dc309f2108a1046c01b` |
+| `candidate-87851907/step0-run.log`                             | `efeb30cea30b7a3af7dc7c3e052fe984dbcab1509d696a87a423cc1367c8e70a` |
+| `candidate-87851907/step0.sh`                                  | `440f9dd9fb85b91def46a180226fe960c74c16d07d62081c1d5b1b9fd2bea926` |
+| `candidate-87851907/thread-creation-scan.json`                 | `bf4cb39deb7852ff15826f3fe0e46927faa99328989a81920dcc7549c9f85589` |
+| `candidate-87851907/watch.py`                                  | `684c7f7c4594f5d99c86734f3e2a45d5e55cc8fd8d67b682f808eebf471914fb` |
+| `candidate-87851907/window-1/F1-ui-snapshot.png`               | `6a6d316130d730e9f648926718787274b9e72670914e8586aca62b0d0b93ae31` |
+| `candidate-87851907/window-1/F1-ui.json`                       | `b38613fe0d29b907fe21f4598bbc4c615cc1b9c46137a688b8f2b026ed16e3ff` |
+| `candidate-87851907/window-1/F15-send-now-O6.json`             | `63bb755a57cf017d7483f5ee6514b79688f8a289c1db750623935a46b9b68417` |
+| `candidate-87851907/window-1/F16-per-type-O2.json`             | `96df2f7574ba462f1989725fb9a3cdf2e1b0c64769abc1d930e6144447c2db68` |
+| `candidate-87851907/window-1/agents-md-start.json`             | `76281ddf4d51edc8723ae6b24f4a2fbf33abf3b01230f98f5dbccf0fca3206cf` |
+| `candidate-87851907/window-1/baseline.json`                    | `9e7ce4f1eb6b1646df6e5abfa84d97ba96ab383a63fc2c668d4f7cb6d290e161` |
+| `candidate-87851907/window-1/candidate-manifest.json`          | `822b37c7d5a6629388d873998b6d13bae70d2036f4ae927e2b40a6177d9fd4d1` |
+| `candidate-87851907/window-1/config-ownership.json`            | `9d16ff24ec8cc1254d34cd5c8669e584ac68ac8c40d3bf522c8347a6251baa5e` |
+| `candidate-87851907/window-1/dalo-post.json`                   | `1afe38b548b5bdd2f960f0c607f1b42b6dd2b664d330f518fd996a112e653d32` |
+| `candidate-87851907/window-1/dalo-post.stderr`                 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `candidate-87851907/window-1/dalo-preinstall.json`             | `1afe38b548b5bdd2f960f0c607f1b42b6dd2b664d330f518fd996a112e653d32` |
+| `candidate-87851907/window-1/dalo-preinstall.stderr`           | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `candidate-87851907/window-1/install-state.json`               | `ed0f0134a4e39af83a4a6ad8f17e95095f9de2a6983ea3ea2c491a550f50ba44` |
+| `candidate-87851907/window-1/raw/O.json`                       | `044fa98045ac78d20f4d70984d54a07923fd9581e73dd5e2fab706ad8bda664d` |
+| `candidate-87851907/window-1/raw/O2.json`                      | `25d5b9fada0fbd2fc2c347b2d3ce0c47d0af527653ef437475a1e15593285d55` |
+| `candidate-87851907/window-1/raw/O3.json`                      | `2deb3b9768584ca4aa8e68fb4497e519db3e01af863e9ee0c1e8fc14c86d5acc` |
+| `candidate-87851907/window-1/raw/O5.json`                      | `aac3967e0cfcd7b6de3d03df50142bc977d794221d4a70bda33b180045191179` |
+| `candidate-87851907/window-1/raw/O6.json`                      | `fc8708a048dbea3afc6a4253cd64dacde70919ff98797aa6fccb0989395ea8d0` |
+| `candidate-87851907/window-1/raw/P-child.json`                 | `8dc60fdf3a6987fd1c6cf931c93bd6b096f237135280b898931b5d5668d1f4d7` |
+| `candidate-87851907/window-1/raw/P.json`                       | `cb2a026f73c1055a89eefaadcc48bc1f968af62edb3a2495b02a48df1a8a1b93` |
+| `candidate-87851907/window-1/raw/T.json`                       | `64455cf128a17d750a714056008cf7dafadd25e66e03b9f401443c0dfad2f039` |
+| `candidate-87851907/window-1/raw/T2.json`                      | `0aaa1553b736a5a29b863dcadaf6e5a2333ed71742b325f7b8fc0ab57d20b7ff` |
+| `candidate-87851907/window-1/raw/T5.json`                      | `42d17535ecb1038ab64d7af0e4f0c102dd2c782c315cd35b21cc690f6bb5dc06` |
+| `candidate-87851907/window-1/raw/T6.json`                      | `ac9f519cecaf5e691446043d01af332ebe97174e0c99850cf89231cc83bee757` |
+| `candidate-87851907/window-1/raw/TL.json`                      | `45ba5cd608deea9286de95acd8fac1e66a185f7a38baf81ba90d7ebf29cf3282` |
+| `candidate-87851907/window-1/restart-restore.json`             | `d91b4a562a0d819aa95a646dc4fef862f6f659165763a95c30db7670d2a72e9f` |
+| `candidate-87851907/window-1/restore-state.json`               | `a447bfc27d4eebbbd2871cb0ad5b1f70f5480556feef8f74598db30ac604d98c` |
+| `candidate-87851907/window-1/scan-ext-w1-O.json`               | `3a8773e8fb8bdf6e2c5dda36e96e274f63bb7006936872cf8e8fa4ab8e3b8f4d` |
+| `candidate-87851907/window-1/scan-ext-w1-O2.json`              | `d73cb327b2c7473eb3ed8c3707ec05a336bb2ca20f1e5f2840a586c10f0fc882` |
+| `candidate-87851907/window-1/scan-ext-w1-O3.json`              | `e29a78639c0957d89f90db3005315c254e97969cb5931ca3774bd21e57f877a7` |
+| `candidate-87851907/window-1/scan-ext-w1-O5.json`              | `bdda6a7f4932b407fcdd26e6ce159c3eef1e7f424ed88a98463489a838fceb60` |
+| `candidate-87851907/window-1/scan-ext-w1-O6.json`              | `64970c21fbe20c9432e055258236ac93e70b12c8eac6268520aa1d7b559137b6` |
+| `candidate-87851907/window-1/scan-sched-w1-O.json`             | `cc94b9cfda47452c703bcad9f811e4842edd377754cb4587af0aa27ea1b2497d` |
+| `candidate-87851907/window-1/scan-sched-w1-O2.json`            | `ccbad8b3d39a1917c8d7ffc85eaf7b5261e4b8ee798ee5942c61af5d3048e082` |
+| `candidate-87851907/window-1/scan-sched-w1-O3.json`            | `0240181e9489d698d8af6d17be17562784bd30c67e5852beff5d1f97b05b67ed` |
+| `candidate-87851907/window-1/scan-sched-w1-O5.json`            | `cf4341cd31ccdb6609c12c0ed6ddd56b2633c22bd657d3d7e36b55072485218b` |
+| `candidate-87851907/window-1/scan-sched-w1-O6.json`            | `e299a4c01cb91572bfa31efa258dd6f68448f1ca4cd8872d74fd205e99515e6e` |
+| `candidate-87851907/window-1/scan-w1-O.json`                   | `0ee834d9a25984d3466d130e1e3adb7e801a9ae708265b4364b0d1d0148eb462` |
+| `candidate-87851907/window-1/scan-w1-O2.json`                  | `a9ccbf2bd390ca02955a78dd3e0d9fb87ad120b5e1fd37bfd80f0142674794c1` |
+| `candidate-87851907/window-1/scan-w1-O3.json`                  | `b9d0e030ffe1e4ecaeda0673798e4ed1a16df60af9b0ac5e5ffcd8dcedad45fd` |
+| `candidate-87851907/window-1/scan-w1-O5.json`                  | `a7ddd4a46ed72836c791f4cce4c8d5d01c51c33af26d1bfa3ad8d8fdc83595e6` |
+| `candidate-87851907/window-1/scan-w1-O6.json`                  | `545c730d4068076d82ebfe1520a7da48d973df249bbee372b09c358476e9e20b` |
+| `candidate-87851907/window-1/slotguard.log`                    | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `candidate-87851907/window-1/watch.log`                        | `68ab03647d8d3676ddb218a2980ada33cc8844532b2daeed82169f87e367edc5` |
+| `candidate-87851907/window-1/window-close.json`                | `72159ab96aae9b3654f2754238fa00230755acf7db741822bf5449073869f24c` |
+| `candidate-87851907/window-2/F10-approvals.json`               | `50e944b61ee6d3e9acd7e0cf23ffb40b774b4368fc2349212e77ef27e6c68e36` |
+| `candidate-87851907/window-2/F10-runs.json`                    | `99f1a007ee180bc7c9d1793aaa2539b9c6cf10f557dfc0d8749f0e1bceed4b6b` |
+| `candidate-87851907/window-2/agents-md-start.json`             | `399b75465549d622fe1e9706b9c3f887c577d4b1063d0d66a0dad3f97201aeac` |
+| `candidate-87851907/window-2/baseline.json`                    | `959eb42be7a21407389420adac498b96e051bc896820b880d9740f01763ecc83` |
+| `candidate-87851907/window-2/candidate-manifest.json`          | `822b37c7d5a6629388d873998b6d13bae70d2036f4ae927e2b40a6177d9fd4d1` |
+| `candidate-87851907/window-2/config-ownership.json`            | `9d16ff24ec8cc1254d34cd5c8669e584ac68ac8c40d3bf522c8347a6251baa5e` |
+| `candidate-87851907/window-2/dalo-post.json`                   | `1afe38b548b5bdd2f960f0c607f1b42b6dd2b664d330f518fd996a112e653d32` |
+| `candidate-87851907/window-2/dalo-post.stderr`                 | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `candidate-87851907/window-2/dalo-preinstall.json`             | `1afe38b548b5bdd2f960f0c607f1b42b6dd2b664d330f518fd996a112e653d32` |
+| `candidate-87851907/window-2/dalo-preinstall.stderr`           | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `candidate-87851907/window-2/install-state.json`               | `a9490bbd224e5e4c9c5b3d313b9eecc918effb6fdb330df9b0308cd42d057eb8` |
+| `candidate-87851907/window-2/raw/O4.json`                      | `3bad53a8d968e11f75bc47288c9a777b558a835cebe6b22758294a4a93beba3e` |
+| `candidate-87851907/window-2/raw/T4.json`                      | `35a7d31f315868c7a7c9856526c097b22a4e7bf0946debdae5c4ff03dcb51cfd` |
+| `candidate-87851907/window-2/restart-restore.json`             | `f1d49754460318c974a987de18fc7b6cb3eb56cac2e7a261b406de4cae2d325c` |
+| `candidate-87851907/window-2/restore-state.json`               | `a298a8051c96b8c2b927c80c7ed5a33a3cf4786924d0ac27d77d9dce7c18677d` |
+| `candidate-87851907/window-2/scan-ext-w2-O4.json`              | `b4a330ffd0dc7f7a5c53f6d22015b19e378be6a9e092aef9e79fdeeb62a23dd6` |
+| `candidate-87851907/window-2/scan-sched-w2-O4.json`            | `e6bfb6064cb7f1b5843f7435064bc76cb1d895dc309cef159c3565bc0f264f53` |
+| `candidate-87851907/window-2/scan-w2-O4.json`                  | `3a40f2fd0ca97a82e01e416ecc769b37ca53b73fc94e4e329dbbc03bc4fc6275` |
+| `candidate-87851907/window-2/slotguard.log`                    | `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855` |
+| `candidate-87851907/window-2/watch.log`                        | `ecc268c4520982cc42f8d05f296aff028a059a174fe4e34cb6477407c0ff9d22` |
+| `candidate-87851907/window-2/window-close.json`                | `97a382707d65457d5335c39c31419806842e9bb95f4d3dd4da9bb9368227d11e` |
+
+#### 87851907: F1
+
+Snapshot requalification with the offer, the re-offer after a decline, both refusals and the UI
+rendering of the offer and the target ID.
+
+- **Setup:** observer `O` in default mode; target `T` idle after stage 1, with its opening request
+  at position 0 and its answer at position 3. Parent `P` and a child task of it for the ancestor
+  refusal.
+- **Trigger:** `$effective-flow focus <T (window 1)>` at 18:47:02 UTC (coordinator turn). After the
+  first verdict the coordinator answered "No follow-up." (18:48:20). Self refusal:
+  `$effective-flow focus <O (window 1)>` at 18:48:28. Ancestor refusal:
+  `$effective-flow focus <P (window 1)>` at 18:48:49, as the task of the child of `P` (documented
+  exception: the child exists only through `P`'s delegated task, so that task is the deciding
+  turn). Second snapshot of `T` at 18:48:45, with `T` idle. Opt-in "5 minutes." as the very next
+  turn at 18:49:39.
+- **Expected:** `src/tools/focus.md` "Snapshot verdict" (identity, coverage and budget, evidence,
+  one verdict, the analysis path, send state "Not attempted") and `src/shared/focus-follow-up.md`
+  "Offer" (the eager offer condition, the intervals and the numbered disclosures in fixed order,
+  item 6 only where approvals may be required). "No follow-up" creates no schedule and, under
+  `src/tools/focus.md` "Follow-up mode", does not suppress the offer of a later snapshot that meets
+  the condition. Self and ancestor refusal under `src/shared/focus-session-contract.md` "Authority
+  before any host access" without history reads or a verdict.
+- **Observed, first snapshot (18:47:56):** "**On track – im Zielverlauf.**" (On track, on the goal
+  path). It anchored the goal at position 0, found stage 1 delivered at position 3 and the overall
+  task open, and claimed no completion. Coverage: one message page over positions 0 and 3, no
+  truncation, three native reads, a conservative charge of 15,512 of 64,000 characters. It named
+  `effective-delivery` and `effective-writing` guidance, the inline analysis and "Nachrichtenversand:
+  Not attempted" (message dispatch: Not attempted), with correction delivery disabled. The offer
+  listed items 1–5 in order: visible messages, persistence until deletion, at most 24 checks with
+  the stop command `/effective-flow focus follow-up stop <T (window 1)>`, the dedicated-observer
+  recommendation and report-only checks. It offered 5, 15, 30 or 60 minutes. Item 6 was omitted, as
+  "Offer" requires for an observer known not to need approvals. The identity appears as the bare ID
+  in inline code.
+- **Observed, "no follow-up" (18:48:22):** "Keine Folgeprüfungen. Es wurde kein Zeitplan angelegt."
+  (No follow-up checks. No schedule was created.) The Codex record of `O` holds three schedule
+  creations in total, matching the opt-ins of `H1`, `H2` and `H3` (`window-1/scan-sched-w1-O.json`);
+  none preceded the 18:49 opt-in.
+- **Observed, self refusal (18:48:39):** the selected session is this observer chat itself
+  according to the host context, and the focus contract excludes self-observation; "Daher kein
+  Verlaufsabruf und kein Urteil. Nachrichtenversand: **Not attempted**." (Therefore no history read
+  and no verdict. Message dispatch: Not attempted.)
+- **Observed, ancestor refusal (18:49:17), child of `P`:** "Die Prüfung von `<P (window 1)>` ist
+  nicht zulässig: Die T3-Metadaten weisen sie als direkte Elternsitzung dieses Beobachters aus."
+  (Checking `<P (window 1)>` is not permitted: the T3 metadata identify it as this observer's direct
+  parent session.) It continued "Keine Zielinhalte gelesen, kein Verlaufsurteil erstellt und keine
+  Nachricht gesendet" (no target content read, no trajectory verdict made and no message sent) and
+  reported one metadata read with at most 256 reserved content characters. `P` relayed the result
+  at 18:49:21.
+- **Observed, second snapshot (18:49:08), the re-offer check:** "**On track – unverändert im
+  Zielverlauf.**" (On track, unchanged on the goal path), over the same page and charge (three native
+  reads, 15,512 of 64,000 characters). It carried the same verdict fields and a new offer with items
+  1–5 in order. The opt-in at 18:49:39 created the loop `H1` (first checkpoint 18:49:59, `ticks=0`,
+  `state=active`).
+- **UI rendering:** at about 19:15 the coordinator checked both offers in the authenticated T3 UI
+  preview tab. Each renders as an ordered decimal list of five items numbered 1 to 5, the same
+  numbers as the raw text, and the target ID renders as inline code, not as a link (UI;
+  `window-1/F1-ui.json`, `window-1/F1-ui-snapshot.png`). The renumbering gap of `e0966ac7` does not
+  occur, because no number is skipped.
+- **Schedule state:** the decline created none (shown by the creation count above; the T3 UI
+  listing at that moment was not captured). The opt-in created `H1`, active in the later items.
+- **Authorship:** coordinator turns throughout; the ancestor refusal's deciding turn was the task
+  of the child of `P`; the UI rendering check was the coordinator's.
+- **Window and result:** window 1. **Pass.**
+
+#### 87851907: F2
+
+Idle target and quiet tick: the #670 fix.
+
+- **Setup:** loops that start right after an opt-in snapshot of an idle target: `H1` (`O` on `T`),
+  `H4` (`O2` on `TL`) and `H5` (`O6` on `T6`); `H2`, the loop of `O` after the F14 resume, with `T`
+  idle again; `H3`, the loop of `O` on its second target `T2`; and `H7` (`O4` on `T4`, window 2) in
+  approval-required mode. Each loop runs at 5 minutes.
+- **Trigger:** the first scheduled tick of each loop and the following ticks, sent by the
+  scheduler.
+- **Expected:** `src/shared/focus-follow-up.md` "Judging and reporting", idle target: one report
+  for a target with no active run, pending request, new events or completion evidence, then a
+  quiet tick with only the checkpoint ("Quiet tick budget"). Only a tick's message counts as this
+  loop's report; the snapshot, its offer and the opt-in turn do not, so the first tick reports the
+  idle target. A resume starts a new loop under the same rule.
+- **Observed, first ticks:** every one of the six loops reported the idle target once on its first
+  tick, with `ticks=1` and `state=active`:
+  - `O2`, `H4` (18:53:45): "Sitzung `<TL (window 1)>` wartet weiterhin auf die
+    Koordinatoranweisung für Stage2. Kein aktiver Lauf, keine ausstehende Anfrage und keine neuen
+    Nachrichten nach Position 2." (Session `<TL (window 1)>` is still waiting for the coordinator's
+    stage 2 instruction. No active run, no pending request and no new messages after position 2.)
+  - `O`, `H1` (18:55:21): the same idle report for `T` after position 3, ending "Urteil
+    unverändert: **On track**." (Verdict unchanged: On track.)
+  - `O6`, `H5` (19:18:45): the idle report for `T6` after position 3.
+  - `O`, `H2` after the F14 resume (19:57:55): the idle report for `T` after position 30, waiting
+    for stage 3.
+  - `O`, `H3` on the second target (20:10:02): the idle report for `T2` after position 2.
+  - `O4`, `H7` in window 2 (21:42:08): the idle report for `T4`, ending "Keine Nachricht gesendet."
+    (No message sent.)
+- **Observed, quiet ticks:** the following ticks on unchanged evidence posted exactly one message,
+  the checkpoint line, without prose. For example `O2`'s second tick (18:58:48):
+  `focus-follow-up v1 | target=<TL (window 1)> | goal=opening@0 | verdict=On track | last=2 |
+pattern=none | correction=none | mechanism=t3-schedule | interval=5 | handle=scheduled-task:<H4>
+| started=2026-11-15T18:48:28.282Z | ticks=2 | backlog=no | lag=0 | state=active`. The same held
+  for `O6` (ticks 2 and 3), `O4` (tick 2 onward) and `H1` after its tick 8 report (tick 9,
+  19:35:24).
+- **Observed, deferral after new events:** at 19:21:56 `T` delivered its Evidence section. The next
+  tick of `H1` (posted 19:25:37, tick 7) saw these new events and stayed quiet, as the idle rule
+  requires. The tick after it (19:30:23, tick 8), without new events, reported the idle decision
+  once: `T` waits for the stage 3 instruction at position 30.
+- **Observed, state change:** tick 5 of `O2` (19:14:08) posted one report that T3 had meanwhile
+  marked `TL` as done, with no new messages after position 2 and no completion evidence; the
+  verdict stayed On track, and the later ticks were quiet. What marked `TL` as done is not captured.
+- **Schedule state:** loops active; the ticks arrived on the 5-minute grid (no separate listing).
+- **Authorship:** scheduler ticks; no coordinator turn between them.
+- **Window and result:** windows 1 and 2. **Pass** (`window-1/scan-w1-O.json`,
+  `window-1/scan-w1-O2.json`, `window-1/scan-w1-O6.json`, `window-2/scan-w2-O4.json`; message texts
+  in the evidence root's raw captures).
+
+#### 87851907: F3
+
+Repetition with the requested-retry negative control.
+
+- **Setup:** `O`, loop `H1` on `T`. At 18:55:45 the coordinator asked `T` for stage 2: run one
+  `cat` of a missing temporary evidence file and, if it fails, quote the error and stop. The failure
+  output is byte-identical on every run and contains an absolute path. In parallel, the
+  negative-control pair `O5`/`T5`, default mode, root observer, loop `H6`, received the same stage 2
+  request at 18:48:51.
+- **Trigger:** after `O`'s blocker report, the coordinator sent only the bare nudge "Continue
+  stage2." (19:01:01). `T` retried the same read on its own (19:01:09–19:01:13, position 13) and
+  failed identically. `T5` instead received three explicitly requested retries ("Retry requested:
+  I am explicitly asking you to retry the same evidence read now.") at 18:55:44, 19:01:04 and
+  19:06:10, in three tick windows.
+- **Expected:** `src/shared/focus-follow-up.md` "Judging and reporting", "Repeated step", with
+  `src/tools/focus.md` "Snapshot verdict" and "One read-only analysis leaf": the blocker tick
+  writes the blocker's locator as the first `pattern=` locator. A retry without new evidence after
+  the reported blocker is Looping, reported once, and later ticks stay quiet. A bare continuation
+  does not request a retry. A retry that a later request explicitly asks for stays exempt. Under
+  the declined-delegation rule the analysis runs inline under identical limits.
+- **Observed, blocker tick (19:00:35):** "Neuer Blocker in `<T (window 1)>`: Die für Stage2
+  angeforderte Nachweisdatei fehlt. Der Leseversuch scheiterte an Position 7" (new blocker in
+  `<T (window 1)>`: the evidence file requested for stage 2 is missing; the read failed at position
+  7). The verdict stayed On track: the requested stop is no stall. Coverage four native reads and
+  two content pages, 30,512 characters; checkpoint `… | last=9 | pattern=7 | correction=none | … |
+ticks=2 | … | state=active`. The report quotes only the error text "No such file or directory" and
+  names no path, so the redaction of the absolute path was exercised.
+- **Observed, Looping (19:05:45):** "**Looping** in `<T (window 1)>`: Der bereits gemeldete
+  Leseversuch an Position 7 wurde an Position 13 wiederholt und scheiterte erneut an derselben
+  fehlenden Nachweisdatei." (the already reported read at position 7 was repeated at position 13
+  and failed again on the same missing evidence file). It added that "Continue stage2" at position
+  10 did not explicitly request a retry. It gave one report-only correction (clarify the missing
+  prerequisite before another attempt) with a pointer to an interactive focus run, "Nachrichtenversand:
+  **Not attempted**" (message dispatch: Not attempted), and the checkpoint
+  `… | verdict=Looping | last=15 | pattern=7,13 | correction=Looping+missing-evidence+7,13 | … |
+ticks=3 | … | state=active`. This was the first tick whose window held the retry, so the time limit
+  was met on the first attempt.
+- **Observed, next tick (19:10:22):** the checkpoint line only, unchanged (`verdict=Looping`,
+  `pattern=7,13`, `ticks=4`), with no repeated report or correction.
+- **Analysis path:** no analysis leaf exists to hand the locators to, because every observer
+  analysed inline. The leaf-handoff check of earlier records is replaced by two checks: the
+  thread-creation scan shows no leaf and no thread-creating call in any tick
+  (`thread-creation-scan.json`), and the Looping report itself states the `pattern=` locators 7 and
+  13, the earlier blocker and the retry rule, and discloses "Analyse wegen des Subagent-Verbots
+  selbst durchgeführt" (analysis performed by the observer itself because of the subagent ban).
+- **Observed, negative control:** `O5` reported the blocker once (18:54:24, "**Neuer Blocker,
+  weiterhin On track**" (new blocker, still On track), `pattern=6`). Its ticks at 18:59:01
+  (`pattern=6,11`), 19:03:59 (`pattern=6,16`) and 19:09:09 (`pattern=6,21`) were checkpoint-only,
+  On track, never Looping. The coordinator then sent `follow-up stop` (19:10:39). At 19:10:46 the
+  deletion passed the complete handle and completed, and at 19:10:49 the stop posted "Die
+  Folgechecks sind beendet. Der Zeitplan wurde gelöscht." (The follow-up checks have ended. The
+  schedule was deleted.) with `state=stopped`.
+- **No false Looping:** F4 followed with `pattern=none` and no Looping verdict.
+- **Schedule state:** `H1` active throughout; `H6` deleted by the stop (the delete-call scan shows
+  the completed call; an API listing at that moment is not captured).
+- **Authorship:** coordinator turns for the target requests, the nudge, the requested retries and
+  the stop; scheduler ticks.
+- **Window and result:** window 1, attempt 1. **Pass** (`window-1/scan-w1-O.json`,
+  `window-1/scan-w1-O5.json`, `window-1/scan-sched-w1-O5.json`, `thread-creation-scan.json`).
+
+#### 87851907: F4
+
+- **Setup:** the loop `H1` on `T`. After F3 the coordinator superseded the missing prerequisite
+  (position 16, as the F14 resume snapshot reports) and told `T` to run `sleep 660`, which produces
+  no output while it runs. The request was sent at 19:10:41.
+- **Trigger:** the scheduled ticks that fell inside the wait (prompts 19:14:59 and 19:20:00).
+- **Expected:** `src/shared/focus-follow-up.md` "Judging and reporting": long test, CI or approval
+  waits are no Looping or Stalled verdict; a quiet tick passes.
+- **Observed:** ticks 5 (19:15:29) and 6 (19:20:20) posted only the checkpoint,
+  `verdict=On track`, `pattern=none`, `correction=none`, with `last=` advancing 23, 27. No Looping
+  or Stalled report occurred. The `pattern=` value reset to `none` after the superseded
+  prerequisite. `T` finished the wait and delivered its Evidence section at 19:21:56.
+- **Schedule state:** loop active, ticks on the grid (no separate listing).
+- **Authorship:** scheduler ticks; coordinator target requests.
+- **Window and result:** window 1. **Pass** (`window-1/scan-w1-O.json`).
+
+#### 87851907: F5
+
+- **Setup:** loop `H2` on `T`, created by F14's resume (checkpoint at 19:52:32, `ticks=0`); `T`
+  awaiting stage 3. Its first tick was F2's idle report.
+- **Trigger:** the coordinator sent the stage 3 request at 19:58:17 (position 32); the next
+  scheduled tick (prompt 20:02:31).
+- **Expected:** `src/shared/focus-follow-up.md` "End events": completion deletes exactly the
+  prompt's handle (complete handle), then one final notice and `state=stopped`.
+- **Observed:** the tick (20:03:06) reported "Die synthetische Aufgabe in `<T (window 1)>` ist
+  abgeschlossen: Position 32 fordert Stage3 ausdrücklich an; Position 33 liefert den geforderten
+  Delivery-Abschnitt und bestätigt den Abschluss." (The synthetic task in `<T (window 1)>` is
+  complete: position 32 explicitly requests stage 3; position 33 delivers the required Delivery
+  section and confirms completion.) It noted that project, tool or release validation is explicitly
+  excluded, then "Die Folgeprüfungen sind beendet; der Zeitplan wurde gelöscht." (The follow-up
+  checks have ended; the schedule was deleted.), and ended `ticks=2` … `state=stopped`. Its
+  `delete_scheduled_task` call (20:03:00) passed the complete prefixed handle, equal to the creation
+  result, the prompt's `handle:` and the checkpoint's `handle=`, and completed.
+- **Schedule state:** the handle was absent from `list_scheduled_tasks` at 20:03 (API).
+- **Authorship:** coordinator stage 3 turn; scheduler tick.
+- **Window and result:** window 1. **Pass** (`window-1/scan-sched-w1-O.json`).
+
+#### 87851907: F6
+
+- **Setup:** `O6` in default mode, loop `H5` on `T6`, four ticks done (F2, F15).
+- **Trigger:** the coordinator deleted `T6` in the T3 UI at 19:37:36 (thread actions, Delete, then
+  the confirmation that the deletion permanently clears the thread); the next scheduled tick
+  (prompt 19:38:10).
+- **Expected:** `src/shared/focus-follow-up.md` "End events": lost access deletes the prompt's
+  handle under the deletion safeguard, then one notice and `state=stopped`; no further fire.
+- **Observed:** the tick (19:38:38) reported "Die Sitzung `<T6 (window 1)>` ist nicht mehr
+  verfügbar (`thread_not_found`). … Die Folgeprüfung wurde beendet und ihr Zeitplan erfolgreich
+  gelöscht." (Session `<T6 (window 1)>` is no longer available (`thread_not_found`). … The
+  follow-up has ended and its schedule was deleted.) It kept the earlier verdict without new reads,
+  and ended `ticks=5` and `state=stopped`. Its deletion (19:38:34) passed the complete handle and
+  completed.
+- **Schedule state:** the target was gone from the T3 UI after the deletion (UI). At 19:40 the host
+  API listed only the loops of `O` and `O2` (API); no later fire arrived for `H5`.
+- **Authorship:** coordinator UI action (deletion of the target); scheduler tick.
+- **Window and result:** window 1. **Pass** (`window-1/scan-w1-O6.json`,
+  `window-1/scan-sched-w1-O6.json`).
+
+#### 87851907: F7
+
+- **Setup:** `O` ran the loop `H3` on `T2`. `O3` is a fresh observer without any valid checkpoint.
+- **Trigger:** the coordinator typed `H3`'s tick prompt into `O3` at 20:04:47, and a second time at
+  20:05:25.
+- **Expected:** `src/shared/focus-follow-up.md` "Deletion safeguard and stopped ticks": the first
+  tick stops before any host access, deletes nothing, posts one delete-in-T3 notice and writes a
+  stopped line with `-` fields and `ticks=1`; a second tick posts the exact checkpoint with
+  `ticks=2`, no repeated notice and no deletion.
+- **Observed:** the first tick (20:05:20) posted "Ein gültiger Checkpoint fehlt im sichtbaren
+  Verlauf. Deshalb wurde `<T2 (window 1)>` nicht gelesen und keine Löschung versucht. Der Zeitplan
+  `scheduled-task:<H3>` muss in T3 gelöscht werden." (A valid checkpoint is missing from the
+  visible history. Therefore `<T2 (window 1)>` was not read and no deletion was attempted. The
+  schedule `scheduled-task:<H3>` must be deleted in T3.) and the stopped line
+  `focus-follow-up v1 | target=<T2 (window 1)> | goal=- | verdict=- | last=- | pattern=- |
+correction=- | mechanism=t3-schedule | interval=- | handle=scheduled-task:<H3> | started=- |
+ticks=1 | backlog=- | lag=- | state=stopped`. The second (20:05:41) was the checkpoint line only,
+  `ticks=2`, no notice, no deletion. The scan found zero delete calls and zero target reads in `O3`
+  (`window-1/scan-sched-w1-O3.json`, `window-1/scan-ext-w1-O3.json`).
+- **Schedule state:** `H3` stayed active, shown by its later scheduled fire in `O` (prompt
+  20:09:36); an API listing at that moment is not captured. F8's UI deletion then removed it.
+- **Authorship:** coordinator turns (a typed tick prompt counts as a tick).
+- **Window and result:** window 1. **Pass** (`window-1/scan-w1-O3.json`).
+
+#### 87851907: F8
+
+Failed deletion, with the schedule deleted in the T3 UI before the tick.
+
+- **Setup:** `O`, loop `H3` on `T2`, after its first tick (F2).
+- **Trigger:** at about 20:10:4x the coordinator deleted `H3` in the T3 UI (scheduled tasks,
+  Actions, Delete; the UI asked for no confirmation). At 20:10:47 the UI no longer listed it, and
+  the host API listed only `O2`'s schedule. The coordinator then requested stages 2 and 3 from `T2`
+  (20:10:48, position 4); `T2` completed at 20:10:52. The coordinator typed `H3`'s tick prompt into
+  `O` at 20:10:57.
+- **Expected:** `src/shared/focus-follow-up.md` "End events": the completion is reported, the
+  actual delete error is surfaced, the final notice states that deletion is not confirmed, and the
+  checkpoint ends `state=stopped`.
+- **Observed:** the tick (20:11:26) reported that `<T2 (window 1)>` completed the synthetic task
+  (stages 2 and 3 requested at position 4, both sections delivered at position 5), verdict On
+  track, then "Die Beobachtung endet. Die Löschung des Zeitplans ist nicht bestätigt:
+  `task_not_found`. Der Zeitplan könnte noch aktiv sein und muss, falls vorhanden, in T3 gelöscht
+  werden." (Observation ends. Deletion of the schedule is not confirmed: `task_not_found`. The
+  schedule may still be active and must be deleted in T3 if present.) It ended `ticks=2` …
+  `state=stopped`. The delete call at 20:11:23 passed the complete handle, equal to the creation
+  result, the prompt's handle and the checkpoint's, and failed with `task_not_found`: the only
+  `task_not_found` of the record, provoked by the UI deletion.
+- **Schedule state:** deleted in the T3 UI by the coordinator and absent from the UI listing at
+  20:10:47 (UI); absent from the host listing before the tick (API).
+- **Authorship:** coordinator UI deletion; coordinator target request and tick prompt.
+- **Window and result:** window 1. **Pass** (`window-1/scan-sched-w1-O.json`).
+
+#### 87851907: F9
+
+- **Setup:** `O`, loop `H1` on `T`, 5-minute interval.
+- **Trigger:** two operator turns (`sleep 265`, then reply "done", with no focus action in the
+  turn). Part (a) was sent at 19:20:37, before the fire due at 19:25:00. Part (b) was sent at
+  19:39:44, before the fire due at 19:40:00, so that the next grid fire falls within a minute of the
+  queued tick.
+- **Expected:** `src/shared/focus-follow-up.md` "Overlap": one queued run after the busy turn,
+  treating the developer turn as no input, and the next fire on the grid within a minute.
+- **Observed, part (a):** the 19:25:00 fire queued behind the operator turn, which ended with
+  "done" at 19:25:11. The queued tick posted at 19:25:37 (tick 7), a quiet checkpoint that answered
+  no developer turn (F2's deferral after new events).
+- **Observed, part (b):** the 19:40:00 fire queued behind the operator turn, which ended with
+  "done" at 19:44:17. The queued tick posted the quiet checkpoint at 19:44:40 (tick 10). The next
+  grid fire (19:45:00) came 20 seconds after the queued tick and posted at 19:45:24 (tick 11). No
+  overlap.
+- **Schedule state:** loop active; the queued runs are shown by the prompt order in the observer's
+  history. A `t3_queue` listing at those moments is not captured.
+- **Authorship:** coordinator operator turns; scheduler ticks.
+- **Window and result:** window 1. **Pass** (`window-1/scan-w1-O.json`).
+
+#### 87851907: F10
+
+Approval-required mode, in window 2 with the owner present.
+
+- **Setup:** `O4` (window 2) in approval-required mode, target `T4` (window 2) in `full-access`,
+  idle after stage 1, 5-minute interval. The owner answered the real approval prompts; the
+  coordinator approved nothing.
+- **Offer ruling:** the snapshot (21:35:47), after the owner approved its shell and MCP reads,
+  carried items 1–6 in order. Item 6 read "Wegen des Freigabemodus benötigt jeder Tick Freigaben
+  für jeden `t3_thread_read`, Skill-Dateizugriffe und die abschließende Löschung. Offene Freigaben
+  halten weitere Ticks in der Warteschlange." (Because of the approval mode, every tick needs
+  approvals for each `t3_thread_read`, skill-file access and the final deletion. Pending approvals
+  hold further ticks in the queue.) It holds both approval elements. The opt-in followed at
+  21:36:05 (checkpoint 21:36:34, `ticks=0`).
+- **Trigger:** the scheduled ticks from 21:41:34. The coordinator asked the owner to hold the first
+  tick's approval, but the owner answered the two approvals of tick 1 within about 2 seconds each.
+  The hold happened on ticks 2 and 3 instead: one approval of tick 2 was held from 21:46:43 to
+  21:51:03, and the approvals of tick 3 from 21:51:47 to 21:56:23 and from 21:56:32 to 22:09:40
+  (about 13 minutes).
+- **Expected:** `src/shared/focus-follow-up.md` "Overlap": one queued run per later fire, no
+  overlap, and the exact checkpoint after approval.
+- **Observed:** tick 1 (21:42:08) was F2's idle report. Tick 2 posted the quiet checkpoint at
+  21:51:17. The fires at 21:56:34, 22:01:34, 22:06:34 and 22:11:35 were requested at fire time and
+  queued as runs 6 to 9; each started only after the previous run completed. Ticks 3 to 7 posted at
+  22:09:47, 22:13:10, 22:13:38, 22:14:01 and 22:14:26, each the exact checkpoint
+  (`ticks=3` to `ticks=7`, `state=active`), with no overlap (`window-2/F10-runs.json`). The window
+  recorded 24 approval requests, all accepted; the approval records do not expose who answered them
+  (`window-2/F10-approvals.json`).
+- **Stop:** the coordinator sent `follow-up stop` at 22:15:23. The deletion was approved and passed
+  the complete handle (22:15:34), and the stop posted "Folgeprüfungen beendet; der Zeitplan wurde
+  gelöscht." (Follow-up checks ended; the schedule was deleted.) with `ticks=7` and `state=stopped`
+  (22:15:37).
+- **Approval-mode ticks:** the scan found every checkpoint of `O4` with a raw `target=` and the
+  exact ending. No tick of `O4` read the observer's ancestry, so no ancestry approval occurred
+  (`window-2/scan-ext-w2-O4.json`).
+- **Schedule state:** queued runs as listed in `window-2/F10-runs.json`; after the stop the API
+  listed none (API).
+- **Authorship:** owner approvals; coordinator snapshot, opt-in and stop turns; scheduler ticks.
+- **Window and result:** window 2. **Pass** (`window-2/F10-runs.json`,
+  `window-2/F10-approvals.json`, `window-2/scan-w2-O4.json`, `window-2/scan-sched-w2-O4.json`).
+
+#### 87851907: F11
+
+- **Setup:** `O`, loop `H1` active.
+- **Trigger:** the coordinator's operator turn (19:45:49) asked the observer to start one child
+  task in the background (`delegate_task`, a notifier that replies "pong") and to acknowledge its
+  completion briefly. The child started at 19:46:00.
+- **Expected:** a finished background task produces a host notification run in the observer thread
+  that is not treated as a tick (`src/shared/focus-follow-up.md` "Tick admission and allow-list").
+- **Observed:** at 19:46:04 the host delivered a user-role notification, "Delegated task … (…)
+  [completed]: pong". The observer answered at 19:46:07 with one sentence, "Der Hintergrundauftrag
+  hat „pong“ zurückgegeben." (The background task returned "pong".), with no checkpoint, no host
+  read and no tick treatment. The next scheduled tick (prompt 19:50:01) posted its checkpoint at
+  19:50:21 (`ticks=12`).
+- **Host observation:** unlike `e0966ac7`, the operator turn's own reply ("Der Hintergrundauftrag
+  wurde gestartet.", the background task was started) was complete, and every T3 message of `O`
+  has its Codex counterpart.
+- **Schedule state:** loop active (no separate listing).
+- **Authorship:** coordinator operator turn; host notification.
+- **Window and result:** window 1. **Pass** (`window-1/scan-w1-O.json`, `thread-creation-scan.json`).
+
+#### 87851907: F12
+
+The cap loop.
+
+- **Setup:** a fresh observer `O2`, its first loop `H4` on `TL`, 5-minute interval, opt-in at
+  18:48:11 (checkpoint 18:48:31, `started=2026-11-15T18:48:28.282Z`, `ticks=0`).
+- **Expected:** `src/shared/focus-follow-up.md` "End events": the loop cap is reached when the
+  tick's incremented `ticks` is 24 or more; the cap tick deletes the schedule with the complete
+  handle, posts one final notice and writes `ticks=24` and `state=stopped`. A compaction before the
+  cap would fall under "Deletion safeguard and stopped ticks".
+- **Observed:** 24 completed ticks from 18:53:45 to 20:49:17, each with a raw `target=` and the
+  exact ending, and no compaction. The cap tick (prompt 20:48:42) deleted the schedule at 20:49:12
+  with the complete handle and posted at 20:49:17: "Die Folgeprüfung für Sitzung `<TL (window 1)>`
+  endet nach 24 Ticks. Der Zeitplan wurde gelöscht." (The follow-up for session `<TL (window 1)>`
+  ends after 24 ticks. The schedule was deleted.) It added that there are no new messages since
+  position 2 and the goal's completion stays unproven, with the last verdict On track, and the
+  checkpoint `focus-follow-up v1 | target=<TL (window 1)> | goal=opening@0 | verdict=On track |
+last=2 | pattern=none | correction=none | mechanism=t3-schedule | interval=5 |
+handle=scheduled-task:<H4> | started=2026-11-15T18:48:28.282Z | ticks=24 | backlog=no | lag=0 |
+state=stopped`. The delete call passed the complete prefixed handle, equal to the creation result,
+  the prompt's `handle:` and the checkpoint's `handle=` (`window-1/scan-sched-w1-O2.json`).
+- **Context at the cap:** the Codex record of `O2` shows 206,684 input tokens of a reported
+  258,400-token window at the cap tick (80%). Context grew from 55,588 tokens at the opt-in, about
+  6,300 tokens per tick. The host reported a 475,000-token window until 19:08:35 and 258,400 tokens
+  afterwards; this was a host-side change during the window, not an action of the record.
+- **Schedule state:** the API listed no schedule at 20:49:4x (API), and the T3 UI's scheduled tasks
+  showed no focus task at 20:50:00 (UI, coordinator).
+- **Authorship:** coordinator opt-in turn; scheduler ticks; the coordinator's API and UI checks.
+- **Window and result:** window 1. **Pass** (`window-1/scan-w1-O2.json`,
+  `window-1/scan-ext-w1-O2.json`, `window-1/scan-sched-w1-O2.json`, `window-1/window-close.json`).
+
+#### 87851907: F13
+
+- **Setup:** the loops of all root observers.
+- **Trigger:** every scheduled tick, and the tick prompts typed for F7 and F8.
+- **Expected:** the scheduled turn loads the skill through the `$effective-flow` prefix, and the
+  tick prompt carries the bare target ID, not a link (`src/shared/focus-follow-up.md`
+  "Scheduling").
+- **Observed:** each prompt had the form `$effective-flow focus follow-up tick <T (window 1)>
+handle:scheduled-task:<H1>`, with the prefix, the bare ID and the complete handle, for example at
+  18:54:59 and 19:04:59. All 27 tick prompts of `O`, `O3`, `O5` and `O6` and all 24 of `O2` match
+  that form (`window-1/scan-sched-w1-*.json`), and so do the seven scheduled prompts of `O4`
+  (window 2) in the raw capture. Every scheduled turn loaded the skill through the prefix.
+- **Schedule state:** loops active.
+- **Authorship:** scheduler prompts; coordinator typed prompts for F7 and F8.
+- **Window and result:** windows 1 and 2. **Pass.**
+
+#### 87851907: F14
+
+- **Setup:** `O`, loop `H1` on `T`, running since 18:49:59.
+- **Trigger:** `follow-up stop` at 19:50:33, then an explicit resume
+  `$effective-flow focus follow-up <T (window 1)>` at 19:50:52.
+- **Expected:** `src/shared/focus-follow-up.md` "Stop and resume": the stop deletes the latest
+  checkpoint's handle (complete handle) and emits `state=stopped`; the resume re-admits the target,
+  shows a new offer, and a schedule with a new handle exists only after the opt-in.
+- **Observed:** the stop deleted the schedule at 19:50:41 with the complete handle (completed) and
+  posted "Die Folgeprüfungen sind beendet; der Zeitplan wurde gelöscht." (The follow-up checks have
+  ended; the schedule was deleted.) with a checkpoint at `ticks=12` and `state=stopped` (19:50:44).
+  The resume re-admitted `T` and took an On track snapshot (19:51:53) over three message pages,
+  positions 0 to 30, seven native reads and 46,024 charged characters, with the inline analysis
+  disclosed. It showed a new offer with items 1–5 in order and said that the old schedule stays
+  deleted and a new one is created only after the choice. After "5 minutes." (19:52:08) the new
+  schedule `H2` posted its first checkpoint at 19:52:32 (`ticks=0`, `state=active`).
+- **Schedule state:** `H1` deleted by the completed call (`window-1/scan-sched-w1-O.json`); an API
+  listing at that moment is not captured. `H2` active until F5.
+- **Authorship:** coordinator turns.
+- **Window and result:** window 1. **Pass** (`window-1/scan-sched-w1-O.json`).
+
+#### 87851907: F15
+
+Early send of a queued tick through the T3 UI.
+
+- **Setup:** `O6`, loop `H5` on `T6`. An operator turn keeps the observer busy (`sleep 300`, with
+  the instruction to use no focus or follow-up action in that turn) from 19:30:47.
+- **Trigger:** the `H5` fire of 19:33:10 queued behind the operator turn; at 19:33:18 the
+  `t3_queue` listing showed one queued tick prompt (API). At about 19:33:25 the coordinator clicked
+  the control that T3 now labels "Send now" on the queued run (UI).
+- **Expected:** `src/shared/focus-follow-up.md` "Overlap": a queued tick the developer sends early
+  through the T3 UI is an ordinary tick.
+- **Observed:** the tick prompt was delivered into the running operator turn at 19:33:25, and the
+  queued run was cancelled at the same moment, without starting. After the shell sleep ended
+  (19:35:52), the steered tick posted the exact checkpoint at 19:36:20 (`ticks=4`,
+  `state=active`), a quiet tick, inside the operator turn. The operator turn's "done" reply never
+  posted: the turn's only assistant message after the steer is the checkpoint. As in `e0966ac7`,
+  the steered prompt ran as a tick although the busy turn asked for no focus action.
+- **Schedule state:** the queued run was shown by the `t3_queue` listing (API); the click was the
+  coordinator's UI action.
+- **Authorship:** coordinator operator turn and UI click; scheduler tick.
+- **Window and result:** window 1, attempt 1. **Pass** (`window-1/F15-send-now-O6.json`).
+
+#### 87851907: F16
+
+A real quiet tick's observer growth, and whether the first loop reaches the cap before compaction.
+
+- **Setup and trigger:** the cap loop `H4` of `O2`, F12.
+- **Expected:** growth per quiet tick recorded and split by item type (skill-file loads, ancestry,
+  state, history page and checkpoint message), against the `e0966ac7` baseline; the compaction tick
+  count recorded when the first loop does not reach the cap.
+- **Method:** the turn items of each tick run in T3's state, read in place. An activity item counts
+  the characters of its JSON form (tool name, input and output, indented by two spaces); a message
+  counts its text length. A run counts as quiet when its only assistant message carries the
+  checkpoint, so all 24 runs of `O2` count. The `e0966ac7` record's published figure (21,384
+  characters) came from a method that is not recorded. Both candidates were therefore recomputed with
+  this one method; for `e0966ac7` the input is its `O2` (window 1) loop (35 tick runs).
+- **Observed:** the median quiet tick of `87851907` added 5 items and 17,393 characters, against 5
+  items and 18,325 characters for `e0966ac7` by the same method (`window-1/F16-per-type-O2.json`,
+  `calibration/F16-cal-e0966ac7-O2.json`).
+
+| Item type                        | Items | `87851907` characters | `e0966ac7` characters, same method |
+| -------------------------------- | ----: | --------------------: | ---------------------------------: |
+| `orchestrator_capabilities` call |     1 |                11,807 |                             12,773 |
+| Target state read                |     1 |                 3,158 |                              3,137 |
+| History page                     |     1 |                 2,067 |                              2,046 |
+| Checkpoint message               |     1 |                   361 |                                369 |
+| Host checkpoint item (no text)   |     1 |                     0 |                                  0 |
+| Skill-file loads                 |     0 |                     0 |                                  0 |
+| Observer-ancestry reads          |     0 |                     0 |                                  0 |
+| **Median quiet tick, total**     | **5** |            **17,393** |                         **18,325** |
+
+The global Codex `AGENTS.md` was present for `87851907` and absent for `e0966ac7`; the quiet tick
+did not grow with it. The first loop reached the cap after 24 ticks without compaction.
+
+- **WP0 limits re-observed:** busy-thread queueing confirmed (F9, F10 and F15); scheduled-turn skill
+  load confirmed (F13); `nextPosition` across runs confirmed indirectly (the `last=` values of the
+  checkpoints advance across runs without re-reading earlier pages); delete-then-continue confirmed
+  (after the UI deletion in F8 and the focus deletions in F3, F5, F6, F10, F12 and F14, no further
+  fire for the deleted handle appears in the observer's history, and the final API listings of both
+  windows were empty).
+- **Schedule state:** as for F12.
+- **Authorship:** scheduler ticks; the growth was read by the coordinator from the host's records.
+- **Window and result:** window 1. **Pass**: the growth is recorded, and the first loop reached the
+  cap.
+
+#### 87851907: limitations
+
+- **Resolved #670 limitations.** The record resolves all four #670 points of the `e0966ac7`
+  record:
+  - **F2, idle report:** every first tick after an opt-in snapshot of an idle target reported it
+    once, on six loops of four observers, including after a resume, on a second target and in
+    approval-required mode (F2);
+  - **F12, cap:** the 5-minute loop reached `ticks=24`, the cap tick deleted its own schedule with
+    the complete handle, and the T3 UI showed no remaining focus task (F12);
+  - **offer numbering:** every offer numbers its items 1–5, with item 6 only in approval mode, and
+    the T3 UI shows the same numbers as the raw text (F1, "Offers" below);
+  - **global Codex `AGENTS.md`:** recorded with one global Codex `AGENTS.md` (SHA-256 `70fc0d66…`)
+    present for both windows; other contents are not qualified.
+- **Counts of the link scan** (every assistant message of each observer, final and commentary; the
+  patterns are `t3-thread:`, `<\s*t3`, `<[a-z][a-z0-9+.-]*:` and a Markdown link to any scheme,
+  applied after well-formed links are removed):
+
+| Observer        | Messages scanned | Naming a session | Conforming mentions | Non-conforming mentions | Well-formed links | Defect matches | T3 text equals Codex record | Checkpoints (raw `target=`, exact ending) |
+| --------------- | ---------------: | ---------------: | ------------------: | ----------------------: | ----------------: | -------------: | --------------------------: | ----------------------------------------: |
+| `O` (window 1)  |               41 |               13 |                  13 |                       5 |                 0 |              0 |                       41/41 |                                        20 |
+| `O2` (window 1) |               29 |                4 |                   4 |                       1 |                 0 |              0 |                       29/29 |                                        25 |
+| `O3` (window 1) |                2 |                1 |                   1 |                       0 |                 0 |              0 |                         2/2 |                                         2 |
+| `O5` (window 1) |               11 |                2 |                   2 |                       1 |                 0 |              0 |                       11/11 |                                         6 |
+| `O6` (window 1) |               10 |                3 |                   3 |                       1 |                 0 |              0 |                       10/10 |                                         6 |
+| `O4` (window 2) |               14 |                2 |                   2 |                       1 |                 0 |              0 |                       14/14 |                                         9 |
+| **Total**       |          **107** |           **25** |              **25** |                   **9** |             **0** |          **0** |                 **107/107** |                                    **68** |
+
+The files are `window-1/scan-w1-O.json`, `scan-w1-O2.json`, `scan-w1-O3.json`, `scan-w1-O5.json`,
+`scan-w1-O6.json` and `window-2/scan-w2-O4.json`. No scan found a well-formed host thread link, a
+malformed fragment, a link or ID naming the wrong session, or a T3 text that differs from the Codex
+record. Eight of the nine non-conforming mentions are the ID inside the longer inline-code span of
+an offer's stop command, the shape that "Offer" prescribes. The ninth is the ID inside the
+inline-code pointer to an interactive focus run in F3's Looping report. None is a title, an
+abbreviation, a bare mention or a link. The two messages of the child of `P` have no link-scan file;
+they are quoted in F1 and name `P` only as the ID in inline code.
+
+- **Evidence strength.** N, the number of session-naming messages scanned, is 25 (107 messages in
+  all). With no malformed fragment among them, the approximate 95% upper bound on the per-message
+  rate is about 3/N, roughly 12%. A pass on this sample, one model and one effort shows that the
+  naming containment held here; it does not prove a low rate.
+- **Report completeness.** No separate report-completeness classification was captured for this
+  candidate. The snapshots, tick reports and refusals quoted under F1 to F15 each carry the fields
+  their item expects.
+- **Ancestry skip.** The activity scan counted observer-ancestry `t3_thread_read` calls per tick of
+  every root observer (`window-*/scan-ext-*.json`). The threshold allows at most one chain walk in
+  ten counted ticks. Stopped ticks, fires after a compaction, snapshots and resumes are excluded from
+  the count and reported separately.
+
+| Observer        | Tick turns | Counted | Walking the chain | Excluded             | Ancestry reads at snapshot and resume |
+| --------------- | ---------: | ------: | ----------------: | -------------------- | ------------------------------------: |
+| `O` (window 1)  |         16 |      16 |                 0 | none                 |                                     4 |
+| `O2` (window 1) |         24 |      24 |                 0 | none                 |                                     1 |
+| `O3` (window 1) |          2 |       0 |                 0 | 2 stopped ticks (F7) |                                     0 |
+| `O5` (window 1) |          4 |       4 |                 0 | none                 |                                     1 |
+| `O6` (window 1) |          5 |       5 |                 0 | none                 |                                     1 |
+| `O4` (window 2) |          7 |       7 |                 0 | none                 |                                     1 |
+| **Total**       |     **58** |  **56** |             **0** |                      |                                 **8** |
+
+Per quiet tick, the observer-ancestry reads are 0 and their charged characters 0 (F16). No observer
+compacted, so no fire is excluded for compaction.
+
+- **Offers.** The whole-text parser read 8 offers: 4 of `O` (window 1), 1 each of `O2`, `O5`, `O6`
+  (window 1) and `O4` (window 2). Every offer carried its numbered disclosures in the fixed order.
+  The seven default-mode offers carried items 1–5. The approval-mode offer of `O4` carried items
+  1–6, with both approval elements in item 6. No offer was missing an item, and no approval-mode
+  offer lacked item 6 (`window-*/scan-ext-*.json`). The disclosure keyword check of the schedule
+  scan (`window-*/scan-sched-*.json`) matches English wording only and marks every German offer as
+  incomplete; it is not used here. The item meanings were judged against the raw text, as glossed
+  under F1 and F10.
+- **Paths.** The path scan found 0 hits across all visible observer messages: no absolute path, no
+  home path or `file` URL, and no Markdown link to any path. `T`'s and `T5`'s failure output held
+  an absolute path, and the observers named only the missing evidence file and the error text.
+- **Delete calls** (`window-*/scan-sched-*.json`): every `delete_scheduled_task` call passed the
+  complete handle with its `scheduled-task:` prefix, equal to the creation result, the prompt's
+  `handle:` and the checkpoint's `handle=`.
+
+| Observer        | Calls | With the complete handle | Completed | `task_not_found` | Which                                     |
+| --------------- | ----: | -----------------------: | --------: | ---------------: | ----------------------------------------- |
+| `O` (window 1)  |     3 |                        3 |         2 |                1 | F14 stop, F5 completion, F8 (UI deletion) |
+| `O2` (window 1) |     1 |                        1 |         1 |                0 | F12 cap tick                              |
+| `O3` (window 1) |     0 |                        0 |         0 |                0 | none (no valid checkpoint)                |
+| `O5` (window 1) |     1 |                        1 |         1 |                0 | negative-control stop                     |
+| `O6` (window 1) |     1 |                        1 |         1 |                0 | F6 lost access                            |
+| `O4` (window 2) |     1 |                        1 |         1 |                0 | F10 stop (approved)                       |
+| **Total**       | **7** |                    **7** |     **6** |            **1** |                                           |
+
+All seven schedule updates in the scans carried the prefix as well.
+
+- **Remaining observations, not defects:**
+  - **German output.** All observer output was German because of the global Codex `AGENTS.md`.
+    The checkpoint grammar stayed literal, and every `started=` value is ISO-8601 UTC.
+  - **Slash form of the skill reference.** The stop command in the offers of `O`, `O5` and `O4`,
+    and the pointer in F3's Looping report, are written `/effective-flow focus …`, while `O2` and
+    `O6` wrote `$effective-flow focus …`. The same slash form appeared on `e0966ac7`; it is not part
+    of #670.
+  - **F15 operator reply.** The busy operator turn of F15 ended without its "done" reply; its only
+    assistant message after the early send is the tick's checkpoint.
+  - **T3 UI label.** The control for sending a queued run early is now labelled "Send now"; on
+    `e0966ac7` it was "Steer".
+  - **Host context window.** The host reported a 475,000-token context window for `O2` until
+    19:08:35 and 258,400 tokens afterwards (F12). The change came from the host.
+  - **F10 hold timing.** The owner answered tick 1's approvals within seconds, so the hold landed on
+    ticks 2 and 3. Holding a later tick still provokes the queued fires that F10 requires.
+  - **Calibration order.** The German and remaining layout fixtures of the offer scan were added
+    after window 2 and replayed against the unchanged rule, rather than run before the recording.
+- **Host faults.** None in either window.
+- **Withdrawn offers.** The record exercises a declined offer only (F1). A withdrawn offer is not
+  recorded.
+- **Not recorded.** The T3 UI was observed for F1's rendering, F6's target deletion, F8's schedule
+  deletion, F12's empty schedule list and F15's "Send now"; other schedule states are API listings
+  or the observers' histories. The T3 server version is not independently captured, a sanitized
+  `orchestrator_capabilities` result is not in the evidence root, and the per-call selections of
+  F1's read ledger are not itemized. No snapshot states its redaction outcome; F1 passes without
+  that field, and F3's blocker report shows the redaction applied.
+- **Scope.** The record binds the portable build only. Native maintainer builds are not qualified,
+  which stays an accepted residual risk; so does the extra visible commentary on quiet ticks that a
+  default Codex configuration produces. Other hosts, other models and other global `AGENTS.md`
+  contents are not covered. The scenarios ran once each. The `focus` and `build-context` eval rounds
+  remain post-merge debt.
+
+**Host prerequisite status, November 15, 2026.** The qualified configuration stated on November 13
+stays unchanged and was recorded again on `87851907`, on `gpt-6.1-sol` at medium reasoning effort,
+with the extended entry (SHA-256 `c19e3da3…`) as the only key of the Codex configuration file. By
+owner decision (2026-11-15, #670 point 4), the owner's global Codex `AGENTS.md` was present for the
+whole record (SHA-256 `70fc0d66…`), which reverses the November 14 status. The follow-up mode is
+qualified with that one file present; other `AGENTS.md` contents are not qualified. This narrows the
+limitation and does not change the prerequisite.
+
 ## Acceptance matrix
 
-| Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | If unavailable                                                                                       |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
-| T3 observed, report-only                        | The built candidate loads `focus`; an exact throwaway target is admitted; the observer reads only the selected source with bounded coverage; identity, scope, redaction, cited evidence, and one snapshot verdict are recorded. | Passed F on the bound candidate `e0966ac7`. The extended host configuration entry was active; its tick part addresses tick turns only, and its naming sentence, which also covers snapshots, is a prerequisite of the qualified naming, not of report-only correctness. History: passed F on the bound candidate `024bcb2a`, passed E on the bound candidate `ada4fdae`, passed D on the bound corrected candidate, and C also passed before the spelling correction; E and D are history, and the D binding is superseded by the follow-up mode change (#613). | Return missing current snapshot qualification before target or ancestry reads; do not claim support. |
-| T3 delegated correction                         | A running delegated target is rechecked immediately before dispatch, and an atomic conditional primitive rejects a target that finishes between the state read and steer without starting a fresh task.                         | Disabled; no candidate-bound proof exists, and the required atomic conditional primitive is not established.                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Report-only; do not invoke a correction.                                                             |
-| T3 idle top-level correction                    | Candidate-bound acceptance of the documented new-turn `queue` form, including exact same-run confirmation and outcome classification.                                                                                           | Disabled; idle top-level acceptance is absent.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Do not invoke a correction.                                                                          |
-| Codex desktop observed                          | Candidate-bound deep-link reading, trusted self/ancestor refusal, bounded coverage, redaction, and cited verdict are observed on the loaded artifact.                                                                           | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Return the specific missing capability; do not read or send.                                         |
-| Local Claude Code self-report/correction        | Candidate-bound default-permission top-level proof, `[ref]`-qualified delivery, bounded request/reply and nonce checks, refusal/late/foreign-reply handling, and a separate confirmed correction case.                          | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Return the specific missing capability; do not look up, request, wait, or correct.                   |
-| Codex desktop send                              | A host-supported sender is independently observed and candidate-bound.                                                                                                                                                          | Disabled in this version; the spike recorded only a model self-report, not a host sender.                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Never send through this path.                                                                        |
-| T3 observed follow-up (schedule_task, T3/Codex) | The follow-up qualification checklist below is recorded on the built candidate, with trusted host context naming provider instance `codex` for the observer thread.                                                             | Passed F on the bound candidate `e0966ac7`, with the documented host prerequisite and the limitations in `#### e0966ac7: limitations` (F2, F12, the T3 UI offer numbering and the untested global Codex `AGENTS.md`); it resolves the `024bcb2a` limitations of the offer disclosures, Looping, the ancestry walk and the local path. Sends stay disabled.                                                                                                                                                                                                      | Offer no follow-up; `follow-up stop` and a tick's deletion of its own handle stay available.         |
+| Host/path                                       | Required candidate-bound proof                                                                                                                                                                                                  | Current status                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | If unavailable                                                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| T3 observed, report-only                        | The built candidate loads `focus`; an exact throwaway target is admitted; the observer reads only the selected source with bounded coverage; identity, scope, redaction, cited evidence, and one snapshot verdict are recorded. | Passed F on the bound candidate `87851907`. The extended host configuration entry was active; its tick part addresses tick turns only, and its naming sentence, which also covers snapshots, is a prerequisite of the qualified naming, not of report-only correctness. History: passed F on the bound candidates `e0966ac7` and `024bcb2a`, passed E on the bound candidate `ada4fdae`, passed D on the bound corrected candidate, and C also passed before the spelling correction; E and D are history, and the D binding is superseded by the follow-up mode change (#613). | Return missing current snapshot qualification before target or ancestry reads; do not claim support. |
+| T3 delegated correction                         | A running delegated target is rechecked immediately before dispatch, and an atomic conditional primitive rejects a target that finishes between the state read and steer without starting a fresh task.                         | Disabled; no candidate-bound proof exists, and the required atomic conditional primitive is not established.                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | Report-only; do not invoke a correction.                                                             |
+| T3 idle top-level correction                    | Candidate-bound acceptance of the documented new-turn `queue` form, including exact same-run confirmation and outcome classification.                                                                                           | Disabled; idle top-level acceptance is absent.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | Do not invoke a correction.                                                                          |
+| Codex desktop observed                          | Candidate-bound deep-link reading, trusted self/ancestor refusal, bounded coverage, redaction, and cited verdict are observed on the loaded artifact.                                                                           | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Return the specific missing capability; do not read or send.                                         |
+| Local Claude Code self-report/correction        | Candidate-bound default-permission top-level proof, `[ref]`-qualified delivery, bounded request/reply and nonce checks, refusal/late/foreign-reply handling, and a separate confirmed correction case.                          | Disabled; this test host is unavailable here and no candidate-bound run exists.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | Return the specific missing capability; do not look up, request, wait, or correct.                   |
+| Codex desktop send                              | A host-supported sender is independently observed and candidate-bound.                                                                                                                                                          | Disabled in this version; the spike recorded only a model self-report, not a host sender.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       | Never send through this path.                                                                        |
+| T3 observed follow-up (schedule_task, T3/Codex) | The follow-up qualification checklist below is recorded on the built candidate, with trusted host context naming provider instance `codex` for the observer thread.                                                             | Passed F on the bound candidate `87851907`, all 16 items, with the documented host prerequisite and one global Codex `AGENTS.md` present (other contents are not qualified; see `#### 87851907: limitations`); it resolves the `e0966ac7` limitations of F2, F12, the T3 UI offer numbering and the untested global Codex `AGENTS.md`. Sends stay disabled.                                                                                                                                                                                                                     | Offer no follow-up; `follow-up stop` and a tick's deletion of its own handle stay available.         |
 
 Activation of any advertised path requires a completed row backed by a candidate record whose differences
 from the current source are only binding drift. The first activation of any route also removes the
@@ -3216,7 +4132,7 @@ recorded candidate on this page. For each one, record the setup, the trigger, th
 output, and the schedule state verified in the T3 UI; focus never lists schedules.
 
 - renewed snapshot qualification, including self and ancestor refusal, recorded before the next
-  activation — recorded: F1 for `e0966ac7`;
+  activation — recorded: F1 for `87851907`;
 - a quiet unchanged tick;
 - a genuine repetition across tick boundaries;
 - a long test or approval wait without a false loop;

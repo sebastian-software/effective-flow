@@ -20,7 +20,9 @@ present it is untested. All sends stay disabled. The decision below is unchanged
 
 Status note, November 15, 2026 (#670, owner decision): the follow-up loop cap changes from 24 hours
 or 48 ticks to a flat 24 ticks for every interval; the decision bullet below says why. The cap
-change makes a new focus candidate, which needs its own record before it merges.
+change makes a new focus candidate, which needs its own record before it merges. The
+[F record for candidate `87851907`](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-87851907)
+passed all 16 checklist items, and its 5-minute loop reached the 24-tick cap without compaction.
 
 ## Context
 
