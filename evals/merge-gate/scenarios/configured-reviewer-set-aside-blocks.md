@@ -4,7 +4,9 @@ The project explicitly configures `recensor` as an automatic reviewer. Its check
 the verified head, and its fresh review surfaces carry one unresolved thread and one
 changes-requested review-body finding. The sandbox replaces only this scenario's `iterate` tool with
 the deterministic echo, so the run records the real Phase-3 handoff while leaving production
-`iterate` outside the claim.
+`iterate` outside the claim. Its checkout carries the pull request as real history: a local `origin`
+holds the seeded `develop` and the fixture's head commit, SHA for SHA, so the repair scope read the
+gate makes before it delegates resolves (see `_scaffold/configured-reviewer-origin.mjs`).
 
 Prepare its five slots with
 `pnpm eval merge-gate prepare --scenario configured-reviewer-set-aside-blocks`, then hand each
@@ -50,10 +52,12 @@ to review `700002` from `recensor[bot]`. It carries the exact item filter, delim
 manifest, `Summary comment: suppressed`, `Next steps: suppressed`, and
 `Review guard: established` declarations.
 
-The scenario-local echo validates and records that handoff, hashes the body text rather than
-retaining it, and returns `deferred` for both supplied identifiers. The gate validates both outcomes
-against its pre-committed key set. Phase 4 then performs its fresh status, thread, comment, and
-review reads. Conditions 7 and 10 require the set-aside confirmation for the deferred items; because
+Before building that handoff, the gate's scope read resolves the reported head against
+`origin/develop` and authorizes the pull request's one changed path. The scenario-local echo
+validates and records that handoff, hashes the body text rather than retaining it, and returns
+`deferred` for both supplied identifiers below empty `Returned commits: []` and
+`Scope expansion: []` lines. The gate validates both outcomes against its pre-committed key set.
+Phase 4 then performs its fresh status, thread, comment, and review reads. Conditions 7 and 10 require the set-aside confirmation for the deferred items; because
 the prompt makes the run non-interactive, no confirmation can be obtained and no `pr-merge` request
 is made.
 

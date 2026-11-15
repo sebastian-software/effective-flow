@@ -181,6 +181,8 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'remote-tracker-ledger-core.mjs',
   'remote-tracker-shared-core.mjs',
   'remote-tracker.mjs',
+  'repair-attempt-core.mjs',
+  'repair-attempt.mjs',
   'review-report-render.mjs',
   'runtime-file-primitives.mjs',
   'runtime-state-guard.mjs',

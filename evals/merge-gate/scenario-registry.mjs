@@ -35,6 +35,8 @@ export const SCENARIOS = Object.freeze([
   'non-interactive-dispatch-reports',
   'presence-notice-names-other-run',
   'quick-conflict-commit-without-ci-evidence-blocks',
+  'repair-after-base-merge-merges',
+  'repeated-ineffective-repair-stops',
   'unreported-checks-at-phase-four',
   'unreported-checks-block-merge',
 ]);

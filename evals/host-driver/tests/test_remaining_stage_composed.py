@@ -195,6 +195,24 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                     set_unknown=lambda ordinal: (self.f.controls / 'unknown').write_text(str(ordinal) + '\n'),
                     release=lambda ordinal: (self.f.controls / ('release-' + str(ordinal))).touch(),
                     check_context=check_context, check_closures=check_closures)
+                if not unknown:
+                    # Hold the last refusal writer until five refusals are durably persisted, so
+                    # block() after the first refusal cannot turn an in-flight refusal into
+                    # reservation-unknown accounting.
+                    self.wait_for(lambda: (self.f.controls / 'refusal-writer-held').exists()
+                        and all((self.f.controls / ('refusal-persisted-' + str(i))).exists()
+                            for i in range(7, 12)) or future.done(), 'five authenticated original refusals')
+                    self.assertFalse(future.done())
+                    remaining = self.f.remaining_grant['orderedTasks'][6:12]
+                    self.assertFalse((Path(remaining[-1]['artifactDir']) / 'launch-refusal.json').exists())
+                    for ordinal, task in enumerate(remaining[:5], 7):
+                        artifact = Path(task['artifactDir'])
+                        self.assertEqual((self.f.controls / ('refusal-persisted-' + str(ordinal))).read_text(),
+                                         digest(artifact / 'launch-refusal.json'))
+                        self.assertFalse((artifact / 'worker-result.json').exists())
+                        self.assertEqual(driver.accounting_projection(task, artifact), {'consumptionState': 'not-reserved',
+                            'chargedRoots': 0, 'actualModelStarted': False})
+                    (self.f.controls / 'release-refusal-writer').touch()
                 summary = future.result(timeout=35)
             finally:
                 # Release every owned claim/harmless command even if an assertion failed.
@@ -202,6 +220,7 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                     claim.unlink(missing_ok=True)
                 for ordinal in range(1, 7):
                     (self.f.controls / ('release-' + str(ordinal))).touch()
+                (self.f.controls / 'release-refusal-writer').touch()
                 if not future.done():
                     driver.block()
                     future.result(timeout=35)

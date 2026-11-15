@@ -504,6 +504,7 @@
               "path": "docs/iterate-eval-change.md",
               "line": 3,
               "startLine": null,
+              "lineOutdated": false,
               "createdAt": "2026-09-01T10:45:00.000Z",
               "url": "https://github.com/example/flow/pull/42#discussion_r800001",
               "comments": [

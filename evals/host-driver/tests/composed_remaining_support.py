@@ -85,6 +85,56 @@ if (operation === 'qualify') {
 '''
 
 
+REFUSAL_BARRIER = r'''
+import os, sys, time
+from pathlib import Path
+sys.dont_write_bytecode = True
+sys.path.insert(0, sys.argv.pop(1))
+import eval_host_worker as worker
+from eval_driver_runtime import inspect_consumption, sha
+original_save_refusal = worker.save_refusal
+
+def wait_for(condition):
+    deadline = time.monotonic() + 35
+    while not condition():
+        if time.monotonic() >= deadline:
+            raise RuntimeError('second-batch refusal persistence barrier timed out')
+        time.sleep(.01)
+
+def synchronized_refusal(job, job_digest, state):
+    ordinal = job['remainingStage']['ordinal']
+    if not 7 <= ordinal <= 12:
+        return original_save_refusal(job, job_digest, state)
+    directory = Path(job['artifactDir'])
+    controls = Path(worker.read_bound_json(job['configFile'])[0]['fixtureControls'])
+    if ordinal == 12:
+        (controls / 'refusal-writer-held').touch()
+        wait_for(lambda: (controls / 'release-refusal-writer').exists())
+    original_save_refusal(job, job_digest, state)
+    observed = inspect_consumption(job, directory / 'worker-job.json', job_digest,
+                                   fixture_only=job['fixtureTools'])
+    if observed != {'consumptionState': 'not-reserved', 'chargedRoots': 0,
+                    'actualModelStarted': False}:
+        raise RuntimeError('original refusal did not authenticate')
+    refusal = directory / 'launch-refusal.json'
+    for path in (refusal, directory):
+        descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+    marker = controls / ('refusal-persisted-' + str(ordinal))
+    pending_marker = marker.with_suffix('.tmp')
+    pending_marker.write_text(sha(refusal))
+    pending_marker.replace(marker)
+    wait_for(lambda: all((controls / ('refusal-persisted-' + str(peer_ordinal))).exists()
+                         for peer_ordinal in range(7, 13)))
+
+worker.save_refusal = synchronized_refusal
+raise SystemExit(worker.main())
+'''
+
+
 def copy_fixture_executable(source, destination):
     """Pin private executable bytes, even when the installed runtime is shared/root-owned."""
     source = Path(source).resolve()
@@ -237,6 +287,17 @@ class ComposedRemainingFixture(OriginalSealFixture):
         spec = importlib.util.spec_from_file_location('composed_remaining_driver', self.driver / 'run-cohorts.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
+        original_execute_wrapper = module.execute_wrapper
+
+        def synchronized_wrapper(command, *args, **kwargs):
+            position = command.index('--') + 2
+            if command[position] != str(self.driver / 'eval_host_worker.py'):
+                raise ValueError('unexpected composed fixture worker entrypoint')
+            command = [*command[:position], '-c', REFUSAL_BARRIER, str(self.driver),
+                       *command[position + 1:]]
+            return original_execute_wrapper(command, *args, **kwargs)
+
+        module.execute_wrapper = synchronized_wrapper
         from unittest import mock
         with mock.patch.dict(sys.modules, {'eval_first_stage': self.stage}):
             driver = module.Driver(self.config_path, self.profiles, operator=self.operator,
