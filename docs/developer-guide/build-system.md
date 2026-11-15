@@ -845,7 +845,9 @@ point is an I/O boundary over testable core or protocol modules:
   `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile`, `npm ci --ignore-scripts`
   or `bun install --frozen-lockfile --ignore-scripts`. Each carries only its listed step keys and
   inputs, without expressions or an inherited `env` (`step-before-test`, `action-before-test`,
-  `env-before-test`), so this repository's own `Format, test and build` job stays undetected.
+  `env-before-test`), and the test step only `name`, `id`, `run`, `timeout-minutes`,
+  `working-directory` and `shell`, without a step `env` (`test-step-env`, `test-step-key`), so
+  this repository's own `Format, test and build` job stays undetected.
   `ci-integrity` (`{ cwd, baseRef, commit?, tree }`, `tree` a full commit or tree id or `index`)
   compares, between that base or pinned commit and `tree`, the `mode type oid` entries of
   `.github/workflows/`, `.forgejo/workflows/`, `.gitea/workflows/` and every local reusable

@@ -609,6 +609,8 @@ export const DETECTION_REASONS = Object.freeze([
   'env-before-test',
   'step-before-test',
   'action-before-test',
+  'test-step-env',
+  'test-step-key',
 ]);
 
 // A check run's head SHA names the pull request, not the tree its job tested. The test step counts
@@ -1019,10 +1021,16 @@ function preTestReasons(steps, testIndex, command, context) {
   return reasons;
 }
 
+// The test step itself carries only `RUN_STEP_KEYS`: any other key, a step `env` above all
+// (`BASH_ENV: ./setup.sh` runs repository code before the tests), is not provably tree-neutral.
 function evaluateStep(step, index, command, context) {
   const reasons = preTestReasons(context.steps, index, command, context);
-  if (step.has('if')) reasons.push('step-condition');
-  if (step.has('continue-on-error')) reasons.push('continue-on-error');
+  for (const key of step.keys()) {
+    if (key === 'if') reasons.push('step-condition');
+    else if (key === 'continue-on-error') reasons.push('continue-on-error');
+    else if (key === 'env') reasons.push('test-step-env');
+    else if (!RUN_STEP_KEYS.has(key)) reasons.push('test-step-key');
+  }
   const stepShell = shellReason(step.get('shell'));
   if (stepShell) reasons.push(stepShell);
   const directory = step.has('working-directory')

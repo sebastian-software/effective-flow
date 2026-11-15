@@ -872,6 +872,34 @@ test('detect: only allowlisted pre-test steps keep a job detected', () => {
   assertUndetected(workflow({ jobExtra: ['    env:', '      CI: true'] }), 'env-before-test');
 });
 
+// Invariant: the test step itself carries only `name`, `id`, `run`, `timeout-minutes`, a root
+// `working-directory` and a `bash` `shell`; a step `env` (`BASH_ENV` runs a script before the
+// tests) or any other key is not provably tree-neutral and leaves the job on full validation.
+test('detect: the test step carries only allowlisted keys', () => {
+  const testStep = (...lines) => workflow({ steps: ['      - run: pnpm test', ...lines] });
+  assert.equal(
+    evaluate(
+      testStep(
+        '        name: Unit tests',
+        '        id: unit',
+        '        timeout-minutes: 10',
+        '        working-directory: .',
+        '        shell: bash',
+      ),
+    ).status,
+    'detected',
+  );
+  assertUndetected(testStep('        env:', '          BASH_ENV: ./setup.sh'), 'test-step-env');
+  assertUndetected(
+    testStep('        env:', '          NODE_OPTIONS: --require ./setup.js'),
+    'test-step-env',
+  );
+  assertUndetected(testStep('        env:'), 'test-step-env');
+  assertUndetected(testStep('        with:', '          args: x'), 'test-step-key');
+  assertUndetected(testStep('        uses: actions/setup-node@v4'), 'test-step-key');
+  assertUndetected(testStep('        unknown-key: x'), 'test-step-key');
+});
+
 // Invariant: a pre-test `run:` step runs in its job's or workflow's default `working-directory`
 // unless it sets its own, so an allowed install outside the root is not allowed even when the test
 // step overrides its directory back to the root.

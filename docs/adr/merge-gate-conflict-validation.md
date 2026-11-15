@@ -172,7 +172,10 @@ default directory must be the root as well. Any other step key, `env`, `if` and
 `continue-on-error` included, any input outside an action's list, any `${{` expression in a `run:`
 or `with:` value, and any `env` the job or workflow passes down are not provable
 (`step-before-test`, `action-before-test`, `env-before-test`); so is every other `run:` step and
-every other action, local, composite and Docker actions included. A check run's head SHA names
+every other action, local, composite and Docker actions included. The test step itself carries
+only `name`, `id`, `timeout-minutes`, its `run:`, a root `working-directory` and a `bash` `shell`;
+a step `env`, which runs repository code before the tests through `BASH_ENV`, and any other key are
+not provable either (`test-step-env`, `test-step-key`). A check run's head SHA names
 the pull request whose event started the workflow, not the tree its job tested, so a job that
 checks out another ref or repository would otherwise pass as evidence for a conflict commit it
 never tested.
