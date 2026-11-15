@@ -1,13 +1,14 @@
 // Conflict validation: the deterministic evidence behind merge-gate's CI-backed `quick` validation of
 // a conflict-resolution commit.
 //
-// - `ci-detect` reads `.github/workflows/` of the commit of `refs/remotes/origin/<baseRef>` and
-//   reports the test jobs that run the repository's manifest test command unconditionally on every
-//   pull request to the base, with the static set of job instances such a run produces.
+// - `ci-detect` reads `.github/workflows/` of the commit of `refs/remotes/origin/<baseRef>`, or of
+//   the pinned `commit` when one is given, and reports the test jobs that run the repository's
+//   manifest test command unconditionally on every pull request to the base, with the static set of
+//   job instances such a run produces.
 // - `ci-integrity` compares the workflow directories (`.github/workflows/`, `.forgejo/workflows/`,
-//   `.gitea/workflows/`) and every local reusable workflow or composite action they reference
-//   (`uses: ./…`) between that base commit and a given tree: a commit or tree object id, or the
-//   staged index (`index`).
+//   `.gitea/workflows/`), every local reusable workflow or composite action they reference
+//   (`uses: ./…`) and the root manifests that define the test commands between that commit and a
+//   given tree: a commit or tree object id, or the staged index (`index`).
 // - `ci-evidence-match` is pure: it matches identity-carrying `pr-status-read` check entries against
 //   a `ci-detect` result for one verified head.
 // - `quick-marker-scan` lists the commits between the merge base of that base commit and a given head
@@ -557,6 +558,7 @@ export const MANIFEST_FILES = Object.freeze([
 // request's own checked-out tree.
 export const DETECTION_REASONS = Object.freeze([
   'base-ref-missing',
+  'commit-missing',
   'no-manifest-test-command',
   'not-a-directory',
   'not-a-regular-file',
@@ -1101,6 +1103,25 @@ async function baseCommit(context, cwd, baseRef) {
   return originBaseCommit(baseRef, read, gitFailed);
 }
 
+// The commit whose CI definition `ci-detect` and `ci-integrity` read: the pinned `commit` when the
+// input names one, which must exist as exactly that commit object, else the base ref's commit.
+// Returns `{ commit, missing }`, `missing` naming the reason when there is none.
+async function definitionCommit(context, input) {
+  if (input.commit === undefined) {
+    const commit = await baseCommit(context, input.cwd, input.baseRef);
+    return commit === null ? { commit, missing: 'base-ref-missing' } : { commit };
+  }
+  const peeled = await gitOutput(
+    context,
+    input.cwd,
+    ['rev-parse', '--verify', '--quiet', `${input.commit}^{commit}`],
+    1,
+  );
+  return peeled !== null && peeled.trim() === input.commit
+    ? { commit: input.commit }
+    : { commit: null, missing: 'commit-missing' };
+}
+
 function describeEntry(entry) {
   return `${entry.mode} ${entry.type} ${entry.oid}`;
 }
@@ -1227,8 +1248,8 @@ function indexReader(context, cwd) {
 // Input validation
 
 const INPUT_KEYS = Object.freeze({
-  'ci-detect': Object.freeze(['cwd', 'baseRef', 'base']),
-  'ci-integrity': Object.freeze(['cwd', 'baseRef', 'tree']),
+  'ci-detect': Object.freeze(['cwd', 'baseRef', 'base', 'commit']),
+  'ci-integrity': Object.freeze(['cwd', 'baseRef', 'commit', 'tree']),
   'ci-evidence-match': Object.freeze(['detection', 'checks', 'headSha']),
   'quick-marker-scan': Object.freeze(['cwd', 'baseRef', 'headSha']),
 });
@@ -1258,6 +1279,13 @@ function validateBranch(value, field) {
   }
 }
 
+// The optional pinned `commit`: a full lowercase object id, never a ref or revision expression.
+function validateCommit(commit) {
+  if (commit !== undefined && !(typeof commit === 'string' && OBJECT_ID.test(commit))) {
+    fail('INVALID_INPUT', 'commit must be a full lowercase commit id', { field: 'commit' });
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // ci-detect
 
@@ -1277,6 +1305,7 @@ export async function detectCi(input, deps = {}) {
   validateCwd(input.cwd);
   validateBranch(input.baseRef, 'baseRef');
   if (input.base !== undefined) validateBranch(input.base, 'base');
+  validateCommit(input.commit);
   const base = input.base ?? input.baseRef;
   const context = makeContext(deps);
   const result = {
@@ -1291,9 +1320,9 @@ export async function detectCi(input, deps = {}) {
     detectedJobs: [],
     workflows: [],
   };
-  const commit = await baseCommit(context, input.cwd, input.baseRef);
+  const { commit, missing } = await definitionCommit(context, input);
   if (commit === null) {
-    result.reasons.push('base-ref-missing');
+    result.reasons.push(missing);
     return result;
   }
   result.baseCommit = commit;
@@ -1378,6 +1407,7 @@ export async function detectCi(input, deps = {}) {
 export const INTEGRITY_REASONS = Object.freeze([
   'identical',
   'base-ref-missing',
+  'commit-missing',
   'tree-missing',
   'changed',
   'unmerged-index-entry',
@@ -1458,10 +1488,35 @@ function unsafeEntry(kind, compared, entries) {
   return null;
 }
 
+// Whether a `package.json` that differs between the two sides still declares the same `scripts`:
+// only that member decides what a package manager's test invocation runs, pre and post scripts
+// included, so a dependency change keeps the test command. Each side must be exactly one regular
+// file within MAX_SOURCE_BYTES that parses as a JSON object; anything else is a difference.
+async function sameScripts(reader, compared, left, right) {
+  const scripts = async (entries) => {
+    if (entries.size !== 1 || !entries.has(compared)) return null;
+    const [mode, type, oid] = entries.get(compared).split(' ');
+    if (treeEntryKind({ mode, type }) !== 'file') return null;
+    const text = await reader.blobText(oid);
+    if (text === null) return null;
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      return null;
+    }
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
+    return JSON.stringify(parsed.scripts ?? null);
+  };
+  const base = await scripts(left);
+  return base !== null && base === (await scripts(right));
+}
+
 export async function checkIntegrity(input, deps = {}) {
   validateKeys('ci-integrity', input);
   validateCwd(input.cwd);
   validateBranch(input.baseRef, 'baseRef');
+  validateCommit(input.commit);
   const { tree } = input;
   if (tree !== INDEX_TREE && !(typeof tree === 'string' && OBJECT_ID.test(tree))) {
     fail('INVALID_INPUT', `tree must be a full object id or ${INDEX_TREE}`, { field: 'tree' });
@@ -1478,9 +1533,9 @@ export async function checkIntegrity(input, deps = {}) {
     differences: [],
     problems: [],
   };
-  const commit = await baseCommit(context, input.cwd, input.baseRef);
+  const { commit, missing } = await definitionCommit(context, input);
   if (commit === null) {
-    result.reason = 'base-ref-missing';
+    result.reason = missing;
     return result;
   }
   result.baseCommit = commit;
@@ -1502,7 +1557,12 @@ export async function checkIntegrity(input, deps = {}) {
     target = treeReader(context, input.cwd, result.treeOid);
   }
 
-  const queue = INTEGRITY_DIRECTORIES.map((directory) => ({ path: directory, kind: 'directory' }));
+  // The root manifests decide what the detected test command runs, so a base update that keeps the
+  // workflow but replaces the test script is a change as well.
+  const queue = [
+    ...INTEGRITY_DIRECTORIES.map((directory) => ({ path: directory, kind: 'directory' })),
+    ...MANIFEST_FILES.map((name) => ({ path: name, kind: 'manifest' })),
+  ];
   const seen = new Set();
   while (queue.length > 0) {
     const item = queue.shift();
@@ -1528,7 +1588,14 @@ export async function checkIntegrity(input, deps = {}) {
       if (targetEntries.unmerged) {
         result.problems.push({ path: compared, reason: 'unmerged-index-entry' });
       }
-      if (!sameEntries(baseEntries, targetEntries)) {
+      if (
+        !sameEntries(baseEntries, targetEntries) &&
+        !(
+          item.kind === 'manifest' &&
+          compared === 'package.json' &&
+          (await sameScripts(baseReader, compared, baseEntries, targetEntries))
+        )
+      ) {
         result.differences.push(...differencesOf(baseEntries, targetEntries));
         continue;
       }
@@ -1539,7 +1606,8 @@ export async function checkIntegrity(input, deps = {}) {
         result.problems.push({ path: unsafe, reason: 'unsafe-reference' });
         continue;
       }
-      // Its references are read from the base copy.
+      // Its references are read from the base copy; a manifest is no workflow source.
+      if (item.kind === 'manifest') continue;
       const sources =
         item.kind === 'directory'
           ? [...baseEntries.keys()].filter(
@@ -1641,6 +1709,15 @@ function validateDetection(detection) {
   }
   if (!DETECTION_STATUSES.includes(detection.status)) {
     fail('INVALID_INPUT', 'detection.status is not a ci-detect status', { field: 'detection' });
+  }
+  // A detection is bound to the commit whose CI definition it read; without that binding nothing
+  // says which test command its jobs ran, so a detected one must name the commit.
+  const { baseCommit: bound } = detection;
+  const boundValid = typeof bound === 'string' && OBJECT_ID.test(bound);
+  if (detection.status === 'detected' ? !boundValid : !(bound == null || boundValid)) {
+    fail('INVALID_INPUT', 'detection.baseCommit must be the full commit id ci-detect read', {
+      field: 'detection',
+    });
   }
   if (!Array.isArray(detection.detectedJobs)) {
     fail('INVALID_INPUT', 'detection.detectedJobs must be an array', { field: 'detection' });

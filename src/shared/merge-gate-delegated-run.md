@@ -1080,7 +1080,7 @@ Verify every one of the following against one ordered **fresh** observation batc
 new `pr-status-read` and wait for it to complete; where the wisdom file records a quick-validated
 conflict commit, that read carries `includeCheckIdentity: true`. Never reuse or reinterpret any
 status result from Phase 2 as this read. Condition 11 applies where the wisdom file records such a
-commit. Otherwise call
+commit; that run makes the fetches and the scan below without the ceiling call. Otherwise call
 `node <skill-root>/scripts/config-resolve.mjs conflict-validation <<< '{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<base>"}'`
 with `tool: "merge-gate"`, the `cwd` of this run's `resolve` call and that read's `baseRef` as
 `<base>`; only where its `data.conflictValidation.ceiling` is `quick`, run the ancestry check's two
@@ -1153,17 +1153,21 @@ condition leaves the next returning condition unbounded the day it is added.
     `## Phase 4 condition 10: Configured reviewer verdicts are assessed` in the loaded
     `merge-gate-configured-reviewer` fragment;
 11. where the wisdom file records a quick-validated conflict commit or the quick-marker scan
-    found one, CI evidence on this batch: its status read carries `includeCheckIdentity: true`; run
-    the ancestry check's two fetches (Phase 2 step 1) for that read's `baseRef`, unless this round
-    already made them for that base; then, rooted in `RUNTIME_STATE_ROOT`,
-    `node <skill-root>/scripts/conflict-validation.mjs ci-integrity <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","tree":"<VERIFIED_HEAD_SHA>"}'`
-    must hold – `ok: true` and `data.status` `ok` – and
+    found one, CI evidence on this batch for every **marked commit**: the recorded one and each in
+    the scan's `data.commits`; a failed fetch or scan leaves them unknown, which is no evidence. Its
+    status read carries `includeCheckIdentity: true`; run the ancestry check's two fetches (Phase 2
+    step 1) for that read's `baseRef`, unless this round already made them for that base; then,
+    rooted in `RUNTIME_STATE_ROOT`, for each marked commit `<commit>`:
+    `node <skill-root>/scripts/conflict-validation.mjs ci-detect <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","commit":"<commit>"}'`
+    gives its detection, read from the marked commit, whose tree holds the CI definition its
+    conflict was validated against, never from the current base or a recorded detection;
+    `node <skill-root>/scripts/conflict-validation.mjs ci-integrity <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","commit":"<commit>","tree":"<VERIFIED_HEAD_SHA>"}'`
+    must hold, `ok: true` with `data.status` `ok`; only then
     `node <skill-root>/scripts/conflict-validation.mjs ci-evidence-match <<< '{"detection":<detection>,"headSha":"<VERIFIED_HEAD_SHA>","checks":<that read's checks>}'`
-    must match – `data.evidence` `true` – both spelled out under the no-CI policy read's spelling
-    rule. `<detection>` is the `ci-detect` `data` object the wisdom file records; without one, run
-    `node <skill-root>/scripts/conflict-validation.mjs ci-detect <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>"}'`
-    now and use its `data`. Two `ci-evidence-match` `data.reason` values are not yet satisfied,
-    and are handled only where conditions 7 and 10 are met, per "Round accounting".
+    with that detection's `data` as `<detection>` must match, `data.evidence` `true`; all spelled
+    out under the no-CI policy read's spelling rule. Two `ci-evidence-match` `data.reason` values
+    are not yet satisfied, and are handled only where conditions 7 and 10 are met, per "Round
+    accounting".
     `missing` – the expected instances have not registered on this head yet, as right after the
     push – waits inside this round: run Phase 2 step 2's check wait once, counting the missing
     instances as pending on its `host-pr-watch` path, then evaluate Phase 4 again on a new batch.
@@ -1171,11 +1175,11 @@ condition leaves the next returning condition unbounded the day it is added.
     still-pending check: it ends this evaluation and starts a new Phase-2 round, so step 2's check
     wait and `mergeGate.maxRounds` bound it. A failed fetch or call, any other result, or a missing
     object or ref is no evidence; the waiver and the no-CI policy never satisfy this condition.
-    Unmet, it stops the run naming what is missing – a base whose workflows changed included – the
-    scan's `data.commits` or failure reason, and the remedy where CI cannot supply the evidence: a
-    merge by hand, or a history rewrite that drops the marked commits. It leaves the pushed commit
-    in place: no force push and no local `full` run. Phase 2 step 2's check-wait timeout path is
-    unchanged.
+    Unmet, it stops the run naming what is missing – a CI definition changed since a marked commit
+    included – the scan's `data.commits` or failure reason, and the remedy where CI cannot supply
+    the evidence: a merge by hand, or a history rewrite that drops the marked commits. It leaves the
+    pushed commit in place: no force push and no local `full` run. Phase 2 step 2's check-wait
+    timeout path is unchanged.
 
 #### The set-aside confirmation
 

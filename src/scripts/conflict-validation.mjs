@@ -1,13 +1,15 @@
 #!/usr/bin/env node
 
 // Thin JSON CLI over conflict-validation-core.mjs:
-//   node conflict-validation.mjs ci-detect           (stdin: { cwd, baseRef, base? })
-//   node conflict-validation.mjs ci-integrity        (stdin: { cwd, baseRef, tree })
+//   node conflict-validation.mjs ci-detect           (stdin: { cwd, baseRef, base?, commit? })
+//   node conflict-validation.mjs ci-integrity        (stdin: { cwd, baseRef, commit?, tree })
 //   node conflict-validation.mjs ci-evidence-match   (stdin: { detection, checks, headSha })
 //   node conflict-validation.mjs quick-marker-scan   (stdin: { cwd, baseRef, headSha })
 // `baseRef` is the pull request's base branch name without a remote prefix; every Git operation
-// reads the commit of `refs/remotes/origin/<baseRef>` and never fetches. `tree` is a full commit or
-// tree object id, or `index` for the staged merge tree. `ci-evidence-match` reads no Git at all.
+// reads the commit of `refs/remotes/origin/<baseRef>` and never fetches. A `commit` (full object
+// id) pins `ci-detect` and `ci-integrity` to that commit's CI definition instead of the ref's. `tree`
+// is a full commit or tree object id, or `index` for the staged merge tree. `ci-evidence-match`
+// reads no Git at all.
 // `quick-marker-scan` lists the commits in `<merge base>..headSha` that carry the quick trailer.
 // Writes exactly one JSON envelope line to stdout and exits 2 for invalid input and 1 for any other
 // failure. Input never travels as command-line arguments; only the operation name does. Git runs

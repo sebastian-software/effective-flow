@@ -243,11 +243,11 @@ must list that commit in `data.commits`; otherwise stop as on a rejected push, p
 The stop reason is "quick marker not verified". Phase 4 of every gate run whose base-confirmed
 ceiling is `quick` – this one, a later one, or one that never saw the conflict – runs the same scan
 on `VERIFIED_HEAD_SHA` (`data.found`; a failed call, such as `shallow-repository`, counts as found)
-and applies condition 11 to a found marker as to a recorded commit, taking the detection from a
-fresh `ci-detect` on the base where the run holds no record of its own.
+and applies condition 11 to every commit it lists as to a recorded one.
 
 **Record** in the wisdom file the ceiling with its source, the `ci-detect` `data` object verbatim as
 the detection, the candidate and the effective mode with every unmet condition, the
 conflict-observed and push-confirmed times, and, after a confirmed push under effective `quick`, the
-**quick-validated conflict commit**: its SHA and that detection, which Phase 4 condition 11 passes
-to `ci-evidence-match` as `detection`.
+**quick-validated conflict commit**: its SHA and that detection's `baseCommit`, the base commit whose
+CI definition the staged merge matched. Phase 4 condition 11 detects against the quick-validated
+commit itself, never from this record.

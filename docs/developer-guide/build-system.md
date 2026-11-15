@@ -826,22 +826,25 @@ point is an I/O boundary over testable core or protocol modules:
 - **Conflict-validation.** Invoke it as `node <skill-root>/scripts/conflict-validation.mjs
 <operation>` with one closed-schema JSON object on standard input; the operation is the only
   argument. It prepares merge-gate's CI-backed `quick` validation of a conflict-resolution commit
-  and decides nothing itself. `ci-detect` (`{ cwd, baseRef, base? }`) reads `.github/workflows/`
-  and the root manifests of the commit of `refs/remotes/origin/<baseRef>`, never the pull-request
-  head, and reports per workflow its trigger evaluation for `base` (default `baseRef`), each job's
+  and decides nothing itself. `ci-detect` (`{ cwd, baseRef, base?, commit? }`) reads
+  `.github/workflows/` and the root manifests of the commit of `refs/remotes/origin/<baseRef>`, or
+  of the pinned `commit` (a full commit id, `commit-missing` when absent) instead, never the working
+  tree, and reports per workflow its trigger evaluation for `base` (default `baseRef`), each job's
   matched test step with its normalized command (`pnpm run test` is `pnpm test`), the static
   expected instance set, the reasons that exclude a job, and overall `detected`, `undetected` or
   `unparsable`. A job is detected only when its step runs exactly the bare manifest test command
   (`package.json` `test` through npm, pnpm, yarn or `bun run`; `cargo test`, `go test`, `pytest`,
   `make test`) on an unfiltered `pull_request` trigger, without a condition, `continue-on-error`,
   a non-`bash` shell, another working directory, a dynamic matrix or a templated name.
-  `ci-integrity` (`{ cwd, baseRef, tree }`, `tree` a full commit or tree id or `index`) compares
-  the `mode type oid` entries of `.github/workflows/`, `.forgejo/workflows/`,
-  `.gitea/workflows/` and every local reusable workflow or composite action (`action.yml` and
-  `action.yaml`) they reference, recursively; the staged tree is read from `git ls-files -s`, never
+  `ci-integrity` (`{ cwd, baseRef, commit?, tree }`, `tree` a full commit or tree id or `index`)
+  compares, between that base or pinned commit and `tree`, the `mode type oid` entries of
+  `.github/workflows/`, `.forgejo/workflows/`, `.gitea/workflows/` and every local reusable
+  workflow or composite action (`action.yml` and `action.yaml`) they reference, recursively, and
+  of the root manifests that define the test commands, where a differing `package.json` still
+  counts as unchanged when both sides parse with the same `scripts` member; the staged tree is read from `git ls-files -s`, never
   through `git write-tree`. Its `status` is `ok`, `changed`, `unprovable` (an unparsable source, an
   unsafe reference, an unmerged index entry) or `missing`. `ci-evidence-match` (`{ detection,
-checks, headSha }`) is pure: evidence holds only when every detected job's complete,
+checks, headSha }`) is pure and rejects a detected `detection` without its full `baseCommit`: evidence holds only when every detected job's complete,
   non-empty instance set appears once each as a completed `CheckRun` of the `github-actions` app
   for `pull_request` from the detected workflow path on `headSha`, concluded exactly
   `SUCCESS`. `quick-marker-scan` (`{ cwd, baseRef, headSha }`)
@@ -850,7 +853,8 @@ checks, headSha }`) is pure: evidence holds only when every detected job's compl
   paragraph line `Effective-Flow-Conflict-Validation: quick`, the durable marker of a
   `quick`-validated conflict commit; a missing ref or head, no merge base, a shallow repository and
   an oversized range are `ok: false`, which the gate treats as found. The gate runs the scan only
-  where its own record names such a commit or the base-confirmed ceiling is `quick`. Workflow text is parsed in a declared YAML subset only (block
+  where its own record names such a commit or the base-confirmed ceiling is `quick`, and pins
+  `ci-detect` and `ci-integrity` to each marked commit. Workflow text is parsed in a declared YAML subset only (block
   mappings and sequences, one-line scalars and flow sequences of scalars, literal block scalars);
   anchors, aliases, tags, flow mappings, folded scalars and several documents make a file
   `unparsable`. Git access is read-only (`show-ref`, `rev-parse`, `ls-tree`, `cat-file -s`, `cat-file blob`,

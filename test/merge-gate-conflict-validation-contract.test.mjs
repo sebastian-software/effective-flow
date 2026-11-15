@@ -196,11 +196,7 @@ test('Phase 4 requires CI evidence for a quick-validated conflict commit', () =>
       'delegated run',
     ),
   );
-  assert.match(condition, /its status read carries `includeCheckIdentity: true`/);
-  assert.match(
-    condition,
-    /ci-integrity <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","tree":"<VERIFIED_HEAD_SHA>"\}'/,
-  );
+  assert.match(condition, /Its status read carries `includeCheckIdentity: true`/);
   assert.match(condition, /conflict-validation\.mjs ci-evidence-match <<< /);
   assert.match(condition, /the waiver and the no-CI policy never satisfy this condition/);
   assert.match(
@@ -208,6 +204,46 @@ test('Phase 4 requires CI evidence for a quick-validated conflict commit', () =>
     /leaves the pushed commit in place: no force push and no local `full` run/,
   );
   assert.match(condition, /check-wait timeout path is unchanged/);
+});
+
+// Invariant: condition 11 binds every marked commit's evidence to the CI definition that commit was
+// validated against. Each marked commit, recorded or scanned, is detected against itself rather
+// than the current base or a recorded detection, so a later clean base merge that replaces the
+// test command while keeping the job name cannot lend the replacement job's success to a suite
+// that never ran; integrity compares that commit with the verified head before any evidence counts,
+// and an unknown marked set is no evidence.
+test('Phase 4 pins detection and integrity to every marked commit', () => {
+  const condition = prose(
+    slice(
+      delegatedRun,
+      '11. where the wisdom file records a quick-validated',
+      '#### The set-aside confirmation',
+      'delegated run',
+    ),
+  );
+  assert.match(
+    condition,
+    /CI evidence on this batch for every \*\*marked commit\*\*: the recorded one and each in the scan's `data\.commits`; a failed fetch or scan leaves them unknown, which is no evidence\./,
+  );
+  assert.match(
+    condition,
+    /for each marked commit `<commit>`: `node <skill-root>\/scripts\/conflict-validation\.mjs ci-detect <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","commit":"<commit>"\}'` gives its detection, read from the marked commit, whose tree holds the CI definition its conflict was validated against, never from the current base or a recorded detection;/,
+  );
+  assert.match(
+    condition,
+    /`node <skill-root>\/scripts\/conflict-validation\.mjs ci-integrity <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>","commit":"<commit>","tree":"<VERIFIED_HEAD_SHA>"\}'` must hold, `ok: true` with `data\.status` `ok`; only then `node <skill-root>\/scripts\/conflict-validation\.mjs ci-evidence-match <<< '\{"detection":<detection>,"headSha":"<VERIFIED_HEAD_SHA>","checks":<that read's checks>\}'` with that detection's `data` as `<detection>` must match/,
+  );
+  assert.doesNotMatch(
+    condition,
+    /ci-detect <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<baseRef>"\}'/,
+    'condition 11 must never detect against the current base',
+  );
+  assert.match(modeSection, /applies condition 11 to every commit it lists as to a recorded one\./);
+  assert.doesNotMatch(modeSection, /fresh `ci-detect` on the base/);
+  assert.match(
+    modeSection,
+    /\*\*quick-validated conflict commit\*\*: its SHA and that detection's `baseCommit`, the base commit whose CI definition the staged merge matched\. Phase 4 condition 11 detects against the quick-validated commit itself, never from this record\./,
+  );
 });
 
 // Invariant: a quick-validated conflict commit carries its own proof: the trailer the helper scans
@@ -234,7 +270,8 @@ test('a quick conflict commit carries the scanned trailer before the push, self-
 
 // Invariant: the quick-marker scan runs in every gate run whose base-confirmed ceiling is `quick`,
 // also one that never saw the conflict, so the CI-evidence condition outlives the run that recorded
-// it; a failed fetch or scan fails closed as found. Any other ceiling, a failed ceiling call
+// it; a failed fetch or scan fails closed as found. A run with its own record still scans, so
+// marked commits it did not write are covered too. Any other ceiling, a failed ceiling call
 // included, fetches and scans nothing, so a non-opted-in repository pays no extra fetch.
 test("Phase 4 scans for the quick marker only under a quick ceiling or the run's own record", () => {
   assert.match(
@@ -255,7 +292,7 @@ test("Phase 4 scans for the quick marker only under a quick ceiling or the run's
   );
   assert.match(
     phase4,
-    /Condition 11 applies where the wisdom file records such a commit\. Otherwise call `node <skill-root>\/scripts\/config-resolve\.mjs conflict-validation <<< '\{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<base>"\}'`/,
+    /Condition 11 applies where the wisdom file records such a commit; that run makes the fetches and the scan below without the ceiling call\. Otherwise call `node <skill-root>\/scripts\/config-resolve\.mjs conflict-validation <<< '\{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<base>"\}'`/,
   );
   assert.match(
     phase4,

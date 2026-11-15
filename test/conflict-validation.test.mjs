@@ -1016,11 +1016,173 @@ test('ci-integrity: a missing base ref or tree object is missing, and a bad tree
   }
 });
 
+// Invariant: the root manifests that define the test commands are part of the compared CI
+// definition, so a change to what the test command runs is a change even where every workflow
+// stays identical. A `package.json` counts as unchanged only while both sides parse with the same
+// `scripts`, so a dependency change keeps it.
+test('ci-integrity: a changed test script or other root manifest fails integrity', async (t) => {
+  const manifest = (extra) => JSON.stringify({ scripts: { test: 'node --test' }, ...extra });
+  for (const [label, files, status, paths] of [
+    [
+      'a dependency-only package.json change',
+      { 'package.json': manifest({ dependencies: { x: '1' } }) },
+      'ok',
+      [],
+    ],
+    [
+      'a replaced test script',
+      { 'package.json': JSON.stringify({ scripts: { test: 'true' } }) },
+      'changed',
+      ['package.json'],
+    ],
+    [
+      'an added pretest script',
+      { 'package.json': JSON.stringify({ scripts: { pretest: 'exit 0', test: 'node --test' } }) },
+      'changed',
+      ['package.json'],
+    ],
+    [
+      'an unparsable package.json',
+      { 'package.json': '{ "scripts": ' },
+      'changed',
+      ['package.json'],
+    ],
+    ['an added Makefile', { Makefile: 'test:\n\ttrue\n' }, 'changed', ['Makefile']],
+  ]) {
+    const root = integrityRepository(t);
+    const head = headCommit(root, files);
+    const data = await operation('ci-integrity', { cwd: root, baseRef: 'main', tree: head });
+    assert.equal(data.status, status, `${label}: ${JSON.stringify(data)}`);
+    assert.deepEqual(
+      data.differences.map((difference) => difference.path),
+      paths,
+      label,
+    );
+    assert.ok(data.compared.includes('package.json'), label);
+  }
+  const linked = baseRepository(
+    t,
+    { 'manifest.json': PNPM_MANIFEST, '.github/workflows/ci.yml': workflow() },
+    { 'package.json': 'manifest.json' },
+  );
+  const head = headCommit(linked, {});
+  const data = await operation('ci-integrity', { cwd: linked, baseRef: 'main', tree: head });
+  assert.equal(data.status, 'unprovable');
+  assert.deepEqual(data.problems, [{ path: 'package.json', reason: 'unsafe-reference' }]);
+});
+
+// The scenario a pinned commit exists for: a conflict commit `marked`, quick-validated while its CI
+// definition equalled the base's, then a base update applied by a later clean merge into the head.
+function movedBaseRepository(t, baseChange) {
+  const root = baseRepository(t, {
+    'package.json': PNPM_MANIFEST,
+    '.github/workflows/ci.yml': workflow(),
+  });
+  const marked = headCommit(root, { 'src/index.js': 'export {};\n' });
+  git(root, 'checkout', '--quiet', 'main');
+  for (const [relative, content] of Object.entries(baseChange)) write(root, relative, content);
+  git(root, 'add', '-A');
+  git(root, 'commit', '--quiet', '-m', 'base moves on');
+  git(root, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  git(root, 'checkout', '--quiet', 'feature');
+  git(root, 'merge', '--quiet', '--no-edit', 'main');
+  return { root, marked, head: git(root, 'rev-parse', 'HEAD') };
+}
+
+// Invariant: detection and integrity pinned to a marked commit read that commit's CI definition,
+// never the current base. A later base update that replaces the test command, in the workflow or
+// in the manifest, while keeping the workflow path and job name passes integrity against the new
+// base but fails it against the marked commit, and the pinned detection still names the command
+// the conflict commit skipped.
+test('ci-detect and ci-integrity pinned to a marked commit catch a base that replaced the test command', async (t) => {
+  for (const [label, baseChange, changedPath] of [
+    [
+      'a workflow step',
+      { '.github/workflows/ci.yml': workflow({ steps: ['      - run: pnpm test:unit'] }) },
+      '.github/workflows/ci.yml',
+    ],
+    [
+      'the test script',
+      { 'package.json': JSON.stringify({ scripts: { test: 'node --test test/smoke' } }) },
+      'package.json',
+    ],
+  ]) {
+    const { root, marked, head } = movedBaseRepository(t, baseChange);
+    const againstBase = await operation('ci-integrity', { cwd: root, baseRef: 'main', tree: head });
+    assert.equal(againstBase.status, 'ok', `${label}: the current base alone cannot see it`);
+    const pinned = await operation('ci-integrity', {
+      cwd: root,
+      baseRef: 'main',
+      commit: marked,
+      tree: head,
+    });
+    assert.equal(pinned.status, 'changed', `${label}: ${JSON.stringify(pinned)}`);
+    assert.equal(pinned.baseCommit, marked);
+    assert.deepEqual(
+      pinned.differences.map((difference) => difference.path),
+      [changedPath],
+      label,
+    );
+    const detection = await operation('ci-detect', { cwd: root, baseRef: 'main', commit: marked });
+    assert.equal(detection.status, 'detected', label);
+    assert.equal(detection.baseCommit, marked);
+    assert.deepEqual(detection.testCommands, ['pnpm test']);
+    assert.deepEqual(
+      detection.detectedJobs.map((job) => [job.workflowPath, job.jobName, job.normalizedCommand]),
+      [['.github/workflows/ci.yml', 'Unit tests', 'pnpm test']],
+    );
+  }
+  // A base update that leaves the CI definition alone keeps the pinned comparison intact.
+  const { root, marked, head } = movedBaseRepository(t, { 'docs/notes.md': 'notes\n' });
+  const unchanged = await operation('ci-integrity', {
+    cwd: root,
+    baseRef: 'main',
+    commit: marked,
+    tree: head,
+  });
+  assert.equal(unchanged.status, 'ok', JSON.stringify(unchanged));
+});
+
+// Invariant: a pinned commit is a full lowercase id of an existing commit object; a ref, a revision
+// expression, a tree or a missing object never stands in for it.
+test('ci-detect and ci-integrity reject a malformed pinned commit and report a missing one', async (t) => {
+  const root = integrityRepository(t);
+  const head = git(root, 'rev-parse', 'HEAD');
+  const treeOid = git(root, 'rev-parse', `${head}^{tree}`);
+  for (const commit of ['b'.repeat(40), treeOid]) {
+    const detection = await operation('ci-detect', { cwd: root, baseRef: 'main', commit });
+    assert.equal(detection.status, 'undetected');
+    assert.deepEqual(detection.reasons, ['commit-missing']);
+    assert.equal(detection.baseCommit, null);
+    const integrity = await operation('ci-integrity', {
+      cwd: root,
+      baseRef: 'main',
+      commit,
+      tree: head,
+    });
+    assert.equal(integrity.status, 'missing');
+    assert.equal(integrity.reason, 'commit-missing');
+  }
+  for (const commit of ['HEAD', 'main', `${head}^`, head.slice(0, 12), head.toUpperCase(), 7]) {
+    for (const [name, input] of [
+      ['ci-detect', { cwd: root, baseRef: 'main', commit }],
+      ['ci-integrity', { cwd: root, baseRef: 'main', commit, tree: head }],
+    ]) {
+      const envelope = await executeOperation(name, input, deps());
+      assert.equal(envelope.ok, false, `${name} ${commit}`);
+      assert.equal(envelope.error.code, 'INVALID_INPUT');
+      assert.equal(envelope.error.details.field, 'commit');
+    }
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // ci-evidence-match
 
+const BOUND_COMMIT = 'c'.repeat(40);
 const DETECTION = Object.freeze({
   status: 'detected',
+  baseCommit: BOUND_COMMIT,
   detectedJobs: [
     {
       workflowPath: '.github/workflows/ci.yml',
@@ -1271,6 +1433,7 @@ test('evidence: an undetected or empty detection is never evidence', () => {
   );
   const empty = evidence([], {
     status: 'detected',
+    baseCommit: BOUND_COMMIT,
     detectedJobs: [{ workflowPath: '.github/workflows/ci.yml', jobId: 'x', expectedInstances: [] }],
   });
   assert.equal(empty.evidence, false);
@@ -1280,6 +1443,7 @@ test('evidence: an undetected or empty detection is never evidence', () => {
 test('evidence: every detected job must be satisfied', () => {
   const detection = {
     status: 'detected',
+    baseCommit: BOUND_COMMIT,
     detectedJobs: [
       DETECTION.detectedJobs[0],
       { workflowPath: '.github/workflows/rust.yml', jobId: 'cargo', expectedInstances: ['cargo'] },
@@ -1302,7 +1466,7 @@ test('evidence: a detection expecting one check-run identity twice is rejected',
     [job, { ...job, jobId: 'lint', expectedInstances: ['Unit tests (24)'] }],
   ]) {
     const envelope = await executeOperation('ci-evidence-match', {
-      detection: { status: 'detected', detectedJobs },
+      detection: { status: 'detected', baseCommit: BOUND_COMMIT, detectedJobs },
       checks: [check('Unit tests (22)'), check('Unit tests (24)')],
       headSha: HEAD_SHA,
     });
@@ -1316,7 +1480,7 @@ test('evidence: a detection expecting one check-run identity twice is rejected',
       check('Unit tests (24)'),
       check('Unit tests (22)', { workflowPath: elsewhere.workflowPath }),
     ],
-    { status: 'detected', detectedJobs: [job, elsewhere] },
+    { status: 'detected', baseCommit: BOUND_COMMIT, detectedJobs: [job, elsewhere] },
   );
   assert.equal(result.evidence, false);
   assert.equal(result.reason, 'missing');
@@ -1324,6 +1488,35 @@ test('evidence: a detection expecting one check-run identity twice is rejected',
     result.jobs.map((entry) => entry.satisfied),
     [true, false],
   );
+});
+
+// Invariant: a detection is bound to the commit whose CI definition it read. A detected one without
+// that full commit id says nothing about which test command its jobs run, so it is rejected rather
+// than matched; an undetected one may lack it, since it is never evidence.
+test('evidence: a detected detection without its full baseCommit is rejected', async () => {
+  const { baseCommit, ...unbound } = DETECTION;
+  assert.equal(baseCommit, BOUND_COMMIT);
+  for (const detection of [
+    unbound,
+    { ...DETECTION, baseCommit: null },
+    { ...DETECTION, baseCommit: 'c'.repeat(12) },
+    { ...DETECTION, baseCommit: 'C'.repeat(40) },
+    { status: 'undetected', baseCommit: 'main', detectedJobs: [] },
+  ]) {
+    const envelope = await executeOperation('ci-evidence-match', {
+      detection,
+      checks: [check('Unit tests (22)'), check('Unit tests (24)')],
+      headSha: HEAD_SHA,
+    });
+    assert.equal(envelope.ok, false, JSON.stringify(detection));
+    assert.equal(envelope.error.code, 'INVALID_INPUT');
+  }
+  for (const detection of [
+    { status: 'undetected', detectedJobs: [] },
+    { status: 'undetected', baseCommit: null, detectedJobs: [] },
+  ]) {
+    assert.equal(evidence([check('Unit tests (22)')], detection).reason, 'not-detected');
+  }
 });
 
 test('evidence: malformed input is rejected', async () => {

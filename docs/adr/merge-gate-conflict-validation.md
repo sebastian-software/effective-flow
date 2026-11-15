@@ -38,9 +38,11 @@ round, whatever is configured, because the proposal needs its result. The effect
 
 1. `ci-detect` reports a detected test job on the base ref;
 2. `ci-integrity` finds the workflow directories (`.github/workflows/`, `.forgejo/workflows/`,
-   `.gitea/workflows/`) and every local reusable workflow or composite action they reference
-   byte-identical between `origin/<baseRef>` and the staged merge tree. A pull request that changes
-   CI gets `full`, because CI runs the pull request's own workflow version. Manifests and scripts
+   `.gitea/workflows/`), every local reusable workflow or composite action they reference and the
+   root manifests that define the test commands byte-identical between `origin/<baseRef>` and the
+   staged merge tree, except that a `package.json` counts as unchanged where both sides parse with
+   the same `scripts` member, so a dependency change keeps `quick`. A pull request that changes CI
+   or its test scripts gets `full`, because CI runs the pull request's own versions. Other scripts
    stay outside this check: a local `full` run executes head-supplied commands as well;
 3. the provider supplies the check identity (GitHub; Forgejo only once verified) and the detected
    job is known to be blocking from the latest status read (`mergeGate.requireAllChecks: true`, or
@@ -53,13 +55,16 @@ and reruns.
 
 **Evidence at the merge decision (AD2a).** A `quick`-validated conflict commit adds one Phase 4
 merge condition, evaluated on its own fresh batch against `VERIFIED_HEAD_SHA`, never on an earlier
-read: `ci-integrity` holds on the tree of `VERIFIED_HEAD_SHA` against the base as fetched for that
-read, and `ci-evidence-match` finds the complete, non-empty set of expected instances of the
-detected test job among the de-duplicated latest check entries of a `pr-status-read` with
-`includeCheckIdentity: true`. Each instance is a `CheckRun` of the `github-actions` app for event
+read, for every marked commit: the recorded one and each the AD2b scan lists. `ci-detect` and
+`ci-integrity` are pinned to that commit, whose tree holds the CI definition its conflict was
+validated against, since integrity held on its staged merge: `ci-integrity` holds between that
+commit and the tree of `VERIFIED_HEAD_SHA`, and `ci-evidence-match` finds, for the detection read
+from that commit, the complete, non-empty set of expected instances of the detected test job among
+the de-duplicated latest check entries of a `pr-status-read` with `includeCheckIdentity: true`. Each instance is a `CheckRun` of the `github-actions` app for event
 `pull_request`, from the detected workflow path, on `VERIFIED_HEAD_SHA`, with conclusion exactly
 `SUCCESS`. `SKIPPED`, `NEUTRAL`, an ambiguous de-duplication group and a missing object or ref are
-no evidence, and a detection that expects one workflow path and instance name twice is rejected.
+no evidence, and a detection that expects one workflow path and instance name twice, or a detected
+one without the full `baseCommit` it was read from, is rejected.
 The check-list waiver and the no-CI policy never satisfy this condition. Two
 results are not yet satisfied, as right after the push, and are handled only once no reviewer
 thread or verdict sends the run back into Phase 3, which takes precedence. An expected instance
@@ -72,7 +77,10 @@ round and check-wait bounds instead of stopping. Any other missing evidence mean
 gate stops, reports what is missing, the marked commits and, where CI cannot supply the evidence,
 the remedy (a merge by hand or a history rewrite), and leaves the pushed commit in place, with no
 force push and no local `full` fallback after the push. The existing check-wait timeout path
-applies unchanged. A base that changed its workflows after the push fails the condition as well.
+applies unchanged. A later clean base merge that replaced a workflow's test command or the test
+script since a marked commit fails the condition as well, even where it kept the job name: the
+condition never re-derives the definition from the current base, which would accept the
+replacement job's success for a suite that never ran.
 
 **The commit carries its own quick marker (AD2b).** The wisdom record ends with the run that wrote
 it, so a later gate run on the same pull request could otherwise merge a `quick`-validated commit
@@ -80,14 +88,14 @@ without the evidence check. The conflict-resolution merge commit created under e
 therefore carries the trailer line `Effective-Flow-Conflict-Validation: quick` in its message,
 written as part of the commit before the push, which the gate confirms with the scan below before
 pushing; a scan that does not list it stops the round with "quick marker not verified" and pushes
-nothing. The AD2a condition applies whenever the run's own wisdom record names such a commit.
-Without one, Phase 4 reads the base-confirmed ceiling (AD1) for the fresh read's `baseRef`, and
-only where it is `quick` fetches and scans the commits from the merge base of `origin/<base>` and
-`VERIFIED_HEAD_SHA` up to that head with `conflict-validation.mjs quick-marker-scan`; the condition
-then applies where the scan finds one, and a failed fetch or scan, a shallow repository included,
-counts as found. A run without its own record runs `ci-detect` freshly on the base for the
-detection. Under a `full` ceiling nothing is fetched or scanned, so a repository that never opted
-in gets no new merge condition. **Accepted residual:** a `quick` commit pushed while the ceiling
+nothing. The AD2a condition applies whenever the run's own wisdom record names such a commit, and
+that run still fetches and scans for further marked commits. Without one, Phase 4 reads the
+base-confirmed ceiling (AD1) for the fresh read's `baseRef`, and only where it is `quick` fetches
+and scans the commits from the merge base of `origin/<base>` and `VERIFIED_HEAD_SHA` up to that
+head with `conflict-validation.mjs quick-marker-scan`; the condition then applies where the scan
+finds one, and a failed fetch or scan, a shallow repository included, counts as found and leaves
+the marked commits unknown, which is no evidence. Under a `full` ceiling nothing is fetched or
+scanned, so a repository that never opted in gets no new merge condition. **Accepted residual:** a `quick` commit pushed while the ceiling
 was `quick` merges on the ordinary checks alone in a later run once the base has switched the
 ceiling back to `full`, because that run no longer looks for the marker.
 
@@ -106,7 +114,8 @@ nothing mid-run.
 `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`, dependency-free and read-only on Git:
 `show-ref`, `rev-parse`, `ls-tree`, `cat-file -s`, `cat-file blob` and `ls-files -s`, plus
 `merge-base` and `log` for the marker scan; nothing is fetched or written, and there is no
-`git write-tree`. `ci-detect`
+`git write-tree`. `ci-detect` and `ci-integrity` read `origin/<baseRef>` or, given a `commit`, that
+commit instead. `ci-detect`
 reads only `.github/workflows/`, because its evidence is defined for GitHub Actions check runs
 alone, while `ci-integrity` compares all three workflow directories. Workflow text is untrusted
 data, parsed only, never executed or followed ([input trust boundary](input-trust-boundary.md)).
@@ -218,8 +227,11 @@ Coordination between concurrent gates, such as agreeing on a merge order, is iss
   test job blocks the merge. The pushed commit stays on the branch, and its trailer makes every
   later gate run under a `quick` ceiling demand the same evidence before it merges. Once the base
   switches back to `full`, a later run merges such a commit on the ordinary checks (AD2b).
-- Where the condition applies but no evidence can exist – on Forgejo, or once the base's CI is no
-  longer detected – the gate does not merge; a merge by hand or a history rewrite is the way out.
+- Where the condition applies but no evidence can exist – on Forgejo, once a marked commit's CI is
+  no longer detected, or once the head's CI definition or test scripts differ from a marked
+  commit's – the gate does not merge; a merge by hand or a history rewrite is the way out.
+- A pull request that changes its test scripts or another root manifest (Cargo, Go, pytest,
+  Make) resolves conflicts under `full`.
 - Forgejo keeps `full` until check identity is verified there, and gets no proposal.
 - Detection rejects every workflow shape it cannot prove, so a repository with a conditional, piped
   or indirect test step stays on `full`.
