@@ -19,7 +19,7 @@ the conversation language, otherwise `data.configuration.projectLanguage`, other
 
 ### The report
 
-Render `data` as the five sections below in the resolved chat language. Each finding's
+Render `data` as the six sections below in the resolved chat language. Each finding's
 `remediation` is the envelope's text: render it, keep encoded values, paths, keys and invocation
 tokens verbatim, spell its `effective-flow setup …` invocation as `{{SKILL:setup}} …`, and add no
 remediation of your own.
@@ -58,6 +58,9 @@ remediation of your own.
    `stale[]` rule and the remediation; every `aliases[]` rule, which names another path to this
    install's helper and never counts as present, so on its own it never makes the state `current`;
    for `not-applicable` and `could-not-check`, the `reason` and any `detail`.
+6. **Conflict validation** (`data.conflictValidation`): for `proposed`, the envelope's `proposal`
+   text, rendered like a remediation; otherwise the `state` and `reason` in one line, with any
+   `detail`. It is an offer, never a finding, and gets no text of your own.
 
 End the report with the next-steps block per the shared `next-steps` contract: it recommends
 `{{SKILL:setup}}` only when `data.setupFixable` is true; otherwise the run emits no block. The

@@ -10,6 +10,7 @@
 //     <<< '<json>'
 //   node effective-flow-state.mjs cleanup <plan|apply> <<< '<json>'
 //   node effective-flow-state.mjs ledger <init|append|reconcile> <<< '<json>'
+//   node effective-flow-state.mjs presence <register|refresh|list|release|prune> <<< '<json>'
 // The operation is exactly these two argv tokens; any other argv, an extra token included, is
 // rejected before stdin is read, so an allowlisted command prefix cannot be widened by an extra
 // argument and `--help` never blocks on a tty. Stdin carries one JSON object within the bound
@@ -126,7 +127,9 @@ const OUTCOME_MESSAGES = Object.freeze({
         ? `stopped by ${outcome.signal}; record status ${outcome.status}, no further item was started`
         : `stopped by ${outcome.signal}${outcome.commit ? ` after commit ${outcome.commit}` : ' before a commit landed'}`,
   NOT_OWNER: (outcome) =>
-    `record ${outcome.recordId} belongs to another session (${outcome.reason}); nothing was changed`,
+    outcome.recordId === undefined
+      ? `the presence marker of ${outcome.sessionId} is not the caller's (${outcome.reason}); nothing was changed`
+      : `record ${outcome.recordId} belongs to another session (${outcome.reason}); nothing was changed`,
   RECORD_EXISTS: (outcome) =>
     `record ${outcome.recordId} or its lock already exists; nothing was written`,
   RECORD_NOT_FOUND: (outcome) => `record ${outcome.recordId} does not exist; nothing was written`,
@@ -153,6 +156,12 @@ const OUTCOME_MESSAGES = Object.freeze({
     'the deadline was reached before this item started; nothing was touched, rerun for the rest',
   LEDGER_EXISTS: (outcome) =>
     `the ledger of record ${outcome.recordId} already exists; nothing was written`,
+  MARKER_EXISTS: (outcome) =>
+    `the presence marker of ${outcome.sessionId} already exists; nothing was written`,
+  MARKER_NOT_FOUND: (outcome) =>
+    `the presence marker of ${outcome.sessionId} does not exist; nothing was written`,
+  MARKER_INVALID: (outcome) =>
+    `the presence marker of ${outcome.sessionId} is invalid (${outcome.reason}); it was kept unchanged`,
 });
 
 function outcomeLine({ outcome, error }) {

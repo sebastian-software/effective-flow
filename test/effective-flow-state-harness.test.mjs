@@ -23,6 +23,7 @@ import { test } from 'node:test';
 import {
   ALLOWLISTED_OPERATIONS,
   CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS,
+  CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS,
   NEVER_ALLOWLISTED_OPERATIONS,
   REMOTE_TRACKER_EXCLUDED_OPERATIONS,
   REMOTE_TRACKER_READ_OPERATIONS,
@@ -39,6 +40,7 @@ import {
   executeOperation,
 } from '../src/scripts/effective-flow-state-core.mjs';
 import { CONFIG_RESOLVE_OPERATIONS } from '../src/scripts/config-resolve-core.mjs';
+import { CONFLICT_VALIDATION_OPERATIONS } from '../src/scripts/conflict-validation-core.mjs';
 import {
   LOCAL_WRITE_OPERATIONS,
   MUTATION_OPERATIONS,
@@ -156,6 +158,10 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
     'ledger init',
     'ledger append',
     'ledger reconcile',
+    'presence register',
+    'presence refresh',
+    'presence list',
+    'presence release',
   ]);
   assert.equal(STATE_OPERATION_CLASSES['lock break'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');
@@ -167,9 +173,12 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
   assert.equal(STATE_OPERATION_CLASSES['ledger append'], 'allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['worktree resume-check'], 'allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['ledger reconcile'], 'allowlisted');
+  // The presence markers: the own-marker writes and the read are allowlisted under their bound;
+  // `presence prune` removes other runs' markers and stays a confirmed cleanup step.
+  assert.equal(STATE_OPERATION_CLASSES['presence prune'], 'not-allowlisted');
   assert.deepEqual(
     [...NEVER_ALLOWLISTED_OPERATIONS],
-    ['lock break', 'harness allow-rules', 'worktree remove', 'cleanup apply'],
+    ['lock break', 'harness allow-rules', 'worktree remove', 'cleanup apply', 'presence prune'],
   );
   assert.deepEqual(
     STATE_OPERATIONS.filter((operation) => STATE_OPERATION_CLASSES[operation] !== 'allowlisted'),
@@ -297,6 +306,11 @@ test('every remote-tracker operation is classified and no listed one mutates or 
   assert.ok(listed.has('thread-ledger-lookup'));
   assert.ok(excluded.has('thread-ledger-record'));
   assert.deepEqual([...CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS], [...CONFIG_RESOLVE_OPERATIONS]);
+  // Every `conflict-validation.mjs` operation only reads, so each one is allowlisted.
+  assert.deepEqual(
+    [...CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS],
+    [...CONFLICT_VALIDATION_OPERATIONS],
+  );
 
   // REMOTE_TRACKER_OPERATIONS is the core's real dispatch: every `case` of its local dispatcher is
   // in it, and the core accepts every entry rather than rejecting it as unknown.
@@ -333,7 +347,8 @@ test('the read-helper rule shapes round-trip and their widened forms are detecte
     RULE_ENTRIES.length,
     ALLOWLISTED_OPERATIONS.length +
       CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS.length +
-      REMOTE_TRACKER_READ_OPERATIONS.length,
+      REMOTE_TRACKER_READ_OPERATIONS.length +
+      CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS.length,
   );
   const cases = {
     [`Bash(node ${root}/scripts/config-resolve.mjs resolve *)`]: null,
@@ -345,6 +360,10 @@ test('the read-helper rule shapes round-trip and their widened forms are detecte
     [`Bash(node ${root}/scripts/remote-tracker.mjs *)`]: 'helper-wildcard',
     [`Bash(node ${root}/scripts/remote-tracker.mjs pr-read --apply *)`]: 'helper-wildcard',
     [`Bash(node ${root}/scripts/config-resolve.mjs *)`]: 'helper-wildcard',
+    [`Bash(node ${root}/scripts/conflict-validation.mjs ci-detect *)`]: null,
+    [`Bash(node ${root}/scripts/conflict-validation.mjs quick-marker-scan *)`]: null,
+    [`Bash(node ${root}/scripts/conflict-validation.mjs quick-marker-write *)`]: 'not-allowlisted',
+    [`Bash(node ${root}/scripts/conflict-validation.mjs *)`]: 'helper-wildcard',
   };
   for (const [rule, reason] of Object.entries(cases)) {
     assert.equal(widenedRuleReason(rule), reason, rule);
@@ -817,7 +836,7 @@ test('allow-rules accepts a sticky root-owned directory and refuses a sticky use
 // ---------------------------------------------------------------------------------------------
 // Settings merge
 
-// Invariant: the apply writes exactly the allowlisted rules of the three helpers (RULE_ENTRIES) and
+// Invariant: the apply writes exactly the allowlisted rules of the four helpers (RULE_ENTRIES) and
 // never one for `lock break`, `harness allow-rules`, a forge mutation or the local ledger write; it
 // creates a missing `.claude/` on apply only.
 test('apply writes exactly the allowlisted rules and creates .claude on apply only', async (t) => {

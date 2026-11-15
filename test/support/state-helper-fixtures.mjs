@@ -99,12 +99,13 @@ export function expectError(envelope, code) {
   return envelope.error;
 }
 
-// The three helper files an allow rule names, written into one `scripts/` directory of a fake
+// The four helper files an allow rule names, written into one `scripts/` directory of a fake
 // install: `harness allow-rules` requires each to resolve beside the running helper.
 export const RULE_HELPER_FILES = Object.freeze([
   'effective-flow-state.mjs',
   'config-resolve.mjs',
   'remote-tracker.mjs',
+  'conflict-validation.mjs',
 ]);
 
 export function writeHelperScripts(scriptsDir) {

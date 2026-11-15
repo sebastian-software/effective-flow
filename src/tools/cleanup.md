@@ -1,6 +1,6 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits and the files of schema-invalid lifecycle records whose worktree is already gone; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
-catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, and merge-gate presence markers whose run's wisdom file is gone; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers."
 ---
 
 # Effective Flow Cleanup
@@ -96,8 +96,8 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
   runtime state, and the project setup ADR are never deleted. The recognized legacy
   `config.json` exception remains governed by the legacy classes below. The only current
   runtime-state deletions allowed are the lifecycle record of a successfully reconciled
-  `cleanup apply` claim and a confirmed stale diff baseline; no other active runtime file is a
-  cleanup target.
+  `cleanup apply` claim, a confirmed stale diff baseline, and a confirmed merge-gate presence
+  marker removed by `presence prune`; no other active runtime file is a cleanup target.
 - **Never target the main or current execution worktree.** `RUNTIME_STATE_ROOT` and the worktree
   from which cleanup is running are never removal candidates. A linked current execution
   worktree still appears in the final retained-worktree report.
@@ -135,6 +135,11 @@ Stale diff baselines are another separate class: an aborted `{{SKILL:build}}`, `
 behind, and its diff can hold working-tree secrets. Nothing proves such a directory abandoned:
 list each with its run ID (the run's start timestamp), warn that a run still in progress needs its
 directory, and never infer staleness from age.
+
+Merge-gate presence markers (`.effective-flow/merge-gate-presence/<SESSION_ID>.json`) are a third
+class. A marker's run is over only when its wisdom file
+`.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` is absent; with that file present the
+run is possibly suspended and its marker stays. Age, `possiblyStale` included, never decides.
 
 ## Workflow
 
@@ -177,6 +182,10 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    worktrees **not reliably checkable**: retained, never silently skipped.
 4. **Stale diff baselines:** list every `<RUNTIME_STATE_ROOT>/.effective-flow/runs/*/diff-baseline/`
    directory read-only, without following a symlink.
+   **Presence markers:** call
+   `node <skill-root>/scripts/effective-flow-state.mjs presence list <<< '{"cwd":"<RUNTIME_STATE_ROOT>"}'`.
+   A marker with `wisdomFile: "absent"` is a removal candidate; any other is kept as possibly
+   suspended (`present`) or unverifiable (`unreadable`).
 5. Capture the existing legacy remnants in the project root:
    - **Runtime directories and legacy `config.json`:** the plan's `legacy:` and `config:` items,
      ready or blocked.
@@ -209,8 +218,8 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    certified only by a carry-over with no open entry.
 8. For `firmo-` labels, determine whether the `effective-flow-` counterpart exists.
 9. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists),
-   worktree counts (removal candidate, retained, recordless or not reliably checkable), and stale
-   diff baselines by run ID. Never end for lack of migration remnants; worktree preview and the
+   worktree counts (removal candidate, retained, recordless or not reliably checkable), stale
+   diff baselines by run ID, and presence markers by session ID and PR. Never end for lack of migration remnants; worktree preview and the
    final report still run.
 
 ### Phase 2: Carry-over check
@@ -287,12 +296,13 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    `schemaReason`, action and `evidence` instead, never a record field: its only action, `absent`,
    deletes only the record file; a worktree it names that is still present is never removed.
 7. List retained and recordless worktrees separately with their concrete reason. They are not
-   offered for confirmation.
+   offered for confirmation. List presence-marker candidates by session ID, PR and age; kept
+   markers are not offered.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
    `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
    reports it as `BRANCH_RETAINED`. Delivery, partial-diff and merge-gate branches remain. Cleanup
    never runs `git worktree prune` or `git branch -D`.
-9. If there are no deletable migration artifacts, stale diff baselines, or worktree removal candidates, call the
+9. If there are no deletable migration artifacts, stale diff baselines, presence-marker or worktree removal candidates, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
 
@@ -327,6 +337,17 @@ options:
 ```
 
 ```ask
+when: there is at least one presence-marker removal candidate
+header: Markers
+question: Remove the merge-gate presence markers listed in the dry run, whose runs left no wisdom file?
+options:
+  - label: Remove all listed
+    description: Remove every listed marker whose wisdom file is still absent
+  - label: Keep all
+    description: Remove no marker; each stays for a later cleanup run
+```
+
+```ask
 when: there is at least one stale diff baseline
 header: Baselines
 question: Discard the stale diff baselines listed in the dry run now? Removal is physical and irreversible.
@@ -353,6 +374,10 @@ Execute per class:
   and remove it only through `node <skill-root>/scripts/diff-baseline.mjs discard` with
   `{ "cwd": "<RUNTIME_STATE_ROOT>", "dir": "<its absolute handle>" }` on stdin, as
   `shared/diff-baseline.md`, section "Lifecycle", defines it; keep a refused one.
+- **Presence markers:** send the confirmed session IDs (at most 64) in one call
+  `node <skill-root>/scripts/effective-flow-state.mjs presence prune <<< '{"cwd":"<RUNTIME_STATE_ROOT>","sessionIds":["<SESSION_ID>"]}'`.
+  It re-checks each wisdom file and removes a marker only while that file is absent (`removed`);
+  `possibly-suspended`, `missing`, `not-regular`, `wisdom-unreadable` and `changed` markers stay.
 - **`.gitignore`:** leave every line untouched. Report the exact outdated entries and route the
   user to `{{SKILL:setup}}`, the sole owner of normalization and repair.
 - **`firmo-` labels:** only on the forge target with a successful helper probe; skipped on an external target. Build the full normalized label transitions through the remote helper: first add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains. Inspect the dry-run steps before applying; if a step fails, report the completed steps and preserve the still-classified issue.
@@ -388,7 +413,8 @@ Report to the user:
 
 - what was carried over (files to `.effective-flow/`) and which config values `{{SKILL:setup}}` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed,
-  including discarded stale diff baselines
+  including discarded stale diff baselines and pruned presence markers, plus every kept marker
+  with its `prune` result or `wisdomFile` state
 - which outdated `.gitignore` lines remain and that `{{SKILL:setup}}` owns their repair, not this run
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
   hidden mode's active ignore entry that this run left untouched
@@ -451,8 +477,9 @@ report that found neither matches no row and emits nothing.
 - A migration marker certifies only the source it names; never use it as deletion proof for an
   unselected simultaneous legacy directory.
 - Preserve the active `.effective-flow/` directory and all unrelated runtime state. Mutate below
-  it only for the explicitly confirmed carry-over copies, migration and `cleanup apply` above, or a
-  confirmed stale diff-baseline discard, always through runtime-state safety. Do not mutate the
+  it only for the explicitly confirmed carry-over copies, migration and `cleanup apply` above, a
+  confirmed stale diff-baseline discard, or a confirmed `presence prune`, always through
+  runtime-state safety. Remove a presence marker only through `presence prune`. Do not mutate the
   project setup ADR or a global skill installation.
 - Do not create commits or backup directories.
 - Do not write config yourself; config carry-over runs through `{{SKILL:setup}}`.

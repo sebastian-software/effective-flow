@@ -1,6 +1,6 @@
-// The `origin` a declared-no-CI-policy scenario's gate run can fetch from.
+// The `origin` a blocking declared-no-CI-policy scenario's gate run can fetch from.
 //
-// **Why these six scenarios need it and the others do not.** A policy read does not trust the
+// **Why these four scenarios need it and the others do not.** A policy read does not trust the
 // working checkout's setup ADR on its own: the pull request's head may have added the policy rows
 // itself, so `config-resolve.mjs no-ci-policy` compares the `mergeGate.noCiPolicy.*` rows with the
 // copy of the same document at `refs/remotes/origin/<baseRef>`, and the gate fetches that base ref
@@ -18,8 +18,13 @@
 //
 // The base is the seeded commit and nothing is committed on top of it, so the base blob and the
 // working checkout cannot differ: the scenarios observe the gate's behaviour under an active policy,
-// and the resolver's `base-blob-mismatch` path is proven by its own unit tests, not here. Every
-// other scenario of the suite keeps the unreachable `origin` it always had.
+// and the resolver's `base-blob-mismatch` path is proven by its own unit tests, not here.
+//
+// The two merging policy scenarios, `no-ci-policy-unattended-merges` and
+// `no-ci-policy-merge-failure-reports`, need a pull-request head as well: their Phase 4 fetches
+// `refs/pull/<N>/head` and scans it for quick markers, so `merge-origin.mjs` prepares them before
+// this module is asked, with the same seeded tree at `origin/develop`. Every other scenario of the
+// suite keeps the unreachable `origin` it always had.
 
 import { execFileSync } from 'node:child_process';
 import { devNull } from 'node:os';

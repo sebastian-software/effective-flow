@@ -41,6 +41,7 @@ const SUITE_ROOT = resolve(REPOSITORY, 'evals', 'merge-gate');
 const STUB = resolve(REPOSITORY, 'evals', '_scaffold', 'remote-tracker.mjs');
 const TRACE = resolve(SUITE_ROOT, '_scaffold', 'iterate-trace.mjs');
 const REPAIR_HELPER = resolve(REPOSITORY, 'src', 'scripts', 'repair-attempt.mjs');
+const CONFLICT_VALIDATION = resolve(REPOSITORY, 'src', 'scripts', 'conflict-validation.mjs');
 const RECEIVER = 'recensor';
 
 function childEnv(extra = {}) {
@@ -413,6 +414,16 @@ test('repair-after-base-merge-merges: the echo, the gate push and the helper mov
     assert.equal(merged.data.result.headSha, repair2);
 
     fetchLikeTheGate(slot);
+    // Phase 4 scans the merged head's range for quick markers whatever the ceiling, and a failed
+    // scan blocks the merge: on this history it runs and finds none.
+    const scan = spawnSync(process.execPath, [CONFLICT_VALIDATION, 'quick-marker-scan'], {
+      input: JSON.stringify({ cwd: slot.projectRoot, baseRef: 'develop', headSha: repair2 }),
+      encoding: 'utf8',
+      env: childEnv(),
+    });
+    const scanned = JSON.parse(scan.stdout);
+    assert.equal(scanned.ok, true, scan.stdout);
+    assert.equal(scanned.data.found, false);
     const recorded = record(slot, {
       state,
       scope,

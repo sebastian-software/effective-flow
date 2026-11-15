@@ -49,9 +49,11 @@ one.
 ## Scope
 
 You are handed, by the gate: the provisioned checkout's absolute root, the base and head refs, the
-conflicted paths, the resolved language values, and whether this run is gated or a non-interactive
-delegation. Work only inside that checkout, and use its absolute root for every command and every
-path — never a relative path resolved against some other working directory.
+conflicted paths, the resolved language values, whether this run is gated or a non-interactive
+delegation, the validation mode (`full` or `quick`), and the environment-signature rule with its
+signature classes. Work only
+inside that checkout, and use its absolute root for every command and every path — never a
+relative path resolved against some other working directory.
 
 The language values you are handed are already resolved: use them for every human-readable line
 you write and never re-resolve them yourself. Only a direct invocation resolves the shared
@@ -229,6 +231,13 @@ order above (scoped instructions, CI workflows and task runners, manifests, neig
   its scoped instructions, one `check`/`verify` script that CI runs as a whole), honor it in full
   whatever the roles of the conflicted files are. That gate is what the merge commit's pre-commit
   check rests on, and a role-scoped subset that declines to run it leaves the commit ungated.
+- **Under the validation mode `quick`, run targeted checks only:** the established checks for the
+  conflicted and adjacent paths, never the combined or top-level gate, which the independent
+  validator runs once. As soon as you classify a conflicted path high-risk, validate as under
+  `full`. Under `full`, or with no mode handed, the rules above apply unchanged.
+- **On an environment signature, report the check and its diagnostic; no suite split, no base
+  comparison, no rerun.** An environment signature is one of the signature classes the gate hands
+  you. A timeout of your own host tool, or one you cannot attribute, is none of these.
 
 Carry the exact commands, their working directory, and their terminal result into the report. Report
 a check that could not run as skipped **with its concrete reason** rather than omitting it; the gate
@@ -253,8 +262,9 @@ every executed check passed, and the index holds exactly the paths you name belo
   regenerated from its source;
 - **per adjacent file**: the file, the named check that failed without the change, that check's
   verbatim pre-change failure output, and the change that fixed it;
-- the exact validation commands with their terminal results, including every check skipped with its
-  reason;
+- the validation mode you applied and the exact validation commands with their terminal results,
+  including every check skipped with its reason and every environment signature with its
+  diagnostic;
 - the complete list of paths staged, so the gate can reconcile it against the working tree;
 - on `ABORT`: the file and the concrete contradiction or missing evidence, plus the state the
   checkout was left in.

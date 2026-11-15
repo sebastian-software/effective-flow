@@ -3333,6 +3333,181 @@ test('no-ci-policy: a missing or unsafe baseRef is invalid input', async (t) => 
 });
 
 // ---------------------------------------------------------------------------------------------
+// conflict-validation: the base-blob guard for `mergeGate.conflictValidation`
+
+const CONFLICT_VALIDATION = 'mergeGate.conflictValidation';
+
+async function conflictValidation(input, deps) {
+  const envelope = await executeOperation('conflict-validation', input, deps);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.operation, 'conflict-validation');
+  return envelope.data;
+}
+
+// Invariant: a `quick` ceiling needs the base branch to carry the identical row; rows outside the
+// single guarded key, the no-CI policy rows included, may differ without effect.
+test('conflict-validation: a quick row the base carries identically is confirmed', async (t) => {
+  const rows = { [CONFLICT_VALIDATION]: 'quick', [NO_CI_BASES]: 'main' };
+  const { root } = policyRepository(t, rows);
+  const data = await conflictValidation({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.deepEqual(data.conflictValidation, {
+    configured: true,
+    value: 'quick',
+    invalid: [],
+    baseRef: 'main',
+    baseComparison: 'equal',
+    ceiling: 'quick',
+    reason: 'confirmed',
+  });
+  assert.equal(data.source.path, join(root, SETUP_ADR));
+  write(root, SETUP_ADR, setupDocument({ ...rows, [NO_CI_BASES]: 'release' }));
+  const unrelated = await conflictValidation({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(unrelated.conflictValidation.baseComparison, 'equal');
+  assert.equal(unrelated.conflictValidation.ceiling, 'quick');
+});
+
+// Invariant: a PR head cannot lower its own conflict validation: a `quick` row only on the head,
+// or a head that changes the base's value, is a mismatch and keeps the ceiling `full`.
+test('conflict-validation: a quick row only on the PR head is not confirmed', async (t) => {
+  const added = policyRepository(t, { 'plan.dir': 'docs/plan' });
+  const head = pullRequestHead(added.base, added.root, 'lowering', (checkout) =>
+    write(
+      checkout,
+      SETUP_ADR,
+      setupDocument({ 'plan.dir': 'docs/plan', [CONFLICT_VALIDATION]: 'quick' }),
+    ),
+  );
+  const { conflictValidation: lowered } = await conflictValidation({
+    cwd: head,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(lowered.value, 'quick');
+  assert.equal(lowered.baseComparison, 'mismatch');
+  assert.equal(lowered.reason, 'base-blob-mismatch');
+  assert.equal(lowered.ceiling, 'full');
+
+  const changed = policyRepository(t, { [CONFLICT_VALIDATION]: 'full' });
+  const switched = pullRequestHead(changed.base, changed.root, 'switching', (checkout) =>
+    write(checkout, SETUP_ADR, setupDocument({ [CONFLICT_VALIDATION]: 'quick' })),
+  );
+  const { conflictValidation: policy } = await conflictValidation({
+    cwd: switched,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(policy.baseComparison, 'mismatch');
+  assert.equal(policy.ceiling, 'full');
+
+  const missingRef = await conflictValidation({
+    cwd: head,
+    tool: 'merge-gate',
+    baseRef: 'release',
+  });
+  assert.equal(missingRef.conflictValidation.baseComparison, 'missing');
+  assert.equal(missingRef.conflictValidation.reason, 'base-blob-missing');
+  assert.equal(missingRef.conflictValidation.ceiling, 'full');
+});
+
+// Invariant: only the literal `full` or `quick` is a value; anything else is null, named once in
+// `invalid`, and keeps the ceiling `full` even when the base confirms the row.
+test('conflict-validation: an invalid value is reported and the ceiling stays full', async (t) => {
+  for (const cell of ['off', 'Quick', 'true', '(empty)', 'null', rowsOf('quick', 'quick')]) {
+    const { root } = policyRepository(t, { [CONFLICT_VALIDATION]: cell });
+    const { conflictValidation: policy } = await conflictValidation({
+      cwd: root,
+      tool: 'merge-gate',
+      baseRef: 'main',
+    });
+    const label = JSON.stringify(cell);
+    assert.equal(policy.configured, true, label);
+    assert.equal(policy.value, null, label);
+    assert.deepEqual(policy.invalid, [CONFLICT_VALIDATION], label);
+    assert.equal(policy.baseComparison, 'equal', label);
+    assert.equal(policy.reason, 'invalid-value', label);
+    assert.equal(policy.ceiling, 'full', label);
+  }
+  const { root } = policyRepository(t, { [CONFLICT_VALIDATION]: 'full' });
+  const { conflictValidation: full } = await conflictValidation({
+    cwd: root,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(full.value, 'full');
+  assert.equal(full.reason, 'confirmed');
+  assert.equal(full.ceiling, 'full');
+});
+
+// Invariant: without the row the default `full` applies and no base blob is read.
+test('conflict-validation: a missing row is not configured and keeps the default full', async (t) => {
+  const { root } = policyRepository(t, { 'plan.dir': 'docs/plan' });
+  const calls = [];
+  const runner = fakeRunner((call) => {
+    calls.push(call.args);
+    return null;
+  });
+  const { conflictValidation: policy } = await conflictValidation(
+    { cwd: root, tool: 'merge-gate', baseRef: 'main' },
+    { runner },
+  );
+  assert.deepEqual(policy, {
+    configured: false,
+    value: null,
+    invalid: [],
+    baseRef: 'main',
+    baseComparison: 'not-applicable',
+    ceiling: 'full',
+    reason: 'not-configured',
+  });
+  assert.ok(!calls.some((args) => args.includes('cat-file')), 'no base blob is read');
+
+  const { root: empty } = plainDirectory(t);
+  const none = await conflictValidation({ cwd: empty, tool: 'merge-gate', baseRef: 'main' });
+  assert.equal(none.source.step, 4);
+  assert.equal(none.conflictValidation.reason, 'not-configured');
+});
+
+// Invariant: hidden mode's local file cannot be changed by a PR, so its `quick` is honoured as
+// `hidden-self` without a base read.
+test('conflict-validation: hidden mode honours quick as hidden-self', async (t) => {
+  const { root } = repository(t);
+  write(root, LOCAL_SETUP, setupDocument({ visibility: 'hidden', [CONFLICT_VALIDATION]: 'quick' }));
+  const calls = [];
+  const runner = fakeRunner((call) => {
+    calls.push(call.args);
+    return null;
+  });
+  const data = await conflictValidation(
+    { cwd: root, tool: 'merge-gate', baseRef: 'main' },
+    { runner },
+  );
+  assert.equal(data.visibility, 'hidden');
+  assert.equal(data.conflictValidation.baseComparison, 'hidden-self');
+  assert.equal(data.conflictValidation.reason, 'confirmed');
+  assert.equal(data.conflictValidation.ceiling, 'quick');
+  assert.ok(!calls.some((args) => args.includes('cat-file')), 'no base blob is read');
+});
+
+test('conflict-validation: a missing or unsafe baseRef is invalid input', async (t) => {
+  const { root } = policyRepository(t, { [CONFLICT_VALIDATION]: 'quick' });
+  for (const baseRef of [undefined, '', '-main', 'a..b', 'ma:in', 'HEAD']) {
+    const input = { cwd: root, tool: 'merge-gate' };
+    if (baseRef !== undefined) input.baseRef = baseRef;
+    const envelope = await executeOperation('conflict-validation', input);
+    assert.equal(envelope.ok, false, JSON.stringify(baseRef));
+    assert.equal(envelope.error.code, 'INVALID_INPUT', JSON.stringify(baseRef));
+    assert.equal(exitCodeFor(envelope), 2);
+  }
+  const prefix = await executeOperation('conflict-validation', {
+    cwd: root,
+    tool: 'merge-gate',
+    baseRef: 'main',
+    prefix: 'mergeGate.',
+  });
+  assert.equal(prefix.error.code, 'INVALID_INPUT', 'no caller-supplied key or prefix');
+});
+
+// ---------------------------------------------------------------------------------------------
 // CLI
 
 function runCli(args, input, env = process.env) {
@@ -3615,4 +3790,16 @@ test('cli: the no-ci-policy operation prints one envelope line and exits 0', (t)
   assert.equal(unsafe.status, 2);
   assert.equal(unsafe.envelope.error.code, 'INVALID_INPUT');
   assert.match(unsafe.stderr, /^INVALID_INPUT: /);
+});
+
+test('cli: the conflict-validation operation prints one envelope line and exits 0', (t) => {
+  const { root } = policyRepository(t, { [CONFLICT_VALIDATION]: 'quick' });
+  const { status, envelope, stderr } = runCli(
+    ['conflict-validation'],
+    JSON.stringify({ cwd: root, tool: 'merge-gate', baseRef: 'main' }),
+  );
+  assert.equal(status, 0, stderr);
+  assert.equal(envelope.operation, 'conflict-validation');
+  assert.equal(envelope.data.conflictValidation.value, 'quick');
+  assert.equal(envelope.data.conflictValidation.baseComparison, 'equal');
 });

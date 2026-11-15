@@ -115,27 +115,45 @@ function raiseBudget(checkout, tool) {
   );
 }
 
+// Each mutated case removes its own checkout copy and output when it ends, pass or fail, so the
+// suite's temporary-directory peak stays at a few concurrent copies instead of every case's copy
+// until the after() hook.
+function withCaseRoot(name, run) {
+  const caseRoot = join(sandbox, name);
+  try {
+    return run(caseRoot);
+  } finally {
+    rmSync(caseRoot, { recursive: true, force: true });
+  }
+}
+
 function assertMutatedBuildFails(name, mutate, expected) {
-  const caseRoot = join(sandbox, `invalid-${name}`);
-  const checkout = join(caseRoot, 'checkout');
-  const destination = join(caseRoot, 'output');
-  copyRepository(ROOT_DIR, checkout);
-  mutate(checkout);
-  const result = runBuild(checkout, destination);
-  assert.notEqual(result.status, 0, `${name}: build unexpectedly succeeded`);
-  assert.match(`${result.stdout}\n${result.stderr}`, expected, name);
-  assert.equal(existsSync(join(destination, 'dist')), false, `${name}: output swapped on failure`);
+  withCaseRoot(`invalid-${name}`, (caseRoot) => {
+    const checkout = join(caseRoot, 'checkout');
+    const destination = join(caseRoot, 'output');
+    copyRepository(ROOT_DIR, checkout);
+    mutate(checkout);
+    const result = runBuild(checkout, destination);
+    assert.notEqual(result.status, 0, `${name}: build unexpectedly succeeded`);
+    assert.match(`${result.stdout}\n${result.stderr}`, expected, name);
+    assert.equal(
+      existsSync(join(destination, 'dist')),
+      false,
+      `${name}: output swapped on failure`,
+    );
+  });
 }
 
 function assertMutatedBuildSucceeds(name, mutate) {
-  const caseRoot = join(sandbox, `valid-${name}`);
-  const checkout = join(caseRoot, 'checkout');
-  const destination = join(caseRoot, 'output');
-  copyRepository(ROOT_DIR, checkout);
-  mutate(checkout);
-  const result = runBuild(checkout, destination);
-  assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
-  assert.equal(existsSync(join(destination, 'dist')), true, `${name}: output was not swapped`);
+  withCaseRoot(`valid-${name}`, (caseRoot) => {
+    const checkout = join(caseRoot, 'checkout');
+    const destination = join(caseRoot, 'output');
+    copyRepository(ROOT_DIR, checkout);
+    mutate(checkout);
+    const result = runBuild(checkout, destination);
+    assert.equal(result.status, 0, `${name}: ${result.stdout}\n${result.stderr}`);
+    assert.equal(existsSync(join(destination, 'dist')), true, `${name}: output was not swapped`);
+  });
 }
 
 before(() => {
@@ -463,7 +481,9 @@ test('the pilot fragments render their own build target and keep portable runs u
 // Invariant: against release 6055c94 every native worker sidecar, base and Fast, is byte-identical
 // apart from the declared deltas of per-spawn model tiers (the `deep` workers' Claude effort and
 // Codex model, the mandate body), the lean-orchestrator sentence, conditional progress pointer and compact checkpoint replacement,
-// and the generic-product reviewer's tooling and bounded implementation full-pass wording;
+// the generic-product reviewer's tooling and bounded implementation full-pass wording, and the
+// merge gate's conflict-commit scope and validation-mode wording in the code validator and the
+// merge-conflict resolver;
 // any other configuration change or body change fails.
 // The pinned stdout names each delta and exactly the workers showing it.
 test('the executable baseline proof preserves every Quality native configuration and source-unchanged artifact', () => {
@@ -492,7 +512,9 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta delegation-mandate-conditional-checkpoint: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta delegation-mandate-triviality-scope: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-e2e-tester, effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-marketing-writer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-implementer-fast, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-implementer-fast, effective-flow-rust-reviewer, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n' +
       'Expected delta generic-product-reviewer-tooling-assignment: effective-flow-generic-product-reviewer\n' +
-      'Expected delta generic-product-reviewer-implementation-full-pass: effective-flow-generic-product-reviewer\n',
+      'Expected delta generic-product-reviewer-implementation-full-pass: effective-flow-generic-product-reviewer\n' +
+      'Expected delta code-validator-conflict-commit-scope: effective-flow-code-validator\n' +
+      'Expected delta merge-conflict-resolver-validation-mode: effective-flow-merge-conflict-resolver\n',
   );
 });
 
@@ -816,8 +838,9 @@ test('a pilot Quality-mapping identity that differs from the deep tier fails bef
 // only, Codex values only, both for portable), the shipped model-tiers fragment carries the generated
 // role defaults and harness table for its target, and the portable guards accept exactly that
 // generated text.
-test('spawn-site markers and the model-tiers fragment render per target', () => {
+test('spawn-site markers and the model-tiers fragment render per target', (t) => {
   const caseRoot = join(sandbox, 'valid-spawn-sites');
+  t.after(() => rmSync(caseRoot, { recursive: true, force: true }));
   const checkout = join(caseRoot, 'checkout');
   const destination = join(caseRoot, 'output');
   copyRepository(ROOT_DIR, checkout);

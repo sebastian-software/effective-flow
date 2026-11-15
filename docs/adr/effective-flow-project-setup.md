@@ -43,6 +43,7 @@ a pure runtime directory and completely gitignored.
 | mergeGate.bots                    | recensor                   |
 | mergeGate.bots.recensor.trigger   | /recensor review           |
 | mergeGate.bots.recensor.check     | recensor/review            |
+| mergeGate.conflictValidation      | quick                      |
 
 ## Branch model
 

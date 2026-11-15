@@ -122,11 +122,13 @@ The canonical convention-file locator is:
 
 `/effective-flow setup allowlist` runs only the allowlist step; the other setup modes except
 Targeted and Status offer it after the configuration write. In Claude Code, the step writes one allow rule for
-each non-destructive or bounded helper operation, 63 rules in all: seventeen runtime-state helper operations
+each non-destructive or bounded helper operation: the runtime-state helper operations
 (`lock acquire`, `lock release`, `lock inspect`, `memory reserve`, `memory set-marker`,
 `memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
 `worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
-`ledger init`, `ledger append`, `ledger reconcile`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
+`ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
+`presence list`, `presence release`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
+`config-resolve.mjs conflict-validation`, the four read-only `conflict-validation.mjs` operations,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
@@ -141,7 +143,7 @@ naming the literal `skillRoot` count as `current`, and a rule for a realpath ali
 install is listed separately. Wider rules, path-prefix wildcards included, are reported as
 warnings.
 
-Destructive helper operations (`lock break`) and `harness allow-rules` itself are never
+Destructive helper operations (`lock break`, `presence prune`) and `harness allow-rules` itself are never
 allowlisted. `commit create` writes Git history and runs the repository's hooks without a prompt;
 it commits only the listed paths and answers `HOOKS_UNTRUSTED` for a fork head or a changed hook
 configuration, which falls back to a prompting commit. Users must not accept Claude Code's "don't ask again" suggestion for a helper call,
@@ -185,11 +187,16 @@ as one call. The delivery ledger of a `deliver` run is part of the same runtime 
 below `worktree-runs/ledgers/`, at most 256 KiB, deleted with its record
 ([Build system](build-system.md#runtime-scripts)). It adds no configuration key.
 
+Merge-gate run-presence markers are the same kind of runtime state: one file per gate run below
+`.effective-flow/merge-gate-presence/`, written only through the state helper's `presence` group
+(`register`, `refresh`, `list`, `release`, and cleanup's `prune`, which removes a marker only when
+its run's wisdom file is absent). They add no configuration key.
+
 ## Resolution order and ownership
 
 Readers resolve configuration through the runtime script
 [`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs), called as
-`config-resolve.mjs resolve`, or `config-resolve.mjs no-ci-policy` for the merge gate's declared no-CI policy (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
+`config-resolve.mjs resolve`, or `config-resolve.mjs no-ci-policy` and `config-resolve.mjs conflict-validation` for the merge gate's two base-confirmed settings (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
 the single source of the locator steps, the root verification, the stem ranking, the table
 decoding, the hidden-mode forced values and the retired-row classification; the prose fragment
 [`src/shared/config-migration.md`](../../src/shared/config-migration.md) keeps only the call
@@ -432,6 +439,20 @@ default) and `mergeGate.noCiPolicy.unattended` (`true` or `false`, default `fals
 checkout so a pull request cannot grant the policy to itself; hidden mode compares the local file
 with itself and has no head guard. The decision, its authority limits and the residual risk are in
 the [ADR](../adr/merge-gate-no-ci-policy.md).
+
+### Conflict validation (`mergeGate.conflictValidation`)
+
+`mergeGate.conflictValidation` (`full` or `quick`, default `full`) is a plain row read through
+`config-resolve.mjs conflict-validation`. The operation applies the no-CI policy's base-blob guard
+to this single row: a fixed allowlist with this one key, never a caller-supplied prefix, with the
+same read-only Git vectors, `isSafeBaseRef`, and symlink and submodule handling. It reports the
+working `value` (null when the row is absent or not `full`/`quick`, the key then in `invalid`),
+`baseComparison` (`equal`, `mismatch`, `missing`, `unreadable`, `hidden-self` or `not-applicable`)
+and a `ceiling` that is `quick` only for a valid `quick` the base confirms or hidden mode holds. The
+merge gate lowers that ceiling to `full` without CI evidence; setup only proposes `quick`, and
+`setup status` carries that proposal as the `conflictValidation` field of its envelope, computed
+from the local `origin/<delivery.baseBranch>` without a fetch. The decision is in the
+[ADR](../adr/merge-gate-conflict-validation.md).
 
 ### Non-reviewer bot list (`mergeGate.botAccounts`)
 

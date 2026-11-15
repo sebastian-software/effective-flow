@@ -397,8 +397,9 @@ export function evaluateEvidence(
   // records the sandbox's git state — has no run that could legitimately lack it or garble it: the
   // seal replaces whatever a run left at its path. A missing or unreadable record therefore says the
   // bench failed and is a validity problem, which publication refuses; what a readable record says
-  // the run did is the suite evaluator's finding to make. A suite that declares none —
-  // `merge-gate` — keeps exactly the evaluation it had, and any such text handed in is orphaned.
+  // the run did is the suite evaluator's finding to make. A scenario it is not required for — every
+  // `merge-gate` scenario but the two that declare it — keeps exactly the evaluation it had, and
+  // any such text handed in is orphaned.
   const sealed = suite.sealedEvidence ?? null;
   const requiresSealed = sealed ? sealed.required(scenario) : false;
   let sealedEvidence = null;

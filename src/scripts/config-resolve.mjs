@@ -8,6 +8,9 @@
 //   `baseRef` is the pull request's base branch name without a remote prefix; the operation
 //   requires the commit of `refs/remotes/origin/<baseRef>` to locate the same source with the same
 //   `mergeGate.noCiPolicy.*` rows, and never fetches.
+//   node config-resolve.mjs conflict-validation   (one JSON object on stdin: { cwd, tool, mode?, baseRef })
+//   the same base-blob guard for the single row `mergeGate.conflictValidation`; `ceiling` is
+//   `quick` only for a valid `quick` the base confirms or hidden mode holds.
 // Writes exactly one JSON envelope line to stdout and exits non-zero on failure: 2 for invalid
 // input, 3 for an unverifiable or unsafe runtime-state root, 1 otherwise. Input never travels as
 // command-line arguments; only the operation name does. Git runs through an injected runner

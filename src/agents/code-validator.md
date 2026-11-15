@@ -69,6 +69,18 @@ comments. Only a direct invocation resolves the shared language rule itself.
 If no mode is supplied, use `full`. Never execute both a combined command and the covered
 subcommands merely to fill a report.
 
+A **conflict-commit scope** from the merge gate replaces the `quick` mapping: skip only the
+named excluded test command, by normalized script identity, as `SKIPPED (covered by CI)`; run every
+other established check for the assigned buckets; replace a mandated combined gate that contains
+the excluded command by its remaining established subcommands. Where those cannot run separately,
+run `full` and report why. Where the scope names several excluded test commands, this holds for
+each.
+
+**On an environment signature, report the check and its diagnostic; no suite split, no base
+comparison, no rerun.** An environment signature is one of the signature classes the handoff names;
+report it in the owner's result states. A timeout of your own host tool, or one you cannot
+attribute, is none of these.
+
 ## Minimal fallback
 
 If `effective-delivery` is unavailable, derive commands from scoped instructions, CI, task

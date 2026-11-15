@@ -34,10 +34,14 @@ The instrument is shared with every other behavioural eval suite and lives one l
 between the two: it is the single place this suite declares its load-set seeds, its evaluator, its
 tracker stub, its `iterate`-echo overlay policy, its checkout preparation, its sandbox namespace and
 the execution profile every round is pinned to, and the shared scaffold reads all of it from there
-rather than naming a tool. `prepareCheckout` prepares nothing beyond the shared seed for most
-scenarios, because a gate run reads the forge through the stub and never fetches; only the six
-no-CI policy scenarios (`no-ci-checkout.mjs`), the two repair scenarios (`repair-origin.mjs`) and the
-configured-reviewer scenario (`configured-reviewer-origin.mjs`) get a local `origin`. The
+rather than naming a tool. `prepareCheckout` prepares nothing beyond the shared seed for a
+scenario that never reaches a fetch, because a gate run reads the forge through the stub. Every
+Phase 4 fetches the base and `refs/pull/42/head` and runs `quick-marker-scan` over the pull
+request's range, and a failed fetch or scan blocks the merge, so every scenario expected to merge
+has a local `origin` and a real head commit: the six of `merge-origin.mjs` and the repair scenario
+that merges. The four blocking no-CI policy scenarios (`no-ci-checkout.mjs`), the two repair
+scenarios (`repair-origin.mjs`) and the configured-reviewer scenario
+(`configured-reviewer-origin.mjs`) get a local `origin` as well. The
 evaluator's `permitsEmptyCallLog` answers `false` for every scenario, because every gate scenario
 reads the forge before it can decide anything. `alwaysAllowedOperations` is a plain
 list here; the shared scaffold also accepts a function of the scenario, which the `iterate` suite
@@ -58,15 +62,19 @@ both halves, and neither is safe alone.
 | `_scaffold/evaluate.mjs`                     | The gate-specific outcome rules over an archived run                                                                                    |
 | `_scaffold/iterate-echo.md`                  | The configured-reviewer and repair scenarios' replacement for the slot's `tools/iterate.md`                                             |
 | `_scaffold/iterate-trace.mjs`                | The echo's receiver and the writer of its bounded handoff trace; in a repair slot it also lands the planned repair and is the `origin`'s receive hook |
-| `_scaffold/no-ci-checkout.mjs`               | The local `origin` of the six no-CI policy scenarios                                                                                    |
+| `_scaffold/merge-origin.mjs`                 | The local `origin` and fixture head commit of the six merging scenarios without another `origin`, which their Phase-4 scan fetches |
+| `_scaffold/no-ci-checkout.mjs`               | The base-only local `origin` of the four blocking no-CI policy scenarios                                                                |
 | `_scaffold/repair-origin.mjs`                | The real-commit `origin` of the two repair scenarios: seeded history, planned repairs, the receive hook                                 |
 | `_scaffold/configured-reviewer-origin.mjs`   | The local `origin` of the configured-reviewer scenario: a re-dated seed and the fixture's head commit, SHA for SHA                      |
+| `_scaffold/run-state-seed.mjs`               | The runtime state and history of the two run-state scenarios, and the checkout step that hands every other scenario to `merge-origin.mjs`, then `no-ci-checkout.mjs` |
+| `_scaffold/sealed-observation.mjs`           | The seal's record of the last message and the sandbox `origin` for those two scenarios, and its parser                                  |
 | `fixtures/<name>.json`                       | The scenario's envelope set, the provider payload each came from, and its merge opt-in                                                  |
 | `results/<name>/run-<n>.jsonl`               | Published call logs — the evidence the assertions read                                                                                  |
 | `results/<name>/run-<n>.build.json`          | Per-file hashes of what that scenario loads, binding the log to a build                                                                 |
 | `results/<name>/run-<n>.prompt.txt`          | The exact rendered prompt supplied to the fresh session                                                                                 |
 | `results/<name>/run-<n>.metadata.json`       | Safe slot, build, prompt, fixture, execution-profile, and host-attestation metadata                                                     |
 | `results/<name>/run-<n>.iterate.jsonl`       | Echo trace; required for the configured-reviewer and repair scenarios, forbidden for any other                                          |
+| `results/<name>/run-<n>.sealed.json`         | Sealed last message and `origin` refs; required for the two run-state scenarios, forbidden for any other                                |
 
 The shared half, for reference: `../eval.mjs` is the round lifecycle CLI and `../prepare.mjs` its
 deprecated single-scenario wrapper, while `../_scaffold/` holds `round-core.mjs` (round, slot,
@@ -192,6 +200,18 @@ wherever it names the head, and the stub serves it unchanged, since the fixture 
 `originHeads`; provisioning fails when the seeded head is another commit, so a change to the seeded
 tree or the thread anchor has to regenerate it. `test/merge-gate-eval-configured-origin.test.mjs`
 proves the scope read resolves on that checkout.
+
+The six merging scenarios without such an `origin` — `merge-proceeds`, `bot-login-excluded`,
+`nested-spawn-abort-runs-inline`, `presence-notice-names-other-run`,
+`no-ci-policy-unattended-merges` and `no-ci-policy-merge-failure-reports` — are prepared by
+`merge-origin.mjs` through the same provisioning, with one pull-request commit that writes
+`docs/merge-gate-eval.md` and carries no quick marker. Each fixture states its own head SHA, since the
+setup ADR in the seeded tree names the scenario; provisioning fails when the seeded head is another
+commit, so a change to the seeded tree has to regenerate all six. The re-made seed keeps the tree, so
+the two policy scenarios' resolver still compares an equal base blob.
+`test/merge-gate-eval-merge-origin.test.mjs` provisions every scenario whose fixture serves the merge
+and proves the gate's Phase-4 fetches and the shipped `quick-marker-scan` succeed on it with
+`found: false`.
 
 The two repair scenarios, `repair-after-base-merge-merges` and `repeated-ineffective-repair-stops`,
 receive the same reviewer rows, echo, trace helper and empty trace, plus a `mergeGate.maxRounds: 8`
@@ -416,8 +436,10 @@ After a session finishes, create a host receipt with exactly these fields:
 
 The working root and profile must exactly match that attempt and its round. Do not add task, thread,
 or session IDs, account or email values, or links. One optional key exists: a scenario whose sealed
-evidence declares `capturesLastMessage: true` (only `focus` today) carries `lastMessagePath`, the
-absolute path of the session's last message, and no other receipt may. Seal only after the host task has ended:
+evidence declares `capturesLastMessage: true` carries `lastMessagePath`, the absolute path of the
+session's last message, and no other receipt may. Here that is `presence-notice-names-other-run` and
+`quick-conflict-commit-without-ci-evidence-blocks`: pass the path the launch wrote through
+`--output-last-message`, which lies outside the attempt root. Seal only after the host task has ended:
 
 ```sh
 pnpm eval merge-gate seal \
@@ -769,6 +791,36 @@ correlated `complete` events are not additional calls.
   discarded runs to reach five valid ones, stop and decide rather than keep re-running — the rule is
   then hiding a pattern rather than absorbing variance.
 
+## The two run-state scenarios
+
+`quick-conflict-commit-without-ci-evidence-blocks` and `presence-notice-names-other-run` are about
+state a gate run reads rather than state it writes, and about things the call log cannot show.
+`_scaffold/run-state-seed.mjs` provisions their slots, and their seal also writes
+`trace/sealed-observation.json`: the session's last message and every ref of the sandbox `origin`
+(`_scaffold/sealed-observation.mjs`). Their host receipts carry `lastMessagePath`; every other
+scenario's receipt and seal are unchanged.
+
+- **The quick-commit scenario enters at a re-dispatch, not at a fresh Phase 4.** The only path the
+  shipped gate offers into an existing wisdom file is a re-dispatch with a `Relayed answer:` line, so
+  the session is the delegated run itself, handed the input lines a caller writes after relaying
+  `BLOCKED-USER checks-pending` with `Continue`. The slot holds what the first dispatch left: the
+  record of a low-risk conflict validated in `quick` mode and pushed, this run's presence marker, and
+  a deterministic history with a reachable `origin` (base, head branch, `refs/pull/42/head`), whose
+  SHAs and `ci-detect` result the fixture's `checkout` block states. `test/merge-gate-eval.test.mjs`
+  provisions that checkout and asks the shipped helpers: the history matches the forge the stub
+  reports, `ci-integrity` holds, and `ci-evidence-match` fails on the event alone. The run's own
+  helper calls — fetches, `ci-integrity`, `ci-evidence-match` — run outside the stub and leave no
+  record. The setup ADR keeps the base rows (`mergeGate.conflictResolution: off`, no
+  `mergeGate.conflictValidation`), because `test/eval-fixture-fidelity.test.mjs` pins every
+  undeclared scenario to the base configuration; neither row is read on this path.
+- **What is asserted:** no `pr-merge`; a fresh read of the status and of every guard surface (one each,
+  because a re-dispatch need not repeat Phase 1); an `origin` exactly as provisioned, so nothing was
+  pushed or force-pushed; and a last message that names the missing CI evidence. For the presence
+  scenario, whose slot also holds the merging `origin` of `merge-origin.mjs`: `merge-proceeds`'
+  ending, and a last message that names pull request 41. The two text
+  checks are patterns over prose: they show that the report names the fact, never that the run
+  decided on it.
+
 ## What this deliberately does not cover
 
 - **The six `no-ci-policy-*` scenarios carry two recorded deviations.** First,
@@ -782,9 +834,9 @@ correlated `complete` events are not additional calls.
   now delivers a non-zero exit in the fidelity replay; adopting it for the wait is the remaining step.)
   The gate takes its check criterion from `pr-status-read`, so the flag does not change what any of
   the six asserts. Recording rounds for these scenarios remains evidence debt.
-- **Seventeen scenarios exist: one pair, one observer, two unreported-check-list refusals, one
+- **Nineteen scenarios exist: one pair, one observer, two unreported-check-list refusals, one
   configured-reviewer refusal, two delegation scenarios, one bot-account exclusion, six no-CI
-  policy scenarios, and the repair-accounting pair.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
+  policy scenarios, the repair-accounting pair, and the two run-state scenarios.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
   result from them proves that one refusal path holds and that the harness can reach a merge, and
   nothing about the breadth of the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
   decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`

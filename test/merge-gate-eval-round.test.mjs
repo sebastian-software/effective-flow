@@ -55,6 +55,12 @@ import {
 import { findings as iterateEvaluatorFindings } from '../evals/iterate/_scaffold/evaluate.mjs';
 import iterateSuite from '../evals/iterate/suite.config.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
+import {
+  PRESENCE_NOTICE_SCENARIO,
+  QUICK_COMMIT_SCENARIO,
+  provisionedRemoteRefs,
+} from '../evals/merge-gate/_scaffold/run-state-seed.mjs';
+import { SEALED_OBSERVATION_SCHEMA } from '../evals/merge-gate/_scaffold/sealed-observation.mjs';
 import nextStepsSuite from '../evals/next-steps/suite.config.mjs';
 
 // Every suite the shared scaffold runs, with the outcome chain its evaluator exposes. The contract
@@ -347,6 +353,15 @@ const UNRECORDED_SCENARIO_LOGS = Object.freeze({
   // The two that attempt the merge: a preview, then exactly one applied call.
   'no-ci-policy-unattended-merges': ['pr-merge', { operation: 'pr-merge', apply: true }],
   'no-ci-policy-merge-failure-reports': ['pr-merge', { operation: 'pr-merge', apply: true }],
+  // The presence scenario ends like merge-proceeds; the quick-commit refusal reads every guard
+  // surface and the status fresh. Both also carry the sealed observation below.
+  [PRESENCE_NOTICE_SCENARIO]: ['pr-merge', { operation: 'pr-merge', apply: true }],
+  [QUICK_COMMIT_SCENARIO]: [
+    'review-threads-read',
+    'pr-comments-read',
+    'pr-reviews-read',
+    'pr-status-read',
+  ],
   // The two repair scenarios run head-indexed, sequenced fixtures, so their logs are lifecycle logs,
   // and each run pairs a repair trace: two delegations, plus the one gate push between them where the
   // composition holds one. The merging one applies its merge after the second delegation; the
@@ -360,6 +375,42 @@ const UNRECORDED_SCENARIO_LOGS = Object.freeze({
     trace: ['dispatch:seed>repair-1', 'dispatch:repair-1>repair-2'],
   },
 });
+
+// The last message each not-yet-recorded scenario that declares a sealed observation passes with.
+const UNRECORDED_LAST_MESSAGES = Object.freeze({
+  [PRESENCE_NOTICE_SCENARIO]:
+    'Merged pull request 42. Notice: another merge-gate run is active for PR #41.\n',
+  [QUICK_COMMIT_SCENARIO]:
+    'DONE\nNot merged: condition 11 has no CI evidence for the quick-validated conflict commit.\n',
+});
+
+function fixtureOf(scenario) {
+  return JSON.parse(
+    readFileSync(
+      resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'fixtures', `${scenario}.json`),
+      'utf8',
+    ),
+  );
+}
+
+// A sealed observation of an `origin` exactly as provisioning left it, with the given last message:
+// what a run that pushed nothing seals. The presence scenario provisions no `origin`.
+function untouchedSealedObservation(scenario, lastMessage = null) {
+  const fixture = fixtureOf(scenario);
+  const record = {
+    schema: SEALED_OBSERVATION_SCHEMA,
+    lastMessage,
+    remoteRefs: fixture.checkout ? provisionedRemoteRefs(fixture) : null,
+    errors: [],
+  };
+  return `${JSON.stringify(record, null, 2)}\n`;
+}
+
+function sealedTextFor(each, scenario, lastMessage = null) {
+  return each.sealedEvidence?.required(scenario)
+    ? untouchedSealedObservation(scenario, lastMessage)
+    : null;
+}
 
 const SYNTHETIC_REPAIR_THREADS = ['PRRT_kwDOrepairCauseOne', 'PRRT_kwDOrepairCauseTwo'];
 
@@ -450,6 +501,7 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
     );
   }
   mkdirSync(directory, { recursive: true });
+  const sealed = suite.sealedEvidence?.required(scenario) ? suite.sealedEvidence : null;
   for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
     const projectRoot = `/tmp/effective-flow-merge-gate-eval/rounds/synthetic/slots/${scenario}/slot-${slot}/attempt-1/project`;
     const target = resolve(directory, `run-${slot}`);
@@ -478,9 +530,20 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
       promptDigest: `sha256:${createHash('sha256').update(prompt).digest('hex')}`,
       fixtureDigest: identity.scenario_inputs.files[`evals/merge-gate/fixtures/${scenario}.json`],
       buildDigest: identity.digest,
-      hostAttestation: hostReceipt(projectRoot),
+      hostAttestation: sealed
+        ? {
+            ...hostReceipt(projectRoot),
+            lastMessagePath: `/tmp/effective-flow-merge-gate-eval/rounds/synthetic/slots/${scenario}/slot-${slot}/attempt-1-last-message.txt`,
+          }
+        : hostReceipt(projectRoot),
     };
     writeFileSync(`${target}.metadata.json`, `${JSON.stringify(metadata, null, 2)}\n`);
+    if (sealed) {
+      writeFileSync(
+        `${target}.${sealed.archiveSuffix}`,
+        untouchedSealedObservation(scenario, UNRECORDED_LAST_MESSAGES[scenario]),
+      );
+    }
   }
 }
 
@@ -1448,9 +1511,9 @@ test(
         base,
       });
       assert.equal(resumedSeal.slot, 2);
-      // This suite declares no sealed evidence, so sealing writes no such file and digests exactly the
-      // files it always did: the hook another suite may declare leaves this seal unchanged.
-      assert.equal(suite.sealedEvidence, undefined);
+      // This scenario carries no sealed observation — only the two run-state scenarios do — so
+      // sealing writes no such file and digests exactly the files it always did.
+      assert.equal(suite.sealedEvidence.required('guard-blocks-merge'), false);
       assert.deepEqual(Object.keys(resumedSeal.digests).sort(), [
         'buildIdentity',
         'fixture',
@@ -3150,6 +3213,7 @@ test('merge-gate: an empty call log is still invalid evidence in every gate scen
       projectRoot,
       answerableOperations: new Set(Object.keys(fixture.operations)),
       auxiliaryText: each.auxiliaryEvidence.required(scenario) ? '' : null,
+      sealedEvidenceText: sealedTextFor(each, scenario),
     });
   };
   for (const scenario of suite.scenarios) {
@@ -3335,14 +3399,12 @@ test('a host abort is refused for a harness with no known error lines', () => {
 // omission never blocks a retry and a merge the scenario refuses always does.
 test('merge-gate: decisive findings are the irreversible ones, never an omission', () => {
   const projectRoot = '/tmp/round/project';
-  const fixtureOf = (scenario) =>
-    JSON.parse(
-      readFileSync(
-        resolve(import.meta.dirname, '..', 'evals', 'merge-gate', 'fixtures', `${scenario}.json`),
-        'utf8',
-      ),
-    );
-  const decisive = (scenario, operations, auxiliaryText = '') => {
+  const decisive = (
+    scenario,
+    operations,
+    auxiliaryText = '',
+    sealedEvidenceText = sealedTextFor(suite, scenario),
+  ) => {
     const assessment = assessAbortedEvidence(suite, {
       scenario,
       logText: partialLog(projectRoot, operations, {
@@ -3351,6 +3413,7 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
       fixture: fixtureOf(scenario),
       projectRoot,
       auxiliaryText: suite.auxiliaryEvidence.required(scenario) ? auxiliaryText : null,
+      sealedEvidenceText,
     });
     assert.deepEqual(assessment.unjudgeable, [], scenario);
     return assessment.decisiveFindings;
@@ -3360,6 +3423,7 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
   // nested-spawn fallback, whose inline gate merges the same pull request.
   // The two no-CI policy scenarios that attempt the merge: the unattended grant merges, and the
   // failing-merge scenario applies exactly one merge the forge then refuses.
+  // The presence scenario merges like the positive control: the notice decides nothing.
   // The repair scenario that merges after its second repair resolved the finding.
   const merging = [
     'merge-proceeds',
@@ -3367,6 +3431,7 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     'nested-spawn-abort-runs-inline',
     'no-ci-policy-unattended-merges',
     'no-ci-policy-merge-failure-reports',
+    PRESENCE_NOTICE_SCENARIO,
     'repair-after-base-merge-merges',
   ];
   for (const scenario of suite.scenarios) {
@@ -3401,6 +3466,19 @@ test('merge-gate: decisive findings are the irreversible ones, never an omission
     decisive('linked-issue-open-points', [{ operation: 'issue-comment', apply: true }]),
     ['the observer-only run performed an applied mutation'],
   );
+  // A push in the quick-commit scenario has already landed in the sandbox `origin`, so a moved ref
+  // is decisive even in a run stopped before Phase 4; an untouched `origin` is not.
+  const pushed = JSON.parse(untouchedSealedObservation(QUICK_COMMIT_SCENARIO));
+  const headRef = `refs/heads/${fixtureOf(QUICK_COMMIT_SCENARIO).checkout.headRef}`;
+  pushed.remoteRefs[headRef] = 'f'.repeat(40);
+  const pushFindings = decisive(
+    QUICK_COMMIT_SCENARIO,
+    ['pr-status-read'],
+    '',
+    `${JSON.stringify(pushed)}\n`,
+  );
+  assert.equal(pushFindings.length, 1, 'a push to the head branch is not decisive');
+  assert.match(pushFindings[0], /the run pushed/);
   // The configured-reviewer handoff blocks a retry only when the recorded handoff is wrong: no echo
   // record yet is an omission, a wrong recorded handoff cannot be taken back, and a correct one is a
   // pass, which discarding cannot hide.
@@ -3618,22 +3696,14 @@ test(
     const resultsDir = resolve(publicationRoot, 'results');
     mkdirSync(hostRoot);
     const scenario = 'guard-blocks-merge';
+    // The suite's own sealed observation, extended to the published scenario: the run-state
+    // scenarios in the copied corpus keep the declaration their archived runs were sealed under, so
+    // the corpus beside the published scenario stays valid.
     const declaring = {
       ...suite,
-      evaluator: {
-        ...suite.evaluator,
-        parseSealedEvidence: (text) => ({ problems: [], state: text }),
-      },
       sealedEvidence: {
-        fileName: 'last-message.txt',
-        archiveSuffix: 'last-message.txt',
-        sealDigestKey: 'lastMessage',
-        // Declared for the published scenario only, so the copied corpus beside it stays valid.
-        required: (name) => name === scenario,
-        capturesLastMessage: true,
-        capture: ({ lastMessagePath }) => readFileSync(lastMessagePath, 'utf8'),
-        missingMessage: 'missing last message',
-        orphanMessage: 'orphan last message',
+        ...suite.sealedEvidence,
+        required: (name) => name === scenario || suite.sealedEvidence.required(name),
       },
     };
     try {
@@ -3671,10 +3741,10 @@ test(
         const archived = resolve(resultsDir, scenario, `run-${slot}`);
         const metadata = JSON.parse(readFileSync(`${archived}.metadata.json`, 'utf8'));
         assert.equal(metadata.hostAttestation.lastMessagePath, lastMessages[slot - 1]);
-        assert.equal(
-          readFileSync(`${archived}.last-message.txt`, 'utf8'),
-          `last message of slot ${slot}\n`,
+        const observation = JSON.parse(
+          readFileSync(`${archived}.${declaring.sealedEvidence.archiveSuffix}`, 'utf8'),
         );
+        assert.equal(observation.lastMessage, `last message of slot ${slot}\n`);
       }
       const neighbour = JSON.parse(
         readFileSync(resolve(resultsDir, 'merge-proceeds', 'run-1.metadata.json'), 'utf8'),

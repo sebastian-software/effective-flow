@@ -29,7 +29,15 @@ import {
   scenarioSetup,
 } from './_scaffold/configured-reviewer-scenario.mjs';
 import { prepareConfiguredReviewerOrigin } from './_scaffold/configured-reviewer-origin.mjs';
-import { prepareCheckout as prepareNoCiCheckout } from './_scaffold/no-ci-checkout.mjs';
+import {
+  prepareCheckout as prepareRunStateCheckout,
+  requiresSealedObservation,
+} from './_scaffold/run-state-seed.mjs';
+import {
+  captureSealedObservation,
+  SEALED_OBSERVATION_FILE,
+  SEALED_OBSERVATION_SUFFIX,
+} from './_scaffold/sealed-observation.mjs';
 import { projectDocuments } from './_scaffold/project-setup.mjs';
 import { prepareRepairOrigin } from './_scaffold/repair-origin.mjs';
 import * as evaluator from './_scaffold/evaluate.mjs';
@@ -78,6 +86,12 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // `base-branch-resolution` fragment it embeds, that a provisioning run loads executes the shipped
 // `scripts/effective-flow-mechanics.mjs` (`base-branch-resolve`, `base-branch-fetch`,
 // `delivery-branch-name`), and nothing stubs it.
+//
+// The presence core is seeded for the same reason: every delegated run registers, refreshes, lists
+// and releases its run-presence marker through `effective-flow-state.mjs presence`, whose core loads
+// it on first use. So is the conflict-validation pair: a conflict round runs `ci-detect` and
+// `ci-integrity`, every Phase 4 runs `quick-marker-scan`, whatever the ceiling, and condition 11
+// runs `ci-integrity` and `ci-evidence-match` wherever the record or that scan names a marked commit.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/merge-gate.md',
@@ -101,6 +115,9 @@ const LOAD_SET_SEEDS = Object.freeze([
   'scripts/effective-flow-state-commit-core.mjs',
   'scripts/effective-flow-state-review-core.mjs',
   'scripts/effective-flow-state-worktree-core.mjs',
+  'scripts/effective-flow-state-presence-core.mjs',
+  'scripts/conflict-validation.mjs',
+  'scripts/conflict-validation-core.mjs',
   'scripts/review-report-render.mjs',
   'scripts/claude-settings-core.mjs',
   'scripts/runtime-file-primitives.mjs',
@@ -141,8 +158,10 @@ const INSTRUMENT_FILES = Object.freeze([
   resolve(SCAFFOLD, 'configured-reviewer-scenario.mjs'),
   resolve(SCAFFOLD, 'project-setup.mjs'),
   resolve(SCAFFOLD, 'no-ci-checkout.mjs'),
+  resolve(SCAFFOLD, 'run-state-seed.mjs'),
   resolve(SCAFFOLD, 'repair-origin.mjs'),
   resolve(SCAFFOLD, 'configured-reviewer-origin.mjs'),
+  resolve(SCAFFOLD, 'merge-origin.mjs'),
 ]);
 
 const suite = {
@@ -191,21 +210,44 @@ const suite = {
     missingMessage: 'the run has no paired iterate trace',
     orphanMessage: 'an iterate trace is orphaned in a scenario without an echo',
   },
+  // What the seal itself observes, for the two scenarios whose subject the call log cannot show: the
+  // session's last message — the report — and every ref of the sandbox `origin`, where a push would
+  // land. `capturesLastMessage` makes exactly those scenarios' host receipts carry `lastMessagePath`,
+  // the file every pinned merge-gate launch writes through `--output-last-message` outside the
+  // attempt root; every other scenario's receipt and seal stay as they were.
+  sealedEvidence: {
+    fileName: SEALED_OBSERVATION_FILE,
+    archiveSuffix: SEALED_OBSERVATION_SUFFIX,
+    sealDigestKey: 'sealedObservation',
+    required: requiresSealedObservation,
+    capturesLastMessage: true,
+    capture: captureSealedObservation,
+    missingMessage: 'the run has no sealed observation of its report and origin',
+    orphanMessage: 'a sealed observation is orphaned in a scenario without one',
+  },
   scenarioSetup,
   projectDocuments,
-  // No checkout preparation beyond the shared seed commit, except for three groups: a gate run reads
-  // the forge through the stub and never fetches, so its sandbox keeps an `origin` no run reaches.
-  // A no-CI policy read fetches the base ref and compares the setup ADR it finds there, so
-  // `no-ci-checkout.mjs` gives exactly those six scenarios a local `origin`. A repair round reads and
-  // writes real history, so `repair-origin.mjs` gives the two repair scenarios a real-commit
-  // `origin` whose head moves during the run. The configured-reviewer run delegates, and its repair
-  // scope read resolves the reported head against `origin/develop` before it does, so
-  // `configured-reviewer-origin.mjs` gives that one scenario a local `origin` holding the fixture's
-  // head commit. Each returns null for every scenario outside its group.
+  // No checkout preparation beyond the shared seed commit, except for five groups: a gate run reads
+  // the forge through the stub, so a scenario that never reaches a fetch keeps an `origin` no run
+  // reaches. Every Phase 4 fetches the base and `refs/pull/<N>/head` and scans the range for quick
+  // markers, and a failed fetch or scan blocks the merge, so `merge-origin.mjs` gives the six merging
+  // scenarios without an `origin` of their own a local one holding the fixture's head commit. A
+  // no-CI policy read fetches the base ref and compares the setup ADR it finds there, so
+  // `no-ci-checkout.mjs` gives the four blocking policy scenarios a base-only local `origin`; the two
+  // merging ones are among the six. A repair round reads and writes real history, so
+  // `repair-origin.mjs` gives the two repair scenarios a real-commit `origin` whose head moves during
+  // the run. The configured-reviewer run delegates, and its repair scope read resolves the reported
+  // head against `origin/develop` before it does, so `configured-reviewer-origin.mjs` gives that one
+  // scenario a local `origin` holding the fixture's head commit. The two run-state scenarios find an
+  // earlier dispatch's record or another run's presence marker, the first with the history and
+  // `origin` its Phase-4 condition fetches, the second on top of its merging `origin`, so
+  // `run-state-seed.mjs` seeds exactly those two and hands every other scenario on to
+  // `merge-origin.mjs`, then `no-ci-checkout.mjs`. Each returns null for every scenario outside its
+  // group.
   prepareCheckout: (input) =>
     prepareRepairOrigin(input) ??
     prepareConfiguredReviewerOrigin(input) ??
-    prepareNoCiCheckout(input),
+    prepareRunStateCheckout(input),
   evaluator,
   // Five discarded attempts on the sequenced Phase-4 scenario is a signal to stop and investigate
   // rather than to keep spending runs; every other scenario has no cap.

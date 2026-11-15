@@ -3,7 +3,7 @@
   "description": "The same situation as no-ci-policy-unattended-merges with one fact changed: the forge refuses the applied merge (gh pr merge exits non-zero because the base branch policy prohibits it), so the helper fails with COMMAND_FAILED and mutationMayHaveSucceeded: true. The gate must report it and not retry.",
   "viewerLogin": "flow-gate",
   "humanLogin": "casey-reviewer",
-  "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+  "headSha": "f354722c3824ded688fe59188d0aac9fbadb8d61",
   "pullRequest": 42,
   "repository": {
     "host": "github.com",
@@ -132,7 +132,7 @@
         "labels": [],
         "head": {
           "ref": "effective-flow/build/merge-gate-behavioural-evals",
-          "sha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+          "sha": "f354722c3824ded688fe59188d0aac9fbadb8d61"
         },
         "base": {
           "ref": "develop"
@@ -235,12 +235,12 @@
               "mergeable": "MERGEABLE",
               "mergeStateStatus": "CLEAN",
               "baseRefName": "develop",
-              "headRefOid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "headRefOid": "f354722c3824ded688fe59188d0aac9fbadb8d61",
               "commits": {
                 "nodes": [
                   {
                     "commit": {
-                      "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                      "oid": "f354722c3824ded688fe59188d0aac9fbadb8d61",
                       "committedDate": "2026-09-01T09:00:00Z",
                       "statusCheckRollup": null
                     }
@@ -262,7 +262,7 @@
             "title": "feat: add the merge-gate behavioural eval skeleton",
             "state": "open",
             "draft": false,
-            "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "headSha": "f354722c3824ded688fe59188d0aac9fbadb8d61",
             "headCommittedAt": "2026-09-01T09:00:00.000Z",
             "baseRef": "develop",
             "mergeState": "CLEAN",
@@ -399,7 +399,7 @@
               "login": "casey-reviewer",
               "type": "User"
             },
-            "commit_id": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "commit_id": "f354722c3824ded688fe59188d0aac9fbadb8d61",
             "state": "APPROVED",
             "body": "Looks good overall.",
             "submitted_at": "2026-09-01T10:15:00Z"
@@ -420,7 +420,7 @@
                 "isBot": false,
                 "authorType": "human"
               },
-              "commitSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "commitSha": "f354722c3824ded688fe59188d0aac9fbadb8d61",
               "state": "APPROVED",
               "body": "Looks good overall.",
               "submittedAt": "2026-09-01T10:15:00.000Z"
@@ -492,7 +492,7 @@
         "number": 42,
         "payload": {
           "method": "squash",
-          "expectedHeadSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+          "expectedHeadSha": "f354722c3824ded688fe59188d0aac9fbadb8d61"
         }
       },
       "providers": [
@@ -508,12 +508,12 @@
                 "mergeable": "MERGEABLE",
                 "mergeStateStatus": "CLEAN",
                 "baseRefName": "develop",
-                "headRefOid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                "headRefOid": "f354722c3824ded688fe59188d0aac9fbadb8d61",
                 "commits": {
                   "nodes": [
                     {
                       "commit": {
-                        "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                        "oid": "f354722c3824ded688fe59188d0aac9fbadb8d61",
                         "committedDate": "2026-09-01T09:00:00Z",
                         "statusCheckRollup": null
                       }
@@ -551,7 +551,7 @@
               "example/flow",
               "--squash",
               "--match-head-commit",
-              "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+              "f354722c3824ded688fe59188d0aac9fbadb8d61"
             ],
             "expectsJson": false
           },
@@ -579,7 +579,7 @@
               "example/flow",
               "--squash",
               "--match-head-commit",
-              "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+              "f354722c3824ded688fe59188d0aac9fbadb8d61"
             ],
             "status": 1,
             "stderr": "GraphQL: Pull request is not mergeable: the base branch policy prohibits the merge. (mergePullRequest)",
