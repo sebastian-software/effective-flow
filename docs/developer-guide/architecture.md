@@ -220,9 +220,11 @@ message is never written by hand: the shipped `delegation-envelope` runtime help
 structured input and then validates it against a digest and a manifest snapshot before dispatch.
 Above the delimiter it carries six control lines (`Item filter:`, `Summary comment:`,
 `Review guard:`, `Next steps:`, `Run state:`, `Language context:`), the boundary token, and the item
-manifest; `iterate` reads every switch from that region only. A `build` or `validate` failure, or a
-helper missing from the installed build, is a sender-side contract error: the gate stops before
-`iterate` is invoked, makes no remote write, and consumes no round. Delegation
+manifest; `iterate` reads every switch from that region only. Every gate delegation also carries
+the `Authorized scope:` line (optional in the envelope for other senders), which `iterate` parses
+fail-closed and checks through the `repair-attempt` helper before it edits or commits. A `build` or
+`validate` failure, or a helper missing from the installed build, is a sender-side contract error:
+the gate stops before `iterate` is invoked, makes no remote write, and consumes no round. Delegation
 mechanics are Effective Flow's own
 orchestration ownership, so this carries no central-skill relationship under the layered
 ownership contract — canonical for the classification and the ownership-check mechanics in

@@ -34,12 +34,15 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 # Invariant: the host-driver stage authenticates a frozen corpus (nine merge-gate, seven iterate and
 # fifteen next-steps scenarios, five slots each), so the synthetic frozen source is built from these
 # names and never from the live registries. A scenario registered after the freeze does not enter the
-# frozen corpus: its absence here is the pinned protocol, not an omission. Only the merge-gate names
-# registered later (`no-ci-policy-*`) are excluded from the live registry below.
+# frozen corpus: its absence here is the pinned protocol, not an omission. Only the names registered
+# later (merge-gate `no-ci-policy-*` and the two repair scenarios, one iterate refusal) are excluded
+# from the live registry below.
 FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'no-ci-policy-flag-absent-blocks', 'no-ci-policy-merge-failure-reports',
     'no-ci-policy-reported-check-blocks', 'no-ci-policy-status-read-failure-blocks',
-    'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks')}}
+    'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks',
+    'repair-after-base-merge-merges', 'repeated-ineffective-repair-stops')},
+    'iterate': {'unparseable-authorized-scope-aborts'}}
 FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
 POLICY = ('workspace-write;approval-never;network-disabled;isolated-home;'
           'attempt-root-writable;ignore-user-config;ignore-rules')
@@ -573,20 +576,25 @@ class OriginalSealFixture(StageFixture):
         shutil.copytree(SOURCE / 'src/scripts', self.source / 'src/scripts')
         for suite in SUITES:
             shutil.copytree(SOURCE / 'evals' / suite / '_scaffold', self.source / 'evals' / suite / '_scaffold')
-            if suite == 'merge-gate':
+            if suite in FROZEN_EXCLUDED:
                 # Invariant: the frozen corpus is authenticated with the evaluator it was frozen with,
                 # whose branch list names exactly the frozen scenarios (`discoverSuite` parity). The
                 # live evaluator also branches on scenarios registered after the freeze, so those
                 # names are dropped from the synthetic copy's list, which keeps the parity contract
-                # honest instead of widening the frozen registry.
-                evaluator = self.source / 'evals/merge-gate/_scaffold/evaluate.mjs'
+                # honest instead of widening the frozen registry. The merge-gate list names them by
+                # constant; the iterate list derives from its refusal table, keyed by name.
+                evaluator = self.source / 'evals' / suite / '_scaffold/evaluate.mjs'
                 text = evaluator.read_text()
-                head, marker, tail = text.partition('export const BRANCHED_SCENARIOS = Object.freeze([')
+                head, marker, tail = text.partition(
+                    'export const BRANCHED_SCENARIOS = Object.freeze([' if suite == 'merge-gate'
+                    else 'export const PHASE_ZERO_REFUSALS = Object.freeze({')
                 assert marker
-                body, close, rest = tail.partition(']);')
-                kept = [line for line in body.split('\n')
-                        if not re.match(r'\s*NO_CI_[A-Z_]+_SCENARIO,\s*$', line)]
-                assert len(body.split('\n')) - len(kept) == len(FROZEN_EXCLUDED['merge-gate'])
+                body, close, rest = tail.partition(']);' if suite == 'merge-gate' else '});')
+                excluded = (r'\s*(NO_CI_[A-Z_]+|REPAIR_AFTER_BASE_MERGE|REPEATED_INEFFECTIVE_REPAIR)_SCENARIO,\s*$'
+                            if suite == 'merge-gate' else
+                            r"\s*'(%s)':" % '|'.join(map(re.escape, sorted(FROZEN_EXCLUDED[suite]))))
+                kept = [line for line in body.split('\n') if not re.match(excluded, line)]
+                assert len(body.split('\n')) - len(kept) == len(FROZEN_EXCLUDED[suite])
                 evaluator.write_text(head + marker + '\n'.join(kept) + close + rest)
             for record in (r for r in self.records if r['task']['suite'] == suite):
                 task = record['task']

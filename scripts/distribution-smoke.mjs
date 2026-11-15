@@ -70,6 +70,8 @@ const RUNTIME_SCRIPT_FILES = [
   'remote-tracker-forgejo-core.mjs',
   'remote-tracker-github-core.mjs',
   'remote-tracker-ledger-core.mjs',
+  'repair-attempt.mjs',
+  'repair-attempt-core.mjs',
   'pilot-measurement.mjs',
   'pilot-measurement-core.mjs',
   'pilot-measurement-protocol.mjs',

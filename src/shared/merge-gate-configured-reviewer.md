@@ -72,8 +72,9 @@ word, because a mapping only one end holds is a mapping that drifts:
 | `failed` – the item's own implementation delegation returned `ABORT`, or its pre-commit review still blocked | `unassessed`   |
 | deselected at the approval gate (Phase 2.5)                                                                  | `unassessed`   |
 | named in `threads=` but excluded as already addressed (Phase 2 step 2)                                       | `unassessed`   |
+| refused by the authorized-scope check (Phase 3 "Authorized scope")                                           | `unassessed`   |
 
-The last three rows are the ones this gate must not read as an assessment: nobody judged the finding,
+The last four rows are the ones this gate must not read as an assessment: nobody judged the finding,
 so the item is `unassessed` and condition 7 (an unresolved thread) or 10 (a body finding) blocks on it.
 
 **The key set is pre-committed, and that is why the return needs no framing of its own.** Before the
@@ -255,9 +256,11 @@ entries that denote the same reviewer – two spellings of one account are one r
      and its observed state as the blocking condition. A timeout here is always a report, never a
      merge – and that holds for **running** exactly as it does for **not started**: a reviewer this
      run watched working is still a reviewer whose notes nobody has answered.
-5. **When the bot has run:** first apply the stale-verdict re-trigger below, then hand its
-   unresolved threads to `{{SKILL:iterate}} <PR>` with the item filter set to **exactly those thread
-   IDs**. `{{SKILL:iterate}}` classifies them, implements the valid ones as new commits, replies, and
+5. **When the bot has run:** first apply the stop check of "Repair checkpoints" in
+   `merge-gate-delegated-run`, then the stale-verdict re-trigger below, then "Repair evaluation per
+   configured reviewer" – a stop from either ends the run before any delegation – and only then hand
+   its unresolved threads to `{{SKILL:iterate}} <PR>` with the item filter set to **exactly those
+   thread IDs**. `{{SKILL:iterate}}` classifies them, implements the valid ones as new commits, replies, and
    resolves them.
    - **Stale verdict: re-trigger once per verdict, before any item is handed over.** Step 3 never
      triggers a reviewer that has run, so a changes-requested verdict at an unmoved head would never
@@ -385,6 +388,30 @@ entries that denote the same reviewer – two spellings of one account are one r
    bot's state. Discard `VERIFIED_HEAD_SHA`; the new head is unverified until a Phase-2 round
    sets it again. The restart consumes a round per "Round accounting".
 
+## Repair evaluation per configured reviewer
+
+Where the wisdom file holds a repair state, run `evaluate` per "Repair checkpoints" step 5 with
+`head` the fresh read's `headSha`, the recorded `events`, and one observation for this reviewer – its
+login as "Matching a configured login" collapsed it, that `head`, and `findings`: each unresolved
+thread not provider-settled with its anchor, and each finding of its latest changes-requested review
+at that head with `anchor: null`, each under its durable key. A cause belongs to the configured
+reviewer that reported it, and the helper compares only that reviewer's findings, so another
+reviewer's overlapping thread never counts
+against it. A re-reported finding is:
+
+- `same` when it keeps a recorded durable key, or its anchored path and current line on this head
+  overlap a hunk of a recorded repair of an open cause;
+- `new` – its own cause with its own counter, never evidence against another – when it is anchored
+  on a current line, its key is unrecorded, and it overlaps no recorded repair hunk;
+- `uncertain` otherwise: no current right-side line (`lineOutdated`, which every Forgejo thread
+  states), a commit after the repair changed the anchored path, an undetermined read, or a body
+  finding without an anchor.
+
+`uncertain` neither counts nor resets, and `mergeGate.maxRounds` stays its bound. Only fresh evidence on a
+later head – this reviewer ran on it and re-reported a `same` finding – makes a repair ineffective; a
+cause resolves, its counter reset, once its reviewer ran on a later head with nothing `same` or
+`uncertain` against it.
+
 ## Phase 4 condition 5: Configured reviewer has run
 
 5. every login in `mergeGate.bots` is observed as **has run** for the current head through the loaded
@@ -495,7 +522,9 @@ entries that denote the same reviewer – two spellings of one account are one r
     SHA read after the round must differ from the one read before it. The corroboration is coarse
     and is stated as what it is: it proves that a **commit** existed in that round, never that the
     commit addressed this finding, and one real commit satisfies it for every finding of the same
-    round. It closes the "claim implemented, change nothing" path and nothing beyond it. Without an
+    round. It closes the "claim implemented, change nothing" path and nothing beyond it. Its two
+    heads are the `before` and `after` of "Repair checkpoints", whose attribution is what counts a
+    repair attempt per finding from its own returned SHA. Without an
     observed head movement the finding is fail-closed exactly as `rejected` is, and the confirmation
     does **not** reach it: that question is about a finding the delegated run deliberately set
     aside, never about one it claimed to have fixed.
@@ -794,6 +823,8 @@ the residual is accepted and made visible rather than closed.
   `mergeGate.bots.<login>.check` where none is configured;
 - **every bot finding this run assessed but did not implement**, named here rather than answered
   in its thread;
+- **every `uncertain` repair classification** with its reviewer, durable key and reason, so a
+  finding only `mergeGate.maxRounds` bounded is visible as such;
 - **every provider-settled thread and every thread still blocking on a forge without thread
   writes**, worded per the provider-settled rule's report wording;
 - **every configured reviewer's changes-requested review at `VERIFIED_HEAD_SHA`**, with its

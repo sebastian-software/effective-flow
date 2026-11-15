@@ -8752,7 +8752,7 @@ test('iterate reviews each item between its DONE and its commit, and a blocked i
   assert.match(phase4, /its scope excluding every rejected item's paths/);
   assert.match(
     phase4,
-    /Fix errors found only as a correction item through Phase 3 steps 2–4 – delegation, pre-commit review, its own commit – never inline/,
+    /Fix errors found only as a correction item through (?:the scope check of Phase 3 "Authorized scope" on its planned paths, then )?Phase 3 steps 2–4 – delegation, pre-commit review, its own commit – never inline/,
   );
   // The serial-commit rule lives once, in iterate's own outcome map, not in the shared lock contract.
   assert.match(
@@ -10110,11 +10110,12 @@ test('the gate branches on three reviewer states and triggers only on "not start
 
   // A reviewer that has run is never triggered as "not started" again. The one post the has-run
   // step may make is the stale-verdict re-trigger, and it comes before any item is handed over,
-  // so an ordinary has-run round still posts nothing (#466).
+  // so an ordinary has-run round still posts nothing (#466). The repair stop check and evaluation
+  // (#662) may come first; they post nothing.
   const hasRun = boundedSlice(phase3, '**When the bot has run:**', '**Exclude every item');
   assert.match(
     hasRun,
-    /first apply the stale-verdict re-trigger below, then hand its unresolved threads/,
+    /then the stale-verdict re-trigger below,[^.]*only then hand its unresolved threads/,
     'the has-run step must run the stale-verdict re-trigger before handing items to iterate',
   );
   assert.match(
@@ -17870,14 +17871,16 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
 
   // The rows that are not word-for-word, and are therefore the ones a drift reinterprets
   // silently: `skipped` is a processing outcome on one side and two different assessments on the
-  // other, while `failed`, a deselected item and a caller-named thread excluded as already
-  // addressed are no assessment at all. The last one keeps "one outcome per supplied identifier"
-  // true for a named thread this run never classified (issue #555).
+  // other, while `failed`, a deselected item, a caller-named thread excluded as already addressed
+  // and an item the authorized-scope check refused are no assessment at all. The excluded thread
+  // keeps "one outcome per supplied identifier" true for a named thread this run never classified
+  // (issue #555); the scope refusal decided where a repair would land, never whether the finding
+  // holds, so reading it as `deferred` would let the set-aside confirmation clear it (issue #662).
   const mapped = new Map(gateTable.slice(1).map(([from, to]) => [from, to]));
   assert.deepEqual(
     [...mapped.values()].filter((value) => value === '`unassessed`').length,
-    3,
-    'exactly the three non-assessments must map onto `unassessed`',
+    4,
+    'exactly the four non-assessments must map onto `unassessed`',
   );
   for (const [pattern, expected, label] of [
     [/^`skipped` as a false positive/, '`rejected`', 'a false positive'],
@@ -17889,6 +17892,7 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
       '`unassessed`',
       'a caller-named thread excluded as already addressed',
     ],
+    [/^refused by the authorized-scope check/, '`unassessed`', 'a scope-refused item'],
   ]) {
     const row = [...mapped].find(([from]) => pattern.test(from));
     assert.ok(row, `the mapping must carry a row for ${label}`);
@@ -17902,12 +17906,12 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
   }
 
   // The sentence after the table counts the non-assessment rows by position, so the non-assessments
-  // must be exactly the trailing rows and the count must match them: a reader told "the last two
-  // rows" would read the third `unassessed` row as an assessment.
+  // must be exactly the trailing rows and the count must match them: a reader told "the last three
+  // rows" would read the fourth `unassessed` row as an assessment.
   assert.deepEqual(
-    gateTable.slice(-3).map(([, to]) => to),
-    ['`unassessed`', '`unassessed`', '`unassessed`'],
-    'the three non-assessment rows must be the last three rows of the mapping',
+    gateTable.slice(-4).map(([, to]) => to),
+    ['`unassessed`', '`unassessed`', '`unassessed`', '`unassessed`'],
+    'the four non-assessment rows must be the last four rows of the mapping',
   );
   for (const [text, label] of [
     [gate, 'merge-gate'],
@@ -17916,13 +17920,13 @@ test('both ends of the iterate return declare one closed outcome vocabulary', ()
     const record = returnedRecord(text, label);
     assert.match(
       record,
-      /The last three rows are the ones/,
-      `${label} must name the last three rows as the non-assessments`,
+      /The last four rows are the ones/,
+      `${label} must name the last four rows as the non-assessments`,
     );
     assert.doesNotMatch(
       record,
-      /The last two rows/,
-      `${label} must not keep the retired two-row count`,
+      /The last (?:two|three) rows/,
+      `${label} must not keep a retired row count`,
     );
   }
 });

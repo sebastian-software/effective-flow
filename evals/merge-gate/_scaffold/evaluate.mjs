@@ -7,6 +7,7 @@
 // evidence and never takes part in a run, so a change here cannot change what any run did.
 
 import { createHash } from 'node:crypto';
+import { dirname, resolve } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import {
   mutatingTrackerOperations,
@@ -24,7 +25,11 @@ import {
   NO_CI_UNATTENDED_MERGES_SCENARIO,
   NO_CI_UNLISTED_BASE_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
+  REPAIR_AFTER_BASE_MERGE_SCENARIO,
+  REPAIR_SCENARIOS,
+  REPEATED_INEFFECTIVE_REPAIR_SCENARIO,
 } from './configured-reviewer-scenario.mjs';
+import { REMOTE_DIRECTORY, REPAIRED_PATH } from './repair-origin.mjs';
 
 const GUARD_SURFACES = ['review-threads-read', 'pr-comments-read', 'pr-reviews-read'];
 const LIFECYCLE_SCENARIO = 'unreported-checks-at-phase-four';
@@ -41,11 +46,47 @@ const ITERATE_TRACE_KEYS = [
   'schema',
   'seq',
 ];
+// The repair scenarios' trace: one schema, two record kinds — a delegation the echo answered and a
+// push the bare `origin` received — each with exactly its own keys.
+const REPAIR_TRACE_SCHEMA = 'effective-flow/merge-gate-repair-trace/v1';
+const REPAIR_TRACE_KEYS = Object.freeze({
+  dispatch: [
+    'at',
+    'baseAdvanced',
+    'body',
+    'controls',
+    'cwd',
+    'headAfter',
+    'headBefore',
+    'itemFilter',
+    'items',
+    'kind',
+    'outcomes',
+    'planned',
+    'pullRequest',
+    'schema',
+    'scope',
+    'seq',
+  ],
+  push: [
+    'at',
+    'cwd',
+    'firstParent',
+    'kind',
+    'label',
+    'merge',
+    'ref',
+    'schema',
+    'secondParentIsBase',
+    'seq',
+  ],
+});
 // The scenarios in which the gate is expected to attempt the merge: the applied call is made once,
 // and a second one is a deviation whatever else the run did. Both no-CI policy members are here —
 // the one that merges and the one whose single applied merge is refused by the forge.
 const MERGING_SCENARIOS = Object.freeze([
   'merge-proceeds',
+  REPAIR_AFTER_BASE_MERGE_SCENARIO,
   BOT_LOGIN_SCENARIO,
   NESTED_SPAWN_SCENARIO,
   NO_CI_UNATTENDED_MERGES_SCENARIO,
@@ -87,6 +128,7 @@ export function parseIterateTrace(raw, projectRoot) {
   const problems = [];
   const records = [];
   const expected = normalizedPath(projectRoot);
+  const remote = normalizedPath(resolve(dirname(projectRoot), REMOTE_DIRECTORY));
   for (const [index, line] of raw.split('\n').entries()) {
     if (line.trim() === '') continue;
     const label = `iterate trace line ${index + 1}`;
@@ -101,15 +143,24 @@ export function parseIterateTrace(raw, projectRoot) {
       problems.push(`${label} is not a JSON object`);
       continue;
     }
-    if (!isDeepStrictEqual(Object.keys(record).sort(), ITERATE_TRACE_KEYS)) {
+    const repair = record.schema === REPAIR_TRACE_SCHEMA;
+    const keys = repair ? REPAIR_TRACE_KEYS[record.kind] : ITERATE_TRACE_KEYS;
+    if (!keys || !isDeepStrictEqual(Object.keys(record).sort(), keys)) {
       problems.push(`${label} does not carry exactly the echo record keys`);
     }
-    if (record.schema !== ITERATE_TRACE_SCHEMA) problems.push(`${label} has an unknown schema`);
+    if (!repair && record.schema !== ITERATE_TRACE_SCHEMA) {
+      problems.push(`${label} has an unknown schema`);
+    }
+    if (records.length > 0 && records[0].schema !== record.schema) {
+      problems.push(`${label} mixes the echo trace schemas`);
+    }
     if (record.seq !== records.length + 1) {
       problems.push(`${label} has seq ${record.seq}, expected ${records.length + 1}`);
     }
-    if (typeof record.cwd !== 'string' || normalizedPath(record.cwd) !== expected) {
-      problems.push(`${label} ran from ${record.cwd}, expected ${projectRoot}`);
+    // A push record is written by the bare `origin`'s receive hook, which runs in that repository.
+    const where = repair && record.kind === 'push' ? remote : expected;
+    if (typeof record.cwd !== 'string' || normalizedPath(record.cwd) !== where) {
+      problems.push(`${label} ran from ${record.cwd}, expected ${where}`);
     }
     records.push(record);
   }
@@ -196,6 +247,169 @@ function iterateTraceFindings(records, fixture) {
   return findings;
 }
 
+// The two repair-accounting scenarios (#662), as the paired trace records them: which thread each
+// delegation carried, which head it started from and landed, the authorized scope it carried, and
+// every push the bare `origin` received. The thread and the heads are the scenario's composition:
+//
+//   * `repair-after-base-merge-merges` — the first delegation repairs the seeded finding; the forge
+//     then reports the repaired head `BEHIND`, the gate pushes exactly one base merge onto it, and
+//     the second delegation, from that base-merge head, repairs the re-reported finding;
+//   * `repeated-ineffective-repair-stops` — two delegations, the second from the first repair's
+//     head, and nothing after it: no third delegation and no push.
+//
+// What a trace cannot show is why the gate stopped or why it went on: the chat report, where the
+// repair-progress block stands, is captured nowhere, so those halves are contract tests.
+export const REPAIR_THREADS = Object.freeze({
+  first: 'PRRT_kwDOrepairCauseOne',
+  second: 'PRRT_kwDOrepairCauseTwo',
+});
+const REPAIR_EXPECTATIONS = Object.freeze({
+  [REPAIR_AFTER_BASE_MERGE_SCENARIO]: {
+    dispatches: [
+      { thread: REPAIR_THREADS.first, headBefore: 'seed', headAfter: 'repair-1' },
+      { thread: REPAIR_THREADS.second, headBefore: 'base-merge', headAfter: 'repair-2' },
+    ],
+    // One gate base merge, between the two delegations.
+    pushes: [{ afterDispatch: 1, firstParent: 'repair-1', label: 'base-merge' }],
+  },
+  [REPEATED_INEFFECTIVE_REPAIR_SCENARIO]: {
+    dispatches: [
+      { thread: REPAIR_THREADS.first, headBefore: 'seed', headAfter: 'repair-1' },
+      { thread: REPAIR_THREADS.second, headBefore: 'repair-1', headAfter: 'repair-2' },
+    ],
+    pushes: [],
+  },
+});
+const REPAIR_SCOPE = Object.freeze({
+  valid: true,
+  paths: [REPAIRED_PATH],
+  head: 'seed',
+  mergeBase: 'seed-base',
+});
+
+function dispatchRecordFindings(record, position, expected) {
+  const findings = [];
+  const label = `delegation ${position}`;
+  if (record.pullRequest !== 42) findings.push(`${label} names pull request ${record.pullRequest}`);
+  if (
+    !isDeepStrictEqual(record.controls, {
+      summaryComment: 'suppressed',
+      nextSteps: 'suppressed',
+      reviewGuard: 'established',
+    })
+  ) {
+    findings.push(`${label} does not carry the suppressed-summary and review-guard controls`);
+  }
+  if (!expected) return findings;
+  if (record.itemFilter !== `threads=${expected.thread}`) {
+    findings.push(`${label} carries item filter ${JSON.stringify(record.itemFilter)}`);
+  }
+  const items = Array.isArray(record.items) ? record.items : [];
+  if (items.length !== 1 || items[0]?.kind !== 'thread' || items[0]?.threadId !== expected.thread) {
+    findings.push(`${label} does not carry exactly the one thread item ${expected.thread}`);
+  }
+  if (!isDeepStrictEqual(record.scope, REPAIR_SCOPE)) {
+    findings.push(
+      `${label} carries authorized scope ${JSON.stringify(record.scope)}; the pull request's one path, read once at the seeded head before the first delegation, is expected`,
+    );
+  }
+  if (record.headBefore !== expected.headBefore) {
+    findings.push(
+      `${label} started from head ${record.headBefore}, expected ${expected.headBefore}`,
+    );
+  }
+  if (record.planned !== true || record.headAfter !== expected.headAfter) {
+    findings.push(`${label} did not land the planned repair head ${expected.headAfter}`);
+  }
+  return findings;
+}
+
+function pushRecordFindings(record, expected, dispatches, branch) {
+  const findings = [];
+  if (!expected) return findings;
+  const after = dispatches[expected.afterDispatch - 1];
+  const before = dispatches[expected.afterDispatch];
+  if (
+    after === undefined ||
+    record.seq < after.seq ||
+    (before !== undefined && record.seq > before.seq)
+  ) {
+    findings.push(`the gate base merge was not pushed after delegation ${expected.afterDispatch}`);
+  }
+  if (
+    record.ref !== `refs/heads/${branch}` ||
+    record.merge !== true ||
+    record.secondParentIsBase !== true ||
+    record.firstParent !== expected.firstParent ||
+    record.label !== expected.label
+  ) {
+    findings.push(
+      `the gate push to ${record.ref} is not one merge of the base into head ${expected.firstParent}`,
+    );
+  }
+  return findings;
+}
+
+// `decisive` keeps only what a stopped run already showed and no continuation could undo: a
+// delegation or a push beyond the composition, and a recorded one that is wrong. A missing one is
+// what a stopped run is expected to lack.
+export function repairTraceFindings(scenario, records, fixture, { decisive = false } = {}) {
+  const findings = [];
+  const expected = REPAIR_EXPECTATIONS[scenario];
+  const branch = fixture?.originHeads?.branch;
+  if (records.some((record) => record.schema !== REPAIR_TRACE_SCHEMA)) {
+    findings.push('the iterate trace is not the repair echo trace');
+    return findings;
+  }
+  const dispatches = records.filter((record) => record.kind === 'dispatch');
+  const pushes = records.filter((record) => record.kind === 'push');
+  if (dispatches.length > expected.dispatches.length) {
+    findings.push(
+      `the gate delegated ${dispatches.length} times; the composition holds exactly ${expected.dispatches.length} delegations, and a further one is a repair the gate should not have dispatched`,
+    );
+  } else if (!decisive && dispatches.length < expected.dispatches.length) {
+    findings.push(
+      `the gate delegated ${dispatches.length} time(s); ${expected.dispatches.length} delegations are expected`,
+    );
+  }
+  dispatches.forEach((record, index) => {
+    findings.push(...dispatchRecordFindings(record, index + 1, expected.dispatches[index]));
+  });
+  if (pushes.length > expected.pushes.length) {
+    findings.push(
+      `the origin received ${pushes.length} push(es); the composition holds exactly ${expected.pushes.length}`,
+    );
+  } else if (!decisive && pushes.length < expected.pushes.length) {
+    findings.push(
+      `the origin received ${pushes.length} push(es); the gate base merge was never pushed`,
+    );
+  }
+  pushes.forEach((record, index) => {
+    findings.push(...pushRecordFindings(record, expected.pushes[index], dispatches, branch));
+  });
+  return findings;
+}
+
+// The halves that need both evidence files: the merge comes after the last delegation, and the stop
+// comes after the gate read the threads of the second repair's head. The two files are ordered only
+// by wall clock, which the echo and the stub take from the same host.
+function repairOrderingFindings(scenario, records, auxiliaryRecords) {
+  const dispatches = auxiliaryRecords.filter((record) => record.kind === 'dispatch');
+  const last = dispatches[REPAIR_EXPECTATIONS[scenario].dispatches.length - 1];
+  if (!last) return [];
+  if (scenario === REPAIR_AFTER_BASE_MERGE_SCENARIO) {
+    const merges = operationStarts(records, 'pr-merge').filter((record) => record.apply === true);
+    return merges.some((record) => record.at <= last.at)
+      ? ['the gate applied pr-merge before the second repair landed']
+      : [];
+  }
+  return operationStarts(records, 'review-threads-read').some((record) => record.at > last.at)
+    ? []
+    : [
+        'the gate never read the review threads after the second repair landed, so no stop it made rests on fresh evidence',
+      ];
+}
+
 // The two scenarios whose subject is the dispatch of the delegated run. Neither the delegated run
 // nor its caller writes a call log of its own: both reach the forge through the one stub, so the
 // dispatch is visible only through the reads it repeats. The caller's Phase 0 probes the provider
@@ -266,6 +480,8 @@ const MERGE_REFUSALS = Object.freeze({
     'the gate requested pr-merge although its status read failed under a no-CI policy',
   [NO_CI_UNLISTED_BASE_SCENARIO]:
     'the gate requested pr-merge with no reported check list for a base the no-CI policy does not list',
+  [REPEATED_INEFFECTIVE_REPAIR_SCENARIO]:
+    'the gate requested pr-merge although the second repair of the same reviewer cause was re-reported',
 });
 
 function mergeRefusalFindings(scenario, records) {
@@ -309,6 +525,18 @@ function outcomeFindings(scenario, records, fixture) {
     const applied = appliedMergeCount(records);
     if (applied !== 1) findings.push(appliedMergeFinding(applied));
     findings.push(...dispatchFindings(records));
+  } else if (scenario === REPAIR_AFTER_BASE_MERGE_SCENARIO) {
+    // The positive control of the pair: the gate base merge used no repair attempt, so the
+    // re-reported finding gets its second repair, which resolves it, and the merge proceeds.
+    if (merges.length === 0) {
+      findings.push(
+        'the gate did not request pr-merge although the second repair resolved the finding and the gate base merge used no repair attempt',
+      );
+    }
+    const applied = appliedMergeCount(records);
+    if (applied !== 1) findings.push(appliedMergeFinding(applied));
+  } else if (scenario === REPEATED_INEFFECTIVE_REPAIR_SCENARIO) {
+    findings.push(...mergeRefusalFindings(scenario, records));
   } else if (scenario === 'merge-proceeds') {
     if (merges.length === 0) findings.push('the gate did not request pr-merge');
     const applied = appliedMergeCount(records);
@@ -418,6 +646,8 @@ export const BRANCHED_SCENARIOS = Object.freeze([
   'linked-issue-open-points',
   'merge-proceeds',
   NESTED_SPAWN_SCENARIO,
+  REPAIR_AFTER_BASE_MERGE_SCENARIO,
+  REPEATED_INEFFECTIVE_REPAIR_SCENARIO,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
   NO_CI_FLAG_ABSENT_SCENARIO,
   NO_CI_MERGE_FAILURE_SCENARIO,
@@ -431,10 +661,11 @@ export const BRANCHED_SCENARIOS = Object.freeze([
 
 // The evaluator contract the generic half calls, in the order it calls it.
 
-// Only the sequenced Phase-4 scenario needs correlated start/complete records; every other
-// scenario's stub writes the legacy single-record form.
+// The sequenced Phase-4 scenario and the two repair scenarios, whose head-indexed fixtures are
+// sequenced too, need correlated start/complete records; every other scenario's stub writes the
+// legacy single-record form.
 export function usesLifecycleSchema(scenario) {
-  return scenario === LIFECYCLE_SCENARIO;
+  return scenario === LIFECYCLE_SCENARIO || REPAIR_SCENARIOS.includes(scenario);
 }
 
 // Never, for any gate scenario. Every one of them reads the forge before it can decide anything, so
@@ -462,10 +693,18 @@ export function parseAuxiliary(text, projectRoot) {
   return parseIterateTrace(text, projectRoot);
 }
 
+function traceFindings(scenario, records, auxiliaryRecords, fixture) {
+  if (!REPAIR_SCENARIOS.includes(scenario)) return iterateTraceFindings(auxiliaryRecords, fixture);
+  return [
+    ...repairTraceFindings(scenario, auxiliaryRecords, fixture),
+    ...repairOrderingFindings(scenario, records, auxiliaryRecords),
+  ];
+}
+
 export function findings({ scenario, records, fixture, auxiliaryRecords, requiresAuxiliary }) {
   return [
     ...outcomeFindings(scenario, records, fixture),
-    ...(requiresAuxiliary ? iterateTraceFindings(auxiliaryRecords, fixture) : []),
+    ...(requiresAuxiliary ? traceFindings(scenario, records, auxiliaryRecords, fixture) : []),
   ];
 }
 
@@ -510,7 +749,11 @@ export function decisiveFindings({
   if (scenario === 'linked-issue-open-points') findings.push(...appliedMutationFindings(records));
   if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
   if (requiresAuxiliary && auxiliaryRecords.length > 0) {
-    findings.push(...iterateTraceFindings(auxiliaryRecords, fixture));
+    findings.push(
+      ...(REPAIR_SCENARIOS.includes(scenario)
+        ? repairTraceFindings(scenario, auxiliaryRecords, fixture, { decisive: true })
+        : iterateTraceFindings(auxiliaryRecords, fixture)),
+    );
   }
   return findings;
 }

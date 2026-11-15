@@ -3,7 +3,7 @@
   "description": "The configured reviewer recensor has completed its check for the verified head and published one unresolved thread plus one changes-requested review-body finding. The scenario-local iterate echo returns deferred for both, so the non-interactive set-aside gate must block without requesting a merge.",
   "viewerLogin": "flow-gate",
   "humanLogin": "casey-reviewer",
-  "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+  "headSha": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff",
   "pullRequest": 42,
   "repository": {
     "host": "github.com",
@@ -132,7 +132,7 @@
         "labels": [],
         "head": {
           "ref": "effective-flow/build/merge-gate-behavioural-evals",
-          "sha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b"
+          "sha": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff"
         },
         "base": {
           "ref": "develop"
@@ -216,12 +216,12 @@
               "mergeable": "MERGEABLE",
               "mergeStateStatus": "CLEAN",
               "baseRefName": "develop",
-              "headRefOid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "headRefOid": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff",
               "commits": {
                 "nodes": [
                   {
                     "commit": {
-                      "oid": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+                      "oid": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff",
                       "committedDate": "2026-09-01T09:00:00Z",
                       "statusCheckRollup": {
                         "contexts": {
@@ -291,7 +291,7 @@
             "title": "feat: add the merge-gate behavioural eval skeleton",
             "state": "open",
             "draft": false,
-            "headSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "headSha": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff",
             "headCommittedAt": "2026-09-01T09:00:00.000Z",
             "baseRef": "develop",
             "mergeState": "CLEAN",
@@ -461,7 +461,7 @@
               "login": "recensor[bot]",
               "type": "Bot"
             },
-            "commit_id": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+            "commit_id": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff",
             "state": "CHANGES_REQUESTED",
             "body": "The fallback branch still accepts an unverified reviewer outcome.",
             "submitted_at": "2026-09-01T10:20:00Z"
@@ -482,7 +482,7 @@
                 "isBot": true,
                 "authorType": "bot"
               },
-              "commitSha": "1f0c4b7a9e5d3c2b8a6f4e2d0c9b7a5f3e1d0c9b",
+              "commitSha": "41b2bf0ac9311b1a017bbe1e52820a7a7bb3fcff",
               "state": "CHANGES_REQUESTED",
               "body": "The fallback branch still accepts an unverified reviewer outcome.",
               "submittedAt": "2026-09-01T10:20:00.000Z"
@@ -558,6 +558,7 @@
               "path": "src/tools/merge-gate.md",
               "line": 1095,
               "startLine": null,
+              "lineOutdated": false,
               "createdAt": "2026-09-01T10:45:00.000Z",
               "url": "https://github.com/example/flow/pull/42#discussion_r800002",
               "comments": [

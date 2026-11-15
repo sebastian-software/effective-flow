@@ -24,8 +24,10 @@
 // declares this file as its `trackerStub.source` and hashes it among its own `instrumentFiles`, so
 // a change here stales every suite that runs it and no other.
 
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { appendFileSync, mkdirSync, readFileSync, rmSync, statSync } from 'node:fs';
+import { devNull } from 'node:os';
 import { dirname, resolve } from 'node:path';
 import process from 'node:process';
 
@@ -36,6 +38,9 @@ const SANDBOX_ROOT = resolve(import.meta.dirname, '..', '..');
 const FIXTURE_PATH = process.env.EVAL_TRACKER_FIXTURE ?? resolve(SANDBOX_ROOT, 'fixture.json');
 const CALL_LOG_PATH =
   process.env.EVAL_TRACKER_LOG ?? resolve(SANDBOX_ROOT, 'trace', 'tracker-calls.jsonl');
+// The bare `origin` beside the checkout, read only by a fixture that declares `originHeads`.
+// `EVAL_TRACKER_ORIGIN` overrides it for the unit tests, like the two paths above.
+const ORIGIN_PATH = process.env.EVAL_TRACKER_ORIGIN ?? resolve(SANDBOX_ROOT, 'remote.git');
 
 // The string a refused merge carries back to the gate, so the run's own report names why the merge
 // did not happen instead of reporting an unexplained command failure. It is deliberately unlike
@@ -495,6 +500,161 @@ function envelopeFor(entry, operation, apply) {
   return entry.envelope;
 }
 
+// **Origin-head mode: an opt-in for scenarios whose head moves during the run.** A fixture that
+// states `originHeads` at its top level is answered from the head a real bare `origin` beside the
+// checkout carries, not from the call position. That is what a scenario needs when the head moves
+// through real commits — a gate base merge it pushes, a delegated repair the `iterate` echo lands —
+// because the number of reads a run makes per head is the run's own business, and only the head
+// says which state of the pull request a read is looking at.
+//
+// The declaration names the head branch and the heads in the order they are expected to appear:
+//
+//   originHeads: { branch, heads: [{ label, placeholder, source }] }
+//
+// `source` names what creates the head: `seed` (the provisioning, always and only the first),
+// `dispatch` (the `iterate` echo at a delegation) or `gate-merge` (the gate's own pushed base merge).
+// Whoever creates a head labels it in the bare repository as `refs/eval/head/<label>`; this stub
+// only reads. The current head is `refs/heads/<branch>` there, and it must equal exactly one
+// labelled head, or the call fails loudly: an undeclared head is a fact about the run (a push or a
+// repair nobody composed), and answering it with some declared state would hide that fact.
+//
+// A sequenced entry then serves the element at the current head's position, so every sequence holds
+// exactly one element per declared head. The real SHAs cannot be known when the fixture is written
+// — a gate merge commit carries the run's own commit time — so every envelope states each head as
+// its `placeholder`, and the served copy carries the real SHA in its place. The canned envelopes
+// stay what the fidelity test proves; the substitution swaps one 40-character hex string for
+// another and changes nothing else. A fixture without `originHeads` is served exactly as before.
+const ORIGIN_HEADS_FIELD = 'originHeads';
+const ORIGIN_HEAD_SOURCES = Object.freeze(['seed', 'dispatch', 'gate-merge']);
+export const ORIGIN_HEAD_REF_PREFIX = 'refs/eval/head/';
+const OBJECT_ID = /^[0-9a-f]{40}$/;
+const HEAD_LABEL = /^[a-z0-9][a-z0-9-]*$/;
+
+export function isOriginHeadFixture(fixture) {
+  return (
+    fixture !== null && typeof fixture === 'object' && Object.hasOwn(fixture, ORIGIN_HEADS_FIELD)
+  );
+}
+
+// Why a fixture's `originHeads` declaration is malformed, or null when it is not. Exported so the
+// fidelity test and the scenario setup apply the stub's own rule.
+export function originHeadsProblem(fixture) {
+  const declaration = fixture[ORIGIN_HEADS_FIELD];
+  if (declaration === null || typeof declaration !== 'object' || Array.isArray(declaration)) {
+    return `${ORIGIN_HEADS_FIELD} must be an object`;
+  }
+  const { branch, heads } = declaration;
+  if (typeof branch !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(branch) || branch.includes('..')) {
+    return `${ORIGIN_HEADS_FIELD}.branch must be a plain branch name`;
+  }
+  if (!Array.isArray(heads) || heads.length === 0) {
+    return `${ORIGIN_HEADS_FIELD}.heads must be a non-empty array`;
+  }
+  const labels = new Set();
+  const placeholders = new Set();
+  for (const [index, head] of heads.entries()) {
+    const label = `${ORIGIN_HEADS_FIELD}.heads[${index}]`;
+    if (head === null || typeof head !== 'object' || Array.isArray(head)) {
+      return `${label} is not an object`;
+    }
+    if (Object.keys(head).sort().join(',') !== 'label,placeholder,source') {
+      return `${label} must state exactly label, placeholder and source`;
+    }
+    if (!HEAD_LABEL.test(head.label ?? '')) return `${label}.label is not a plain label`;
+    if (!OBJECT_ID.test(head.placeholder ?? '')) return `${label}.placeholder is not an object id`;
+    if (!ORIGIN_HEAD_SOURCES.includes(head.source)) return `${label}.source is unknown`;
+    if ((index === 0) !== (head.source === 'seed')) {
+      return `${label}: the first head and only the first is the seed`;
+    }
+    if (labels.has(head.label) || placeholders.has(head.placeholder)) {
+      return `${label} repeats a label or a placeholder`;
+    }
+    labels.add(head.label);
+    placeholders.add(head.placeholder);
+  }
+  for (const [operation, entry] of Object.entries(fixture.operations ?? {})) {
+    if (isSequenced(entry) && entry[SEQUENCE_FIELD]?.length !== heads.length) {
+      return `the sequence of "${operation}" must hold one element per declared head (${heads.length})`;
+    }
+    if (isSequenced(entry) && Object.hasOwn(entry, REPEAT_LAST_FIELD)) {
+      return `the sequence of "${operation}" is indexed by head and cannot declare ${REPEAT_LAST_FIELD}`;
+    }
+  }
+  return null;
+}
+
+// Every git read of the bare repository runs without the operator's configuration and without any
+// `GIT_*` variable the caller's environment carries, so a hook's or a host's setting cannot point it
+// at another repository.
+export function isolatedGitEnv() {
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_')),
+  );
+  return { ...env, GIT_CONFIG_GLOBAL: devNull, GIT_CONFIG_NOSYSTEM: '1', GIT_TERMINAL_PROMPT: '0' };
+}
+
+function originGit(args) {
+  return execFileSync('git', ['--git-dir', ORIGIN_PATH, ...args], {
+    encoding: 'utf8',
+    stdio: ['ignore', 'pipe', 'pipe'],
+    env: isolatedGitEnv(),
+  }).trim();
+}
+
+// The current head and the labelled heads, read fresh on every call.
+function readOriginHeads(declaration) {
+  const current = originGit(['rev-parse', '--verify', `refs/heads/${declaration.branch}^{commit}`]);
+  const labelled = new Map();
+  const listing = originGit([
+    'for-each-ref',
+    '--format=%(refname) %(objectname)',
+    ORIGIN_HEAD_REF_PREFIX,
+  ]);
+  for (const line of listing.split('\n').filter(Boolean)) {
+    const [ref, sha] = line.split(' ');
+    labelled.set(ref.slice(ORIGIN_HEAD_REF_PREFIX.length), sha);
+  }
+  return { current, labelled };
+}
+
+// Replaces each labelled head's placeholder with its real SHA, everywhere in the envelope.
+export function substituteOriginHeads(envelope, heads, labelled) {
+  let text = JSON.stringify(envelope);
+  for (const head of heads) {
+    const sha = labelled.get(head.label);
+    if (sha !== undefined) text = text.split(head.placeholder).join(sha);
+  }
+  return JSON.parse(text);
+}
+
+export function resolveOriginHeadEnvelope(fixture, operation, apply, read = readOriginHeads) {
+  const problem = originHeadsProblem(fixture);
+  if (problem !== null) return malformedEntry(operation, problem);
+  const { heads } = fixture[ORIGIN_HEADS_FIELD];
+  let state;
+  try {
+    state = read(fixture[ORIGIN_HEADS_FIELD]);
+  } catch (error) {
+    return errorEnvelope(
+      operation,
+      'COMMAND_FAILED',
+      `eval stub could not read the origin head: ${error?.message ?? 'unexpected failure'}`,
+      { operation },
+    );
+  }
+  const position = heads.findIndex((head) => state.labelled.get(head.label) === state.current) + 1;
+  if (position < 1) {
+    return errorEnvelope(
+      operation,
+      'COMMAND_FAILED',
+      `eval stub: the origin head ${state.current} is no head the fixture declares`,
+      { operation, head: state.current },
+    );
+  }
+  const envelope = resolveEnvelope(fixture, operation, apply, position);
+  return substituteOriginHeads(envelope, heads, state.labelled);
+}
+
 export async function main(argv = process.argv.slice(2), io = {}) {
   const stdout = io.stdout ?? process.stdout;
   const parsed = parseStubArgv(argv);
@@ -568,7 +728,9 @@ export async function main(argv = process.argv.slice(2), io = {}) {
           !apply,
         );
       } else {
-        envelope = resolveEnvelope(fixture, operation, apply, position);
+        envelope = isOriginHeadFixture(fixture)
+          ? resolveOriginHeadEnvelope(fixture, operation, apply)
+          : resolveEnvelope(fixture, operation, apply, position);
       }
     }
   } catch (error) {

@@ -1,6 +1,6 @@
-// Scenario-local setup for the one configured-reviewer scenario, the one configuration row the
-// non-interactive dispatch scenario changes, the one row the bot-account scenario appends, and the
-// rows of the six declared no-CI policy scenarios.
+// Scenario-local setup for the one configured-reviewer scenario, the two repair-accounting
+// scenarios, the one configuration row the non-interactive dispatch scenario changes, the one row
+// the bot-account scenario appends, and the rows of the six declared no-CI policy scenarios.
 // Every other scenario keeps the shared no-reviewer project configuration and the production
 // `iterate` tool; this module is the single place that
 // decides which scenario receives the reviewer rows, the `iterate` echo overlay, the paired
@@ -60,6 +60,21 @@ const NO_CI_POLICY_ROWS = Object.freeze({
 
 export const NO_CI_POLICY_SCENARIOS = Object.freeze(Object.keys(NO_CI_POLICY_ROWS));
 
+// The two repair-accounting scenarios (#662). Both configure the same reviewer as the
+// configured-reviewer scenario, receive the `iterate` echo, and run against the real-commit `origin`
+// of `repair-origin.mjs`; the echo lands the planned repair at each delegation. The round cap is
+// raised so that it can never be what ends either run: a gate without the repair stop would
+// delegate a third time long before eight rounds are used, and that third delegation is the
+// observation the stop scenario exists to make.
+export const REPAIR_AFTER_BASE_MERGE_SCENARIO = 'repair-after-base-merge-merges';
+export const REPEATED_INEFFECTIVE_REPAIR_SCENARIO = 'repeated-ineffective-repair-stops';
+export const REPAIR_SCENARIOS = Object.freeze([
+  REPAIR_AFTER_BASE_MERGE_SCENARIO,
+  REPEATED_INEFFECTIVE_REPAIR_SCENARIO,
+]);
+
+export const REPAIR_ROWS = [...CONFIGURED_REVIEWER_ROWS, ['mergeGate.maxRounds', '8']];
+
 export function noCiPolicyRows(scenario) {
   const extra = NO_CI_POLICY_ROWS[scenario];
   if (!extra) return null;
@@ -89,6 +104,9 @@ export function scenarioSetup(scenario) {
   }
   const policyRows = noCiPolicyRows(scenario);
   if (policyRows) return { projectSetupRows: policyRows, iterateEcho: false };
+  if (REPAIR_SCENARIOS.includes(scenario)) {
+    return { projectSetupRows: REPAIR_ROWS.map(([key, value]) => [key, value]), iterateEcho: true };
+  }
   if (scenario !== CONFIGURED_REVIEWER_SCENARIO) {
     return { projectSetupRows: [], iterateEcho: false };
   }
@@ -99,9 +117,9 @@ export function scenarioSetup(scenario) {
   return { projectSetupRows, iterateEcho: true };
 }
 
-// A configured-reviewer run is one indivisible evidence unit: its call log, its build stamp, and
-// its `iterate` echo trace. Every other scenario's unit carries no echo trace, and one that appears
-// there is an orphan rather than extra evidence.
+// A configured-reviewer or repair-accounting run is one indivisible evidence unit: its call log, its
+// build stamp, and its `iterate` echo trace. Every other scenario's unit carries no echo trace, and
+// one that appears there is an orphan rather than extra evidence.
 export function requiresIterateTrace(scenario) {
   return scenarioSetup(scenario).iterateEcho;
 }
