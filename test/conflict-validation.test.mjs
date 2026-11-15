@@ -27,7 +27,6 @@ import {
   hasQuickMarker,
   manifestTestCommands,
   matchEvidence,
-  packageManifest,
   parseWorkflowYaml,
 } from '../src/scripts/conflict-validation-core.mjs';
 import { createProcessRunner } from '../src/scripts/config-resolve-core.mjs';
@@ -119,15 +118,8 @@ function workflow(parts = {}) {
   return `name: CI\n${parts.top ?? ''}${on}jobs:\n${job}\n`;
 }
 
-function evaluate(
-  text,
-  {
-    commands = PNPM_COMMANDS,
-    base = 'main',
-    manifest = packageManifest({ 'package.json': PNPM_MANIFEST }),
-  } = {},
-) {
-  return evaluateWorkflow('.github/workflows/ci.yml', text, { commands, base, manifest });
+function evaluate(text, { commands = PNPM_COMMANDS, base = 'main' } = {}) {
+  return evaluateWorkflow('.github/workflows/ci.yml', text, { commands, base });
 }
 
 function jobOf(result, jobId = 'test') {
@@ -282,26 +274,33 @@ test('detect: without a manifest test command nothing is detected', () => {
 // ---------------------------------------------------------------------------------------------
 // Detection conditions
 
-// Invariant: this repository's own test job, whose pre-test steps are the checkout, the pnpm and
-// Node setup actions, `pnpm install --frozen-lockfile` and `pnpm agent:check`, stays detected
-// against its own `package.json` scripts, so the repository that motivated `quick` keeps it.
-test("detect: this repository's own ci.yml shape is detected", () => {
+// Invariant: a pre-test step counts only when it is on the allowlist, so this repository's own test
+// job, whose unnamed `pnpm install --frozen-lockfile` keeps lifecycle scripts enabled and whose
+// `Format check` runs the package script `pnpm agent:check`, falls back to full validation; the
+// test names both blocking steps, so a change to either is a deliberate decision.
+test("detect: this repository's own ci.yml job is undetected behind its install and format check", () => {
   const text = readFileSync(new URL('.github/workflows/ci.yml', ROOT), 'utf8');
   const files = { 'package.json': readFileSync(new URL('package.json', ROOT), 'utf8') };
-  const commands = manifestTestCommands(files);
-  const manifest = packageManifest(files);
   const result = evaluateWorkflow('.github/workflows/ci.yml', text, {
-    commands,
+    commands: manifestTestCommands(files),
     base: 'develop',
-    manifest,
   });
-  assert.equal(result.status, 'detected', JSON.stringify(result));
+  assert.equal(result.status, 'undetected', JSON.stringify(result));
   const build = jobOf(result, 'build');
-  assert.equal(build.status, 'detected');
   assert.equal(build.jobName, 'Format, test and build');
   assert.equal(build.step.name, 'Unit tests');
   assert.equal(build.step.normalizedCommand, 'pnpm test');
-  assert.deepEqual(build.expectedInstances, ['Format, test and build']);
+  assert.deepEqual(build.reasons, ['step-before-test']);
+  const steps = parseWorkflowYaml(text).get('jobs').get('build').get('steps');
+  const blocking = steps
+    .slice(0, build.step.index)
+    .filter((step) => step.has('run'))
+    .map((step) => [step.get('name') ?? null, step.get('run')]);
+  assert.deepEqual(blocking, [
+    [null, 'pnpm install --frozen-lockfile'],
+    ['Format check', 'pnpm agent:check'],
+  ]);
+  assert.deepEqual(build.expectedInstances, []);
   assert.equal(jobOf(result, 'shellcheck').status, 'undetected');
 });
 
@@ -615,8 +614,8 @@ test('detect: a test job whose check-run name another job of the workflow can re
 
 // Invariant: a check run's head SHA names the pull request, not the tree its job tested, so a test
 // step counts only after exactly one unconditional checkout of the default pull request ref into
-// the workspace with no Git command in between; a job that tests another ref, repository or
-// directory never yields evidence for a conflict commit it did not test.
+// the workspace; a job that tests another ref, repository or directory never yields evidence for a
+// conflict commit it did not test.
 test('detect: the test step must run on the single default checkout of the pull request', () => {
   const checkout = (inputs) =>
     workflow({
@@ -658,246 +657,228 @@ test('detect: the test step must run on the single default checkout of the pull 
     'continue-on-error',
   );
   assertUndetected(
-    job([
-      CHECKOUT,
-      '      - run: git fetch origin develop && git checkout FETCH_HEAD',
-      '      - run: pnpm test',
-    ]),
-    'git-command-before-test',
+    job([CHECKOUT, '        env:', '          GIT_DIR: other', '      - run: pnpm test']),
+    'action-before-test',
   );
-  assertUndetected(
-    job([CHECKOUT, '      - run: |', '          gh pr checkout 1', '      - run: pnpm test']),
-    'git-command-before-test',
-  );
-  // Quoting, escaping, wrappers, substitution and interpreters never hide a Git command, and text
-  // whose command words cannot be established statically counts as one.
-  const before = (...script) =>
-    job([
-      CHECKOUT,
-      '      - run: |',
-      ...script.map((line) => `          ${line}`),
-      '      - run: pnpm test',
-    ]);
-  for (const script of [
-    ["bash -c 'git checkout origin/develop'"],
-    ['sh -c "git checkout origin/develop"'],
-    ['"gh" pr checkout 1'],
-    ["'git' checkout origin/develop"],
-    ['echo `git checkout origin/develop`'],
-    ['\\git checkout origin/develop'],
-    ["g''it checkout origin/develop"],
-    ['g"i"t checkout origin/develop'],
-    ['gi\\', 't checkout origin/develop'],
-    ['$(echo git) checkout origin/develop'],
-    ['env git checkout origin/develop'],
-    ['command git checkout origin/develop'],
-    ['echo origin/develop | xargs git checkout'],
-    ['/usr/bin/git checkout origin/develop'],
-    ['GIT=git && "$GIT" checkout origin/develop'],
-    ['${TOOL} checkout origin/develop'],
-    ['eval "$CHECKOUT"'],
-    ["$'\\x67it' checkout origin/develop"],
-    ['g{i,}t checkout origin/develop'],
-    ['/usr/bin/gi? checkout origin/develop'],
-    ['g[i]t checkout origin/develop'],
-    ['git-lfs pull'],
-    ['echo tig | rev | bash /dev/stdin'],
-    ["printf '\\147it checkout origin/develop' > step.sh && bash step.sh"],
-    ['python3 -c "import os; os.system(chr(103) + chr(105) + chr(116))"'],
-    ['node -e "require(child_process).execSync(process.env.CMD)"'],
-    ['bash < commands.txt'],
-  ]) {
-    assertUndetected(before(...script), 'git-command-before-test');
-  }
-  assert.equal(evaluate(before('pnpm install --frozen-lockfile')).status, 'detected');
   assert.equal(
     evaluate(job([CHECKOUT, '      - run: pnpm test', '      - run: git status'])).status,
     'detected',
   );
-  // The earlier run's script resolves to a provable command, so only its position decides.
-  const later = evaluate(job(['      - run: pnpm test', CHECKOUT, '      - run: pnpm test']), {
-    manifest: packageManifest({
-      'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
-    }),
-  });
-  assert.equal(later.status, 'detected');
-  assert.equal(jobOf(later).step.index, 2);
+  // The first test run precedes the checkout, and to the second it is a pre-test step off the
+  // allowlist, so neither counts.
+  assertUndetected(
+    job(['      - run: pnpm test', CHECKOUT, '      - run: pnpm test']),
+    'no-checkout',
+  );
+  assertUndetected(
+    job([CHECKOUT, '      - run: pnpm test', '        if: always()', '      - run: pnpm test']),
+    'step-condition',
+  );
 });
 
-// Invariant: a pre-test step counts only when its effect on the checked-out tree is provable from
-// the workflow text and the definition commit's root `package.json` `scripts`, which `ci-integrity`
-// holds equal; a repository script, an unresolvable package script, a local, Docker or unlisted
-// action may switch the tree (for example `git checkout origin/develop` inside it) while every
-// compared file stays unchanged, so the job falls back to full validation.
-test('detect: a pre-test step whose effect on the checked-out tree cannot be proved is excluded', () => {
+// Invariant: a pre-test step counts only when it is on the explicit allowlist of steps proven to
+// leave the checked-out tree unchanged — the checkout, `actions/setup-node`, `pnpm/action-setup`
+// without an install, `actions/cache` and `actions/cache/restore` on hidden home paths, and the
+// test manager's frozen-lockfile install with lifecycle scripts disabled. `ci-integrity` proves the
+// compared text unchanged, not what a step runs, so anything else may replace the tested tree
+// while every compared file stays unchanged and leaves the job on full validation.
+test('detect: only allowlisted pre-test steps keep a job detected', () => {
   const CHECKOUT = '      - uses: actions/checkout@v4';
   const job = (...steps) =>
     workflow({
       job: ['  test:', '    runs-on: ubuntu-latest', '    steps:', CHECKOUT, ...steps].join('\n'),
     });
-  const run = (line) => job(`      - run: ${line}`, '      - run: pnpm test');
-  const manifestOf = (scripts, extra = {}) =>
-    packageManifest({
-      'package.json': JSON.stringify({ scripts: { test: 'node --test', ...scripts }, ...extra }),
-    });
-  const withScripts = (scripts, extra) => ({ manifest: manifestOf(scripts, extra) });
-
-  // (a) A repository script file or path, a file handed to a code runner, a sourced file or a task
-  // runner runs code nothing compares.
-  for (const line of [
-    'bash scripts/setup.sh',
-    'node scripts/setup.mjs',
-    'python3 tools/prepare.py',
-    './scripts/setup.sh',
-    'scripts/setup',
-    'sudo setup.sh',
-    'source env.sh',
-    '. ./env',
-    'make setup',
-    'npx some-tool',
-  ]) {
-    assertUndetected(run(line), 'script-before-test');
-  }
-
-  // (b) A package script resolves against the root `scripts`, recursively, pre and post scripts
-  // included; an install runs the root lifecycle scripts the same way.
-  const setup = (scripts, line = 'pnpm setup', extra) =>
-    evaluate(run(line), withScripts(scripts, extra));
-  assert.equal(setup({ setup: 'oxfmt --check' }).status, 'detected');
-  assert.equal(setup({ setup: 'oxfmt --check' }, 'pnpm run setup').status, 'detected');
-  assert.equal(setup({ setup: 'pnpm lint', lint: 'oxfmt --check' }).status, 'detected');
-  const reasonsOf = (result) => jobOf(result).reasons;
-  assert.ok(
-    reasonsOf(setup({ setup: 'git checkout origin/develop' })).includes('git-command-before-test'),
+  const npmCommands = manifestTestCommands({ 'package.json': PNPM_MANIFEST }).filter(
+    ({ normalized }) => normalized === 'npm test',
   );
-  assert.ok(reasonsOf(setup({ setup: 'bash scripts/setup.sh' })).includes('script-before-test'));
-  assert.ok(
-    reasonsOf(setup({ setup: 'pnpm inner', inner: 'git checkout origin/develop' })).includes(
-      'git-command-before-test',
+  const detected = (text, options) =>
+    assert.equal(evaluate(text, options).status, 'detected', text);
+
+  // (a) One detected case per allowlist entry.
+  detected(job('      - uses: actions/setup-node@v4', '      - run: pnpm test'));
+  detected(
+    job(
+      '      - uses: actions/setup-node@v4',
+      '        with:',
+      '          node-version: 24',
+      '          cache: pnpm',
+      '      - run: pnpm test',
     ),
   );
-  assert.ok(
-    reasonsOf(setup({ setup: 'oxfmt', presetup: 'git switch develop' })).includes(
-      'git-command-before-test',
-    ),
-  );
-  for (const [scripts, line, extra] of [
-    [{}, 'pnpm setup'],
-    [{ setup: 'pnpm setup' }, 'pnpm setup'],
-    [{ setup: 'oxfmt' }, 'pnpm --filter app setup'],
-    [{ setup: 'oxfmt' }, 'pnpm -C sub setup'],
-    [{ setup: 'oxfmt' }, 'cd sub && pnpm setup'],
-    [{ setup: 'oxfmt' }, 'pnpm exec setup'],
-    [{ setup: 'oxfmt' }, 'pnpm dlx setup'],
-    [{ postinstall: 'node --version' }, 'pnpm install', { workspaces: ['packages/*'] }],
-  ]) {
-    assertUndetected(run(line), 'package-script-before-test', withScripts(scripts, extra));
-  }
-  assertUndetected(
-    run('npm ci'),
-    'git-command-before-test',
-    withScripts({ postinstall: 'git checkout origin/develop' }),
-  );
-  assert.equal(
-    evaluate(run('npm ci --ignore-scripts'), withScripts({ postinstall: 'git pull' })).status,
-    'detected',
-  );
-  assertUndetected(
-    job('      - run: pnpm setup', '        working-directory: sub', '      - run: pnpm test'),
-    'package-script-before-test',
-    withScripts({ setup: 'oxfmt' }),
-  );
-  assertUndetected(run('pnpm install'), 'package-script-before-test', {
-    manifest: packageManifest({ 'package.json': PNPM_MANIFEST, 'pnpm-workspace.yaml': '' }),
-  });
-  assertUndetected(run('pnpm install'), 'package-script-before-test', {
-    manifest: packageManifest({ 'package.json': 'not json' }),
-  });
-  assertUndetected(
-    job('      - run: echo setup', '        shell: python', '      - run: pnpm test'),
-    'shell-override',
-  );
-
-  // (c) A local or Docker action's steps are not read.
-  assertUndetected(
-    job('      - uses: ./.github/actions/setup', '      - run: pnpm test'),
-    'local-action-before-test',
-  );
-  assertUndetected(
-    job('      - uses: docker://alpine/git:latest', '      - run: pnpm test'),
-    'docker-action-before-test',
-  );
-
-  // (d) Only toolchain setup actions are tree-neutral; `pnpm/action-setup` may install.
-  for (const action of [
-    'actions/cache@v4',
-    'some/checkout-action@v1',
-    'actions/setup-node/sub@v4',
-  ]) {
-    assertUndetected(
-      job(`      - uses: ${action}`, '      - run: pnpm test'),
-      'unknown-action-before-test',
-    );
-  }
-  for (const action of [
-    'actions/setup-node@v4',
-    'actions/setup-python@v5',
-    'pnpm/action-setup@v4',
-  ]) {
-    assert.equal(
-      evaluate(job(`      - uses: ${action}`, '      - run: pnpm test')).status,
-      'detected',
-    );
-  }
-  const pnpmSetup = (value) =>
+  detected(job('      - uses: pnpm/action-setup@v4', '      - run: pnpm test'));
+  detected(
     job(
       '      - uses: pnpm/action-setup@v4',
       '        with:',
-      `          run_install: ${value}`,
+      '          version: 10',
+      '          run_install: false',
       '      - run: pnpm test',
-    );
-  assert.equal(evaluate(pnpmSetup('false')).status, 'detected');
-  assert.equal(evaluate(pnpmSetup('true')).status, 'detected');
-  assertUndetected(
-    pnpmSetup('true'),
-    'git-command-before-test',
-    withScripts({ prepare: 'git checkout origin/develop' }),
+    ),
   );
-  assertUndetected(
-    pnpmSetup('|\n            - args: [--frozen-lockfile]'),
-    'package-script-before-test',
+  detected(
+    job(
+      '      - uses: actions/cache@v4',
+      '        with:',
+      '          path: ~/.npm',
+      '          key: npm-cache',
+      '      - run: pnpm test',
+    ),
   );
+  detected(
+    job(
+      '      - uses: actions/cache/restore@v4',
+      '        with:',
+      '          path: |',
+      '            ~/.cache/pnpm',
+      '            ~/.local/share/pnpm/store',
+      '          key: pnpm-store',
+      '      - run: pnpm test',
+    ),
+  );
+  detected(
+    job(
+      '      - name: Install',
+      '        run: pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile',
+      '        working-directory: .',
+      '      - run: pnpm test',
+    ),
+  );
+  detected(job('      - run: npm ci --ignore-scripts', '      - run: npm test'), {
+    commands: npmCommands,
+  });
 
-  // The repository's own pre-test steps stay provable.
-  assert.equal(
-    evaluate(
+  // (b) Repository code, file operations, package scripts, Git and every unlisted command.
+  const run = (line, test = 'pnpm test') => job(`      - run: ${line}`, `      - run: ${test}`);
+  for (const line of [
+    'cp package.ci.json package.json',
+    'cargo run --bin setup',
+    'go run .',
+    'node scripts/setup.mjs',
+    'bash scripts/setup.sh',
+    'sed -i s/a/b/ package.json',
+    'echo x > package.json',
+    'git checkout origin/develop',
+    "bash -c 'git checkout origin/develop'",
+    'gh pr checkout 1',
+    'pnpm agent:check',
+    'pnpm run setup',
+    'make setup',
+    'npx some-tool',
+    'echo setup',
+    'pnpm install',
+    'pnpm install --frozen-lockfile',
+    'pnpm install --frozen-lockfile --ignore-scripts',
+    'pnpm install --ignore-scripts --ignore-pnpmfile',
+    'pnpm install --frozen-lockfile --ignore-scripts=true --ignore-pnpmfile',
+    'pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile --filter app',
+    'pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile && git pull',
+    '|\n          pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile\n          git pull',
+    'npm ci --ignore-scripts',
+  ]) {
+    assertUndetected(run(line), 'step-before-test');
+  }
+  for (const line of [
+    'npm ci',
+    'npm install --ignore-scripts',
+    'npm ci --ignore-scripts=false',
+    'npm ci --ignore-scripts --no-ignore-scripts',
+    'npm ci --ignore-scripts ${{ inputs.extra }}',
+    'pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile',
+  ]) {
+    assertUndetected(run(line, 'npm test'), 'step-before-test', { commands: npmCommands });
+  }
+  for (const [key, value] of [
+    ['env', '\n          NODE_OPTIONS: --require ./setup.js'],
+    ['if', ' always()'],
+    ['continue-on-error', ' true'],
+    ['working-directory', ' sub'],
+    ['shell', ' sh'],
+  ]) {
+    assertUndetected(
       job(
-        '      - uses: pnpm/action-setup@v4',
-        '      - uses: actions/setup-node@v4',
-        '        with:',
-        '          node-version: 24',
-        '          cache: pnpm',
-        '      - run: pnpm install --frozen-lockfile',
-        '      - run: pnpm agent:check',
+        '      - run: pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile',
+        `        ${key}:${value}`,
         '      - run: pnpm test',
       ),
-      withScripts({ 'agent:check': 'oxfmt --check' }),
-    ).status,
-    'detected',
+      'step-before-test',
+    );
+  }
+  // Yarn, cargo, go, pytest and make test steps have no allowed install.
+  const yarnCommands = manifestTestCommands({ 'package.json': PNPM_MANIFEST }).filter(
+    ({ normalized }) => normalized === 'yarn test',
   );
+  assertUndetected(
+    run('yarn install --frozen-lockfile --ignore-scripts', 'yarn test'),
+    'step-before-test',
+    { commands: yarnCommands },
+  );
+  assertUndetected(run('cargo fetch', 'cargo test'), 'step-before-test', {
+    commands: manifestTestCommands({ 'Cargo.toml': '' }),
+  });
+
+  // (c) Every unlisted action, and a listed one with an install, a workspace path, an unlisted
+  // input, an expression or a step key beyond the allowlist.
+  const uses = (action, ...lines) =>
+    job(`      - uses: ${action}`, ...lines, '      - run: pnpm test');
+  for (const text of [
+    uses('./.github/actions/setup'),
+    uses('docker://alpine/git:latest'),
+    uses('some/checkout-action@v1'),
+    uses('actions/setup-python@v5'),
+    uses('actions/setup-node/sub@v4'),
+    uses('actions/cache/save@v4', '        with:', '          path: ~/.npm', '          key: k'),
+    uses('pnpm/action-setup@v4', '        with:', '          run_install: true'),
+    uses(
+      'pnpm/action-setup@v4',
+      '        with:',
+      '          run_install: |',
+      '            - args: [--frozen-lockfile]',
+    ),
+    uses('pnpm/action-setup@v4', '        with:', '          dest: node_modules/.pnpm'),
+    uses('actions/setup-node@v4', '        with:', '          cache: yarn'),
+    uses('actions/setup-node@v4', '        with:', '          node-version: ${{ matrix.node }}'),
+    uses('actions/setup-node@v4', '        env:', '          NODE_OPTIONS: --require ./x.js'),
+    uses('actions/setup-node@v4', '        if: always()'),
+    uses('actions/cache@v4'),
+    uses('actions/cache@v4', '        with:', '          path: node_modules', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/work', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/.npm/../work', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/.npm/*', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ${{ github.workspace }}/x'),
+    uses(
+      'actions/cache/restore@v4',
+      '        with:',
+      '          path: |',
+      '            ~/.npm',
+      '            dist',
+      '          key: k',
+    ),
+    uses(
+      'actions/cache/restore@v4',
+      '        with:',
+      '          path: ~/.npm',
+      '          save-always: true',
+    ),
+  ]) {
+    assertUndetected(text, 'action-before-test');
+  }
+
+  // (d) A workflow or job `env` reaches every pre-test step.
+  assertUndetected(
+    workflow({ top: 'env:\n  NODE_OPTIONS: --require ./setup.js\n' }),
+    'env-before-test',
+  );
+  assertUndetected(workflow({ jobExtra: ['    env:', '      CI: true'] }), 'env-before-test');
 });
 
-// Invariant: a pre-test step runs in its job's or workflow's default `working-directory` unless it
-// sets its own, so outside the root its package scripts resolve against an uncompared manifest
-// even when the test step overrides its directory back to the root; and an install counts as
-// running no lifecycle script only for an unambiguous disabling option, its value preserved, so
-// `--ignore-scripts=false` still runs a `postinstall` that may switch the tree.
-test('detect: inherited pre-test directories and ignore-scripts values are honoured', () => {
-  const scripts = { test: 'node --test', setup: 'oxfmt --check' };
-  const manifest = packageManifest({ 'package.json': JSON.stringify({ scripts }) });
+// Invariant: a pre-test `run:` step runs in its job's or workflow's default `working-directory`
+// unless it sets its own, so an allowed install outside the root is not allowed even when the test
+// step overrides its directory back to the root.
+test('detect: an allowed pre-test install must run in the workspace root', () => {
   const steps = [
     '      - uses: actions/checkout@v4',
-    '      - run: pnpm run setup',
+    '      - run: pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile',
     '      - run: pnpm test',
     '        working-directory: .',
   ];
@@ -905,63 +886,32 @@ test('detect: inherited pre-test directories and ignore-scripts values are honou
     [`${indent}defaults:`, `${indent}  run:`, `${indent}    working-directory: sub`].join('\n');
   const jobWith = (extra) =>
     ['  test:', '    runs-on: ubuntu-latest', ...extra, '    steps:', ...steps].join('\n');
-  assert.equal(evaluate(workflow({ job: jobWith([]) }), { manifest }).status, 'detected');
-  assertUndetected(workflow({ job: jobWith([defaults('    ')]) }), 'package-script-before-test', {
-    manifest,
-  });
-  assertUndetected(
-    workflow({ top: `${defaults('')}\n`, job: jobWith([]) }),
-    'package-script-before-test',
-    { manifest },
-  );
+  assert.equal(evaluate(workflow({ job: jobWith([]) })).status, 'detected');
+  assertUndetected(workflow({ job: jobWith([defaults('    ')]) }), 'step-before-test');
+  assertUndetected(workflow({ top: `${defaults('')}\n`, job: jobWith([]) }), 'step-before-test');
   const rootJob = jobWith([defaults('    ').replace('sub', '.')]);
-  assert.equal(
-    evaluate(workflow({ top: `${defaults('')}\n`, job: rootJob }), { manifest }).status,
-    'detected',
-  );
-
-  const install = (line) =>
-    workflow({
-      job: [
-        '  test:',
-        '    runs-on: ubuntu-latest',
-        '    steps:',
-        '      - uses: actions/checkout@v4',
-        `      - run: ${line}`,
-        '      - run: pnpm test',
-      ].join('\n'),
-    });
-  const gitPostinstall = {
-    manifest: packageManifest({
-      'package.json': JSON.stringify({
-        scripts: { test: 'node --test', postinstall: 'git checkout origin/develop' },
-      }),
-    }),
-  };
-  for (const line of [
-    'npm ci --ignore-scripts=false',
-    'npm ci --ignore-scripts false',
-    'npm ci --ignore-scripts=0',
-    'npm ci --ignore-scripts --no-ignore-scripts',
-  ]) {
-    assertUndetected(install(line), 'git-command-before-test', gitPostinstall);
-  }
-  for (const line of [
-    'npm ci --ignore-scripts',
-    'npm ci --ignore-scripts=true',
-    'pnpm install --ignore-scripts --frozen-lockfile',
-  ]) {
-    assert.equal(evaluate(install(line), gitPostinstall).status, 'detected', line);
-  }
+  assert.equal(evaluate(workflow({ top: `${defaults('')}\n`, job: rootJob })).status, 'detected');
 });
 
 // ---------------------------------------------------------------------------------------------
 // ci-detect through Git
 
-test('ci-detect: reads the base commit and detects the repository ci.yml shape', async (t) => {
+test('ci-detect: reads the base commit and detects a job behind allowlisted pre-test steps', async (t) => {
   const root = baseRepository(t, {
-    'package.json': readFileSync(new URL('package.json', ROOT), 'utf8'),
-    '.github/workflows/ci.yml': readFileSync(new URL('.github/workflows/ci.yml', ROOT), 'utf8'),
+    'package.json': PNPM_MANIFEST,
+    '.github/workflows/ci.yml': workflow({
+      on: 'on:\n  push:\n    branches: [develop]\n  pull_request:\n',
+      steps: [
+        '      - uses: pnpm/action-setup@v4',
+        '      - uses: actions/setup-node@v4',
+        '        with:',
+        '          node-version: 24',
+        '          cache: pnpm',
+        '      - run: pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile',
+        '      - name: Unit tests',
+        '        run: pnpm test',
+      ],
+    }),
     '.github/workflows/other.yml':
       'on: push\njobs:\n  x:\n    runs-on: a\n    steps:\n      - run: pnpm test\n',
   });
@@ -975,10 +925,10 @@ test('ci-detect: reads the base commit and detects the repository ci.yml shape',
   assert.deepEqual(data.detectedJobs, [
     {
       workflowPath: '.github/workflows/ci.yml',
-      jobId: 'build',
-      jobName: 'Format, test and build',
+      jobId: 'test',
+      jobName: 'Unit tests',
       normalizedCommand: 'pnpm test',
-      expectedInstances: ['Format, test and build'],
+      expectedInstances: ['Unit tests'],
     },
   ]);
   assert.deepEqual(

@@ -5,8 +5,8 @@
 //   the pinned `commit` when one is given, and reports the test jobs that run the repository's
 //   manifest test command unconditionally on every pull request to the base, with the static set of
 //   job instances such a run produces, on the tree of the pull request's single default checkout:
-//   any earlier step whose effect on that tree cannot be proved (a Git command, a repository script,
-//   an unresolvable package script, a local, Docker or unlisted action) leaves the job undetected.
+//   any earlier step outside a short allowlist of steps proven to leave that tree unchanged leaves
+//   the job undetected.
 // - `ci-integrity` compares the workflow directories (`.github/workflows/`, `.forgejo/workflows/`,
 //   `.gitea/workflows/`), every local reusable workflow or composite action they reference
 //   (`uses: ./…`) and the root manifests that define the test commands between that commit and a
@@ -551,7 +551,8 @@ export const MANIFEST_FILES = Object.freeze([
   ...MAKEFILES,
 ]);
 
-// Its presence alone makes the root a workspace for `packageManifest`, whatever its content.
+// Compared by `ci-integrity` beside `MANIFEST_FILES`, since it decides which packages a workspace
+// install and a workspace test reach.
 const WORKSPACE_MANIFEST = 'pnpm-workspace.yaml';
 
 // ---------------------------------------------------------------------------------------------
@@ -605,26 +606,16 @@ export const DETECTION_REASONS = Object.freeze([
   'checkout-repository',
   'checkout-path',
   'unknown-checkout-input',
-  'git-command-before-test',
-  'script-before-test',
-  'package-script-before-test',
-  'local-action-before-test',
-  'docker-action-before-test',
-  'unknown-action-before-test',
+  'env-before-test',
+  'step-before-test',
+  'action-before-test',
 ]);
 
 // A check run's head SHA names the pull request, not the tree its job tested. The test step counts
 // only after exactly one `actions/checkout` of the default pull request ref into the workspace, with
-// no step between them whose effect on that tree cannot be proved; checkout inputs outside this list
-// can redirect or narrow the checked-out tree.
+// every other step before it on the pre-test allowlist (see `preTestReasons`); checkout inputs
+// outside this list can redirect or narrow the checked-out tree.
 const CHECKOUT_ACTION = /^actions\/checkout@\S+$/i;
-// The remote actions a pre-test step may use besides the checkout: toolchain setup that writes
-// outside the workspace. `actions/cache` is absent on purpose, since it restores arbitrary paths,
-// workspace files included; `pnpm/action-setup` with `run_install` is read as an install.
-const TREE_NEUTRAL_ACTIONS = Object.freeze([
-  /^actions\/setup-[a-z0-9][a-z0-9-]*@\S+$/i,
-  /^pnpm\/action-setup@\S+$/i,
-]);
 const CHECKOUT_TREE_NEUTRAL_INPUTS = new Set([
   'token',
   'ssh-key',
@@ -771,6 +762,12 @@ function shellReason(value) {
   return value === undefined || value === 'bash' ? null : 'shell-override';
 }
 
+// Whether a workflow or job passes an `env` down to its steps, which may point a pre-test step at
+// repository code (`NODE_OPTIONS: --require ./setup.js`).
+function declaresEnv(owner) {
+  return owner instanceof Map && owner.has('env') && owner.get('env') !== null;
+}
+
 // The statically derivable job instances: one name without a matrix, else the cartesian product of a
 // literal matrix in key order, named `<name> (<v1>, <v2>)` as GitHub names matrix jobs.
 function expectedInstances(job, displayName, reasons) {
@@ -814,258 +811,207 @@ function expectedInstances(job, displayName, reasons) {
   return combinations.map((combination) => `${displayName} (${combination.join(', ')})`);
 }
 
-// Pre-test steps are read conservatively, since an undetected job only falls back to full
-// validation: a step counts whenever its effect on the checked-out tree cannot be proved from the
-// workflow text and the definition commit's root `package.json` `scripts`, which `ci-integrity`
-// holds equal. `run` text is a Git command (`git-command-before-test`) whenever it could run `git` or
-// `gh`, or its command words cannot be established statically. Line continuations, quotes and
-// backslashes are dropped first, so `"git"`, `g''it`, `\git` and `bash -c 'git …'` read as `git`,
-// and every word is split at `/`, `=` and other punctuation, so `/usr/bin/git`, `env git` and
-// `xargs git` do too. It runs repository code nothing compares (`script-before-test`) when it
-// names a path or a script file, hands a file to a code runner, sources one, or starts a task
-// runner. A package manager's script runs only when that script resolves, recursively under the
-// same rules, against those `scripts`; an install runs the root lifecycle scripts the same way; any
-// other invocation, an option before the command, another package directory, a `cd` and a
-// workspace are `package-script-before-test`.
-const GIT_PROGRAM = /^(?:git|gh)(?:[-.]|$)/i;
-// Expansion, substitution, evaluation, escape sequences, brace expansion and globbing can assemble a
-// command word the text never spells out.
-const ESCAPE_SEQUENCE = /\\(?:[0-7]|[xuUc])/;
-const DYNAMIC_SHELL_TEXT = /[$`*?]|\beval\b|\{[^{}]*(?:,|\.\.)[^{}]*\}|\[(?!\[?\s)/;
-// Programs that run code from an option, standard input, a redirect or a named file.
-const CODE_RUNNER =
-  /^(?:(?:a|ba|c|da|k|mk|tc|z)?sh|fish|busybox|pwsh|powershell|python[\d.]*|node(?:js)?|deno|bun|perl[\d.]*|ruby|php|lua|tclsh|xargs|source)$/i;
-const SCRIPT_FILE =
-  /\.(?:sh|bash|zsh|ksh|fish|ps1|psm1|bat|cmd|py|rb|pl|pm|php|lua|tcl|[cm]?[jt]sx?)$/i;
-// Programs that run tasks a repository file defines, or package binaries fetched on demand.
-const TASK_RUNNER = /^(?:g?make|just|task|rake|gradle|mvn|ant|tox|nox|npx|pnpx|bunx)$/i;
-const PACKAGE_MANAGER = /^(?:npm|pnpm|yarn|bun)$/i;
-const PACKAGE_INSTALL_COMMANDS = new Set(['install', 'i', 'ci', 'clean-install', 'add', 'rebuild']);
-const PACKAGE_RUN_COMMANDS = new Set(['run', 'run-script']);
-const PACKAGE_SCRIPT_SHORTHANDS = new Map([
-  ['test', 'test'],
-  ['t', 'test'],
-  ['tst', 'test'],
-  ['start', 'start'],
-  ['stop', 'stop'],
+// A pre-test step counts only when it is on this allowlist of steps proven to leave the checked-out
+// tree unchanged; anything else, unknown or not provably tree-neutral, leaves the job undetected and
+// so on full validation. `ci-integrity` proves the workflow text unchanged, not what a step runs, so
+// any repository code, file operation, package script or other action could replace the tested tree
+// (`cp package.ci.json package.json`, `cargo run --bin setup`, `git checkout origin/develop`) while
+// every compared file stays unchanged. A `run:` step is allowed only as the frozen-lockfile install
+// of the test step's package manager with lifecycle scripts disabled; a `uses:` step only as one of
+// `PRE_TEST_ACTIONS`, each with its listed inputs and no expression. Any other step key, `env`,
+// `if` and `continue-on-error` included, and any `env` the job or workflow passes down, are not.
+const RUN_STEP_KEYS = new Set([
+  'name',
+  'id',
+  'run',
+  'timeout-minutes',
+  'working-directory',
+  'shell',
 ]);
-// Built-in commands that run no repository code.
-const PACKAGE_NEUTRAL_COMMANDS = new Set([
-  'audit',
-  'bin',
-  'cache',
-  'config',
-  'fetch',
-  'help',
-  'info',
-  'licenses',
-  'list',
-  'ls',
-  'outdated',
-  'root',
-  'store',
-  'view',
-  'why',
+const USES_STEP_KEYS = new Set(['name', 'id', 'uses', 'with', 'timeout-minutes']);
+// Any shell metacharacter, quote, escape, expansion, glob, comment or line break.
+const SHELL_TEXT = /[|&;<>()$`'"\\*?[\]{}~!#\n]/;
+// The install each package manager may run before its test step, as an exact word set: the
+// subcommand, every `required` option and any `optional` one. A frozen lockfile keeps the tracked
+// lockfile unchanged and `--ignore-scripts` keeps root and dependency lifecycle scripts from
+// running; pnpm also loads `.pnpmfile.cjs` hooks despite `--ignore-scripts`, unless
+// `--ignore-pnpmfile`. yarn has none, since it runs a repository-selected `yarnPath` in place of
+// itself; neither have cargo, go, pytest and make test steps.
+const PRE_TEST_INSTALLS = new Map([
+  [
+    'pnpm test',
+    {
+      manager: 'pnpm',
+      subcommands: ['install', 'i'],
+      required: ['--frozen-lockfile', '--ignore-scripts', '--ignore-pnpmfile'],
+      optional: ['--prefer-offline'],
+    },
+  ],
+  [
+    'npm test',
+    {
+      manager: 'npm',
+      subcommands: ['ci'],
+      required: ['--ignore-scripts'],
+      optional: ['--no-audit', '--no-fund', '--prefer-offline'],
+    },
+  ],
+  [
+    'bun run test',
+    {
+      manager: 'bun',
+      subcommands: ['install'],
+      required: ['--frozen-lockfile', '--ignore-scripts'],
+      optional: [],
+    },
+  ],
 ]);
-// Options that move a package-manager command to another package or to several.
-const PACKAGE_SCOPE_OPTION =
-  /^(?:-C|--dir|--prefix|--cwd|-F|--filter|-r|--recursive|-w|--workspace|--workspaces|-ws|-g|--global)$/;
-const IGNORE_SCRIPTS_OPTION = /^--(?:no-)?ignore-scripts(?:=|$)/i;
-const INSTALL_LIFECYCLE_SCRIPTS = Object.freeze([
-  'pnpm:devPreinstall',
-  'preinstall',
-  'install',
-  'postinstall',
-  'prepublish',
-  'preprepare',
-  'prepare',
-  'postprepare',
+const CACHE_RESTORE_INPUTS = Object.freeze([
+  'path',
+  'key',
+  'restore-keys',
+  'enableCrossOsArchive',
+  'fail-on-cache-miss',
+  'lookup-only',
 ]);
-const MAX_SCRIPT_RESOLUTIONS = 100;
+// A cache path entry under a hidden directory of the home directory, which never holds the
+// workspace on GitHub-hosted runners (`~/work/…`); no `..`, glob, negation or expression.
+const HOME_HIDDEN_PATH = /^~\/\.[A-Za-z0-9_][\w.-]*(?:\/[\w.-]+)*\/?$/;
+const PRE_TEST_ACTIONS = Object.freeze([
+  {
+    pattern: /^actions\/setup-node@[^\s$]+$/i,
+    inputs: new Set([
+      'node-version',
+      'node-version-file',
+      'cache',
+      'cache-dependency-path',
+      'check-latest',
+      'architecture',
+      'registry-url',
+      'scope',
+      'always-auth',
+      'token',
+      'mirror',
+      'mirror-token',
+      'package-manager-cache',
+    ]),
+    // Its yarn cache runs `yarn` in the workspace, which may run a repository-selected `yarnPath`.
+    valid: (inputs) => [undefined, null, '', 'npm', 'pnpm'].includes(mapGet(inputs, 'cache')),
+  },
+  {
+    pattern: /^pnpm\/action-setup@[^\s$]+$/i,
+    inputs: new Set(['version', 'package_json_file', 'standalone', 'run_install']),
+    valid: (inputs) => [undefined, null, 'false'].includes(mapGet(inputs, 'run_install')),
+  },
+  {
+    pattern: /^actions\/cache@[^\s$]+$/i,
+    inputs: new Set([...CACHE_RESTORE_INPUTS, 'upload-chunk-size', 'save-always']),
+    valid: (inputs) => cachePathsOutsideWorkspace(mapGet(inputs, 'path')),
+  },
+  {
+    pattern: /^actions\/cache\/restore@[^\s$]+$/i,
+    inputs: new Set(CACHE_RESTORE_INPUTS),
+    valid: (inputs) => cachePathsOutsideWorkspace(mapGet(inputs, 'path')),
+  },
+]);
 
-// The root package manifest pre-test package-manager invocations resolve against, from the same
-// `{ name: text }` files as `manifestTestCommands`: `scripts` is `{}` without a `package.json` or a
-// `scripts` member, and null when it is no JSON object or `scripts` no object; `workspaces` is set
-// by a `workspaces` member or a `pnpm-workspace.yaml` entry, whose packages' scripts an install
-// also runs.
-export function packageManifest(files) {
-  const text = typeof files?.['package.json'] === 'string' ? files['package.json'] : null;
-  let parsed = {};
-  if (text !== null) {
-    try {
-      parsed = JSON.parse(text);
-    } catch {
-      parsed = null;
-    }
-  }
-  const valid = parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed);
-  const scripts = valid ? (parsed.scripts ?? {}) : null;
-  return {
-    scripts:
-      scripts !== null && typeof scripts === 'object' && !Array.isArray(scripts) ? scripts : null,
-    workspaces:
-      (valid && parsed.workspaces !== undefined) ||
-      typeof files?.['pnpm-workspace.yaml'] === 'string',
-  };
-}
-
-// The reasons the root script `name` and its pre and post scripts may change the tree; `budget`
-// bounds the resolutions of one pre-test analysis, cycles included.
-function packageScriptReasons(name, manifest, budget) {
-  const { scripts } = manifest;
-  if (scripts === null || !Object.hasOwn(scripts, name)) return ['package-script-before-test'];
-  const reasons = [];
-  for (const script of [`pre${name}`, name, `post${name}`]) {
-    if (script !== name && !Object.hasOwn(scripts, script)) continue;
-    budget.remaining -= 1;
-    if (budget.remaining < 0 || typeof scripts[script] !== 'string') {
-      return ['package-script-before-test'];
-    }
-    reasons.push(...runReasons(scripts[script], manifest, budget, true));
-  }
-  return reasons;
-}
-
-// Whether `words` provably disable install lifecycle scripts: at least one `ignore-scripts` option,
-// and each a bare `--ignore-scripts` no value follows or `--ignore-scripts=true`.
-function scriptsDisabled(words) {
-  const options = [...words.keys()].filter((index) => IGNORE_SCRIPTS_OPTION.test(words[index]));
+function cachePathsOutsideWorkspace(value) {
+  if (typeof value !== 'string') return false;
+  const entries = value
+    .split('\n')
+    .map((entry) => entry.trim())
+    .filter((entry) => entry !== '');
   return (
-    options.length > 0 &&
-    options.every(
-      (index) =>
-        words[index] === '--ignore-scripts=true' ||
-        (words[index] === '--ignore-scripts' &&
-          (words[index + 1] === undefined || words[index + 1].startsWith('-'))),
+    entries.length > 0 &&
+    entries.every(
+      (entry) =>
+        HOME_HIDDEN_PATH.test(entry) &&
+        !entry.split('/').some((segment) => segment === '.' || segment === '..'),
     )
   );
 }
 
-// The reasons one package-manager invocation, `words` following the manager, may change the tree.
-function packageInvocationReasons(words, manifest, budget) {
-  const [command, ...rest] = words;
-  if (command?.startsWith('-') || words.some((word) => PACKAGE_SCOPE_OPTION.test(word))) {
-    return ['package-script-before-test'];
-  }
-  const name = command?.toLowerCase();
-  if (name === undefined || PACKAGE_INSTALL_COMMANDS.has(name)) {
-    if (scriptsDisabled(words)) return [];
-    if (manifest.workspaces || manifest.scripts === null) return ['package-script-before-test'];
-    return INSTALL_LIFECYCLE_SCRIPTS.filter((script) =>
-      Object.hasOwn(manifest.scripts, script),
-    ).flatMap((script) => packageScriptReasons(script, manifest, budget));
-  }
-  if (PACKAGE_RUN_COMMANDS.has(name)) {
-    if (rest[0] === undefined || rest[0].startsWith('-')) return ['package-script-before-test'];
-    return packageScriptReasons(rest[0], manifest, budget);
-  }
-  if (PACKAGE_SCRIPT_SHORTHANDS.has(name)) {
-    return packageScriptReasons(PACKAGE_SCRIPT_SHORTHANDS.get(name), manifest, budget);
-  }
-  if (PACKAGE_NEUTRAL_COMMANDS.has(name)) return [];
-  // pnpm, yarn and bun run a script named as the command.
-  return packageScriptReasons(command, manifest, budget);
+function onlyKeys(step, keys) {
+  return [...step.keys()].every((key) => keys.has(key));
 }
 
-// The reasons `run` text may change the checked-out tree; `rooted` is false when it runs outside
-// the workspace root, where the root `scripts` say nothing.
-function runReasons(run, manifest, budget, rooted) {
-  if (ESCAPE_SEQUENCE.test(run)) return ['git-command-before-test'];
-  const text = run.replace(/\\\r?\n/g, '').replace(/["'\\]/g, '');
-  if (DYNAMIC_SHELL_TEXT.test(text)) return ['git-command-before-test'];
+// Whether a pre-test `uses:` step is one of `PRE_TEST_ACTIONS` with allowed, literal inputs.
+function allowedAction(step) {
+  if (!onlyKeys(step, USES_STEP_KEYS)) return false;
+  const uses = step.get('uses');
+  const action =
+    typeof uses === 'string' && PRE_TEST_ACTIONS.find(({ pattern }) => pattern.test(uses.trim()));
+  if (!action) return false;
+  const inputs = step.has('with') ? step.get('with') : null;
+  if (inputs !== null && !(inputs instanceof Map)) return false;
+  for (const [key, value] of inputs ?? []) {
+    if (!action.inputs.has(key)) return false;
+    if (value !== null && (typeof value !== 'string' || EXPRESSION.test(value))) return false;
+  }
+  return action.valid(inputs);
+}
+
+// Whether a pre-test `run:` step is exactly the allowed install of the test step's package manager,
+// in the workspace root and in `bash`; `workingDirectory` is the job's or workflow's default.
+function allowedRun(step, install, workingDirectory) {
+  if (!install || !onlyKeys(step, RUN_STEP_KEYS) || shellReason(step.get('shell'))) return false;
+  const directory = step.has('working-directory')
+    ? step.get('working-directory')
+    : workingDirectory;
+  if (directory !== undefined && normalizeDirectory(directory) !== '') return false;
+  const run = step.get('run');
+  if (typeof run !== 'string') return false;
+  const line = run.trim();
+  if (SHELL_TEXT.test(line) || /[^\S ]/.test(line)) return false;
+  const [manager, subcommand, ...options] = line.split(/ +/);
+  return (
+    manager === install.manager &&
+    install.subcommands.includes(subcommand) &&
+    new Set(options).size === options.length &&
+    install.required.every((option) => options.includes(option)) &&
+    options.every(
+      (option) => install.required.includes(option) || install.optional.includes(option),
+    )
+  );
+}
+
+// The reasons the checkout step itself may not check out the pull request's default tree.
+function checkoutStepReasons(step) {
   const reasons = [];
-  const parts = text.split(/([\n|&;()<>]+)/);
-  const segments = [];
-  for (let index = 0; index < parts.length; index += 2) {
-    // An `ignore-scripts` option keeps its `=` value, which decides whether it disables scripts.
-    segments.push(parts[index].match(/--(?:no-)?ignore-scripts=[\w.:+@%-]*|[\w.:+@%-]+/gi) ?? []);
+  for (const key of step.keys()) {
+    if (key === 'if') reasons.push('step-condition');
+    else if (key === 'continue-on-error') reasons.push('continue-on-error');
+    else if (!USES_STEP_KEYS.has(key)) reasons.push('action-before-test');
   }
-  const relocated = !rooted || segments.flat().some((word) => word === 'cd' || word === 'pushd');
-  for (let index = 0; index < parts.length; index += 2) {
-    const words = segments[index / 2];
-    const piped = index > 0 && parts[index - 1].includes('|');
-    const redirected = index + 1 < parts.length && parts[index + 1].includes('<');
-    if (parts[index].split(/\s+/).some((token) => token.includes('/'))) {
-      reasons.push('script-before-test');
-    }
-    if (words[0] === '.') reasons.push('script-before-test');
-    for (const [position, word] of words.entries()) {
-      if (GIT_PROGRAM.test(word)) reasons.push('git-command-before-test');
-      if (SCRIPT_FILE.test(word) || TASK_RUNNER.test(word)) reasons.push('script-before-test');
-      // `bun` is both; as a manager, `bun <file>` is no script and stays unprovable.
-      if (PACKAGE_MANAGER.test(word)) {
-        reasons.push(
-          ...(relocated
-            ? ['package-script-before-test']
-            : packageInvocationReasons(words.slice(position + 1), manifest, budget)),
-        );
-      } else if (CODE_RUNNER.test(word)) {
-        const next = words[position + 1];
-        if (piped || redirected || next === undefined || next.startsWith('-')) {
-          reasons.push('git-command-before-test');
-        } else reasons.push('script-before-test');
-      }
-    }
+  if (!step.has('with')) return reasons;
+  const inputs = step.get('with');
+  if (inputs === null) return reasons;
+  if (!(inputs instanceof Map)) return [...reasons, 'invalid-checkout-inputs'];
+  for (const [key, value] of inputs) {
+    if (key === 'path' && normalizeDirectory(value) === '') continue;
+    if (CHECKOUT_INPUT_REASONS.has(key)) reasons.push(CHECKOUT_INPUT_REASONS.get(key));
+    else if (!CHECKOUT_TREE_NEUTRAL_INPUTS.has(key)) reasons.push('unknown-checkout-input');
   }
-  return unique(reasons);
+  return reasons;
 }
 
-// The reasons a pre-test `uses` step may change the checked-out tree.
-function actionReasons(step, action, manifest, budget) {
-  if (action.startsWith('./')) return ['local-action-before-test'];
-  if (/^docker:\/\//i.test(action)) return ['docker-action-before-test'];
-  if (!TREE_NEUTRAL_ACTIONS.some((pattern) => pattern.test(action))) {
-    return ['unknown-action-before-test'];
-  }
-  const install = mapGet(step.get('with'), 'run_install');
-  if (install === undefined || install === null || install === 'false') return [];
-  return install === 'true'
-    ? packageInvocationReasons(['install'], manifest, budget)
-    : ['package-script-before-test'];
-}
-
-// Whether the steps before the test step leave the workspace at the pull request's checked-out tree;
-// `workingDirectory` is the job's or workflow's default a step without its own runs in.
-function checkoutReasons(steps, testIndex, manifest, workingDirectory) {
-  const reasons = [];
-  const budget = { remaining: MAX_SCRIPT_RESOLUTIONS };
+// The reasons the steps before the test step may leave the workspace other than at the pull
+// request's checked-out tree, for the test step running `command`.
+function preTestReasons(steps, testIndex, command, context) {
+  const reasons = context.inheritsEnv ? ['env-before-test'] : [];
+  const install = PRE_TEST_INSTALLS.get(command.normalized);
   let checkouts = 0;
   for (const step of steps.slice(0, testIndex)) {
-    if (!(step instanceof Map)) continue;
-    const run = step.get('run');
-    if (typeof run === 'string') {
-      const stepShell = shellReason(step.get('shell'));
-      if (stepShell) reasons.push(stepShell);
-      const directory = step.has('working-directory')
-        ? step.get('working-directory')
-        : workingDirectory;
-      const rooted = directory === undefined || normalizeDirectory(directory) === '';
-      reasons.push(...runReasons(run, manifest, budget, rooted));
-    }
-    if (!step.has('uses')) continue;
-    const uses = step.get('uses');
-    if (typeof uses !== 'string') {
-      reasons.push('unknown-action-before-test');
-      continue;
-    }
-    if (!CHECKOUT_ACTION.test(uses.trim())) {
-      reasons.push(...actionReasons(step, uses.trim(), manifest, budget));
-      continue;
-    }
-    checkouts += 1;
-    if (step.has('if')) reasons.push('step-condition');
-    if (step.has('continue-on-error')) reasons.push('continue-on-error');
-    if (!step.has('with')) continue;
-    const inputs = step.get('with');
-    if (inputs === null) continue;
-    if (!(inputs instanceof Map)) {
-      reasons.push('invalid-checkout-inputs');
-      continue;
-    }
-    for (const [key, value] of inputs) {
-      if (key === 'path' && normalizeDirectory(value) === '') continue;
-      if (CHECKOUT_INPUT_REASONS.has(key)) reasons.push(CHECKOUT_INPUT_REASONS.get(key));
-      else if (!CHECKOUT_TREE_NEUTRAL_INPUTS.has(key)) reasons.push('unknown-checkout-input');
+    const uses = mapGet(step, 'uses');
+    if (typeof uses === 'string' && CHECKOUT_ACTION.test(uses.trim())) {
+      checkouts += 1;
+      reasons.push(...checkoutStepReasons(step));
+    } else if (!(step instanceof Map) || !(step.has('uses') || step.has('run'))) {
+      reasons.push('step-before-test');
+    } else if (step.has('uses')) {
+      if (!allowedAction(step)) reasons.push('action-before-test');
+    } else if (!allowedRun(step, install, context.workingDirectory)) {
+      reasons.push('step-before-test');
     }
   }
   if (checkouts === 0) reasons.push('no-checkout');
@@ -1074,7 +1020,7 @@ function checkoutReasons(steps, testIndex, manifest, workingDirectory) {
 }
 
 function evaluateStep(step, index, command, context) {
-  const reasons = checkoutReasons(context.steps, index, context.manifest, context.workingDirectory);
+  const reasons = preTestReasons(context.steps, index, command, context);
   if (step.has('if')) reasons.push('step-condition');
   if (step.has('continue-on-error')) reasons.push('continue-on-error');
   const stepShell = shellReason(step.get('shell'));
@@ -1196,7 +1142,7 @@ function evaluateJob(jobId, job, commands, workflowDefaults) {
         steps,
         workingDirectory:
           jobDirectory.value !== undefined ? jobDirectory.value : workflowDefaults.workingDirectory,
-        manifest: workflowDefaults.manifest,
+        inheritsEnv: workflowDefaults.inheritsEnv || declaresEnv(job),
       };
       let chosen = null;
       steps.forEach((step, index) => {
@@ -1232,13 +1178,8 @@ function evaluateJob(jobId, job, commands, workflowDefaults) {
 }
 
 // Evaluates one parsed or unparsable workflow file. `text` is the blob text of `workflowPath`;
-// `commands` comes from `manifestTestCommands`; `base` is the pull request's base branch; `manifest`
-// comes from `packageManifest`, by default that of a root without a `package.json`.
-export function evaluateWorkflow(
-  workflowPath,
-  text,
-  { commands, base, manifest = packageManifest({}) },
-) {
+// `commands` comes from `manifestTestCommands`; `base` is the pull request's base branch.
+export function evaluateWorkflow(workflowPath, text, { commands, base }) {
   const workflow = {
     path: workflowPath,
     status: 'undetected',
@@ -1268,7 +1209,10 @@ export function evaluateWorkflow(
   else {
     for (const [jobId, job] of jobs) {
       workflow.jobs.push(
-        evaluateJob(jobId, job, commands, { workingDirectory: directory.value, manifest }),
+        evaluateJob(jobId, job, commands, {
+          workingDirectory: directory.value,
+          inheritsEnv: declaresEnv(document),
+        }),
       );
     }
     rejectNameCollisions(workflow.jobs, jobs);
@@ -1575,10 +1519,7 @@ export async function detectCi(input, deps = {}) {
   }
   result.baseCommit = commit;
   const reader = treeReader(context, input.cwd, commit);
-  const files = await readRootManifests(reader);
-  if (await reader.entry(WORKSPACE_MANIFEST)) files[WORKSPACE_MANIFEST] = '';
-  const commands = manifestTestCommands(files);
-  const manifest = packageManifest(files);
+  const commands = manifestTestCommands(await readRootManifests(reader));
   result.manifest.commands = commands.map(({ normalized, forms, source }) => ({
     normalized,
     forms,
@@ -1628,7 +1569,7 @@ export async function detectCi(input, deps = {}) {
         });
         continue;
       }
-      result.workflows.push(evaluateWorkflow(workflowPath, text, { commands, base, manifest }));
+      result.workflows.push(evaluateWorkflow(workflowPath, text, { commands, base }));
     }
   }
 
@@ -1740,8 +1681,8 @@ function unsafeEntry(kind, compared, entries) {
 }
 
 // Whether a `package.json` that differs between the two sides still declares the same `scripts`
-// and `workspaces` members: only those decide what `ci-detect` derives from it, pre and post
-// scripts and a workspace install included, so a dependency change keeps the test command. Each
+// and `workspaces` members: `scripts` decides what the detected test command runs and `workspaces`
+// which packages it and an allowlisted install reach, so a dependency change keeps the test command. Each
 // side must be exactly one regular file within MAX_SOURCE_BYTES that parses as a JSON object;
 // anything else is a difference.
 async function samePackageMembers(reader, compared, left, right) {
