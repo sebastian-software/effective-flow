@@ -654,6 +654,51 @@ test('detect: the test step must run on the single default checkout of the pull 
     job([CHECKOUT, '      - run: |', '          gh pr checkout 1', '      - run: pnpm test']),
     'git-command-before-test',
   );
+  // Quoting, escaping, wrappers, substitution and interpreters never hide a Git command, and text
+  // whose command words cannot be established statically counts as one.
+  const before = (...script) =>
+    job([
+      CHECKOUT,
+      '      - run: |',
+      ...script.map((line) => `          ${line}`),
+      '      - run: pnpm test',
+    ]);
+  for (const script of [
+    ["bash -c 'git checkout origin/develop'"],
+    ['sh -c "git checkout origin/develop"'],
+    ['"gh" pr checkout 1'],
+    ["'git' checkout origin/develop"],
+    ['echo `git checkout origin/develop`'],
+    ['\\git checkout origin/develop'],
+    ["g''it checkout origin/develop"],
+    ['g"i"t checkout origin/develop'],
+    ['gi\\', 't checkout origin/develop'],
+    ['$(echo git) checkout origin/develop'],
+    ['env git checkout origin/develop'],
+    ['command git checkout origin/develop'],
+    ['echo origin/develop | xargs git checkout'],
+    ['/usr/bin/git checkout origin/develop'],
+    ['GIT=git && "$GIT" checkout origin/develop'],
+    ['${TOOL} checkout origin/develop'],
+    ['eval "$CHECKOUT"'],
+    ["$'\\x67it' checkout origin/develop"],
+    ['g{i,}t checkout origin/develop'],
+    ['/usr/bin/gi? checkout origin/develop'],
+    ['g[i]t checkout origin/develop'],
+    ['git-lfs pull'],
+    ['echo tig | rev | bash /dev/stdin'],
+    ["printf '\\147it checkout origin/develop' > step.sh && bash step.sh"],
+    ['python3 -c "import os; os.system(chr(103) + chr(105) + chr(116))"'],
+    ['node -e "require(child_process).execSync(process.env.CMD)"'],
+    ['bash < commands.txt'],
+  ]) {
+    assertUndetected(before(...script), 'git-command-before-test');
+  }
+  assert.equal(
+    evaluate(before('pnpm install --frozen-lockfile', 'pnpm agent:check')).status,
+    'detected',
+  );
+  assert.equal(evaluate(before('bash scripts/setup.sh')).status, 'detected');
   assert.equal(
     evaluate(job([CHECKOUT, '      - run: pnpm test', '      - run: git status'])).status,
     'detected',

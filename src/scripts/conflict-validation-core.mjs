@@ -796,8 +796,37 @@ function expectedInstances(job, displayName, reasons) {
   return combinations.map((combination) => `${displayName} (${combination.join(', ')})`);
 }
 
-function isGitInvocation(token) {
-  return ['git', 'gh'].some((name) => token === name || token.endsWith(`/${name}`));
+// Pre-test `run` text is read conservatively, since an undetected job only falls back to full
+// validation: it counts as a Git command whenever it could run `git` or `gh`, or its command words
+// cannot be established statically. Line continuations, quotes and backslashes are dropped first, so
+// `"git"`, `g''it`, `\git` and `bash -c 'git …'` read as `git`, and every word is split at `/`, `=`
+// and other punctuation, so `/usr/bin/git`, `env git` and `xargs git` do too.
+const GIT_PROGRAM = /^(?:git|gh)(?:[-.]|$)/i;
+// Expansion, substitution, evaluation, escape sequences, brace expansion and globbing can assemble a
+// command word the text never spells out.
+const ESCAPE_SEQUENCE = /\\(?:[0-7]|[xuUc])/;
+const DYNAMIC_SHELL_TEXT = /[$`*?]|\beval\b|\{[^{}]*(?:,|\.\.)[^{}]*\}|\[(?!\[?\s)/;
+// Programs that run code from an option, standard input or a redirect rather than a named file.
+const CODE_RUNNER =
+  /^(?:(?:a|ba|c|da|k|mk|tc|z)?sh|fish|busybox|pwsh|powershell|python[\d.]*|node(?:js)?|deno|bun|perl[\d.]*|ruby|php|lua|tclsh|xargs|source)$/i;
+
+function mayInvokeGit(run) {
+  if (ESCAPE_SEQUENCE.test(run)) return true;
+  const text = run.replace(/\\\r?\n/g, '').replace(/["'\\]/g, '');
+  if (DYNAMIC_SHELL_TEXT.test(text)) return true;
+  const parts = text.split(/([\n|&;()<>]+)/);
+  for (let index = 0; index < parts.length; index += 2) {
+    const words = parts[index].split(/[^\w.:+@%-]+/).filter((word) => word !== '');
+    const piped = index > 0 && parts[index - 1].includes('|');
+    const redirected = index + 1 < parts.length && parts[index + 1].includes('<');
+    for (const [position, word] of words.entries()) {
+      if (GIT_PROGRAM.test(word)) return true;
+      if (!CODE_RUNNER.test(word)) continue;
+      const next = words[position + 1];
+      if (piped || redirected || next === undefined || next.startsWith('-')) return true;
+    }
+  }
+  return false;
 }
 
 // Whether the steps before the test step leave the workspace at the pull request's checked-out tree.
@@ -807,7 +836,7 @@ function checkoutReasons(steps, testIndex) {
   for (const step of steps.slice(0, testIndex)) {
     if (!(step instanceof Map)) continue;
     const run = step.get('run');
-    if (typeof run === 'string' && tokens(run).some(isGitInvocation)) {
+    if (typeof run === 'string' && mayInvokeGit(run)) {
       reasons.push('git-command-before-test');
     }
     const uses = step.get('uses');
