@@ -611,6 +611,8 @@ export const DETECTION_REASONS = Object.freeze([
   'action-before-test',
   'test-step-env',
   'test-step-key',
+  'job-container',
+  'job-services',
 ]);
 
 // A check run's head SHA names the pull request, not the tree its job tested. The test step counts
@@ -876,8 +878,16 @@ const CACHE_RESTORE_INPUTS = Object.freeze([
   'fail-on-cache-miss',
   'lookup-only',
 ]);
-// A cache path entry under a hidden directory of the home directory, which never holds the
-// workspace on GitHub-hosted runners (`~/work/…`); no `..`, glob, negation or expression.
+// A cache path entry is one of these known package-manager cache directories or lies below one; any
+// other home path is not, since a self-hosted runner may keep its workspace under a hidden home
+// directory (`~/.runner/_work/…`). No `..`, glob, negation or expression.
+const KNOWN_CACHE_DIRECTORIES = Object.freeze([
+  '~/.npm',
+  '~/.pnpm-store',
+  '~/.cache/pnpm',
+  '~/.local/share/pnpm/store',
+  '~/.bun/install/cache',
+]);
 const HOME_HIDDEN_PATH = /^~\/\.[A-Za-z0-9_][\w.-]*(?:\/[\w.-]+)*\/?$/;
 const PRE_TEST_ACTIONS = Object.freeze([
   {
@@ -928,7 +938,11 @@ function cachePathsOutsideWorkspace(value) {
     entries.every(
       (entry) =>
         HOME_HIDDEN_PATH.test(entry) &&
-        !entry.split('/').some((segment) => segment === '.' || segment === '..'),
+        !entry.split('/').some((segment) => segment === '.' || segment === '..') &&
+        KNOWN_CACHE_DIRECTORIES.some(
+          (directory) =>
+            entry.replace(/\/$/, '') === directory || entry.startsWith(`${directory}/`),
+        ),
     )
   );
 }
@@ -1135,6 +1149,11 @@ function evaluateJob(jobId, job, commands, workflowDefaults) {
   if (job.has('uses')) reasons.push('reusable-workflow');
   if (job.has('if')) reasons.push('job-condition');
   if (job.has('continue-on-error')) reasons.push('continue-on-error');
+  // A job container or service container is not provably tree-neutral: `container.env`, the `-e`
+  // and `-v` flags of `options`, the image's own environment and a service's workspace volume all
+  // reach the test step outside the steps this allowlist reads.
+  if (job.has('container')) reasons.push('job-container');
+  if (job.has('services')) reasons.push('job-services');
   const jobShell = runDefault(job, 'shell');
   const jobDirectory = runDefault(job, 'working-directory');
   if (jobShell.invalid || jobDirectory.invalid) reasons.push('invalid-defaults');

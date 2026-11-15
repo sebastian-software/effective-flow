@@ -678,10 +678,11 @@ test('detect: the test step must run on the single default checkout of the pull 
 
 // Invariant: a pre-test step counts only when it is on the explicit allowlist of steps proven to
 // leave the checked-out tree unchanged — the checkout, `actions/setup-node`, `pnpm/action-setup`
-// without an install, `actions/cache` and `actions/cache/restore` on hidden home paths, and the
-// test manager's frozen-lockfile install with lifecycle scripts disabled. `ci-integrity` proves the
-// compared text unchanged, not what a step runs, so anything else may replace the tested tree
-// while every compared file stays unchanged and leaves the job on full validation.
+// without an install, `actions/cache` and `actions/cache/restore` on known package-manager cache
+// directories, and the test manager's frozen-lockfile install with lifecycle scripts disabled.
+// `ci-integrity` proves the compared text unchanged, not what a step runs, so anything else may
+// replace the tested tree while every compared file stays unchanged and leaves the job on full
+// validation.
 test('detect: only allowlisted pre-test steps keep a job detected', () => {
   const CHECKOUT = '      - uses: actions/checkout@v4';
   const job = (...steps) =>
@@ -732,6 +733,18 @@ test('detect: only allowlisted pre-test steps keep a job detected', () => {
       '            ~/.cache/pnpm',
       '            ~/.local/share/pnpm/store',
       '          key: pnpm-store',
+      '      - run: pnpm test',
+    ),
+  );
+  detected(
+    job(
+      '      - uses: actions/cache@v4',
+      '        with:',
+      '          path: |',
+      '            ~/.pnpm-store',
+      '            ~/.npm/_cacache',
+      '            ~/.bun/install/cache/',
+      '          key: k',
       '      - run: pnpm test',
     ),
   );
@@ -845,6 +858,16 @@ test('detect: only allowlisted pre-test steps keep a job detected', () => {
     uses('actions/cache@v4', '        with:', '          path: ~/work', '          key: k'),
     uses('actions/cache@v4', '        with:', '          path: ~/.npm/../work', '          key: k'),
     uses('actions/cache@v4', '        with:', '          path: ~/.npm/*', '          key: k'),
+    uses(
+      'actions/cache@v4',
+      '        with:',
+      '          path: ~/.runner/_work/app',
+      '          key: k',
+    ),
+    uses('actions/cache@v4', '        with:', '          path: ~/.runner', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/.cache/other', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/.npmrc', '          key: k'),
+    uses('actions/cache@v4', '        with:', '          path: ~/.npm-other', '          key: k'),
     uses('actions/cache@v4', '        with:', '          path: ${{ github.workspace }}/x'),
     uses(
       'actions/cache/restore@v4',
@@ -898,6 +921,33 @@ test('detect: the test step carries only allowlisted keys', () => {
   assertUndetected(testStep('        with:', '          args: x'), 'test-step-key');
   assertUndetected(testStep('        uses: actions/setup-node@v4'), 'test-step-key');
   assertUndetected(testStep('        unknown-key: x'), 'test-step-key');
+});
+
+// Invariant: a job `container` or `services` entry reaches the test step outside the steps the
+// allowlist reads (`container.env`, the `-e` and `-v` flags of `options`, the image's own
+// environment, a service's workspace volume), so it leaves the job on full validation.
+test('detect: a job container or service container leaves the job undetected', () => {
+  assert.equal(evaluate(workflow()).status, 'detected');
+  for (const extra of [
+    ['    container: node:24'],
+    ['    container:', '      image: node:24'],
+    ['    container:', '      image: node:24', '      env:', '        BASH_ENV: ./setup.sh'],
+    ['    container:', '      image: node:24', '      options: -e BASH_ENV=./setup.sh'],
+  ]) {
+    assertUndetected(workflow({ jobExtra: extra }), 'job-container');
+  }
+  for (const extra of [
+    ['    services:', '      db:', '        image: postgres:17'],
+    [
+      '    services:',
+      '      sidecar:',
+      '        image: alpine:3',
+      '        volumes:',
+      '          - /home/runner/work:/work',
+    ],
+  ]) {
+    assertUndetected(workflow({ jobExtra: extra }), 'job-services');
+  }
 });
 
 // Invariant: a pre-test `run:` step runs in its job's or workflow's default `working-directory`

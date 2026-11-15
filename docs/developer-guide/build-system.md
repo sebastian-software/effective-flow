@@ -840,14 +840,17 @@ point is an I/O boundary over testable core or protocol modules:
   unchanged; anything unknown or not provably tree-neutral is `undetected`, so the conflict falls
   back to `full`. The allowlist is one default `actions/checkout`; `actions/setup-node` (`cache`
   absent, `npm` or `pnpm`); `pnpm/action-setup` without `run_install` or with `run_install: false`;
-  `actions/cache` and `actions/cache/restore` whose every `path` lies under `~/.<name>`; and one
+  `actions/cache` and `actions/cache/restore` whose every `path` is or lies below a known
+  package-manager cache directory (`~/.npm`, `~/.pnpm-store`, `~/.cache/pnpm`,
+  `~/.local/share/pnpm/store`, `~/.bun/install/cache`); and one
   metacharacter-free `run:` install of the test step's package manager,
   `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile`, `npm ci --ignore-scripts`
   or `bun install --frozen-lockfile --ignore-scripts`. Each carries only its listed step keys and
   inputs, without expressions or an inherited `env` (`step-before-test`, `action-before-test`,
   `env-before-test`), and the test step only `name`, `id`, `run`, `timeout-minutes`,
   `working-directory` and `shell`, without a step `env` (`test-step-env`, `test-step-key`), so
-  this repository's own `Format, test and build` job stays undetected.
+  this repository's own `Format, test and build` job stays undetected. A job `container` or
+  `services` entry is never provable (`job-container`, `job-services`).
   `ci-integrity` (`{ cwd, baseRef, commit?, tree }`, `tree` a full commit or tree id or `index`)
   compares, between that base or pinned commit and `tree`, the `mode type oid` entries of
   `.github/workflows/`, `.forgejo/workflows/`, `.gitea/workflows/` and every local reusable

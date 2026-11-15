@@ -154,9 +154,12 @@ therefore be on this allowlist:
 - `actions/setup-node`, with a `cache` that is absent, `npm` or `pnpm`, since its yarn cache runs
   `yarn` in the workspace;
 - `pnpm/action-setup` without `run_install` or with `run_install: false`, and without `dest`;
-- `actions/cache` and `actions/cache/restore` when every `path` entry lies under a hidden directory
-  of the home directory (`~/.<name>…`), without `..`, glob, negation or expression; plain `~/` is
-  not enough, because a GitHub-hosted workspace lies under `~/work`;
+- `actions/cache` and `actions/cache/restore` when every `path` entry is one of the known
+  package-manager cache directories `~/.npm`, `~/.pnpm-store`, `~/.cache/pnpm`,
+  `~/.local/share/pnpm/store` and `~/.bun/install/cache` or lies below one, without `..`, glob,
+  negation or expression; any other home path is not enough, because a GitHub-hosted workspace
+  lies under `~/work` and a self-hosted runner may keep its workspace under a hidden home directory
+  such as `~/.runner`;
 - one `run:` line, free of shell metacharacters, that installs with the test step's package manager
   from a frozen lockfile with lifecycle scripts disabled, as an exact word set:
   `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile` (or `pnpm i`, optionally
@@ -175,7 +178,10 @@ or `with:` value, and any `env` the job or workflow passes down are not provable
 every other action, local, composite and Docker actions included. The test step itself carries
 only `name`, `id`, `timeout-minutes`, its `run:`, a root `working-directory` and a `bash` `shell`;
 a step `env`, which runs repository code before the tests through `BASH_ENV`, and any other key are
-not provable either (`test-step-env`, `test-step-key`). A check run's head SHA names
+not provable either (`test-step-env`, `test-step-key`). Nor is a job `container` or `services`
+entry (`job-container`, `job-services`): `container.env`, the `-e` and `-v` flags of `options`,
+the image's own environment and a service's workspace volume reach the test step outside the
+steps this allowlist reads. A check run's head SHA names
 the pull request whose event started the workflow, not the tree its job tested, so a job that
 checks out another ref or repository would otherwise pass as evidence for a conflict commit it
 never tested.
