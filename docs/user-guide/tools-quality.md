@@ -46,7 +46,7 @@ target after a snapshot on the T3 observed path, but only from a Codex observer 
 follow-up gate qualifies the actual host; not every T3 observed snapshot shows the offer. It runs
 through one T3 schedule bound to the observer thread that persists until it is deleted. Ticks stay quiet while nothing material changes, never
 send a message, and end at completion, an explicit `focus follow-up stop <session-ref>`, lost
-access, or a loop cap. On any other host path a snapshot offers nothing; asking for follow-up
+access, or a loop cap of 24 ticks (2 hours at 5 minutes, so a longer observation needs a longer interval). On any other host path a snapshot offers nothing; asking for follow-up
 returns the limitation, and `follow-up stop` stays available. Sends stay disabled.
 
 The follow-up mode has a Codex host prerequisite. It was qualified only with a conditional
@@ -61,8 +61,8 @@ commentary on quiet ticks, with no change to reads or authority.
 The current [F record](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-e0966ac7)
 observed a tick-level Looping report once on an unrequested repetition, while explicitly requested
 retries stayed On track; a bare "continue" does not count as a retry request. Offers list their
-disclosures as numbered items, and the approval item 5 appears only for an observer that may need
-approvals; the T3 UI renumbers the list, so a missing number is visible only in the raw text.
+disclosures as numbered items, and the approval item, the last one, appears only for an observer
+that may need approvals.
 Qualification did not observe the loop's cap end: the long loop compacted after 33 ticks and then
 stopped as the deletion safeguard requires. A loop that starts right after a snapshot of an idle
 target may skip the one-time idle report on its first tick. The record ran without a global Codex

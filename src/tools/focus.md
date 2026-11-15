@@ -78,14 +78,16 @@ owner guidance or disclosed fallback, and the verdict/output contract below. Inc
 
 The leaf starts no child, accesses no native session or other source, sends nothing, starts no
 workflow and writes nothing. Permit only supplied evidence, scoped repository reads, read-only Git
-metadata and already-recorded forge/CI queries within that scope. Explicitly prohibit tests,
-builds, checks, probes, installations, historical-command execution and waiting; read-only authority
-does not authorize running checks, and the Claude observer's wait exception never reaches the leaf.
+metadata and already-recorded forge/CI queries within that scope. Explicitly prohibit tests, builds,
+checks, probes, installations, historical-command execution and waiting; read-only authority does
+not authorize running checks, and the Claude observer's wait exception never reaches the leaf.
 Return one supported verdict, cited rationale, at most one correction and limitations, ending with
 `DONE` or `ABORT`. Await the leaf before concluding. An abort/incomplete result is disclosed and
 cannot masquerade as completed analysis; keep only independently supported conclusions. Unavailable
-or declined delegation uses the mandate's visible inline fallback under identical limits, never
-an additional analysis spawn.
+or declined delegation uses the mandate's visible inline fallback under identical limits, never an
+additional analysis spawn. A user or instruction-file rule that forbids the host's native subagent
+mechanism counts as declined delegation, and the leaf is never dispatched through `delegate_task`
+or another thread-creating tool.
 
 ## Snapshot verdict
 
