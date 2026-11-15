@@ -142,7 +142,19 @@ only inside a reusable workflow or composite action; and it runs on the pull req
 exactly one `actions/checkout` step precedes it, without `if:` or `continue-on-error`, without a
 `ref`, a `repository` or a `path` other than the workspace root, and with no input beyond the
 credential, history, LFS, submodule and progress inputs that leave the checked-out tree unchanged,
-and no step before it runs `git` or `gh`. A check run's head SHA names the pull request whose
+and no step before it has an effect on that tree the definition commit cannot prove: no `run:`
+in a shell other than `bash`, none that could run `git` or `gh` or whose command words are not
+static, names a path or script file,
+hands a file to a code runner, sources one or starts a task runner (`make`, `npx`, …); no
+package-manager invocation other than a root `package.json` script, or an install, whose scripts,
+pre and post scripts and install lifecycle scripts resolve, recursively and bounded, to such
+provable text, with no option before the command, another package directory, `cd` or workspace;
+no local (`./…`) or `docker://` action; and no remote action other than `actions/setup-*` and
+`pnpm/action-setup`, the latter's `run_install` read as an install. `ci-integrity` proves the
+compared text unchanged, not tree-neutral, so a repository script or composite action that runs
+`git checkout origin/develop` would otherwise keep the pull request's check-run identity for a
+tree its tests never ran on; `actions/cache` is not listed because it restores arbitrary paths,
+workspace files included. A check run's head SHA names the pull request whose
 event started the workflow, not the tree its job tested, so a job that checks out another ref or
 repository would otherwise pass as evidence for a conflict commit it never tested.
 `pr-status-read` adds typename, app slug, event, workflow file path and head SHA per entry only on

@@ -835,7 +835,11 @@ point is an I/O boundary over testable core or protocol modules:
   `unparsable`. A job is detected only when its step runs exactly the bare manifest test command
   (`package.json` `test` through npm, pnpm, yarn or `bun run`; `cargo test`, `go test`, `pytest`,
   `make test`) on an unfiltered `pull_request` trigger, without a condition, `continue-on-error`,
-  a non-`bash` shell, another working directory, a dynamic matrix or a templated name.
+  a non-`bash` shell, another working directory, a dynamic matrix or a templated name, and only
+  after one default `actions/checkout` with no earlier step whose effect on the checked-out tree
+  is unprovable (`git-command-before-test`, `script-before-test`, `package-script-before-test`,
+  `local-action-before-test`, `docker-action-before-test`, `unknown-action-before-test`); a
+  pre-test package script resolves against the definition commit's root `package.json` `scripts`.
   `ci-integrity` (`{ cwd, baseRef, commit?, tree }`, `tree` a full commit or tree id or `index`)
   compares, between that base or pinned commit and `tree`, the `mode type oid` entries of
   `.github/workflows/`, `.forgejo/workflows/`, `.gitea/workflows/` and every local reusable

@@ -27,6 +27,7 @@ import {
   hasQuickMarker,
   manifestTestCommands,
   matchEvidence,
+  packageManifest,
   parseWorkflowYaml,
 } from '../src/scripts/conflict-validation-core.mjs';
 import { createProcessRunner } from '../src/scripts/config-resolve-core.mjs';
@@ -118,8 +119,15 @@ function workflow(parts = {}) {
   return `name: CI\n${parts.top ?? ''}${on}jobs:\n${job}\n`;
 }
 
-function evaluate(text, { commands = PNPM_COMMANDS, base = 'main' } = {}) {
-  return evaluateWorkflow('.github/workflows/ci.yml', text, { commands, base });
+function evaluate(
+  text,
+  {
+    commands = PNPM_COMMANDS,
+    base = 'main',
+    manifest = packageManifest({ 'package.json': PNPM_MANIFEST }),
+  } = {},
+) {
+  return evaluateWorkflow('.github/workflows/ci.yml', text, { commands, base, manifest });
 }
 
 function jobOf(result, jobId = 'test') {
@@ -274,12 +282,19 @@ test('detect: without a manifest test command nothing is detected', () => {
 // ---------------------------------------------------------------------------------------------
 // Detection conditions
 
+// Invariant: this repository's own test job, whose pre-test steps are the checkout, the pnpm and
+// Node setup actions, `pnpm install --frozen-lockfile` and `pnpm agent:check`, stays detected
+// against its own `package.json` scripts, so the repository that motivated `quick` keeps it.
 test("detect: this repository's own ci.yml shape is detected", () => {
   const text = readFileSync(new URL('.github/workflows/ci.yml', ROOT), 'utf8');
-  const commands = manifestTestCommands({
-    'package.json': readFileSync(new URL('package.json', ROOT), 'utf8'),
+  const files = { 'package.json': readFileSync(new URL('package.json', ROOT), 'utf8') };
+  const commands = manifestTestCommands(files);
+  const manifest = packageManifest(files);
+  const result = evaluateWorkflow('.github/workflows/ci.yml', text, {
+    commands,
+    base: 'develop',
+    manifest,
   });
-  const result = evaluateWorkflow('.github/workflows/ci.yml', text, { commands, base: 'develop' });
   assert.equal(result.status, 'detected', JSON.stringify(result));
   const build = jobOf(result, 'build');
   assert.equal(build.status, 'detected');
@@ -694,18 +709,182 @@ test('detect: the test step must run on the single default checkout of the pull 
   ]) {
     assertUndetected(before(...script), 'git-command-before-test');
   }
-  assert.equal(
-    evaluate(before('pnpm install --frozen-lockfile', 'pnpm agent:check')).status,
-    'detected',
-  );
-  assert.equal(evaluate(before('bash scripts/setup.sh')).status, 'detected');
+  assert.equal(evaluate(before('pnpm install --frozen-lockfile')).status, 'detected');
   assert.equal(
     evaluate(job([CHECKOUT, '      - run: pnpm test', '      - run: git status'])).status,
     'detected',
   );
-  const later = evaluate(job(['      - run: pnpm test', CHECKOUT, '      - run: pnpm test']));
+  // The earlier run's script resolves to a provable command, so only its position decides.
+  const later = evaluate(job(['      - run: pnpm test', CHECKOUT, '      - run: pnpm test']), {
+    manifest: packageManifest({
+      'package.json': JSON.stringify({ scripts: { test: 'vitest run' } }),
+    }),
+  });
   assert.equal(later.status, 'detected');
   assert.equal(jobOf(later).step.index, 2);
+});
+
+// Invariant: a pre-test step counts only when its effect on the checked-out tree is provable from
+// the workflow text and the definition commit's root `package.json` `scripts`, which `ci-integrity`
+// holds equal; a repository script, an unresolvable package script, a local, Docker or unlisted
+// action may switch the tree (for example `git checkout origin/develop` inside it) while every
+// compared file stays unchanged, so the job falls back to full validation.
+test('detect: a pre-test step whose effect on the checked-out tree cannot be proved is excluded', () => {
+  const CHECKOUT = '      - uses: actions/checkout@v4';
+  const job = (...steps) =>
+    workflow({
+      job: ['  test:', '    runs-on: ubuntu-latest', '    steps:', CHECKOUT, ...steps].join('\n'),
+    });
+  const run = (line) => job(`      - run: ${line}`, '      - run: pnpm test');
+  const manifestOf = (scripts, extra = {}) =>
+    packageManifest({
+      'package.json': JSON.stringify({ scripts: { test: 'node --test', ...scripts }, ...extra }),
+    });
+  const withScripts = (scripts, extra) => ({ manifest: manifestOf(scripts, extra) });
+
+  // (a) A repository script file or path, a file handed to a code runner, a sourced file or a task
+  // runner runs code nothing compares.
+  for (const line of [
+    'bash scripts/setup.sh',
+    'node scripts/setup.mjs',
+    'python3 tools/prepare.py',
+    './scripts/setup.sh',
+    'scripts/setup',
+    'sudo setup.sh',
+    'source env.sh',
+    '. ./env',
+    'make setup',
+    'npx some-tool',
+  ]) {
+    assertUndetected(run(line), 'script-before-test');
+  }
+
+  // (b) A package script resolves against the root `scripts`, recursively, pre and post scripts
+  // included; an install runs the root lifecycle scripts the same way.
+  const setup = (scripts, line = 'pnpm setup', extra) =>
+    evaluate(run(line), withScripts(scripts, extra));
+  assert.equal(setup({ setup: 'oxfmt --check' }).status, 'detected');
+  assert.equal(setup({ setup: 'oxfmt --check' }, 'pnpm run setup').status, 'detected');
+  assert.equal(setup({ setup: 'pnpm lint', lint: 'oxfmt --check' }).status, 'detected');
+  const reasonsOf = (result) => jobOf(result).reasons;
+  assert.ok(
+    reasonsOf(setup({ setup: 'git checkout origin/develop' })).includes('git-command-before-test'),
+  );
+  assert.ok(reasonsOf(setup({ setup: 'bash scripts/setup.sh' })).includes('script-before-test'));
+  assert.ok(
+    reasonsOf(setup({ setup: 'pnpm inner', inner: 'git checkout origin/develop' })).includes(
+      'git-command-before-test',
+    ),
+  );
+  assert.ok(
+    reasonsOf(setup({ setup: 'oxfmt', presetup: 'git switch develop' })).includes(
+      'git-command-before-test',
+    ),
+  );
+  for (const [scripts, line, extra] of [
+    [{}, 'pnpm setup'],
+    [{ setup: 'pnpm setup' }, 'pnpm setup'],
+    [{ setup: 'oxfmt' }, 'pnpm --filter app setup'],
+    [{ setup: 'oxfmt' }, 'pnpm -C sub setup'],
+    [{ setup: 'oxfmt' }, 'cd sub && pnpm setup'],
+    [{ setup: 'oxfmt' }, 'pnpm exec setup'],
+    [{ setup: 'oxfmt' }, 'pnpm dlx setup'],
+    [{ postinstall: 'node --version' }, 'pnpm install', { workspaces: ['packages/*'] }],
+  ]) {
+    assertUndetected(run(line), 'package-script-before-test', withScripts(scripts, extra));
+  }
+  assertUndetected(
+    run('npm ci'),
+    'git-command-before-test',
+    withScripts({ postinstall: 'git checkout origin/develop' }),
+  );
+  assert.equal(
+    evaluate(run('npm ci --ignore-scripts'), withScripts({ postinstall: 'git pull' })).status,
+    'detected',
+  );
+  assertUndetected(
+    job('      - run: pnpm setup', '        working-directory: sub', '      - run: pnpm test'),
+    'package-script-before-test',
+    withScripts({ setup: 'oxfmt' }),
+  );
+  assertUndetected(run('pnpm install'), 'package-script-before-test', {
+    manifest: packageManifest({ 'package.json': PNPM_MANIFEST, 'pnpm-workspace.yaml': '' }),
+  });
+  assertUndetected(run('pnpm install'), 'package-script-before-test', {
+    manifest: packageManifest({ 'package.json': 'not json' }),
+  });
+  assertUndetected(
+    job('      - run: echo setup', '        shell: python', '      - run: pnpm test'),
+    'shell-override',
+  );
+
+  // (c) A local or Docker action's steps are not read.
+  assertUndetected(
+    job('      - uses: ./.github/actions/setup', '      - run: pnpm test'),
+    'local-action-before-test',
+  );
+  assertUndetected(
+    job('      - uses: docker://alpine/git:latest', '      - run: pnpm test'),
+    'docker-action-before-test',
+  );
+
+  // (d) Only toolchain setup actions are tree-neutral; `pnpm/action-setup` may install.
+  for (const action of [
+    'actions/cache@v4',
+    'some/checkout-action@v1',
+    'actions/setup-node/sub@v4',
+  ]) {
+    assertUndetected(
+      job(`      - uses: ${action}`, '      - run: pnpm test'),
+      'unknown-action-before-test',
+    );
+  }
+  for (const action of [
+    'actions/setup-node@v4',
+    'actions/setup-python@v5',
+    'pnpm/action-setup@v4',
+  ]) {
+    assert.equal(
+      evaluate(job(`      - uses: ${action}`, '      - run: pnpm test')).status,
+      'detected',
+    );
+  }
+  const pnpmSetup = (value) =>
+    job(
+      '      - uses: pnpm/action-setup@v4',
+      '        with:',
+      `          run_install: ${value}`,
+      '      - run: pnpm test',
+    );
+  assert.equal(evaluate(pnpmSetup('false')).status, 'detected');
+  assert.equal(evaluate(pnpmSetup('true')).status, 'detected');
+  assertUndetected(
+    pnpmSetup('true'),
+    'git-command-before-test',
+    withScripts({ prepare: 'git checkout origin/develop' }),
+  );
+  assertUndetected(
+    pnpmSetup('|\n            - args: [--frozen-lockfile]'),
+    'package-script-before-test',
+  );
+
+  // The repository's own pre-test steps stay provable.
+  assert.equal(
+    evaluate(
+      job(
+        '      - uses: pnpm/action-setup@v4',
+        '      - uses: actions/setup-node@v4',
+        '        with:',
+        '          node-version: 24',
+        '          cache: pnpm',
+        '      - run: pnpm install --frozen-lockfile',
+        '      - run: pnpm agent:check',
+        '      - run: pnpm test',
+      ),
+      withScripts({ 'agent:check': 'oxfmt --check' }),
+    ).status,
+    'detected',
+  );
 });
 
 // ---------------------------------------------------------------------------------------------
