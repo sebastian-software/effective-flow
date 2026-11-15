@@ -852,8 +852,8 @@ checks, headSha }`) is pure and rejects a detected `detection` without its full 
   `refs/remotes/origin/<baseRef>` and `headSha` up to `headSha` whose message ends with the trailer
   paragraph line `Effective-Flow-Conflict-Validation: quick`, the durable marker of a
   `quick`-validated conflict commit; a missing ref or head, no merge base, a shallow repository and
-  an oversized range are `ok: false`, which the gate treats as found. The gate runs the scan only
-  where its own record names such a commit or the base-confirmed ceiling is `quick`, and pins
+  an oversized range are `ok: false`, which the gate treats as found. The gate runs the scan in
+  every Phase 4, whatever the conflict-validation ceiling resolves to, and pins
   `ci-detect` and `ci-integrity` to each marked commit. Workflow text is parsed in a declared YAML subset only (block
   mappings and sequences, one-line scalars and flow sequences of scalars, literal block scalars);
   anchors, aliases, tags, flow mappings, folded scalars and several documents make a file

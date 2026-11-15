@@ -764,17 +764,19 @@ reports what is missing and leaves the pushed commit in place, with no force pus
 The proof requirement travels with the commit, not with the run. A merge commit validated in `quick`
 mode carries the trailer line `Effective-Flow-Conflict-Validation: quick` in its message; a gate that
 cannot confirm the trailer before the push stops with "quick marker not verified" and pushes
-nothing. While `mergeGate.conflictValidation: quick` counts, as the first condition above states, every gate run looks
-for that trailer among the pull request's commits that are not on the base before it merges. So a
-later run, or a run that never saw the conflict, still demands the same CI evidence; when it cannot
-read the history, for example in a shallow clone, it demands the evidence anyway. Where no evidence
-can exist – on Forgejo, or once the base's CI test job is no longer detected – the gate does not
-merge: its report names the marked commits, and the way out is a merge by hand or a history rewrite
-that drops them.
+nothing. Whatever `mergeGate.conflictValidation` is set to, every gate run looks for that trailer
+among the pull request's commits that are not on the base before it merges. So a later run, a run
+that never saw the conflict, or a run after the setting was removed or switched back to `full`
+still demands the same CI evidence; when it cannot read the history, for example in a shallow
+clone, it demands the evidence anyway and its report names the remedy, such as
+`git fetch --unshallow`. Where no evidence can exist – on Forgejo, or once the base's CI test job
+is no longer detected – the gate does not merge: its report names the marked commits, and the way
+out is a merge by hand or a history rewrite that drops them.
 
-A repository that has not opted in is unaffected: under `full` the gate looks for no trailer and
-adds no merge condition. One limit follows from that: a `quick` commit pushed earlier merges on the
-ordinary checks alone once the base has switched back to `full`.
+A repository that has not opted in validates conflicts as before, but its gate looks for the
+trailer too. Where it cannot read the pull request's history – a shallow clone, more than 10,000
+commits since the merge base, or no merge base at all – the gate does not merge until that is
+fixed.
 
 While `mergeGate.conflictValidation` is `full` and the conditions above hold, the completion report
 carries one line proposing `quick`, with the workflow file, the job and the test command. The run

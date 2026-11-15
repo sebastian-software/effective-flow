@@ -88,16 +88,16 @@ without the evidence check. The conflict-resolution merge commit created under e
 therefore carries the trailer line `Effective-Flow-Conflict-Validation: quick` in its message,
 written as part of the commit before the push, which the gate confirms with the scan below before
 pushing; a scan that does not list it stops the round with "quick marker not verified" and pushes
-nothing. The AD2a condition applies whenever the run's own wisdom record names such a commit, and
-that run still fetches and scans for further marked commits. Without one, Phase 4 reads the
-base-confirmed ceiling (AD1) for the fresh read's `baseRef`, and only where it is `quick` fetches
-and scans the commits from the merge base of `origin/<base>` and `VERIFIED_HEAD_SHA` up to that
-head with `conflict-validation.mjs quick-marker-scan`; the condition then applies where the scan
-finds one, and a failed fetch or scan, a shallow repository included, counts as found and leaves
-the marked commits unknown, which is no evidence. Under a `full` ceiling nothing is fetched or
-scanned, so a repository that never opted in gets no new merge condition. **Accepted residual:** a `quick` commit pushed while the ceiling
-was `quick` merges on the ordinary checks alone in a later run once the base has switched the
-ceiling back to `full`, because that run no longer looks for the marker.
+nothing. Phase 4 of every gate run, whatever the ceiling (AD1) resolves to – `quick`, `full`,
+absent, base-mismatched or unreadable – fetches and scans the commits from the merge base of
+`origin/<base>` and `VERIFIED_HEAD_SHA` up to that head with
+`conflict-validation.mjs quick-marker-scan`. The AD2a condition applies where the run's own
+wisdom record names such a commit or the scan finds one, and a failed fetch or scan, a shallow
+repository included, counts as found and leaves the marked commits unknown, which is no evidence.
+The ceiling decides only whether a conflict may be validated `quick`, never whether a marked
+commit needs its evidence: after the push, the head can remove or change the setting, the base can
+stop matching it, and its read can fail. Once marked, a commit needs its pinned CI evidence for as
+long as it is in the pull request's range.
 
 **Proposal, never an automatic switch (AD3).** When the key is configured `full`, explicitly or by
 default, the provider is GitHub and detection is positive, `quick` is proposed with its evidence
@@ -220,13 +220,15 @@ Coordination between concurrent gates, such as agreeing on a merge order, is iss
 
 ## Consequences
 
-- A repository that does not opt in keeps today's local validation and merge decision, except
-  that environment failures now stop with a report instead of reruns. Its gate reads the ceiling
-  but fetches, scans and blocks nothing new.
+- A repository that does not opt in keeps today's local validation, except that environment
+  failures now stop with a report instead of reruns. Its gate still fetches and scans the pull
+  request's range in every Phase 4 (AD2b), and where that scan cannot run – a shallow clone, a
+  range above the scan's 10,000-commit bound, no merge base – the gate does not merge until that
+  is fixed, for example with `git fetch --unshallow`, even though the repository never opted in.
+  That is the price of failing closed.
 - A `quick` merge depends on CI having run on the merged head: a skipped, cancelled or failed
   test job blocks the merge. The pushed commit stays on the branch, and its trailer makes every
-  later gate run under a `quick` ceiling demand the same evidence before it merges. Once the base
-  switches back to `full`, a later run merges such a commit on the ordinary checks (AD2b).
+  later gate run demand the same evidence before it merges, whatever the ceiling then is.
 - Where the condition applies but no evidence can exist – on Forgejo, once a marked commit's CI is
   no longer detected, or once the head's CI definition or test scripts differ from a marked
   commit's – the gate does not merge; a merge by hand or a history rewrite is the way out.

@@ -1162,19 +1162,16 @@ merge. A protected branch that requires an approval is reported as needing a hum
 Verify every one of the following against one ordered **fresh** observation batch. Start it with a
 new `pr-status-read` and wait for it to complete; where the wisdom file records a quick-validated
 conflict commit, that read carries `includeCheckIdentity: true`. Never reuse or reinterpret any
-status result from Phase 2 as this read. Condition 11 applies where the wisdom file records such a
-commit; that run makes the fetches and the scan below without the ceiling call. Otherwise call
-`node <skill-root>/scripts/config-resolve.mjs conflict-validation <<< '{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<base>"}'`
-with `tool: "merge-gate"`, the `cwd` of this run's `resolve` call and that read's `baseRef` as
-`<base>`; only where its `data.conflictValidation.ceiling` is `quick`, run the ancestry check's two
-fetches (Phase 2 step 1) for this pull request and `<base>`, unless this round already made them
-for that base, then, rooted in `RUNTIME_STATE_ROOT`,
+status result from Phase 2 as this read. Whatever `mergeGate.conflictValidation` resolves to –
+`quick`, `full`, absent, base-mismatched or unreadable – run the ancestry check's two fetches
+(Phase 2 step 1) for this pull request and that read's `baseRef` as `<base>`, unless this round
+already made them for that base, then, rooted in `RUNTIME_STATE_ROOT`,
 `node <skill-root>/scripts/conflict-validation.mjs quick-marker-scan <<< '{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>","headSha":"<VERIFIED_HEAD_SHA>"}'`:
-condition 11 applies where `data.found` is `true`, and a failed fetch or scan counts as found. Any
-other ceiling, a failed ceiling call included, fetches and scans nothing, and condition 11 does not
-apply. Where it applies and the read carried no `includeCheckIdentity: true`, one new
-`pr-status-read` that carries it replaces that read in this batch. Only after that fresh status
-read has completed, start the review-thread, pull-request-comment, and submitted-review reads together. Wait
+condition 11 applies where the wisdom file records such a commit or `data.found` is `true`, and a
+failed fetch or scan counts as found, its report naming the failure and its remedy, such as
+`git fetch --unshallow` for `shallow-repository`. Where it applies and the read carried no
+`includeCheckIdentity: true`, one new `pr-status-read` that carries it replaces that read in this
+batch. Only after that fresh status read has completed, start the review-thread, pull-request-comment, and submitted-review reads together. Wait
 for all three to complete. Only then apply "Unconfigured automatic-reviewer advisory" to those
 review surfaces, merge its candidates into the wisdom record, and evaluate every condition from all
 four results; never evaluate a partial batch. Any unmet condition ends the run with a report naming

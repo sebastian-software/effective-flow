@@ -90,8 +90,8 @@ const SCENARIO_REGISTRY = resolve(SUITE_ROOT, 'scenario-registry.mjs');
 // The presence core is seeded for the same reason: every delegated run registers, refreshes, lists
 // and releases its run-presence marker through `effective-flow-state.mjs presence`, whose core loads
 // it on first use. So is the conflict-validation pair: a conflict round runs `ci-detect` and
-// `ci-integrity`, and Phase 4 condition 11 runs `ci-integrity` and `ci-evidence-match` wherever the
-// wisdom file records a quick-validated conflict commit.
+// `ci-integrity`, every Phase 4 runs `quick-marker-scan`, whatever the ceiling, and condition 11
+// runs `ci-integrity` and `ci-evidence-match` wherever the record or that scan names a marked commit.
 const LOAD_SET_SEEDS = Object.freeze([
   'SKILL.md',
   'tools/merge-gate.md',

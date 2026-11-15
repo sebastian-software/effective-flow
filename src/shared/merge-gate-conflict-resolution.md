@@ -240,9 +240,9 @@ last line, written into the commit before the push and never amended in afterwar
 push,
 `node <skill-root>/scripts/conflict-validation.mjs quick-marker-scan <<< '{"cwd":"<checkout>","baseRef":"<base>","headSha":"<merge commit>"}'`
 must list that commit in `data.commits`; otherwise stop as on a rejected push, pushing nothing.
-The stop reason is "quick marker not verified". Phase 4 of every gate run whose base-confirmed
-ceiling is `quick` – this one, a later one, or one that never saw the conflict – runs the same scan
-on `VERIFIED_HEAD_SHA` (`data.found`; a failed call, such as `shallow-repository`, counts as found)
+The stop reason is "quick marker not verified". Phase 4 of every gate run, whatever the ceiling –
+this one, a later one, or one that never saw the conflict – runs the same scan on
+`VERIFIED_HEAD_SHA` (`data.found`; a failed call, such as `shallow-repository`, counts as found)
 and applies condition 11 to every commit it lists as to a recorded one.
 
 **Record** in the wisdom file the ceiling with its source, the `ci-detect` `data` object verbatim as

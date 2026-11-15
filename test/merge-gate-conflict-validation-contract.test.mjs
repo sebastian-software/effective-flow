@@ -268,15 +268,15 @@ test('a quick conflict commit carries the scanned trailer before the push, self-
   );
 });
 
-// Invariant: the quick-marker scan runs in every gate run whose base-confirmed ceiling is `quick`,
-// also one that never saw the conflict, so the CI-evidence condition outlives the run that recorded
-// it; a failed fetch or scan fails closed as found. A run with its own record still scans, so
-// marked commits it did not write are covered too. Any other ceiling, a failed ceiling call
-// included, fetches and scans nothing, so a non-opted-in repository pays no extra fetch.
-test("Phase 4 scans for the quick marker only under a quick ceiling or the run's own record", () => {
+// Invariant: Phase 4 of every gate run scans for quick markers regardless of the ceiling, also one
+// that never saw the conflict, so the CI-evidence condition outlives the run that recorded it and
+// the setting that allowed it: a head that removes, changes or mismatches the setting, or a failed
+// ceiling read, would otherwise let a marked commit merge on ordinary checks. A failed fetch or
+// scan counts as found and names its remedy, and Phase 4 makes no ceiling call at all.
+test('Phase 4 scans for quick markers regardless of the ceiling, and a failed scan counts as found', () => {
   assert.match(
     modeSection,
-    /Phase 4 of every gate run whose base-confirmed ceiling is `quick` – this one, a later one, or one that never saw the conflict – runs the same scan on `VERIFIED_HEAD_SHA` \(`data\.found`; a failed call, such as `shallow-repository`, counts as found\)/,
+    /Phase 4 of every gate run, whatever the ceiling – this one, a later one, or one that never saw the conflict – runs the same scan on `VERIFIED_HEAD_SHA` \(`data\.found`; a failed call, such as `shallow-repository`, counts as found\)/,
   );
   const phase4 = prose(
     slice(
@@ -292,15 +292,12 @@ test("Phase 4 scans for the quick marker only under a quick ceiling or the run's
   );
   assert.match(
     phase4,
-    /Condition 11 applies where the wisdom file records such a commit; that run makes the fetches and the scan below without the ceiling call\. Otherwise call `node <skill-root>\/scripts\/config-resolve\.mjs conflict-validation <<< '\{"cwd":"<checkout>","tool":"merge-gate","baseRef":"<base>"\}'`/,
+    /Whatever `mergeGate\.conflictValidation` resolves to – `quick`, `full`, absent, base-mismatched or unreadable – run the ancestry check's two fetches \(Phase 2 step 1\) for this pull request and that read's `baseRef` as `<base>`, unless this round already made them for that base, then, rooted in `RUNTIME_STATE_ROOT`, `node <skill-root>\/scripts\/conflict-validation\.mjs quick-marker-scan <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>","headSha":"<VERIFIED_HEAD_SHA>"\}'`: condition 11 applies where the wisdom file records such a commit or `data\.found` is `true`, and a failed fetch or scan counts as found, its report naming the failure and its remedy, such as `git fetch --unshallow` for `shallow-repository`\./,
   );
-  assert.match(
+  assert.doesNotMatch(
     phase4,
-    /only where its `data\.conflictValidation\.ceiling` is `quick`, run the ancestry check's two fetches \(Phase 2 step 1\) for this pull request and `<base>`, unless this round already made them for that base, then, rooted in `RUNTIME_STATE_ROOT`, `node <skill-root>\/scripts\/conflict-validation\.mjs quick-marker-scan <<< '\{"cwd":"<RUNTIME_STATE_ROOT>","baseRef":"<base>","headSha":"<VERIFIED_HEAD_SHA>"\}'`: condition 11 applies where `data\.found` is `true`, and a failed fetch or scan counts as found\./,
-  );
-  assert.match(
-    phase4,
-    /Any other ceiling, a failed ceiling call included, fetches and scans nothing, and condition 11 does not apply\./,
+    /config-resolve\.mjs conflict-validation|ceiling/,
+    'Phase 4 must not gate the marker scan or condition 11 on the ceiling',
   );
   assert.match(
     phase4,
