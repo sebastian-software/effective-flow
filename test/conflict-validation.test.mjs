@@ -887,6 +887,74 @@ test('detect: a pre-test step whose effect on the checked-out tree cannot be pro
   );
 });
 
+// Invariant: a pre-test step runs in its job's or workflow's default `working-directory` unless it
+// sets its own, so outside the root its package scripts resolve against an uncompared manifest
+// even when the test step overrides its directory back to the root; and an install counts as
+// running no lifecycle script only for an unambiguous disabling option, its value preserved, so
+// `--ignore-scripts=false` still runs a `postinstall` that may switch the tree.
+test('detect: inherited pre-test directories and ignore-scripts values are honoured', () => {
+  const scripts = { test: 'node --test', setup: 'oxfmt --check' };
+  const manifest = packageManifest({ 'package.json': JSON.stringify({ scripts }) });
+  const steps = [
+    '      - uses: actions/checkout@v4',
+    '      - run: pnpm run setup',
+    '      - run: pnpm test',
+    '        working-directory: .',
+  ];
+  const defaults = (indent) =>
+    [`${indent}defaults:`, `${indent}  run:`, `${indent}    working-directory: sub`].join('\n');
+  const jobWith = (extra) =>
+    ['  test:', '    runs-on: ubuntu-latest', ...extra, '    steps:', ...steps].join('\n');
+  assert.equal(evaluate(workflow({ job: jobWith([]) }), { manifest }).status, 'detected');
+  assertUndetected(workflow({ job: jobWith([defaults('    ')]) }), 'package-script-before-test', {
+    manifest,
+  });
+  assertUndetected(
+    workflow({ top: `${defaults('')}\n`, job: jobWith([]) }),
+    'package-script-before-test',
+    { manifest },
+  );
+  const rootJob = jobWith([defaults('    ').replace('sub', '.')]);
+  assert.equal(
+    evaluate(workflow({ top: `${defaults('')}\n`, job: rootJob }), { manifest }).status,
+    'detected',
+  );
+
+  const install = (line) =>
+    workflow({
+      job: [
+        '  test:',
+        '    runs-on: ubuntu-latest',
+        '    steps:',
+        '      - uses: actions/checkout@v4',
+        `      - run: ${line}`,
+        '      - run: pnpm test',
+      ].join('\n'),
+    });
+  const gitPostinstall = {
+    manifest: packageManifest({
+      'package.json': JSON.stringify({
+        scripts: { test: 'node --test', postinstall: 'git checkout origin/develop' },
+      }),
+    }),
+  };
+  for (const line of [
+    'npm ci --ignore-scripts=false',
+    'npm ci --ignore-scripts false',
+    'npm ci --ignore-scripts=0',
+    'npm ci --ignore-scripts --no-ignore-scripts',
+  ]) {
+    assertUndetected(install(line), 'git-command-before-test', gitPostinstall);
+  }
+  for (const line of [
+    'npm ci --ignore-scripts',
+    'npm ci --ignore-scripts=true',
+    'pnpm install --ignore-scripts --frozen-lockfile',
+  ]) {
+    assert.equal(evaluate(install(line), gitPostinstall).status, 'detected', line);
+  }
+});
+
 // ---------------------------------------------------------------------------------------------
 // ci-detect through Git
 

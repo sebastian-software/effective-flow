@@ -867,6 +867,7 @@ const PACKAGE_NEUTRAL_COMMANDS = new Set([
 // Options that move a package-manager command to another package or to several.
 const PACKAGE_SCOPE_OPTION =
   /^(?:-C|--dir|--prefix|--cwd|-F|--filter|-r|--recursive|-w|--workspace|--workspaces|-ws|-g|--global)$/;
+const IGNORE_SCRIPTS_OPTION = /^--(?:no-)?ignore-scripts(?:=|$)/i;
 const INSTALL_LIFECYCLE_SCRIPTS = Object.freeze([
   'pnpm:devPreinstall',
   'preinstall',
@@ -922,6 +923,21 @@ function packageScriptReasons(name, manifest, budget) {
   return reasons;
 }
 
+// Whether `words` provably disable install lifecycle scripts: at least one `ignore-scripts` option,
+// and each a bare `--ignore-scripts` no value follows or `--ignore-scripts=true`.
+function scriptsDisabled(words) {
+  const options = [...words.keys()].filter((index) => IGNORE_SCRIPTS_OPTION.test(words[index]));
+  return (
+    options.length > 0 &&
+    options.every(
+      (index) =>
+        words[index] === '--ignore-scripts=true' ||
+        (words[index] === '--ignore-scripts' &&
+          (words[index + 1] === undefined || words[index + 1].startsWith('-'))),
+    )
+  );
+}
+
 // The reasons one package-manager invocation, `words` following the manager, may change the tree.
 function packageInvocationReasons(words, manifest, budget) {
   const [command, ...rest] = words;
@@ -930,7 +946,7 @@ function packageInvocationReasons(words, manifest, budget) {
   }
   const name = command?.toLowerCase();
   if (name === undefined || PACKAGE_INSTALL_COMMANDS.has(name)) {
-    if (words.includes('--ignore-scripts')) return [];
+    if (scriptsDisabled(words)) return [];
     if (manifest.workspaces || manifest.scripts === null) return ['package-script-before-test'];
     return INSTALL_LIFECYCLE_SCRIPTS.filter((script) =>
       Object.hasOwn(manifest.scripts, script),
@@ -958,7 +974,8 @@ function runReasons(run, manifest, budget, rooted) {
   const parts = text.split(/([\n|&;()<>]+)/);
   const segments = [];
   for (let index = 0; index < parts.length; index += 2) {
-    segments.push(parts[index].split(/[^\w.:+@%-]+/).filter((word) => word !== ''));
+    // An `ignore-scripts` option keeps its `=` value, which decides whether it disables scripts.
+    segments.push(parts[index].match(/--(?:no-)?ignore-scripts=[\w.:+@%-]*|[\w.:+@%-]+/gi) ?? []);
   }
   const relocated = !rooted || segments.flat().some((word) => word === 'cd' || word === 'pushd');
   for (let index = 0; index < parts.length; index += 2) {
@@ -1004,8 +1021,9 @@ function actionReasons(step, action, manifest, budget) {
     : ['package-script-before-test'];
 }
 
-// Whether the steps before the test step leave the workspace at the pull request's checked-out tree.
-function checkoutReasons(steps, testIndex, manifest) {
+// Whether the steps before the test step leave the workspace at the pull request's checked-out tree;
+// `workingDirectory` is the job's or workflow's default a step without its own runs in.
+function checkoutReasons(steps, testIndex, manifest, workingDirectory) {
   const reasons = [];
   const budget = { remaining: MAX_SCRIPT_RESOLUTIONS };
   let checkouts = 0;
@@ -1015,8 +1033,10 @@ function checkoutReasons(steps, testIndex, manifest) {
     if (typeof run === 'string') {
       const stepShell = shellReason(step.get('shell'));
       if (stepShell) reasons.push(stepShell);
-      const rooted =
-        !step.has('working-directory') || normalizeDirectory(step.get('working-directory')) === '';
+      const directory = step.has('working-directory')
+        ? step.get('working-directory')
+        : workingDirectory;
+      const rooted = directory === undefined || normalizeDirectory(directory) === '';
       reasons.push(...runReasons(run, manifest, budget, rooted));
     }
     if (!step.has('uses')) continue;
@@ -1051,7 +1071,7 @@ function checkoutReasons(steps, testIndex, manifest) {
 }
 
 function evaluateStep(step, index, command, context) {
-  const reasons = checkoutReasons(context.steps, index, context.manifest);
+  const reasons = checkoutReasons(context.steps, index, context.manifest, context.workingDirectory);
   if (step.has('if')) reasons.push('step-condition');
   if (step.has('continue-on-error')) reasons.push('continue-on-error');
   const stepShell = shellReason(step.get('shell'));
