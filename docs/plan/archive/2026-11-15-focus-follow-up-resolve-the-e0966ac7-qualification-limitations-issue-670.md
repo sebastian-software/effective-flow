@@ -1,6 +1,6 @@
 # Focus follow-up: resolve the e0966ac7 qualification limitations (issue 670)
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 
@@ -412,6 +412,25 @@ has drifted since #664.
   the notice and offer items are judged by meaning.
 - **Note, Maintainability: imprecise test location.** The test row names the assertions that
   change and the ones that stay unchanged.
+
+## Test results
+
+- Candidate `87851907` (fix commit on this branch): step 0 on a clean, container-local checkout
+  passed `pnpm agent:check`, the focus contract tests (34/34), the focus eval tests (88/88),
+  `node build.mjs` (focus 416/416, stamp `1.73.0 (8785190)`), `pnpm test:distribution` and the five
+  eval evidence reports. CI run `43725974088` failed only in the digest guard (5,556 tests,
+  5,504 passed, 1 failed), red by design until the fixture followed the record.
+- Recording on 2026-11-15 in two install windows, window 1 from 18:46 to 20:51 UTC and window 2 for
+  F10 from about 21:27 to 22:16 UTC, with the owner's global Codex `AGENTS.md` present and unchanged
+  (SHA-256 `70fc0d66…` at the start and end of both windows): all 16 items passed, no observed defect,
+  no host fault. The 5-minute loop reached `ticks=24` without compaction. Every observer analysed
+  inline; no snapshot or tick created a thread. The offer scan passed 13 synthetic fixtures; the
+  layout and German fixtures were added after window 2 and replayed against the unchanged rule.
+- Record, user guide and ADR notes: `pnpm agent:check` and `node --test test/focus-contracts.test.mjs`
+  (34/34) passed; the publication scan of the diff against all pseudonym registers found nothing.
+- `origin/develop` (`aabe18ff`, #669) was merged after the record. It changes no focus source, no
+  included fragment and no `focus` budget row; the built focus files keep the recorded digests, and
+  `test/fixtures/focus-digests.sha256` now holds them.
 
 ## Open points
 
