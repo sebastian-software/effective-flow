@@ -737,7 +737,11 @@ The configured value is a ceiling, and the run decides again in every conflict r
 - the same `mergeGate.conflictValidation: quick` row is on the base branch (read after the run's
   fetch), so a pull request cannot lower its own validation; in hidden mode the local file counts;
 - the base branch has a CI job that runs the repository's bare test command on every pull request
-  that targets it, with no condition, filter or indirection the run cannot prove;
+  that targets it, with no condition, filter or indirection the run cannot prove, and before it only
+  the checkout and a short allowlist of setup steps proven to leave the checked-out tree unchanged:
+  `actions/setup-node`, `pnpm/action-setup` without an install, `actions/cache` on hidden home
+  paths, and an install with lifecycle scripts disabled such as `npm ci --ignore-scripts` (a plain
+  `npm ci` or any other command is not provable, so the run uses `full`);
 - the pull request changes no workflow file, and no workflow it references;
 - the forge is GitHub, and the job is known to block the merge: either
   `mergeGate.requireAllChecks: true`, or the job is reported as a required check;

@@ -836,10 +836,16 @@ point is an I/O boundary over testable core or protocol modules:
   (`package.json` `test` through npm, pnpm, yarn or `bun run`; `cargo test`, `go test`, `pytest`,
   `make test`) on an unfiltered `pull_request` trigger, without a condition, `continue-on-error`,
   a non-`bash` shell, another working directory, a dynamic matrix or a templated name, and only
-  after one default `actions/checkout` with no earlier step whose effect on the checked-out tree
-  is unprovable (`git-command-before-test`, `script-before-test`, `package-script-before-test`,
-  `local-action-before-test`, `docker-action-before-test`, `unknown-action-before-test`); a
-  pre-test package script resolves against the definition commit's root `package.json` `scripts`.
+  when every earlier step is on an allowlist of steps proven to leave the checked-out tree
+  unchanged; anything unknown or not provably tree-neutral is `undetected`, so the conflict falls
+  back to `full`. The allowlist is one default `actions/checkout`; `actions/setup-node` (`cache`
+  absent, `npm` or `pnpm`); `pnpm/action-setup` without `run_install` or with `run_install: false`;
+  `actions/cache` and `actions/cache/restore` whose every `path` lies under `~/.<name>`; and one
+  metacharacter-free `run:` install of the test step's package manager,
+  `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile`, `npm ci --ignore-scripts`
+  or `bun install --frozen-lockfile --ignore-scripts`. Each carries only its listed step keys and
+  inputs, without expressions or an inherited `env` (`step-before-test`, `action-before-test`,
+  `env-before-test`), so this repository's own `Format, test and build` job stays undetected.
   `ci-integrity` (`{ cwd, baseRef, commit?, tree }`, `tree` a full commit or tree id or `index`)
   compares, between that base or pinned commit and `tree`, the `mode type oid` entries of
   `.github/workflows/`, `.forgejo/workflows/`, `.gitea/workflows/` and every local reusable

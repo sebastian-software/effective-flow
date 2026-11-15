@@ -568,6 +568,13 @@ or settled by user decisions. The table counts the deep interactive review.
   once the base-confirmed ceiling is switched back to `full`.
 - **`missing` evidence waits:** `missing` runs the check wait once inside the round and then stops
   with that reason. `pending` starts a new bounded Phase 2 round. Condition 11 performs no return.
+- **Pre-test allowlist:** a job stays detected only when every step before its test step is on an
+  explicit allowlist of steps proven to leave the checked-out tree unchanged (ADR, AD4). This
+  repository's own `Format, test and build` job is therefore undetected: its unnamed
+  `pnpm install --frozen-lockfile` keeps lifecycle scripts enabled and its `Format check` step runs
+  the package script `pnpm agent:check`. The criterion "this repository's `ci.yml` shape →
+  `detected`" and the manual throwaway-PR check under `quick` here no longer apply; its conflict
+  commits validate under `full`.
 - **YAML subset:** one-line flow sequences of plain scalars are accepted, because this repository's
   own `ci.yml` uses `branches: [develop]`. `ci-detect` reads only `.github/workflows/`, because
   evidence exists only for GitHub check runs.

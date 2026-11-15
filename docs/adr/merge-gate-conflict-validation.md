@@ -124,9 +124,8 @@ The supported YAML subset is block mappings and sequences, plain and quoted scal
 sequences of plain or quoted scalars, and the literal block scalars `|`, `|-` and `|+`; anchors,
 aliases, flow mappings, multi-line or nested flow collections, folded block scalars, block
 indentation indicators, tags and multiple documents make a file `unparsable`, which is no evidence. The plan rejected every flow
-collection; the one-line flow sequence is a deliberate deviation, because this repository's own
-`ci.yml` filters with `branches: [develop]`, so rejecting it would leave the repository that
-motivated the decision on `full`. A job is
+collection; the one-line flow sequence is a deliberate deviation, because branch filters are
+commonly written that way, as in this repository's own `branches: [develop]`. A job is
 detected only when the workflow triggers on `pull_request` with an exact literal branch filter
 that includes the base, no `paths` filter and `synchronize` among any `types`; the step's `run:` is
 exactly the bare manifest test invocation, matched by normalized script identity (`pnpm test`
@@ -139,25 +138,44 @@ trimmed and case-folded, where a job whose name is not literal could report unde
 whose instance set is not static under its name, `<name> (…)` or `<name> / …`, because evidence
 matches a check run by workflow path and name, never by job id, and another job's green run would
 otherwise stand in for a test that has not registered yet; the test runs in the job itself, not
-only inside a reusable workflow or composite action; and it runs on the pull request's own tree:
-exactly one `actions/checkout` step precedes it, without `if:` or `continue-on-error`, without a
-`ref`, a `repository` or a `path` other than the workspace root, and with no input beyond the
-credential, history, LFS, submodule and progress inputs that leave the checked-out tree unchanged,
-and no step before it has an effect on that tree the definition commit cannot prove: no `run:`
-in a shell other than `bash`, none that could run `git` or `gh` or whose command words are not
-static, names a path or script file,
-hands a file to a code runner, sources one or starts a task runner (`make`, `npx`, …); no
-package-manager invocation other than a root `package.json` script, or an install, whose scripts,
-pre and post scripts and install lifecycle scripts resolve, recursively and bounded, to such
-provable text, with no option before the command, another package directory, `cd` or workspace;
-no local (`./…`) or `docker://` action; and no remote action other than `actions/setup-*` and
-`pnpm/action-setup`, the latter's `run_install` read as an install. `ci-integrity` proves the
-compared text unchanged, not tree-neutral, so a repository script or composite action that runs
-`git checkout origin/develop` would otherwise keep the pull request's check-run identity for a
-tree its tests never ran on; `actions/cache` is not listed because it restores arbitrary paths,
-workspace files included. A check run's head SHA names the pull request whose
-event started the workflow, not the tree its job tested, so a job that checks out another ref or
-repository would otherwise pass as evidence for a conflict commit it never tested.
+only inside a reusable workflow or composite action; and it runs on the pull request's own tree.
+
+Pre-test steps follow one principle: **a step that is unknown or not provably tree-neutral leaves
+the job undetected, so the conflict falls back to `full`.** `ci-integrity` proves the compared text
+unchanged, not what a step runs, so repository code, a file operation, a package script or an
+action (`cp package.ci.json package.json`, `cargo run --bin setup`, `git checkout origin/develop`)
+could replace the tested tree while every compared file stays unchanged and keep the pull request's
+check-run identity for a tree its tests never ran on. Every step before the test step must
+therefore be on this allowlist:
+
+- exactly one `actions/checkout`, without `if:` or `continue-on-error`, without a `ref`, a
+  `repository` or a `path` other than the workspace root, and with no input beyond the credential,
+  history, LFS, submodule and progress inputs that leave the checked-out tree unchanged;
+- `actions/setup-node`, with a `cache` that is absent, `npm` or `pnpm`, since its yarn cache runs
+  `yarn` in the workspace;
+- `pnpm/action-setup` without `run_install` or with `run_install: false`, and without `dest`;
+- `actions/cache` and `actions/cache/restore` when every `path` entry lies under a hidden directory
+  of the home directory (`~/.<name>…`), without `..`, glob, negation or expression; plain `~/` is
+  not enough, because a GitHub-hosted workspace lies under `~/work`;
+- one `run:` line, free of shell metacharacters, that installs with the test step's package manager
+  from a frozen lockfile with lifecycle scripts disabled, as an exact word set:
+  `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile` (or `pnpm i`, optionally
+  `--prefer-offline`), because pnpm runs `.pnpmfile.cjs` hooks despite `--ignore-scripts`;
+  `npm ci --ignore-scripts` (optionally `--no-audit`, `--no-fund`, `--prefer-offline`); and
+  `bun install --frozen-lockfile --ignore-scripts`. yarn has no allowed install, because it runs a
+  repository-selected `yarnPath` in place of itself, and neither have `cargo`, `go`, `pytest` and
+  `make` test steps.
+
+An allowlisted step carries only `name`, `id`, `timeout-minutes` and its `run:`, or its `uses:` and
+`with:`; the install may add a root `working-directory` and a `bash` `shell`, and its inherited
+default directory must be the root as well. Any other step key, `env`, `if` and
+`continue-on-error` included, any input outside an action's list, any `${{` expression in a `run:`
+or `with:` value, and any `env` the job or workflow passes down are not provable
+(`step-before-test`, `action-before-test`, `env-before-test`); so is every other `run:` step and
+every other action, local, composite and Docker actions included. A check run's head SHA names
+the pull request whose event started the workflow, not the tree its job tested, so a job that
+checks out another ref or repository would otherwise pass as evidence for a conflict commit it
+never tested.
 `pr-status-read` adds typename, app slug, event, workflow file path and head SHA per entry only on
 `includeCheckIdentity: true`, so existing envelopes stay unchanged (AD4a).
 
@@ -173,9 +191,10 @@ allowance needs a failure it observed itself.
 of the generic `quick` mapping: only the matched CI test command is excluded; every other
 established check the repository's instructions or CI define for the change is required; a
 mandated combined gate containing the excluded command is replaced by its remaining established
-subcommands, and where those cannot run separately the effective mode is `full`. For this
-repository that means `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` locally,
-and `pnpm test` in CI. Deferral to CI covers only the excluded command; any other check that
+subcommands, and where those cannot run separately the effective mode is `full`. This
+repository's own `Format, test and build` job is not detected, because its install keeps lifecycle
+scripts enabled and its `Format check` runs a package script before the test (AD4), so its
+conflict commits stay on `full`. Deferral to CI covers only the excluded command; any other check that
 cannot run stops the round.
 
 **Environment failures stop cleanly (AD7).** The validator keeps the result states and
@@ -249,7 +268,8 @@ Coordination between concurrent gates, such as agreeing on a merge order, is iss
   Make) resolves conflicts under `full`.
 - Forgejo keeps `full` until check identity is verified there, and gets no proposal.
 - Detection rejects every workflow shape it cannot prove, so a repository with a conditional, piped
-  or indirect test step stays on `full`.
+  or indirect test step, or with any pre-test step off the allowlist, stays on `full`; this
+  repository's own CI job is one of them.
 - The marker adds one persisted file per active run; a crashed run's marker stays until its wisdom
   file is gone.
 
