@@ -1311,7 +1311,8 @@ test('ci-integrity: a missing base ref or tree object is missing, and a bad tree
 // Invariant: the root manifests that define the test commands are part of the compared CI
 // definition, so a change to what the test command runs is a change even where every workflow
 // stays identical. A `package.json` counts as unchanged only while both sides parse with the same
-// `scripts`, so a dependency change keeps it.
+// `scripts` and `workspaces` members, so a dependency change keeps it; `pnpm-workspace.yaml` is
+// compared as well, presence included, because `ci-detect` reads a workspace from both.
 test('ci-integrity: a changed test script or other root manifest fails integrity', async (t) => {
   const manifest = (extra) => JSON.stringify({ scripts: { test: 'node --test' }, ...extra });
   for (const [label, files, status, paths] of [
@@ -1340,6 +1341,26 @@ test('ci-integrity: a changed test script or other root manifest fails integrity
       ['package.json'],
     ],
     ['an added Makefile', { Makefile: 'test:\n\ttrue\n' }, 'changed', ['Makefile']],
+    // `ci-detect` reads a workspace from either source, so an added one would make the marked
+    // commit's pre-test install undetected and its quick evidence unsatisfiable.
+    [
+      'an added workspaces member with unchanged scripts',
+      { 'package.json': manifest({ workspaces: ['packages/*'] }) },
+      'changed',
+      ['package.json'],
+    ],
+    [
+      'an added null workspaces member',
+      { 'package.json': manifest({ workspaces: null }) },
+      'changed',
+      ['package.json'],
+    ],
+    [
+      'an added pnpm-workspace.yaml',
+      { 'pnpm-workspace.yaml': "packages:\n  - 'packages/*'\n" },
+      'changed',
+      ['pnpm-workspace.yaml'],
+    ],
   ]) {
     const root = integrityRepository(t);
     const head = headCommit(root, files);

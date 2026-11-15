@@ -39,9 +39,10 @@ round, whatever is configured, because the proposal needs its result. The effect
 1. `ci-detect` reports a detected test job on the base ref;
 2. `ci-integrity` finds the workflow directories (`.github/workflows/`, `.forgejo/workflows/`,
    `.gitea/workflows/`), every local reusable workflow or composite action they reference and the
-   root manifests that define the test commands byte-identical between `origin/<baseRef>` and the
-   staged merge tree, except that a `package.json` counts as unchanged where both sides parse with
-   the same `scripts` member, so a dependency change keeps `quick`. A pull request that changes CI
+   root manifests that define the test commands, `pnpm-workspace.yaml` included, byte-identical
+   between `origin/<baseRef>` and the staged merge tree, except that a `package.json` counts as
+   unchanged where both sides parse with the same `scripts` and `workspaces` members, so a
+   dependency change keeps `quick`. A pull request that changes CI
    or its test scripts gets `full`, because CI runs the pull request's own versions. Other scripts
    stay outside this check: a local `full` run executes head-supplied commands as well;
 3. the provider supplies the check identity (GitHub; Forgejo only once verified) and the detected

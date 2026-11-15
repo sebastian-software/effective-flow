@@ -551,6 +551,9 @@ export const MANIFEST_FILES = Object.freeze([
   ...MAKEFILES,
 ]);
 
+// Its presence alone makes the root a workspace for `packageManifest`, whatever its content.
+const WORKSPACE_MANIFEST = 'pnpm-workspace.yaml';
+
 // ---------------------------------------------------------------------------------------------
 // Workflow evaluation
 
@@ -1573,7 +1576,7 @@ export async function detectCi(input, deps = {}) {
   result.baseCommit = commit;
   const reader = treeReader(context, input.cwd, commit);
   const files = await readRootManifests(reader);
-  if (await reader.entry('pnpm-workspace.yaml')) files['pnpm-workspace.yaml'] = '';
+  if (await reader.entry(WORKSPACE_MANIFEST)) files[WORKSPACE_MANIFEST] = '';
   const commands = manifestTestCommands(files);
   const manifest = packageManifest(files);
   result.manifest.commands = commands.map(({ normalized, forms, source }) => ({
@@ -1736,12 +1739,13 @@ function unsafeEntry(kind, compared, entries) {
   return null;
 }
 
-// Whether a `package.json` that differs between the two sides still declares the same `scripts`:
-// only that member decides what a package manager's test invocation runs, pre and post scripts
-// included, so a dependency change keeps the test command. Each side must be exactly one regular
-// file within MAX_SOURCE_BYTES that parses as a JSON object; anything else is a difference.
-async function sameScripts(reader, compared, left, right) {
-  const scripts = async (entries) => {
+// Whether a `package.json` that differs between the two sides still declares the same `scripts`
+// and `workspaces` members: only those decide what `ci-detect` derives from it, pre and post
+// scripts and a workspace install included, so a dependency change keeps the test command. Each
+// side must be exactly one regular file within MAX_SOURCE_BYTES that parses as a JSON object;
+// anything else is a difference.
+async function samePackageMembers(reader, compared, left, right) {
+  const members = async (entries) => {
     if (entries.size !== 1 || !entries.has(compared)) return null;
     const [mode, type, oid] = entries.get(compared).split(' ');
     if (treeEntryKind({ mode, type }) !== 'file') return null;
@@ -1754,10 +1758,11 @@ async function sameScripts(reader, compared, left, right) {
       return null;
     }
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null;
-    return JSON.stringify(parsed.scripts ?? null);
+    // An absent `workspaces` is dropped and a present one kept, null included.
+    return JSON.stringify({ scripts: parsed.scripts ?? null, workspaces: parsed.workspaces });
   };
-  const base = await scripts(left);
-  return base !== null && base === (await scripts(right));
+  const base = await members(left);
+  return base !== null && base === (await members(right));
 }
 
 export async function checkIntegrity(input, deps = {}) {
@@ -1806,10 +1811,10 @@ export async function checkIntegrity(input, deps = {}) {
   }
 
   // The root manifests decide what the detected test command runs, so a base update that keeps the
-  // workflow but replaces the test script is a change as well.
+  // workflow but replaces the test script or adds a workspace is a change as well.
   const queue = [
     ...INTEGRITY_DIRECTORIES.map((directory) => ({ path: directory, kind: 'directory' })),
-    ...MANIFEST_FILES.map((name) => ({ path: name, kind: 'manifest' })),
+    ...[...MANIFEST_FILES, WORKSPACE_MANIFEST].map((name) => ({ path: name, kind: 'manifest' })),
   ];
   const seen = new Set();
   while (queue.length > 0) {
@@ -1841,7 +1846,7 @@ export async function checkIntegrity(input, deps = {}) {
         !(
           item.kind === 'manifest' &&
           compared === 'package.json' &&
-          (await sameScripts(baseReader, compared, baseEntries, targetEntries))
+          (await samePackageMembers(baseReader, compared, baseEntries, targetEntries))
         )
       ) {
         result.differences.push(...differencesOf(baseEntries, targetEntries));

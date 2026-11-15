@@ -844,8 +844,9 @@ point is an I/O boundary over testable core or protocol modules:
   compares, between that base or pinned commit and `tree`, the `mode type oid` entries of
   `.github/workflows/`, `.forgejo/workflows/`, `.gitea/workflows/` and every local reusable
   workflow or composite action (`action.yml` and `action.yaml`) they reference, recursively, and
-  of the root manifests that define the test commands, where a differing `package.json` still
-  counts as unchanged when both sides parse with the same `scripts` member; the staged tree is read from `git ls-files -s`, never
+  of the root manifests that define the test commands and `pnpm-workspace.yaml`, where a differing
+  `package.json` still counts as unchanged when both sides parse with the same `scripts` and
+  `workspaces` members; the staged tree is read from `git ls-files -s`, never
   through `git write-tree`. Its `status` is `ok`, `changed`, `unprovable` (an unparsable source, an
   unsafe reference, an unmerged index entry) or `missing`. `ci-evidence-match` (`{ detection,
 checks, headSha }`) is pure and rejects a detected `detection` without its full `baseCommit`: evidence holds only when every detected job's complete,
