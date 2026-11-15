@@ -1,7 +1,8 @@
 // Shared test support: copies a repository checkout so a test can mutate sources and build the
 // copy in isolation. The copy skips top-level entries that are either repository-private
 // (`.git`, runtime state, dependencies) or rewritten by an in-place `node build.mjs`, which a
-// concurrently running test file may start at any moment. This module declares no test.
+// concurrently running test file may start at any moment, plus the recorded eval evidence under
+// `evals/<suite>/results/`. This module declares no test.
 import { cpSync } from 'node:fs';
 import { relative } from 'node:path';
 
@@ -17,12 +18,20 @@ export const COPY_EXCLUDED_ENTRIES = Object.freeze([
   'node_modules',
 ]);
 
+// Directory name skipped one level below `evals/`: recorded evidence (`evals/<suite>/results/`) is
+// the largest part of `evals/` and no build reads it. `evals/` itself stays in the copy, because the
+// build's repository-only reference guard walks it (`REPOSITORY_ONLY_ROOTS` in build.mjs).
+export const COPY_EXCLUDED_EVAL_SUBTREE = 'results';
+
+export function isCopyExcluded(relativePath) {
+  const [first, suite, child] = relativePath.split('/');
+  if (COPY_EXCLUDED_ENTRIES.includes(first)) return true;
+  return first === 'evals' && suite !== undefined && child === COPY_EXCLUDED_EVAL_SUBTREE;
+}
+
 export function copyRepository(sourceRoot, destination) {
   cpSync(sourceRoot, destination, {
     recursive: true,
-    filter(source) {
-      const first = relative(sourceRoot, source).split('/')[0];
-      return !COPY_EXCLUDED_ENTRIES.includes(first);
-    },
+    filter: (source) => !isCopyExcluded(relative(sourceRoot, source)),
   });
 }

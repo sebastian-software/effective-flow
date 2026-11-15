@@ -167,6 +167,17 @@ function ghHostArgs(repository) {
 // it only its completion instant.
 const PR_STATUS_QUERY = `query($owner:String!,$repo:String!,$number:Int!){repository(owner:$owner,name:$repo){pullRequest(number:$number){number title url state isDraft mergeable mergeStateStatus baseRefName headRefOid commits(last:1){nodes{commit{oid committedDate statusCheckRollup{contexts(first:100){totalCount nodes{__typename ... on CheckRun{name status conclusion detailsUrl isRequired(pullRequestNumber:$number) databaseId startedAt completedAt checkSuite{databaseId app{slug} workflowRun{databaseId event workflow{databaseId}}}} ... on StatusContext{context state targetUrl isRequired(pullRequestNumber:$number) createdAt}}}}}}}}}}`;
 
+// `includeCheckIdentity: true` adds one selection: the workflow run's file path
+// (`WorkflowRun.file: WorkflowRunFile`, nullable, whose `path: String!` is the repository-relative
+// workflow file such as `.github/workflows/ci.yml`). Everything else the identity reports — the
+// typename, the app slug, the event, and the head the rollup belongs to — the base query already
+// selects. A separate constant rather than an always-on field keeps the default plan, and with it
+// the `data.command` preview the canned eval envelopes carry, byte-for-byte unchanged.
+const PR_STATUS_IDENTITY_QUERY = PR_STATUS_QUERY.replace(
+  'workflowRun{databaseId event workflow{databaseId}}',
+  'workflowRun{databaseId event file{path} workflow{databaseId}}',
+);
+
 export function buildGithubCommandPlan(operation, input, repository) {
   const { owner, repository: repo } = repository;
   // Both provider CLIs address the same REST path shape, so this builder and the one in
@@ -441,7 +452,8 @@ export function buildGithubCommandPlan(operation, input, repository) {
         'gh',
         ['api', ...hostArgs, 'graphql', '--input', '-'],
         jsonStdin({
-          query: PR_STATUS_QUERY,
+          // The flag's type is validated by `executeOperation` before any plan is built.
+          query: input.includeCheckIdentity === true ? PR_STATUS_IDENTITY_QUERY : PR_STATUS_QUERY,
           variables: { owner, repo, number: prNumber(input) },
         }),
       );

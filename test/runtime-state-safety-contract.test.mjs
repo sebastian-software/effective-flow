@@ -570,7 +570,7 @@ test('cleanup guards lifecycle claims, updates, and record removal at the main r
   );
   assert.match(
     flat,
-    /The only current runtime-state deletions allowed are the lifecycle record of a successfully reconciled `cleanup apply` claim and a confirmed stale diff baseline/,
+    /The only current runtime-state deletions allowed are the lifecycle record of a successfully reconciled `cleanup apply` claim, a confirmed stale diff baseline, and a confirmed merge-gate presence marker removed by `presence prune`; no other active runtime file is a cleanup target/,
   );
   assert.match(
     cleanup,

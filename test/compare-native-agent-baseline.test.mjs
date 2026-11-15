@@ -141,6 +141,8 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'delegation-mandate-triviality-scope',
       'generic-product-reviewer-tooling-assignment',
       'generic-product-reviewer-implementation-full-pass',
+      'code-validator-conflict-commit-scope',
+      'merge-conflict-resolver-validation-mode',
     ],
   );
 });

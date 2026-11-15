@@ -501,6 +501,10 @@ export function buildForgejoCommandPlan(operation, input, repository) {
     // three previews in `data.commands`. The existing `tea pulls … --output json` renderer is
     // deliberately not used here: it carries no `mergeable`, no `draft` and no head SHA, so a merge
     // guard built on it would fail `STALE_WRITE` on every merge.
+    // `includeCheckIdentity: true` changes none of the three reads: a Forgejo commit status supplies
+    // only `typename` (`StatusContext`) and the addressed head SHA; app slug, event and workflow
+    // path stay `null`, which a caller reads as no evidence. `forgejoCheckRecord` in
+    // `remote-tracker-core.mjs` documents the field-by-field reasoning.
     case 'pr-status-read':
       return teaApiReadPlan(repository, apiEndpoint(`pulls/${prNumber(input)}`));
     // The merge runs through `tea api` rather than through `tea pulls merge`, because

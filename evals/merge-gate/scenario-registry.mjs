@@ -33,6 +33,8 @@ export const SCENARIOS = Object.freeze([
   'no-ci-policy-unattended-merges',
   'no-ci-policy-unlisted-base-blocks',
   'non-interactive-dispatch-reports',
+  'presence-notice-names-other-run',
+  'quick-conflict-commit-without-ci-evidence-blocks',
   'repair-after-base-merge-merges',
   'repeated-ineffective-repair-stops',
   'unreported-checks-at-phase-four',

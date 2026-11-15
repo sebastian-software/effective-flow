@@ -65,3 +65,30 @@ test('every build output directory under OUTPUT_ROOT is excluded from the reposi
     assert.ok(COPY_EXCLUDED_ENTRIES.includes(name), `${name} must be excluded from the copy`);
   }
 });
+
+// Invariant: the copy drops only recorded eval evidence (`evals/<suite>/results/`) and keeps the
+// rest of `evals/`, because the build's repository-only reference guard walks `evals/` as a
+// repository-only root; a `results` name anywhere else is ordinary content.
+test('copyRepository skips evals/<suite>/results subtrees but keeps the rest of evals', (t) => {
+  const sandbox = mkdtempSync(join(tmpdir(), 'effective-flow-repository-copy-evals-'));
+  t.after(() => rmSync(sandbox, { recursive: true, force: true }));
+  const source = join(sandbox, 'source');
+  const destination = join(sandbox, 'destination');
+  const kept = [
+    'evals/_scaffold/a.mjs',
+    'evals/eval.mjs',
+    'evals/merge-gate/results.md',
+    'evals/merge-gate/scenarios/results/a.md',
+    'evals/merge-gate/suite.config.mjs',
+    'evals/results',
+    'src/results/a.md',
+  ];
+  for (const path of kept) writeFixtureFile(source, path);
+  writeFixtureFile(source, 'evals/merge-gate/results/round-1/evidence.json');
+  writeFixtureFile(source, 'evals/focus/results/x');
+
+  copyRepository(source, destination);
+
+  assert.deepEqual(listFiles(destination), [...kept].sort());
+  assert.match(BUILD_SOURCE, /REPOSITORY_ONLY_ROOTS = \[[^\]]*\n\s+'evals',/);
+});

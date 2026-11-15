@@ -87,8 +87,8 @@ function auxiliaryFor(suite, scenario) {
 }
 
 // The evidence the sealing step itself writes, for a scenario whose suite declares it — the
-// `iterate` suite's sandbox git state. `null` for every other scenario and for a suite that declares
-// none, which is every path `merge-gate` takes.
+// `iterate` suite's sandbox git state, or the observation of the two `merge-gate` scenarios that
+// declare it. `null` for every other scenario and for a suite that declares none.
 function sealedFor(suite, scenario) {
   const sealed = suite.sealedEvidence;
   if (!sealed) return null;
@@ -751,8 +751,8 @@ function preparedDigests(suite, paths) {
 // part of that scenario's sealed evidence unit, so a write to it after sealing is
 // `changed-after-seal` exactly as a write to the call log is.
 //
-// So is the sealed evidence the sealing step writes, under the suite's own digest key. A suite that
-// declares none — `merge-gate` — digests exactly the keys it always did.
+// So is the sealed evidence the sealing step writes, under the suite's own digest key. A scenario it
+// is not required for digests exactly the keys it always did.
 function sealDigests(suite, paths, scenario) {
   const auxiliary = auxiliaryFor(suite, scenario);
   const sealed = sealedFor(suite, scenario);

@@ -72,6 +72,7 @@ value or default as the pre-selection:
 | --------------------------------- | ------------------------------------- | --------- |
 | `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
 | `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.conflictValidation`    | `full`, `quick`                       | `full`    |
 | `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
 | `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
 | `mergeGate.maxRounds`             | positive integer                      | `10`      |
@@ -95,6 +96,11 @@ value or default as the pre-selection:
   a project upgrading from an earlier generation, and that `off` restores the previous behavior
   exactly. No earlier generation wrote a `prReview.conflictResolution` row; one that exists anyway is
   retired like any other `prReview.<key>` row and carried over to this key.
+- `mergeGate.conflictValidation`: how the gate validates its own conflict-resolution commit.
+  `full` (default) validates it fully locally; `quick` lets the CI test job stand in for the local
+  test run of a low-risk conflict commit, and counts only once the same row is on the base branch,
+  so a pull request cannot lower its own validation. Where Step 5's conflict-validation proposal
+  holds, show it with this question; otherwise pre-select the current value.
 - `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently
   red optional check.
