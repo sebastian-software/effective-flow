@@ -535,6 +535,69 @@ test('detect: a test only inside a reusable workflow or composite action is excl
   );
 });
 
+// Invariant: evidence matches a check run by workflow path and name, never by job id, so a test job
+// stays detected only when no other job of its workflow, and no second instance of its own matrix,
+// can report under one of its expected instance names; a job whose name or instance set is not
+// statically known counts as reporting under every name it could take. Otherwise another job's
+// green run could satisfy a test instance that has not registered yet.
+test('detect: a test job whose check-run name another job of the workflow can report is excluded', () => {
+  const TEST_JOB = workflow().split('jobs:\n')[1].trimEnd();
+  const withJob = (...lines) => workflow({ job: [TEST_JOB, ...lines].join('\n') });
+  const other = (id, extra, steps = ['      - run: pnpm lint']) => [
+    `  ${id}:`,
+    ...extra,
+    '    runs-on: ubuntu-latest',
+    '    steps:',
+    ...steps,
+  ];
+  const collided = (text, jobId = 'test') => {
+    const job = jobOf(assertUndetected(text, 'name-collision'), jobId);
+    assert.equal(job.status, 'undetected');
+    assert.deepEqual(job.reasons, ['name-collision']);
+    assert.deepEqual(job.expectedInstances, []);
+  };
+
+  collided(withJob(...other('lint', ['    name: Unit tests'])));
+  collided(withJob(...other('lint', ['    name: " unit  TESTS"'])));
+  const twin = withJob(
+    ...other(
+      'again',
+      ['    name: Unit tests'],
+      ['      - uses: actions/checkout@v4', '      - run: pnpm test'],
+    ),
+  );
+  collided(twin);
+  collided(twin, 'again');
+
+  const matrixJob = (values) =>
+    workflow({ jobExtra: ['    strategy:', '      matrix:', `        node: [${values}]`] });
+  collided(matrixJob('22, 22'));
+  collided(
+    `${matrixJob('22, 24').trimEnd()}\n${other('plain', ['    name: Unit tests (24)']).join('\n')}\n`,
+  );
+
+  collided(withJob(...other('lint', ['    name: Lint ${{ github.event_name }}'])));
+  collided(withJob('  broken: 7'));
+  const dynamic = (name) =>
+    other('lint', [`    name: ${name}`, '    strategy:', '      matrix: ${{ fromJSON(vars.M) }}']);
+  collided(withJob(...dynamic('Unit tests')));
+  collided(withJob(`  deploy:\n    name: Unit tests\n    uses: ./.github/workflows/test.yml`));
+  collided(
+    `${matrixJob('22').trimEnd()}\n  deploy:\n    name: Unit tests\n    uses: ./.github/workflows/test.yml\n`,
+  );
+
+  for (const text of [
+    withJob(...other('lint', ['    name: Lint'])),
+    withJob(...other('lint', ['    name: Unit tests lint'])),
+    withJob(...dynamic('Lint')),
+    withJob('  deploy:\n    name: Deploy\n    uses: ./.github/workflows/deploy.yml'),
+  ]) {
+    const result = evaluate(text);
+    assert.equal(result.status, 'detected', JSON.stringify(result));
+    assert.deepEqual(jobOf(result).expectedInstances, ['Unit tests']);
+  }
+});
+
 // Invariant: a check run's head SHA names the pull request, not the tree its job tested, so a test
 // step counts only after exactly one unconditional checkout of the default pull request ref into
 // the workspace with no Git command in between; a job that tests another ref, repository or
@@ -1226,6 +1289,39 @@ test('evidence: every detected job must be satisfied', () => {
   assert.equal(result.evidence, false);
   assert.deepEqual(
     result.jobs.map((job) => job.satisfied),
+    [true, false],
+  );
+});
+
+// Invariant: one green check run never satisfies two expected instances, so a hand-built or stale
+// detection that expects one workflow path and instance name twice is rejected as invalid input.
+test('evidence: a detection expecting one check-run identity twice is rejected', async () => {
+  const job = DETECTION.detectedJobs[0];
+  for (const detectedJobs of [
+    [{ ...job, expectedInstances: ['Unit tests (22)', 'Unit tests (22)'] }],
+    [job, { ...job, jobId: 'lint', expectedInstances: ['Unit tests (24)'] }],
+  ]) {
+    const envelope = await executeOperation('ci-evidence-match', {
+      detection: { status: 'detected', detectedJobs },
+      checks: [check('Unit tests (22)'), check('Unit tests (24)')],
+      headSha: HEAD_SHA,
+    });
+    assert.equal(envelope.ok, false);
+    assert.equal(envelope.error.code, 'INVALID_INPUT');
+  }
+  const elsewhere = { ...job, workflowPath: '.github/workflows/other.yml', jobId: 'test' };
+  const result = evidence(
+    [
+      check('Unit tests (22)'),
+      check('Unit tests (24)'),
+      check('Unit tests (22)', { workflowPath: elsewhere.workflowPath }),
+    ],
+    { status: 'detected', detectedJobs: [job, elsewhere] },
+  );
+  assert.equal(result.evidence, false);
+  assert.equal(result.reason, 'missing');
+  assert.deepEqual(
+    result.jobs.map((entry) => entry.satisfied),
     [true, false],
   );
 });

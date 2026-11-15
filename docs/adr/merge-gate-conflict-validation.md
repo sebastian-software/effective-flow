@@ -59,7 +59,8 @@ detected test job among the de-duplicated latest check entries of a `pr-status-r
 `includeCheckIdentity: true`. Each instance is a `CheckRun` of the `github-actions` app for event
 `pull_request`, from the detected workflow path, on `VERIFIED_HEAD_SHA`, with conclusion exactly
 `SUCCESS`. `SKIPPED`, `NEUTRAL`, an ambiguous de-duplication group and a missing object or ref are
-no evidence. The check-list waiver and the no-CI policy never satisfy this condition. Two
+no evidence, and a detection that expects one workflow path and instance name twice is rejected.
+The check-list waiver and the no-CI policy never satisfy this condition. Two
 results are not yet satisfied, as right after the push, and are handled only once no reviewer
 thread or verdict sends the run back into Phase 3, which takes precedence. An expected instance
 that has not registered yet (`missing`) waits once inside the current round with the existing
@@ -122,7 +123,12 @@ exactly the bare manifest test invocation, matched by normalized script identity
 equals `pnpm run test`), as its only command; no shell other than `bash`, no `if:` and no
 `continue-on-error` on the step or job; any `working-directory` is the manifest's directory; any
 matrix is literal, without `include`, `exclude` or expressions, and the job name is not templated,
-so the expected instance set is static and non-empty; the test runs in the job itself, not
+so the expected instance set is static and non-empty; no other job of the workflow and no other
+instance of its own matrix can report a check run under one of its expected instance names, compared
+trimmed and case-folded, where a job whose name is not literal could report under any name and one
+whose instance set is not static under its name, `<name> (…)` or `<name> / …`, because evidence
+matches a check run by workflow path and name, never by job id, and another job's green run would
+otherwise stand in for a test that has not registered yet; the test runs in the job itself, not
 only inside a reusable workflow or composite action; and it runs on the pull request's own tree:
 exactly one `actions/checkout` step precedes it, without `if:` or `continue-on-error`, without a
 `ref`, a `repository` or a `path` other than the workspace root, and with no input beyond the

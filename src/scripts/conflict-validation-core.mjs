@@ -552,8 +552,9 @@ export const MANIFEST_FILES = Object.freeze([
 // Workflow evaluation
 
 // `ci-detect` reason codes. Workflow level: trigger, filters and defaults. Job level: everything that
-// makes the job's test result conditional, indirect, not statically enumerable or not provably a
-// result for the pull request's own checked-out tree.
+// makes the job's test result conditional, indirect, not statically enumerable, not distinguishable
+// by its check-run name from another job of the workflow, or not provably a result for the pull
+// request's own checked-out tree.
 export const DETECTION_REASONS = Object.freeze([
   'base-ref-missing',
   'no-manifest-test-command',
@@ -585,6 +586,7 @@ export const DETECTION_REASONS = Object.freeze([
   'matrix-include-exclude',
   'empty-matrix',
   'matrix-too-large',
+  'name-collision',
   'no-steps',
   'no-test-step',
   'test-command-not-bare',
@@ -853,6 +855,70 @@ function evaluateStep(step, index, command, context) {
   };
 }
 
+// The check-run base name of a job: its literal `name`, else its id. `reason` is set when the name
+// is not statically known.
+function jobDisplayName(jobId, job) {
+  const name = job.has('name') ? job.get('name') : undefined;
+  if (name === undefined) return { displayName: jobId, reason: null };
+  if (typeof name !== 'string' || name.trim() === '') {
+    return { displayName: jobId, reason: 'invalid-name' };
+  }
+  if (EXPRESSION.test(name)) return { displayName: jobId, reason: 'templated-name' };
+  return { displayName: name, reason: null };
+}
+
+// Check-run names are compared trimmed, with collapsed whitespace and case-folded, so a name GitHub
+// may normalize counts as a collision rather than as a distinct check.
+function collisionKey(name) {
+  return name.trim().replace(/\s+/g, ' ').toLowerCase();
+}
+
+// Every check-run name a job of the workflow can report under, detected or not: `exact` keys when
+// its instance set is statically derivable; a `prefix` key when only its display name is, since a
+// non-literal matrix reports as `<name> (<values>)` and a reusable workflow's jobs as
+// `<name> / <called job>`; `any` when not even the display name is.
+function possibleNames(jobId, job) {
+  if (!(job instanceof Map)) return { any: true };
+  const { displayName, reason } = jobDisplayName(jobId, job);
+  if (reason) return { any: true };
+  const reasons = [];
+  const instances = expectedInstances(job, displayName, reasons);
+  if (job.has('uses') || reasons.length > 0) return { prefix: collisionKey(displayName) };
+  return { exact: instances.map(collisionKey) };
+}
+
+function mayReportAs(names, key) {
+  if (names.any) return true;
+  if (names.exact) return names.exact.includes(key);
+  return (
+    key === names.prefix ||
+    key.startsWith(`${names.prefix} (`) ||
+    key.startsWith(`${names.prefix} / `)
+  );
+}
+
+// Evidence matches a check run by workflow path and name only, never by job id, so a detected job
+// stays detected only when no other job of its workflow, and no second instance of its own, can
+// report under one of its expected instance names: otherwise another job's green run could stand in
+// for a test that has not registered yet. Another workflow file never collides, because evidence
+// also requires the check run's workflow path.
+function rejectNameCollisions(evaluated, jobs) {
+  const names = [...jobs].map(([jobId, job]) => possibleNames(jobId, job));
+  evaluated.forEach((result, index) => {
+    if (result.status !== 'detected') return;
+    const keys = result.expectedInstances.map(collisionKey);
+    const collides =
+      new Set(keys).size !== keys.length ||
+      names.some(
+        (other, otherIndex) => otherIndex !== index && keys.some((key) => mayReportAs(other, key)),
+      );
+    if (!collides) return;
+    result.status = 'undetected';
+    result.reasons = ['name-collision'];
+    result.expectedInstances = [];
+  });
+}
+
 function evaluateJob(jobId, job, commands, workflowDefaults) {
   const result = {
     jobId,
@@ -867,13 +933,8 @@ function evaluateJob(jobId, job, commands, workflowDefaults) {
     reasons.push('invalid-job');
     return result;
   }
-  const name = job.has('name') ? job.get('name') : undefined;
-  let displayName = jobId;
-  if (name !== undefined) {
-    if (typeof name !== 'string' || name.trim() === '') reasons.push('invalid-name');
-    else if (EXPRESSION.test(name)) reasons.push('templated-name');
-    else displayName = name;
-  }
+  const { displayName, reason: nameReason } = jobDisplayName(jobId, job);
+  if (nameReason) reasons.push(nameReason);
   result.jobName = displayName;
   if (job.has('uses')) reasons.push('reusable-workflow');
   if (job.has('if')) reasons.push('job-condition');
@@ -960,6 +1021,7 @@ export function evaluateWorkflow(workflowPath, text, { commands, base }) {
     for (const [jobId, job] of jobs) {
       workflow.jobs.push(evaluateJob(jobId, job, commands, { workingDirectory: directory.value }));
     }
+    rejectNameCollisions(workflow.jobs, jobs);
   }
   workflow.reasons = unique(workflow.reasons);
   if (workflow.reasons.length > 0) {
@@ -1595,6 +1657,20 @@ function validateDetection(detection) {
       fail('INVALID_INPUT', 'detection.detectedJobs holds a malformed job', { field: 'detection' });
     }
   }
+  // A check run is matched by workflow path and name only, so one expected identity listed twice
+  // would let a single green run satisfy two expected instances.
+  const identities = new Set();
+  for (const job of detection.detectedJobs) {
+    for (const name of job.expectedInstances) {
+      const identity = JSON.stringify([job.workflowPath, name]);
+      if (identities.has(identity)) {
+        fail('INVALID_INPUT', 'detection.detectedJobs expects one check-run identity twice', {
+          field: 'detection',
+        });
+      }
+      identities.add(identity);
+    }
+  }
 }
 
 // `group` holds every entry named like the instance. Only entries carrying the job's full identity
@@ -1626,7 +1702,8 @@ function instanceOutcome(group, job, headSha) {
 // Evidence holds only when every detected job has its complete, non-empty expected instance set
 // among the entries, each one a completed `CheckRun` of the `github-actions` app for a
 // `pull_request` run of the detected workflow file on `headSha`, concluded exactly
-// `SUCCESS`. `SKIPPED`, `NEUTRAL`, a missing instance and an ambiguous name are no evidence.
+// `SUCCESS`. `SKIPPED`, `NEUTRAL`, a missing instance and an ambiguous name are no evidence; a
+// detection that expects one workflow path and instance name twice is invalid input.
 // `data.reason` is `missing` or `pending` (EVIDENCE_NOT_YET_REASONS) only while nothing failed
 // finally, so a caller may read the same head again; any other non-`complete` reason is final. A
 // final failure needs an entry with the job's full identity that is not `SUCCESS`, or an ambiguous
