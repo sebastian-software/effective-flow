@@ -170,10 +170,11 @@ test('delegation-mandate.md exists and stays within the always-loaded context bu
   assert.ok(
     lineCount <= 16,
     `src/shared/delegation-mandate.md has ${lineCount} lines but must stay at 16 or fewer. ` +
-      'It is eagerly included by every delegating tool, and build.mjs budgets every one of ' +
-      'them individually in CONTEXT_BUDGET_LINES. Most of those entries are a measured size ' +
-      'plus a few lines of headroom, so a line added here is paid against each of them at ' +
-      'once; `review` is the tightest of the tools sharing the 700-line budget, at 692.',
+      'It is eagerly included by every delegating tool, and each of them carries its own ' +
+      'line budget in the contextBudget frontmatter field of src/tools/<name>.md. Most of ' +
+      'those budgets are a measured size plus a few lines of headroom, so a line added here ' +
+      'is paid against each of them at once; read the current headroom off the ' +
+      '"Always-loaded core (lines/budget)" line node build.mjs prints.',
   );
 });
 

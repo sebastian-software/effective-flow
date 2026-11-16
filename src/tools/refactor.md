@@ -1,6 +1,7 @@
 ---
 description: "Orchestrates the refactoring workflow: analysis, gap analysis, plan validation, baseline, routed refactoring, review, post-validation and before/after comparison."
 catalogHint: "Improves structure or readability without changing behavior."
+contextBudget: 979
 ---
 
 # Effective Flow Refactor

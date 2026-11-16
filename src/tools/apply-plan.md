@@ -1,5 +1,6 @@
 ---
 description: "Reads a plan file from docs/plan/, checks its status and workflow recommendation and starts the matching implementation skill {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}}."
+contextBudget: 566
 ---
 
 # Effective Flow Apply Plan

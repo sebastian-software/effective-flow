@@ -1,5 +1,6 @@
 ---
 description: "Deprecated former name of {{SKILL:merge-gate}}: reports the deprecation once and then forwards the run unchanged to the merge gate. Carries no gate logic of its own."
+contextBudget: 38
 ---
 
 # Effective Flow PR Review (deprecated alias)

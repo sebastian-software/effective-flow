@@ -91,7 +91,7 @@ Before stage 1 starts, today's prompt counts for the same runs are recorded as t
 
 - unit and conformance fixtures cover it, including its edge cases (the remote-configured fetch failure, the suffix scheme of every artifact family, local-date boundaries, and slug transliteration)
 - its owning fragment is reduced to the helper call and outcome handling, with no restated copy left in another host
-- the `CONTEXT_BUDGET_LINES` entries of its eager hosts are lowered by the measured amount
+- the `contextBudget` budgets of its eager hosts are lowered by the measured amount
 
 ## Solution sketch
 
@@ -297,7 +297,7 @@ The first version is delivered in stages. Stages 0, 1, and 2 are each gated on t
      - fixtures that pin today's intended behaviour first
      - the owning fragments reduced to helper calls, with the restated copies removed
      - the fetch prefix
-   - **Done when:** the stage 3 criteria hold for all five procedures, and the `CONTEXT_BUDGET_LINES` entries of `pr`, `refactor`, and `setup` are lowered.
+   - **Done when:** the stage 3 criteria hold for all five procedures, and the `contextBudget` budgets of `pr`, `refactor`, and `setup` are lowered.
    - **Depends on:** nothing; it can run in parallel with 1.
    - **Handoff:** `effective-flow plan "Work package 5 'Mechanics computation' from docs/concept/2026-10-29-runtime-state-cli.md: add the bundled effective-flow-mechanics helper that imports plan-lint-core, plan-publication-core and setup-status-core instead of copying them, and move base-branch resolution (no local fallback after a failed fetch with a remote configured), name allocation with per-family suffix schemes, delivery branch naming, ADR numbering and plan-reference resolution into it, pinned by fixtures first."`
 6. **Mechanics writes (stage 3b)**

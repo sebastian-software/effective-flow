@@ -1,6 +1,7 @@
 ---
 description: "Audits every open tracker issue and open local plan in scope against one explicitly named goal: a deep assessment judges goal fit and names the minimal goal path, and after one bundled confirmation the run creates or updates one goal epic, hands oversized issues to {{SKILL:plan-issue}}, and marks individually confirmed obsolete issues. Deletes and closes nothing."
 catalogHint: "Checks open issues and plans against one goal and maintains its goal epic."
+contextBudget: 389
 ---
 
 # Effective Flow Backlog Audit

@@ -1,5 +1,6 @@
 ---
 description: "Internal instruction for the deep review of one concept artifact: elaborates an existing concept under docs/concept/, clarifies decision-requiring points interactively, marks ADR candidates and records the first planning steps as a roadmap of work packages in that same file."
+contextBudget: 409
 ---
 
 # Effective Flow Concept Review

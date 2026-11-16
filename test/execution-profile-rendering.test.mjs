@@ -21,6 +21,7 @@ import {
   getField,
   getNestedArray,
   parseNativeAgentInventory,
+  readContextBudget,
   reconcileNativeAgentInventories,
   resolveAgentTier,
 } from '../build-lib.mjs';
@@ -104,14 +105,17 @@ function replaceOnce(path, beforeText, afterText) {
   writeFileSync(path, source.replace(beforeText, afterText));
 }
 
-function raiseBudget(checkout, tool) {
-  const path = join(checkout, 'build.mjs');
+// Raise the copied tool's own `contextBudget` frontmatter line (#99), by ten lines unless a probe
+// needs more room.
+function raiseBudget(checkout, tool, lines = 10) {
+  const path = join(checkout, 'src/tools', `${tool}.md`);
   const source = readFileSync(path, 'utf8');
-  const entry = new RegExp(`\\n    ${tool}: (\\d+),\\n`);
-  assert.match(source, entry, `CONTEXT_BUDGET_LINES must carry an entry for ${tool}`);
-  writeFileSync(
+  const budget = readContextBudget(extractFrontmatter(source), { context: path });
+  assert.ok(budget, `src/tools/${tool}.md must declare a contextBudget frontmatter line`);
+  replaceOnce(
     path,
-    source.replace(entry, (_, lines) => `\n    ${tool}: ${Number(lines) + 10},\n`),
+    `\ncontextBudget: ${budget}\n---\n`,
+    `\ncontextBudget: ${budget + lines}\n---\n`,
   );
 }
 
@@ -847,7 +851,7 @@ test('spawn-site markers and the model-tiers fragment render per target', (t) =>
   addProbeRows(checkout);
   appendFileSync(join(checkout, 'src/tools/version.md'), PROBE_TOOL_TEXT);
   // The probe is fixture text, not a measured tool change; give it room in the line budget.
-  replaceOnce(join(checkout, 'build.mjs'), '    version: 38,', '    version: 60,');
+  raiseBudget(checkout, 'version', 22);
   const result = runBuild(checkout, destination);
   assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
 

@@ -1,6 +1,7 @@
 ---
 description: "Orchestrates the documentation workflow: scope clarification, plan-reference detection, doc analysis, implementation via docs-writer or code-documenter, validation and completion."
 catalogHint: "Creates or updates documentation without changing product behavior."
+contextBudget: 654
 ---
 
 # Effective Flow Docs

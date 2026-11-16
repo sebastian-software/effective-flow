@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
+import { readContextBudget } from '../build-lib.mjs';
 
 const repositoryRoot = new URL('..', import.meta.url);
 
@@ -38,15 +39,19 @@ function frontmatter(text) {
 
 test('Focus is exposed, budgeted, and has exactly one analysis spawn site', () => {
   // Invariant: build wiring must expose the Focus source while retaining its measured context budget
-  // and a single model-tier spawn site; otherwise the shipped prompt can disappear or fan out.
+  // (its own `contextBudget` frontmatter line) and a single model-tier spawn site; otherwise the
+  // shipped prompt can disappear, ship unmeasured, or fan out.
   const build = source('build.mjs');
   const groups = boundedSlice(build, 'const TOOL_GROUPS = [', '\nconst EXPOSED_TOOLS');
   const focusGroup = groups.match(/\{\n    title: 'Ensure quality',[\s\S]*?\n  \},/);
   assert.ok(focusGroup, 'the quality tool group must remain present');
   assert.match(focusGroup[0], /tools: \['review', 'retro', 'focus'\]/);
-  assert.match(build, /\n    focus: \d+,/);
 
   const focus = source('src/tools/focus.md');
+  assert.ok(
+    readContextBudget(frontmatter(focus), { context: 'src/tools/focus.md' }) > 0,
+    'src/tools/focus.md must declare a valid contextBudget frontmatter line',
+  );
   assert.equal(
     [...focus.matchAll(/<!-- spawn-site:[^\n]+ -->/g)].length,
     1,

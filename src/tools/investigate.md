@@ -1,6 +1,7 @@
 ---
 description: "Encapsulates a pure analysis phase for bug and behavior investigation: diagnostically clarifies the root cause or why something behaves the way it does, produces a diagnosis report under .effective-flow/investigation/ and no code. Ends with exactly one follow-up recommendation and routes to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}} – or concludes with \"no bug, intended behavior\" or \"product decision needed\"."
 catalogHint: "Finds the cause of a bug or surprising behavior – pure analysis, no code."
+contextBudget: 544
 ---
 
 # Effective Flow Investigate

@@ -1,6 +1,7 @@
 ---
 description: "Routes explicit issue references to {{SKILL:plan-issue}} and otherwise creates pure implementation plans in docs/plan/, without generating code or changing existing implementation files. Records the classified implementation workflow in the plan header, so the implementing run reads it from there."
 catalogHint: "Routes issue references to issue planning or writes an actionable local plan – without code – and can publish it."
+contextBudget: 795
 ---
 
 <!-- progress-context-receiver:1 -->

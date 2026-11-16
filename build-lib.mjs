@@ -12,7 +12,8 @@ import { join, posix } from 'node:path';
 // These functions are extracted from build.mjs so the Markdown -> skill
 // transforms can be unit-tested (node:test) without running the full I/O
 // build. Nothing here writes to the filesystem and, apart from the read-only
-// walk in collectRepositoryOnlyFiles, nothing reads it either; all other inputs
+// walk in collectRepositoryOnlyFiles and the directory listing in
+// resolveContextBudgetNonToolSources, nothing reads it either; all other inputs
 // and outputs are strings or plain data. build.mjs owns the I/O, the source config
 // (EXPOSED_TOOLS, agent prefix) and the known-name sets, and passes them in.
 
@@ -174,6 +175,104 @@ export function getNestedList(frontmatter, section, key, { context } = {}) {
     }
   }
   return items.join('\n');
+}
+
+// Context budget (#99): every `src/tools/<name>.md` declares the line budget of its
+// always-loaded core as one top-level frontmatter line `contextBudget: <n>`, the last line before
+// the closing `---`. Each tool owns its own line, so raising two tools' budgets touches two files
+// rather than one shared map. See docs/developer-guide/build-system.md ("Context budget").
+//
+// The reader works on the raw frontmatter lines rather than on getField/parseScalar: those return
+// the first match and strip quotes, and the budget must reject a duplicate or quoted value instead.
+export const CONTEXT_BUDGET_FIELD = 'contextBudget';
+
+// A top-level key line: column 0, the key, optional blanks, then a colon. Any such line counts as a
+// declaration, so a misspelled form (`contextBudget:922`, `contextBudget : 922`) is malformed, not
+// absent. Indented lines belong to a nested section and are not the budget.
+const CONTEXT_BUDGET_KEY_RE = new RegExp(`^${CONTEXT_BUDGET_FIELD}[ \\t]*:`);
+const CONTEXT_BUDGET_LINE_RE = new RegExp(`^${CONTEXT_BUDGET_FIELD}: ([1-9][0-9]*)$`);
+
+// Sources that are not tools and therefore must never declare a context budget: the router and
+// every worker and shared-fragment source. Each entry is repository-relative (POSIX separators):
+// `{ dir, file }` names one file, `{ dir }` alone stands for every direct `*.md` child of `dir`.
+// resolveContextBudgetNonToolSources expands the list under a repository root.
+export const CONTEXT_BUDGET_NON_TOOL_SOURCES = Object.freeze([
+  Object.freeze({ dir: 'src', file: 'SKILL.md' }),
+  Object.freeze({ dir: 'src/agents' }),
+  Object.freeze({ dir: 'src/shared' }),
+]);
+
+// Expand CONTEXT_BUDGET_NON_TOOL_SOURCES under `root` into sorted, repository-relative POSIX file
+// paths. Reads only the listed directories.
+export function resolveContextBudgetNonToolSources(root) {
+  return CONTEXT_BUDGET_NON_TOOL_SOURCES.flatMap(({ dir, file }) =>
+    file
+      ? [posix.join(dir, file)]
+      : readdirSync(join(root, ...dir.split('/')))
+          .filter((name) => name.endsWith('.md'))
+          .sort()
+          .map((name) => posix.join(dir, name)),
+  );
+}
+
+// True when the frontmatter carries any top-level `contextBudget` key line, well-formed or not.
+export function declaresContextBudget(frontmatter) {
+  return frontmatter.split('\n').some((line) => CONTEXT_BUDGET_KEY_RE.test(line));
+}
+
+function contextBudgetMalformedReason(line) {
+  const value = line.slice(line.indexOf(':') + 1).trim();
+  if (value === '') {
+    return 'the value is empty; block scalars and continuation lines are not supported';
+  }
+  if (value.startsWith('|') || value.startsWith('>')) return 'block scalars are not supported';
+  if (value.startsWith('"') || value.startsWith("'")) return 'quoted values are not supported';
+  if (!line.startsWith(`${CONTEXT_BUDGET_FIELD}: `)) {
+    return 'the key must be followed directly by a colon and exactly one space';
+  }
+  return (
+    'the value must be a positive integer without sign, leading zero, decimal point, exponent, ' +
+    'comment, or trailing text or whitespace'
+  );
+}
+
+// Read a tool's context budget from its raw frontmatter. Returns the positive integer, or null when
+// no top-level `contextBudget` key exists. A malformed declaration throws, naming `context`.
+export function readContextBudget(frontmatter, { context } = {}) {
+  const lines = frontmatter.split('\n');
+  const declared = lines.flatMap((line, index) =>
+    CONTEXT_BUDGET_KEY_RE.test(line) ? [index] : [],
+  );
+  if (declared.length === 0) return null;
+  const prefix = `context budget (#99): ${context}:`;
+  const form = `"${CONTEXT_BUDGET_FIELD}: <n>"`;
+  if (declared.length > 1) {
+    throw new Error(
+      `${prefix} "${CONTEXT_BUDGET_FIELD}" is declared ${declared.length} times in the ` +
+        `frontmatter; keep exactly one ${form} as the last frontmatter line`,
+    );
+  }
+  const [index] = declared;
+  const line = lines[index];
+  const match = CONTEXT_BUDGET_LINE_RE.exec(line);
+  const value = match ? Number(match[1]) : NaN;
+  if (!Number.isSafeInteger(value)) {
+    const reason = match
+      ? 'the value exceeds the safe integer range'
+      : contextBudgetMalformedReason(line);
+    throw new Error(
+      `${prefix} malformed frontmatter line ${JSON.stringify(line)}: ${reason}; write ${form} ` +
+        'with <n> a positive integer',
+    );
+  }
+  // extractFrontmatter() stops before the newline that precedes the closing ---, so the budget
+  // line must be the literal last element; a blank line written before --- displaces it.
+  if (index !== lines.length - 1) {
+    throw new Error(
+      `${prefix} ${form} must be the last frontmatter line, directly before the closing ---`,
+    );
+  }
+  return value;
 }
 
 export function cleanDescription(desc) {

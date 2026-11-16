@@ -1,6 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass in the primary checkout: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests on public repositories."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
+contextBudget: 490
 ---
 
 # Effective Flow Issue Buddy

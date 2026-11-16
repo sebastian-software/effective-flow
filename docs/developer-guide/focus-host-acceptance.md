@@ -40,7 +40,8 @@ artifacts are not tracked.
 (`src/tools/focus.md`, `src/shared/focus-session-contract.md`, `src/shared/focus-follow-up.md`,
 `src/shared/retro-native-sources.md`) owes candidate-bound requalification. Other digest-bound
 changes are exempt only when the maintainer demonstrates that they are nonbehavioral for the
-qualified path, for example a context-budget adjustment with identical rendered focus bytes.
+qualified path. The `contextBudget` line in `src/tools/focus.md` is part of that focus source, so
+changing it owes requalification.
 
 For the built files, the maintainer rebuilds the release head and compares the digests with the
 record's table. Material changes to the loaded artifact require candidate-bound acceptance,

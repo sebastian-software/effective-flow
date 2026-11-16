@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { extractFrontmatter, readContextBudget } from '../build-lib.mjs';
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const source = (path) => readFileSync(join(ROOT, path), 'utf8');
@@ -59,8 +60,14 @@ test('retro is catalogued, budgeted, exempted, and owned across the source build
   );
   assert.ok(exposed.includes('retro'), 'retro must be an exposed catalog tool');
 
-  const budgets = boundedSlice(build, 'const CONTEXT_BUDGET_LINES = {', '\n  };');
-  assert.match(budgets, /^\s*retro:\s*\d+,/m);
+  // Invariant: retro carries its own measured context budget (#99) as a valid `contextBudget`
+  // frontmatter line, which the build reads; without one the build ships it unmeasured.
+  assert.ok(
+    readContextBudget(extractFrontmatter(source('src/tools/retro.md')), {
+      context: 'src/tools/retro.md',
+    }) > 0,
+    'src/tools/retro.md must declare a valid contextBudget frontmatter line',
+  );
 
   const exemptions = boundedSlice(build, 'const NEXT_STEPS_EXEMPT_TOOLS = new Set([', '\n]);');
   assert.match(exemptions, /^\s*['"]retro['"],/m);
