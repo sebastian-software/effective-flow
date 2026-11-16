@@ -387,7 +387,9 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         Object.freeze({
           from: '  you. A timeout of your own host tool, or one you cannot attribute, is none of these.\n',
           to:
-            '  you. A timeout of your own host tool, or one you cannot attribute, is none of these.\n' +
+            "  you. A test entrypoint stopped at its own environment preflight follows the gate's preflight\n" +
+            '  mapping: the class it names, else `FAILED`, never skipped. A timeout of your own host tool, or one\n' +
+            '  you cannot attribute, is none of these.\n' +
             '- **Never substitute for a check that cannot run here:** never run the suite, or a\n' +
             "  suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`\n" +
             '  or one over a suite-covering directory or glob; never neutralize the preflight by editing the\n' +
