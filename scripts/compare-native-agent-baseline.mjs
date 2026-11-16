@@ -347,6 +347,54 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // A test-executing role loads the unsupported-environment rule lazily when the project's test
+    // entrypoint stops at its own preflight (issue #676).
+    Object.freeze({
+      id: 'code-validator-validation-environment',
+      edits: Object.freeze([
+        Object.freeze({
+          from: 'attribute, is none of these.\n\n## Minimal fallback\n',
+          to:
+            'attribute, is none of these.\n\n' +
+            "**Load on demand:** Read `shared/validation-environment-unsupported.md`, when the project's test entrypoint stopped at its own environment preflight with a report naming a failed check, or a check reported version control unavailable.\n\n" +
+            '## Minimal fallback\n',
+        }),
+      ]),
+    }),
+    Object.freeze({
+      id: 'test-writer-validation-environment',
+      edits: Object.freeze([
+        Object.freeze({
+          from: '  gaps to the caller.\n',
+          to:
+            '  gaps to the caller.\n\n' +
+            "**Load on demand:** Read `shared/validation-environment-unsupported.md`, when a test run you start stops at the project's own environment preflight with a report naming a failed check, or a check reports version control unavailable.\n",
+        }),
+      ]),
+    }),
+    // The resolver names the forbidden substitutes for a check that cannot run, and its
+    // adjacent-file allowance excludes the test preflight (issue #676).
+    Object.freeze({
+      id: 'merge-conflict-resolver-forbidden-substitutes',
+      edits: Object.freeze([
+        Object.freeze({
+          from: '  **reported** adjacent files, never for unreported ones.\n',
+          to:
+            '  **reported** adjacent files, never for unreported ones;\n' +
+            '- the allowance never covers the test preflight, its probe or the test script: a failing preflight\n' +
+            '  is reported, never fixed.\n',
+        }),
+        Object.freeze({
+          from: '  you. A timeout of your own host tool, or one you cannot attribute, is none of these.\n',
+          to:
+            '  you. A timeout of your own host tool, or one you cannot attribute, is none of these.\n' +
+            '- **Never substitute for a check that cannot run here:** never run the suite, or a\n' +
+            "  suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`\n" +
+            '  or one over a suite-covering directory or glob; never neutralize the preflight by editing the\n' +
+            '  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`.\n',
+        }),
+      ]),
+    }),
   ]),
 });
 

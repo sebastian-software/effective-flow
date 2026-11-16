@@ -24,6 +24,7 @@ import {
   contentDigest,
   encodeControl,
   executeOperation,
+  limitationText,
   MAX_CONTROL_BYTES,
   MAX_DISPATCH_BYTES,
   REQUIRED_GATES,
@@ -639,7 +640,7 @@ async function issue(live, gate, evidence = live.evidence, extra = {}) {
     ...extra,
   });
 }
-async function completed(fx) {
+async function completed(fx, { limited = [], lane = null } = {}) {
   let live = await setupDelivery(await start(fx));
   const evidence = [durable(live)];
   const gates = [];
@@ -649,7 +650,15 @@ async function completed(fx) {
     (gate) =>
       !['delivery', 'plan-archival', 'pilot-finalization', 'cleanup', 'completion'].includes(gate),
   ))
-    gates.push(await issue(live, gate));
+    gates.push(
+      await issue(
+        live,
+        gate,
+        evidence,
+        limited.includes(gate) ? { outcome: 'limited', prerequisite: 'git-checkout' } : {},
+      ),
+    );
+  if (lane) await recordLane(live, lane.lane, lane.authority);
   const acceptance = gates.filter((ref) =>
     /gate-(independent-review|final-validation)-/.test(path.basename(ref.path)),
   );
@@ -710,6 +719,46 @@ async function completed(fx) {
       worktreeRemoved: false,
     },
   };
+}
+function recordLane(live, lane, authority) {
+  return live.call('record-lane', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    lane,
+    authority,
+  });
+}
+function configured(fx, rows) {
+  mkdirSync(path.join(fx.root, 'docs/adr'), { recursive: true });
+  writeFileSync(path.join(fx.root, 'docs/adr/effective-flow-project-setup.md'), setupTable(rows));
+  git(fx.root, 'add', 'docs/adr/effective-flow-project-setup.md');
+  git(fx.root, 'commit', '-m', 'configure');
+  fx.input.execution.head = git(fx.root, 'rev-parse', 'HEAD');
+  return fx;
+}
+const LIMITED = { outcome: 'limited', prerequisite: 'git-checkout' };
+// Phases 2-6 plus a final validation whose suite stopped at the environment preflight.
+async function limitedThroughFinalValidation(live) {
+  const evidence = [durable(live)];
+  const gates = [];
+  for (const gate of REQUIRED_GATES.slice(0, REQUIRED_GATES.indexOf('final-validation') + 1))
+    gates.push(
+      await issue(
+        { ...live, evidence },
+        gate,
+        evidence,
+        ['validation', 'final-validation'].includes(gate) ? LIMITED : {},
+      ),
+    );
+  return { ...live, evidence, gates, acceptance: gates.slice(-2) };
+}
+function prepareLimited(live) {
+  return live.call('prepare-completion', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    preparationId: 'delivery',
+    gates: live.acceptance,
+  });
 }
 function terminalInput(live, extra = {}) {
   return {
@@ -789,6 +838,192 @@ test('terminal refuses missing gates/evidence, foreign Git identity, stale gate 
     live.call('terminal', terminalInput(live)),
     (failure) => failure.code === 'ENOENT' || failure.code === 'MISSING_EVIDENCE',
   );
+});
+
+// Invariant: `limited` is an environment result of a validation gate only: it names its failed
+// prerequisite and never stands in for a protected remote gate's required proof.
+test('a limited receipt names its prerequisite and stays off non-validation and protected remote gates', async (t) => {
+  const live = await setupDelivery(await start(fixture(t)));
+  const evidence = [durable(live)];
+  await assert.rejects(issue(live, 'implementation', evidence, LIMITED), error('INCOMPLETE_GATES'));
+  await assert.rejects(
+    issue(live, 'validation', evidence, { outcome: 'limited' }),
+    error('INVALID_PAYLOAD'),
+  );
+  await assert.rejects(
+    issue(live, 'validation', evidence, { outcome: 'limited', prerequisite: '/abs/path' }),
+    error('INVALID_PAYLOAD'),
+  );
+  await assert.rejects(
+    issue(live, 'validation', evidence, { prerequisite: 'git-checkout' }),
+    error('INVALID_PAYLOAD'),
+  );
+  const receipt = await issue(live, 'validation', evidence, LIMITED);
+  const value = JSON.parse(readFileSync(path.join(receipt.root, receipt.path)));
+  assert.equal(value.outcome, 'limited');
+  assert.equal(value.prerequisite, 'git-checkout');
+
+  const fx = fixture(t);
+  fx.input.remoteValidation = {
+    protocol: 'effective-flow.protected-validation/1',
+    requiredGates: ['final-validation'],
+    policyDigest: contentDigest('original protected policy'),
+  };
+  const remote = await setupDelivery(await start(fx));
+  await assert.rejects(
+    issue(remote, 'final-validation', [durable(remote)], LIMITED),
+    (failure) => failure.code === 'REMOTE_VALIDATION_REQUIRED' && /limited/.test(failure.message),
+  );
+});
+
+// Invariant: a PR-lane run completes with limited final validation, and DONE discloses the
+// limitation verbatim instead of reading as a fully validated delivery.
+test('a limited final validation completes on a configured pr lane and DONE must disclose it', async (t) => {
+  const live = await completed(configured(fixture(t), [['delivery.completion', 'pr']]), {
+    limited: ['validation', 'final-validation'],
+    lane: { lane: 'pr', authority: { kind: 'configuration' } },
+  });
+  await assert.rejects(live.call('terminal', terminalInput(live)), error('MISSING_EVIDENCE'));
+  const terminal = await live.call(
+    'terminal',
+    terminalInput(live, {
+      conclusion: `Feature delivered; ${limitationText('git-checkout')}; PR CI runs the full suite.`,
+    }),
+  );
+  const accepted = await live.call('verify-terminal', { ...live.common, terminal });
+  assert.equal(accepted.status, 'DONE');
+});
+
+// Invariant: continuing an existing plan pull request is the pr lane, proven by the verified plan
+// continuation the execution authorization already bound.
+test('a verified plan continuation proves the pr lane for a limited final validation', async (t) => {
+  const live = await publishedPlanFixture(t);
+  const authorization = await authorizePlan(live);
+  git(live.root, 'worktree', 'add', live.target, 'published-plan');
+  const ownership = lifecycleFixture(live, live.target, 'published-plan', live.fetchedHead);
+  await live.call('transition-execution', {
+    ...live.common,
+    agentHandle: 'original-child-handle',
+    authorization,
+    execution: {
+      executionRoot: live.target,
+      branch: 'published-plan',
+      head: live.head,
+      origin: 'effective-flow-created',
+      owner: 'build',
+    },
+    ownership,
+  });
+  const limited = await limitedThroughFinalValidation(live);
+  await assert.rejects(prepareLimited(limited), error('INCOMPLETE_GATES'));
+  await recordLane(limited, 'pr', { kind: 'plan-continuation' });
+  const prepared = await prepareLimited(limited);
+  const value = JSON.parse(readFileSync(path.join(prepared.root, prepared.path)));
+  assert.deepEqual(value.gates, limited.acceptance);
+});
+
+// Invariant: every no-PR lane, and a missing lane record, stops a limited final validation before
+// completion preparation, so it can never reach the handback commit.
+for (const variant of ['missing', 'merge', 'branch', 'in-place-no-delivery'])
+  test(`a limited final validation is refused at prepare-completion with lane ${variant}`, async (t) => {
+    let fx = fixture(t);
+    if (variant === 'branch') fx = configured(fx, [['delivery.completion', 'branch']]);
+    if (variant === 'in-place-no-delivery') fx = configured(fx, [['worktree.enabled', 'false']]);
+    const live = await limitedThroughFinalValidation(
+      await setupDelivery(
+        await start(fx),
+        variant === 'in-place-no-delivery' ? 'in-place-no-delivery' : undefined,
+      ),
+    );
+    if (variant !== 'missing') await recordLane(live, variant, { kind: 'configuration' });
+    await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
+  });
+
+// Invariant: the lane is bound only through closed provenance; a caller's bare claim of `pr`
+// never unlocks a limited validation.
+test('a caller-asserted completion lane without closed provenance is refused', async (t) => {
+  const live = await limitedThroughFinalValidation(await setupDelivery(await start(fixture(t))));
+  for (const authority of [
+    { kind: 'configuration' },
+    { kind: 'plan-continuation' },
+    { kind: 'caller', lane: 'pr' },
+    { kind: 'source', source: 'instruction', index: null, quote: 'open a pull request' },
+    null,
+  ])
+    await assert.rejects(recordLane(live, 'pr', authority), error('AUTHORITY_MISMATCH'));
+  await assert.rejects(
+    live.call('record-lane', { ...live.common, agentHandle: 'original-child-handle', lane: 'pr' }),
+    error('INVALID_PAYLOAD'),
+  );
+  await assert.rejects(
+    recordLane(live, 'in-place-no-delivery', { kind: 'configuration' }),
+    error('AUTHORITY_MISMATCH'),
+  );
+  await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
+  // The exact original instruction quote is closed provenance, recorded once.
+  await recordLane(live, 'pr', {
+    kind: 'source',
+    source: 'instruction',
+    index: null,
+    quote: 'retain a delivery branch',
+  });
+  await assert.rejects(recordLane(live, 'merge', { kind: 'configuration' }), error('COLLISION'));
+});
+
+// Invariant: a fully passing final validation supersedes a provisional Phase 5 limited
+// validation, so a run whose environment recovered completes without a limitation claim.
+test('a passing final validation supersedes a provisional limited validation at the terminal', async (t) => {
+  const live = await completed(fixture(t), { limited: ['validation'] });
+  const terminal = await live.call('terminal', terminalInput(live));
+  assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'DONE');
+});
+
+// Invariant: the no-PR stop is a terminal ABORT that names the failed prerequisite; it never
+// becomes DONE and verify-terminal refuses an ABORT that hides the limitation.
+test('a no-PR lane stops a limited final validation as an ABORT naming its prerequisite', async (t) => {
+  const live = await limitedThroughFinalValidation(await setupDelivery(await start(fixture(t))));
+  await recordLane(live, 'merge', { kind: 'configuration' });
+  await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
+  const checkpoint = await live.call('checkpoint', {
+    ...live.common,
+    checkpointId: 'environment-stop',
+    agentHandle: 'original-child-handle',
+    completed: REQUIRED_GATES.slice(0, REQUIRED_GATES.indexOf('final-validation') + 1),
+    pending: REQUIRED_GATES.slice(REQUIRED_GATES.indexOf('final-validation') + 1),
+    evidence: live.gates,
+  });
+  const { snapshot } = JSON.parse(readFileSync(path.join(checkpoint.root, checkpoint.path)));
+  const finalPlan = await live.call('retain-evidence', {
+    ...live.common,
+    evidenceId: 'environment-stop-plan',
+    source: live.ref(live.executionRoot, 'plan.md'),
+  });
+  const stop = (extra) => ({
+    ...live.common,
+    status: 'ABORT',
+    finalPlan,
+    finalCheckout: {
+      repositoryIdentity: live.repositoryIdentity,
+      executionRoot: live.executionRoot,
+      branch: live.execution.branch,
+      head: snapshot.head,
+      snapshot,
+      worktreeRemoved: false,
+    },
+    gates: live.gates,
+    retainedWorktree: null,
+    pilotStatus: 'not-applicable',
+    conclusion: 'Stopped before completion.',
+    nextWorkflow: 'Rerun once Git is readable.',
+    ...extra,
+  });
+  await assert.rejects(live.call('terminal', stop({ status: 'DONE' })), error('MISSING_EVIDENCE'));
+  await assert.rejects(live.call('terminal', stop()), error('MISSING_EVIDENCE'));
+  const terminal = await live.call(
+    'terminal',
+    stop({ conclusion: `Stopped: ${limitationText('git-checkout')}.` }),
+  );
+  assert.equal((await live.call('verify-terminal', { ...live.common, terminal })).status, 'ABORT');
 });
 
 test('CLI emits exactly one machine envelope, diagnostic stderr and usage exit status', () => {

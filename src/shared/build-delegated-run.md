@@ -229,14 +229,28 @@ Start in parallel if possible:
    admission/request/verified-poll/receipt chain before host completion sealing. Launch qualification
    does not replace this phase’s proof. A remote result is evidence for the ordinary gate; it does not
    grant the gate by itself.
+   A suite the validator reports as `SKIPPED (environment: <prerequisite id>)` is an environment
+   result: for delegated execution record the `validation` gate as provisionally `limited` with that
+   id; Phase 7 step 1 decides whether the run continues.
 
 ```lazy-include
 protected-validation
 when: the validation decision selects the protected native macOS GitHub Actions bridge
 ```
 
+```lazy-include
+validation-environment-unsupported
+when: the validator reports the suite stopped at the project's own environment preflight, or a check reports version control unavailable
+```
+
+```lazy-include
+validation-environment-continuation
+when: the validator reports the suite as `SKIPPED (environment: <prerequisite id>)`
+```
+
 2. Give the user the complete list of all errors and warnings found.
-3. If errors are found: delegate the repair to the routed Quality implementer.
+3. If errors are found: delegate the repair to the routed Quality implementer. An environment
+   result is no error and goes to no implementer.
 4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
 
 ### Phase 6: Review
@@ -314,7 +328,20 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
    <!-- spawn-site:build-delegated-run/final-validation -->
-2. For delegated execution first record the existing passed review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
+   **Environment lane.** When this final validation reports the suite as
+   `SKIPPED (environment: <prerequisite id>)`, decide here, before `prepare-completion` and the
+   handback commit. The lane is the explicit run override, else `delivery.completion`: `pr`, or
+   continuing an existing plan pull request, continues; `merge`, `branch`, an unset row (default
+   `merge`) and in-place without delivery stop; a `null` or invalid row is asked now, in a delegated
+   run through `question` with origin `delivery-choice`, and the answer is recorded in the
+   "Determine mode" slot of `worktree-integration`, so handback step 3 does not ask again. A
+   non-interactive run that cannot be answered counts as no-PR. For delegated execution record the
+   lane with `record-lane` and the `final-validation` gate as `limited`. The stop is a terminal
+   `ABORT` naming the prerequisite id: keep and report the owned worktree and branch, finalize the
+   pilot record with `completionStatus: aborted`, and recover through a fresh run once the
+   prerequisite holds. Under `Commit: caller-owned` decide nothing: return `DONE` with the
+   limitation and let the caller decide. Under protected validation this decision does not apply.
+2. For delegated execution first record the existing passed (or PR-lane `limited`) review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.
    - if, exceptionally, no plan file exists: create `<plan.dir>/` and assign the date-slug name per `Plan file convention`.

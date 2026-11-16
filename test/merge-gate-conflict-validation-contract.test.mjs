@@ -124,6 +124,36 @@ test('both handoffs and both roles carry the environment-signature rule', () => 
   }
 });
 
+// Invariant: both handoffs and both receiving roles name the full forbidden-substitute list, so a
+// failed preflight never turns into a preflight-bypassing full-suite run, a preflight edit, or a
+// changed Git environment; the resolver's adjacent-file latitude excludes the preflight itself.
+test('both handoffs and both roles name the forbidden substitutes', () => {
+  const unsupported = prose(readSource('shared', 'validation-environment-unsupported.md'));
+  const substitutes = [
+    /never run the suite, or a suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test` or one over a suite-covering directory or glob/,
+    /never neutralize the preflight by editing the probe or the test script/,
+    /never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`/,
+  ];
+  for (const [label, text] of [
+    ['resolver handoff', resolverHandoff],
+    ['validator handoff', validatorHandoff],
+    ['resolver', resolverValidation],
+  ])
+    for (const pattern of substitutes) assert.match(text, pattern, label);
+  // The validator role reaches the same list through its lazily loaded environment fragment.
+  assert.match(validator, /```lazy-include\nvalidation-environment-unsupported\nwhen: /);
+  assert.match(
+    unsupported,
+    /run the full suite, or a suite-equivalent selection, outside the project's entrypoint, such as a bare `node --test`/,
+  );
+  assert.match(unsupported, /neutralize the preflight by editing the probe or the test script/);
+  assert.match(unsupported, /set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`/);
+  assert.match(
+    prose(slice(resolver, '## Adjacent files', '## Abort on uncertainty', 'resolver')),
+    /the allowance never covers the test preflight, its probe or the test script: a failing preflight is reported, never fixed\./,
+  );
+});
+
 // Invariant: an environment signature under effective `full` stops the round before the commit and
 // the push; only the excluded test command under `quick` is deferred to CI.
 test('an environment signature under full stops before the push', () => {

@@ -19,6 +19,8 @@ const TIMEOUT_MS = 5_000;
 const CANARY_CONTENT = 'effective-flow sandbox capability canary\n';
 const DENIED_SENTINEL = 'effective-flow-write-denied';
 const REPOSITORY_ROOT = path.resolve(import.meta.dirname, '..');
+const GIT_PREREQUISITES_POINTER =
+  'See docs/developer-guide/build-system.md#test-environment-prerequisites.';
 
 // Free space os.tmpdir() must offer before the suite starts.
 // Measured 2026-11-14 with Node 24.22.2 on Linux, availableParallelism() 2: a full `node --test`
@@ -102,7 +104,7 @@ function checkGitCheckout(check) {
       `git exit ${result.status}, signal ${result.signal}`;
   failed(
     check,
-    `Git cannot read the checkout at ${REPOSITORY_ROOT}: ${detail}. Run tests where Git is installed and the checkout's Git metadata is visible.`,
+    `Git cannot read the checkout at ${REPOSITORY_ROOT}: ${detail}. Run tests where Git is installed and the checkout's Git metadata is visible. ${GIT_PREREQUISITES_POINTER}`,
   );
 }
 

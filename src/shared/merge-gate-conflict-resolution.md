@@ -29,6 +29,10 @@ Hand `{{AGENT:merge-conflict-resolver}}`:
   conflicted path high-risk; under `full`, its validation rules unchanged;
 - the rule **"on an environment signature, report the check and its diagnostic; no suite split, no
   base comparison, no rerun"** with the signature classes of "Conflict validation mode";
+- the **forbidden substitutes** for a check that cannot run here: never run the suite, or a
+  suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
+  or one over a suite-covering directory or glob; never neutralize the preflight by editing the
+  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`;
 - the **boundary it works inside**, restated because it is the gate's boundary and not the worker's
   to relax: it resolves, validates, and stages by explicit path, and it never commits, never
   continues the merge, never aborts it, never pushes, and never rewrites history. The commit, the
@@ -78,6 +82,10 @@ stated for the reason the second bullet gives:
     generic `quick` mapping;
   - the rule **"on an environment signature, report the check and its diagnostic; no suite split,
     no base comparison, no rerun"** with the same signature classes;
+  - the same **forbidden substitutes**: never run the suite, or a suite-equivalent selection,
+    outside the project's test entrypoint, such as a bare `node --test` or one over a
+    suite-covering directory or glob; never neutralize the preflight by editing the probe or the
+    test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`;
   - the **resolved language values**, so the validator does not re-read the project setup ADR – its
     own language rule forbids that, so a validator handed none has no compliant option.
 

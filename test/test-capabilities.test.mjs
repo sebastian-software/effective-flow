@@ -104,6 +104,13 @@ test('a checkout Git cannot read is an observable blocked environment', (t) => {
   assert.equal(check(report, 'temporary-directory').status, 'passed');
   assert.equal(check(report, 'git-checkout').status, 'failed');
   assert.match(check(report, 'git-checkout').message, /^Git cannot read the checkout at /);
+  // Invariant: only the git-checkout failure ends with the guide pointer; the aggregate stays generic.
+  assert.ok(
+    check(report, 'git-checkout').message.endsWith(
+      'See docs/developer-guide/build-system.md#test-environment-prerequisites.',
+    ),
+  );
+  assert.doesNotMatch(report.error.message, /build-system\.md/);
   assert.equal(report.error?.code, 'TEST_ENVIRONMENT_UNSUPPORTED');
 });
 

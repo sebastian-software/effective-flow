@@ -37,6 +37,7 @@ export const BUILD_RUN_OPERATIONS = Object.freeze([
   'seal-delivery',
   'handoff',
   'record-return',
+  'record-lane',
   'retain-evidence',
   'validation-await-admission',
   'validation-request',
@@ -493,6 +494,13 @@ const RECEIPT_FIELDS = [
   'manifest',
 ];
 const ACCEPTANCE_GATES = ['independent-review', 'final-validation'];
+// An environment-limited validation is provisional evidence: only a recorded PR lane accepts it.
+const LIMITABLE_GATES = ['validation', 'final-validation'];
+const LANES = ['pr', 'merge', 'branch', 'in-place-no-delivery'];
+const PREREQUISITE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+export function limitationText(prerequisite) {
+  return `no local full-suite evidence (environment: ${prerequisite})`;
+}
 const POST_HANDOFF_GATES = [
   'delivery',
   'plan-archival',
@@ -1000,16 +1008,11 @@ async function dataRead(context, ref) {
 }
 async function gateReceipt(context, ref) {
   const value = await readRecord(context, ref);
-  exact(value, RECEIPT_FIELDS, ['remoteValidation', 'retainedOwnership']);
+  exact(value, RECEIPT_FIELDS, ['remoteValidation', 'retainedOwnership', 'prerequisite']);
   one(value.gate, REQUIRED_GATES);
-  one(value.outcome, ['passed', 'not-applicable']);
+  gateOutcome(context, value.gate, value.outcome, value.prerequisite);
   text(value.reason);
   snapshotShape(value.snapshot);
-  if (
-    value.outcome === 'not-applicable' &&
-    !['delivery', 'pilot-finalization'].includes(value.gate)
-  )
-    fail('INCOMPLETE_GATES', 'required gate cannot be waived');
   if (!Array.isArray(value.evidence) || value.evidence.length === 0)
     fail('MISSING_EVIDENCE', 'gate evidence is missing');
   for (const item of value.evidence)
@@ -1064,6 +1067,34 @@ async function gateReceipt(context, ref) {
       fail('MISSING_EVIDENCE', 'cleanup must disclose its verified retention reason');
   }
   return value;
+}
+function gateOutcome(context, gate, outcome, prerequisite) {
+  one(outcome, ['passed', 'not-applicable', 'limited']);
+  if (outcome === 'not-applicable' && !['delivery', 'pilot-finalization'].includes(gate))
+    fail('INCOMPLETE_GATES', 'required gate cannot be waived');
+  if (outcome !== 'limited') {
+    if (prerequisite !== undefined)
+      fail('INVALID_PAYLOAD', 'only a limited validation names a prerequisite');
+    return;
+  }
+  if (!LIMITABLE_GATES.includes(gate))
+    fail('INCOMPLETE_GATES', 'only a validation gate can record limited evidence');
+  if (typeof prerequisite !== 'string' || !PREREQUISITE.test(prerequisite))
+    fail('INVALID_PAYLOAD', 'limited validation needs its failed prerequisite id');
+  if (context.request.remoteValidation?.requiredGates.includes(gate))
+    fail('REMOTE_VALIDATION_REQUIRED', 'a protected remote gate cannot record limited evidence');
+}
+async function laneRecord(context) {
+  if (!(await present(context, 'lane.json'))) return null;
+  const value = await localRecord(context, 'lane.json');
+  exact(value, ['protocol', 'runId', 'requestDigest', 'agentHandle', 'lane', 'authority']);
+  one(value.lane, LANES);
+  return value;
+}
+// `passed` always counts; `limited` counts only once Phase 7 recorded the PR lane.
+async function acceptedOutcome(context, receipt) {
+  if (receipt.outcome === 'passed') return true;
+  return receipt.outcome === 'limited' && (await laneRecord(context))?.lane === 'pr';
 }
 async function assertCompleted(context, completed, refs, current, proof = context.completionProof) {
   const proven = new Set();
@@ -1312,23 +1343,26 @@ async function authority(context, value, mode) {
       fail('AUTHORITY_MISMATCH', 'selected mode is not established by configuration');
     return;
   }
-  if (value.kind === 'source') {
-    exact(value, ['kind', 'source', 'index', 'quote']);
-    text(value.quote);
-    one(value.source, ['instruction', 'restriction']);
-    const source =
-      value.source === 'instruction'
-        ? context.source.instruction
-        : context.source.restrictions[value.index];
-    if (
-      (value.source === 'instruction' && value.index !== null) ||
-      (value.source === 'restriction' && (!Number.isSafeInteger(value.index) || value.index < 0)) ||
-      typeof source !== 'string' ||
-      !source.includes(value.quote)
-    )
-      fail('AUTHORITY_MISMATCH', 'mode provenance is not in the immutable original user source');
-    return;
-  }
+  if (value.kind === 'source') return sourceAuthority(context, value);
+  return replyAuthority(context, value);
+}
+function sourceAuthority(context, value) {
+  exact(value, ['kind', 'source', 'index', 'quote']);
+  text(value.quote);
+  one(value.source, ['instruction', 'restriction']);
+  const source =
+    value.source === 'instruction'
+      ? context.source.instruction
+      : context.source.restrictions[value.index];
+  if (
+    (value.source === 'instruction' && value.index !== null) ||
+    (value.source === 'restriction' && (!Number.isSafeInteger(value.index) || value.index < 0)) ||
+    typeof source !== 'string' ||
+    !source.includes(value.quote)
+  )
+    fail('AUTHORITY_MISMATCH', 'mode provenance is not in the immutable original user source');
+}
+async function replyAuthority(context, value) {
   exact(value, ['kind', 'reply', 'resume']);
   one(value.kind, ['reply']);
   const reply = await readRecord(context, value.reply);
@@ -1341,6 +1375,56 @@ async function authority(context, value, mode) {
     resumed.agentHandle !== (await agentHandle(context))
   )
     fail('AUTHORITY_MISMATCH', 'mode decision lacks a consumed trusted delivery-choice reply');
+}
+// The bound `delivery.completion` row; a missing row is the documented default `merge`.
+async function configuredCompletion(context) {
+  let basis;
+  try {
+    basis = JSON.parse((await artifact(context.request.policy.basis, [context.root])).toString());
+  } catch (error) {
+    if (error instanceof BuildRunError) throw error;
+    fail('INVALID_STATE', 'malformed configuration basis');
+  }
+  const entry = basis.execution?.values?.['delivery.completion'];
+  if (entry === undefined || entry.state === 'unset') return 'merge';
+  return entry.state === 'set' && ['pr', 'merge', 'branch'].includes(entry.value)
+    ? entry.value
+    : null;
+}
+// Phase 7 binds the completion lane once, from closed provenance only; a bare lane claim is refused.
+async function recordLane(context, input) {
+  if (!context.authorization || !context.transition)
+    fail('INVALID_STATE', 'the completion lane follows the verified execution transition');
+  if (await present(context, 'lane.json'))
+    fail('COLLISION', 'the completion lane is already recorded');
+  await agent(context, input.agentHandle);
+  await policyUnchanged(context);
+  if (await outstanding(context))
+    fail('OUTSTANDING_QUESTION', 'consume the lane decision before recording it');
+  one(input.lane, LANES);
+  const value = input.authority;
+  if (value === null || typeof value !== 'object' || Array.isArray(value))
+    fail('AUTHORITY_MISMATCH', 'the completion lane needs closed provenance');
+  const inPlace = context.authorization.mode === 'in-place-no-delivery';
+  if (inPlace !== (input.lane === 'in-place-no-delivery'))
+    fail('AUTHORITY_MISMATCH', 'the completion lane contradicts the verified execution mode');
+  if (value.kind === 'configuration') {
+    exact(value, ['kind']);
+    if (!inPlace && input.lane !== (await configuredCompletion(context)))
+      fail('AUTHORITY_MISMATCH', 'the completion lane is not the bound delivery.completion row');
+  } else if (value.kind === 'plan-continuation') {
+    exact(value, ['kind']);
+    if (!context.authorization.planContinuation || input.lane !== 'pr')
+      fail('AUTHORITY_MISMATCH', 'only a verified plan continuation proves this pr lane');
+  } else if (value.kind === 'source') sourceAuthority(context, value);
+  else if (value.kind === 'reply') await replyAuthority(context, value);
+  else fail('AUTHORITY_MISMATCH', 'the completion lane provenance is not closed');
+  return record(context, 'lane.json', {
+    ...base(context),
+    agentHandle: input.agentHandle,
+    lane: input.lane,
+    authority: value,
+  });
 }
 // This consumes the existing owner's body-free normalized discovery, not a new approval flag.
 // Checks 1–4 remain facts of that owner read; check 5 and local branch/source proofs are Git checks.
@@ -1848,7 +1932,7 @@ async function acceptanceAt(context, refs, basis, manifest) {
     const receipt = await gateReceipt(context, ref);
     if (
       !ACCEPTANCE_GATES.includes(receipt.gate) ||
-      receipt.outcome !== 'passed' ||
+      !(await acceptedOutcome(context, receipt)) ||
       seen.has(receipt.gate) ||
       !(
         same(receipt.snapshot, basis) ||
@@ -1872,10 +1956,12 @@ async function prepareCompletion(context, input) {
   const seen = new Set();
   for (const ref of input.gates) {
     const gate = await gateReceipt(context, ref);
+    if (gate.outcome === 'limited' && !(await acceptedOutcome(context, gate)))
+      fail('INCOMPLETE_GATES', 'limited final validation needs a recorded pr lane');
     if (
       !ACCEPTANCE_GATES.includes(gate.gate) ||
       seen.has(gate.gate) ||
-      gate.outcome !== 'passed' ||
+      !(await acceptedOutcome(context, gate)) ||
       !same(gate.snapshot, current.snapshot)
     )
       fail('CONTENT_DRIFT', 'pre-completion review/validation must judge current content');
@@ -1937,7 +2023,7 @@ async function preparation(context, ref) {
     const receipt = await gateReceipt(context, item);
     if (
       !ACCEPTANCE_GATES.includes(receipt.gate) ||
-      receipt.outcome !== 'passed' ||
+      !(await acceptedOutcome(context, receipt)) ||
       !same(receipt.snapshot, value.snapshot) ||
       gates.has(receipt.gate)
     )
@@ -3378,8 +3464,14 @@ async function validateTerminalValue(context, value) {
     await evidence(value.finalPlan, context.request, context, context.deps, true);
   }
   const seen = new Set();
-  for (const ref of value.gates) {
-    const receipt = await gateReceipt(context, ref);
+  const receipts = [];
+  for (const ref of value.gates) receipts.push(await gateReceipt(context, ref));
+  // A fully passing final validation supersedes a provisional Phase 5 limited validation.
+  const finalPassed = receipts.some(
+    (receipt) => receipt.gate === 'final-validation' && receipt.outcome === 'passed',
+  );
+  for (const [position, ref] of value.gates.entries()) {
+    const receipt = receipts[position];
     if (seen.has(receipt.gate)) fail('INCOMPLETE_GATES', 'duplicate gate receipt');
     seen.add(receipt.gate);
     if (
@@ -3413,6 +3505,12 @@ async function validateTerminalValue(context, value) {
       (value.pilotStatus === 'not-applicable') !== (receipt.outcome === 'not-applicable')
     )
       fail('INCOMPLETE_GATES', 'pilot outcome contradicts finalization receipt');
+    if (receipt.outcome === 'limited' && !(receipt.gate === 'validation' && finalPassed)) {
+      if (value.status === 'DONE' && !(await acceptedOutcome(context, receipt)))
+        fail('INCOMPLETE_GATES', 'limited validation completes only on a recorded pr lane');
+      if (!value.conclusion.includes(limitationText(receipt.prerequisite)))
+        fail('MISSING_EVIDENCE', 'the conclusion must disclose the limited validation');
+    }
   }
   if (value.status === 'DONE' && REQUIRED_GATES.some((gate) => !seen.has(gate)))
     fail('INCOMPLETE_GATES', 'missing required gate');
@@ -3750,6 +3848,7 @@ const SCHEMAS = {
   'seal-delivery': ['agentHandle', 'sealId', 'basis', 'finalPlan', 'expectedTree', 'judgments'],
   handoff: ['agentHandle', 'seal', 'head', 'finalPlan'],
   'record-return': ['agentHandle', 'delivery'],
+  'record-lane': ['agentHandle', 'lane', 'authority'],
   'retain-evidence': ['evidenceId'],
   'validation-await-admission': ['validatorHandle', 'gate'],
   'validation-request': ['validationId', 'validatorHandle', 'gate', 'bootstrapRef'],
@@ -3922,6 +4021,7 @@ async function operate(operation, input, context) {
   if (operation === 'seal-delivery') return sealDelivery(context, input);
   if (operation === 'handoff') return makeHandoff(context, input);
   if (operation === 'record-return') return recordReturn(context, input);
+  if (operation === 'record-lane') return recordLane(context, input);
   if (operation === 'bind-agent')
     return record(context, 'agent.json', {
       ...base(context),
@@ -4059,13 +4159,8 @@ async function operate(operation, input, context) {
     if (await outstanding(context))
       fail('OUTSTANDING_QUESTION', 'resume the trusted reply before completing gates');
     one(input.gate, REQUIRED_GATES);
-    one(input.outcome, ['passed', 'not-applicable']);
+    gateOutcome(context, input.gate, input.outcome, input.prerequisite);
     text(input.reason);
-    if (
-      input.outcome === 'not-applicable' &&
-      !['delivery', 'pilot-finalization'].includes(input.gate)
-    )
-      fail('INCOMPLETE_GATES', 'required gate cannot be waived');
     if (context.handoff && input.gate === 'pilot-finalization')
       await agent(context, input.agentHandle);
     if (
@@ -4117,6 +4212,7 @@ async function operate(operation, input, context) {
       ...base(context),
       gate: input.gate,
       outcome: input.outcome,
+      ...(input.prerequisite === undefined ? {} : { prerequisite: input.prerequisite }),
       reason: retainedReason === undefined ? input.reason : `${input.reason} ${retainedReason}`,
       ...(retainedOwnership === undefined ? {} : { retainedOwnership }),
       snapshot: basis,
@@ -4147,6 +4243,7 @@ export async function executeOperation(operation, input, deps = {}) {
           'validationRequest',
           'validationResult',
           'validatorHandle',
+          'prerequisite',
         ]
       : operation === 'seal-delivery'
         ? ['renewedGates', 'archivalRefusal', 'retainedFiles']
