@@ -1,0 +1,54 @@
+{
+  "name": "merged-delivery-findings-report",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "emitter": "build",
+    "sourceAssociation": {
+      "kind": "local-plan",
+      "path": "docs/plan/archive/2026-10-08-packages.md",
+      "establishedArchiveMoveFrom": "docs/plan/2026-10-08-packages.md"
+    },
+    "outcome": {
+      "completedWork": ["A implemented and merged"],
+      "delivery": "merged",
+      "pullRequest": 42,
+      "findingsReport": {
+        "path": ".effective-flow/review/2026-10-08-build-review.md",
+        "openFindings": 1
+      }
+    },
+    "reportFacts": [
+      "Package A finished successfully; the delivery merged the branch and the checkout is back on the base branch.",
+      "The review wrote the findings report `.effective-flow/review/2026-10-08-build-review.md`; one finding is still open and was offloaded there."
+    ],
+    "completed": true,
+    "languageChat": "de",
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build",
+      "retro"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/archive/2026-10-08-packages.md": "# Package plan\n\n**Plan status:** Implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package A.\n\n## Implementation sequence\n\n- [x] A: implement parser.\n\n## Plan review\n\n**Result:** Approved\n\n## Review findings\n\n**Date:** 2026-10-08\n**Reviewer:** all routed reviewers\n\n### Summary\n\n| Status | Count |\n|---|---:|\n| Fixed | 1 |\n| Open / Not implemented | 1 |\n\n**External review report:** `.effective-flow/review/2026-10-08-build-review.md`\n\n## Open points\n\n- No open points.\n",
+    ".effective-flow/review/2026-10-08-build-review.md": "# Code review report\n\n**Date:** 2026-10-08\n**Scope:** Package A parser\n**Project type:** Tooling\n**Origin plan:** `docs/plan/2026-10-08-packages.md`\n**Source workflow:** `effective-flow build`\n**Source review:** Phase 6 implementation review\n\n## Summary\n\n| Severity | Count |\n|---|---|\n| Critical | 0 |\n| Important | 1 |\n| Note | 0 |\n\n| Complexity | Count |\n|---|---|\n| Low | 1 |\n| Medium | 0 |\n| High | 0 |\n\n| Action | Count |\n|---|---|\n| effective-flow fix | 1 |\n| effective-flow refactor | 0 |\n| effective-flow build | 0 |\n| effective-flow docs | 0 |\n\n## Findings\n\n### [R-0000021] Parser accepts an unbounded nesting depth\n- **Severity**: Important\n- **Complexity**: Low\n- **Area**: Parser\n- **File**: src/parser.mjs:42\n- **Admission outcome**: admitted\n- **Admission reason**: material-harm\n- **Admission gate**: v1\n- **Evidence**: test reproduction: a 10000-level nested input exhausts the stack\n- **Evidence digest**: sha256:4f1c2a9e\n- **Current reachability**: any caller passing untrusted input to parse()\n- **Root-cause signature**: parser/unbounded-recursion\n- **Scope and containment**: outside package A's accepted scope; no containment in place\n- **Why now**: untrusted input reaches the parser in the next release\n- **Completion condition**: parse() rejects nesting deeper than a configured limit\n- **Problem**: Recursive descent has no depth limit.\n- **Recommendation**: Add a depth limit and reject deeper input.\n- **Action**: `effective-flow fix`\n- **Prompt suggestion**: Add a nesting-depth limit to parse() and a test for the rejection.\n- **Developer note**:\n- **Status**: Open\n"
+  }
+}

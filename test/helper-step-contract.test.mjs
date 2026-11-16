@@ -341,7 +341,7 @@ test('review states the summary-only presentation in its Goal and covers inline 
   );
   assert.match(
     text,
-    /8\. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat\./,
+    /8\. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat; without an admitted finding, only the retrospective slot of `next-steps` applies\./,
   );
   assert.doesNotMatch(text, /Present the most important findings/);
 });

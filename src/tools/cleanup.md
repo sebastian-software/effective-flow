@@ -55,7 +55,7 @@ when: a stale diff baseline will be discarded, or a confirmed carry-over copy or
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ```lazy-include
@@ -468,7 +468,7 @@ claim from a retained status is the confirmed cleanup-only claim of an `aborted`
 
 Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
 row when this run staged deletions, the configuration row when it only referred config values on. A
-report that found neither matches no row and emits nothing.
+report that found neither matches no row.
 
 ## Rules
 

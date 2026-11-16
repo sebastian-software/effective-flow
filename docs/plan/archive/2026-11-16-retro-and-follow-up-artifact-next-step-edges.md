@@ -1,6 +1,6 @@
 # Retro and follow-up artifact next-step edges
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -406,3 +406,80 @@ Round 2 (deep interactive review, 2026-11-16):
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-16
+**Workflow:** effective-flow build (inline Quality route), continued on plan PR #683
+
+### Requirement
+
+Implemented as planned: the retrospective slot (A1–A5, signals T1–T4), B1, C2(a) and C2(b) via the
+validated `Associated plan:` line, C3, C4 and D2. C1 stays dropped.
+
+### Architecture decisions
+
+As planned, with these refinements from implementation and review:
+
+- The slot section names an explicit abort clause: after an abort only T4 qualifies.
+- Retro eligibility is mechanical: only the literal `Run state: non-interactive` line, the
+  unattended planning envelope, or a `non-interactive` state a tool infers by its own documented
+  fallback excludes it.
+- The full `Associated plan:` check lives once in the always-loaded merge-gate core. The caller drops
+  a line that fails it before every dispatch, re-dispatches included, or an inline run. The
+  delegated run's Entry applies the same check as a strict backstop, and an Entry abort returns
+  `Entry abort: yes`, which T4 never counts.
+- C2(b) counts only `Open` or bare `Not implemented` findings, never `(ADR: <slug>)` statuses.
+- The closed B1 set is phrased as endings. Pending-check, wait-timeout and `no-branch-writes`
+  endings win, and `blocked by review notes` precedes `blocked by failing checks`.
+- A delegated build `ABORT` emits nothing; its caller alone applies the slot.
+
+### Affected files
+
+- `src/shared/next-steps.md`, `src/shared/merge-gate-delegated-run.md`, `src/tools/merge-gate.md`,
+  `src/shared/build-delegated-run.md`, `src/shared/setup-targeted-change.md`, and the next-steps
+  fence triggers or emission gates of 21 tool files under `src/tools/`
+- `contextBudget:` raised for `issue-buddy` (490 → 494) and `merge-gate` (922 → 925)
+- `docs/user-guide/tool-flow.md`, `tools-quality.md`, `tools-deliver.md`,
+  `docs/developer-guide/build-system.md`
+- `test/workflow-contracts.test.mjs`, `test/next-steps-eval.test.mjs`,
+  `test/helper-step-contract.test.mjs`, `test/model-tiers-contract.test.mjs`
+- `evals/next-steps/` (six scenarios, fixtures, oracles, registry, README) and
+  `evals/host-driver/tests/test_first_stage.py` (per-suite frozen branch tables, so post-freeze
+  next-steps scenarios stay outside the frozen 155-slot corpus)
+
+### Implementation details
+
+`merge-gate-delegation-contract.md` needed no change, because it holds no caller input-line list.
+`fix`, `refactor` and `maintain` already name their report path after a merge; `build` now does too.
+Commit, cleanup and setup Targeted/Status endings spawn no sub-agent, so their wording was narrowed
+to "matches no next-steps row" instead of gaining the slot clause.
+
+### Test results
+
+- `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` pass.
+- No local full-suite evidence (environment: version-control): the test preflight's `git-checkout`
+  check fails inside the validation container for this linked worktree. The pull request's CI runs
+  the full suite.
+- The targeted contract, eval and host-driver tests of the change pass. The remaining local failures
+  all carry the version-control environment signature. Two composed host-driver tests timed out
+  once under parallel load and passed in an isolated run on the same tree.
+- `pnpm eval next-steps verify` and `pnpm eval merge-gate verify` report no integrity blockers. The
+  six new next-steps scenarios have no recorded evidence yet, and the existing scenarios are stale;
+  record a round before the release PR.
+
+## Review findings
+
+**Date:** 2026-11-16
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    21 |
+| Open / Not implemented |     0 |
+
+Three further observations were closed below the admission threshold: T3 coverage for inline gate
+runs, an Entry-abort marker for the dormant delegated build route, and harmless setup Status
+wording.

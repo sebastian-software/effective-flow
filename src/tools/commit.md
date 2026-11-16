@@ -45,7 +45,7 @@ commit-message-rules
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ## Recommended skills
@@ -98,7 +98,7 @@ names the base branch as its head. A direct invocation does not fabricate a deli
 10. Emit the next-step block per `next-steps` as the last element of that report, unless the caller
     passed the literal line `Next steps: suppressed`. The block needs a commit that `git commit`
     actually created on a branch other than the base branch; a run with nothing staged, a commit a
-    hook blocked, or a commit made on the base branch itself matches no row and emits nothing.
+    hook blocked, or a commit made on the base branch itself matches no row.
 
 ## Rules
 

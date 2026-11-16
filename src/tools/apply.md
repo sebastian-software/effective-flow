@@ -48,7 +48,7 @@ when: a remote tracker access is about to perform its first runtime-state mutati
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ```include
