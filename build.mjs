@@ -2525,7 +2525,7 @@ try {
     'apply-plan': 566,
     investigate: 544,
     retro: 215,
-    focus: 414,
+    focus: 416,
     fix: 572,
     'plan-review': 521,
     pr: 510,

@@ -18,6 +18,12 @@ first tick after an opt-in snapshot of an idle target skipped the one-time idle 
 where the loop cap and the cap tick's deletion were not observed; with a global Codex `AGENTS.md`
 present it is untested. All sends stay disabled. The decision below is unchanged.
 
+Status note, November 15, 2026 (#670, owner decision): the follow-up loop cap changes from 24 hours
+or 48 ticks to a flat 24 ticks for every interval; the decision bullet below says why. The cap
+change makes a new focus candidate, which needs its own record before it merges. The
+[F record for candidate `87851907`](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-87851907)
+passed all 16 checklist items, and its 5-minute loop reached the 24-tick cap without compaction.
+
 ## Context
 
 A session that drifts cannot see its own drift. The planned `effective-flow focus` tool is an outside
@@ -163,9 +169,13 @@ for several questions, one host version and interval). The decision:
   mark a scheduled turn are not read, so a hand-typed tick prompt counts as a tick; this is harmless
   because ticks are report-only. A tick or stop deletes only a handle an earlier assistant message of
   the observer conversation names, so an edited prompt cannot delete an unrelated task.
-- **A loop cap of 24 hours or 48 ticks.** The spike measured 13,130 characters of observer growth
-  per proxy tick in the `activity` view (partial), which puts a full loop at roughly 630,000
-  characters or more; continuing past the cap needs an explicit resume.
+- **A loop cap of 24 ticks.** The spike measured 13,130 characters of observer growth
+  per proxy tick in the `activity` view (partial), which puts a full 24-tick loop at roughly 315,000
+  characters or more. The e0966ac7 record compacted the 5-minute loop after 33 ticks at about
+  21,400 characters per quiet tick; 024bcb2a compacted after 21 and 23 ticks at about 37,000. The
+  cap is therefore 24 ticks for every interval (2 hours at 5 minutes, 24 hours at 60 minutes), the
+  next record confirms that a loop at the current tick cost reaches it, and a running loop past 24
+  ticks ends at its next tick; continuing past the cap needs an explicit resume.
 
 Residual risk: ticks read the target unattended, in whatever mode the observer runs. In an
 approval-requiring mode each read waits for approval; in a broader mode the reads run without a

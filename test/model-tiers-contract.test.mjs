@@ -122,6 +122,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     'snapshot output attribution; starts no analysis beyond focus/session-analysis',
   ],
   [
+    'tools/focus.md',
+    'The leaf starts no child, accesses no native session or other source',
+    'leaf limits and the inline fallback of the focus/session-analysis spawn; starts nothing',
+  ],
+  [
     'tools/apply-issues.md',
     'Each analysis sub-agent receives',
     'handoff of apply-issues/issue-analysis',

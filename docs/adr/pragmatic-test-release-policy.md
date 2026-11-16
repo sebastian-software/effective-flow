@@ -14,6 +14,12 @@ alone, now the [F record for candidate `e0966ac7`](../developer-guide/focus-host
 which supersedes the `024bcb2a` record as the binding. The `focus` and `build-context` eval rounds
 stay post-merge debt and decide no activation. The decision below is unchanged.
 
+Status note, November 15, 2026: for `focus`, the applicable acceptance is the host acceptance record
+alone, now the [F record for candidate `87851907`](../developer-guide/focus-host-acceptance.md#f-record-for-candidate-87851907),
+which supersedes the `e0966ac7` record as the binding for both T3 observed rows. Sends stay
+disabled. The `focus` and `build-context` eval rounds stay post-merge debt and decide no activation.
+The decision below is unchanged.
+
 ## Context
 
 Package acceptance and experimental execution qualification answer different questions. A

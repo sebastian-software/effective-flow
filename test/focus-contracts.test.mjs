@@ -438,19 +438,32 @@ test('Focus follow-up offer is bounded, disclosed, and opted into only by the ne
 test('Focus follow-up offer disclosures are an enumerated fixed-order set', () => {
   // Invariant: the offer discloses six numbered items in a fixed order, each on its own line, so an
   // observer cannot merge, reorder or drop one; only the approval item may be omitted, and only when
-  // the mode is known not to require approvals (an unknown mode fails safe to disclosure); the
-  // remaining items keep their numbers, so an omission stays visible.
+  // the mode is known not to require approvals (an unknown mode fails safe to disclosure); only the
+  // last item is omissible, so an omission never leaves a gap.
   const text = followUp();
   ordered(
     text,
-    "render these mandatory disclosures in this fixed order, each on its own numbered line; only item 5 is omitted, and only when the observer's mode is known not to require approvals; the remaining items keep their numbers:",
+    "render these mandatory disclosures in this fixed order, each on its own numbered line; only item 6 is omitted, and only when the observer's mode is known not to require approvals:",
     '1. every tick posts a visible message in this observer thread;',
     '2. the schedule persists on the host until it is deleted;',
     '3. the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks;',
     '4. a recommendation to use a dedicated observer thread;',
-    '5. in an observer mode requiring approvals or of unknown mode, each tick asks for approval',
-    '6. ticks are report-only: a warranted correction is shown once, with a pointer to an interactive `{{FLOW}} focus <session-ref>` run.',
+    '5. ticks are report-only: a warranted correction is shown once, with a pointer to an interactive `{{FLOW}} focus <session-ref>` run;',
+    '6. in an observer mode requiring approvals or of unknown mode, each tick asks for approval of each `t3_thread_read`, skill-file reads and its final deletion, and waits until they are answered; a pending approval holds the next tick in the host queue.',
   );
+  const fragment = flat(source('src/shared/focus-follow-up.md'));
+  for (const stale of [
+    '1440',
+    '24 hours',
+    '48 ticks',
+    'whichever comes first',
+    'trusted clock',
+    'min(48',
+    'the remaining items keep their numbers',
+    'only item 5 is omitted',
+  ]) {
+    assert.ok(!fragment.includes(stale), `the follow-up fragment must not contain: ${stale}`);
+  }
   assert.doesNotMatch(text, /observer ancestry and target/);
   const offer = boundedSlice(source('src/shared/focus-follow-up.md'), '## Offer', '## Scheduling');
   assert.deepEqual(
@@ -548,7 +561,7 @@ test('Focus follow-up checkpoint is one exact v1 line with strict validity', () 
     'The initial checkpoint takes it from the failing step or blocker the snapshot reported, otherwise `none`.',
     'It resets to `none` when the step passes, the target moves to a different step or the verdict leaves Looping; a backlog tick sets or clears it only for the covered range. `correction=` is `none` when no correction stands. An explicit `goal:` argument is written `goal=arg@snapshot`.',
     "`started=` is the ISO-8601 UTC time of the creation result's next run time minus the interval and is informational only. `lag=` counts consecutive `backlog=yes` ticks.",
-    'An invalid-path stopped line takes `target` and `handle` from the prompt and writes `-` for unknown fields, except `ticks=1` when no earlier count exists; later stopped ticks increment it, and with `interval=-` the cap is 48 ticks.',
+    'An invalid-path stopped line takes `target` and `handle` from the prompt and writes `-` for unknown fields, except `ticks=1` when no earlier count exists; later stopped ticks increment it, and the cap is reached when `ticks` is 24 or more.',
     '`last=` is always a numeric position: the last served position, not the end of history',
     'A read returning no items and a null `nextPosition` keeps the previous value; the next page read always passes it as `afterPosition`.',
     'A tick whose final page still returns `hasMore: true` records `backlog=yes` and is not quiet.',
@@ -605,7 +618,7 @@ test('Focus follow-up deletes only named handles and keeps stopped loops quiet',
     'With a missing, malformed or foreign checkpoint, including after compaction, the tick reads nothing about the target, retries deleting its own prompt handle under the deletion safeguard, notifies once and emits a checkpoint with `state=stopped`.',
     'Every tick that sees `state=stopped` first retries deleting its handle and then emits only the checkpoint line.',
     'suppresses a repeated notice, even when the creation turn is no longer reachable.',
-    '`ticks` and `started` keep counting; reaching the cap posts one final notice: "schedule may still be active – delete it in T3".',
+    '`ticks` and `started` keep counting; the first tick reaching the cap posts one final notice: "schedule may still be active – delete it in T3".',
   ]);
 });
 
@@ -640,7 +653,8 @@ test('Focus follow-up reports only material changes under the existing verdict r
     'Otherwise it posts only the checkpoint line.',
     'A first change of `verdict=` to Cannot judge is reported once with its coverage gap; an unchanged Cannot judge is not repeated.',
     'When `lag=` reaches 3, report once that follow-up lags the target, then continue; repeat only after `lag=` returned to 0.',
-    "a target with no active run, no pending request, no new events and no completion evidence is reported once as a needed decision; a later tick treats it as reported when an assistant message of this loop reported it after the target's last change",
+    "a target with no active run, no pending request, no new events and no completion evidence is reported once as a needed decision; a later tick treats it as reported when an assistant message of this loop reported it after the target's last change; only a tick's message counts as that report; the snapshot, its offer and the opt-in turn that creates the schedule never do",
+    'After that report, ticks stay quiet until the target changes or the cap ends the loop.',
   ]);
 });
 
@@ -749,7 +763,7 @@ test('Focus follow-up ends every loop by deleting exactly its own handle', () =>
     '- completion; - an explicit stop; - lost access or an unavailable target; - the target turning out to be delegated;',
     'a goal change in the target when no explicit `goal:` was given; with an explicit `goal:` the change is reported once as a needed decision and the loop continues;',
     'a declined approval for a tick read, treated as an explicit stop;',
-    'the loop cap of 24 hours or 48 ticks, whichever comes first. Without a trusted clock it is reached at `ticks = min(48, 1440 / interval)`: 48 for 5, 15 and 30 minutes, 24 for 60 minutes.',
+    "the loop cap, reached when this tick's incremented `ticks` is 24 or more.",
     'A compacted observer before the cap falls under the invalid-checkpoint path.',
     'The final notice is posted after the delete call returns; the run continues after deleting its own task. A task is never disabled.',
     'An explicit resume re-admits the same target and creates a new schedule only after a new offer and opt-in; it never reuses an old handle.',
@@ -775,4 +789,21 @@ test('Focus names sessions by exact inline-code reference, never as a host threa
     ),
     'The checkpoint line must keep its raw target reference',
   );
+});
+
+test('Focus inline fallback treats a forbidden native subagent mechanism as declined delegation', () => {
+  // Invariant: an instruction forbidding the host's native subagent mechanism is a declined
+  // delegation, so the leaf runs inline and is never dispatched through a thread-creating tool.
+  const focus = flat(source('src/tools/focus.md'));
+  assert.ok(
+    focus.includes(
+      "A user or instruction-file rule that forbids the host's native subagent mechanism counts as declined delegation, and the leaf is never dispatched through `delegate_task` or another thread-creating tool.",
+    ),
+    'Focus must treat a forbidden native subagent mechanism as declined delegation',
+  );
+  // `delegate_task` is named only in that exclusion, never as a leaf dispatch path.
+  assert.equal(focus.split('`delegate_task`').length - 1, 1, 'focus.md names `delegate_task` once');
+  for (const path of ['src/shared/focus-session-contract.md', 'src/shared/focus-follow-up.md']) {
+    assert.ok(!source(path).includes('delegate_task'), `${path} names no \`delegate_task\``);
+  }
 });
