@@ -1,5 +1,35 @@
 # Changelog
 
+## [1.74.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.73.0...effective-flow-v1.74.0) (2026-11-16)
+
+
+### Features
+
+* add backlog-audit tool for goal alignment of open issues and plans ([#667](https://github.com/sebastian-software/effective-flow/issues/667)) ([1020580](https://github.com/sebastian-software/effective-flow/commit/102058062c159ddf6d23d8e12b7087331bac8099))
+* add merge-gate worktree purpose and cleanup-only release ([#658](https://github.com/sebastian-software/effective-flow/issues/658)) ([ccf2d3a](https://github.com/sebastian-software/effective-flow/commit/ccf2d3a880f7410555b18d820113e20e1876c0d1)), closes [#657](https://github.com/sebastian-software/effective-flow/issues/657)
+* batch planning questions into one round and apply a planning ladder ([#660](https://github.com/sebastian-software/effective-flow/issues/660)) ([406413d](https://github.com/sebastian-software/effective-flow/commit/406413d4c1657eb1c5bac8cd6b1c7110e2d28737))
+* **build:** run the full local suite at most once per build run ([#682](https://github.com/sebastian-software/effective-flow/issues/682)) ([be4a123](https://github.com/sebastian-software/effective-flow/commit/be4a123aa7530eca36b7584be18bdbf6687b04ff)), closes [#679](https://github.com/sebastian-software/effective-flow/issues/679)
+* carry verified test evidence from delivery into the pull request ([#665](https://github.com/sebastian-software/effective-flow/issues/665)) ([489752e](https://github.com/sebastian-software/effective-flow/commit/489752ed6f3bc0ad607e174032e75442d2f0aabb))
+* **deliver:** hand known committed session work to pr ([#654](https://github.com/sebastian-software/effective-flow/issues/654)) ([61fbb37](https://github.com/sebastian-software/effective-flow/commit/61fbb3760c86abe2d1e26b864104b10344b0bc80))
+* **focus:** enable the T3 observed snapshot and follow-up candidate ([#625](https://github.com/sebastian-software/effective-flow/issues/625)) ([f03433a](https://github.com/sebastian-software/effective-flow/commit/f03433a0362771b183a662d4a36405562a140d81)), closes [#613](https://github.com/sebastian-software/effective-flow/issues/613)
+* **iterate:** run the full suite once per review-fix round, with CI-backed quick under merge-gate ([#675](https://github.com/sebastian-software/effective-flow/issues/675)) ([180e922](https://github.com/sebastian-software/effective-flow/commit/180e922464bf1d773a9622e79c6c4244b29506f3))
+* **merge-gate:** CI-backed quick validation for low-risk conflict commits ([#669](https://github.com/sebastian-software/effective-flow/issues/669)) ([aabe18f](https://github.com/sebastian-software/effective-flow/commit/aabe18fff2efba86cacb127848212c7e8d5111b0))
+* **merge-gate:** honor an explicit no-CI policy for named base branches ([#655](https://github.com/sebastian-software/effective-flow/issues/655)) ([fe0624d](https://github.com/sebastian-software/effective-flow/commit/fe0624d4380ca73af863b903897b4c8486430b99))
+* **merge-gate:** stop unproductive repair loops with separate repair accounting ([#666](https://github.com/sebastian-software/effective-flow/issues/666)) ([ac901d0](https://github.com/sebastian-software/effective-flow/commit/ac901d087e272702bc8580360403f1bd54743a86))
+* retire schema-invalid worktree records through cleanup ([#659](https://github.com/sebastian-software/effective-flow/issues/659)) ([c979353](https://github.com/sebastian-software/effective-flow/commit/c9793539835ed97fb97fa59b29c42e2e3ddc533c))
+* run merge-gate orchestration at standard and review every gate code change at deep ([#641](https://github.com/sebastian-software/effective-flow/issues/641)) ([2ff3c0f](https://github.com/sebastian-software/effective-flow/commit/2ff3c0fd4d6ccedc87f1a31f6ace1c4116ffa82b))
+* scope implementation re-review and keep a fixed review floor ([#656](https://github.com/sebastian-software/effective-flow/issues/656)) ([8b97627](https://github.com/sebastian-software/effective-flow/commit/8b97627ddcea191893c7b087c2150d15c5d9af46))
+
+
+### Bug Fixes
+
+* bring a behind head with a failing check forward in merge-gate ([#647](https://github.com/sebastian-software/effective-flow/issues/647)) ([00810ca](https://github.com/sebastian-software/effective-flow/commit/00810caf6907b151b04e4c2386a7ff7594f93f9e))
+* **focus:** resolve follow-up offer, looping, ancestry and path limits ([#664](https://github.com/sebastian-software/effective-flow/issues/664)) ([90d5ed3](https://github.com/sebastian-software/effective-flow/commit/90d5ed3c6439ba63a5b4d479a61dd86a70a2737c)), closes [#663](https://github.com/sebastian-software/effective-flow/issues/663)
+* **focus:** tick-only idle report, flat 24-tick cap and last-item approval disclosure ([#672](https://github.com/sebastian-software/effective-flow/issues/672)) ([67dbdb6](https://github.com/sebastian-software/effective-flow/commit/67dbdb6ae00c063694c138ea76fea7a384970366)), closes [#670](https://github.com/sebastian-software/effective-flow/issues/670)
+* **merge-gate:** stop re-firing the base merge once the head cannot carry it ([#649](https://github.com/sebastian-software/effective-flow/issues/649)) ([acc0483](https://github.com/sebastian-software/effective-flow/commit/acc04830f2cd60bc26037ff169f6170bf0479294))
+* stop validation from bypassing an unsupported test environment ([#678](https://github.com/sebastian-software/effective-flow/issues/678)) ([48344d7](https://github.com/sebastian-software/effective-flow/commit/48344d7b19e567b557eced54e435cd04f1ed6951))
+* **test:** persist batch-two refusals before the coordinator blocks ([#671](https://github.com/sebastian-software/effective-flow/issues/671)) ([a54345d](https://github.com/sebastian-software/effective-flow/commit/a54345de48844b9fdb0f75a5909433c532739097))
+
 ## [1.73.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.72.0...effective-flow-v1.73.0) (2026-11-10)
 
 
