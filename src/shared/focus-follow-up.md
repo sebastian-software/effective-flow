@@ -25,18 +25,18 @@ non-tick turn, with the gate row qualified; never after an admission failure or 
 target, and only when the snapshot served at least one history page. The offer is available in
 every runtime mode. Offer a fixed interval of 5, 15, 30 or 60
 minutes, or no follow-up, and render these mandatory disclosures in this fixed order, each on its
-own numbered line; only item 5 is omitted, and only when the observer's mode is known not to
-require approvals; the remaining items keep their numbers:
+own numbered line; only item 6 is omitted, and only when the observer's mode is known not to
+require approvals:
 
 1. every tick posts a visible message in this observer thread;
 2. the schedule persists on the host until it is deleted;
 3. the loop cap below, and that `{{FLOW}} focus follow-up stop <session-ref>` ends the checks;
 4. a recommendation to use a dedicated observer thread;
-5. in an observer mode requiring approvals or of unknown mode, each tick asks for approval of each
+5. ticks are report-only: a warranted correction is shown once, with a pointer to an interactive
+   `{{FLOW}} focus <session-ref>` run;
+6. in an observer mode requiring approvals or of unknown mode, each tick asks for approval of each
    `t3_thread_read`, skill-file reads and its final deletion, and waits until they are answered; a
-   pending approval holds the next tick in the host queue;
-6. ticks are report-only: a warranted correction is shown once, with a pointer to an interactive
-   `{{FLOW}} focus <session-ref>` run.
+   pending approval holds the next tick in the host queue.
 
 Only the developer's next turn after the offer, naming one listed interval, opts in; any other turn
 withdraws the offer. If a valid `state=active` checkpoint for `<session-ref>` exists in this
@@ -84,7 +84,7 @@ exempt from focus's inline-code naming rule: `target=` holds the raw reference, 
   `ticks=`.
 - An invalid-path stopped line takes `target` and `handle` from the prompt and writes `-` for
   unknown fields, except `ticks=1` when no earlier count exists; later stopped ticks increment it,
-  and with `interval=-` the cap is 48 ticks.
+  and the cap is reached when `ticks` is 24 or more.
 - `last=` is always a numeric position: the last served position, not the end of history; items
   after it are unread for this loop, whatever their age. A read returning no items and a null
   `nextPosition` keeps the previous value; the next page read always passes it as `afterPosition`.
@@ -133,7 +133,7 @@ and emits a checkpoint with `state=stopped`. Every tick that sees `state=stopped
 deleting its handle and then emits only the checkpoint line. A `state=stopped` line with this
 prompt's handle in an earlier assistant message of this observer conversation suppresses a repeated
 notice, even when the creation turn is no longer reachable. `ticks` and `started` keep counting;
-reaching the cap posts one final notice: "schedule may still be active – delete it in T3".
+the first tick reaching the cap posts one final notice: "schedule may still be active – delete it in T3".
 
 ## Overlap
 
@@ -175,9 +175,10 @@ reported once with its coverage gap; an unchanged Cannot judge is not repeated.
 - **Backlog:** a backlog tick judges only the covered range. When `lag=` reaches 3, report once that
   follow-up lags the target, then continue; repeat only after `lag=` returned to 0.
 - **Idle target:** a target with no active run, no pending request, no new events and no completion
-  evidence is reported once as a needed decision; a later tick treats it as reported when an assistant message of this loop reported it after the
-  target's last change, and stays quiet until it changes or the cap ends the
-  loop.
+  evidence is reported once as a needed decision; a later tick treats it as reported when an
+  assistant message of this loop reported it after the target's last change; only a tick's message
+  counts as that report; the snapshot, its offer and the opt-in turn that creates the schedule never
+  do. After that report, ticks stay quiet until the target changes or the cap ends the loop.
 - **Repeated step:** applying focus's Looping rule, a retry of the `pattern=` step after the
   reported failure or blocker with no new evidence (same failing step, same reported cause) is a
   repeated round, not a blocker wait; a repeated failure with new evidence, such as a different
@@ -208,9 +209,8 @@ notice and emits `state=stopped`:
 - a goal change in the target when no explicit `goal:` was given; with an explicit `goal:` the
   change is reported once as a needed decision and the loop continues;
 - a declined approval for a tick read, treated as an explicit stop;
-- the loop cap of 24 hours or 48 ticks, whichever comes first. Without a trusted clock it is
-  reached at `ticks = min(48, 1440 / interval)`: 48 for 5, 15 and 30 minutes, 24 for 60 minutes. A
-  compacted observer before the cap falls under the invalid-checkpoint path.
+- the loop cap, reached when this tick's incremented `ticks` is 24 or more. A compacted observer
+  before the cap falls under the invalid-checkpoint path.
 
 The final notice is posted after the delete call returns; the run continues after deleting its own
 task. A task is never disabled.
