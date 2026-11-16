@@ -34,6 +34,7 @@ const fragment = readSource('shared', 'merge-gate-conflict-resolution.md');
 const delegatedRun = readSource('shared', 'merge-gate-delegated-run.md');
 const resolver = readSource('agents', 'merge-conflict-resolver.md');
 const validator = readSource('agents', 'code-validator.md');
+const signatureClasses = prose(readSource('shared', 'environment-signature-classes.md'));
 
 const AD7_RULE =
   'on an environment signature, report the check and its diagnostic; no suite split, no base comparison, no rerun';
@@ -165,13 +166,18 @@ test('an environment signature under full stops before the push', () => {
     modeSection,
     /Under effective `quick` only the excluded test command is deferred to CI/,
   );
+  // The four classes are defined once, in the fragment both roles include; the gate names it.
+  assert.match(
+    modeSection,
+    /An environment signature is one of the four classes of `environment-signature-classes`\./,
+  );
   for (const signature of [
     "the execution environment's own wall-clock limit",
     'no space left on device',
     'version control unavailable for a check that needs it',
     'process termination unconfirmed',
   ]) {
-    assert.ok(modeSection.includes(signature), `the classification must name: ${signature}`);
+    assert.ok(signatureClasses.includes(signature), `the classes must name: ${signature}`);
   }
   assert.match(
     prose(fragment),
@@ -180,23 +186,37 @@ test('an environment signature under full stops before the push', () => {
   );
 });
 
-// Invariant: merge-gate keeps its four signature classes; a stopped preflight is a signature only
+// Invariant: merge-gate keeps its four signature classes, defined once in the
+// `environment-signature-classes` fragment both roles include; a stopped preflight is a signature only
 // as `git-checkout` (version control unavailable), and any other failed preflight check is a failing
 // check reported FAILED, never skipped, so it cannot leave "every executed check passed" true.
 test('a non-Git preflight failure is a failing check, never a skipped one', () => {
   assert.match(
     modeSection,
-    /\*\*Preflight mapping:\*\* a test entrypoint stopped at its own environment preflight carries a signature only where its failed check is `git-checkout`, which is version control unavailable; any other failed preflight check, such as loopback, sandbox or temporary space, is a failing check, reported `FAILED` and never skipped, so it stops the round as any failing verdict does\./,
+    /\*\*Preflight mapping:\*\* the one of `environment-signature-classes`, which both handoffs name; a preflight check it reports `FAILED` stops the round as any failing verdict does\./,
+  );
+  assert.match(
+    signatureClasses,
+    /a test entrypoint stopped at its own environment preflight carries a signature only where its failed check is `git-checkout`, which is version control unavailable; any other failed preflight check, such as loopback, sandbox or temporary space, is a failing check, reported `FAILED` and never skipped\./,
   );
   assert.match(
     resolverHandoff,
-    /with the signature classes and the preflight mapping of "Conflict validation mode"/,
+    /with the signature classes and the preflight mapping of `environment-signature-classes`/,
   );
   assert.match(validatorHandoff, /with the same signature classes and preflight mapping/);
   assert.match(
     resolverValidation,
-    /A test entrypoint stopped at its own environment preflight follows the gate's preflight mapping: the class it names, else `FAILED`, never skipped\./,
+    /The gate's handoff switches this rule on with the signature classes and the preflight mapping below: a stopped preflight is the class it names, else `FAILED`, never skipped\./,
   );
+  for (const [label, text] of [
+    ['resolver', slice(resolver, '## Validation', '\n## Staging', 'resolver')],
+    ['validator', validator],
+  ])
+    assert.match(
+      text,
+      /```include\nenvironment-signature-classes\n```/,
+      `${label} includes the classes`,
+    );
   // The validator reaches the same rule through its environment fragment's precedence.
   assert.match(
     prose(readSource('shared', 'validation-environment-unsupported.md')),
@@ -204,23 +224,19 @@ test('a non-Git preflight failure is a failing check, never a skipped one', () =
   );
 });
 
-// Invariant: a host-tool timeout or an unattributable timeout is no environment signature, so
+// Invariant: a host-tool timeout or an unattributable timeout is no environment signature (stated
+// for both roles in the classes fragment they include), so
 // repositories with long suites keep today's path rather than stopping.
 test('a host-tool timeout is not a stop signature', () => {
   assert.match(
     modeSection,
     /A timeout of a role's own host tool, and any timeout it cannot attribute, is no environment signature and keeps today's path\./,
   );
-  for (const [label, text] of [
-    ['resolver', prose(resolver)],
-    ['validator', prose(validator)],
-  ]) {
-    assert.match(
-      text,
-      /A timeout of your own host tool, or one you cannot attribute, is none of these\./,
-      label,
-    );
-  }
+  assert.match(
+    signatureClasses,
+    /A timeout of your own host tool, or one you cannot attribute, is none of these\./,
+    'the classes fragment both roles include',
+  );
 });
 
 // Invariant: the configured value is a ceiling confirmed by the base; anything unconfirmed is full.

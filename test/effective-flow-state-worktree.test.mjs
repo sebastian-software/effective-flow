@@ -3764,3 +3764,289 @@ test('a record file that cannot be deleted is reported and then offered again', 
   );
   assert.equal(existsSync(file), false);
 });
+
+// ---------------------------------------------------------------------------------------------
+// Purpose `base-validation` (#679)
+
+const BASE_VALIDATION_BRANCH = `base-validation/${SESSION}`;
+
+// A `baselineHead` that `git branch -d` from `main` never sees as merged: a commit beyond `main`
+// that the build branch `build/baseline` still reaches, or, `dangling`, no other ref at all.
+function unintegratedCommit(root, { dangling = false } = {}) {
+  const tree = git(root, 'rev-parse', 'HEAD^{tree}');
+  const oid = git(root, 'commit-tree', tree, '-p', 'HEAD', '-m', 'baseline head');
+  if (!dangling) git(root, 'branch', 'build/baseline', oid);
+  return oid;
+}
+
+// A linked worktree at the `base-validation` leaf on its temporary branch at `base`.
+function baseValidationWorktree(root, base = 'HEAD') {
+  return addWorktree(root, {
+    path: join(baseDir(root), `${SESSION}-base-validation`),
+    branch: BASE_VALIDATION_BRANCH,
+    base,
+  });
+}
+
+function baseValidationRecord(root, worktree, overrides = {}) {
+  return makeRecord(root, worktree, {
+    purpose: 'base-validation',
+    overrides: { branchPolicy: 'delete-after-integration', ...overrides },
+  });
+}
+
+async function initializedBaseValidation(root, base) {
+  const worktree = baseValidationWorktree(root, base);
+  const record = baseValidationRecord(root, worktree);
+  expectOk(await call('worktree record-init', { cwd: root, executionRoot: root, record }));
+  return { worktree, record };
+}
+
+// Invariant: `base-validation` is bound to `delete-after-integration`; `retain` is refused.
+test('recordProblem binds base-validation to delete-after-integration', (t) => {
+  const root = repository(t);
+  const worktree = {
+    worktreePath: join(baseDir(root), `${SESSION}-base-validation`),
+    branch: BASE_VALIDATION_BRANCH,
+    head: 'a'.repeat(40),
+  };
+  const record = baseValidationRecord(root, worktree);
+  assert.equal(recordProblem(record), null);
+  assert.equal(recordProblem({ ...record, branchPolicy: 'retain' }), 'branch-policy-purpose');
+});
+
+// Invariant: `record-init` accepts a base-validation record only at
+// `<base>/<repo>/<SESSION_ID>-base-validation` on branch `base-validation/<SESSION_ID>` with
+// `delete-after-integration`; another branch or policy is INVALID_INPUT before Git, another path
+// NOT_ELIGIBLE with the `path` proof.
+test('record-init: base-validation at its path, branch and policy only', async (t) => {
+  const root = repository(t);
+  const { record } = await initializedBaseValidation(root);
+  assert.deepEqual(readRecord(root), record);
+  assert.equal(record.worktreePath, join(baseDir(root), `${SESSION}-base-validation`));
+
+  const misplaced = repository(t);
+  const elsewhere = addWorktree(misplaced, {
+    path: join(baseDir(misplaced), SESSION),
+    branch: BASE_VALIDATION_BRANCH,
+  });
+  const outcome = expectOutcome(
+    await call('worktree record-init', {
+      cwd: misplaced,
+      executionRoot: misplaced,
+      record: baseValidationRecord(misplaced, elsewhere),
+    }),
+    'NOT_ELIGIBLE',
+  );
+  assert.deepEqual(outcome.proofs, ['path']);
+
+  const otherBranch = 'base-validation/other-session';
+  for (const [label, candidate] of [
+    ['retain policy', { ...record, branchPolicy: 'retain' }],
+    [
+      'branch',
+      {
+        ...record,
+        branch: otherBranch,
+        receipt: { ...record.receipt, checkout: { kind: 'branch', branch: otherBranch } },
+      },
+    ],
+  ]) {
+    const envelope = await executeOperationWith(root, candidate);
+    assert.equal(envelope.error?.code, 'INVALID_INPUT', `${label}: ${JSON.stringify(envelope)}`);
+  }
+});
+
+async function executeOperationWith(root, record) {
+  const { executeOperation } = await import('../src/scripts/effective-flow-state-core.mjs');
+  return executeOperation(
+    'worktree record-init',
+    { cwd: root, executionRoot: root, record },
+    { runner: unreachableRunner() },
+  );
+}
+
+// Invariant: the session roots of `worktree inspect` include the `<SESSION_ID>-base-validation`
+// leaf, so a registered worktree there that no record names is `unrecorded` for its session only.
+test('inspect: an unrecorded base-validation worktree is reported for its session', async (t) => {
+  const root = repository(t);
+  const worktree = baseValidationWorktree(root);
+  const inspected = expectOk(
+    await call('worktree inspect', { cwd: root, executionRoot: root, sessionId: SESSION }),
+  );
+  assert.deepEqual(
+    inspected.unrecorded.map((entry) => entry.path),
+    [worktree.worktreePath],
+  );
+  const other = expectOk(
+    await call('worktree inspect', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: 'build-2222222222222222',
+    }),
+  );
+  assert.deepEqual(other.unrecorded, []);
+});
+
+// Invariant (purpose exception): a never-integrated base-validation branch that `git branch -d`
+// refuses is compare-and-deleted once its tip is still `creationOid`, so the item is `ok`; a branch
+// `branch -d` accepts is deleted as usual.
+test('remove: a base-validation branch still at creationOid is deleted although never integrated', async (t) => {
+  const root = repository(t);
+  const baseline = unintegratedCommit(root);
+  const { worktree, record } = await initializedBaseValidation(root, baseline);
+  const result = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  );
+  assert.equal(result.items[0].ok, true, JSON.stringify(result.items[0]));
+  assert.deepEqual(result.items[0].branch, {
+    outcome: 'deleted-after-proof',
+    branch: BASE_VALIDATION_BRANCH,
+    branchOid: baseline,
+    proof: 'unadvanced',
+  });
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(existsSync(recordFile(root)), false);
+  assert.equal(git(root, 'branch', '--list', BASE_VALIDATION_BRANCH), '');
+
+  const merged = repository(t);
+  await initializedBaseValidation(merged);
+  const plain = expectOk(
+    await call('worktree remove', {
+      cwd: merged,
+      executionRoot: merged,
+      sessionId: SESSION,
+      recordIds: ['record-1'],
+    }),
+  );
+  assert.deepEqual([plain.items[0].ok, plain.items[0].branch.outcome], [true, 'deleted']);
+});
+
+// Invariant: the exception is narrow: a base-validation branch whose tip moved beyond
+// `creationOid` is never force-deleted; the worktree and record go and the item is BRANCH_RETAINED
+// with reason `advanced` and the new commits.
+test('remove: an advanced base-validation branch is BRANCH_RETAINED', async (t) => {
+  const root = repository(t);
+  const { worktree, record } = await initializedBaseValidation(root, unintegratedCommit(root));
+  git(worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'stray');
+  const stray = git(worktree.worktreePath, 'rev-parse', 'HEAD');
+  const result = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  );
+  const [item] = result.items;
+  assert.deepEqual([item.ok, item.code, item.removed], [false, 'BRANCH_RETAINED', true]);
+  assert.deepEqual(
+    [item.branch.outcome, item.branch.reason, item.branch.unproven],
+    ['retained', 'advanced', [stray]],
+  );
+  assert.equal(git(root, 'rev-parse', `refs/heads/${BASE_VALIDATION_BRANCH}`), stray);
+  assert.equal(existsSync(recordFile(root)), false);
+});
+
+// Invariant: cleanup lists a released base-validation record as a `worktree:` item with its purpose
+// and policy, and `cleanup apply` removes it, the never-integrated branch included.
+test('cleanup lists and removes a released base-validation worktree and its branch', async (t) => {
+  const root = repository(t);
+  const { worktree, record } = await initializedBaseValidation(root, unintegratedCommit(root));
+  await moveTo(root, record, 'cleanup-ready');
+  const planned = await plan(root);
+  const { item } = planEntry(planned, record.recordId);
+  assert.ok(item, JSON.stringify(planned.blocked));
+  assert.deepEqual(
+    [item.purpose, item.branchPolicy, item.blockers],
+    ['base-validation', 'delete-after-integration', []],
+  );
+  const result = expectOk(await applyPlanned(root, planned));
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, branch }) => [itemId, ok, branch?.outcome]),
+    [[`worktree:${record.recordId}`, true, 'deleted-after-proof']],
+  );
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(git(root, 'branch', '--list', BASE_VALIDATION_BRANCH), '');
+});
+
+async function removeBaseValidation(root, extra) {
+  return expectOk(
+    await call(
+      'worktree remove',
+      { cwd: root, executionRoot: root, sessionId: SESSION, recordIds: ['record-1'] },
+      extra,
+    ),
+  );
+}
+
+// Invariant (defence in depth): the forced path never drops the last ref to `creationOid`: a
+// base-validation branch at an otherwise unreachable commit is kept as `unreachable`.
+test('remove: a base-validation branch whose creationOid no other ref reaches is kept', async (t) => {
+  const root = repository(t);
+  const baseline = unintegratedCommit(root, { dangling: true });
+  await initializedBaseValidation(root, baseline);
+  const [item] = (await removeBaseValidation(root)).items;
+  assert.deepEqual(
+    [item.ok, item.code, item.removed, item.branch.reason],
+    [false, 'BRANCH_RETAINED', true, 'unreachable'],
+  );
+  assert.equal(git(root, 'rev-parse', `refs/heads/${BASE_VALIDATION_BRANCH}`), baseline);
+});
+
+// Invariant: the forced path of base-validation keeps the compare-and-delete guards: a branch that
+// moves before its deletion is `ref-moved`, one checked out again is `checked-out`; both stay.
+test('remove: a moved or checked-out base-validation branch is kept with its reason', async (t) => {
+  const moved = repository(t);
+  const baseline = unintegratedCommit(moved);
+  await initializedBaseValidation(moved, baseline);
+  const main = git(moved, 'rev-parse', 'main');
+  const [movedItem] = (
+    await removeBaseValidation(moved, {
+      onPhase: (name) => {
+        if (name === 'beforeBranchDelete') {
+          git(moved, 'update-ref', `refs/heads/${BASE_VALIDATION_BRANCH}`, main);
+        }
+      },
+    })
+  ).items;
+  assert.deepEqual([movedItem.code, movedItem.branch.reason], ['BRANCH_RETAINED', 'ref-moved']);
+  assert.equal(git(moved, 'rev-parse', `refs/heads/${BASE_VALIDATION_BRANCH}`), main);
+
+  const held = repository(t);
+  const heldBaseline = unintegratedCommit(held);
+  await initializedBaseValidation(held, heldBaseline);
+  const elsewhere = join(held, '.effective-flow', 'elsewhere');
+  const [heldItem] = (
+    await removeBaseValidation(held, {
+      onPhase: (name) => {
+        if (name === 'afterRemove')
+          git(held, 'worktree', 'add', '-q', elsewhere, BASE_VALIDATION_BRANCH);
+      },
+    })
+  ).items;
+  assert.deepEqual([heldItem.code, heldItem.branch.reason], ['BRANCH_RETAINED', 'checked-out']);
+  assert.equal(
+    git(held, 'rev-parse', '--verify', `refs/heads/${BASE_VALIDATION_BRANCH}`),
+    heldBaseline,
+  );
+});
+
+// Invariant (stopped run): cleanup claims a base-validation record only once it is released; an
+// `aborted` or `failed` one stays blocked by condition 1, which is why every exit path of the
+// orchestrator and the exit self-check release it to `cleanup-ready` instead.
+test('cleanup blocks a stopped base-validation record by condition 1', async (t) => {
+  for (const status of ['aborted', 'failed']) {
+    const root = repository(t);
+    const { record } = await initializedBaseValidation(root, unintegratedCommit(root));
+    await moveTo(root, record, status, 'stopped');
+    const { item, blocked } = planEntry(await plan(root), record.recordId);
+    assert.equal(item, undefined, status);
+    assert.deepEqual(blocked?.conditions, [1], status);
+  }
+});

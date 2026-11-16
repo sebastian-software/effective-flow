@@ -82,7 +82,10 @@ Scope entries are literal paths, never globs. A handed-off set that is empty is 
   the assignment that the list selects the routing buckets and is reported as the change under
   validation, while each selected bucket's checks still run at repository-native breadth, never
   narrowed to the listed files. Under `Validation: targeted` (`caller-owned-commit`) the list is
-  the validator's targeted scope instead.
+  the validator's targeted scope instead. `{{SKILL:build}}` hands a targeted scope of its own
+  after its Phase 5 full run: in correction rounds and in Phase 7, the Delta (or, after an
+  environment signature or host-tool timeout, the cumulative list) selects only the affected
+  tests, while the non-test checks keep repository-native breadth.
 - **Review:** route reviewers from the path list and hand each reviewer the absolute `diffPath` plus
   only its routed bucket's slice of the path list. Baseline and tree OIDs stay with the orchestrator.
 - **Formatter:** format the list's non-deleted paths plus the plan file, once.

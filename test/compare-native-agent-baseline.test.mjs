@@ -146,6 +146,8 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'code-validator-validation-environment',
       'test-writer-validation-environment',
       'merge-conflict-resolver-forbidden-substitutes',
+      'code-validator-build-validation-budget',
+      'merge-conflict-resolver-environment-signature-classes',
     ],
   );
 });

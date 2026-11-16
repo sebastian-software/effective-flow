@@ -44,6 +44,27 @@ const MANDATE_WORKER_BULLET =
 const MANDATE_LAST_BULLET =
   "- This mandate covers worker roles and analysis fan-out only. Delegation from one workflow to another keeps that tool's own mechanics, including its interactive/gated path.";
 
+// The rendered environment-signature classes fragment that the code validator and the merge-conflict
+// resolver include eagerly (issue #679); two body deltas below insert it.
+const ENVIRONMENT_SIGNATURE_CLASSES =
+  '**Environment signature classes.** An environment signature is one of four classes, each named by\n' +
+  'its prerequisite id:\n' +
+  '\n' +
+  "- `wall-clock`: the execution environment's own wall-clock limit (the runner or container reports a\n" +
+  '  deadline or timeout exit);\n' +
+  '- `no-space`: no space left on device;\n' +
+  '- `version-control`: version control unavailable for a check that needs it;\n' +
+  '- `process-termination`: process termination unconfirmed.\n' +
+  '\n' +
+  'They apply only where the handoff switches the environment-signature rule on. A check with one\n' +
+  'counts as not executed. A timeout of your own host tool, or one you cannot attribute, is none of\n' +
+  'these.\n' +
+  '\n' +
+  '**Preflight mapping, only where the handoff names it:** a test entrypoint stopped at its own\n' +
+  'environment preflight carries a signature only where its failed check is `git-checkout`, which is\n' +
+  'version control unavailable; any other failed preflight check, such as loopback, sandbox or\n' +
+  'temporary space, is a failing check, reported `FAILED` and never skipped.\n';
+
 // The only deltas a native worker sidecar may show against the base build; any other byte
 // difference fails the proof. A delta is permitted, never required: a worker that builds
 // byte-identically always passes. A configuration delta changes exactly one key line; body deltas
@@ -394,6 +415,87 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
             "  suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`\n" +
             '  or one over a suite-covering directory or glob; never neutralize the preflight by editing the\n' +
             '  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`.\n',
+        }),
+      ]),
+    }),
+    // Build's orchestrator-assigned targeted scope, the environment-signature classes defined once in
+    // their own fragment, the build-only failure-attribution pointer and the attribution annotation
+    // (issue #679).
+    Object.freeze({
+      id: 'code-validator-build-validation-budget',
+      edits: Object.freeze([
+        Object.freeze({
+          from:
+            '`SKIPPED (coverage from the round validator)`.\n' +
+            '\n' +
+            'A **conflict-commit scope**',
+          to:
+            '`SKIPPED (coverage from the round validator)`.\n' +
+            '\n' +
+            'An **orchestrator-assigned targeted scope** from the `build` workflow, in its correction rounds\n' +
+            'and final check after its one full run, replaces the mode mapping too: its assigned paths select\n' +
+            'only the affected tests, previously failing tests named by identity run by identity, never through\n' +
+            'their suite command, and the non-test checks (format, typecheck, lint, build) run at\n' +
+            'repository-native breadth. With no affected test, report the test surface as\n' +
+            '`SKIPPED (no affected test; full run at Phase 5 tree)`.\n' +
+            '\n' +
+            'A **conflict-commit scope**',
+        }),
+        Object.freeze({
+          from:
+            'comparison, no rerun.** An environment signature is one of the signature classes the handoff names;\n' +
+            "report it in the owner's result states. A timeout of your own host tool, or one you cannot\n" +
+            'attribute, is none of these.\n' +
+            '\n',
+          to:
+            'comparison, no rerun.** This rule applies only when the handoff hands it; report a signature in\n' +
+            "the owner's result states with its class.\n" +
+            '\n' +
+            ENVIRONMENT_SIGNATURE_CLASSES +
+            '\n' +
+            "**Build's handoff names no preflight mapping.** A handoff that names the signature classes without\n" +
+            "the preflight mapping, as the `build` workflow's does, is no handed rule for the Precedence\n" +
+            "paragraph of `validation-environment-unsupported`: that fragment's trigger, permitted evidence and\n" +
+            'result `SKIPPED (environment: <prerequisite id>)` apply unchanged to a stopped preflight.\n' +
+            '\n' +
+            '**Load on demand:** Read `shared/build-failure-attribution.md`, when the handoff carries the line `Failure attribution: base-ci-then-local`.\n' +
+            '\n',
+        }),
+        Object.freeze({
+          from: '- terminal states, decisive diagnostics, and warnings;\n',
+          to:
+            "- terminal states, decisive diagnostics, and warnings, plus each failure's `attribution:`\n" +
+            '  annotation under a `Failure attribution:` line;\n',
+        }),
+      ]),
+    }),
+    // The resolver includes the environment-signature classes and preflight mapping instead of
+    // restating them (issue #679).
+    Object.freeze({
+      id: 'merge-conflict-resolver-environment-signature-classes',
+      edits: Object.freeze([
+        Object.freeze({
+          from:
+            '  comparison, no rerun.** An environment signature is one of the signature classes the gate hands\n' +
+            "  you. A test entrypoint stopped at its own environment preflight follows the gate's preflight\n" +
+            '  mapping: the class it names, else `FAILED`, never skipped. A timeout of your own host tool, or one\n' +
+            '  you cannot attribute, is none of these.\n',
+          to:
+            "  comparison, no rerun.** The gate's handoff switches this rule on with the signature classes and\n" +
+            '  the preflight mapping below: a stopped preflight is the class it names, else `FAILED`, never\n' +
+            '  skipped.\n',
+        }),
+        Object.freeze({
+          from:
+            '  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`.\n' +
+            '\n' +
+            'Carry the exact commands',
+          to:
+            '  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`.\n' +
+            '\n' +
+            ENVIRONMENT_SIGNATURE_CLASSES +
+            '\n' +
+            'Carry the exact commands',
         }),
       ]),
     }),

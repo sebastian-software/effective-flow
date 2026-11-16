@@ -293,10 +293,10 @@ test('dangerous broad or forced Git cleanup commands are explicitly prohibited',
     flatLifecycle,
     /only an `apply-review` call carrying `integrationRoot` lets the helper prove every component commit by exact patch-id/,
   );
-  assert.match(flatLifecycle, /a forced deletion outside that proof never happens/);
+  assert.match(flatLifecycle, /a forced deletion outside these proofs never happens/);
   const flatApplyReview = applyReview.replace(/\s+/g, ' ');
   assert.match(flatApplyReview, /"integrationRoot":"<ORIGINAL_ROOT>"/);
-  assert.match(flatApplyReview, /That in-run proof is the only forced branch deletion/);
+  assert.match(flatApplyReview, /That in-run proof is the only forced component-branch deletion/);
   assert.doesNotMatch(cleanup, /integrationRoot/, 'cleanup apply never carries the proof target');
   assert.match(
     cleanup.replace(/\s+/g, ' '),
@@ -1093,5 +1093,56 @@ test('the lifecycle contract states an invalid record is deleted only through th
     flatLifecycle,
     /never repairs, rewrites or deletes such a record/,
     'the blanket never-deletes wording left no way to retire an invalid record',
+  );
+});
+
+// --- Worktree purpose `base-validation` (#679) ---
+
+// Invariant: the attribution base run has its own purpose, bound to the `-<purpose>` path leaf, its
+// own branch and `delete-after-integration`, and its never-integrated branch is force-deleted only
+// while its tip is still `creationOid` and another ref reaches it; the helper's purpose list, the
+// cleanup prose and the cleanup description carry the same exception.
+test('the lifecycle binds base-validation to its path, branch and policy with the unadvanced exception', () => {
+  assert.ok(PURPOSES.includes('base-validation'), 'the helper accepts the base-validation purpose');
+  assertClauses(flatLifecycle, [
+    [
+      /`base-validation` at that `-<purpose>` leaf, on branch `base-validation\/<SESSION_ID>`, carry `delete-after-integration`/,
+      'purpose table binding',
+    ],
+    [
+      /a never-integrated `base-validation` branch is compare-and-deleted only while its tip is `creationOid` and another ref reaches it, else kept \(`advanced`, `unreachable`\)/,
+      'unadvanced exception',
+    ],
+  ]);
+  assert.match(
+    flatCleanup,
+    /a refused `base-validation` branch is deleted only under the lifecycle's exception/,
+  );
+  const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
+  assert.match(
+    frontmatter,
+    /force-deletes a branch other than a base-validation branch still at its creation commit/,
+  );
+  assert.doesNotMatch(frontmatter, /force-deletes branches/, 'the old absolute claim is false now');
+});
+
+// Invariant (stopped-run cleanup): cleanup can claim only `cleanup-ready` and `cleanup-failed` for
+// this purpose, so every exit path of the orchestrator releases a base-validation record instead
+// of stopping it: restore to `creationOid`, remove reported generated output, `worktree remove`
+// with its denial fallback, never `aborted` or `failed`; the exit self-check moves a leftover
+// `active` one to `cleanup-ready`. The validator installs nothing. The exact restore and clean
+// commands belong to the build fragment, not to this eager lifecycle fragment.
+test('every base-validation exit path releases the record for cleanup', () => {
+  assertClauses(flatLifecycle, [
+    [/the validator installs nothing/, 'no install by the validator'],
+    [
+      /Every exit path – completion, failure or abort – restores the checkout to `creationOid`, removes the untracked, non-ignored output the validator reported as generated, and withdraws the record with `worktree remove` and its denial fallback, never `aborted` or `failed`, so a refused removal stays `cleanup-ready` or `cleanup-failed`/,
+      'every exit path releases',
+    ],
+  ]);
+  assert.doesNotMatch(flatLifecycle, /git -C <WORKTREE_PATH> (?:restore|clean)/);
+  assert.match(
+    readShared(OBLIGATION).replace(/\s+/g, ' '),
+    /Set a record left `active` once with `worktree transition` – a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop, otherwise to `failed`/,
   );
 });

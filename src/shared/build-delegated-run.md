@@ -211,7 +211,9 @@ documentation-sync
 
 ### Phase 4: Tests
 
-Start in parallel if possible:
+Start in parallel if possible, and assign each writer only new tests and the existing tests the
+change affects, never a whole-suite run; outside `Validation: targeted`, Phase 5 step 1 is the
+run's one full-suite point:
 
 1. `{{AGENT:test-writer}}` for unit tests and component tests
    <!-- spawn-site:build-delegated-run/unit-tests -->
@@ -222,16 +224,53 @@ Start in parallel if possible:
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline".
    Under `Validation: targeted` (`caller-owned-commit`) that list is its targeted scope, here and in
-   Phase 7's final check.
+   Phase 7's final check, and none of the validation budget below applies: no full run in either
+   phase, no (a) or (b), no `Failure attribution:` line, and signature handling stays with the caller.
    <!-- spawn-site:build-delegated-run/validation -->
+
    If the selected remote environment is the protected native macOS bridge, load the protected-validation
    contract and enforce its previously qualified executor lane, fresh full-candidate proof and same-validator
    admission/request/verified-poll/receipt chain before host completion sealing. Launch qualification
    does not replace this phase’s proof. A remote result is evidence for the ordinary gate; it does not
-   grant the gate by itself.
+   grant the gate by itself. The validation budget never narrows that full-candidate proof, here or
+   in Phase 7.
    A suite the validator reports as `SKIPPED (environment: <prerequisite id>)` is an environment
    result: for delegated execution record the `validation` gate as provisionally `limited` with that
-   id; Phase 7 step 1 decides whether the run continues.
+   id; Phase 7 step 1 decides whether the run continues. A check reported with an environment
+   signature, and a validator host-tool timeout, is such a result too: not executed, with its class
+   (`wall-clock`, `no-space`, `version-control`, `process-termination`) or `host-timeout` as the id.
+
+   **Validation budget.** This step is the run's one full-suite point. Phase 4's tests, every
+   correction round and Phase 7 run targeted; a second full run happens at most once, only in
+   Phase 7 under its condition (a) or (b), so the run never exceeds two full runs. Beside the path
+   list, hand the validator the line `Failure attribution: base-ci-then-local`, `baselineHead` and
+   `baselineTree`, the approved expected-failure lines of the plan's `## Validation plan`
+   (`## Validierungsplan`) verbatim,
+   and the rule **"on an environment signature, report the check and its diagnostic; no suite
+   split, no base comparison, no rerun"** with the four signature classes of
+   `environment-signature-classes`, never its preflight mapping. A full run is **valid** when no
+   check was cancelled or left unexecuted by an environment signature or a host-tool timeout (a
+   `SKIPPED` because no established command exists does not count) and every remaining failure was
+   repaired and re-verified, proven `pre-existing`, or matched as approved `expected`. When Phase 5
+   ends, keep the budget state `{phase5Tree, validFullRun, reason, secondFullUsed}` in the wisdom
+   file and, for delegated execution, retain it with `retain-evidence` as `validation-budget`:
+   `phase5Tree` is the `currentTree` of the render that started the full run, `reason` names why the
+   run is or is not valid (such as the signature class), and `secondFullUsed` is `false`.
+
+   **Base attribution.** When the validator returns `attribution: pending-base-run`, wait until
+   that candidate run has ended; never run the base in parallel with it. Then create the
+   `base-validation` worktree with its lifecycle record per `worktree-lifecycle`, and start
+   `{{AGENT:code-validator}}` there with `Failure attribution: base-ci-then-local`, a
+   `Base attribution run:` line naming only the pending identities, the same signature rule, and the
+   reason step 2 ran.
+   <!-- spawn-site:build-delegated-run/base-attribution -->
+
+   Merge each returned `pre-existing`, `new` or `unknown` into the original annotation. Before
+   `worktree remove`, on every exit path, run
+   `git -C <WORKTREE_PATH> restore --source=<CREATION_OID> --staged --worktree -- :/`, then
+   `git -C <WORKTREE_PATH> clean -f -d -- <PATH>...` on only the untracked, non-ignored paths the
+   validator reported as generated, never `-x`, skipping the clean when it reported none; then
+   remove the worktree. The report states why step 2 ran.
 
 ```lazy-include
 protected-validation
@@ -250,8 +289,10 @@ when: the validator reports the suite as `SKIPPED (environment: <prerequisite id
 
 2. Give the user the complete list of all errors and warnings found.
 3. If errors are found: delegate the repair to the routed Quality implementer. An environment
-   result is no error and goes to no implementer.
-4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
+   result is no error and goes to no implementer. Neither does a failure annotated `pre-existing` or
+   approved `expected`: it counts as no failed verification and starts no correction round, and the
+   gate's receipt stays `passed` with a `reason` naming the attribution.
+4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round, then a Delta with `sinceTree` the pre-round render's `currentTree`, and re-verify targeted: the previously failing tests by identity plus the affected tests of the Delta, never their suite command, with the non-test checks at repository-native breadth.
 
 ### Phase 6: Review
 
@@ -328,8 +369,41 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
    <!-- spawn-site:build-delegated-run/final-validation -->
+
+   **Final scope.** Hand the same lines as Phase 5 step 1; its attribution, base-attribution and
+   correction-loop rules apply here unchanged. Read the budget state, `validation-budget` merged with
+   `validation-budget-second-full` when present: a missing or unreadable one means Phase 5 has no
+   valid full run, and an unknown slot counts as used. After a valid Phase 5
+   full run, render a Delta with `sinceTree` `phase5Tree` directly after the cumulative render: its
+   path list is the targeted test scope, while the non-test checks (format or agent check,
+   typecheck, lint, build) run at repository-native breadth; with no affected test the test surface
+   reports `SKIPPED (no affected test; full run at Phase 5 tree)`. After a Phase 5 environment
+   signature or host-tool timeout, stay targeted over the cumulative path list: the affected tests
+   of the whole change plus the non-test checks, no Delta and no full run; any other Phase 5 run
+   without a valid full run takes that cumulative scope too unless `full` applies. You, never the
+   validator, classify `full`, and only while the second-full slot is unused:
+   - (a) Phase 5 has no valid full run because its validator was never reached or the persisted
+     budget state is missing;
+   - (b) a Delta path is on this closed list, and on nothing else: `.github/workflows/`,
+     `.forgejo/workflows/`, `.gitea/workflows/`; `action.yml` or `action.yaml` anywhere; the root
+     files of `MANIFEST_FILES` in `conflict-validation-core.mjs` (`package.json`, `Cargo.toml`,
+     `go.mod`, `pyproject.toml`, `pytest.ini`, `setup.cfg`, `setup.py`, `tox.ini`, `GNUmakefile`,
+     `makefile`, `Makefile`) plus `pnpm-workspace.yaml`; the root lockfiles `pnpm-lock.yaml`,
+     `package-lock.json`, `yarn.lock`, `Cargo.lock`, `poetry.lock`, `uv.lock`; `conftest.py`
+     anywhere; `*.config.{js,mjs,cjs,ts}`, `tsconfig*.json`, `build.mjs`.
+
+   Before that second full run, record `secondFullUsed: true` in the wisdom file and, for delegated
+   execution, retain the updated state with `retain-evidence` as `validation-budget-second-full`;
+   only that exclusive creation proves an unknown slot free, and its `COLLISION` means the slot is
+   used, so Phase 7 stays targeted rather than stopping on a helper failure. After a repair here, render again and
+   re-check targeted over that repair's Delta; `full` follows only while the slot is unused and (a)
+   or (b) holds. The `final-validation` receipt `reason` names the targeted scope or the condition
+   that applied.
+
    **Environment lane.** When this final validation reports the suite as
-   `SKIPPED (environment: <prerequisite id>)`, decide here, before `prepare-completion` and the
+   `SKIPPED (environment: <prerequisite id>)`, reports a check with an environment signature or a
+   host-tool timeout, or follows a Phase 5 one on the cumulative path, record `final-validation` as
+   `limited` with that prerequisite id and decide here, before `prepare-completion` and the
    handback commit. The lane is the explicit run override, else `delivery.completion`: `pr`, or
    continuing an existing plan pull request, continues; `merge`, `branch`, an unset row (default
    `merge`) and in-place without delivery stop; a `null` or invalid row is asked now, in a delegated
@@ -344,6 +418,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
    pilot record with `completionStatus: aborted`, and recover through a fresh run once the
    prerequisite holds. Under `Commit: caller-owned` decide nothing: return `DONE` with the
    limitation and let the caller decide. Under protected validation this decision does not apply.
+
 2. For delegated execution first record the existing passed (or PR-lane `limited`) review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.
@@ -399,7 +474,10 @@ Rules for the findings report:
    Under `Commit: caller-owned` (`caller-owned-commit`) no commit, completion action or worktree withdrawal of this step runs, no plan is switched or archived (a plan this run wrote stays untracked and is reported), and neither do the `build-run-contract` calls `seal-delivery` and `handoff` below. For delegated execution, at that existing handback's reconciled staged-tree boundary call `seal-delivery`; immediately after its verified commit and before worktree withdrawal call `handoff`. Hidden/private and in-place-without-delivery follow their bound variants. After handoff relay later delivery/publication questions through runtime-only checkpoints; preserve the original ordering and publication gates. Record an actual in-place checkout restore with `record-return`, never infer it from a branch name.
 7. Run the worktree-record exit self-check.
 8. If Phase 2 reserved a pilot record, finalize it exactly once per the loaded `pilot-measurement-workflow` fragment, including its incident and finalization-failure paths.
-9. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
+9. Summarize what was implemented, tested and documented; describe the state the full suite covered
+   (Phase 5, before later corrections), never a snapshot tree id, that later changes were verified
+   targeted, and every attribution and approved expected failure
+   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
 10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step.
 
 ## Rules

@@ -56,7 +56,15 @@ hidden mode); `visibility`; `producer`; and `checks`. The snapshot per producer:
   marked as targeted (such as `node --test (targeted)`, `pytest (targeted)` or
   `cargo test (targeted)`), never a fixed command, with its files summarized in `scope`, and the
   full suite as `unavailable`, provenance `not-run`, with the prerequisite id and reason class as
-  `limitation`.
+  `limitation`. In every targeted Phase 7, each targeted check run is mapped the same way, marked
+  `(targeted)`. Without a signature the full suite is `skipped`, provenance `not-run`, with the
+  `limitation` `full suite ran before later corrections; changes since verified targeted` after a
+  valid Phase 5 full run, or `no valid full-suite run; changes verified targeted` on the cumulative
+  path; after a signature or host-tool timeout the `limited` mapping above applies. A failure annotated `pre-existing` or
+  `expected` maps as `failed` with a `limitation` naming the attribution, such as
+  `pre-existing on base` or `approved expected failure`; it is `baseline-failure` only when its
+  comparison ran against the exact `baselineTree`. No private snapshot tree id, such as
+  `phase5Tree` or `baselineTree`, enters a text field or any other forge-visible text.
 
 Carry the resulting line to the handback's `{{SKILL:pr}}` call.
 

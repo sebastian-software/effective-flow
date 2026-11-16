@@ -36,11 +36,9 @@ follow its content.
    `full` and says so, and the effective mode is `full`.
 5. **Environment signatures.** Hand the validator the rule **"on an environment signature, report
    the check and its diagnostic; no suite split, no base comparison, no rerun"** with the signature
-   classes: the execution environment's own wall-clock limit (the runner or container reports a
-   deadline or timeout exit), no space left on device, version control unavailable for a check
-   that needs it, or process termination unconfirmed. A check with one counts as not executed, and
-   the run pushes nothing and returns `ABORT: validation environment signature`, naming the class
-   and the affected checks. Under effective `quick` only the excluded test commands are deferred to
+   classes and the preflight mapping of `environment-signature-classes`, which the validator
+   includes. A check with one counts as not executed, and the run pushes nothing and returns
+   `ABORT: validation environment signature`, naming the class and the affected checks. Under effective `quick` only the excluded test commands are deferred to
    CI, none of which runs locally, so any other environment check stops the run the same way. A
    timeout of the validator's own host tool, and any timeout it cannot attribute, is no environment
    signature and keeps Phase 4's path.

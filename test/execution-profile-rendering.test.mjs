@@ -488,7 +488,9 @@ test('the pilot fragments render their own build target and keep portable runs u
 // the generic-product reviewer's tooling and bounded implementation full-pass wording, and the
 // merge gate's conflict-commit scope and validation-mode wording in the code validator and the
 // merge-conflict resolver, and the unsupported-environment pointers and forbidden substitutes in the
-// code validator, test writer and merge-conflict resolver;
+// code validator, test writer and merge-conflict resolver, and build's targeted scope, the shared
+// environment-signature classes and the failure-attribution pointer in the code validator and the
+// merge-conflict resolver;
 // any other configuration change or body change fails.
 // The pinned stdout names each delta and exactly the workers showing it.
 test('the executable baseline proof preserves every Quality native configuration and source-unchanged artifact', () => {
@@ -522,7 +524,9 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta merge-conflict-resolver-validation-mode: effective-flow-merge-conflict-resolver\n' +
       'Expected delta code-validator-validation-environment: effective-flow-code-validator\n' +
       'Expected delta test-writer-validation-environment: effective-flow-test-writer\n' +
-      'Expected delta merge-conflict-resolver-forbidden-substitutes: effective-flow-merge-conflict-resolver\n',
+      'Expected delta merge-conflict-resolver-forbidden-substitutes: effective-flow-merge-conflict-resolver\n' +
+      'Expected delta code-validator-build-validation-budget: effective-flow-code-validator\n' +
+      'Expected delta merge-conflict-resolver-environment-signature-classes: effective-flow-merge-conflict-resolver\n',
   );
 });
 

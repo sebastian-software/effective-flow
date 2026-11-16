@@ -608,10 +608,15 @@ non-destructive, and a worktree's age alone never makes it safe to remove.
 Cleanup asks once per deletion class and then applies every selected item in a single helper call,
 so Claude Code shows at most one permission prompt for it; in Codex the call asks for sandbox
 escalation up front. If an item changed since the preview, nothing is written and cleanup shows a
-new preview. Cleanup itself never force-deletes a branch: a temporary `apply-review` branch that
-`git branch -d` refuses is kept, the worktree and its record are removed, and the report lists the
-branch as `BRANCH_RETAINED` with the unproven commits. Only an `apply-review` run deletes such a
-branch, after it has proven every component commit on the integrated branch by patch-id.
+new preview. Cleanup never force-deletes an `apply-review` branch: a temporary `apply-review` branch
+that `git branch -d` refuses is kept, the worktree and its record are removed, and the report lists
+the branch as `BRANCH_RETAINED` with the unproven commits. Only an `apply-review` run deletes such a
+branch, after it has proven every component commit on the integrated branch by patch-id. A
+`base-validation` worktree whose removal a `build` run could not finish stays released for cleanup,
+which removes it like any other recorded worktree. Its never-integrated branch is the one exception:
+cleanup deletes it even when `git branch -d` refuses, but only while its tip is still the creation
+commit and another branch, tag or remote-tracking ref still contains that commit; otherwise it is
+kept.
 
 **Input/output:** No input beyond the confirmations. The skill first shows an inventory, then a
 dry-run preview of each deletion class. It removes tracked legacy files via `git rm` (recoverable
@@ -620,7 +625,8 @@ irreversibly after explicit confirmation, and removes an eligible worktree with 
 `git worktree remove <path>` only after confirmation. It never uses `--force`, broad
 `git worktree prune`, or `git branch -D`. Delivery, partial-diff and merge-gate branches remain in
 the repository; a temporary `apply-review` branch may be removed only with `git branch -d` when its
-lifecycle proves that the component was integrated safely.
+lifecycle proves that the component was integrated safely, and a `base-validation` branch only under
+the exception above.
 
 The final report is always produced, even when no migration remnant or removable worktree exists.
 It separates removed worktrees from failed removal attempts and lists every remaining linked
