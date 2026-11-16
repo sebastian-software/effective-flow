@@ -52,9 +52,11 @@ hidden mode); `visibility`; `producer`; and `checks`. The snapshot per producer:
 - `refactor`: the Phase 5 render;
 - `build`: the Phase 7 step 1 render. A repair during that final validation needs a fresh render
   before the validator passes again; without one, build no record. A `limited` final validation is
-  that run: map its targeted run as check `node --test (targeted)` with its files summarized in
-  `scope`, and the full suite as `unavailable`, provenance `not-run`, with the prerequisite id and
-  reason class as `limitation`.
+  that run: map each targeted run as check the runner command the validator reported for it,
+  marked as targeted (such as `node --test (targeted)`, `pytest (targeted)` or
+  `cargo test (targeted)`), never a fixed command, with its files summarized in `scope`, and the
+  full suite as `unavailable`, provenance `not-run`, with the prerequisite id and reason class as
+  `limitation`.
 
 Carry the resulting line to the handback's `{{SKILL:pr}}` call.
 
