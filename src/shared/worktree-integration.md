@@ -119,6 +119,9 @@ At the start of the actual implementation work, determine the effective mode:
   the effective completion even when it differs from `delivery.completion`; do not modify the
   configured value. The completion report names both the configured value and applied override.
   With no qualifying directive, retain the configured value, or its documented default when unset.
+- A completion answer obtained later in this run, such as build's environment-lane question at
+  Phase 7 step 1, is recorded in this slot as the explicit action with that answer as its evidence,
+  so handback step 3 never asks again.
 - Before any fetch, setup, branch change or other write-capable action, issue and verify an
   execution-location receipt for the current checkout. Before worktree creation, resolve and
   retain its verified `RUNTIME_STATE_ROOT` from the first record of

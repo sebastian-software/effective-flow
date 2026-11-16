@@ -245,6 +245,11 @@ headOid}}` in its default redacted dry-run mode. Inspect the planned paths, mode
    `effective-delivery`'s repository-validation contract; never invent commands.
 
 ```lazy-include
+validation-environment-unsupported
+when: step 4.3's test entrypoint stops at the project's own environment preflight with a report naming a failed check, or a check reports version control unavailable
+```
+
+```lazy-include
 verification-evidence
 when: step 4.3 validation has run, to record its observed checks, and again when step 6 builds the verification record
 ```

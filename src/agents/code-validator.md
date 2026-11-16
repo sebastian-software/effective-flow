@@ -87,6 +87,11 @@ comparison, no rerun.** An environment signature is one of the signature classes
 report it in the owner's result states. A timeout of your own host tool, or one you cannot
 attribute, is none of these.
 
+```lazy-include
+validation-environment-unsupported
+when: the project's test entrypoint stopped at its own environment preflight with a report naming a failed check, or a check reported version control unavailable
+```
+
 ## Minimal fallback
 
 If `effective-delivery` is unavailable, derive commands from scoped instructions, CI, task
