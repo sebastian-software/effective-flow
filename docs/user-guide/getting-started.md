@@ -115,7 +115,7 @@ hosts without that adapter; it is never presented as proof that the requested mo
 To keep your own session small, the orchestrator also sends substantive work to a sub-agent. The
 judgment of `plan`, `plan-review`, `plan-issue`, `concept` and `concept-review` runs in one
 read-only `deep` sub-agent after the artifact is written, and `merge-gate` runs as one delegated
-run. If that judgment sub-agent cannot run, the artifact records it, and a skipped judgment leaves
+run at `standard`, while the code changes it lands are reviewed at `deep`. If that judgment sub-agent cannot run, the artifact records it, and a skipped judgment leaves
 a blocking open point that names the command to rerun it. Questions of a delegated run reach you
 through your session as usual.
 

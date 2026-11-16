@@ -441,30 +441,34 @@ translate an existing ADR.
 
 ## Merge-gate configuration keys
 
-This fragment carries only the `mergeGate.*` block of the Effective Flow configuration: the keys,
-their values and defaults, and the retirement of the legacy `prReview.*` namespace. It
-is loaded by the sources that resolve those keys without documenting them themselves. The config
-locator (where the project setup ADR is found) and the table encoding (how a value is written and
-read) are not repeated here; they live in the "Effective Flow configuration (project setup ADR)"
-fragment `config-migration`, which every consumer of this block also loads.
+This fragment carries only the `mergeGate.*` block of the Effective Flow configuration – the keys,
+their values and defaults, and the retirement of the legacy `prReview.*` namespace – and the one
+`iterate.*` key the gate resolves. It is loaded by the sources that resolve those keys without
+documenting them themselves. The config locator (where the project setup ADR is found) and the
+table encoding (how a value is written and read) are not repeated here; they live in the
+"Effective Flow configuration (project setup ADR)" fragment `config-migration`, which every
+consumer of this block also loads.
 
 ### Merge-gate keys (`mergeGate.*`) and their legacy namespace
 
 effective-flow merge-gate reads the keys below; effective-flow iterate reads the `bots` entries for its
 review-in-flight guard. A missing line means the default, per the encoding rule above.
 
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.conflictValidation`    | `full`, `quick`                       | `full`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
 
 A login containing brackets (`greptileai[bot]`) is a valid middle segment, because the encoding
 splits on `.` only.
@@ -473,6 +477,15 @@ splits on `.` only.
 possibly typed as users, whose top-level comments and review-thread items effective-flow merge-gate
 treats as bot comments. The gate never triggers or waits for them, and their changes-requested
 reviews still count. A record a `mergeGate.bots` entry matches is a reviewer either way.
+
+**`mergeGate.noCiPolicy.*` is the declared no-CI policy,** set by effective-flow setup only on an
+explicit operator choice. `bases` is active only when its decoded `value` is a string with at least
+one item, and `unattended` grants only when `value === true`; any other value is off and reported
+once. The gate honors it only where these rows are identical on `origin/<baseRef>` and in the
+working checkout. Removing `bases` revokes it, and no state outlives the configuration.
+
+**`mergeGate.conflictValidation`** caps a conflict commit's validation: `quick` counts only where
+the row is identical on `origin/<baseRef>` or in hidden mode; anything else means `full`.
 
 **`mergeGate.conflictResolution` is new.** No earlier generation wrote a `prReview.conflictResolution`
 row; one that exists anyway is retired like any other `prReview.<key>` row, with successor
@@ -496,6 +509,16 @@ and never read; the configuration building block's retired-key rule decides whet
 **`delivery.prReview` is not part of this block** and is never migrated: it decides whether a run
 publishes **its own review findings** onto a pull request it created (see the encoding rule above),
 while `mergeGate.*` configures the gate that takes an **existing** pull request from open to merged.
+
+### Review-fix validation key (`iterate.reviewFixValidation`)
+
+| Key                           | Values          | Default |
+| ----------------------------- | --------------- | ------- |
+| `iterate.reviewFixValidation` | `full`, `quick` | `full`  |
+
+effective-flow merge-gate resolves it, guarded like `mergeGate.conflictValidation`, before it delegates a
+review-fix round; `quick` holds only for such a round with the gate's CI evidence
+(`merge-gate-review-fix-validation`).
 
 ## Setup-only configuration migration
 
@@ -574,7 +597,8 @@ The Effective Flow configuration is optional and controls the defaults of the fo
   `en`, while a missing `language.chat` mirrors the user's language instead of inheriting)
 - **`plan`** (source: `effective-flow plan`): `dir` (string, default `docs/plan`) — directory of the plan files; beside it `concept.dir` (source: `effective-flow concept`, string, default `docs/concept`) — directory of the concept files
 - **`delivery`** (source: `effective-flow build`, section "Delivery and worktree integration" – likewise embedded in the other code-changing workflows): delivery is implied by worktree/branch (no separate `enabled` switch anymore) — `baseBranch` (default derived from `origin/HEAD`, else `origin/main`; proposed as the current local branch in a repository with no remote named `origin`), `branchPrefix` (default `effective-flow`), `completion` (pr/merge/branch, default `merge`), `returnBranch` (auto or local branch name), `prReview` (ask/always/off, default `ask` — automatic PR review publication after a delivery), `mergeMethod` (squash/merge/rebase, default `squash` — how a pull request is integrated when `effective-flow merge-gate` merges it)
-- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default), `botAccounts` (comma list of non-reviewer bot logins, default empty — automated accounts whose comments the gate does not count as human). This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `conflictValidation` (full/quick, default `full` — how a gate run validates its conflict-resolution commit; set only on Step 5's proposal or an explicit request), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default), `botAccounts` (comma list of non-reviewer bot logins, default empty — automated accounts whose comments the gate does not count as human), `noCiPolicy.bases` (comma list of exact, case-sensitive base branch names, unset by default — the declared no-CI policy for bases that run no CI) and `noCiPolicy.unattended` (bool, default `false` — lets a non-interactive gate run use that policy), recorded, changed or removed only on an explicit operator choice in Guided block 9 or a Targeted change; Profile and Express never enable it. This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
+- **`iterate`** (source: `effective-flow iterate`, resolved by `effective-flow merge-gate`): `reviewFixValidation` (full/quick, default `full` — how the final validator of a review-fix round the gate delegates validates; set only on Step 5's proposal or an explicit request, in Guided block 9 or a Targeted change).
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
 - **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; in hidden mode the configuration resolver forces its fixed values (the hidden file's rows are listed under "Safe defaults").
@@ -871,6 +895,15 @@ For "No": all advanced keys keep the safe default or the existing
 config value; continue to Step 6.
 
 **Load on demand:** Read `shared/setup-advanced-settings.md`, when the Step 5 `Advanced` question was answered `Yes`.
+
+#### The conflict-validation proposal
+
+Both proposals below require that the `origin` remote is GitHub and that
+`node <skill-root>/scripts/conflict-validation.mjs ci-detect <<< '{"cwd":"<checkout>","baseRef":"<base>"}'`
+reports `detected` (`<base>`: `delivery.baseBranch` without `origin/`; it reads the local `origin/<base>` and never fetches). Each proposal is gated only on its own key being `full` or unset. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`.
+
+- Where `mergeGate.conflictValidation` is `full` or unset, propose `quick`: name `baseCommit` as the commit read, each `detectedJobs[]` workflow path, job name and test command, and that only those test commands then leave a low-risk conflict commit's local run for CI; list what the local `full` run checks beyond those jobs where the repository's instructions and CI make it derivable, otherwise say that it is not derivable statically, which is all the `setup status` envelope's `proposal` states; under `mergeGate.requireAllChecks: false`, add that the jobs must be required checks.
+- Where `iterate.reviewFixValidation` is `full` or unset, propose `iterate.reviewFixValidation: quick` with the same evidence: only those test commands then leave the final validator of a review-fix round that merge-gate delegates for CI, standalone iterate runs and CI-repair rounds stay `full`, and, whatever `mergeGate.requireAllChecks` says, the jobs must be required checks of the base branch.
 
 #### Collapsing two `mergeGate.bots` spellings of one reviewer
 
@@ -1388,7 +1421,9 @@ Allowlist run only those of `setup-allowlist`):
 - whether the `.gitignore` line `.effective-flow/` was added, a former two-line pattern (`.effective-flow/*` plus `!.effective-flow/config.json`) or an old `.firmo/`/`.sf-plugin/` line was migrated to it, or the target state was already established; in a linked worktree also the absolute `info/exclude` path, whether Step 1 item 4 added its `.effective-flow/` line or found it present or not needed, and the verification from `RUNTIME_STATE_ROOT`
 - which mode was chosen (Profile, Express, Guided, or Targeted); for Profile, the selected topology, chat
   choice, profile-owned final values and detected provider/base, and for Guided whether advanced
-  settings were adjusted
+  settings were adjusted; with Advanced `No`, Step 5's conflict-validation proposal as one hint
+  line where it holds, and its `iterate.reviewFixValidation` proposal as a second one where that
+  holds, each to accept through Advanced or a Targeted change
 - the central behavior values (`worktree.enabled` [default `true`], `delivery.completion`
   [default `merge`] including, if applicable, `delivery.baseBranch`/`delivery.returnBranch`,
   `delivery.prReview` [default `ask`],
@@ -1397,10 +1432,11 @@ Allowlist run only those of `setup-allowlist`):
   verified `tracker.externalStartedState`) as well
   as `plan.dir` and `concept.dir`, if set or changed from the default
 - if set or changed from the default: the merge-gate values `mergeGate.completion`,
-  `mergeGate.conflictResolution`,
+  `mergeGate.conflictResolution`, `mergeGate.conflictValidation`,
   `mergeGate.requireAllChecks`, `mergeGate.checkWaitMinutes`, `mergeGate.maxRounds`,
   `mergeGate.botWaitMinutes`, `mergeGate.bots` with the trigger text and, where set, the check
-  context recorded per login, `mergeGate.botAccounts`, and `delivery.mergeMethod`. Name the gate keys separately from
+  context recorded per login, `mergeGate.botAccounts`, `mergeGate.noCiPolicy.bases` and
+  `mergeGate.noCiPolicy.unattended`, `iterate.reviewFixValidation` and `delivery.mergeMethod`. Name the gate keys separately from
   `delivery.prReview` so the two are not read as one setting
 - whether two `mergeGate.bots` entries were collapsed into one reviewer: which login was kept, which
   redundant list member and rows were removed, and, for every key the two disagreed about, both

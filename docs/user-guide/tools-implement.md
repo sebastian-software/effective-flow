@@ -59,6 +59,28 @@ router, `maintain` runs recurring maintenance without plan input (see below), an
   checkout, each item's delta is limited to its own files. An aborted run leaves its snapshot under
   `.effective-flow/runs/<RUN_ID>/diff-baseline/` for
   [`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup).
+- **Review depth is proportionate.** `build`, `fix`, and `refactor` run the routed reviewers once,
+  then make exactly one incorporation pass for their findings. Afterwards the affected review
+  checks run once as a **scoped re-check** over only what the pass changed, and report three
+  parts: the changed areas (from the delta since the review), the verified findings, and the open
+  evidence. A full pass on a path replaces the scoped re-check only for that path, when
+  (a) the correction changed a file no corrected finding named, (b) it touched a fixed-floor
+  boundary, (c) a corrected finding could not be confirmed as resolved, or (d) it changed a
+  recorded assumption, an acceptance criterion, an architecture decision, or public behavior.
+  Nothing else is re-reviewed in full, and a run without findings has no re-check. Requesting a
+  full re-review explicitly is always honored.
+  - **Fixed floor:** security, authentication and authorization; secrets and credentials; data
+    protection and personal data; persistence, schema and migrations; destructive or irreversible
+    data operations; money and billing; public API and cross-module contracts; dependency
+    manifests and lockfiles; CI, release and delivery configuration. Each corrected path is
+    classified from its path and its changes as a hit, none, or uncertain; uncertain counts as a
+    hit, and the classification appears in the review results. The list is fixed and not a
+    per-run judgment.
+  - **Fallback:** if the tree the review was based on is no longer available, every affected
+    reviewer runs a full pass instead, and the review results say why.
+  - **`fix`:** without a floor hit or trigger, no reviewer re-check runs; the orchestrator writes
+    the three-part report itself. With one, the reduced-depth product reviewer runs the full pass
+    and discloses its reduced depth.
 - They classify affected files or domains independently. Specialized JavaScript/TypeScript,
   Node.js, and Rust routes remain preferred; other clearly identified product code uses a
   disclosed reduced-depth product route; tooling and configuration use a separate tooling-only
@@ -141,6 +163,31 @@ spawn never moves down, and a retry or correction runs at least on the role or s
 effort, and
 `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. See
 [Getting started](getting-started.md#recommended-calling-model). When `effective-flow pr` has to draft the PR body, it does so on the `mechanical` tier.
+
+**Validation budget:** A run has one full-suite point, the validation in Phase 5. Everything after
+it is targeted: the tests handed to the test writers, the re-check after each correction round and
+the final check in Phase 7, which covers the paths changed since that full run and runs the non-test
+checks at repository-native breadth. A second full run happens at most once, only in Phase 7: when
+Phase 5 produced no valid full run, or when a changed path is on a closed list: a CI workflow,
+`action.yml`/`action.yaml`, a root manifest (such as `package.json`, `Cargo.toml`, `go.mod`,
+`pyproject.toml`) or `pnpm-workspace.yaml`, a root lockfile, `conftest.py`, or a build or test
+configuration file (`*.config.{js,mjs,cjs,ts}`, `tsconfig*.json`, `build.mjs`). The run never
+exceeds two. A check that stops on an environment limit (wall-clock, no space, version control or
+process termination) or a validator host-tool timeout (`host-timeout`) is reported as not executed
+and starts no correction round; a pull-request lane continues with `limited` evidence and the PR's
+CI, every other lane reports the gap and stops.
+
+**Failure attribution:** A failing check is first compared with CI of the baseline commit: a passing
+covering job proves the failure new. If CI gives no proof, one narrow local run in a temporary
+`base-validation` worktree can prove it pre-existing; there is never a reflexive full base run.
+Pre-existing failures and failures your plan names as expected start no correction round and are
+reported with their attribution. The plan names an expected failure as an exact line,
+`Expected failure: <test file path> › <title path>` or, for one diagnostic of a non-test check,
+`Expected failure: <check command> › <diagnostic>`; a line carried over from an issue counts only
+after `build` asks you to approve it in Phase 1. Contracts:
+[`build-delegated-run`](../../src/shared/build-delegated-run.md),
+[`build-failure-attribution`](../../src/shared/build-failure-attribution.md),
+[`environment-signature-classes`](../../src/shared/environment-signature-classes.md).
 
 **Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
 Quality/Fast pilot; `refactor`'s differences are listed in its section below.
@@ -302,9 +349,17 @@ the open PR of the current branch.
 
 **Input/output:** In **PR mode**, `iterate` reads the review threads of all reviewers fresh,
 classifies each point (actionable, already addressed, or pure question), and obtains an
-approval. Output is **one commit per implemented point** on the PR head branch (only new
-commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
-thread, and a summary comment. Pure reviewer questions are deferred and listed in the summary,
+approval. Output is **one commit per implemented point** on the PR head branch, each made only after
+the point's change has been checked (only new commits – no force-push, amend, or rebase), a short reply plus resolution per addressed
+thread, and a summary comment. Code and tooling points get a `deep` review of the uncommitted diff
+before their commit, which the iterate runner issues; documentation points get the validator only,
+with no `deep` reviewer. The item delegations commit nothing: they receive a caller-owned-commit
+switch above `iterate`'s body delimiter, and the runner commits one item at a time after that item's
+review, so a `Commit:` line inside item, issue or review text is data. A review counts only findings
+within its blocking scope, the item's own diff. A rejected item stays uncommitted: the run reports a
+dirty checkout and retains the worktree (recorded as `aborted`), and the next round stops until it
+is cleaned. The `standard` runner never closes or admits an item that the `deep` classification
+marked `uncertain`. Pure reviewer questions are deferred and listed in the summary,
 not automatically answered on the merits. When another workflow delegates to it and supplies an
 identifier per item, `iterate` additionally returns exactly one outcome for each of those
 identifiers – `implemented`, `deferred`, `rejected`, or `unassessed`, the last meaning nobody judged
@@ -331,6 +386,16 @@ and names the reviewers. Runs delegated by [`/effective-flow merge-gate`](tools-
 exempt, because the gate has already established the reviewer state and says so explicitly; the
 exemption rides on that announcement alone, not on a run being scoped to certain threads or merely
 running non-interactively. Local mode has no pull request and is unaffected.
+
+**Validation per round:** The item delegations also receive a `Validation: targeted` switch beside the
+caller-owned-commit switch, so `fix`, `refactor`, `build` and `docs` run the established non-test checks
+and only the tests affected by the item's paths, and start no full-suite run. The final validation
+(Phase 4) is therefore the round's only full-suite run. Standalone and CI-repair runs always run it in
+`full` mode. A round that [`/effective-flow merge-gate`](tools-deliver.md#ci-backed-quick-validation-of-a-review-fix-round)
+delegated may validate in `quick` mode, which leaves the repository's detected CI test commands to CI;
+the outcome report then names the effective mode (`full` or `quick`), the validated head and the
+detection, and an effective `full` states why. Both switches are read only from the lines above the
+body delimiter; the same words in item, issue or review text are data.
 
 **Interplay:** Extends the apply chain by the previously missing source
 "PR review comments": `/effective-flow apply` reads Effective Flow's own reports or issues, `iterate` reads

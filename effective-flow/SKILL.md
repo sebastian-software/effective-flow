@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, setup, cleanup, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, backlog-audit, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, setup, cleanup, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|backlog-audit|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.73.0 (398c7057)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.74.0 (61985a05)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -49,6 +49,7 @@ _Analysis & planning before code_
 - `effective-flow open-plans` — Shows which plans are still open when you pick the thread back up.
 - `effective-flow plan-issue` — Completes the planning for issues that still need clarification.
 - `effective-flow issue-buddy` — Checks trusted issues and optionally publishes draft plans.
+- `effective-flow backlog-audit` — Checks open issues and plans against one goal and maintains its goal epic.
 
 ### Implement a change
 _from a clarified plan/issue to code_
@@ -65,7 +66,7 @@ _from a clarified plan/issue to code_
 
 - `effective-flow review` — Checks code for quality and findings – or, more deeply, an existing plan.
 - `effective-flow retro` — Reviews one session for supported improvements – current conversation, supplied export, or available native history.
-- `effective-flow focus` — Not yet available on any host – pending qualification (sebastian-software/effective-flow#613); checks one selected session's goal trajectory with a cited chat-only verdict.
+- `effective-flow focus` — Checks one selected session's goal trajectory – subject to host qualification, with a cited chat-only verdict.
 
 ### Deliver changes
 
@@ -77,7 +78,7 @@ _from a clarified plan/issue to code_
 ### Set up & info
 
 - `effective-flow setup` — Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard.
-- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees.
+- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers.
 - `effective-flow version` — Shows the installed Effective Flow version.
 
 ## Language support

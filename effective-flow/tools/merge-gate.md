@@ -304,8 +304,8 @@ record deleted and the worktree unregistered, or with its record in cleanup-read
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
 `unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
 and manual reconciliation is required. Set a record left `active` once with `worktree transition`
-– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
-`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+– a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop,
+otherwise to `failed` – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
 worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 ## PR review comment integration
@@ -698,17 +698,17 @@ A dispatching caller asks only for an `AMBIGUOUS_HOST` provider and the `complet
 delegated run poses every other gate. The caller renders each question's options together with its
 consequence.
 
-| Question id             | Gate                                                                                                       | Options                                        | Consequence                                                                             |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `completion`            | Phase 0 step 3 entry gate, asked by the caller and never returned                                          | `Merge`, `No merge`                            | the option descriptions of the Phase 0 fence                                            |
-| `reviews-unestablished` | Phase 0 step 2, `prReviewsRead` unsupported                                                                | `Continue`, `Stop`                             | `Continue` lets the gate run, and merge, with no changes-requested verdict read         |
-| `checks-pending`        | Phase 2 step 2, a timed-out or unavailable check wait, or an unreported check list                         | `Continue`, `Stop`                             | `Continue` keeps the gate running; the named checks still block a merge until they pass |
-| `check-list-waiver`     | The no-check-list waiver in `merge-gate-check-list-waiver`                                                 | `Waive`, `Stop`                                | `Waive` authorizes a merge with no reported check list                                  |
-| `conflict-resolution`   | `mergeGate.conflictResolution: ask` in `merge-gate-conflict-resolution`                                    | `Resolve`, `Report only`                       | `Resolve` commits and pushes one merge commit onto the head branch                      |
-| `set-aside`             | "The set-aside confirmation" in `merge-gate-configured-reviewer`                                           | `Confirm`, `Stop`                              | `Confirm` sets the listed findings aside, so they no longer block the merge             |
-| `issue-done`            | Phase 5.5 step 4 in `merge-gate-issue-observation`                                                         | `Set to done`, `Leave open`                    | `Set to done` closes each listed issue; read each criterion, the question quotes none   |
-| `iterate-in-flight`     | `effective-flow iterate` Phase 1.5; never reached here, as every delegation carries `Review guard: established` | `Wait`, `Proceed`, `Abort`                     | none                                                                                    |
-| `iterate-approval`      | `effective-flow iterate` Phase 2.5 approval                                                                     | `Yes`, `Adjust` (deselect listed durable keys) | `Yes` implements, pushes and replies for each listed item with its proposed outcome     |
+| Question id             | Gate                                                                                                                                                                       | Options                                        | Consequence                                                                             |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
+| `completion`            | Phase 0 step 3 entry gate, asked by the caller and never returned                                                                                                          | `Merge`, `No merge`                            | the option descriptions of the Phase 0 fence                                            |
+| `reviews-unestablished` | Phase 0 step 2, `prReviewsRead` unsupported                                                                                                                                | `Continue`, `Stop`                             | `Continue` lets the gate run, and merge, with no changes-requested verdict read         |
+| `checks-pending`        | Phase 2 step 2, a timed-out or unavailable check wait, or an unreported check list; never for that list in a gated or relayed run the active `mergeGate.noCiPolicy` covers | `Continue`, `Stop`                             | `Continue` keeps the gate running; the named checks still block a merge until they pass |
+| `check-list-waiver`     | The no-check-list waiver in `merge-gate-check-list-waiver`; never in a gated or relayed run the active `mergeGate.noCiPolicy` covers                                       | `Waive`, `Stop`                                | `Waive` authorizes a merge with no reported check list                                  |
+| `conflict-resolution`   | `mergeGate.conflictResolution: ask` in `merge-gate-conflict-resolution`                                                                                                    | `Resolve`, `Report only`                       | `Resolve` commits and pushes one merge commit onto the head branch                      |
+| `set-aside`             | "The set-aside confirmation" in `merge-gate-configured-reviewer`                                                                                                           | `Confirm`, `Stop`                              | `Confirm` sets the listed findings aside, so they no longer block the merge             |
+| `issue-done`            | Phase 5.5 step 4 in `merge-gate-issue-observation`                                                                                                                         | `Set to done`, `Leave open`                    | `Set to done` closes each listed issue; read each criterion, the question quotes none   |
+| `iterate-in-flight`     | `effective-flow iterate` Phase 1.5; never reached here, as every delegation carries `Review guard: established`                                                                 | `Wait`, `Proceed`, `Abort`                     | none                                                                                    |
+| `iterate-approval`      | `effective-flow iterate` Phase 2.5 approval                                                                                                                                     | `Yes`, `Adjust` (deselect listed durable keys) | `Yes` implements, pushes and replies for each listed item with its proposed outcome     |
 
 A **question instance** is its id, this gate run's round counter at the gate (`0` before the first
 Phase-2 round) and its **state digest**: the SHA-256 hex of the line
@@ -844,7 +844,7 @@ host's built-in general-purpose subagent (Claude) or default agent (Codex), neve
 worker role, with zero inherited turns where supported. The handoff says to read
 `<skill root>/tools/merge-gate.md` and follow its delegated-run section, and passes these input
 lines, each once:
-Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
+Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 Model selection site: `merge-gate/delegated-run` (`shared/model-selection.md`).
 
 - `PR: <number>` and `Provider: <github|forgejo>`, from Phase 0 with `AMBIGUOUS_HOST` answered;

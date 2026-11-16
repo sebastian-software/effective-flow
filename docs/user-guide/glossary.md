@@ -35,6 +35,11 @@ is no separate on/off switch for it. The delivery branch follows the pattern
 `delivery.completion`, ends as a merge, a pull request, or a branch simply left in place.
 Details in [Worktree and Delivery](./worktree-and-delivery.md).
 
+## Drift
+
+Backlog items that expand scope beyond what a named goal needs. `/effective-flow backlog-audit` gives
+such an item the verdict `drift` and lists it in its report; it never closes or deletes it.
+
 ## Finding
 
 A single, concretely locatable finding from [`/effective-flow review`](./tools-quality.md) –
@@ -57,6 +62,13 @@ are never written into a plan, concept, configuration, or other file. Escape opt
 "Decide later" or "Abort" stay unscored, and a question with an irreversible option, such as
 discarding work or deleting state, is not scored at all.
 
+## Goal epic
+
+The one tracker issue, labeled `effective-flow-goal-epic`, that
+[`/effective-flow backlog-audit`](./tools-understand.md#effective-flow-backlog-audit) keeps for a named
+goal. It carries a managed checklist of the items on the minimal goal path; a rerun updates only that
+section. See [Remote Tracker](./remote-tracker.md#backlog-audit).
+
 ## Harness
 
 The environment in which Effective Flow runs as a skill – currently Claude Code and Codex.
@@ -64,6 +76,12 @@ Effective Flow is built from a shared source tree for both harnesses; as a user 
 notice nothing of this, except in the exact call syntax (`/effective-flow <tool>` on Claude Code,
 `$effective-flow <tool>` on Codex). The client surface you type into decides the prefix, not the
 model: T3 Code uses `$effective-flow <tool>` for every provider, including Claude.
+
+## Minimal goal path
+
+The ordered set of `core` and `oversized` items that `/effective-flow backlog-audit` finds necessary
+to reach one named goal, in the order the assessment gives. Items that only help (`supporting`) are
+not on it.
 
 ## Clarification gate
 

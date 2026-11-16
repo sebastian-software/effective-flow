@@ -221,12 +221,14 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | applyReview.worktree.setup           | auto                       |
 | mergeGate.completion                 | ask                        |
 | mergeGate.conflictResolution         | auto                       |
+| mergeGate.conflictValidation         | full                       |
 | mergeGate.requireAllChecks           | true                       |
 | mergeGate.checkWaitMinutes           | 20                         |
 | mergeGate.maxRounds                  | 10                         |
 | mergeGate.botWaitMinutes             | 10                         |
 | mergeGate.bots                       | (empty)                    |
 | mergeGate.botAccounts                | (empty)                    |
+| iterate.reviewFixValidation          | full                       |
 | language.project                     | en                         |
 | language.source                      | en                         |
 | language.documentation.user          | en                         |
@@ -385,18 +387,21 @@ location of the overall workflow. See [Worktree and delivery](./worktree-and-del
 Controls [`/effective-flow merge-gate`](./tools-deliver.md), the merge gate that drives an
 already-open pull request to merge-readiness and, if allowed, merges it.
 
-| Key                    | Values                              | Default   | Meaning                                                                                                       |
-| ---------------------- | ----------------------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
-| `completion`           | `ask` / `merge` / `report` / `null` | `ask`     | May the run merge at the end, or only report merge-readiness                                                  |
-| `conflictResolution`   | `off` / `ask` / `auto`              | `auto`    | May the run resolve a conflict between the head branch and its base                                           |
-| `requireAllChecks`     | `true` / `false`                    | `true`    | Require every check's latest run green, not only the forge-required ones                                      |
-| `checkWaitMinutes`     | Positive integer                    | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling; not applied on T3 Code |
-| `maxRounds`            | Positive integer                    | `10`      | Upper bound on check-gate rounds for the whole run                                                            |
-| `botWaitMinutes`       | Positive integer                    | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer; not applied on T3 Code              |
-| `bots`                 | Comma list of logins                | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                                            |
-| `bots.<login>.trigger` | Literal trigger comment text        | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale                                      |
-| `bots.<login>.check`   | Commit-status or check-run context  | `(unset)` | Check that proves whether that reviewer is running or has run                                                 |
-| `botAccounts`          | Comma list of logins                | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block                           |
+| Key                     | Values                                | Default   | Meaning                                                                                                              |
+| ----------------------- | ------------------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `completion`            | `ask` / `merge` / `report` / `null`   | `ask`     | May the run merge at the end, or only report merge-readiness                                                         |
+| `conflictResolution`    | `off` / `ask` / `auto`                | `auto`    | May the run resolve a conflict between the head branch and its base                                                  |
+| `conflictValidation`    | `full` / `quick`                      | `full`    | How the run validates its own conflict-resolution commit; `quick` defers the test command to CI                      |
+| `requireAllChecks`      | `true` / `false`                      | `true`    | Require every check's latest run green, not only the forge-required ones                                             |
+| `checkWaitMinutes`      | Positive integer                      | `20`      | Timeout, in minutes, for one wait on pending checks, including Forgejo helper polling; not applied on T3 Code        |
+| `maxRounds`             | Positive integer                      | `10`      | Upper bound on check-gate rounds for the whole run; repair attempts are tracked separately; repairs still use rounds |
+| `botWaitMinutes`        | Positive integer                      | `10`      | Timeout, in minutes, for one wait after triggering an automatic reviewer; not applied on T3 Code                     |
+| `bots`                  | Comma list of logins                  | `(empty)` | Automatic reviewers (e.g. Greptile) the gate waits for and answers                                                   |
+| `bots.<login>.trigger`  | Literal trigger comment text          | `(unset)` | Comment posted when the reviewer has not started or its verdict is stale                                             |
+| `bots.<login>.check`    | Commit-status or check-run context    | `(unset)` | Check that proves whether that reviewer is running or has run                                                        |
+| `botAccounts`           | Comma list of logins                  | `(empty)` | Non-reviewer bots (e.g. `codecov-commenter`) whose comments and threads never block                                  |
+| `noCiPolicy.bases`      | Comma list of exact base branch names | `(unset)` | Base branches of a repository that intentionally runs no CI; the declared no-CI policy applies to them               |
+| `noCiPolicy.unattended` | `true` / `false`                      | `false`   | Lets a non-interactive run merge on the policy too; only a literal `true` grants it                                  |
 
 `mergeGate.completion: ask` (or an unset key) poses the entry question exactly once, at the start of
 a gated run; a non-interactive delegation cannot be asked and behaves as `report`. Telling your
@@ -408,6 +413,28 @@ reported but does not block. A counted check passes when it completed as `SUCCES
 `NEUTRAL`, as GitHub counts it; any other conclusion blocks. `mergeGate.bots.<login>.trigger` and `mergeGate.bots.<login>.check`
 are one dotted key each per bot; a login containing brackets (for example `greptile-apps[bot]`) is a
 valid middle segment because the encoding splits on `.` only.
+
+**`mergeGate.maxRounds` bounds waiting and repairing alike, and repair attempts are tracked beside
+it.** The gate counts a returned `iterate` commit for a reviewer finding or a failing check as a
+repair attempt; waits, bot waits, review resubmissions and its own base merges use none. It stops
+with a report after the second ineffective repair of the same blocking reviewer finding, or before a
+repair outside the authorized scope (the pull request's changed paths plus test files the run adds)
+is committed – or, if one was committed anyway, right after it. Both rules are fixed and have
+**no configuration key**. CI repair attempts are reported but never stop the run, and findings the
+gate cannot match reliably (review-body findings, outdated or left-side anchors, every Forgejo
+thread) stay `uncertain`, so `maxRounds` remains their bound. Each invocation starts with fresh
+counters. See
+[Repair attempts and when the gate stops repairing](tools-deliver.md#repair-attempts-and-when-the-gate-stops-repairing).
+
+**`mergeGate.noCiPolicy.*` declares that a repository intentionally runs no CI.** For a pull request
+into a listed base branch whose head reports no check list at all, the gate then asks neither its
+pending-checks question nor its no-check-list waiver, and merges once every other condition holds.
+The policy counts only where the same two rows are on the base branch, so a pull request cannot
+grant it to itself, and it never reaches a check that has appeared, a failing check, another merge
+condition or branch protection. A non-interactive run uses it only with `unattended: true` (and
+`mergeGate.completion: merge`); a GitHub repository without CI also needs
+`mergeGate.requireAllChecks: false`. Removing `bases` revokes the policy. See
+[the merge gate](./tools-deliver.md) for what the run reports.
 
 **`mergeGate.botAccounts` declares automated accounts that are not reviewers.** Some coverage and
 report bots are typed by the forge as ordinary users, for example Codecov's `codecov-commenter`. The
@@ -430,7 +457,8 @@ person's comment must be answered or resolved instead.
 
 **`mergeGate.conflictResolution` decides what happens when the head branch conflicts with its base.**
 The gate already brings a branch that has merely fallen _behind_ its base forward with a merge
-commit; this key covers the case where that same merge does not apply cleanly.
+commit – and does the same, once per run, for a behind head with a failing check, whatever merge
+state the forge reports; this key covers the case where that same merge does not apply cleanly.
 
 - `auto` (the default) hands the conflicted files to the gate's dedicated resolver, has the resolved
   tree verified independently before anything is committed, and pushes one ordinary merge commit.
@@ -475,6 +503,33 @@ under [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-wit
 anyway is retired like any other `prReview.*` row (see below), with `mergeGate.conflictResolution` as
 its successor, and `/effective-flow setup` carries it over. Without one, a project whose legacy block
 setup migrates gets the default `auto` here.
+
+**`mergeGate.conflictValidation` decides how much a resolved conflict is validated locally.** It
+only affects the commit that resolves a conflict with the base; `review.validation` and
+`applyReview.finalValidation` stay untouched.
+
+- `full` (the default) validates the resolution locally with the repository's full checks, as
+  before.
+- `quick` is a ceiling, not a guarantee. The run validates a **low-risk** conflict commit locally
+  without the test command that a CI job on the base branch runs on every pull request, and then
+  merges only once that CI job succeeded on the pushed head. Every other check still runs
+  locally. The run falls back to `full` when CI is not detected, the pull request changes a
+  workflow, the forge is not GitHub, the job is not known to block the merge (it blocks under
+  `mergeGate.requireAllChecks: true` or as a required check), or the resolver rated a conflicted
+  file high-risk.
+- **Base confirmation.** `quick` counts only where the same row is on the base branch
+  (`origin/<base>`, read after the run's fetch), so a pull request cannot lower its own
+  validation. In hidden mode the local file cannot be changed by a pull request, so its `quick`
+  counts. A missing, invalid or unconfirmed value means `full`.
+- **Proposal.** `/effective-flow setup` never switches the key on its own. Where it is `full` or
+  unset, the remote is GitHub and the local `origin/<delivery.baseBranch>` (read without a fetch)
+  carries a detected CI test job, setup proposes `quick` with that evidence: in the advanced
+  merge-gate block, as a hint in the Guided summary when you skip the advanced settings, in a
+  Targeted change to a `mergeGate.*` key, and in `/effective-flow setup status`. A merge-gate run
+  that validated a conflict under `full` while those conditions held adds the same proposal to its
+  report.
+
+Decision record: [merge-gate conflict validation](../adr/merge-gate-conflict-validation.md).
 
 **Either spelling of a bot login works.** GitHub shows `greptile-apps[bot]` in its interface and
 reports that form through its REST API, but reports the same account as bare `greptile-apps` through
@@ -575,6 +630,41 @@ values before removing those source rows. No other tool writes configuration.
 
 The merge method itself is a delivery property, not a gate property, and lives under
 [Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
+
+## Block `iterate`
+
+One key, resolved by [`/effective-flow merge-gate`](./tools-deliver.md) for the review-fix rounds it
+delegates to [`/effective-flow iterate`](./tools-implement.md#effective-flow-iterate).
+
+| Key                   | Values           | Default | Meaning                                                                                                   |
+| --------------------- | ---------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `reviewFixValidation` | `full` / `quick` | `full`  | How the final validation of a gate-delegated review-fix round runs; `quick` defers the test command to CI |
+
+**`iterate.reviewFixValidation` decides how much a review-fix round is validated locally.** It
+affects only the final validation of a round that the merge gate delegates to `iterate` for a bot
+finding; `review.validation` and `applyReview.finalValidation` stay untouched.
+
+- `full` (the default) runs the local full suite once per round, in `iterate`'s final validation.
+- `quick` is a ceiling, like `mergeGate.conflictValidation`. The round validates without the test
+  command that a CI job on the base branch runs on every pull request, and the gate merges only once
+  that job succeeded on the final head. Every other check still runs locally. The round falls back to
+  `full` when CI is not detected, the pull request changed a workflow, manifest or test script
+  between the detection's base commit and the verified head, the round itself changes one, the forge
+  is not GitHub, or any detected job is not a required check of the base branch.
+  `mergeGate.requireAllChecks: true` alone does not qualify.
+- A standalone `iterate` run, local mode and a CI-repair round always validate `full`, whatever the
+  key says.
+- **Base confirmation** works as for `mergeGate.conflictValidation`: `quick` counts only where the
+  same row is on the base branch, and in hidden mode the local file counts. A missing, invalid or
+  unconfirmed value means `full`.
+- **Proposal.** `/effective-flow setup` proposes `quick` at the sites where it proposes
+  `mergeGate.conflictValidation: quick`, under the same CI-detection condition but independently of
+  that key's value: in the advanced merge-gate block, as a hint in the Guided summary, in a Targeted
+  change to a `mergeGate.*` key or to this key, and in `/effective-flow setup status`. Accepting it is the Targeted request
+  `/effective-flow setup set iterate.reviewFixValidation to quick`. A merge-gate run whose
+  review-fix round validated `full` while the conditions held adds the proposal to its report.
+
+Decision record: [merge-gate conflict validation](../adr/merge-gate-conflict-validation.md).
 
 ## Block `plan`
 
@@ -745,6 +835,24 @@ is separate from `mergeGate.checkWaitMinutes`, which controls pull-request check
 `/effective-flow merge-gate <PR>` again for observer-only re-entry when tracker automation needs
 longer.
 
+## Block `backlogAudit`
+
+Controls [`/effective-flow backlog-audit`](./tools-understand.md#effective-flow-backlog-audit). The
+rows are optional and are not part of the [safe defaults](#safe-defaults-at-a-glance); a rejected
+value or an unknown `backlogAudit.` key stops the run.
+
+| Key              | Values                      | Default   | Meaning                                                                       |
+| ---------------- | --------------------------- | --------- | ----------------------------------------------------------------------------- |
+| `panel`          | Comma-separated model names | `(empty)` | Panel members used by `--panel` without a list                                |
+| `maxItems`       | Integer from 1 to 1000      | `80`      | Most issues plus plans one run assesses; more stops the run before assessment |
+| `maxSnapshotKiB` | Integer from 1 to 16384     | `400`     | Largest snapshot of items, comments, plans and architecture summary, in KiB   |
+
+A run that exceeds a bound names the measured sizes and the narrowing options `--label`,
+`--issues-only` and `--plans-only`; it never shards or truncates. Each panel member must be on the
+panel allowlist for the running harness (see
+[Per-spawn model tiers](../adr/per-spawn-model-tiers.md)); the allowlist is build metadata and not
+configurable.
+
 ## Block `skills`
 
 Controls dynamic [skill discovery](./skill-discovery.md): whether and which host skills the tools
@@ -793,10 +901,12 @@ rows `plan.dir`, `concept.dir`, `tracker.mode`, and `delivery.prReview`, plus a
 | `applyReview.worktree.setup`        | `auto`                       |
 | `mergeGate.completion`              | `ask` (ask at run time)      |
 | `mergeGate.conflictResolution`      | `auto`                       |
+| `mergeGate.conflictValidation`      | `full`                       |
 | `mergeGate.requireAllChecks`        | `true`                       |
 | `mergeGate.checkWaitMinutes`        | `20`                         |
 | `mergeGate.maxRounds`               | `10`                         |
 | `mergeGate.botWaitMinutes`          | `10`                         |
+| `iterate.reviewFixValidation`       | `full`                       |
 | `language.project`                  | `en`                         |
 | `worktree.enabled`                  | `true`                       |
 | `delivery.completion`               | `merge`                      |

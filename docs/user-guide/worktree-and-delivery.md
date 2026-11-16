@@ -71,8 +71,8 @@ worktree-local runtime directory.
 
 ### Persisted worktree lifecycle
 
-Every newly created Effective Flow delivery, partial-diff, plan-publication, or `apply-review`
-component worktree gets its own lifecycle record under
+Every newly created Effective Flow delivery, partial-diff, plan-publication, merge-gate, or
+`apply-review` component worktree gets its own lifecycle record under
 `<RUNTIME_STATE_ROOT>/.effective-flow/worktree-runs/`. Effective Flow writes the record only after
 the execution-location receipt exists and records the repository and worktree identity, branch,
 branch creation commit (OID), workflow and purpose, ownership, timestamps, status, and
@@ -84,7 +84,9 @@ The recorded `creationOid` is immutable evidence of where Effective Flow created
 the branch's expected final tip. During cleanup, that commit must still resolve and remain an
 ancestor of the current recorded branch tip. Normal committed work therefore advances `HEAD`
 without invalidating the record. Rewritten or divergent history, including a branch tip that no
-longer descends from `creationOid`, blocks automatic cleanup.
+longer descends from `creationOid`, blocks automatic cleanup. The one exception is
+[a stopped `merge-gate` worktree](#merge-gate-checkout), which `cleanup` may release without that
+ancestry check once it proves that no commit is lost.
 
 The lifecycle makes later cleanup explicit instead of relying on path or age heuristics:
 
@@ -115,6 +117,13 @@ verified. If a crash happens between those steps, a later cleanup reconciles the
 path, branch policy, and claim. It removes only its own record when the result is complete;
 otherwise it reports partial cleanup and preserves the remaining state.
 
+A record that fails its schema is never repaired or rewritten. No field of it can authorize
+anything; its fields can only block. After your confirmation, `cleanup` retires it only when Git
+and the filesystem show that its worktree is gone: it then deletes only the record file and keeps
+every branch. A worktree such a record names that is still present is never removed by cleanup;
+remove it yourself with `git worktree remove <path>` and run cleanup again (see
+[`cleanup`](./tools-setup.md#effective-flow-cleanup)).
+
 ### Resuming or releasing a failed delivery
 
 A `deliver` run that fails after its first commit leaves a `partial-diff` record as `aborted` or
@@ -130,20 +139,86 @@ the retained delivery.
   recorded commits (plus at most one proven commit that was created but not yet recorded) and at
   least one group is committed, the index is clean or stages exactly the next group, the worktree
   holds exactly the remaining groups' content, the source checkout still matches the confirmed
-  selection, and the current visibility is not weaker than the recorded one. Any drift, a record
-  held by another run, or unprovable ownership blocks the resume. What the run then skips and
+  selection, no file hidden by Git's skip-worktree or assume-unchanged flag differs from the index
+  and `HEAD`, no ignored file stands where a delivery file belongs, and the current visibility is
+  not weaker than the recorded one. Any drift, a record held by another run, or unprovable
+  ownership blocks the resume. What the run then skips and
   reruns is described in [Deliver](./tools-deliver.md#resuming-or-releasing-a-failed-delivery).
 - **Release.** A record that cannot be resumed can go from `aborted` or `failed` to `cleanup-ready`
   after you confirm it. With a ledger, the remaining changes are discarded from the worktree only
   when they equal the recorded content and the source still holds it, while Git's index lock of the
-  worktree keeps other Git commands from changing its index, and every discarded file stays as a
-  tree under `refs/effective-flow/released/<RECORD_ID>/` until you delete that ref. Without one, the
-  worktree must be clean or already gone; otherwise the exact blocking paths are listed. Release
-  keeps the branch and its commits.
+  worktree keeps other Git commands from changing its index. Each file is re-checked against the
+  source right before it is discarded, and release stops with a write failure if either side
+  changed. Discarded files are first moved to a private quarantine and verified there, then kept as
+  a tree under `refs/effective-flow/released/<RECORD_ID>/` until you delete that ref, and only then
+  is the quarantine cleared. Release is also refused when a kept quarantine from an earlier failed
+  release is still in the worktree (it holds the only copy of those files, and cleanup refuses it
+  too), when an ignored file stands where a delivery file belongs or a hidden file differs from
+  both index and `HEAD`, and when the source checkout is the delivery worktree itself. Without a
+  ledger, the worktree must be clean or already gone; otherwise the exact blocking paths are listed.
+  Release keeps the branch and its commits.
 - **Cleanup.** `cleanup` then removes the released worktree like any `cleanup-ready` one and deletes
-  the ledger before the record. A released record whose worktree is already fully gone, unregistered
+  the ledger before the record. Like release, it refuses a worktree that holds a kept release
+  quarantine, an ignored file at a ledger endpoint, or hidden changes, since removing it would
+  delete those files unseen. A released record whose worktree is already fully gone, unregistered
   and without a directory, is removed as well; a half-gone worktree stays retained for manual
   reconciliation. The branch is kept, and deleting it stays your choice.
+
+### Merge-gate checkout
+
+When [`/effective-flow merge-gate`](./tools-deliver.md#resolving-a-conflict-with-the-base) must
+merge the base into a pull request's head branch, it works in your checkout when that is clean and
+already on the branch, and stops when it is dirty or another worktree holds the branch. It
+provisions nothing for a fork or a missing head branch. When no checkout holds the branch, it
+creates one worktree at `<worktree.baseDir>/<repo>/<SESSION_ID>-merge-gate`, with the purpose
+`merge-gate` and the branch policy `retain`. It checks out the pull request's existing head branch,
+never a new branch name. The worktree is provisioned in a fixed order:
+
+1. Fetch the head branch from `origin` into its remote-tracking ref, without writing `FETCH_HEAD`.
+   If the fetch fails, nothing is provisioned and the run ends the round with the reason recorded.
+2. Add the worktree on the local head branch, or, when that branch does not exist yet, create it
+   from the fetched ref with upstream tracking.
+3. Write the lifecycle record.
+4. Fast-forward the branch to `origin`, then check that it equals the pull request's head commit.
+
+A clean checkout you already have on the branch gets the same fetch, fast-forward and identity
+check, without a record. If the fast-forward fails, your local head branch has diverged from
+`origin`. For a provisioned worktree, the gate withdraws the worktree and its record, keeping the
+branch; either way it merges, commits and pushes nothing and reports the reused checkout or the
+retained head branch with its commits that are not on `origin`. After a confirmed push, a no-op
+merge or a head mismatch, the run removes the worktree and its record again. A controlled stop
+leaves the record `aborted` and an error leaves it `failed`; the worktree and the branch stay.
+
+Only [`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup) releases such a stopped
+record, after your confirmation and without the `creationOid` ancestry check, because a force-push
+or reset after the stop can legitimately leave that commit off the branch. Cleanup instead proves
+that removing the worktree loses no commit, and fails closed when it cannot:
+
+- **Worktree still present.** The other safety checks still apply. No merge, cherry-pick, revert,
+  rebase or sequencer operation may be in progress, and every commit on `HEAD` must already be on a
+  remote-tracking ref (`git rev-list HEAD --not --remotes` prints nothing).
+- **Worktree already gone.** The branch must be gone, or every commit on its tip must be on a
+  remote-tracking ref.
+
+The proof fetches nothing, so it compares against the remote-tracking refs as they currently are,
+and cleanup repeats it under the record lock right before it claims the record. `worktree remove`,
+`worktree inspect` and adoption never release a stopped `merge-gate` record. A failed check appears
+as a `blockers` entry in the cleanup report (see
+[Cleanup keeps a linked worktree](./troubleshooting.md#cleanup-keeps-a-linked-worktree)). The head
+branch is always kept.
+
+### Base-validation worktree
+
+When [`/effective-flow build`](./tools-implement.md#effective-flow-build) must check whether a failing
+test was already failing before your change, it creates one temporary worktree at
+`<worktree.baseDir>/<repo>/<SESSION_ID>-base-validation` on the branch `base-validation/<SESSION_ID>`,
+with the purpose `base-validation`, at the baseline commit. On every exit path – completion,
+failure or abort – the run restores the checkout, removes the output the validator reported as
+generated, and removes the worktree. If that removal is refused, for example because the worktree
+still holds unexpected changes, the record stays released (`cleanup-ready` or `cleanup-failed`),
+never `aborted` or `failed`, so [`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup)
+removes it like any other recorded worktree once it is clean. Its branch is deleted only while it
+still points at its creation commit and another ref still contains that commit.
 
 ### Harness-native worktrees
 
@@ -461,7 +536,10 @@ names the draft, and `pr` finishes it instead of leaving the reused pull request
 A direct `pr` call requires a clean, attached, non-base checkout whose branch contains at least one
 commit against the refreshed base. Staged, unstaged, or untracked content makes the invocation
 abort rather than silently excluding it. Use `deliver` when local content still needs selection or
-isolation.
+isolation. On a clean checkout with nothing left to select, `deliver` itself calls `pr` as a direct
+invocation for commits the session made (see
+[Publishing commits you already made](./tools-deliver.md#publishing-commits-you-already-made));
+`pr`'s `push -u` is then the only write, and `pr` owns it.
 
 ## Distinction: the apply-review-specific worktree
 

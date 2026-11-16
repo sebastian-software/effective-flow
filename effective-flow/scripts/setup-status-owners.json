@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.73.0",
+  "version": "1.74.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -8,6 +8,7 @@
     "open-plans",
     "plan-issue",
     "issue-buddy",
+    "backlog-audit",
     "apply",
     "build",
     "fix",
@@ -633,6 +634,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "backlog-audit",
         "build",
         "cleanup",
         "commit",
@@ -697,6 +699,10 @@
         {
           "tool": "apply",
           "scope": "tools.refactor"
+        },
+        {
+          "tool": "backlog-audit",
+          "scope": "tools.backlog-audit"
         },
         {
           "tool": "build",
@@ -1962,6 +1968,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "backlog-audit",
         "build",
         "cleanup",
         "commit",
@@ -2082,6 +2089,10 @@
         {
           "tool": "apply",
           "scope": "tools.refactor"
+        },
+        {
+          "tool": "backlog-audit",
+          "scope": "tools.backlog-audit"
         },
         {
           "tool": "build",
@@ -2696,6 +2707,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "backlog-audit",
         "build",
         "cleanup",
         "commit",
@@ -2766,6 +2778,10 @@
         {
           "tool": "apply",
           "scope": "tools.refactor"
+        },
+        {
+          "tool": "backlog-audit",
+          "scope": "tools.backlog-audit"
         },
         {
           "tool": "build",
@@ -3355,6 +3371,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "backlog-audit",
         "build",
         "cleanup",
         "commit",
@@ -3419,6 +3436,10 @@
         {
           "tool": "apply",
           "scope": "tools.refactor"
+        },
+        {
+          "tool": "backlog-audit",
+          "scope": "tools.backlog-audit"
         },
         {
           "tool": "build",

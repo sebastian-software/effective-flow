@@ -200,7 +200,7 @@ route to take and still offers the remaining changes:
 
 `/effective-flow setup status` diagnoses the setup of the current checkout and changes nothing. It
 asks no question, writes no file, changes neither Git state nor `.effective-flow/`, and offers no inline
-fix; a non-interactive run produces the same report. The report has five sections:
+fix; a non-interactive run produces the same report. The report has seven sections:
 
 - **Configuration:** where the configuration comes from (the project-setup ADR or the hidden local
   file) and its visibility, or that the project is not set up yet; every problem the configuration
@@ -230,6 +230,20 @@ fix; a non-interactive run produces the same report. The report has five section
 - **Allow rules:** in Claude Code, whether the [allow rules](#allow-rules-claude-code) for the
   runtime-state helper are `absent`, `current` or `stale`, with the missing and stale rules; in
   another harness, or when the state cannot be read, that it does not apply or could not be checked.
+- **Conflict validation:** whether setup would propose `mergeGate.conflictValidation: quick`. When
+  the key is `full` or unset, the remote is GitHub and the local `origin/<delivery.baseBranch>`
+  (read without fetching) carries a detected CI test job, the section shows the proposal with its
+  evidence: workflow file, job and test command, that what the local run checks beyond the job is
+  not derivable statically (status reads no repository instructions; a Guided or Targeted run
+  lists those checks where the instructions and CI make them derivable), and the required-check
+  condition under `mergeGate.requireAllChecks: false`. Otherwise it shows
+  one line with the state and the reason, such as `quick` already configured or no CI test job
+  detected. It is an offer, never a problem, so it adds nothing to the recommendation below;
+  accepting it is the Targeted request `/effective-flow setup set mergeGate.conflictValidation to quick`.
+- **Review-fix validation:** the same offer for `iterate.reviewFixValidation: quick`, decided from the
+  same CI detection and shown in the same form, with the extra condition that the detected jobs must be
+  required checks of the base branch. Accepting it is the Targeted request
+  `/effective-flow setup set iterate.reviewFixValidation to quick`.
 
 Every problem comes with the setup form that would fix it, such as `/effective-flow setup` or
 `/effective-flow setup hidden`, or with the manual step when setup cannot fix it; a missing domain
@@ -243,13 +257,15 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 62 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 73 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
 `worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
-`ledger reconcile`), one for `config-resolve`, and 44 for the remote tracker's read-only operations:
-its forge reads, its pure local computations and `thread-ledger-lookup`. `worktree resume-check` and
+`ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`),
+four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 44 for the remote tracker's read-only operations:
+its forge reads, its pure local computations and `thread-ledger-lookup`, and four for
+`conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check` and
 `ledger reconcile` only read. `ledger init` writes the delivery ledger once during an active
 `deliver` run, for that run's own record, and only within a size bound of 256 KiB; `ledger append`
 adds one proven commit to it. `worktree transition` stays within its bounds: its release restores
@@ -547,6 +563,33 @@ only when all independent checks agree: Effective Flow created it, its lifecycle
 path, branch, purpose, and registration, and the checkout is clean, unlocked, and not prunable.
 The repository's main worktree and the worktree running `cleanup` are never removal candidates.
 
+One stopped worktree is the exception. A `merge-gate` checkout left `aborted` or `failed` (see
+[Merge-gate checkout](worktree-and-delivery.md#merge-gate-checkout)) is also a candidate, with the
+branch-ancestry check waived, once cleanup proves that removing it loses no commit: nothing is in
+progress in it and every commit is already on a remote-tracking ref. Cleanup does not fetch for this
+proof and repeats it under the record lock before it removes anything. Only `cleanup` releases such
+a record. When the proof fails, the report keeps the worktree and lists a `blockers` entry:
+`unpushed-commits`, `in-progress-operation` or `proof-unavailable`. The head branch is kept.
+
+A lifecycle record that fails its schema (an unknown schema, a missing or extra key, an invalid
+value) cannot make a worktree a candidate, and cleanup never repairs or rewrites it. It offers the
+record as its own `invalid-record` item instead, proven from Git and the filesystem alone: no field
+of the record authorizes anything. The preview shows the `schemaReason` and the one action, `absent`:
+the recorded path is unregistered and gone, and cleanup deletes only the record file. Every branch
+is kept.
+
+Cleanup never removes a worktree on the strength of an invalid record. Nothing in such a record can
+prove that the checkout now at its path is still the one its run created; it may be your own
+checkout at a reused path. A record whose worktree is still registered and present is therefore
+listed as blocked with `worktree-present`. Check that nothing in that worktree is still needed,
+remove it yourself with `git worktree remove <path>` (without `--force`), and run cleanup again,
+which then offers the record as `absent`.
+
+A record is also listed once as blocked with its `blockers` when its status is not `aborted`,
+`failed`, `cleanup-ready` or `cleanup-failed`, when another record names its path, or when its
+worktree is half gone. A file that no record ID names is blocked with `invalid-record-id` and its
+name is not shown. A worktree that an invalid record names is not also listed as recordless.
+
 Cleanup also lists **stale diff baselines**: the `.effective-flow/runs/<RUN_ID>/diff-baseline/`
 directories that an aborted `build`, `fix`, or `refactor` run left behind (see
 [Implement a change](tools-implement.md)). They can contain working-tree content, including
@@ -565,19 +608,25 @@ non-destructive, and a worktree's age alone never makes it safe to remove.
 Cleanup asks once per deletion class and then applies every selected item in a single helper call,
 so Claude Code shows at most one permission prompt for it; in Codex the call asks for sandbox
 escalation up front. If an item changed since the preview, nothing is written and cleanup shows a
-new preview. Cleanup itself never force-deletes a branch: a temporary `apply-review` branch that
-`git branch -d` refuses is kept, the worktree and its record are removed, and the report lists the
-branch as `BRANCH_RETAINED` with the unproven commits. Only an `apply-review` run deletes such a
-branch, after it has proven every component commit on the integrated branch by patch-id.
+new preview. Cleanup never force-deletes an `apply-review` branch: a temporary `apply-review` branch
+that `git branch -d` refuses is kept, the worktree and its record are removed, and the report lists
+the branch as `BRANCH_RETAINED` with the unproven commits. Only an `apply-review` run deletes such a
+branch, after it has proven every component commit on the integrated branch by patch-id. A
+`base-validation` worktree whose removal a `build` run could not finish stays released for cleanup,
+which removes it like any other recorded worktree. Its never-integrated branch is the one exception:
+cleanup deletes it even when `git branch -d` refuses, but only while its tip is still the creation
+commit and another branch, tag or remote-tracking ref still contains that commit; otherwise it is
+kept.
 
 **Input/output:** No input beyond the confirmations. The skill first shows an inventory, then a
 dry-run preview of each deletion class. It removes tracked legacy files via `git rm` (recoverable
 through Git history), removes untracked or gitignored legacy directories physically and
 irreversibly after explicit confirmation, and removes an eligible worktree with ordinary
 `git worktree remove <path>` only after confirmation. It never uses `--force`, broad
-`git worktree prune`, or `git branch -D`. Delivery branches remain in the repository; a temporary
-`apply-review` branch may be removed only with `git branch -d` when its lifecycle proves that the
-component was integrated safely.
+`git worktree prune`, or `git branch -D`. Delivery, partial-diff and merge-gate branches remain in
+the repository; a temporary `apply-review` branch may be removed only with `git branch -d` when its
+lifecycle proves that the component was integrated safely, and a `base-validation` branch only under
+the exception above.
 
 The final report is always produced, even when no migration remnant or removable worktree exists.
 It separates removed worktrees from failed removal attempts and lists every remaining linked
@@ -585,7 +634,10 @@ worktree except the main worktree. Each entry includes its path, checkout identi
 inspection status, a specific reason for keeping it, and a safe next step. When cleanup runs in a
 linked worktree, that current execution worktree is reported as in use by the cleanup run. Active,
 aborted, failed, dirty, locked, prunable, harness-managed, mismatched, and lifecycle-less worktrees
-stay intact.
+stay intact; the only `aborted` or `failed` worktree cleanup may release is a `merge-gate` one that
+passes its proof. A blocked `invalid-record` item is reported like any other retained worktree, with
+its `blockers` and a next step (see
+[Cleanup keeps a linked worktree](troubleshooting.md#cleanup-keeps-a-linked-worktree)).
 An `active` record may represent either work still in progress or a run interrupted by a crash;
 there is no timeout or heartbeat that guesses which one it is.
 
@@ -596,9 +648,17 @@ removes it. The same holds for the hidden local configuration `.effective-flow/p
 and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
 state, not leftovers. It may copy confirmed runtime files into
 `.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
-stale diff baseline; otherwise it preserves active runtime state. A true no-op means there are no
+stale diff baseline, or remove a merge-gate presence marker whose run is provably over; otherwise
+it preserves active runtime state. A true no-op means there are no
 migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
 report still appears.
+
+A running or waiting `merge-gate` run keeps a small presence marker below
+`.effective-flow/merge-gate-presence/`, so that another gate run on the repository can see it.
+Cleanup offers to remove such a marker only when its run's wisdom file
+(`.effective-flow/.wisdom-accumulation-<session>.tmp.md`) is gone, which proves the run is over.
+While that file exists the run may be suspended and its marker stays, however old it is, even one
+reported as possibly stale. This is a third deletion class with its own confirmation.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the

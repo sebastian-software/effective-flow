@@ -21,15 +21,15 @@ the `memory` lock itself, re-reads memory, changes only its own field, preserves
 and replaces the file atomically. The owning workflow has already loaded “Runtime-state write
 safety” and the runtime-directory migration prerequisite.
 
-**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
+**Helper call shape.** Write every call of the four JSON helpers as exactly one simple command:
 
 ```text
 node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
 ```
 
 with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
-`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
-mutation.
+`config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`, `config-resolve.mjs conflict-validation` or `config-resolve.mjs review-fix-validation`,
+`conflict-validation.mjs <operation>`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a mutation.
 
 - Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
   reached (a symlinked install path included, never resolved through `realpath`), and spell it out

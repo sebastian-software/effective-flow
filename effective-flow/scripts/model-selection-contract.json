@@ -33,6 +33,14 @@
       }
     }
   },
+  "panelModels": {
+    "claude": [
+      "fable"
+    ],
+    "codex": [
+      "gpt-6-astra"
+    ]
+  },
   "roles": {
     "code-documenter": "standard",
     "code-validator": "standard",
@@ -55,6 +63,7 @@
     {
       "id": "apply-issues/issue-analysis",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -65,6 +74,7 @@
     {
       "id": "apply-issues/issue-delegation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -75,6 +85,7 @@
     {
       "id": "apply-review/finding-pre-analysis",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -85,6 +96,7 @@
     {
       "id": "apply-review/component-delegation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -93,8 +105,75 @@
       ]
     },
     {
+      "id": "backlog-audit/architecture-context",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "backlog-audit/assessment",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "backlog-audit/panel",
+      "downAllowed": false,
+      "panel": true,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "backlog-audit/epic-draft",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "backlog-audit/split-draft",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "backlog-audit/obsolete-draft",
+      "downAllowed": true,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
       "id": "build/delegated-run",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -105,6 +184,7 @@
     {
       "id": "build-delegated-run/nested-spawn-probe",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -115,6 +195,7 @@
     {
       "id": "build-delegated-run/initial-implementation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "ui-implementer",
@@ -141,6 +222,7 @@
     {
       "id": "build-delegated-run/unit-tests",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "test-writer",
@@ -151,6 +233,7 @@
     {
       "id": "build-delegated-run/e2e-tests",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "e2e-tester",
@@ -161,6 +244,7 @@
     {
       "id": "build-delegated-run/validation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -171,6 +255,7 @@
     {
       "id": "build-delegated-run/review",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "frontend-reviewer",
@@ -193,6 +278,18 @@
     {
       "id": "build-delegated-run/final-validation",
       "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "code-validator",
+          "tier": "standard"
+        }
+      ]
+    },
+    {
+      "id": "build-delegated-run/base-attribution",
+      "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -203,6 +300,7 @@
     {
       "id": "build-delegated-run/completion-transform-check",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -213,6 +311,7 @@
     {
       "id": "concept-review/analysis-fan-out",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -223,6 +322,7 @@
     {
       "id": "docs/implementation",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "marketing-writer",
@@ -241,6 +341,7 @@
     {
       "id": "docs/validation",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -251,6 +352,7 @@
     {
       "id": "fix/reproduction",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -261,6 +363,7 @@
     {
       "id": "fix/failing-test",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "test-writer",
@@ -271,6 +374,7 @@
     {
       "id": "fix/implementation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "ui-implementer",
@@ -297,6 +401,7 @@
     {
       "id": "fix/regression-test",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "test-writer",
@@ -307,6 +412,7 @@
     {
       "id": "fix/verification",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -321,6 +427,7 @@
     {
       "id": "investigate/skeptic",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -331,6 +438,7 @@
     {
       "id": "issue-buddy/readiness",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -341,6 +449,7 @@
     {
       "id": "issue-buddy/plan-run",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -351,6 +460,7 @@
     {
       "id": "issue-buddy/nested-spawn-probe",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -359,8 +469,9 @@
       ]
     },
     {
-      "id": "iterate/item-delegation",
+      "id": "iterate/classification",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -369,8 +480,43 @@
       ]
     },
     {
+      "id": "iterate/item-delegation",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "iterate/review",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
       "id": "iterate/validation",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -381,6 +527,7 @@
     {
       "id": "maintain/baseline-checks",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -391,6 +538,7 @@
     {
       "id": "maintain/baseline-tests",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "test-writer",
@@ -401,6 +549,7 @@
     {
       "id": "maintain/api-adaptation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "ui-implementer",
@@ -427,6 +576,7 @@
     {
       "id": "maintain/review",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "frontend-reviewer",
@@ -449,6 +599,7 @@
     {
       "id": "maintain/final-validation",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -459,6 +610,7 @@
     {
       "id": "plan/codebase-examination",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -469,6 +621,7 @@
     {
       "id": "plan-issue/codebase-examination",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -479,6 +632,7 @@
     {
       "id": "plan-review/analysis-fan-out",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -489,6 +643,7 @@
     {
       "id": "pr/body-draft",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -499,6 +654,7 @@
     {
       "id": "refactor/baseline-checks",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -509,6 +665,7 @@
     {
       "id": "refactor/baseline-tests",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "test-writer",
@@ -519,6 +676,7 @@
     {
       "id": "refactor/initial-implementation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "ui-implementer",
@@ -545,6 +703,7 @@
     {
       "id": "refactor/review",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "frontend-reviewer",
@@ -567,6 +726,7 @@
     {
       "id": "refactor/post-validation-checks",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -577,6 +737,7 @@
     {
       "id": "refactor/post-validation-tests",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "test-writer",
@@ -587,6 +748,7 @@
     {
       "id": "retro/session-analysis",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -597,6 +759,7 @@
     {
       "id": "focus/session-analysis",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -607,6 +770,7 @@
     {
       "id": "review/design-decision-sources",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -617,6 +781,7 @@
     {
       "id": "review/technical-validation",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -627,6 +792,7 @@
     {
       "id": "review/quality-review",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "frontend-reviewer",
@@ -649,6 +815,7 @@
     {
       "id": "central-reasoning-delegation/judgment",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -659,6 +826,7 @@
     {
       "id": "documentation-sync-contract/code-documenter",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "code-documenter",
@@ -669,6 +837,7 @@
     {
       "id": "documentation-sync-contract/docs-writer",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "docs-writer",
@@ -679,6 +848,7 @@
     {
       "id": "documentation-sync-contract/marketing-writer",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": "marketing-writer",
@@ -689,6 +859,7 @@
     {
       "id": "initial-state-documentation/state-investigation",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -699,6 +870,7 @@
     {
       "id": "investigation-method/explore",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -709,16 +881,18 @@
     {
       "id": "merge-gate/delegated-run",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
-          "tier": "deep"
+          "tier": "standard"
         }
       ]
     },
     {
       "id": "merge-gate-conflict-resolution/resolver",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "merge-conflict-resolver",
@@ -729,6 +903,7 @@
     {
       "id": "merge-gate-conflict-resolution/verification",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": "code-validator",
@@ -737,8 +912,32 @@
       ]
     },
     {
+      "id": "merge-gate-conflict-resolution/review",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "frontend-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "nodejs-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "rust-reviewer",
+          "tier": "deep"
+        },
+        {
+          "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
       "id": "merge-gate-delegated-run/nested-spawn-probe",
       "downAllowed": true,
+      "panel": false,
       "clauses": [
         {
           "role": null,
@@ -749,10 +948,11 @@
     {
       "id": "merge-gate-delegation-contract/iterate-delegation",
       "downAllowed": false,
+      "panel": false,
       "clauses": [
         {
           "role": null,
-          "tier": "deep"
+          "tier": "standard"
         }
       ]
     }

@@ -1,6 +1,6 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `effective-flow setup` is offered. It writes 62
+This fragment is loaded only when the allowlist step of `effective-flow setup` is offered. It writes 73
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
@@ -8,10 +8,14 @@ install's absolute path, so later runs call the helpers without a permission pro
   `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`,
   `commit create`, `review open-report`, `review write-report`, `worktree record-init`,
   `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
-  `ledger init`, `ledger append` and `ledger reconcile`;
-- one for the `config-resolve` helper's `resolve` operation;
+  `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
+  `presence list` and `presence release`;
+- one for the `config-resolve` helper's `resolve` operation and one each for its read-only
+  `no-ci-policy`, `conflict-validation` and `review-fix-validation` operations;
 - one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
-  and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`.
+  and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`;
+- one per read-only `conflict-validation.mjs` operation: `ci-detect`, `ci-integrity`,
+  `ci-evidence-match` and `quick-marker-scan`.
 
 `commit create` writes Git history and runs the repository's hooks without a prompt; it commits
 only the listed paths, refuses paths below `.effective-flow/` and an untrusted hook configuration,
@@ -33,9 +37,12 @@ own `active` `partial-diff` record, from descriptors the helper computes itself,
 when that worst case exceeds the bound; `ledger append` adds one commit entry to it, only for a
 branch tip it proved the next group's exact commit (parent, paths, blobs and modes). Neither
 touches a worktree, branch or record. `worktree resume-check` and `ledger reconcile` only
-read: they take no lock and write nothing. `lock break`, `harness allow-rules` and the destructive
-`worktree remove` and `cleanup apply` never get a rule. Only the helper writes the settings file;
-never edit it in prose.
+read: they take no lock and write nothing. `presence register` creates only the calling run's own
+marker below `.effective-flow/merge-gate-presence/`, no-clobber and at most 2 KiB; `presence refresh`
+and `presence release` rewrite or remove only that marker and only with its token; `presence list`
+only reads. `lock break`, `harness allow-rules` and the destructive `worktree remove` and
+`cleanup apply` never get a rule, nor does `presence prune`, which removes other runs' markers.
+Only the helper writes the settings file; never edit it in prose.
 
 ### `setup allowlist`
 
@@ -47,15 +54,15 @@ question and runs no other setup step.
 
 ### Preview, confirmation, apply
 
-**Helper call shape.** Write every call of the three JSON helpers as exactly one simple command:
+**Helper call shape.** Write every call of the four JSON helpers as exactly one simple command:
 
 ```text
 node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
 ```
 
 with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
-`config-resolve.mjs resolve`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a
-mutation.
+`config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`, `config-resolve.mjs conflict-validation` or `config-resolve.mjs review-fix-validation`,
+`conflict-validation.mjs <operation>`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a mutation.
 
 - Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
   reached (a symlinked install path included, never resolved through `realpath`), and spell it out
@@ -80,7 +87,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 62 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 73 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

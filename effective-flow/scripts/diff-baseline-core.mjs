@@ -4,7 +4,10 @@
 // `capture` allocates `<cwd>/.effective-flow/runs/<sessionId>[-N]/diff-baseline/` exclusively and
 // snapshots the execution root into a tree object. `render` snapshots the execution root again
 // with the identical procedure and writes the tree-to-tree delta as `diff.patch` plus
-// `paths.json`. `discard` removes the `diff-baseline/` directory and its now empty run parent.
+// `paths.json`. Every render records its current tree in `rendered-trees.json`; a render with
+// `sinceTree` (one of those recorded trees) instead writes only the delta since that tree as
+// `delta.patch` plus `delta-paths.json` and leaves `diff.patch` and `paths.json` untouched.
+// `discard` removes the `diff-baseline/` directory and its now empty run parent.
 //
 // A snapshot never touches the real index, stash, refs or HEAD, and writes no new object into the
 // real object store: every snapshot git call runs against a private temporary index
@@ -19,7 +22,7 @@
 // writes to its own store.
 //
 // `render` refuses a handle whose recorded `baseline.json` names another baseline tree or execution
-// root than the caller passes.
+// root than the caller passes, and a `sinceTree` that no earlier render of the same handle recorded.
 //
 // Every mkdir, write, rename and delete below `.effective-flow/` is preceded by the runtime-state
 // guard, run from `cwd`: `.effective-flow/` must be ignored and untracked, and no component of the
@@ -93,6 +96,13 @@ const HOOKS_DIR = 'hooks';
 const BASELINE_FILE = 'baseline.json';
 const PATCH_FILE = 'diff.patch';
 const PATHS_FILE = 'paths.json';
+const DELTA_PATCH_FILE = 'delta.patch';
+const DELTA_PATHS_FILE = 'delta-paths.json';
+const RENDERED_TREES_FILE = 'rendered-trees.json';
+// The distinct current trees a handle's renders recorded, oldest first. A run renders a few dozen
+// times at most; past the bound the oldest tree is dropped, so a `sinceTree` naming it is refused
+// rather than the record growing without limit.
+export const MAX_RENDERED_TREES = 256;
 
 // Snapshot calls pin the settings that would otherwise let git start a daemon, write an extension
 // or a split-index shared file into the real git directory, abort on a line-ending round trip, or
@@ -174,7 +184,7 @@ export function createProcessRunner() {
 
 const OPERATION_KEYS = Object.freeze({
   capture: Object.freeze(['cwd', 'executionRoot', 'sessionId', 'repositoryIdentity']),
-  render: Object.freeze(['cwd', 'executionRoot', 'dir', 'baselineTree', 'scope']),
+  render: Object.freeze(['cwd', 'executionRoot', 'dir', 'baselineTree', 'scope', 'sinceTree']),
   discard: Object.freeze(['cwd', 'dir']),
 });
 
@@ -621,15 +631,17 @@ const MAX_RECORD_BYTES = 64 * 1024;
 // type check on the handle then rejects it. On a regular file the flag has no effect.
 const READ_FLAGS = fsConstants.O_RDONLY | O_NOFOLLOW | (fsConstants.O_NONBLOCK ?? 0);
 
-// Reads `<dir>/baseline.json` without following a symlink. The caller has already proven the
-// directory chain from `cwd` down to `dir`.
-async function readBaselineRecord(dir) {
-  const recordPath = path.join(dir, BASELINE_FILE);
+// Reads and parses one JSON record in `dir` without following a symlink, or returns undefined
+// for a missing record when `allowMissing` is set. The caller has already proven the directory
+// chain from `cwd` down to `dir`.
+async function readJsonRecord(dir, file, { allowMissing = false } = {}) {
+  const recordPath = path.join(dir, file);
   let handle;
   try {
     handle = await open(recordPath, READ_FLAGS);
   } catch (error) {
     if (error?.code === 'ENOENT') {
+      if (allowMissing) return undefined;
       fail('MISSING_OBJECT', `the baseline record ${recordPath} does not exist`);
     }
     fail('UNSAFE_TARGET', `cannot open ${recordPath}: ${error?.code ?? error?.message}`);
@@ -646,12 +658,16 @@ async function readBaselineRecord(dir) {
   } finally {
     await handle.close().catch(() => {});
   }
-  let record;
   try {
-    record = JSON.parse(text);
+    return JSON.parse(text);
   } catch {
     fail('INVALID_INPUT', `${recordPath} is not valid JSON`);
   }
+}
+
+// Reads `<dir>/baseline.json`.
+async function readBaselineRecord(dir) {
+  const record = await readJsonRecord(dir, BASELINE_FILE);
   if (
     !record ||
     typeof record !== 'object' ||
@@ -661,10 +677,43 @@ async function readBaselineRecord(dir) {
   ) {
     fail(
       'INVALID_INPUT',
-      `${recordPath} is not a version ${DIFF_BASELINE_VERSION} baseline record`,
+      `${path.join(dir, BASELINE_FILE)} is not a version ${DIFF_BASELINE_VERSION} baseline record`,
     );
   }
   return record;
+}
+
+// Reads `<dir>/rendered-trees.json`: the distinct current trees earlier renders of this handle
+// recorded, oldest first. A handle no render has completed for yet has none.
+async function readRenderedTrees(dir) {
+  const record = await readJsonRecord(dir, RENDERED_TREES_FILE, { allowMissing: true });
+  if (record === undefined) return [];
+  if (
+    !record ||
+    typeof record !== 'object' ||
+    record.version !== DIFF_BASELINE_VERSION ||
+    !Array.isArray(record.trees) ||
+    record.trees.length > MAX_RENDERED_TREES ||
+    !record.trees.every((tree) => typeof tree === 'string' && OBJECT_ID_PATTERN.test(tree))
+  ) {
+    fail(
+      'INVALID_INPUT',
+      `${path.join(dir, RENDERED_TREES_FILE)} is not a version ${DIFF_BASELINE_VERSION} rendered-trees record`,
+    );
+  }
+  return record.trees;
+}
+
+// Appends a render's current tree to the handle's record once, dropping the oldest tree past
+// MAX_RENDERED_TREES.
+async function recordRenderedTree(context, dir, trees, currentTree) {
+  if (trees.includes(currentTree)) return;
+  const next = [...trees, currentTree].slice(-MAX_RENDERED_TREES);
+  await atomicWrite(
+    context,
+    path.join(dir, RENDERED_TREES_FILE),
+    `${JSON.stringify({ version: DIFF_BASELINE_VERSION, trees: next }, null, 2)}\n`,
+  );
 }
 
 async function requireBaselineDirectory(cwd, value) {
@@ -673,6 +722,52 @@ async function requireBaselineDirectory(cwd, value) {
   return { ...resolved, present };
 }
 
+// The name-status entries and the patch of one tree-to-tree delta, limited to `scope`.
+async function diffTrees(context, executionRoot, env, range, scope) {
+  // An empty scope selects nothing; git would read a bare `--` as the whole tree.
+  if (scope !== null && scope.length === 0) return { entries: [], patch: Buffer.alloc(0) };
+  const spec = pathspecArgs(scope);
+  const nameStatus = await git(
+    context,
+    executionRoot,
+    ['diff-tree', '-r', '-z', '--name-status', '-M', '--no-ext-diff', ...range, ...spec],
+    { env },
+  );
+  const patch = await git(
+    context,
+    executionRoot,
+    [
+      'diff-tree',
+      '-r',
+      '-p',
+      '-M',
+      '--no-color',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--src-prefix=a/',
+      '--dst-prefix=b/',
+      ...range,
+      ...spec,
+    ],
+    { env },
+  );
+  return { entries: parseNameStatus(nameStatus.stdout), patch: patch.stdout };
+}
+
+async function requireStoredTree(context, executionRoot, env, tree, message) {
+  const kind = await git(context, executionRoot, ['cat-file', '-t', tree], {
+    env,
+    allowed: [0, 1, 128],
+  });
+  if (kind.status !== 0 || kind.stdout.toString('utf8').trim() !== 'tree') {
+    fail('MISSING_OBJECT', message);
+  }
+}
+
+// Without `sinceTree`, render writes the cumulative delta since the baseline as `diff.patch` and
+// `paths.json`. With `sinceTree`, it writes only the delta since that earlier recorded render as
+// `delta.patch` and `delta-paths.json`, and leaves the cumulative files untouched. Either way it
+// records its current tree, so a later render of the same handle may name it as `sinceTree`.
 export async function renderDiff(input, deps = {}) {
   requireInputObject(input, 'render');
   const context = makeContext(deps);
@@ -680,6 +775,8 @@ export async function renderDiff(input, deps = {}) {
   const executionInput = requireAbsolutePath(input.executionRoot, 'executionRoot');
   const handle = requireBaselineHandle(input.dir);
   const baselineTree = requireObjectId(input.baselineTree, 'baselineTree');
+  const sinceTree =
+    input.sinceTree === undefined ? null : requireObjectId(input.sinceTree, 'sinceTree');
   const scope = normalizeScope(input.scope);
   const { cwd, common } = await resolveRuntimeRoot(context, cwdInput);
   const executionRoot = await resolveExecutionRoot(context, executionInput, common);
@@ -703,6 +800,15 @@ export async function renderDiff(input, deps = {}) {
       `executionRoot ${executionRoot} does not match the recorded ${record.executionRoot} of ${dir}`,
     );
   }
+  // Only a tree this handle's own renders recorded may anchor a delta, so a foreign tree or one
+  // from another handle never selects what the caller reviews as "changed since".
+  const renderedTrees = await readRenderedTrees(dir);
+  if (sinceTree !== null && !renderedTrees.includes(sinceTree)) {
+    fail(
+      'INVALID_INPUT',
+      `sinceTree ${sinceTree} is not a currentTree an earlier render of ${dir} recorded`,
+    );
+  }
   if (!(await assertDirectoryChain(cwd, path.join(dir, OBJECTS_DIR), { allowMissing: true }))) {
     fail(
       'MISSING_OBJECT',
@@ -711,57 +817,60 @@ export async function renderDiff(input, deps = {}) {
   }
 
   const lookupEnv = await snapshotEnv(context, executionRoot, dir);
-  const kind = await git(context, executionRoot, ['cat-file', '-t', baselineTree], {
-    env: lookupEnv,
-    allowed: [0, 1, 128],
-  });
-  if (kind.status !== 0 || kind.stdout.toString('utf8').trim() !== 'tree') {
-    fail('MISSING_OBJECT', `baseline tree ${baselineTree} is missing from the snapshot store`);
+  await requireStoredTree(
+    context,
+    executionRoot,
+    lookupEnv,
+    baselineTree,
+    `baseline tree ${baselineTree} is missing from the snapshot store`,
+  );
+  if (sinceTree !== null) {
+    await requireStoredTree(
+      context,
+      executionRoot,
+      lookupEnv,
+      sinceTree,
+      `sinceTree ${sinceTree} is missing from the snapshot store`,
+    );
   }
 
   const { tree: currentTree } = await snapshot(context, executionRoot, dir);
-  const range = [baselineTree, currentTree];
-  const spec = pathspecArgs(scope);
-  // An empty scope selects nothing; git would read a bare `--` as the whole tree.
-  const empty = scope !== null && scope.length === 0;
-  const nameStatus = empty
-    ? { stdout: Buffer.alloc(0) }
-    : await git(
-        context,
-        executionRoot,
-        ['diff-tree', '-r', '-z', '--name-status', '-M', '--no-ext-diff', ...range, ...spec],
-        { env: lookupEnv },
-      );
-  const entries = parseNameStatus(nameStatus.stdout);
-  const patch = empty
-    ? { stdout: Buffer.alloc(0) }
-    : await git(
-        context,
-        executionRoot,
-        [
-          'diff-tree',
-          '-r',
-          '-p',
-          '-M',
-          '--no-color',
-          '--no-ext-diff',
-          '--no-textconv',
-          '--src-prefix=a/',
-          '--dst-prefix=b/',
-          ...range,
-          ...spec,
-        ],
-        { env: lookupEnv },
-      );
+  if (sinceTree !== null) {
+    const { entries, patch } = await diffTrees(
+      context,
+      executionRoot,
+      lookupEnv,
+      [sinceTree, currentTree],
+      scope,
+    );
+    const deltaDiffPath = path.join(dir, DELTA_PATCH_FILE);
+    const deltaPathsPath = path.join(dir, DELTA_PATHS_FILE);
+    await atomicWrite(context, deltaDiffPath, patch);
+    await atomicWrite(
+      context,
+      deltaPathsPath,
+      `${JSON.stringify({ version: DIFF_BASELINE_VERSION, baselineTree, sinceTree, currentTree, scope, entries }, null, 2)}\n`,
+    );
+    await recordRenderedTree(context, dir, renderedTrees, currentTree);
+    return { deltaDiffPath, deltaPathsPath, currentTree, deltaEntries: entries };
+  }
 
+  const { entries, patch } = await diffTrees(
+    context,
+    executionRoot,
+    lookupEnv,
+    [baselineTree, currentTree],
+    scope,
+  );
   const diffPath = path.join(dir, PATCH_FILE);
   const pathsPath = path.join(dir, PATHS_FILE);
-  await atomicWrite(context, diffPath, patch.stdout);
+  await atomicWrite(context, diffPath, patch);
   await atomicWrite(
     context,
     pathsPath,
     `${JSON.stringify({ version: DIFF_BASELINE_VERSION, baselineTree, currentTree, scope, entries }, null, 2)}\n`,
   );
+  await recordRenderedTree(context, dir, renderedTrees, currentTree);
   return { diffPath, pathsPath, currentTree, entries };
 }
 

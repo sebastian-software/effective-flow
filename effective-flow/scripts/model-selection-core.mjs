@@ -12,7 +12,18 @@ export const MAX_STDIN_BYTES = 64 * 1024;
 export const MAX_EVIDENCE_BYTES = 16 * 1024 * 1024;
 const MAX_CONTRACT_BYTES = 1024 * 1024;
 const TIERS = Object.freeze(['mechanical', 'standard', 'deep']);
-const SELECT_KEYS = ['harness', 'site', 'role', 'fallback', 'tier', 'reason', 'retry', 'native'];
+const SELECT_KEYS = [
+  'harness',
+  'site',
+  'role',
+  'fallback',
+  'tier',
+  'reason',
+  'retry',
+  'native',
+  'panelModel',
+];
+const HARNESSES = Object.freeze(['codex', 'claude']);
 const CONTRACT_PATH = fileURLToPath(new URL('./model-selection-contract.json', import.meta.url));
 const READ_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | (constants.O_NONBLOCK ?? 0);
 
@@ -113,6 +124,7 @@ function validateContract(contract) {
     contract.schemaVersion !== 1 ||
     !['codex', 'claude', 'portable'].includes(contract.target) ||
     !object(contract.mappings) ||
+    !object(contract.panelModels) ||
     !object(contract.roles) ||
     !Array.isArray(contract.sites)
   )
@@ -130,6 +142,18 @@ function validateContract(contract) {
         invalid();
     }
   }
+  // A panel model is never the harness's deep model: the panel member would only repeat the
+  // primary assessor.
+  if (Object.keys(contract.panelModels).some((key) => !HARNESSES.includes(key))) invalid();
+  for (const harness of HARNESSES) {
+    const models = contract.panelModels[harness];
+    if (
+      !Array.isArray(models) ||
+      new Set(models).size !== models.length ||
+      models.some((model) => !text(model) || model === contract.mappings.deep[harness].model)
+    )
+      invalid();
+  }
   for (const [role, tier] of Object.entries(contract.roles)) {
     if (!/^[a-z][a-z0-9-]*$/.test(role) || !TIERS.includes(tier)) invalid();
   }
@@ -140,6 +164,7 @@ function validateContract(contract) {
       !text(site.id) ||
       sites.has(site.id) ||
       typeof site.downAllowed !== 'boolean' ||
+      typeof site.panel !== 'boolean' ||
       !Array.isArray(site.clauses) ||
       site.clauses.length === 0
     )
@@ -156,6 +181,14 @@ function validateContract(contract) {
         invalid();
       roles.add(clause.role);
     }
+    if (
+      site.panel &&
+      (site.downAllowed ||
+        site.clauses.length !== 1 ||
+        site.clauses[0].role !== null ||
+        site.clauses[0].tier !== 'deep')
+    )
+      invalid();
   }
   return contract;
 }
@@ -178,9 +211,9 @@ async function loadContract(deps) {
 
 function select(input, contract) {
   keys(input, SELECT_KEYS);
-  if (!['codex', 'claude'].includes(input.harness))
+  if (!HARNESSES.includes(input.harness))
     fail('INVALID_INPUT', 'harness must identify codex or claude');
-  for (const key of ['site', 'role', 'tier', 'reason']) {
+  for (const key of ['site', 'role', 'tier', 'reason', 'panelModel']) {
     if (Object.hasOwn(input, key) && !text(input[key], key === 'reason' ? 2000 : 200)) {
       fail('INVALID_INPUT', `${key} must be a bounded non-empty string`);
     }
@@ -202,6 +235,7 @@ function select(input, contract) {
     fail('INVALID_INPUT', 'Unknown worker role');
   let defaultTier;
   let downAllowed = true;
+  let panelSite = false;
   const role = input.role ?? null;
   if (input.site) {
     const site = contract.sites.find((entry) => entry.id === input.site);
@@ -209,12 +243,31 @@ function select(input, contract) {
     if (!clause) fail('INVALID_INPUT', 'Unknown spawn site or incompatible worker role');
     defaultTier = clause.tier;
     downAllowed = site.downAllowed;
+    panelSite = site.panel;
   } else if (role) {
     defaultTier = contract.roles[role];
   } else if (input.fallback) {
     defaultTier = 'standard';
   } else {
     fail('INVALID_INPUT', 'A spawn site, worker role, or reasoned explicit fallback is required');
+  }
+  // A panel site always names its model, and only a panel site may name one. The model must be on
+  // the harness's build-generated panel allowlist and differ from the primary deep model.
+  if (panelSite !== Object.hasOwn(input, 'panelModel')) {
+    fail(
+      'INVALID_INPUT',
+      panelSite
+        ? 'A panel spawn site requires panelModel'
+        : 'panelModel is accepted only for a panel spawn site',
+    );
+  }
+  if (panelSite) {
+    if (input.native || input.fallback || Object.hasOwn(input, 'tier'))
+      fail('INVALID_INPUT', 'A panel selection takes no native role, fallback, or tier move');
+    if (input.panelModel === contract.mappings.deep[input.harness].model)
+      fail('TIER_POLICY', 'A panel model must differ from the primary deep model');
+    if (!contract.panelModels[input.harness].includes(input.panelModel))
+      fail('TIER_POLICY', 'The panel model is not on the harness panel allowlist');
   }
   const tier = input.tier ?? defaultTier;
   if (!TIERS.includes(tier)) fail('INVALID_INPUT', 'Unknown model tier');
@@ -230,7 +283,7 @@ function select(input, contract) {
   }
   const mapping = contract.mappings[tier][input.harness];
   const expected = {
-    model: mapping.model,
+    model: panelSite ? input.panelModel : mapping.model,
     effort: mapping[input.harness === 'codex' ? 'reasoning_effort' : 'effort'],
   };
   let spawnRole = role;

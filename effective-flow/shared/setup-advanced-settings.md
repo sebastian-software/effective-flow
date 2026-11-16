@@ -19,7 +19,7 @@ schema in `effective-flow setup`, and the current config value or default as the
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
 7. `tracker` (skipped in hidden mode, whose tracker is forced to `local`): `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
-9. `mergeGate` – the **merge gate** of `effective-flow merge-gate`, asked as its own block: see below.
+9. `mergeGate` – the **merge gate** of `effective-flow merge-gate`, asked as its own block together with `iterate.reviewFixValidation`: see below.
 10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `effective-flow build`. Profile and Express never ask this block and preserve an existing value.
 
 **Load on demand:** Read `shared/setup-execution-profiles.md`, when the user chose the advanced settings and block 10 (`executionProfiles`) is being asked.
@@ -57,18 +57,21 @@ If the user chose the advanced settings and the merge gate block is being asked,
 Then ask for the remaining keys, each with a short explanation, the valid values, and the current
 value or default as the pre-selection:
 
-| Key                              | Values                             | Default   |
-| -------------------------------- | ---------------------------------- | --------- |
-| `mergeGate.completion`           | `ask`, `merge`, `report`           | `ask`     |
-| `mergeGate.conflictResolution`   | `off`, `ask`, `auto`               | `auto`    |
-| `mergeGate.requireAllChecks`     | `true`, `false`                    | `true`    |
-| `mergeGate.checkWaitMinutes`     | positive integer                   | `20`      |
-| `mergeGate.maxRounds`            | positive integer                   | `10`      |
-| `mergeGate.botWaitMinutes`       | positive integer                   | `10`      |
-| `mergeGate.bots`                 | comma list of logins               | `(empty)` |
-| `mergeGate.bots.<login>.trigger` | literal trigger comment text       | unset     |
-| `mergeGate.bots.<login>.check`   | commit-status or check-run context | unset     |
-| `mergeGate.botAccounts`          | comma list of logins               | `(empty)` |
+| Key                               | Values                                | Default   |
+| --------------------------------- | ------------------------------------- | --------- |
+| `mergeGate.completion`            | `ask`, `merge`, `report`              | `ask`     |
+| `mergeGate.conflictResolution`    | `off`, `ask`, `auto`                  | `auto`    |
+| `mergeGate.conflictValidation`    | `full`, `quick`                       | `full`    |
+| `mergeGate.requireAllChecks`      | `true`, `false`                       | `true`    |
+| `mergeGate.checkWaitMinutes`      | positive integer                      | `20`      |
+| `mergeGate.maxRounds`             | positive integer                      | `10`      |
+| `mergeGate.botWaitMinutes`        | positive integer                      | `10`      |
+| `mergeGate.bots`                  | comma list of logins                  | `(empty)` |
+| `mergeGate.bots.<login>.trigger`  | literal trigger comment text          | unset     |
+| `mergeGate.bots.<login>.check`    | commit-status or check-run context    | unset     |
+| `mergeGate.botAccounts`           | comma list of logins                  | `(empty)` |
+| `mergeGate.noCiPolicy.bases`      | comma list of exact base branch names | unset     |
+| `mergeGate.noCiPolicy.unattended` | `true`, `false`                       | `false`   |
 
 - `mergeGate.conflictResolution`: what a gate run does when the head branch conflicts with its base.
   `auto` (the default) has the conflict resolved by the gate's dedicated worker, the result verified
@@ -82,6 +85,18 @@ value or default as the pre-selection:
   a project upgrading from an earlier generation, and that `off` restores the previous behavior
   exactly. No earlier generation wrote a `prReview.conflictResolution` row; one that exists anyway is
   retired like any other `prReview.<key>` row and carried over to this key.
+- `mergeGate.conflictValidation`: how the gate validates its own conflict-resolution commit.
+  `full` (default) validates it fully locally; `quick` lets the CI test job stand in for the local
+  test run of a low-risk conflict commit, and counts only once the same row is on the base branch,
+  so a pull request cannot lower its own validation. Where Step 5's conflict-validation proposal
+  holds, show it with this question; otherwise pre-select the current value.
+- `iterate.reviewFixValidation` (`full`, `quick`, default `full`), asked right after
+  `mergeGate.conflictValidation` though it is no `mergeGate.*` row: how the final validator of a
+  review-fix round that the gate delegates validates. `full` (default) runs the local full suite;
+  `quick` lets the CI test job stand in for the local test run, counts only once the same row is on
+  the base branch, and holds only where every detected job is a required check; standalone iterate
+  runs and CI-repair rounds stay `full`. Where Step 5's `iterate.reviewFixValidation` proposal
+  holds, show it with this question; otherwise pre-select the current value.
 - `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently
   red optional check.
@@ -135,6 +150,19 @@ value or default as the pre-selection:
   a `mergeGate.botAccounts` entry are equal after trimming one trailing `[bot]` from each, name the
   pair and ask whether that account is a reviewer or a non-reviewer bot; change the other list only
   with that answer.
+- `mergeGate.noCiPolicy.bases` and `mergeGate.noCiPolicy.unattended`, the **declared no-CI
+  policy**, offered last as an opt-in: first ask whether the repository intentionally runs no CI,
+  and ask `bases` only on a yes. Pre-select the
+  recorded value or "not set", and record, change or remove it only on the operator's explicit
+  choice. `bases` is a comma list of exact, case-sensitive base branch names: for a pull request
+  into a listed base that reports no check list at all, the gate then asks neither its
+  pending-checks question nor its no-check-list waiver. Ask `unattended` only once `bases` is set:
+  `true` lets a non-interactive gate run merge on the policy too. Explain that the policy applies
+  only once the same rows are on the base branch, so a pull request cannot grant it to itself; that
+  unattended merging also needs `mergeGate.completion: merge`; that a GitHub repository without CI
+  also needs `mergeGate.requireAllChecks: false`, or its check wait fails first; and the residual
+  risk that a late-attaching check, or CI a pull request introduces, looks like no CI. Removing
+  `bases` also removes `unattended` in the same confirmed write.
 
 `delivery.mergeMethod` (block 5) decides **how** the gate merges; it stays in the `delivery` block
 because it is a property of this project's delivery, not of the gate.

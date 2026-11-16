@@ -176,6 +176,8 @@ translate an existing ADR.
 
 **Load on demand:** Read `shared/durable-follow-up-gate.md`, when planning is about to propose a derived child issue.
 
+**Load on demand:** Read `shared/backlog-audit-split.md`, when Phase 2 step 1 reads a comment whose first line starts with `<!-- effective-flow-backlog-audit-split `.
+
 ## Project conventions
 
 If the project contains an `AGENTS.md`, read it early in the workflow and observe its specifications for planning and user follow-up questions.
@@ -343,6 +345,11 @@ values, paths, checklist syntax, and the HTML marker remain stable.
 - No open points. / [implementation-blocking decision and re-entry note]
 
 ```
+
+Under `### Acceptance criteria` (`### Akzeptanzkriterien`) the comment may carry `effective-flow plan`'s
+expected-failure lines, `Expected failure: <test file path> › <title path>` or
+`Expected failure: <check command> › <diagnostic>` (German `Erwarteter Fehlschlag:`); they count
+only once `effective-flow build` Phase 1 approves them.
 
 Include the compact checkpoint from `plan-contract` (`Ergebnis-Checkpoint` in German); review it
 with the specification, preserving its original baseline and explicit owner decisions. This active
@@ -567,7 +574,8 @@ For each chosen issue in turn:
    carrying `<!-- effective-flow-plan-issues -->` or the backward-compatible
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such
-   a comment exists.
+   a comment exists. An issue labeled `effective-flow-goal-obsolete` is reported with that mark and
+   planned only after the user explicitly overrides it in this run; otherwise skip it unchanged.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `plan-issue/codebase-examination` (`shared/model-selection.md`).
 2. Apply the clarification methodology from `effective-flow plan` (Phase 1/2): identify the genuinely relevant ambiguities — target behavior, domain rules, technical requirements, dependencies, edge cases, acceptance criteria — and ask the user about them specifically.
@@ -594,6 +602,7 @@ For each chosen issue in turn:
    safely. Labels pass through the same secret boundary and are rejected rather than redacted when
    sensitive. Do not attach `effective-flow-needs-planning`: every proposed child must already pass
    the implementation clarity gate. Admission alone does not make an unclear child implementable.
+   An issue with a backlog-audit split marker follows "Backlog-audit split" for its children.
    Allocate stable keys such as
    `child-01` once per parent and preserve existing keys on re-entry. If the target lacks any
    applicable guarantee, report decomposition as unavailable without creating a checklist or
@@ -608,19 +617,28 @@ Before offering the deep interactive review, run the same quality baseline as th
 workflow for the active issue only. Steps 1 and 3 each hand over a fresh draft snapshot of the
 active comment per "Judgment handoff"; no tracker write moves ahead of Phase 4.
 
+**Load on demand:** Read `shared/planning-batch.md`, when Phase 3 starts the quality baseline for the active issue.
+
+Under `planning-batch`, steps 1, 2 and 3 are its gap, validation and internal review steps
+(`effective-flow plan` Phases 4, 5 and 6); the comment's open-points section holds the pending points.
+
 1. Ask `effective-delivery` for the generic gap judgment from `effective-flow plan` Phase 4:
    over-engineering, scope creep, hidden assumptions, missing or non-measurable acceptance
    criteria, edge cases, implementation risks, and evidence versus guessing. Use another declared
    domain owner only when the issue crosses that specialist boundary.
-2. Incorporate directly resolvable gaps into the specification. Normalize the validation judgment
-   from `effective-flow plan` Phase 5: concrete scope and file references, measurable acceptance
-   criteria, sufficient verified context, explicit purpose/workflow, no-code compliance, and a
-   fitting workflow recommendation.
+2. Incorporate directly resolvable gaps into the specification and defer decision-requiring ones
+   per `planning-batch`. Normalize the validation judgment from `effective-flow plan` Phase 5: concrete
+   scope and file references, measurable acceptance criteria, sufficient verified context, explicit
+   purpose/workflow, no-code compliance, and a fitting workflow recommendation.
 3. Obtain the internal plan-review judgment from `effective-delivery` exactly as in
    `effective-flow plan` Phase 6. Classify findings as Critical, Important, or Note across Architecture,
    Security, Data protection, Error cases, Testability, Scope, and Maintainability. Incorporate all
-   critical findings and every directly resolvable important finding; record remaining
-   decision-requiring findings as concrete open points.
+   critical findings and every directly resolvable important finding; remaining decision-requiring
+   findings join the batch.
+
+Then run the batch round and its ladder for this issue only, per `planning-batch`, with no tracker
+write before Phase 4; unanswered points and "Decide later" become open points that feed step 6.
+
 4. Normalize the active comment to the canonical structure, including its language-matching plan
    review, scorecard, findings, and open-points section. `Approved` / `Freigegeben` requires no
    critical finding and no implementation-blocking open point; otherwise use
@@ -730,7 +748,8 @@ Complete this entire phase for the active issue before starting another issue:
    closes that TOCTOU window; if a duplicate or uncertain result becomes visible, stop and reconcile
    rather than retrying.
 
-4. With a baseline that has no critical findings, ask for this issue only:
+4. This review is user-requested depth (`planning-batch`). With a baseline that has no critical
+   findings, ask for this issue only:
 
 Ask the user: **Start the deep interactive plan review now?**
 - Yes -- Search now for unknown, imprecise, and decision-requiring points

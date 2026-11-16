@@ -230,3 +230,5 @@ broaden the task into unrelated dependency maintenance.
   editing it.
 - Return changed tests, the protected claim, exact commands and results, and remaining evidence
   gaps to the caller.
+
+**Load on demand:** Read `shared/validation-environment-unsupported.md`, when a test run you start stops at the project's own environment preflight with a report naming a failed check, or a check reports version control unavailable.

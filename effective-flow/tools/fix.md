@@ -205,6 +205,8 @@ already authorized implementation note; a returning delegate sends evidence to i
 
 **Load on demand:** Read `shared/diff-baseline.md`, when the diff baseline is captured at the end of Phase 3, step 0, or later rendered or discarded.
 
+**Load on demand:** Read `shared/verification-evidence.md`, when Phase 5 builds the verification record, before the diff baseline is discarded.
+
 ## Investigation method
 
 This building block describes the read-only core of a bug and behavior investigation. The investigation steps described here are themselves read-only: they change no code and write no tests; a reproduction happens within these steps only through observation – running existing checks, describing logs and behavior – or through a documented reproduction guide. Whether the embedding workflow additionally produces a reproduction test is decided by that workflow itself (e.g. `effective-flow fix` additionally writes a failing test); `effective-flow investigate`, by contrast, stays fully read-only.
@@ -326,7 +328,8 @@ Run the read-only investigation per "Investigation method", section "Investigate
 
 1. Try to reproduce the bug with ``effective-flow-code-validator`` for the current technical state. If
    possible, specify a failing test that documents the behavior (file, case, expected failure)
-   without writing it; Phase 3 writes it once the diff baseline exists.
+   without writing it; Phase 3 writes it once the diff baseline exists. Under `Validation: targeted`
+   (`caller-owned-commit`) the reproduction stays, limited to the targeted scope.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `fix/reproduction` (`shared/model-selection.md`).
 2. Perform a gap analysis for the diagnosis and fix strategy:
@@ -426,8 +429,8 @@ record deleted and the worktree unregistered, or with its record in cleanup-read
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
 `unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
 and manual reconciliation is required. Set a record left `active` once with `worktree transition`
-– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
-`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+– a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop,
+otherwise to `failed` – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
 worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 ### Phase 3: Fix
@@ -481,7 +484,7 @@ surface prevents completion under the blocking rule of the detail contract.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `fix/regression-test` (`shared/model-selection.md`).
    - confirms that the Phase 3 failing test now passes, or writes a regression test
-2. Then render the diff baseline and hand the path list per "Diff baseline" to, in parallel if possible:
+2. Then render the diff baseline, retain its `currentTree` as `reviewTree`, and hand the path list per "Diff baseline" to, in parallel if possible:
    Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium`. Tier `deep` for `effective-flow-generic-product-reviewer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `fix/verification` (`shared/model-selection.md`).
    - ``effective-flow-code-validator``: repository-native lint, type, build and documentation checks that
@@ -489,9 +492,21 @@ surface prevents completion under the blocking rule of the detail contract.
    - for every degraded generic product bucket, ``effective-flow-generic-product-reviewer``: a read-only
      qualitative review with the reduced-depth limitation, reporting all severities; critical
      findings must be fixed before completion
+   - after the incorporation pass, on a `review-depth` floor hit or trigger, or when `reviewTree` is unavailable:
+     ``effective-flow-generic-product-reviewer`` with its reduced-depth notice for the full pass. Label
+     the handoff as an explicit bounded implementation full-pass assignment from `effective-flow fix`;
+     supply only its triggering path list and each path's confirmed route. When `reviewTree` is
+     unavailable, this reviewer also stands in for the routed reviewers; give it the full
+     cumulative path list and confirmed routes under the same explicit assignment.
+
+**Load on demand:** Read `shared/review-depth.md`, when Phase 4 aggregates findings for the incorporation pass.
 
 If findings or residual risks arise, make one automatic incorporation pass for new current-scope
-items, render again, then pass the residual batch through “Gated residual review-finding reports”. Document only
+items, then apply `review-depth` without a reviewer re-check unless a floor hit or trigger starts
+step 2's full-pass reviewer on its triggering paths: the orchestrator runs both renders,
+classifies the floor, and writes the three-part report itself from the delta render, the corrected
+findings with their evidence, and the open evidence. Then pass the residual batch through “Gated residual review-finding reports”. The Phase 4 report carries the
+floor classification record and the three-part report. Document only
 `admitted` residuals in the structured form below; a remaining `current-scope` or unresolved
 `uncertain` item blocks completion, and `closed` items produce no artifact:
 
@@ -520,7 +535,8 @@ items, render again, then pass the residual batch through “Gated residual revi
 3. If this fix resolved a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
-4. Delete the wisdom file and discard the diff baseline.
+4. With delivery or worktree execution active, first build the verification record per
+   `verification-evidence` from the last Phase 4 `reviewTree`. Delete the wisdom file and discard the diff baseline.
 5. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). For automatic PR-review integration, declare `no-review-capability` unconditionally: this workflow never supplies complete specialist review coverage. Keep any local residual-report evidence in its existing report path; do not pass that partial set as `finding-set`. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
 6. Run the worktree-record exit self-check.
 7. Summarize:

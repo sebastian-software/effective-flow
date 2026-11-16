@@ -53,8 +53,9 @@ running environment identifies T3 Code.
 **Pending read** (in place of Phase 2 step 2). Read `pr-status-read` once. The pending set is every
 reported check not yet completed, restricted to checks that are required or of unstated requiredness
 when `mergeGate.requireAllChecks` is `false`. An empty set continues to steps 3 and 4 in the same
-round. A non-empty set suspends. An unreported check list (`checksReported: false`) keeps step 2's
-once-per-run `checks-pending` handling, relayed or non-interactive, and never suspends.
+round. A non-empty set suspends. An unreported check list (`checksReported: false`) never suspends: it
+continues like an empty set, and Phase 2's loop-exit rule for an unreported list decides it – step
+2's once-per-run `checks-pending` handling or the declared no-CI policy's skip.
 
 **Bot order** (configured-reviewer Phase 3). Run steps 1 to 3 for every configured bot first, then
 post any stale-verdict re-trigger of step 5, before any delegation. A bot that is not **has run**,

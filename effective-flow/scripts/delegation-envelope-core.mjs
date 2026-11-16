@@ -1,8 +1,8 @@
 // Sender-side builder and validator for the message `merge-gate` hands to `iterate`.
 //
 // `build` turns structured input into the canonical envelope (six control lines, the optional
-// progress and approval lines, an optional CI-repair instruction, the boundary token, the manifest,
-// the delimiter, the body spans), checks
+// progress, authorized-scope, review-fix validation and approval lines, an optional CI-repair
+// instruction, the boundary token, the manifest, the delimiter, the body spans), checks
 // its own output with the same structural validator `validate` uses, and writes it to a fresh file
 // below `<cwd>/.effective-flow/merge-gate/` together with a snapshot of the expected structure.
 // `validate` re-reads that file, binds it to the digest `build` returned, and re-runs the text-only
@@ -25,6 +25,26 @@ export const PROGRESS_KEYWORD = 'Progress context';
 export const PROGRESS_RECEIVER_MARKER = '<!-- progress-context-receiver:1 -->';
 const PROGRESS_CONTEXT_KEYS = Object.freeze(['version', 'parent', 'channel', 'dispatch']);
 const UNSAFE_PROGRESS_CHARS = /[\p{Cc}\p{Cf}\p{Default_Ignorable_Code_Point}\u2028\u2029]/u;
+// The optional authorized-scope line: one JSON object holding the stored scope record (sorted,
+// de-duplicated PR paths with their merge-base and head SHAs) and the identifiers minted for the
+// free-text repair and the Phase-4 correction bucket. It is version-neutral: legal under snapshot
+// versions 1 and 2, and a snapshot without it stays valid. `merge-gate` makes it mandatory for its
+// own delegations; `iterate.md` owns its meaning.
+export const SCOPE_KEYWORD = 'Authorized scope';
+const SCOPE_LINE_KEYS = Object.freeze(['version', 'scope', 'freeText', 'correction']);
+const SCOPE_RECORD_KEYS = Object.freeze(['mergeBase', 'head', 'paths']);
+const OBJECT_ID_FORMAT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const MINTED_IDENTIFIER = /^[A-Z0-9]{32,}$/;
+// The optional review-fix validation line, `Review-fix validation: quick-candidate <baseCommit>`:
+// merge-gate's quick candidate for one review-fix round, naming the full lowercase 40-hex base
+// commit its CI detection used. It is never a required control keyword and is version-neutral like
+// the scope line. It travels only beside the authorized-scope line and never in a CI repair (a
+// delegation with an instruction); `iterate.md` owns its meaning.
+export const REVIEW_FIX_VALIDATION_KEYWORD = 'Review-fix validation';
+export const REVIEW_FIX_QUICK_CANDIDATE = 'quick-candidate';
+const REVIEW_FIX_VALIDATION_KEYS = Object.freeze(['baseCommit']);
+const BASE_COMMIT_FORMAT = /^[0-9a-f]{40}$/;
+const REVIEW_FIX_VALIDATION_LINE = /^quick-candidate ([0-9a-f]{40})$/;
 
 export const DELEGATION_ENVELOPE_OPERATIONS = Object.freeze(['build', 'validate']);
 
@@ -82,6 +102,8 @@ export const INSTRUCTION_FORBIDDEN_PREFIXES = Object.freeze([
   'Run state:',
   'Language context:',
   'Progress context:',
+  'Authorized scope:',
+  'Review-fix validation:',
   'Approved outcomes:',
   'Item:',
   'Thread item:',
@@ -319,6 +341,98 @@ function normalizeProgressReceiver(value) {
   return { skillRoot };
 }
 
+function requireExactKeys(value, keys, label, code = 'INVALID_PAYLOAD') {
+  const actual = Object.keys(value);
+  if (actual.length !== keys.length || actual.some((key) => !keys.includes(key))) {
+    fail(code, `${label} must contain exactly ${keys.join(', ')}`);
+  }
+}
+
+// One repository-relative scope path. It travels inside a JSON control line, so it must not carry
+// a character that could end or hide part of that line, and it must not name a place outside the
+// checkout.
+function requireScopePath(value, label) {
+  requireNonEmptyString(value, label);
+  if (UNSAFE_MANIFEST_CHARS.test(value)) {
+    fail(
+      'UNSAFE_MANIFEST_VALUE',
+      `${label} contains a control, line-terminating or invisible format character`,
+    );
+  }
+  if (value.startsWith('/') || value.startsWith('\\') || /^[A-Za-z]:[\\/]/.test(value)) {
+    fail('UNSAFE_MANIFEST_VALUE', `${label} must be a repository-relative path`);
+  }
+  if (value.split(/[\\/]/).includes('..')) {
+    fail('UNSAFE_MANIFEST_VALUE', `${label} must not contain a ".." segment`);
+  }
+  return value;
+}
+
+// The stored scope record: exactly `mergeBase`, `head` and `paths`, returned with sorted,
+// de-duplicated paths.
+function normalizeAuthorizedScope(value) {
+  requireObject(value, 'authorizedScope');
+  requireExactKeys(value, SCOPE_RECORD_KEYS, 'authorizedScope');
+  for (const key of ['mergeBase', 'head']) {
+    if (typeof value[key] !== 'string' || !OBJECT_ID_FORMAT.test(value[key])) {
+      fail('INVALID_PAYLOAD', `authorizedScope.${key} must be a full lowercase object id`);
+    }
+  }
+  if (!Array.isArray(value.paths))
+    fail('INVALID_PAYLOAD', 'authorizedScope.paths must be an array');
+  const paths = value.paths.map((entry, index) =>
+    requireScopePath(entry, `authorizedScope.paths[${index}]`),
+  );
+  return { mergeBase: value.mergeBase, head: value.head, paths: [...new Set(paths)].sort() };
+}
+
+// Parses one scope line value strictly; its canonical serialization is the only accepted form.
+function normalizeScopeLine(value) {
+  requireObject(value, 'authorized scope line');
+  requireExactKeys(value, SCOPE_LINE_KEYS, 'authorized scope line');
+  if (value.version !== 1) fail('INVALID_PAYLOAD', 'authorized scope line version must be 1');
+  const scope = normalizeAuthorizedScope(value.scope);
+  for (const key of ['freeText', 'correction']) {
+    if (typeof value[key] !== 'string' || !MINTED_IDENTIFIER.test(value[key])) {
+      fail('INVALID_PAYLOAD', `authorized scope line ${key} must be a minted identifier`);
+    }
+  }
+  if (value.freeText === value.correction) {
+    fail('INVALID_PAYLOAD', 'authorized scope line identifiers must differ');
+  }
+  return { version: 1, scope, freeText: value.freeText, correction: value.correction };
+}
+
+function requireCanonicalScopeLine(text) {
+  const line = normalizeScopeLine(parseEnvelopeJson(text, 'authorized scope line'));
+  if (JSON.stringify(line) !== text) {
+    fail('INVALID_PAYLOAD', 'authorized scope line is not canonical');
+  }
+  return line;
+}
+
+// The review-fix quick candidate: exactly `baseCommit`, a full lowercase 40-hex commit SHA.
+function normalizeReviewFixValidation(value) {
+  requireObject(value, 'reviewFixValidation');
+  requireExactKeys(value, REVIEW_FIX_VALIDATION_KEYS, 'reviewFixValidation');
+  if (typeof value.baseCommit !== 'string' || !BASE_COMMIT_FORMAT.test(value.baseCommit)) {
+    fail('INVALID_PAYLOAD', 'reviewFixValidation.baseCommit must be a full lowercase 40-hex SHA');
+  }
+  return { baseCommit: value.baseCommit };
+}
+
+// The line value for one candidate; its only accepted form.
+export function reviewFixValidationValue({ baseCommit }) {
+  return `${REVIEW_FIX_QUICK_CANDIDATE} ${baseCommit}`;
+}
+
+// Parses one review-fix validation line value strictly; returns its base commit, or null.
+export function parseReviewFixValidation(value) {
+  if (typeof value !== 'string') return null;
+  const match = REVIEW_FIX_VALIDATION_LINE.exec(value);
+  return match ? match[1] : null;
+}
+
 // `approvedOutcomes` maps every delegated item's durable key to its approved outcome. It is legal
 // only beside `runState: non-interactive`, because only the approval round carries it, and it must
 // name exactly the durable keys of the thread and body items, so no item travels unapproved and no
@@ -367,6 +481,14 @@ export function normalizeBuildInput(input) {
     input.progressContext === undefined ? null : normalizeProgressContext(input.progressContext);
   const progressReceiver =
     input.progressReceiver === undefined ? null : normalizeProgressReceiver(input.progressReceiver);
+  const authorizedScope =
+    input.authorizedScope === undefined || input.authorizedScope === null
+      ? null
+      : normalizeAuthorizedScope(input.authorizedScope);
+  const reviewFixValidation =
+    input.reviewFixValidation === undefined || input.reviewFixValidation === null
+      ? null
+      : normalizeReviewFixValidation(input.reviewFixValidation);
 
   const rawThreads = input.threadItems ?? [];
   const rawBodies = input.bodyItems ?? [];
@@ -423,6 +545,14 @@ export function normalizeBuildInput(input) {
   if (input.instruction !== undefined && input.instruction !== null) {
     instruction = requireNonEmptyString(input.instruction, 'instruction');
   }
+  // The receiver honours the candidate only beside the scope line, and a CI repair always
+  // validates `full`, so either combination is a sender error rather than an inert line.
+  if (reviewFixValidation !== null && authorizedScope === null) {
+    fail('INVALID_PAYLOAD', 'reviewFixValidation requires authorizedScope');
+  }
+  if (reviewFixValidation !== null && instruction !== null) {
+    fail('INVALID_PAYLOAD', 'reviewFixValidation is never carried by a CI repair instruction');
+  }
 
   const approvedOutcomes =
     input.approvedOutcomes === undefined || input.approvedOutcomes === null
@@ -440,6 +570,8 @@ export function normalizeBuildInput(input) {
     languageContext,
     progressContext,
     progressReceiver,
+    authorizedScope,
+    reviewFixValidation,
     threadItems,
     bodyItems,
     instruction,
@@ -506,6 +638,12 @@ function callerValues(normalized) {
   const values = [];
   if (normalized.instruction !== null) values.push(normalized.instruction);
   if (normalized.progressContext !== null) values.push(JSON.stringify(normalized.progressContext));
+  if (normalized.authorizedScope !== null) {
+    const { mergeBase, head, paths } = normalized.authorizedScope;
+    values.push(mergeBase, head, ...paths);
+  }
+  if (normalized.reviewFixValidation !== null)
+    values.push(normalized.reviewFixValidation.baseCommit);
   for (const item of normalized.threadItems) values.push(item.durableKey, item.threadId);
   for (const item of normalized.bodyItems) {
     values.push(item.durableKey, item.reviewId, item.author, item.url, item.text);
@@ -556,12 +694,19 @@ export function bodyItemLine(identifier, { reviewId, author, url }) {
 }
 
 // The entries above the delimiter, in order: six control lines, optional progress context, the
-// approval line when the control values carry one, the instruction (one entry, which may itself
-// span lines), the token line, the manifest lines.
+// optional authorized scope, the optional review-fix validation line, the approval line when the
+// control values carry one, the instruction (one entry, which may itself span lines), the token
+// line, the manifest lines.
 export function headerLines({ controlValues, instruction, token, manifestLines }) {
   const lines = CONTROL_KEYWORDS.map((keyword) => `${keyword}: ${controlValues[keyword]}`);
   if (controlValues[PROGRESS_KEYWORD] !== undefined) {
     lines.push(`${PROGRESS_KEYWORD}: ${controlValues[PROGRESS_KEYWORD]}`);
+  }
+  if (controlValues[SCOPE_KEYWORD] !== undefined) {
+    lines.push(`${SCOPE_KEYWORD}: ${controlValues[SCOPE_KEYWORD]}`);
+  }
+  if (controlValues[REVIEW_FIX_VALIDATION_KEYWORD] !== undefined) {
+    lines.push(`${REVIEW_FIX_VALIDATION_KEYWORD}: ${controlValues[REVIEW_FIX_VALIDATION_KEYWORD]}`);
   }
   if (controlValues[APPROVAL_KEYWORD] !== undefined) {
     lines.push(`${APPROVAL_KEYWORD}: ${controlValues[APPROVAL_KEYWORD]}`);
@@ -598,7 +743,13 @@ function requireSnapshot(snapshot) {
   if (!controls || typeof controls !== 'object' || Array.isArray(controls)) {
     invalid('controlValues');
   }
-  const allowedControls = [...CONTROL_KEYWORDS, PROGRESS_KEYWORD, APPROVAL_KEYWORD];
+  const allowedControls = [
+    ...CONTROL_KEYWORDS,
+    PROGRESS_KEYWORD,
+    SCOPE_KEYWORD,
+    REVIEW_FIX_VALIDATION_KEYWORD,
+    APPROVAL_KEYWORD,
+  ];
   if (Object.keys(controls).some((key) => !allowedControls.includes(key)))
     invalid('unknown controlValues key');
   const progress = controls[PROGRESS_KEYWORD];
@@ -613,6 +764,28 @@ function requireSnapshot(snapshot) {
       if (JSON.stringify(context) !== progress) invalid('progress context is not canonical');
     } catch {
       invalid(`controlValues.${PROGRESS_KEYWORD}`);
+    }
+  }
+  // Version-neutral: the scope line is legal under either snapshot version.
+  const scopeLine = controls[SCOPE_KEYWORD];
+  const scopeCount = scopeLine === undefined ? 0 : 1;
+  if (scopeLine !== undefined) {
+    try {
+      if (typeof scopeLine !== 'string') invalid(`controlValues.${SCOPE_KEYWORD}`);
+      requireCanonicalScopeLine(scopeLine);
+    } catch {
+      invalid(`controlValues.${SCOPE_KEYWORD}`);
+    }
+  }
+  // Version-neutral as well, and legal only beside the scope line.
+  const reviewFixLine = controls[REVIEW_FIX_VALIDATION_KEYWORD];
+  const reviewFixCount = reviewFixLine === undefined ? 0 : 1;
+  if (reviewFixLine !== undefined) {
+    if (parseReviewFixValidation(reviewFixLine) === null) {
+      invalid(`controlValues.${REVIEW_FIX_VALIDATION_KEYWORD}`);
+    }
+    if (scopeLine === undefined) {
+      invalid(`controlValues.${REVIEW_FIX_VALIDATION_KEYWORD} requires ${SCOPE_KEYWORD}`);
     }
   }
   for (const keyword of CONTROL_KEYWORDS) {
@@ -671,15 +844,25 @@ function requireSnapshot(snapshot) {
     header.length -
     CONTROL_KEYWORDS.length -
     progressCount -
+    scopeCount -
+    reviewFixCount -
     approvalCount -
     1 -
     snapshot.manifestLines.length;
   if (instructionCount !== 0 && instructionCount !== 1) invalid('headerLines length');
+  // A CI repair never carries the review-fix line, so a tampered snapshot cannot pair them either.
+  if (instructionCount === 1 && reviewFixCount === 1) {
+    invalid(
+      `controlValues.${REVIEW_FIX_VALIDATION_KEYWORD} is never carried beside an instruction`,
+    );
+  }
   const expected = headerLines({
     controlValues: controls,
     instruction:
       instructionCount === 1
-        ? header[CONTROL_KEYWORDS.length + progressCount + approvalCount]
+        ? header[
+            CONTROL_KEYWORDS.length + progressCount + scopeCount + reviewFixCount + approvalCount
+          ]
         : null,
     token: snapshot.token,
     manifestLines: snapshot.manifestLines,
@@ -790,6 +973,89 @@ export function validateStructure(text, snapshotInput) {
       fail('CONTROL_LINE_MISMATCH', `"${PROGRESS_KEYWORD}:" differs from the snapshot`, {
         line: entry.line,
       });
+    }
+  }
+
+  // The authorized-scope line: at most once, present exactly when the snapshot declares one, well
+  // formed, and byte-equal to the snapshot's canonical serialization.
+  const scopes = [];
+  aboveLines.forEach((line, index) => {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith(`${SCOPE_KEYWORD}:`)) return;
+    scopes.push({ line: index + 1, value: trimmed.slice(SCOPE_KEYWORD.length + 1).trim() });
+  });
+  if (scopes.length > 1) {
+    fail('CONTROL_LINE_DUPLICATED', `"${SCOPE_KEYWORD}:" appears more than once`, {
+      line: scopes[1].line,
+    });
+  }
+  const expectedScope = snapshot.controlValues[SCOPE_KEYWORD];
+  if (expectedScope === undefined && scopes.length === 1) {
+    fail('CONTROL_LINE_MISMATCH', `"${SCOPE_KEYWORD}:" is not in the snapshot`, {
+      line: scopes[0].line,
+    });
+  }
+  if (expectedScope !== undefined && scopes.length === 0) {
+    fail('CONTROL_LINE_MISSING', `"${SCOPE_KEYWORD}:" is missing above the delimiter`, {
+      line: delimiterLine,
+    });
+  }
+  if (scopes.length === 1) {
+    try {
+      requireCanonicalScopeLine(scopes[0].value);
+    } catch {
+      fail('CONTROL_LINE_MISMATCH', `"${SCOPE_KEYWORD}:" is malformed`, { line: scopes[0].line });
+    }
+    if (scopes[0].value !== expectedScope) {
+      fail('CONTROL_LINE_MISMATCH', `"${SCOPE_KEYWORD}:" differs from the snapshot`, {
+        line: scopes[0].line,
+      });
+    }
+  }
+
+  // The review-fix validation line: at most once, present exactly when the snapshot declares one,
+  // well formed, and equal to the snapshot's value.
+  const reviewFixLines = [];
+  aboveLines.forEach((line, index) => {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith(`${REVIEW_FIX_VALIDATION_KEYWORD}:`)) return;
+    reviewFixLines.push({
+      line: index + 1,
+      value: trimmed.slice(REVIEW_FIX_VALIDATION_KEYWORD.length + 1).trim(),
+    });
+  });
+  if (reviewFixLines.length > 1) {
+    fail('CONTROL_LINE_DUPLICATED', `"${REVIEW_FIX_VALIDATION_KEYWORD}:" appears more than once`, {
+      line: reviewFixLines[1].line,
+    });
+  }
+  const expectedReviewFix = snapshot.controlValues[REVIEW_FIX_VALIDATION_KEYWORD];
+  if (expectedReviewFix === undefined && reviewFixLines.length === 1) {
+    fail('CONTROL_LINE_MISMATCH', `"${REVIEW_FIX_VALIDATION_KEYWORD}:" is not in the snapshot`, {
+      line: reviewFixLines[0].line,
+    });
+  }
+  if (expectedReviewFix !== undefined && reviewFixLines.length === 0) {
+    fail(
+      'CONTROL_LINE_MISSING',
+      `"${REVIEW_FIX_VALIDATION_KEYWORD}:" is missing above the delimiter`,
+      { line: delimiterLine },
+    );
+  }
+  if (reviewFixLines.length === 1) {
+    if (parseReviewFixValidation(reviewFixLines[0].value) === null) {
+      fail('CONTROL_LINE_MISMATCH', `"${REVIEW_FIX_VALIDATION_KEYWORD}:" is malformed`, {
+        line: reviewFixLines[0].line,
+      });
+    }
+    if (reviewFixLines[0].value !== expectedReviewFix) {
+      fail(
+        'CONTROL_LINE_MISMATCH',
+        `"${REVIEW_FIX_VALIDATION_KEYWORD}:" differs from the snapshot`,
+        {
+          line: reviewFixLines[0].line,
+        },
+      );
     }
   }
 
@@ -1168,6 +1434,16 @@ export async function buildEnvelope(input, deps = {}) {
     identifiers.push({ identifier, kind: 'body', durableKey: item.durableKey });
     manifestLines.push(bodyItemLine(identifier, item));
   }
+  // The free-text repair and the Phase-4 correction bucket get their own identifiers, carried only
+  // in the scope line, so a return entry under an unminted name such as `ci` stays inert.
+  let scopeIdentifiers = null;
+  if (normalized.authorizedScope !== null) {
+    const freeText = drawDistinct(randomBytes, collides);
+    minted.push(freeText);
+    const correction = drawDistinct(randomBytes, collides);
+    minted.push(correction);
+    scopeIdentifiers = { freeText, correction };
+  }
   const token = drawDistinct(randomBytes, collides);
 
   const threadIds = normalized.threadItems.map((item) => item.threadId);
@@ -1180,6 +1456,18 @@ export async function buildEnvelope(input, deps = {}) {
     'Language context': languageContextValue(normalized.languageContext),
   };
   if (progressContext !== null) controlValues[PROGRESS_KEYWORD] = JSON.stringify(progressContext);
+  if (scopeIdentifiers !== null) {
+    controlValues[SCOPE_KEYWORD] = JSON.stringify({
+      version: 1,
+      scope: normalized.authorizedScope,
+      ...scopeIdentifiers,
+    });
+  }
+  if (normalized.reviewFixValidation !== null) {
+    controlValues[REVIEW_FIX_VALIDATION_KEYWORD] = reviewFixValidationValue(
+      normalized.reviewFixValidation,
+    );
+  }
   // Every approved item `build` refused is undelegated, so an approval that leaves no identifier
   // writes no line, exactly as a round without approved items writes none.
   if (normalized.approvedOutcomes !== null && identifiers.length > 0) {
@@ -1253,6 +1541,7 @@ export async function buildEnvelope(input, deps = {}) {
     snapshotPath,
     digest: sha256(text),
     identifiers,
+    ...(scopeIdentifiers === null ? {} : { scopeIdentifiers }),
     refused,
   };
 }

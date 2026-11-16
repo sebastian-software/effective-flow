@@ -225,7 +225,7 @@ keys:
   `status` is closed: `passed` needs `requiredCount > 0` and `satisfiedCount >= requiredCount`;
   `failed` needs `requiredCount > 0` and `satisfiedCount < requiredCount`; `not-required` needs
   `requiredCount` and `satisfiedCount` of `0`; `unavailable`, for a validation never reached,
-  needs `satisfiedCount` of `0`.
+  needs `satisfiedCount` of `0`. A `limited` final validation maps to `unavailable`.
 - `review.status` is `completed` with the aggregated severity counts, `not-run` when no reviewer
   started, or `unavailable` when not reached. A status other than `completed` sends all three
   severity counts as `0`.

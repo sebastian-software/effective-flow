@@ -163,8 +163,8 @@ record deleted and the worktree unregistered, or with its record in cleanup-read
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
 `unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
 and manual reconciliation is required. Set a record left `active` once with `worktree transition`
-– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
-`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+– a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop,
+otherwise to `failed` – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
 worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 **Load on demand:** Read `shared/plan-archival.md`, when the delivery point of the handback is reached, or in-place execution archives a plan file.
@@ -180,6 +180,8 @@ worktree may already be withdrawn. The self-check never removes or claims a work
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined (Phase 2, step 0).
 
 **Load on demand:** Read `shared/diff-baseline.md`, when the diff baseline is captured at the end of Phase 2, step 0, or later rendered or discarded.
+
+**Load on demand:** Read `shared/verification-evidence.md`, when Phase 7 step 5 builds the verification record, before the diff baseline is discarded.
 
 # Bounded build-run control
 
@@ -229,9 +231,11 @@ Carry the originating mode. A validated interactive build relay preserves the ex
 
 ## Preserve acceptance through the actual completion order
 
-`receipt` records the existing phase judgments against current content and durable evidence. Required gate names are `implementation`, `documentation`, `tests`, `validation`, `independent-review`, `final-validation`, `delivery`, `plan-archival`, `pilot-finalization`, `cleanup`, `completion`. Persist necessary non-Git evidence under this runtime run before deleting wisdom/baseline; never retain full diffs or skip normal cleanup. File refs are `{root,path,digest}`; committed refs are `{repositoryIdentity,commit,blob,path,digest}` and are verified through the surviving common repository.
+`receipt` records the existing phase judgments against current content and durable evidence; under `Validation: targeted` (`caller-owned-commit`) the `reason` of the `validation` and `final-validation` receipts names their targeted scope. Otherwise the `final-validation` `reason` names the targeted scope (the Delta since the Phase 5 full-suite tree, or the cumulative path list) or the full-run condition (a) or (b) that applied, and a `passed` receipt whose remaining failures are all attributed `pre-existing` or approved `expected` names that attribution. Required gate names are `implementation`, `documentation`, `tests`, `validation`, `independent-review`, `final-validation`, `delivery`, `plan-archival`, `pilot-finalization`, `cleanup`, `completion`. Issue `independent-review` only after the Phase 6 scoped re-check and every `review-depth` floor pass, including those for step 3 corrections and containments, bound to the content Phase 6 leaves after its last accepted correction. Persist necessary non-Git evidence under this runtime run before deleting wisdom/baseline; never retain full diffs or skip normal cleanup. File refs are `{root,path,digest}`; committed refs are `{repositoryIdentity,commit,blob,path,digest}` and are verified through the surviving common repository.
 
-Use `retain-evidence` for required phase/wisdom evidence instead of custom runtime writers: the common fields plus `evidenceId` and exactly one of `content` (nonempty well-formed UTF-8 text without NUL) or `source:{root,path,digest}`. Each input is limited to **1 MiB of actual bytes**. The helper verifies an allowed single-file source and copies its exact bytes, exclusively creates this run's fixed `evidence-<evidenceId>.txt`, and returns its standard file ref. Caller text is only caller text; retention proves neither native execution nor gate success. Before `terminal`, retain any non-Git final plan with `source` and use the returned ref; never replace the actual plan bytes with a caller attestation. Retention remains runtime-only after verified handoff and is refused after terminal completion. Existing failed-helper handling and immutable original controls still apply.
+**Limited validation.** A `validation` or `final-validation` receipt for a suite reported as `SKIPPED (environment: <prerequisite id>)` uses `outcome:"limited"` with that id in `prerequisite`, and so does one for a check not executed because of an environment signature or a host-tool timeout, with `wall-clock`, `no-space`, `version-control`, `process-termination` or `host-timeout`; every other gate, a missing or malformed id, and any gate in `remoteValidation.requiredGates` are refused. A Phase 5 `limited` receipt is provisional. Before `prepare-completion`, Phase 7 step 1 binds the run's lane once with `record-lane` `{agentHandle,lane,authority}`: `lane` is `pr`, `merge`, `branch` or `in-place-no-delivery`, the last exactly for that execution mode, and `authority` is closed provenance bound to that lane: `configuration` (the bound `delivery.completion` row, unset meaning `merge`); `source` (an exact quote/index from the immutable original instruction/restrictions that names exactly this lane through the closed keywords — merge, branch, in place/without worktree — and never `pr`, because a substring cannot prove affirmative intent; an explicit PR request not already configured is confirmed by `reply`); `reply` (a consumed `delivery-choice` reply/resume whose question's checkpoint evidence holds a `limited` `final-validation` receipt for the question's content, and whose answer is a fixed completion option of this lane: `Pull request`/`pr`, `Merge`/`merge` or `Branch only`/`branch`, so a translated question carries the encoded value as its option); or `plan-continuation` (the bound authorization's verified `planContinuation`, lane `pr` only). A caller-asserted lane is refused. The helper cannot classify an explicit completion override in the original instruction deterministically, so `configuration` stays the workflow's claim that "Determine mode" recorded none. `prepare-completion`, its later reuse and `verify-terminal` accept `limited` only with a `pr` lane record, and any terminal listing a `limited` receipt must contain `no local full-suite evidence (environment: <prerequisite>)` verbatim in `conclusion`; a passed `final-validation` in the same terminal supersedes a provisional `limited` `validation`.
+
+Use `retain-evidence` for required phase/wisdom evidence instead of custom runtime writers, including build's validation budget state as JSON `content` under `validation-budget` and its second-full update under `validation-budget-second-full`; an id is never retained twice, and `build-delegated-run` owns its read-back and slot rules, including a `COLLISION` on the second-full id as a used slot rather than a stop. Each call takes the common fields plus `evidenceId` and exactly one of `content` (nonempty well-formed UTF-8 text without NUL) or `source:{root,path,digest}`. Each input is limited to **1 MiB of actual bytes**. The helper verifies an allowed single-file source and copies its exact bytes, exclusively creates this run's fixed `evidence-<evidenceId>.txt`, and returns its standard file ref. Caller text is only caller text; retention proves neither native execution nor gate success. Before `terminal`, retain any non-Git final plan with `source` and use the returned ref; never replace the actual plan bytes with a caller attestation. Retention remains runtime-only after verified handoff and is refused after terminal completion. Existing failed-helper handling and immutable original controls still apply.
 
 Immediately after the existing final validation and before Phase 7's report/formatter/archive changes, `prepare-completion` binds the actual independent-review and final-validation receipts, their content basis, a referenced manifest and the exact index. It does not reissue passing judgments. Preserve the approved plan verbatim except its canonical implemented-status replacement; append completion documentation under `## Build completion` (`## Workflow-Abschluss` for German) and move it to its owning exact archive path, unless archival is refused with the evidence below. This deterministic proof permits the existing plan-summary/status/archive/staging/commit work without another full review.
 
@@ -383,7 +387,9 @@ surface prevents completion under the blocking rule of the detail contract.
 
 ### Phase 4: Tests
 
-Start in parallel if possible:
+Start in parallel if possible, and assign each writer only new tests and the existing tests the
+change affects, never a whole-suite run; outside `Validation: targeted`, Phase 5 step 1 is the
+run's one full-suite point:
 
 1. ``effective-flow-test-writer`` for unit tests and component tests
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
@@ -395,38 +401,95 @@ Start in parallel if possible:
 ### Phase 5: Validation
 
 1. Render the diff baseline and hand the path list to ``effective-flow-code-validator`` per "Diff baseline".
+   Under `Validation: targeted` (`caller-owned-commit`) that list is its targeted scope, here and in
+   Phase 7's final check, and none of the validation budget below applies: no full run in either
+   phase, no (a) or (b), no `Failure attribution:` line, and signature handling stays with the caller.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/validation` (`shared/model-selection.md`).
+
    If the selected remote environment is the protected native macOS bridge, load the protected-validation
    contract and enforce its previously qualified executor lane, fresh full-candidate proof and same-validator
    admission/request/verified-poll/receipt chain before host completion sealing. Launch qualification
    does not replace this phase’s proof. A remote result is evidence for the ordinary gate; it does not
-   grant the gate by itself.
+   grant the gate by itself. The validation budget never narrows that full-candidate proof, here or
+   in Phase 7.
+   A suite the validator reports as `SKIPPED (environment: <prerequisite id>)` is an environment
+   result: for delegated execution record the `validation` gate as provisionally `limited` with that
+   id; Phase 7 step 1 decides whether the run continues. A check reported with an environment
+   signature, and a validator host-tool timeout, is such a result too: not executed, with its class
+   (`wall-clock`, `no-space`, `version-control`, `process-termination`) or `host-timeout` as the id.
+
+   **Validation budget.** This step is the run's one full-suite point. Phase 4's tests, every
+   correction round and Phase 7 run targeted; a second full run happens at most once, only in
+   Phase 7 under its condition (a) or (b), so the run never exceeds two full runs. Beside the path
+   list, hand the validator the line `Failure attribution: base-ci-then-local`, `baselineHead` and
+   `baselineTree`, the approved expected-failure lines of the plan's `## Validation plan`
+   (`## Validierungsplan`) verbatim,
+   and the rule **"on an environment signature, report the check and its diagnostic; no suite
+   split, no base comparison, no rerun"** with the four signature classes of
+   `environment-signature-classes`, never its preflight mapping. A full run is **valid** when no
+   check was cancelled or left unexecuted by an environment signature or a host-tool timeout (a
+   `SKIPPED` because no established command exists does not count) and every remaining failure was
+   repaired and re-verified, proven `pre-existing`, or matched as approved `expected`. When Phase 5
+   ends, keep the budget state `{phase5Tree, validFullRun, reason, secondFullUsed}` in the wisdom
+   file and, for delegated execution, retain it with `retain-evidence` as `validation-budget`:
+   `phase5Tree` is the `currentTree` of the render that started the full run, `reason` names why the
+   run is or is not valid (such as the signature class), and `secondFullUsed` is `false`.
+
+   **Base attribution.** When the validator returns `attribution: pending-base-run`, wait until
+   that candidate run has ended; never run the base in parallel with it. Then create the
+   `base-validation` worktree with its lifecycle record per `worktree-lifecycle`, and start
+   ``effective-flow-code-validator`` there with `Failure attribution: base-ci-then-local`, a
+   `Base attribution run:` line naming only the pending identities, the same signature rule, and the
+   reason step 2 ran.
+   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
+   Model selection site: `build-delegated-run/base-attribution` (`shared/model-selection.md`).
+
+   Merge each returned `pre-existing`, `new` or `unknown` into the original annotation. Before
+   `worktree remove`, on every exit path, run
+   `git -C <WORKTREE_PATH> restore --source=<CREATION_OID> --staged --worktree -- :/`, then
+   `git -C <WORKTREE_PATH> clean -f -d -- <PATH>...` on only the untracked, non-ignored paths the
+   validator reported as generated, never `-x`, skipping the clean when it reported none; then
+   remove the worktree. The report states why step 2 ran.
 
 **Load on demand:** Read `shared/protected-validation.md`, when the validation decision selects the protected native macOS GitHub Actions bridge.
 
+**Load on demand:** Read `shared/validation-environment-unsupported.md`, when the validator reports the suite stopped at the project's own environment preflight, or a check reports version control unavailable.
+
+**Load on demand:** Read `shared/validation-environment-continuation.md`, when the validator reports the suite as `SKIPPED (environment: <prerequisite id>)`.
+
 2. Give the user the complete list of all errors and warnings found.
-3. If errors are found: delegate the repair to the routed Quality implementer.
-4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round.
+3. If errors are found: delegate the repair to the routed Quality implementer. An environment
+   result is no error and goes to no implementer. Neither does a failure annotated `pre-existing` or
+   approved `expected`: it counts as no failed verification and starts no correction round, and the
+   gate's receipt stays `passed` with a `reason` naming the attribution.
+4. Fix and re-verify per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if the validator still does not pass afterwards, instead of repeating indefinitely. Render the diff baseline again after every correction round, then a Delta with `sinceTree` the pre-round render's `currentTree`, and re-verify targeted: the previously failing tests by identity plus the affected tests of the Delta, never their suite command, with the non-test checks at repository-native breadth.
 
 ### Phase 6: Review
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including ``effective-flow-generic-product-reviewer`` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `effective-flow review` default, which delivers only Critical + Important.
+   Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
+   CI path goes to ``effective-flow-generic-product-reviewer`` with its reduced-depth notice, under an
+   explicit bounded implementation full-pass assignment from `effective-flow build`; supply only the
+   floor-hit tooling/CI path list and each path's confirmed route.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `build-delegated-run/review` (`shared/model-selection.md`).
+
+**Load on demand:** Read `shared/review-depth.md`, when Phase 6 aggregates review findings for the incorporation pass, or a step 3 correction or containment is about to be accepted.
+
 2. Aggregate all review findings, then make exactly one automatic incorporation pass through the
-   routed Quality implementer for every new finding that belongs to the authorized slice. Render
-   again and re-run the affected review checks once after that pass; do not weaken or consume the
+   routed Quality implementer for every new finding that belongs to the authorized slice. Then
+   re-run the affected review checks once per `review-depth`. Do not weaken or consume the
    separate validator correction budget.
 3. Send the residual batch through the admission contract loaded by “Gated residual
    review-finding reports”. Severity remains review information, not an admission label:
-   - `current-scope`: correct or safely contain it now through the routed Quality implementer, then render again; completion stays blocked unless the user or
+   - `current-scope`: correct or safely contain it now through the routed Quality implementer, then render again and classify that correction or containment against the `review-depth` floor before accepting it; completion stays blocked unless the user or
      authorized plan/tracker owner explicitly reduces the slice
    - `admitted`: eligible for the common residual report path
    - `closed`: report only an aggregate count and short reason in chat
    - `uncertain`: perform the one bounded evidence/containment check and resolve it or stop
 4. Assign each finding a local ID in the order of aggregation: `F1`, `F2`, `F3`, ... These IDs apply only within this workflow run and are reused later in the plan file.
-5. Present the review results in this format. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
+5. Present the review results in this format, followed by the `review-depth` floor classification record and re-check report. Additionally aggregate the Complexity counters so Phase 7 can adopt them without deriving them again:
 
 ```markdown
 **Review results**
@@ -476,7 +539,57 @@ severity. An admitted Critical residual also requires the existing explicit comp
 1. Render the diff baseline and hand the path list to ``effective-flow-code-validator`` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/final-validation` (`shared/model-selection.md`).
-2. For delegated execution first record the existing passed review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
+
+   **Final scope.** Hand the same lines as Phase 5 step 1; its attribution, base-attribution and
+   correction-loop rules apply here unchanged. Read the budget state, `validation-budget` merged with
+   `validation-budget-second-full` when present: a missing or unreadable one means Phase 5 has no
+   valid full run, and an unknown slot counts as used. After a valid Phase 5
+   full run, render a Delta with `sinceTree` `phase5Tree` directly after the cumulative render: its
+   path list is the targeted test scope, while the non-test checks (format or agent check,
+   typecheck, lint, build) run at repository-native breadth; with no affected test the test surface
+   reports `SKIPPED (no affected test; full run at Phase 5 tree)`. After a Phase 5 environment
+   signature or host-tool timeout, stay targeted over the cumulative path list: the affected tests
+   of the whole change plus the non-test checks, no Delta and no full run; any other Phase 5 run
+   without a valid full run takes that cumulative scope too unless `full` applies. You, never the
+   validator, classify `full`, and only while the second-full slot is unused:
+   - (a) Phase 5 has no valid full run because its validator was never reached or the persisted
+     budget state is missing;
+   - (b) a Delta path is on this closed list, and on nothing else: `.github/workflows/`,
+     `.forgejo/workflows/`, `.gitea/workflows/`; `action.yml` or `action.yaml` anywhere; the root
+     files of `MANIFEST_FILES` in `conflict-validation-core.mjs` (`package.json`, `Cargo.toml`,
+     `go.mod`, `pyproject.toml`, `pytest.ini`, `setup.cfg`, `setup.py`, `tox.ini`, `GNUmakefile`,
+     `makefile`, `Makefile`) plus `pnpm-workspace.yaml`; the root lockfiles `pnpm-lock.yaml`,
+     `package-lock.json`, `yarn.lock`, `Cargo.lock`, `poetry.lock`, `uv.lock`; `conftest.py`
+     anywhere; `*.config.{js,mjs,cjs,ts}`, `tsconfig*.json`, `build.mjs`.
+
+   Before that second full run, record `secondFullUsed: true` in the wisdom file and, for delegated
+   execution, retain the updated state with `retain-evidence` as `validation-budget-second-full`;
+   only that exclusive creation proves an unknown slot free, and its `COLLISION` means the slot is
+   used, so Phase 7 stays targeted rather than stopping on a helper failure. After a repair here, render again and
+   re-check targeted over that repair's Delta; `full` follows only while the slot is unused and (a)
+   or (b) holds. The `final-validation` receipt `reason` names the targeted scope or the condition
+   that applied.
+
+   **Environment lane.** When this final validation reports the suite as
+   `SKIPPED (environment: <prerequisite id>)`, reports a check with an environment signature or a
+   host-tool timeout, or follows a Phase 5 one on the cumulative path, record `final-validation` as
+   `limited` with that prerequisite id and decide here, before `prepare-completion` and the
+   handback commit. The lane is the explicit run override, else `delivery.completion`: `pr`, or
+   continuing an existing plan pull request, continues; `merge`, `branch`, an unset row (default
+   `merge`) and in-place without delivery stop; a `null` or invalid row is asked now, in a delegated
+   run through `question` with origin `delivery-choice`, and the answer is recorded in the
+   "Determine mode" slot of `worktree-integration`, so handback step 3 does not ask again. A
+   non-interactive run that cannot be answered counts as no-PR. For delegated execution record the
+   lane with `record-lane` after the `final-validation` gate's `limited` receipt, and ask any lane
+   question only from a checkpoint holding that receipt. `record-lane` binds a source quote only to
+   a stopping lane, so an explicit `pr` override that configuration does not name is confirmed
+   through that `delivery-choice` question. The stop is a terminal
+   `ABORT` naming the prerequisite id: keep and report the owned worktree and branch, finalize the
+   pilot record with `completionStatus: aborted`, and recover through a fresh run once the
+   prerequisite holds. Under `Commit: caller-owned` decide nothing: return `DONE` with the
+   limitation and let the caller decide. Under protected validation this decision does not apply.
+
+2. For delegated execution first record the existing passed (or PR-lane `limited`) review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `effective-flow plan`: update that file.
    - if the user referenced an unbuilt plan file: update the referenced file.
    - if, exceptionally, no plan file exists: create `<plan.dir>/` and assign the date-slug name per `Plan file convention`.
@@ -525,14 +638,17 @@ Rules for the findings report:
 - If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
 4. Delete the wisdom file after persisting the bounded required gate evidence per `build-run-contract`.
-5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use ``effective-flow-code-validator`` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. Then discard the diff baseline.
+5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use ``effective-flow-code-validator`` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render and only the checks this run observed; a step 1 repair without a fresh render before the passing validator run builds none. Then discard the diff baseline.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/completion-transform-check` (`shared/model-selection.md`).
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
-   For delegated execution, at that existing handback's reconciled staged-tree boundary call `seal-delivery`; immediately after its verified commit and before worktree withdrawal call `handoff`. Hidden/private and in-place-without-delivery follow their bound variants. After handoff relay later delivery/publication questions through runtime-only checkpoints; preserve the original ordering and publication gates. Record an actual in-place checkout restore with `record-return`, never infer it from a branch name.
+   Under `Commit: caller-owned` (`caller-owned-commit`) no commit, completion action or worktree withdrawal of this step runs, no plan is switched or archived (a plan this run wrote stays untracked and is reported), and neither do the `build-run-contract` calls `seal-delivery` and `handoff` below. For delegated execution, at that existing handback's reconciled staged-tree boundary call `seal-delivery`; immediately after its verified commit and before worktree withdrawal call `handoff`. Hidden/private and in-place-without-delivery follow their bound variants. After handoff relay later delivery/publication questions through runtime-only checkpoints; preserve the original ordering and publication gates. Record an actual in-place checkout restore with `record-return`, never infer it from a branch name.
 7. Run the worktree-record exit self-check.
 8. If Phase 2 reserved a pilot record, finalize it exactly once per the loaded `pilot-measurement-workflow` fragment, including its incident and finalization-failure paths.
-9. Summarize what was implemented, tested and documented; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
+9. Summarize what was implemented, tested and documented; describe the state the full suite covered
+   (Phase 5, before later corrections), never a snapshot tree id, that later changes were verified
+   targeted, and every attribution and approved expected failure
+   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
 10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step.
 
 ## Rules

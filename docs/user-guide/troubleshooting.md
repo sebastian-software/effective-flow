@@ -185,18 +185,49 @@ linked worktree except the repository's main worktree. The report gives the chec
 inspection or lifecycle status, the specific reason for retaining it, and a safe next step.
 Retention is intentional whenever Effective Flow cannot prove that normal removal is safe.
 
-| Reported state or reason                        | What it means                                                                                     | Safe next step                                                                                                                                       |
-| ----------------------------------------------- | ------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `active`                                        | Work may still be running, or the owning run may have ended unexpectedly, for example in a crash. | Check whether the owning workflow is still running and inspect the worktree before changing anything. Age alone is not evidence that it is finished. |
-| `aborted` or `failed`                           | The run stopped before it could mark the worktree safe for cleanup.                               | Inspect `git -C <worktree-path> status`; recover or commit wanted changes, or discard them deliberately outside the automatic cleanup path.          |
-| Dirty checkout                                  | Tracked, untracked, or submodule state would make ordinary removal unsafe.                        | Inspect the status and secure or intentionally discard the remaining work. Then run cleanup again.                                                   |
-| Locked worktree                                 | Git or another workflow has marked the worktree as unavailable for removal.                       | Identify who owns the lock. Unlock it only after you have verified that no workflow or external process still depends on it.                         |
-| `cleanup-in-progress` or lifecycle lock         | Another cleanup actor claimed the record, or a previous attempt stopped after claiming it.        | Inspect the recorded owner and timestamp. Do not break the lock or claim merely because it looks old.                                                |
-| Prunable or missing worktree path               | Git registration and the filesystem no longer agree.                                              | Inspect `git worktree list --porcelain` and reconcile the Git metadata manually. Cleanup never runs a broad `git worktree prune`.                    |
-| Missing or unknown lifecycle record             | Effective Flow cannot prove ownership or a safe completed run.                                    | Treat the worktree as user-managed. Inspect and resolve it manually; cleanup does not adopt legacy worktrees from a path or branch pattern.          |
-| Receipt, branch, commit, or repository mismatch | Current Git state no longer matches the record that created the worktree.                         | Verify the repository and checkout history manually. Preserve the worktree until you understand the mismatch.                                        |
-| Harness-managed or user-created                 | Effective Flow does not own cleanup for this checkout.                                            | Use the owning harness or your normal Git workflow to manage it.                                                                                     |
-| Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                       | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                   |
+| Reported state or reason                        | What it means                                                                                                                                                                                                                 | Safe next step                                                                                                                                                                             |
+| ----------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `active`                                        | Work may still be running, or the owning run may have ended unexpectedly, for example in a crash.                                                                                                                             | Check whether the owning workflow is still running and inspect the worktree before changing anything. Age alone is not evidence that it is finished.                                       |
+| `aborted` or `failed`                           | The run stopped before it could mark the worktree safe for cleanup.                                                                                                                                                           | Inspect `git -C <worktree-path> status`; recover or commit wanted changes, or discard them deliberately outside the automatic cleanup path. For a `merge-gate` worktree, see the next row. |
+| Stopped `merge-gate` worktree with `blockers`   | A `merge-gate` run stopped as `aborted` or `failed`, and cleanup could not prove that removing its worktree loses no commit. The entry lists its `blockers`.                                                                  | Resolve each blocker as described below the table, then run cleanup again.                                                                                                                 |
+| Dirty checkout                                  | Tracked, untracked, or submodule state, an ignored file at a delivery file's place, a hidden (skip-worktree or assume-unchanged) change, or a kept `.effective-flow-release-*` quarantine would make ordinary removal unsafe. | Inspect the status and secure or intentionally discard the remaining work. Then run cleanup again.                                                                                         |
+| Locked worktree                                 | Git or another workflow has marked the worktree as unavailable for removal.                                                                                                                                                   | Identify who owns the lock. Unlock it only after you have verified that no workflow or external process still depends on it.                                                               |
+| `cleanup-in-progress` or lifecycle lock         | Another cleanup actor claimed the record, or a previous attempt stopped after claiming it.                                                                                                                                    | Inspect the recorded owner and timestamp. Do not break the lock or claim merely because it looks old.                                                                                      |
+| Prunable or missing worktree path               | Git registration and the filesystem no longer agree.                                                                                                                                                                          | Inspect `git worktree list --porcelain` and reconcile the Git metadata manually. Cleanup never runs a broad `git worktree prune`.                                                          |
+| Missing lifecycle record                        | Effective Flow cannot prove ownership or a safe completed run.                                                                                                                                                                | Treat the worktree as user-managed. Inspect and resolve it manually; cleanup does not adopt legacy worktrees from a path or branch pattern.                                                |
+| Schema-invalid lifecycle record                 | The record file fails its schema, so nothing in it is trusted. Cleanup retires it itself once its worktree is gone; a blocked entry shows its `schemaReason` and `blockers`.                                                  | Resolve a blocker as described below the table, then run cleanup again. For a blocker not described there, reconcile manually.                                                             |
+| Receipt, branch, commit, or repository mismatch | Current Git state no longer matches the record that created the worktree.                                                                                                                                                     | Verify the repository and checkout history manually. Preserve the worktree until you understand the mismatch.                                                                              |
+| Harness-managed or user-created                 | Effective Flow does not own cleanup for this checkout.                                                                                                                                                                        | Use the owning harness or your normal Git workflow to manage it.                                                                                                                           |
+| Cleanup is running in this worktree             | The current execution worktree cannot safely remove itself.                                                                                                                                                                   | Let cleanup finish, then run it from the main checkout or another safe execution location if this worktree should be reconsidered.                                                         |
+
+A stopped `merge-gate` worktree is the one `aborted` or `failed` worktree that `cleanup` can release
+itself, after your confirmation. When it cannot prove that removal loses no commit, it keeps the
+worktree and its head branch and reports a `blockers` entry for each failed check:
+
+- `unpushed-commits`: the head branch holds a commit that is on no remote-tracking ref. Push the
+  branch, or drop the commits deliberately. Cleanup does not fetch, so run `git fetch` yourself if a
+  push is not reflected yet.
+- `in-progress-operation`: a merge, cherry-pick, revert, rebase or sequencer operation is still in
+  progress in the worktree. Finish or abort it with Git.
+- `proof-unavailable`: a Git call of the proof failed or timed out, so cleanup fails closed. Fix the
+  repository or its access, then run cleanup again.
+
+See [Merge-gate checkout](./worktree-and-delivery.md#merge-gate-checkout) for what the proof checks.
+
+A schema-invalid lifecycle record whose worktree is gone needs nothing from you:
+[`cleanup`](./tools-setup.md#effective-flow-cleanup) offers it as an `invalid-record` item and
+deletes only the record file after your confirmation, keeping every branch. Only a blocked one needs
+manual work. Its entry carries `blockers`:
+
+- `worktree-present`: the recorded worktree is still registered and present. Cleanup never removes
+  it, because nothing in an invalid record proves that the checkout at that path is still the one
+  its run created. Inspect it with `git -C <path> status`, secure anything you still need, remove it
+  with `git worktree remove <path>` (without `--force`; Git refuses a worktree with changes), then
+  run cleanup again. It now offers the record as `absent`.
+
+Any other blocker, for example `recorded-elsewhere`, `half-gone` or `record-locked`, means cleanup
+cannot prove that retiring the record is safe: reconcile the Git registration, the directory and the
+record by hand, and never break a lock merely because it looks old.
 
 An `aborted` or `failed` worktree that a run on a
 [published plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
@@ -211,7 +242,11 @@ example because the visibility is weaker or the branch history differs), to rele
 A release keeps the branch; run `/effective-flow cleanup` afterwards to remove the worktree. A
 failure before the first commit can only be released. If the source checkout or the worktree changed
 and the worktree still holds changes, release is refused too: restore the source checkout or clean
-the worktree by hand, then run `deliver` again. While a release or resume runs, it holds the delivery
+the worktree by hand, then run `deliver` again. The same holds when a kept
+`.effective-flow-release-*` quarantine from an earlier failed release is in the worktree (it holds
+the only copy of those files, so recover them from it by hand), when an ignored file stands where a
+delivery file belongs, or when a hidden (skip-worktree or assume-unchanged) file differs from index
+and `HEAD`; cleanup refuses such a worktree as well. While a release or resume runs, it holds the delivery
 worktree's Git index lock, so a Git command there that stages content fails with `index.lock: File
 exists`; run it again once `deliver` has finished. A lock left behind by a killed run makes the next
 release or resume refuse with nothing changed: remove that `index.lock` by hand once no Git process

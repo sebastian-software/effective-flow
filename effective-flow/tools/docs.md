@@ -551,8 +551,8 @@ record deleted and the worktree unregistered, or with its record in cleanup-read
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
 `unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
 and manual reconciliation is required. Set a record left `active` once with `worktree transition`
-– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
-`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+– a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop,
+otherwise to `failed` – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
 worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 ### Phase 2: Implementation
@@ -607,7 +607,7 @@ worktree may already be withdrawn. The self-check never removes or claims a work
      does not define at all is reported by its role rather than by an invented path
    - existing unrelated README links are preserved and excluded from the final documentation
      follow-up-section invariant
-4. Start ``effective-flow-code-validator`` when doc changes affect technical artifacts or the project build can plausibly check the change.
+4. Start ``effective-flow-code-validator`` when doc changes affect technical artifacts or the project build can plausibly check the change; under `Validation: targeted` (`caller-owned-commit`) with the changed paths as its targeted scope.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `docs/validation` (`shared/model-selection.md`).
 5. If errors are found: fix them or delegate again to the appropriate doc agent – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if validation still reports errors afterwards, instead of repeating indefinitely.

@@ -177,7 +177,7 @@ A referenced unbuilt Feature plan must pass the clarification gate. Failure refe
 
 ## Phase 1: Planning when no unbuilt plan was referenced
 
-Run `effective-flow plan` with the requirement, allowing changes only under `<plan.dir>/`, no code or implementation/test/validator/reviewer skills, and clarification before writing. On missing information ask the user and restart planning. Read its complete plan; require exactly one canonical open status marker, measurable acceptance criteria, a validation plan and concrete affected files. Present the plan and a short validation scorecard; obtain explicit approval before execution.
+Run `effective-flow plan` with the requirement, allowing changes only under `<plan.dir>/`, no code or implementation/test/validator/reviewer skills, and clarification before writing. On missing information ask the user and restart planning. Read its complete plan; require exactly one canonical open status marker, measurable acceptance criteria, a validation plan and concrete affected files. Present the plan and a short validation scorecard; obtain explicit approval before execution. Show `Expected failure:` / `Erwarteter Fehlschlag:` lines carried over from an issue as their own list in the approval question and write only approved ones verbatim into `## Validation plan` (`## Validierungsplan`); without approval, also in a non-interactive run, they count as real failures.
 
 Ask the user: **Implementation plan approved?**
 - Yes -- Approval granted, continue with phases 2–7

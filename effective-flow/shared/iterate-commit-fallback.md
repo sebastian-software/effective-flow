@@ -32,7 +32,10 @@ While holding the lock for the entire sequence, in the item's execution worktree
    `git commit -a`, or an equivalent blanket operation.
 3. Inspect `git diff --cached --name-only` and require it to equal the explicit item-owned path
    set, then inspect the complete `git diff --cached` and require every staged hunk to belong to
-   the current item. Record the verified staged paths and content before committing.
+   the current item. Require each staged blob (`git ls-files -s -- <path>`; a deletion stages none)
+   to equal the item's recorded `expect` OID, so the commit holds exactly the reviewed content;
+   otherwise unstage the item's paths and return `ABORT` for it. Record the verified staged paths
+   and content before committing.
 4. Create the item's conventional commit, capture its hash immediately with
    `git rev-parse HEAD`, and write the `item identity -> commit hash` mapping to the wisdom file.
 5. Immediately confirm the committed paths and content against the recorded staged diff. Run

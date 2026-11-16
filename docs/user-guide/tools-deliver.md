@@ -43,7 +43,9 @@ If the exact files and states still cannot be agreed, it stops without changing 
 This manifest confirmation is the workflow's sole routine approval; the only questions that can come
 before it are the [resume and release questions](#resuming-or-releasing-a-failed-delivery) for a
 retained failed delivery and the conditional upstream questions described under
-[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). If source state drifts after
+[When your branch is behind its upstream](#when-your-branch-is-behind-its-upstream). The
+[committed-range route](#publishing-commits-you-already-made) replaces it with at most its provider
+question or one focused publish question. If source state drifts after
 confirmation, `deliver` displays the updated manifest and asks you to confirm it again before it
 continues.
 
@@ -61,6 +63,47 @@ later group or commit hook fails, the fresh worktree and branch are retained tog
 earlier verified commits and the still-uncommitted groups. Nothing is pushed and no pull request is
 created; successful commits are never amended, reordered, squashed, or retried.
 
+#### Publishing commits you already made
+
+When the session produced no uncommitted changes to select, `deliver` can still publish commits it
+made itself. The route applies only when the reconciled candidate is empty, the checkout is clean
+(untracked files included), and the branch is attached and not the base branch. It needs no
+confirmation round of its own and creates no branch, worktree, commit, or manifest.
+
+- **Which commits count:** only commits whose full 40-character OID (64 in a SHA-256 repository)
+  this session holds: from a
+  `commit` report (which always names the full OID), from `git rev-parse HEAD` right after the
+  session's own `git commit`, or from a worker report naming the full OID. An abbreviated OID, a
+  merge commit, a rebased or cherry-picked commit, an OID lost to context compaction, and any
+  guess from author, message, or recency never count.
+- **Four conditions:** the fetch and upstream state allow publishing; the commits between the
+  refreshed base and `HEAD` are non-empty and all session-known; no pull request already exists
+  for the branch (any base, any state); and no earlier `pr` attempt on it ended uncertain.
+- **Outcomes:** when all four hold, `deliver` lists each commit and its changed paths and hands
+  the branch to `pr` without asking a tool-choice question. An open pull request instead points
+  you to `iterate`, or to a direct `pr` call when it is a plan's draft. A failed condition that
+  you can reasonably override, such as commits this session cannot vouch for, only closed or
+  merged pull requests, an uncertain earlier attempt, or an unexpected upstream, produces one
+  focused **Publish via pr** or **Cancel** question naming the condition. Hard failures, such as
+  a failed or stale fetch, a detached checkout, an empty range, or missing forge access, end with
+  one notice line. An unanswered or skipped question, and a non-interactive run, resolve to
+  **Cancel**: nothing is pushed. When the run must ask which forge it is (`github` or `forgejo`),
+  that is its only question: a condition that would otherwise ask the Publish or Cancel question
+  then ends with a notice instead, and an unanswered forge question also ends with a notice, with
+  nothing pushed.
+- **Dirty checkouts:** any staged, unstaged, or untracked change keeps the selection path above.
+  When the configured base resolves to an `origin` remote-tracking ref and the checkout is attached
+  to a non-base branch, its delivery adds one notice line that committed work on the branch is not
+  included. A local-only base, a detached checkout, or the base branch itself (`HEAD_IS_BASE`) adds
+  no notice, because the range read fails and a failed read adds none; on the base branch the
+  earlier upstream check's ahead notice is the signal.
+- **Verification:** this route carries no verification evidence in this version. `deliver` passes
+  `pr` the line `Verification evidence: none`, so the pull request gets no verification section and
+  the report says `no trusted verification evidence`. A positive path for this route is not part of
+  this version.
+- **Writes:** `deliver` itself pushes nothing. The only write is `pr`'s `push -u`, which also
+  sets the branch's upstream configuration; `pr` owns it.
+
 #### Resuming or releasing a failed delivery
 
 A delivery that failed after its first commit stays retained, and a later `deliver` run can continue
@@ -73,7 +116,9 @@ counts, and a record that another run still holds is reported and left alone.
 - **Resume.** One question, **Resume** or **New delivery**, lists the deliveries that can be
   continued. A delivery qualifies when at least one of its commit groups is provably on its branch,
   the source checkout still holds the confirmed selection, the worktree holds exactly the changes the
-  earlier run left, and the current visibility is not weaker than the original one. Resume continues
+  earlier run left (no file hidden by skip-worktree or assume-unchanged differs from the index and
+  `HEAD`, and no ignored file stands where a delivery file belongs), and the current visibility is
+  not weaker than the original one. Resume continues
   the same branch and worktree with the original selection and does not ask you to confirm it again.
   An unanswered question or a non-interactive run starts a new delivery and keeps the record.
 - **What a resume skips and reruns.** It skips the upstream check and fast-forward, the selection and
@@ -95,9 +140,15 @@ counts, and a record that another run still holds is reported and left alone.
   remaining changes from the worktree only when they provably equal what is still in your checkout,
   and keeps every discarded file as a tree under `refs/effective-flow/released/<RECORD_ID>/`
   (`git ls-tree -r <ref>` lists it; `git update-ref -d <ref>` drops it once you no longer need it);
-  without recorded progress it requires a clean or already vanished worktree. When the source
-  checkout or the worktree changed and the worktree still holds changes, release is refused and the
-  blocking paths are listed: restore the source checkout or clean the worktree by hand first. The
+  without recorded progress it requires a clean or already vanished worktree. Each file is
+  re-checked against the source right before it is discarded, and release stops with a write failure
+  if either side changed. When the source checkout or the worktree changed and the worktree still
+  holds changes, release is refused and the blocking paths are listed: restore the source checkout
+  or clean the worktree by hand first. Release is also refused when a kept quarantine from an earlier
+  failed release is in the worktree (it holds the only copy of those files; recover them by hand,
+  cleanup refuses it too), when an ignored file stands where a delivery file belongs or a hidden
+  (skip-worktree or assume-unchanged) file differs from index and `HEAD`, and when the source
+  checkout is the delivery worktree itself; remove or fix those files by hand. The
   branch and its commits stay, and `/effective-flow cleanup` then removes the worktree. A delivery
   started from another checkout is resumed or released by `deliver` in that checkout; from here only
   its clean or vanished worktree can be released.
@@ -145,7 +196,9 @@ Most states end with one notice line and no question, and `deliver` goes on to t
 detached checkout, a branch without an upstream, an upstream that no longer exists, a fetch that
 failed, timed out, could not refresh the upstream, or was skipped because the upstream
 configuration is invalid, a comparison that could not be completed, a branch that is up to date,
-and a branch that is only ahead. Two states ask:
+and a branch that is only ahead. An ahead branch still reaches the selection, and when the checkout is
+clean and nothing is left to select, the [committed-range route](#publishing-commits-you-already-made) applies. Two
+states ask:
 
 - **Behind:** `deliver` names the upstream and how many commits your branch is behind, then asks
   whether to **Fast-forward first**, **Continue without update**, or **Abort**.
@@ -198,8 +251,9 @@ other Conventional-Commit syntax remain English and language-stable.
 workflows call it with a verified delivery receipt after they have staged only their known output.
 `commit` never selects, stages, unstages, restores, or validates files. It respects existing hooks;
 if a hook fails, it reports the cause instead of bypassing it. With multiple unrelated topics in a
-directly staged diff, it suggests splitting first. A delivery caller additionally receives the
-created commit OID, branch, tree OID, and remaining staged, unstaged, and untracked state so it can
+directly staged diff, it suggests splitting first. Every report names the created commit's full
+40-character OID (64 in a SHA-256 repository), never an abbreviation, so a later publish can recognize the commit as
+session-made. A delivery caller additionally receives the branch, tree OID, and remaining staged, unstaged, and untracked state so it can
 verify the boundary before continuing.
 
 ## `/effective-flow pr`
@@ -212,6 +266,8 @@ or switches a branch, stages or commits content, or restores a checkout.
 **When to use:** When every intended change is already committed on an attached, non-base branch
 and that branch is ready to publish. If local staged, unstaged, or untracked changes still need to
 be included, use `deliver`; direct `pr` aborts on a dirty checkout rather than omitting them.
+When the session's own commits are all that is left to publish, `deliver` hands them to `pr` for
+you (see [Publishing commits you already made](#publishing-commits-you-already-made)).
 
 **Typical call:** `/effective-flow pr`
 
@@ -251,6 +307,67 @@ the retitle and the ready transition are one final edit, so marking the pull req
 the last change. The first failure stops it, the pull request stays a draft, and the report names
 the failed step.
 
+**Verification section:** A new pull request, and a plan's draft that `pr` finishes, gets a
+"Verification" section in its description when the workflow that hands the branch over actually ran
+checks: the `build`, `fix` and `refactor` handbacks, and `deliver` after its own pre-commit
+validation. The section lists only checks that workflow observed in the run, never CI results,
+reviewer output or a command that was merely planned. It is bound to the content, not to a commit:
+`pr` compares the verified content with the content it publishes, ignoring the run's own plan file
+and its archived copy, so a plan archived after validation does not invalidate it. Equal content
+shows the results under "Verified on `<short head>`"; the same content after a rebase or amend still
+counts. Any other difference, such as a formatter run or a fix after the last check, replaces the
+results with one notice that the recorded results do not match the content of `<short head>` and
+are not reported. The section follows `language.forge`; check, scope and limitation text stays as
+the workflow wrote it. Derived description prose makes no test claims of its own, and a description
+you supplied stays unchanged, with the section following it.
+
+`pr` never starts validation and never invents evidence. When there is nothing trustworthy to show,
+the description carries no section and the final report says why on its verification line:
+
+- **Direct `pr` run:** `no trusted verification evidence`. A record pasted by you or read from saved
+  state is ignored, because only a returning workflow's checked handoff is trusted.
+- **Handoff without a record:** `no verification record supplied by this workflow` (for example
+  from `docs`, `maintain` or `iterate`), or `none` when a producer could not build one.
+- **Rejected record:** `rejected (<reason>)`, for a malformed or oversized record or a text field
+  that is too long, spans several lines or carries text unsafe to publish, for example an absolute
+  or home-relative path, a URL with credentials, a mention, an issue-closing keyword, HTML, a
+  credential-like or log-shaped value, and in hidden mode a workflow name or plan path. Relative
+  paths and plain URLs are allowed. A gap never blocks the commit or the pull request.
+
+A reused open pull request keeps its title and description. The report only states whether this
+run's record matches the current head (`verification: current (<short head>)`), is `stale`, or was
+rejected; an older section on that pull request keeps naming the head it was verified on.
+
+A section where every check passed:
+
+```markdown
+## Verification
+
+Verified on `3f9c2a1`.
+
+| Check | Outcome | Scope | Limitation |
+| --- | --- | --- | --- |
+| pnpm lint | passed | whole repository | — |
+| pnpm test | passed | unit and integration tests | — |
+| pnpm build | passed | production build | — |
+```
+
+A section with known limitations. A skipped or unavailable check is never shown as passed, and a
+failure that was already present is shown as a baseline failure with the first seven characters of
+the baseline tree it was compared against:
+
+```markdown
+## Verification
+
+Verified on `3f9c2a1`.
+
+| Check | Outcome | Scope | Limitation |
+| --- | --- | --- | --- |
+| pnpm lint | passed | whole repository | — |
+| pnpm test | baseline failure | payments package unit tests | unchanged against base 8d41e07 |
+| pnpm test:e2e | skipped | end-to-end tests | no browser available in the delivery checkout |
+```
+
 **Conventional-commit title:** `pr` enforces a PR title with a valid conventional-commit type
 (`feat:`, `fix:`, `docs:`, `refactor:`, …), derived from the **effect** of the change or the
 triggering workflow; an already valid, self-set title is preserved. This is
@@ -288,7 +405,14 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    delegating to `/effective-flow iterate`. A branch that has fallen behind its base is brought
    forward with a merge commit, and a branch that **conflicts** with its base is brought forward by
    the same merge with its conflicts resolved inside it – see
-   [Resolving a conflict with the base](#resolving-a-conflict-with-the-base).
+   [Resolving a conflict with the base](#resolving-a-conflict-with-the-base). The same merge also
+   runs for a head that has a failing check and does not contain its base, whatever merge state the
+   forge reports – see
+   [A failing check on a behind head](#a-failing-check-on-a-behind-head). Where the base merge is
+   proven unavailable for the head – it lives in a fork, in no same-name branch on `origin`, or in a
+   same-name branch that carries a different commit while the forge reports `BEHIND` or `DIRTY` – the
+   branch is not brought forward: the run ends with a report instead. The proofs are listed under
+   [the base merge can be proven unavailable](#resolving-a-conflict-with-the-base).
 2. **Automatic-reviewer round** – for each configured bot (Greptile and comparable tools),
    establishes whether it is still running, has not started, or has already run for the current
    head, triggers the ones that have not started – and, once per verdict, one with a configured
@@ -347,6 +471,24 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    only about the forge's own required checks. On Forgejo the helper polls within the same bound and
    already asks you once. Those two are where the waiver is reachable; a GitHub repository that runs
    no CI at all and keeps the default check criterion still cannot be merged by this tool.
+
+   **Declared no-CI policy.** A repository that intentionally runs no CI can record
+   `mergeGate.noCiPolicy.bases` (exact base branch names) in its setup, and `setup` writes it only
+   on your explicit choice. For a pull request into a listed base whose fresh status read reports
+   no check at all, the gate then skips the pending-checks question and the waiver, and merges once
+   every other condition holds; no waiver record is written. It applies only where the same
+   `mergeGate.noCiPolicy.*` rows are on the base branch, so a pull request cannot grant it to
+   itself (in hidden mode the file is local and there is no such guard). A non-interactive run uses
+   it only with `mergeGate.noCiPolicy.unattended: true` and `mergeGate.completion: merge`;
+   otherwise it stops as before. A GitHub repository without CI also needs
+   `mergeGate.requireAllChecks: false`, or its check wait fails before the policy is reached. On
+   Forgejo the run makes one status read instead of waiting.
+   The policy reaches nothing but the missing check list: a pending or red check, every other
+   condition and branch protection are unchanged, and a base that requires checks refuses the merge.
+   The report names the policy, the matched base and the residual risk that a check attaching
+   after the read, or CI the pull request itself introduces, looks like no CI; where the policy
+   was configured but did not apply, it says why.
+
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
    confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
@@ -360,8 +502,14 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    completed only after its linked issue is observed terminal – which an issue transitioned here now
    is.
 
-**How it runs:** The gate runs as one delegated run on the `deep` tier, so the long wait-and-repair
-loop stays out of your session's context. A restriction you give your session – do not merge, or
+**How it runs:** The gate runs as one delegated run on the `standard` tier, so the long wait-and-repair
+loop stays out of your session's context. The code it lands is reviewed at the `deep` tier: each
+review item's change before its commit, and a conflict resolution before it is committed and pushed.
+A blocking finding commits nothing, and a review counts only findings within its site's blocking
+scope: the item's diff, or for a conflict the resolved and adjacent hunks. The standard runner never
+closes or admits an item that the `deep` classification marked `uncertain`. A rejected item stays
+uncommitted: the run reports a dirty checkout, retains the worktree (recorded as `aborted`), and the
+next round stops until it is cleaned. Classifying review items is a separate read-only `deep` step. A restriction you give your session – do not merge, or
 commit or push nothing onto the branch – travels into the delegated run and wins over
 `mergeGate.completion`: the run then only reports, or ends with its report where it would otherwise
 write to the branch. A restriction neither of those expresses, such as read only, is never
@@ -403,11 +551,12 @@ a re-entry retries only the reconciliation a previous run left open.
 **What it never does:** It never reviews. It produces no findings of its own, never approves a pull
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
 force-push of the head branch – a branch behind or in conflict with its base is only ever brought
-forward with a merge commit, and a conflict that could only be resolved by rewriting history is
-reported instead), and never merges past an open comment from an account that is neither a bot nor
-the one it runs as. It implements no code itself: CI repairs and bot-finding fixes are delegated to
-`/effective-flow iterate`, and a merge conflict is delegated to a dedicated resolver worker. The gate
-itself only ever writes that one merge commit and pushes it.
+forward with a merge commit, and not at all where the base merge is proven unavailable; a conflict
+that could only be resolved by rewriting history is reported instead), and never merges past an open
+comment from an account that is neither a bot nor the one it runs as. It implements no code itself:
+CI repairs and bot-finding fixes are delegated to `/effective-flow iterate`, and a merge conflict is
+delegated to a dedicated resolver worker. The gate itself only ever writes that one merge commit and
+pushes it.
 
 It also never force-closes a linked issue and never treats PR prose as a substitute for a valid
 lifecycle receipt. A transition you confirmed after a `complete` assessment verdict is not a forced
@@ -454,15 +603,18 @@ boundary.
 
 A pull request whose head branch conflicts with its base used to end the run: the gate reported the
 conflict and stopped. It now repairs that conflict with the **same** operation it already used for a
-branch that had merely fallen behind – merging the base into the head branch – with the conflicts
+branch that had merely fallen behind, or that is behind with a failing check – merging the base into
+the head branch – with the conflicts
 resolved inside that merge. The result is one ordinary merge commit, pushed normally. Nothing is
 rebased, squashed, amended, or force-pushed, and a resolution that would need any of those to succeed
-is reported instead of performed.
+is reported instead of performed. Where the base merge is proven unavailable for the head (see
+below), the gate does not attempt it and the run ends with a report instead.
 
 What the run does with a conflict:
 
-1. **Resolves it in a delegated worker.** The gate provisions a checkout, starts the merge, and hands
-   the conflicted files to a dedicated resolver. That worker classifies each conflicted file's risk,
+1. **Resolves it in a delegated worker.** The gate provisions a
+   [checkout](worktree-and-delivery.md#merge-gate-checkout), starts the merge, and hands the
+   conflicted files to a dedicated resolver. That worker classifies each conflicted file's risk,
    regenerates generated and lock files from their source rather than merging their text, and removes
    every conflict marker. Where the two sides make contradictory statements that cannot be reconciled
    without a new product or architecture decision, it **aborts and names the contradiction** rather
@@ -482,17 +634,23 @@ What the run does with a conflict:
    concatenated. A rename that also changes content, a binary file, a submodule, and a symlink are
    aborts outright: the conflicted value is a decision, not something a merge can compute.
 
-2. **Verifies the result twice, before anything is committed – and fails closed.** The resolver runs
+2. **Verifies the result twice and has it reviewed, before anything is committed – and fails closed.** The resolver runs
    the repository's own checks on the resolved tree, and the gate then has that same uncommitted tree
-   checked independently by its validation role, in that role's `full` mode. `full` is what honours a
-   repository-mandated combined or top-level gate, and it is used here because this merge commit has
-   no other pre-commit check standing behind it. The resolution counts as verified only when the two
+   checked independently by its validation role. By default that role runs in `full` mode, which
+   honours a repository-mandated combined or top-level gate, because this merge commit has no other
+   pre-commit check standing behind it. The resolution counts as verified only when the two
    layers **together executed at least one** of the repository's own checks and every executed check
    passed. A failing verdict from either role, a verdict that is not an affirmative pass, and a run in
    which every applicable check came back skipped are all treated exactly as an abort: the merge is
    aborted, nothing is pushed, and the run reports every check that did not run. A disagreement
-   between the two roles is never a tie broken in the merge's favour. CI remains the final criterion
+   between the two roles is never a tie broken in the merge's favour. A third layer follows: a routed
+   `deep` review of the staged resolution, limited to the conflicted and adjacent paths, still before
+   the commit. A blocking finding from that review commits nothing, exactly like a failed
+   verification. CI remains the final criterion
    afterwards, and a failure it catches is repaired through `/effective-flow iterate` as before.
+   Only a repository that opted in with `mergeGate.conflictValidation: quick` can validate less,
+   and only for a low-risk conflict; see
+   [CI-backed `quick` validation](#ci-backed-quick-validation-of-a-conflict-commit) below.
 3. **Reports it file by file – and that report is what a human audits.** The run's chat summary names
    every conflicted file with what was done to it, and every non-conflicted file the resolver had to
    touch to make a **named** failing check pass, with that check and its failure output as it
@@ -504,7 +662,7 @@ What the run does with a conflict:
    disclosure requirement plus a presence check on the evidence, and whether the named failure
    genuinely justified the change is what the report leaves for a human to judge.
 
-Three details worth knowing:
+Five details worth knowing:
 
 - **The human-comment guard does not block the resolution.** A conflict with the merge target is an
   objective defect of the branch, not a position a reviewer is negotiating, so the resolution runs
@@ -521,6 +679,29 @@ Three details worth knowing:
   controlled stop – `off`, an unanswered question, an abort from either verifying role, a
   verification that executed no check at all – the in-progress merge is aborted so the checkout is
   left clean, and nothing is pushed.
+- **The head-identity check applies to every merge.** The gate merges the base only into a checkout
+  whose tip is exactly the head commit it just checked. Otherwise – a fork pull request whose head
+  is not the same-name branch on `origin`, or a head that moved since the read – it merges nothing,
+  pushes nothing, re-reads the status, ends the round and reports the mismatch. If the re-read shows
+  a different head commit, the head moved and the next round decides from it. If it shows the same
+  head commit, whichever trigger called for the merge, the gate compares the same-name branch on
+  `origin` with it. A branch that is only ahead (the forge lags) stays transient. A branch equal to
+  the pull request's head while the local checkout differs ends the run with a report. Anything else
+  writes the base-merge-unavailable record once per run with the proof `different-commit`.
+- **The base merge can be proven unavailable.** The gate looks for one of three proofs – two before
+  it provisions anything for a merge, one at the head-identity check. Each writes the one
+  base-merge-unavailable record, once per run, and from then on neither trigger merges again.
+  - `fork` – the pull request states that its head is in another repository.
+  - `missing-branch` – `git ls-remote` finds no same-name branch on `origin`. A lookup that fails
+    any other way proves nothing: the gate reports it and carries on. A head branch name that fails
+    validation ends the run with a report before anything is looked up.
+  - `different-commit` – the same-head mismatch above.
+
+  A `fork` or `missing-branch` proof ends the run with a report whatever the merge state, and so does
+  a `different-commit` proof wherever the forge reports `BEHIND` or `DIRTY`. That run merges,
+  commits, pushes and delegates nothing; the report lists the failing checks and tells you to merge
+  the base, or resolve the conflict, where the head lives. A `different-commit` proof with any other
+  merge state keeps the previous path: the failing check goes to `iterate`.
 
 **The head branch is untrusted input.** The gate operates on any open pull request, including one
 whose head branch lives in a fork this repository does not control, and the resolver discovers the
@@ -529,13 +710,168 @@ runners, manifests, package scripts – then executes them in the provisioned ch
 filesystem and network access. Under the default `auto` this happens automatically, with nobody
 asked. A project that gates pull requests it does not trust should set
 `mergeGate.conflictResolution: ask`, so a human authorizes every resolution, or `off`, so no
-untrusted branch's commands are executed by this gate at all.
+untrusted branch's commands are executed by this gate at all. This holds on Forgejo too, where a
+failing check on a behind head can now reach the auto-resolution (see below): set `ask` or `off`
+there as well.
 
 Whether the gate may do this at all is `mergeGate.conflictResolution` (default `auto`); see
-[Block `mergeGate`](configuration.md#block-mergegate). On Forgejo this path has no entry point:
-the forge reports no merge state at all, so neither `BEHIND` nor `DIRTY` is ever observed there, and
-a genuine conflict surfaces as a bounded loop ending in a report rather than as the fast conflict
-path.
+[Block `mergeGate`](configuration.md#block-mergegate). On Forgejo the forge reports no merge state,
+so neither `BEHIND` nor `DIRTY` is ever observed there. The path is reachable there only through a
+failing check on a behind head (see below); a genuine conflict on a head without a failing check
+still surfaces as a bounded loop ending in a report rather than as the fast conflict path. A
+conflict met through a failing check whose cause the base does not fix ends in a controlled stop
+without an `iterate` repair: the resolution's full verification runs into that red check.
+
+#### CI-backed `quick` validation of a conflict commit
+
+A gate run that resolves a conflict used to validate the merge commit in `full` mode every time, and the
+resolver ran the repository's combined gate on top of it, so a one-minute conflict could cost two full
+test-suite runs. `mergeGate.conflictValidation: quick` (default `full`) lets a repository whose pull
+request CI already runs its test suite skip that local run for a **low-risk** conflict. It governs only
+the conflict-resolution commit; `review.validation` and `applyReview.finalValidation` are untouched. The
+key is set in [Block `mergeGate`](configuration.md#block-mergegate).
+
+The configured value is a ceiling, and the run decides again in every conflict round. It validates in
+`quick` mode only when all of these hold before the push; otherwise it validates in `full` mode:
+
+- the same `mergeGate.conflictValidation: quick` row is on the base branch (read after the run's
+  fetch), so a pull request cannot lower its own validation; in hidden mode the local file counts;
+- the base branch has a CI job that runs the repository's bare test command on every pull request
+  that targets it, with no condition, filter or indirection the run cannot prove, and before it only
+  the checkout and a short allowlist of setup steps proven to leave the checked-out tree unchanged:
+  `actions/setup-node`, `pnpm/action-setup` without an install, `actions/cache` on hidden home
+  paths, and an install with lifecycle scripts disabled such as `npm ci --ignore-scripts` (a plain
+  `npm ci` or any other command is not provable, so the run uses `full`);
+- the pull request changes no workflow file, and no workflow it references;
+- the forge is GitHub, and the job is known to block the merge: either
+  `mergeGate.requireAllChecks: true`, or the job is reported as a required check;
+- the resolver rated no conflicted file high-risk.
+
+Under `quick` the resolver runs targeted checks for the conflicted and adjacent paths only, and the
+validator runs every established check except the detected CI test commands once. Where a mandated
+combined gate contains that command and its remaining parts cannot run separately, the run uses
+`full`. A conflict that needs an adjacent-file fix and surfaces that failure only in the validator
+aborts under `quick`; that is the accepted trade-off.
+
+Because the test command then runs only in CI, the **merge** needs proof. Before it merges, the gate
+checks on a fresh status read that the CI job's complete set of instances succeeded on the exact head
+it merges, from the detected workflow, and that the base has not changed its workflows since. A
+skipped, neutral, failed or ambiguous result is no evidence, and the check-list waiver and the no-CI
+policy never stand in for it. A job that has not appeared on the head yet, as right after the
+push, makes the gate wait once in the same round, for at most `mergeGate.checkWaitMinutes`; if it
+still has not appeared, the gate stops and says so. A job that is still running makes the gate wait
+in its next round, within `mergeGate.maxRounds` and `mergeGate.checkWaitMinutes`. A reviewer thread
+or verdict the run still has to assess goes first. Without the evidence the gate does not merge: it
+reports what is missing and leaves the pushed commit in place, with no force push and no local
+`full` run afterwards.
+
+The proof requirement travels with the commit, not with the run. A merge commit validated in `quick`
+mode carries the trailer line `Effective-Flow-Conflict-Validation: quick` in its message; a gate that
+cannot confirm the trailer before the push stops with "quick marker not verified" and pushes
+nothing. Whatever `mergeGate.conflictValidation` is set to, every gate run looks for that trailer
+among the pull request's commits that are not on the base before it merges. So a later run, a run
+that never saw the conflict, or a run after the setting was removed or switched back to `full`
+still demands the same CI evidence; when it cannot read the history, for example in a shallow
+clone, it demands the evidence anyway and its report names the remedy, such as
+`git fetch --unshallow`. Where no evidence can exist – on Forgejo, or once the base's CI test job
+is no longer detected – the gate does not merge: its report names the marked commits, and the way
+out is a merge by hand or a history rewrite that drops them.
+
+A repository that has not opted in validates conflicts as before, but its gate looks for the
+trailer too. Where it cannot read the pull request's history – a shallow clone, more than 10,000
+commits since the merge base, or no merge base at all – the gate does not merge until that is
+fixed.
+
+While `mergeGate.conflictValidation` is `full` and the conditions above hold, the completion report
+carries one line proposing `quick`, with the workflow file, the job and the test command. The run
+never switches by itself and asks nothing during the run; `/effective-flow setup` makes the same
+offer.
+
+#### CI-backed `quick` validation of a review-fix round
+
+A round that fixes a bot finding runs `/effective-flow iterate`. Each item runs targeted checks for
+its own paths only, and the final validation is the round's only full-suite run. `iterate.reviewFixValidation: quick` (default `full`) lets a repository whose
+pull request CI already runs its test suite skip even that run. The key is set in
+[Block `iterate`](configuration.md#block-iterate).
+
+The gate computes a `quick` candidate before each bot-round delegation and hands it to `iterate`. The
+candidate is `quick` only when all of these hold; otherwise the round validates in `full` mode and
+the report names the first unmet condition:
+
+- the same `iterate.reviewFixValidation: quick` row is on the base branch, so a pull request cannot
+  lower its own validation; in hidden mode the local file counts;
+- the base branch has a detected CI test job, under the rules of the conflict section above;
+- the forge is GitHub and **every** detected job is a required check of the base branch.
+  `mergeGate.requireAllChecks: true` alone is not enough here, because nothing outside the gate run
+  enforces it;
+- the pull request changes no workflow, manifest or test script between the base commit the
+  detection read and the verified head;
+- the round's commits change no workflow, manifest or test script. `iterate` checks this against the
+  committed head after every correction commit and, once it fails, validates `full` for the rest of
+  the round.
+
+Under `quick` the validator runs every established check except the detected CI test commands, plus
+the affected tests the items named. Standalone `iterate` runs and CI-repair rounds always validate
+`full`.
+
+The merge needs the same proof as for a conflict commit. `iterate` reports its effective mode, the
+validated head and the detection; the gate records the head as a quick-validated review-fix head,
+treating a missing or unparseable report as `quick`, and before it merges it requires the CI job's
+complete instance set to have succeeded on the final head. No commit trailer is involved, and a
+later round never removes the record. While the key is `full` and the conditions hold, the
+completion report carries one line proposing `quick`; the run never switches by itself.
+
+#### When the environment itself fails
+
+If a check cannot run because of the environment, not the change, the run stops instead of working
+around it. The signatures are: the execution environment's own wall-clock limit (a runner or container
+deadline or timeout), no space left on device, Git unavailable for a check that needs it, and a process
+whose termination could not be confirmed. A check with one of these counts as not executed. Both
+roles report the check and its diagnostic, and neither splits the suite, compares against the base or
+reruns it. The gate then ends the round before the commit and the push, reports the signature and the
+affected checks, and pushes nothing. A timeout of the agent's own tool, or one that cannot be
+attributed, is not a signature and keeps the previous behavior, so repositories with long suites run
+as before.
+
+#### Another gate on the same repository
+
+Each gate run keeps one small marker file below `.effective-flow/merge-gate-presence/`, named
+after its session, with its pull request number, head, base and last activity. At entry the run lists
+the other markers and shows one line per valid one, naming that run's pull request and the files both
+runs change. A marker with no activity for more than 24 hours is shown as possibly stale, never as
+active. The notice only informs: it changes no gate decision, and it is not a message to the other
+session. A run releases its marker when it ends, except when it returns a question to you or
+suspends, so a waiting run stays visible. [`cleanup`](tools-setup.md#effective-flow-cleanup) removes
+a marker only when its run's wisdom file is gone.
+
+#### A failing check on a behind head
+
+On a base that does not require branches to be up to date, the forge does not report a head that
+merely lags its base as `BEHIND`, and a check that fails only because its fix is on the base would
+otherwise go to `iterate`, which cannot merge the base. The gate therefore has a second trigger for
+the same merge. It fires when the latest status read shows a check failing by the gate's check
+criterion – `mergeGate.requireAllChecks` is respected, and skipped or neutral checks never count –
+and the head commit does not contain `origin/<base>`. That is a Git ancestry check, independent of
+forge state, so it also works on Forgejo. The gate then merges the base into the head exactly as it
+does for `BEHIND`, **at most once per run** and before any `iterate` delegation; a head that is
+green and merely behind stays untouched.
+
+- **Undetermined ancestry.** If the ancestry cannot be determined – missing data, a failed fetch, a
+  shallow clone – the gate keeps its previous path to `iterate` and reports why.
+- **Round cost.** When the red check is the pull request's own defect, the merge costs one extra
+  round before `iterate` sees the failure. When checks only fail during the wait, the guard round,
+  the merge round and the next wait round all pass first. With `mergeGate.maxRounds` of 1 the run
+  ends before the merge; with 2 it performs the merge but ends before the merge's new checks
+  complete or `iterate` repairs anything. A head-identity mismatch on an unmoved head means the merge
+  cannot run: unless `origin` is only ahead or a local checkout diverged, it costs one round and
+  records `different-commit`, and the next round hands the failing check to `iterate` – unless the
+  forge reports `BEHIND` or `DIRTY`, where the run ends with a report instead. A `fork` or
+  `missing-branch` proof ends the run in the round that finds it.
+- **Once, then `iterate`.** If the check is still red after that merge, it goes to `iterate` even if
+  the base has moved again. Once a base-merge-unavailable record exists, the merge is not tried
+  again either.
+- **Same boundaries as `BEHIND`.** The human-comment guard and `report` mode do not block it; only a
+  caller limit of `no-branch-writes` prevents it. The head-identity check above applies.
 
 #### Three reviewer states, not two
 
@@ -737,6 +1073,56 @@ Three things it deliberately does not do:
 A finding the delegated run reports as **implemented** clears on its own, but only where the head
 commit actually moved in that round. That is coarse on purpose – it proves a commit existed, never
 that the commit addressed the finding – and it closes the "claim implemented, change nothing" path.
+
+#### Repair attempts and when the gate stops repairing
+
+`mergeGate.maxRounds` bounds the whole run and keeps its meaning. Beside it the gate counts
+**repair attempts**: a commit that `iterate` returned for a reviewer finding it implemented, or for
+a failing check. Waiting is not repairing. A check wait, a bot wait, a review resubmission, a
+delegation that moved no head, and the gate's own base merges – either trigger, or a conflict
+resolution – use **no** repair attempt, so a base-only update followed by the same finding never
+counts against the finding. Commits the delegated run makes for a Phase-4 correction count for no
+cause. Every run reports attempt counts; a stop report lists every attempt and the waits and base
+changes between them.
+
+Two situations end automatic repair early, always before any further delegation, base merge or
+merge, and always with a report instead of a merge:
+
+- **The same blocking finding survives two repairs.** After the **second** repair of one reviewer
+  finding, the gate stops if that reviewer, running on a later head, still reports the same finding.
+  The first ineffective repair is recorded and the run may try once more. Only a configured
+  reviewer's finding stops the run this way. The rule is fixed; there is no setting for it.
+- **A repair would leave the authorized scope.** The scope is the pull request's changed paths plus
+  test files a repair **adds** during the run. The gate reads it once, just before the run's first
+  delegation, and passes it to `iterate`, which refuses to edit or commit a path outside it and
+  hands the paths back. The gate also checks the commits that were actually made, so a run that
+  ignored the scope still stops. Editing or deleting an _existing_ test file outside the pull
+  request's paths is an expansion, and so is one a base merge brought in; adding a new focused
+  test, or adjusting one this run added, is not. A path touching a sensitive boundary is no expansion on its own and keeps its usual
+  pre-commit review. If the scope cannot be read, the gate delegates
+  nothing and says why; a run that needs no delegation behaves as before.
+
+**CI repairs are counted and reported but never stop the run.** The gate sees only a check's name
+and conclusion, never why it failed, so it cannot tell a repeated failure from a new one. For CI,
+`mergeGate.maxRounds` stays the bound.
+
+**A finding the gate cannot place stays `uncertain`.** To call a re-reported finding the same one,
+the gate compares only the same reviewer's findings, by their thread or review identity, or by an
+anchor that overlaps a line the repair changed. It cannot do that for a finding written in a review
+body (no anchor), an outdated thread or one on the left side of the diff, a line another commit has
+since changed, and every thread on Forgejo, which exposes no reliable current line. Those findings
+neither add to nor clear a count, and `maxRounds` stays their bound. A genuinely new anchored
+finding gets a counter of its own and is no evidence against an earlier one.
+
+**The stop report** names the unresolved finding and its reviewer, every observed repair attempt
+(round, head before and after, outcome), the waits and base merges in between, commits the gate did
+not expect, out-of-scope paths with their commits, and the one decision you need to make – fix it by
+hand or change the approach, authorize the named paths and run the gate again, or inspect a returned
+merge commit or commits the gate could not verify before any further automatic repair. Pushed
+commits stay on the branch; nothing is reverted or force-pushed.
+
+**Every invocation starts with fresh counters** and reads the scope again before its first
+delegation, so running the gate again after a stop is not a resume of that stop.
 
 #### What the gate accepts back from a delegated run
 

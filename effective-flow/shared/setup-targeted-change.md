@@ -92,21 +92,21 @@ instead of falling back to the default, because the user asked for one specific 
 switches" below are `setup-guided-core-switches`, numbered blocks those of
 `setup-advanced-settings`.
 
-| Key group                                                      | Owner                                              | Targeted rule                                                                 |
-| -------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
-| `review.*`                                                     | advanced block 1                                   | —                                                                             |
-| `applyReview.*`                                                | block 2                                            | —                                                                             |
-| `language.project`, `language.*` overrides                     | core switches (Language), `config-setup-migration` | a `language.workflow` change offers the owner's legacy-key migration proposal |
-| `plan.dir`, `concept.dir`                                      | block 4                                            | canonicalized, neither the same directory nor nested                          |
-| `delivery.completion`, `delivery.prReview`                     | core switches                                      | —                                                                             |
-| `delivery.baseBranch`, `delivery.returnBranch`                 | Step 4 base-branch rule                            | `git remote` / `origin/HEAD` proposal; a divergence is named in the preview   |
-| `delivery.branchPrefix`, `delivery.mergeMethod`                | block 5                                            | —                                                                             |
-| `worktree.enabled`                                             | core switches (Worktree)                           | —                                                                             |
-| `worktree.setup`, `worktree.baseDir`                           | block 6                                            | —                                                                             |
-| `tracker.mode`, `tracker.remoteToolOverride`                   | core switches (Tracker)                            | see below                                                                     |
-| `tracker.externalTool`, `…Hint`, `…StartedState`, `…DoneState` | core switches (external), block 7                  | see below                                                                     |
-| `skills.*`                                                     | block 8                                            | `agents.<name>` / `tools.<name>` only with source agent or tool names         |
-| `mergeGate.*`, `.bots`, `.trigger`, `.check`, `.botAccounts`   | block 9, Step 5 collapse                           | see below                                                                     |
+| Key group                                                                                   | Owner                                              | Targeted rule                                                                 |
+| ------------------------------------------------------------------------------------------- | -------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `review.*`                                                                                  | advanced block 1                                   | —                                                                             |
+| `applyReview.*`                                                                             | block 2                                            | —                                                                             |
+| `language.project`, `language.*` overrides                                                  | core switches (Language), `config-setup-migration` | a `language.workflow` change offers the owner's legacy-key migration proposal |
+| `plan.dir`, `concept.dir`                                                                   | block 4                                            | canonicalized, neither the same directory nor nested                          |
+| `delivery.completion`, `delivery.prReview`                                                  | core switches                                      | —                                                                             |
+| `delivery.baseBranch`, `delivery.returnBranch`                                              | Step 4 base-branch rule                            | `git remote` / `origin/HEAD` proposal; a divergence is named in the preview   |
+| `delivery.branchPrefix`, `delivery.mergeMethod`                                             | block 5                                            | —                                                                             |
+| `worktree.enabled`                                                                          | core switches (Worktree)                           | —                                                                             |
+| `worktree.setup`, `worktree.baseDir`                                                        | block 6                                            | —                                                                             |
+| `tracker.mode`, `tracker.remoteToolOverride`                                                | core switches (Tracker)                            | see below                                                                     |
+| `tracker.externalTool`, `…Hint`, `…StartedState`, `…DoneState`                              | core switches (external), block 7                  | see below                                                                     |
+| `skills.*`                                                                                  | block 8                                            | `agents.<name>` / `tools.<name>` only with source agent or tool names         |
+| `mergeGate.*`, `.bots`, `.trigger`, `.check`, `.botAccounts`, `iterate.reviewFixValidation` | block 9, Step 5 collapse                           | see below                                                                     |
 
 - Adding a reviewer to `mergeGate.bots` also touches its `.trigger` and `.check`. Collapse first
   ("Collapsing two `mergeGate.bots` spellings of one reviewer", Step 5), then block 9's
@@ -114,6 +114,17 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
   request touching only an existing reviewer's `.check` asks only `.check`; untouched reviewers are
   not asked. Removing a login from `mergeGate.bots` also removes its `.trigger` and `.check` rows in
   the same preview.
+- `mergeGate.noCiPolicy.*` changes only on a request that explicitly names the policy; a vaguer one
+  ("no CI", "skip checks") gets the focused question, never a guessed write. Setting `unattended`
+  with no `bases` recorded or requested also asks block 9's `bases` question, and removing
+  `mergeGate.noCiPolicy.bases` also removes `mergeGate.noCiPolicy.unattended` in the same preview,
+  which carries block 9's `completion` and `requireAllChecks` hints.
+- A change touching `mergeGate.*` that does not itself set `mergeGate.conflictValidation` shows
+  Step 5's conflict-validation proposal in its preview where it holds, as an offer the write
+  excludes unless the user accepts it.
+- A change touching `mergeGate.*` or `iterate.reviewFixValidation` that does not itself set
+  `iterate.reviewFixValidation` shows Step 5's `iterate.reviewFixValidation` proposal in its preview
+  where it holds, as an offer the write excludes unless the user accepts it.
 - Adding a login to either `mergeGate.bots` or `mergeGate.botAccounts` first runs block 9's two-way
   overlap check against the other list and changes that list only with the user's answer.
 - Changing `tracker.mode` to `external` also touches the owner's external follow-ups
@@ -126,7 +137,7 @@ switches" below are `setup-guided-core-switches`, numbered blocks those of
 
 **Load on demand:** Read `shared/setup-guided-core-switches.md`, when a Targeted operation touches a core-switch key: `worktree.enabled`, `delivery.completion`, `delivery.prReview`, `language.*`, `tracker.mode`, `tracker.remoteToolOverride`, or a `tracker.external*` key.
 
-**Load on demand:** Read `shared/setup-advanced-settings.md`, when a Targeted operation touches a block key: `review.*`, `applyReview.*`, `plan.dir`, `concept.dir`, `delivery.branchPrefix`, `delivery.mergeMethod`, `worktree.setup`, `worktree.baseDir`, a `tracker.external*` key, `skills.*`, or `mergeGate.*`.
+**Load on demand:** Read `shared/setup-advanced-settings.md`, when a Targeted operation touches a block key: `review.*`, `applyReview.*`, `plan.dir`, `concept.dir`, `delivery.branchPrefix`, `delivery.mergeMethod`, `worktree.setup`, `worktree.baseDir`, a `tracker.external*` key, `skills.*`, `mergeGate.*`, or `iterate.reviewFixValidation`.
 
 ### Hidden mode
 

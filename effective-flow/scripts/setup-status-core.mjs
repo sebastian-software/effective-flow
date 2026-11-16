@@ -1,8 +1,10 @@
 // Read-only setup status: the deterministic part of `setup status`. One `status` call diagnoses the
 // Effective Flow configuration of a checkout, the ignore state of `.effective-flow/`, the central
-// domain-owner skills the configuration disables, and the installed version against the latest
-// published release. It writes nothing, asks nothing and repairs nothing; every finding only names
-// the setup invocation form, or the manual step, that would fix it. `setup` stays the only writer.
+// domain-owner skills the configuration disables, the installed version against the latest
+// published release, and whether setup would propose `mergeGate.conflictValidation: quick` and
+// `iterate.reviewFixValidation: quick`. It writes nothing, asks nothing and repairs nothing; every
+// finding only names the setup invocation form, or the manual step, that would fix it. `setup`
+// stays the only writer.
 //
 // Input (one JSON object): `{ "cwd": "<absolute directory>", "skillRoot"?: "<absolute directory>" }`.
 // `skillRoot` is the loaded skill's directory in its symlinked install form; without it the
@@ -118,7 +120,7 @@
 //     remediation        text for `outdated`, otherwise null
 //     setupFixable       false
 //     setupForm          null
-//   allowlist            the Claude Code allow rules of the three JSON helpers, read from
+//   allowlist            the Claude Code allow rules of the four JSON helpers, read from
 //                        `<runtimeStateRoot>/.claude/settings.local.json`:
 //     state              absent | current | stale | not-applicable | could-not-check
 //     reason             null, or not-applicable: no-skill-root | not-claude-code (`CLAUDECODE`
@@ -137,6 +139,32 @@
 //                        the state is also `stale` with this list empty when only part of this
 //                        install's rules is present (`missing` names the rest)
 //     remediation, setupFixable, setupForm   `allowlist` for absent and stale, otherwise null
+//   conflictValidation   the setup proposal of `mergeGate.conflictValidation: quick`, read from the
+//                        local `origin/<delivery.baseBranch>` without fetching:
+//     state              proposed | not-proposed | not-applicable | could-not-check
+//     reason             null when proposed; not-proposed: quick-configured | invalid-value |
+//                        no-origin-remote | not-github | base-ref-missing | ci-undetected |
+//                        ci-unparsable; not-applicable: not-a-git-repository; could-not-check:
+//                        configuration-unresolved | unsafe-base-branch | git-failed
+//     detail             null, or the git error or the unsafe base value
+//     value              the configured `full` | `quick`, or null when absent or invalid
+//     provider           github | forgejo, or null when unknown
+//     baseRef            the base branch read (no remote prefix), or null
+//     baseCommit         the commit of `refs/remotes/origin/<baseRef>` that was read, or null
+//     detection          the `ci-detect` status (detected | undetected | unparsable), or null
+//     jobs[]             { workflowPath, jobId, jobName, testCommand, expectedInstances[] } per
+//                        detected test job
+//     requireAllChecks   false only when the row is literally `false`
+//     proposal           text for `proposed` (evidence, what stays local, the required-check
+//                        condition under `requireAllChecks: false`, the Targeted request), else null
+//     setupFixable       false: the proposal is an offer, never a finding to fix
+//     setupForm          null
+//   reviewFixValidation  the setup proposal of `iterate.reviewFixValidation: quick`: the same
+//                        fields, states and reasons as `conflictValidation`, decided from the same
+//                        single CI observation; `value`, `quick-configured` and `invalid-value`
+//                        read `iterate.reviewFixValidation`, and `proposal` always carries the
+//                        required-check condition, because a review-fix round is eligible only when
+//                        every detected job is a required check, whatever `requireAllChecks` says
 //
 // The remediation texts are frozen data in this module (`REMEDIATIONS`): they name a setup
 // invocation form or a manual step, never an inline fix. The configuration comes from one
@@ -157,6 +185,7 @@ import {
   UNSAFE_REASONS,
   createProcessRunner,
   gitBaseEnv,
+  isSafeBaseRef,
   resolveConfiguration,
 } from './config-resolve-core.mjs';
 import {
@@ -170,6 +199,8 @@ import {
   readSettingsFile,
   resolveInstallHelper,
 } from './claude-settings-core.mjs';
+import { ConflictValidationError, detectCi } from './conflict-validation-core.mjs';
+import { parseRemote } from './remote-tracker-core.mjs';
 
 export const SETUP_STATUS_OPERATIONS = Object.freeze(['status']);
 export const SETUP_STATUS_ERROR_CODES = Object.freeze(['INVALID_INPUT', 'INTERNAL_ERROR']);
@@ -1542,6 +1573,273 @@ async function allowlistSection(skillRoot, configuration, env, fs) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Validation-mode proposals (read-only): `mergeGate.conflictValidation` and
+// `iterate.reviewFixValidation`
+
+const CONFLICT_VALIDATION_KEY = 'mergeGate.conflictValidation';
+const REVIEW_FIX_VALIDATION_KEY = 'iterate.reviewFixValidation';
+const VALIDATION_MODE_VALUES = Object.freeze(['full', 'quick']);
+const REQUIRE_ALL_CHECKS_KEY = 'mergeGate.requireAllChecks';
+const REMOTE_TOOL_OVERRIDE_KEY = 'tracker.remoteToolOverride';
+const DELIVERY_BASE_KEY = 'delivery.baseBranch';
+const ORIGIN_PREFIX = 'origin/';
+const ORIGIN_HEAD_REF = 'refs/remotes/origin/HEAD';
+const ORIGIN_REMOTE_PREFIX = 'refs/remotes/origin/';
+// setup's own default for an unset `delivery.baseBranch` without `origin/HEAD`.
+const DEFAULT_BASE = 'main';
+
+// The fixed parts of the proposal text; the evidence values are inserted where they stand.
+// `localOnly` names what leaves the local run – exactly the detected test commands – and states that
+// what else the local `full` run covers is not derivable here: the workflows show only the CI side,
+// and the repository's instructions, which define the local checks, are prose this helper does not
+// read. setup lists those checks itself where the instructions make them derivable.
+export const CONFLICT_VALIDATION_TEXT = Object.freeze({
+  localOnly:
+    'Under `quick` a low-risk conflict commit skips only the test commands named above locally: they run in CI after the push instead of before it, and the gate merges only once those jobs succeeded on the merge head. What the local `full` run checks beyond those jobs is not derivable statically from the workflows; every check of it other than those test commands still runs locally, and a high-risk conflict stays `full`.',
+  requiredCheck:
+    'Because `mergeGate.requireAllChecks` is `false`, the job must also be a required check of the base branch; otherwise the gate keeps `full`.',
+  accept:
+    'To accept, run `effective-flow setup set mergeGate.conflictValidation to quick` (a Targeted request).',
+});
+
+// The fixed parts of the review-fix proposal text, in the same roles. `requiredCheck` is always
+// part of it: merge-gate offers a review-fix round `quick` only when every detected job is a
+// required check of the base branch, and `mergeGate.requireAllChecks: true` does not replace that.
+export const REVIEW_FIX_VALIDATION_TEXT = Object.freeze({
+  localOnly:
+    'Under `quick` the final validator of a review-fix round that merge-gate delegates skips only the test commands named above locally: they run in CI after the push instead of before it, and the gate merges only once those jobs succeeded on the final head. What the local `full` run checks beyond those jobs is not derivable statically from the workflows; every check of it other than those test commands still runs locally, and standalone iterate runs and CI-repair rounds stay `full`.',
+  requiredCheck:
+    'Every detected job must also be a required check of the base branch; otherwise the round stays `full`, even under `mergeGate.requireAllChecks: true`.',
+  accept:
+    'To accept, run `effective-flow setup set iterate.reviewFixValidation to quick` (a Targeted request).',
+});
+
+// One entry per proposed key: the key, its fixed text, and whether the required-check sentence
+// is unconditional.
+const VALIDATION_PROPOSALS = Object.freeze({
+  conflictValidation: Object.freeze({
+    key: CONFLICT_VALIDATION_KEY,
+    text: CONFLICT_VALIDATION_TEXT,
+    alwaysRequiredCheck: false,
+  }),
+  reviewFixValidation: Object.freeze({
+    key: REVIEW_FIX_VALIDATION_KEY,
+    text: REVIEW_FIX_VALIDATION_TEXT,
+    alwaysRequiredCheck: true,
+  }),
+});
+
+function validationProposalResult(state, extra = {}) {
+  return {
+    state,
+    reason: null,
+    detail: null,
+    value: null,
+    provider: null,
+    baseRef: null,
+    baseCommit: null,
+    detection: null,
+    jobs: [],
+    requireAllChecks: true,
+    proposal: null,
+    ...extra,
+    setupFixable: false,
+    setupForm: null,
+  };
+}
+
+function setValue(values, key) {
+  const found = values && Object.hasOwn(values, key) ? values[key] : null;
+  return found?.state === 'set' ? found : null;
+}
+
+// `github`, `forgejo`, or null when the origin remote cannot be classified; `tracker.remoteToolOverride`
+// decides first, as it does for the remote tracker. Throws CouldNotCheck on a Git failure.
+async function originProvider(context, root, values) {
+  const result = await git(context, root, ['remote', 'get-url', 'origin']);
+  if (result.error || (result.status !== 0 && result.status !== 2)) {
+    throw new CouldNotCheck(gitDetail(['remote', 'get-url', 'origin'], result));
+  }
+  if (result.status === 2) return { remote: false, provider: null };
+  const override = setValue(values, REMOTE_TOOL_OVERRIDE_KEY)?.value;
+  try {
+    const parsed = parseRemote(result.stdout.trim(), {
+      provider: typeof override === 'string' ? override : undefined,
+    });
+    return { remote: true, provider: parsed.provider };
+  } catch {
+    return { remote: true, provider: null };
+  }
+}
+
+// The base branch setup would deliver to: `delivery.baseBranch` without its `origin/` prefix, else
+// the branch `origin/HEAD` names, else `main`.
+async function deliveryBase(context, root, values) {
+  const configured = setValue(values, DELIVERY_BASE_KEY)?.value;
+  if (typeof configured === 'string' && configured.trim() !== '') {
+    const trimmed = configured.trim();
+    return trimmed.startsWith(ORIGIN_PREFIX) ? trimmed.slice(ORIGIN_PREFIX.length) : trimmed;
+  }
+  const args = ['symbolic-ref', '--quiet', ORIGIN_HEAD_REF];
+  const result = await git(context, root, args);
+  if (result.error || (result.status !== 0 && result.status !== 1)) {
+    throw new CouldNotCheck(gitDetail(args, result));
+  }
+  const target = result.status === 0 ? result.stdout.trim() : '';
+  return target.startsWith(ORIGIN_REMOTE_PREFIX)
+    ? target.slice(ORIGIN_REMOTE_PREFIX.length)
+    : DEFAULT_BASE;
+}
+
+export const MAX_PROPOSAL_FIELD_CHARS = 80;
+
+// A value read from the base branch's workflows, made safe to quote in one code span of the
+// proposal: no backtick can close the span, no control, format or line-separator character
+// survives, whitespace runs collapse, and the result is at most MAX_PROPOSAL_FIELD_CHARS characters.
+// The exact values stay in the structured `jobs`.
+export function proposalField(value) {
+  const text = String(value ?? '')
+    .replace(/[`\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const chars = [...text];
+  if (chars.length <= MAX_PROPOSAL_FIELD_CHARS) return text === '' ? '?' : text;
+  return `${chars.slice(0, MAX_PROPOSAL_FIELD_CHARS - 1).join('')}…`;
+}
+
+function proposalText(spec, { explicit, baseRef, baseCommit, jobs, requireAllChecks }) {
+  const evidence = jobs
+    .map(
+      (job) =>
+        `job \`${proposalField(job.jobName)}\` in \`${proposalField(job.workflowPath)}\` runs \`${proposalField(job.testCommand)}\``,
+    )
+    .join('; ');
+  const parts = [
+    `\`${spec.key}\` is \`full\`${explicit ? '' : ' (the default)'}, and CI on \`origin/${proposalField(baseRef)}\` (commit \`${baseCommit}\`, read locally without fetching) has a test job: ${evidence}. Proposal: \`quick\`.`,
+    spec.text.localOnly,
+  ];
+  if (spec.alwaysRequiredCheck || !requireAllChecks) parts.push(spec.text.requiredCheck);
+  parts.push(spec.text.accept);
+  return parts.join(' ');
+}
+
+// The key-independent half of a proposal: the origin provider, the delivery base and one
+// `ci-detect` on the local `origin/<base>`, returned as the state and fields a proposal takes over.
+// Reads Git only; never fetches. A Git failure carries no provider, as before the split.
+async function observeCi(checkoutRoot, values, deps) {
+  try {
+    const { remote, provider } = await originProvider(deps.context, checkoutRoot, values);
+    if (!remote) {
+      return { state: 'not-proposed', extra: { provider, reason: 'no-origin-remote' } };
+    }
+    if (provider !== 'github') {
+      return { state: 'not-proposed', extra: { provider, reason: 'not-github' } };
+    }
+    const baseRef = await deliveryBase(deps.context, checkoutRoot, values);
+    if (!isSafeBaseRef(baseRef)) {
+      return {
+        state: 'could-not-check',
+        extra: { provider, reason: 'unsafe-base-branch', detail: baseRef },
+      };
+    }
+    const detection = await detectCi(
+      { cwd: checkoutRoot, baseRef },
+      { runner: deps.runner, env: deps.env },
+    );
+    const jobs = detection.detectedJobs.map((job) => ({
+      workflowPath: job.workflowPath,
+      jobId: job.jobId,
+      jobName: job.jobName,
+      testCommand: job.normalizedCommand,
+      expectedInstances: [...job.expectedInstances],
+    }));
+    const observed = {
+      provider,
+      baseRef,
+      baseCommit: detection.baseCommit,
+      detection: detection.baseCommit === null ? null : detection.status,
+      jobs,
+    };
+    if (detection.baseCommit === null) {
+      return { state: 'not-proposed', extra: { ...observed, reason: 'base-ref-missing' } };
+    }
+    if (detection.status !== 'detected') {
+      const reason = detection.status === 'unparsable' ? 'ci-unparsable' : 'ci-undetected';
+      return { state: 'not-proposed', extra: { ...observed, reason } };
+    }
+    return { state: 'proposed', extra: observed };
+  } catch (error) {
+    const gitFailed =
+      error instanceof CouldNotCheck ||
+      (error instanceof ConflictValidationError && error.code === 'GIT_FAILED');
+    if (!gitFailed) throw error;
+    return { state: 'could-not-check', extra: { reason: 'git-failed', detail: error.message } };
+  }
+}
+
+// Whether setup proposes `quick` for one key of VALIDATION_PROPOSALS: the key is `full` or absent,
+// the origin remote is GitHub, and `ci-detect` finds a test job on the local `origin/<base>`.
+// `observe` runs that CI observation at most once for all keys.
+async function validationProposalSection(spec, values, observe) {
+  const entry = setValue(values, spec.key);
+  const present = Object.hasOwn(values, spec.key);
+  const value =
+    typeof entry?.value === 'string' && VALIDATION_MODE_VALUES.includes(entry.value)
+      ? entry.value
+      : null;
+  const requireAllChecks = setValue(values, REQUIRE_ALL_CHECKS_KEY)?.raw !== 'false';
+  const known = { value, requireAllChecks };
+  if (value === 'quick') {
+    return validationProposalResult('not-proposed', { ...known, reason: 'quick-configured' });
+  }
+  if (present && value === null) {
+    return validationProposalResult('not-proposed', { ...known, reason: 'invalid-value' });
+  }
+  const { state, extra } = await observe();
+  if (state !== 'proposed') return validationProposalResult(state, { ...known, ...extra });
+  const proposal = proposalText(spec, {
+    explicit: value === 'full',
+    baseRef: extra.baseRef,
+    baseCommit: extra.baseCommit,
+    jobs: extra.jobs,
+    requireAllChecks,
+  });
+  return validationProposalResult('proposed', { ...known, ...extra, proposal });
+}
+
+// Both proposals, keyed as in VALIDATION_PROPOSALS, sharing one CI observation.
+async function validationProposalSections(setupData, configuration, deps) {
+  const sections = {};
+  if (configuration.state === 'error') {
+    for (const field of Object.keys(VALIDATION_PROPOSALS)) {
+      sections[field] = validationProposalResult('could-not-check', {
+        reason: 'configuration-unresolved',
+      });
+    }
+    return sections;
+  }
+  const { runtimeStateRoot, checkoutRoot } = configuration;
+  if (runtimeStateRoot === null) {
+    for (const field of Object.keys(VALIDATION_PROPOSALS)) {
+      sections[field] = validationProposalResult('not-applicable', {
+        reason: 'not-a-git-repository',
+      });
+    }
+    return sections;
+  }
+  const values = setupData?.values ?? {};
+  let observation = null;
+  const observe = () => {
+    observation ??= observeCi(checkoutRoot, values, deps);
+    return observation;
+  };
+  for (const [field, spec] of Object.entries(VALIDATION_PROPOSALS)) {
+    sections[field] = await validationProposalSection(spec, values, observe);
+  }
+  return sections;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Status
 
 export async function setupStatus(input, deps = {}) {
@@ -1564,6 +1862,11 @@ export async function setupStatus(input, deps = {}) {
   const domainOwners = domainOwnersSection(projectionOutcome, setupData);
   const version = await versionSection(projectionOutcome, deps);
   const allowlist = await allowlistSection(input.skillRoot, configuration, env, fs);
+  const { conflictValidation, reviewFixValidation } = await validationProposalSections(
+    setupData,
+    configuration,
+    { context, runner, env },
+  );
 
   // Every setup-fixable finding with its form; domain owners and the version never are.
   const fixable = [
@@ -1589,6 +1892,8 @@ export async function setupStatus(input, deps = {}) {
     domainOwners,
     version,
     allowlist,
+    conflictValidation,
+    reviewFixValidation,
   };
 }
 

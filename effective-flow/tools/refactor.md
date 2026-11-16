@@ -361,6 +361,8 @@ the handoff.
 
 **Load on demand:** Read `shared/diff-baseline.md`, when the diff baseline is captured at the end of Phase 2, or later rendered or discarded.
 
+**Load on demand:** Read `shared/verification-evidence.md`, when Phase 6 builds the verification record, before the diff baseline is discarded.
+
 ## Wisdom Accumulation
 
 At the start, create a session ID (e.g. via timestamp `date +%Y%m%d%H%M%S`) and use it consistently for the wisdom file `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`. This prevents collisions with parallel runs.
@@ -666,8 +668,8 @@ record deleted and the worktree unregistered, or with its record in cleanup-read
 or cleanup-failed; anything else is reported. Report a `cleanup-in-progress` record. Report each
 `unrecorded` worktree as its own entry with path and branch: `effective-flow cleanup` cannot remove it,
 and manual reconciliation is required. Set a record left `active` once with `worktree transition`
-– to `aborted` after a controlled stop, otherwise to `failed` – and report only a call that is not
-`ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
+– a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop,
+otherwise to `failed` – and report only a call that is not `ok`. Every self-check call passes `"executionRoot":"<RUNTIME_STATE_ROOT>"`, since the run's own
 worktree may already be withdrawn. The self-check never removes or claims a worktree and never creates or backfills a record.
 
 ### Phase 2: Baseline
@@ -692,6 +694,7 @@ Start in parallel:
    - run all existing tests and document the result
    - do not write new tests in this phase
 
+Under `Validation: targeted` (`caller-owned-commit`) both runs cover only the targeted scope.
 Document the baseline for the later comparison. Mark each check the approved acceptance criteria
 require for that comparison. A required check that cannot be established is a controlled stop
 before Phase 3: report it, reserve no pilot record, and move an owned worktree to `aborted`. A
@@ -820,13 +823,23 @@ surface prevents completion under the blocking rule of the detail contract.
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
    routing selects, including ``effective-flow-generic-product-reviewer`` for degraded product buckets.
+   Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
+   CI path goes to ``effective-flow-generic-product-reviewer`` with its reduced-depth notice, under an
+   explicit bounded implementation full-pass assignment from `effective-flow refactor`; supply only the
+   floor-hit tooling/CI path list and each path's confirmed route.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `refactor/review` (`shared/model-selection.md`).
+
+**Load on demand:** Read `shared/review-depth.md`, when Phase 4 aggregates review findings for the incorporation pass.
+
 2. Aggregate findings and make exactly one automatic incorporation pass for new current-scope
-   items through the routed Quality implementer. Render again and run the affected review checks once after the pass, then classify the residual batch via
-   “Gated residual review-finding reports”. A remaining `current-scope` or unresolved `uncertain`
-   item blocks completion; only `admitted` residuals may become a report, and `closed` items do not.
-3. Present the review results in detail, including status per finding. Treat the results as
+   items through the routed Quality implementer. Then run the affected review checks once per
+   `review-depth`, with the scoped re-check by the routed reviewers, then classify the residual
+   batch via “Gated residual review-finding reports”. A remaining `current-scope` or unresolved
+   `uncertain` item blocks completion; only `admitted` residuals may become a report, and `closed`
+   items do not.
+3. Present the review results in detail, including status per finding, the `review-depth` floor
+   classification record and the re-check report. Treat the results as
    provisional until Phase 6 confirms that no regression remains. On every Phase 4 run, replace
    the previous provisional review set in full with the newest results; do not carry findings
    from superseded runs forward.
@@ -859,7 +872,7 @@ Render the diff baseline, then start in parallel:
 2. ``effective-flow-test-writer``
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `refactor/post-validation-tests` (`shared/model-selection.md`).
-   - runs all existing tests again
+   - runs all existing tests again, or the targeted scope under `Validation: targeted`
    - writes no new tests
 
 ### Phase 6: Before/after comparison and completion
@@ -903,7 +916,8 @@ repeat. An incident the run survives leaves the status to the comparison.
      - add a short implementation note as the last entry directly in the affected finding
      - begin the note with `✅`, name at least the date and workflow, and include the same finalization marker, for example `✅ Implemented on YYYY-MM-DD via effective-flow refactor (run <SESSION_ID>)`
      - before appending, read the finding again and check for an implementation note with this exact finalization marker; if one exists, do not append another note
-   - delete the wisdom file and discard the diff baseline
+   - with delivery or worktree execution active, build the verification record per
+     `verification-evidence` from the last Phase 5 render; then delete the wisdom file and discard the diff baseline
    - if delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (for a guided plan file including the plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** finding set of the latest Phase-4 review to that handback; never pass `current-scope`, `closed`, or unresolved `uncertain` candidates. If the workflow exceptionally runs in-place without delivery, it performs the same status switch and archive move directly in the working tree.
    - Run the worktree-record exit self-check.
    - finalize a reserved pilot record per "Pilot record" above
