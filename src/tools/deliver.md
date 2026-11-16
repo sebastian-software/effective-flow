@@ -1,7 +1,7 @@
 ---
 description: "Turns a confirmed selection of current-session local changes into coherent commits on a fresh delivery branch and opens a pull request without changing the source checkout beyond an optional, user-confirmed upstream fast-forward before selection."
 catalogHint: "Delivers confirmed local changes as coherent commits in a clean pull request."
-contextBudget: 808
+contextBudget: 813
 ---
 
 # Effective Flow Deliver
@@ -244,6 +244,11 @@ headOid}}` in its default redacted dry-run mode. Inspect the planned paths, mode
    delete/modify conflicts.
 3. Run the repository's established pre-commit validation in the isolated checkout under
    `effective-delivery`'s repository-validation contract; never invent commands.
+
+```lazy-include
+validation-environment-unsupported
+when: step 4.3's test entrypoint stops at the project's own environment preflight with a report naming a failed check, or a check reports version control unavailable
+```
 
 ```lazy-include
 verification-evidence

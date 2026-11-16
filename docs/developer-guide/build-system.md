@@ -58,6 +58,18 @@ capability probes as failures. Do not skip, xfail, relax or substitute a check, 
 host as native-worker proof. On macOS, the nested policy remains a legitimate full-suite requirement
 because the suite must exercise a different native sandbox policy.
 
+## Test environment prerequisites
+
+The test process needs a readable Git checkout: Git installed and the checkout's Git metadata,
+including the common Git directory a linked worktree points to, visible to the process that runs
+the tests. Tests that compare against other refs need full history, as CI checks out with
+`fetch-depth: 0`. Test and harness code must not let a nested fixture repository inherit `GIT_DIR`
+or `GIT_WORK_TREE`; a Git call aimed at a fixture runs without either. Without these prerequisites,
+`pnpm test` stops at its preflight with `TEST_ENVIRONMENT_UNSUPPORTED` and the failed check id, and
+validation records limited evidence (checks that need no Git, such as format and build, plus the
+test files that name or import a changed path, with the full suite left to pull-request CI) instead
+of bypassing the preflight with another full-suite run.
+
 ## Placeholder and directive syntax
 
 The sources use two kinds of placeholders that the build resolves – their expansion is never

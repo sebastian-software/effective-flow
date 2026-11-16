@@ -194,7 +194,9 @@ file, under one bound:
   failing check is an `ABORT`, not a judgment call;
 - the gate compares the working tree's modified paths against your report before it commits. A file
   you changed but did not name and justify makes the whole round an error — the allowance is for
-  **reported** adjacent files, never for unreported ones.
+  **reported** adjacent files, never for unreported ones;
+- the allowance never covers the test preflight, its probe or the test script: a failing preflight
+  is reported, never fixed.
 
 ## Abort on uncertainty — the default
 
@@ -237,7 +239,13 @@ order above (scoped instructions, CI workflows and task runners, manifests, neig
   `full`. Under `full`, or with no mode handed, the rules above apply unchanged.
 - **On an environment signature, report the check and its diagnostic; no suite split, no base
   comparison, no rerun.** An environment signature is one of the signature classes the gate hands
-  you. A timeout of your own host tool, or one you cannot attribute, is none of these.
+  you. A test entrypoint stopped at its own environment preflight follows the gate's preflight
+  mapping: the class it names, else `FAILED`, never skipped. A timeout of your own host tool, or one
+  you cannot attribute, is none of these.
+- **Never substitute for a check that cannot run here:** never run the suite, or a
+  suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
+  or one over a suite-covering directory or glob; never neutralize the preflight by editing the
+  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`.
 
 Carry the exact commands, their working directory, and their terminal result into the report. Report
 a check that could not run as skipped **with its concrete reason** rather than omitting it; the gate

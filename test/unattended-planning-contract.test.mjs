@@ -334,6 +334,10 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
+        'so handback step 3 never asks again.',
+      ],
+      [
+        'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
         'scope, files recorded as produced by the workflow, or explicit user confirmation. Preserve',
       ],
       [

@@ -1,7 +1,7 @@
 ---
 description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
 catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
-contextBudget: 1830
+contextBudget: 1847
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -972,6 +972,23 @@ when: Phase 0 honored a `Review-fix validation:` line and Phase 4 is about to de
    limit the internal correction rounds and escalate to the user if the checks still fail
    afterwards. A correction item that cannot run or stays blocked leaves the failure reported.
    Re-validation after a correction item belongs to this round and its mode decision.
+3. **Environment preflight.** When the validator, or the project-wide gate step 1 started
+   directly, reports the suite stopped at the project's own environment preflight, both fragments
+   below apply; step 1's gate is then a test-executing role, and no environment result becomes a
+   correction item. In PR mode the round continues to Phase 5 with the redacted limitation in its
+   report or summary comment. In local mode the run ends reporting the blocked prerequisite; the
+   Phase 3 commits stay and nothing is pushed. A rule handed under step 5 of
+   `iterate-review-fix-validation` governs the signature classes it names instead.
+
+```lazy-include
+validation-environment-unsupported
+when: Phase 4's validator or project-wide gate reports the suite stopped at the project's own environment preflight, or a check reports version control unavailable
+```
+
+```lazy-include
+validation-environment-continuation
+when: Phase 4 reports the suite as `SKIPPED (environment: <prerequisite id>)` and step 3 decides whether the round continues
+```
 
 ### Phase 5: Delivery back (PR mode only)
 

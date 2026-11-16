@@ -28,7 +28,12 @@ Hand `{{AGENT:merge-conflict-resolver}}`:
   for the conflicted and adjacent paths only, and `full` validation as soon as it classifies a
   conflicted path high-risk; under `full`, its validation rules unchanged;
 - the rule **"on an environment signature, report the check and its diagnostic; no suite split, no
-  base comparison, no rerun"** with the signature classes of "Conflict validation mode";
+  base comparison, no rerun"** with the signature classes and the preflight mapping of "Conflict
+  validation mode";
+- the **forbidden substitutes** for a check that cannot run here: never run the suite, or a
+  suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
+  or one over a suite-covering directory or glob; never neutralize the preflight by editing the
+  probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`;
 - the **boundary it works inside**, restated because it is the gate's boundary and not the worker's
   to relax: it resolves, validates, and stages by explicit path, and it never commits, never
   continues the merge, never aborts it, never pushes, and never rewrites history. The commit, the
@@ -77,7 +82,11 @@ stated for the reason the second bullet gives:
     "Conflict validation mode" is `quick`, the **conflict-commit scope** it states instead of the
     generic `quick` mapping;
   - the rule **"on an environment signature, report the check and its diagnostic; no suite split,
-    no base comparison, no rerun"** with the same signature classes;
+    no base comparison, no rerun"** with the same signature classes and preflight mapping;
+  - the same **forbidden substitutes**: never run the suite, or a suite-equivalent selection,
+    outside the project's test entrypoint, such as a bare `node --test` or one over a
+    suite-covering directory or glob; never neutralize the preflight by editing the probe or the
+    test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`;
   - the **resolved language values**, so the validator does not re-read the project setup ADR – its
     own language rule forbids that, so a validator handed none has no compliant option.
 
@@ -224,7 +233,11 @@ effective `full` that holds with or without CI. Under effective `quick` only the
 command is deferred to CI – each excluded one, none of which runs locally – so any other
 environment check stops the round the same way; the resolution still needs one executed, passing
 check, and the merge needs Phase 4's CI evidence. A timeout of a role's own host tool, and any timeout it cannot attribute, is
-no environment signature and keeps today's path.
+no environment signature and keeps today's path. **Preflight mapping:** a test entrypoint stopped
+at its own environment preflight carries a signature only where its failed check is `git-checkout`,
+which is version control unavailable; any other failed preflight check, such as loopback, sandbox or
+temporary space, is a failing check, reported `FAILED` and never skipped, so it stops the round as
+any failing verdict does.
 
 **Proposal line.** Where the ceiling is `full` because the value is `full` or absent, the provider is
 GitHub and detection is `detected`, the completion report and an environment stop report carry one

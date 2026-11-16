@@ -78,3 +78,8 @@ dependency-version-policy
   editing it.
 - Return changed tests, the protected claim, exact commands and results, and remaining evidence
   gaps to the caller.
+
+```lazy-include
+validation-environment-unsupported
+when: a test run you start stops at the project's own environment preflight with a report naming a failed check, or a check reports version control unavailable
+```
