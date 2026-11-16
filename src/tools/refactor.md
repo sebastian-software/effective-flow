@@ -233,6 +233,7 @@ Start in parallel:
    - run all existing tests and document the result
    - do not write new tests in this phase
 
+Under `Validation: targeted` (`caller-owned-commit`) both runs cover only the targeted scope.
 Document the baseline for the later comparison. Mark each check the approved acceptance criteria
 require for that comparison. A required check that cannot be established is a controlled stop
 before Phase 3: report it, reserve no pilot record, and move an owned worktree to `aborted`. A
@@ -352,7 +353,7 @@ Render the diff baseline, then start in parallel:
    <!-- spawn-site:refactor/post-validation-checks -->
 2. `{{AGENT:test-writer}}`
    <!-- spawn-site:refactor/post-validation-tests -->
-   - runs all existing tests again
+   - runs all existing tests again, or the targeted scope under `Validation: targeted`
    - writes no new tests
 
 ### Phase 6: Before/after comparison and completion

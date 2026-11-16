@@ -222,7 +222,13 @@ Above the delimiter it carries six control lines (`Item filter:`, `Summary comme
 `Review guard:`, `Next steps:`, `Run state:`, `Language context:`), the boundary token, and the item
 manifest; `iterate` reads every switch from that region only. Every gate delegation also carries
 the `Authorized scope:` line (optional in the envelope for other senders), which `iterate` parses
-fail-closed and checks through the `repair-attempt` helper before it edits or commits. A `build` or
+fail-closed and checks through the `repair-attempt` helper before it edits or commits. A bot-round
+delegation may add `Review-fix validation: quick-candidate <baseCommit>` beside it, honored only
+there and never in a CI repair; `iterate` then validates its final head in the gate's CI-backed
+`quick` mode, reports `Review-fix validation result:`, and the gate enforces CI evidence for the
+head it records ([ADR](../adr/merge-gate-conflict-validation.md)). The other direction is the
+`Validation: targeted` item switch of `caller-owned-commit`, which `iterate` sends so that item
+workflows run targeted checks only and its Phase 4 stays the round's one full-suite run. A `build` or
 `validate` failure, or a helper missing from the installed build, is a sender-side contract error:
 the gate stops before `iterate` is invoked, makes no remote write, and consumes no round. Delegation
 mechanics are Effective Flow's own
@@ -1055,9 +1061,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 72 non-destructive or bounded rules, in four
+a prose removal of that state too. `setup` can write 73 non-destructive or bounded rules, in four
 families (twenty-one runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile` and `presence register|refresh|list|release`, `config-resolve resolve|no-ci-policy|conflict-validation`, the 44 read-only `remote-tracker` operations, and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile` and `presence register|refresh|list|release`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 44 read-only `remote-tracker` operations, and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

@@ -128,7 +128,7 @@ each non-destructive or bounded helper operation: the runtime-state helper opera
 `worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
 `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
 `presence list`, `presence release`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
-`config-resolve.mjs conflict-validation`, the four read-only `conflict-validation.mjs` operations,
+`config-resolve.mjs conflict-validation`, `config-resolve.mjs review-fix-validation`, the four read-only `conflict-validation.mjs` operations,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
@@ -196,7 +196,7 @@ its run's wisdom file is absent). They add no configuration key.
 
 Readers resolve configuration through the runtime script
 [`src/scripts/config-resolve-core.mjs`](../../src/scripts/config-resolve-core.mjs), called as
-`config-resolve.mjs resolve`, or `config-resolve.mjs no-ci-policy` and `config-resolve.mjs conflict-validation` for the merge gate's two base-confirmed settings (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
+`config-resolve.mjs resolve`, or `config-resolve.mjs no-ci-policy`, `config-resolve.mjs conflict-validation` and `config-resolve.mjs review-fix-validation` for the merge gate's three base-confirmed settings (see [Runtime scripts](build-system.md#runtime-scripts)). The core is
 the single source of the locator steps, the root verification, the stem ranking, the table
 decoding, the hidden-mode forced values and the retired-row classification; the prose fragment
 [`src/shared/config-migration.md`](../../src/shared/config-migration.md) keeps only the call
@@ -453,6 +453,18 @@ merge gate lowers that ceiling to `full` without CI evidence; setup only propose
 `setup status` carries that proposal as the `conflictValidation` field of its envelope, computed
 from the local `origin/<delivery.baseBranch>` without a fetch. The decision is in the
 [ADR](../adr/merge-gate-conflict-validation.md).
+
+### Review-fix validation (`iterate.reviewFixValidation`)
+
+`iterate.reviewFixValidation` (`full` or `quick`, default `full`) is the one `iterate.*` key the
+merge gate reads. `config-resolve.mjs review-fix-validation` takes the same input as
+`conflict-validation`, shares its implementation, and guards only this fixed row, with the same
+`value`, `baseComparison` and `ceiling` fields under `data.reviewFixValidation`. The gate computes
+the effective candidate (ceiling, CI detection, integrity, GitHub, every detected job a required
+check) before a bot-round delegation and passes it through the `Review-fix validation:` envelope
+line; standalone `iterate` runs and CI repairs never reach `quick`. `setup status` carries the
+setup proposal as the sibling `reviewFixValidation` field, with the same states and reasons as
+`conflictValidation`. The decision is in the [ADR](../adr/merge-gate-conflict-validation.md).
 
 ### Non-reviewer bot list (`mergeGate.botAccounts`)
 

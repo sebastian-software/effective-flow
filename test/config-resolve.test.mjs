@@ -3508,6 +3508,240 @@ test('conflict-validation: a missing or unsafe baseRef is invalid input', async 
 });
 
 // ---------------------------------------------------------------------------------------------
+// review-fix-validation: the same base-blob guard for `iterate.reviewFixValidation`
+
+const REVIEW_FIX_VALIDATION = 'iterate.reviewFixValidation';
+
+async function reviewFixValidation(input, deps) {
+  const envelope = await executeOperation('review-fix-validation', input, deps);
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.equal(envelope.operation, 'review-fix-validation');
+  return envelope.data;
+}
+
+// Invariant: `review-fix-validation` reports `data.reviewFixValidation` in exactly the shape of
+// `data.conflictValidation`, and a `quick` ceiling needs the base branch to carry the identical row.
+test('review-fix-validation: a quick row the base carries identically is confirmed', async (t) => {
+  const { root } = policyRepository(t, { [REVIEW_FIX_VALIDATION]: 'quick' });
+  const data = await reviewFixValidation({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.deepEqual(Object.keys(data), [
+    'runtimeStateRoot',
+    'checkoutRoot',
+    'visibility',
+    'source',
+    'reviewFixValidation',
+    'diagnostics',
+  ]);
+  assert.deepEqual(data.reviewFixValidation, {
+    configured: true,
+    value: 'quick',
+    invalid: [],
+    baseRef: 'main',
+    baseComparison: 'equal',
+    ceiling: 'quick',
+    reason: 'confirmed',
+  });
+  assert.equal(data.source.path, join(root, SETUP_ADR));
+});
+
+// Invariant: hidden mode's local file cannot be changed by a PR, so its `quick` is honoured as
+// `hidden-self` without a base read.
+test('review-fix-validation: hidden mode honours quick as hidden-self', async (t) => {
+  const { root } = repository(t);
+  write(
+    root,
+    LOCAL_SETUP,
+    setupDocument({ visibility: 'hidden', [REVIEW_FIX_VALIDATION]: 'quick' }),
+  );
+  const calls = [];
+  const runner = fakeRunner((call) => {
+    calls.push(call.args);
+    return null;
+  });
+  const data = await reviewFixValidation(
+    { cwd: root, tool: 'merge-gate', baseRef: 'main' },
+    { runner },
+  );
+  assert.equal(data.reviewFixValidation.baseComparison, 'hidden-self');
+  assert.equal(data.reviewFixValidation.reason, 'confirmed');
+  assert.equal(data.reviewFixValidation.ceiling, 'quick');
+  assert.ok(!calls.some((args) => args.includes('cat-file')), 'no base blob is read');
+});
+
+// Invariant: a PR head cannot lower its own review-fix validation: a base without the ref, a
+// `quick` row only on the head, or a head that changes the base's value keeps the ceiling `full`.
+test('review-fix-validation: a quick row the base does not confirm keeps the ceiling full', async (t) => {
+  const added = policyRepository(t, { 'plan.dir': 'docs/plan' });
+  const head = pullRequestHead(added.base, added.root, 'lowering', (checkout) =>
+    write(
+      checkout,
+      SETUP_ADR,
+      setupDocument({ 'plan.dir': 'docs/plan', [REVIEW_FIX_VALIDATION]: 'quick' }),
+    ),
+  );
+  const { reviewFixValidation: lowered } = await reviewFixValidation({
+    cwd: head,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(lowered.value, 'quick');
+  assert.equal(lowered.baseComparison, 'mismatch');
+  assert.equal(lowered.reason, 'base-blob-mismatch');
+  assert.equal(lowered.ceiling, 'full');
+
+  const changed = policyRepository(t, { [REVIEW_FIX_VALIDATION]: 'full' });
+  const switched = pullRequestHead(changed.base, changed.root, 'switching', (checkout) =>
+    write(checkout, SETUP_ADR, setupDocument({ [REVIEW_FIX_VALIDATION]: 'quick' })),
+  );
+  const { reviewFixValidation: policy } = await reviewFixValidation({
+    cwd: switched,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(policy.baseComparison, 'mismatch');
+  assert.equal(policy.reason, 'base-blob-mismatch');
+  assert.equal(policy.ceiling, 'full');
+
+  const missingRef = await reviewFixValidation({
+    cwd: head,
+    tool: 'merge-gate',
+    baseRef: 'release',
+  });
+  assert.equal(missingRef.reviewFixValidation.baseComparison, 'missing');
+  assert.equal(missingRef.reviewFixValidation.reason, 'base-blob-missing');
+  assert.equal(missingRef.reviewFixValidation.ceiling, 'full');
+});
+
+// Invariant: only the literal `full` or `quick` is a value; anything else is null, named once in
+// `invalid`, and keeps the ceiling `full` even when the base confirms the row.
+test('review-fix-validation: an invalid value is reported and the ceiling stays full', async (t) => {
+  for (const cell of ['off', 'Quick', 'true', '(empty)', rowsOf('quick', 'quick')]) {
+    const { root } = policyRepository(t, { [REVIEW_FIX_VALIDATION]: cell });
+    const { reviewFixValidation: policy } = await reviewFixValidation({
+      cwd: root,
+      tool: 'merge-gate',
+      baseRef: 'main',
+    });
+    const label = JSON.stringify(cell);
+    assert.equal(policy.value, null, label);
+    assert.deepEqual(policy.invalid, [REVIEW_FIX_VALIDATION], label);
+    assert.equal(policy.baseComparison, 'equal', label);
+    assert.equal(policy.reason, 'invalid-value', label);
+    assert.equal(policy.ceiling, 'full', label);
+  }
+  const { root } = policyRepository(t, { [REVIEW_FIX_VALIDATION]: 'full' });
+  const { reviewFixValidation: full } = await reviewFixValidation({
+    cwd: root,
+    tool: 'merge-gate',
+    baseRef: 'main',
+  });
+  assert.equal(full.value, 'full');
+  assert.equal(full.reason, 'confirmed');
+  assert.equal(full.ceiling, 'full');
+});
+
+// Invariant: without the row the default `full` applies and no base blob is read.
+test('review-fix-validation: a missing row is not configured and keeps the default full', async (t) => {
+  const { root } = policyRepository(t, { 'plan.dir': 'docs/plan' });
+  const calls = [];
+  const runner = fakeRunner((call) => {
+    calls.push(call.args);
+    return null;
+  });
+  const { reviewFixValidation: policy } = await reviewFixValidation(
+    { cwd: root, tool: 'merge-gate', baseRef: 'main' },
+    { runner },
+  );
+  assert.deepEqual(policy, {
+    configured: false,
+    value: null,
+    invalid: [],
+    baseRef: 'main',
+    baseComparison: 'not-applicable',
+    ceiling: 'full',
+    reason: 'not-configured',
+  });
+  assert.ok(!calls.some((args) => args.includes('cat-file')), 'no base blob is read');
+});
+
+// Invariant: the two keys never widen each other: each operation reads and guards only its own
+// fixed row, so a conflict-commit opt-in grants no review-fix `quick`, and a PR head changing the
+// other key's row leaves this key's base comparison `equal`.
+test('review-fix-validation and conflict-validation each guard only their own key', async (t) => {
+  const conflictOnly = policyRepository(t, { [CONFLICT_VALIDATION]: 'quick' });
+  const input = { cwd: conflictOnly.root, tool: 'merge-gate', baseRef: 'main' };
+  const reviewFix = await reviewFixValidation(input);
+  assert.equal(reviewFix.reviewFixValidation.reason, 'not-configured');
+  assert.equal(reviewFix.reviewFixValidation.ceiling, 'full');
+  assert.equal(Object.hasOwn(reviewFix, 'conflictValidation'), false);
+  const conflict = await conflictValidation(input);
+  assert.equal(conflict.conflictValidation.ceiling, 'quick');
+  assert.equal(Object.hasOwn(conflict, 'reviewFixValidation'), false);
+
+  const both = policyRepository(t, {
+    [CONFLICT_VALIDATION]: 'quick',
+    [REVIEW_FIX_VALIDATION]: 'quick',
+  });
+  const head = pullRequestHead(both.base, both.root, 'other-key', (checkout) =>
+    write(
+      checkout,
+      SETUP_ADR,
+      setupDocument({ [CONFLICT_VALIDATION]: 'full', [REVIEW_FIX_VALIDATION]: 'quick' }),
+    ),
+  );
+  const headInput = { cwd: head, tool: 'merge-gate', baseRef: 'main' };
+  const { reviewFixValidation: kept } = await reviewFixValidation(headInput);
+  assert.equal(kept.baseComparison, 'equal');
+  assert.equal(kept.ceiling, 'quick');
+  const { conflictValidation: moved } = await conflictValidation(headInput);
+  assert.equal(moved.baseComparison, 'mismatch');
+  assert.equal(moved.ceiling, 'full');
+});
+
+// Invariant: sharing one implementation leaves `conflict-validation`'s envelope unchanged: the same
+// top-level keys in the same order, with `conflictValidation` and no review-fix field.
+test('conflict-validation keeps its envelope shape beside review-fix-validation', async (t) => {
+  const { root } = policyRepository(t, { [CONFLICT_VALIDATION]: 'quick' });
+  const data = await conflictValidation({ cwd: root, tool: 'merge-gate', baseRef: 'main' });
+  assert.deepEqual(Object.keys(data), [
+    'runtimeStateRoot',
+    'checkoutRoot',
+    'visibility',
+    'source',
+    'conflictValidation',
+    'diagnostics',
+  ]);
+  assert.deepEqual(Object.keys(data.conflictValidation), [
+    'configured',
+    'value',
+    'invalid',
+    'baseRef',
+    'baseComparison',
+    'ceiling',
+    'reason',
+  ]);
+});
+
+test('review-fix-validation: a missing or unsafe baseRef or a caller-supplied key is invalid input', async (t) => {
+  const { root } = policyRepository(t, { [REVIEW_FIX_VALIDATION]: 'quick' });
+  for (const baseRef of [undefined, '', '-main', 'a..b', 'HEAD']) {
+    const input = { cwd: root, tool: 'merge-gate' };
+    if (baseRef !== undefined) input.baseRef = baseRef;
+    const envelope = await executeOperation('review-fix-validation', input);
+    assert.equal(envelope.ok, false, JSON.stringify(baseRef));
+    assert.equal(envelope.error.code, 'INVALID_INPUT', JSON.stringify(baseRef));
+    assert.equal(exitCodeFor(envelope), 2);
+  }
+  const key = await executeOperation('review-fix-validation', {
+    cwd: root,
+    tool: 'merge-gate',
+    baseRef: 'main',
+    key: CONFLICT_VALIDATION,
+  });
+  assert.equal(key.error.code, 'INVALID_INPUT', 'no caller-supplied key');
+});
+
+// ---------------------------------------------------------------------------------------------
 // CLI
 
 function runCli(args, input, env = process.env) {
@@ -3802,4 +4036,16 @@ test('cli: the conflict-validation operation prints one envelope line and exits 
   assert.equal(envelope.operation, 'conflict-validation');
   assert.equal(envelope.data.conflictValidation.value, 'quick');
   assert.equal(envelope.data.conflictValidation.baseComparison, 'equal');
+});
+
+test('cli: the review-fix-validation operation prints one envelope line and exits 0', (t) => {
+  const { root } = policyRepository(t, { [REVIEW_FIX_VALIDATION]: 'quick' });
+  const { status, envelope, stderr } = runCli(
+    ['review-fix-validation'],
+    JSON.stringify({ cwd: root, tool: 'merge-gate', baseRef: 'main' }),
+  );
+  assert.equal(status, 0, stderr);
+  assert.equal(envelope.operation, 'review-fix-validation');
+  assert.equal(envelope.data.reviewFixValidation.value, 'quick');
+  assert.equal(envelope.data.reviewFixValidation.ceiling, 'quick');
 });

@@ -823,6 +823,11 @@ point is an I/O boundary over testable core or protocol modules:
   `not-applicable`), `active` and `reason`, beside the usual `data` fields. The merge gate, not the
   operation, decides run state, the check list and the head; see the
   [merge-gate no-CI policy ADR](../adr/merge-gate-no-ci-policy.md).
+  Two further operations, `conflict-validation` and `review-fix-validation`, take the same `{ cwd,
+tool, mode?, baseRef }` input and share one key-parameterized implementation: each has a fixed
+  `GUARDED_ROWS` entry for exactly one row (`mergeGate.conflictValidation` and
+  `iterate.reviewFixValidation`), applies the same base-blob guard, and reports `data.conflictValidation`
+  or `data.reviewFixValidation` with an identical shape; the caller never supplies the key.
 - **Conflict-validation.** Invoke it as `node <skill-root>/scripts/conflict-validation.mjs
 <operation>` with one closed-schema JSON object on standard input; the operation is the only
   argument. It prepares merge-gate's CI-backed `quick` validation of a conflict-resolution commit
@@ -909,7 +914,7 @@ checks, headSha }`) is pure and rejects a detected `detection` without its full 
   derives the item filter, and refuses a body carrying the delimiter, a body item whose review
   `url` or `author` is absent (`missing-provenance`, never a synthesized value), an empty body, or
   a protocol-shaped instruction. A present value the manifest cannot carry safely is not a refusal
-  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines (plus the optional, version-neutral `Authorized scope:` line a gate delegation always carries), the manifest, the delimiter,
+  but an `UNSAFE_MANIFEST_VALUE` error, and malformed Unicode is `INVALID_PAYLOAD`. It serializes the six control lines (plus the optional, version-neutral `Authorized scope:` line a gate delegation always carries and, beside it, the optional `Review-fix validation: quick-candidate <baseCommit>` line, which a CI-repair instruction never carries), the manifest, the delimiter,
   and the body spans in one canonical order, checks its own output, and writes the message plus a
   manifest snapshot exclusively under `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/`. It
   returns the path, a `sha256:` digest, and the identifier → durable-key map. `validate` recomputes
@@ -1360,7 +1365,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 72 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 73 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1481,7 +1486,7 @@ and directive syntax").
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,
   `merge-gate-checkout-boundary`, `merge-gate-conflict-resolution`, `merge-gate-issue-observation`,
   `merge-gate-check-list-waiver`, `merge-gate-provider-settled-threads`,
-  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `merge-gate-repair-report`, `delegated-scope-return`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
+  `merge-gate-delegation-contract`, `merge-gate-delegated-run`, `merge-gate-review-fix-validation`, `iterate-review-fix-validation`, `merge-gate-repair-report`, `delegated-scope-return`, `judgment-draft-snapshot`, `judgment-inline-fallback`, `subagent-progress`, `review-bot-state`, `review-bot-state-observation`,
   `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `planning-batch`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,

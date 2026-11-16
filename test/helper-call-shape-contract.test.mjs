@@ -44,13 +44,14 @@ const includesLazily = (text, name) =>
 const fragment = readFileSync(join(SOURCE_DIR, 'shared', `${FRAGMENT}.md`), 'utf8');
 
 // The literal shape per helper, with exactly the argv the helper accepts: `config-resolve.mjs`
-// takes `resolve`, `no-ci-policy` or `conflict-validation` (CONFIG_RESOLVE_OPERATIONS), and
+// takes `resolve`, `no-ci-policy`, `conflict-validation` or `review-fix-validation`
+// (CONFIG_RESOLVE_OPERATIONS), and
 // `conflict-validation.mjs` one of CONFLICT_VALIDATION_OPERATIONS.
 const SHAPES = {
   'effective-flow-state':
     /^node <skill-root>\/scripts\/effective-flow-state\.mjs (?:<group> <operation>|[a-z]+ [a-z-]+) <<< '.*'$/,
   'config-resolve':
-    /^node <skill-root>\/scripts\/config-resolve\.mjs (?:resolve|no-ci-policy|conflict-validation) <<< '.*'$/,
+    /^node <skill-root>\/scripts\/config-resolve\.mjs (?:resolve|no-ci-policy|conflict-validation|review-fix-validation) <<< '.*'$/,
   'remote-tracker':
     /^node <skill-root>\/scripts\/remote-tracker\.mjs (?:<operation>|[a-z-]+)(?: --apply)? <<< '.*'$/,
   'conflict-validation':

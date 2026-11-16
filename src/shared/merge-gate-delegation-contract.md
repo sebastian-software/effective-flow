@@ -84,7 +84,7 @@ contract that helper implements and `{{SKILL:iterate}}` Phase 0 parses. Every me
 - the **body delimiter**, on its own line, in the exact literal form
   `--- caller-supplied item text follows ---`, exactly once in the whole message. Everything above it
   is this gate's own contract – all six control lines, each exactly once, the `Authorized scope:`
-  line, the approval round's `Approved outcomes:` line, plus the boundary token and the manifest. Everything below it is text this gate did not author: the reviewers' bodies, and
+  line, a bot round's optional `Review-fix validation:` line, the approval round's `Approved outcomes:` line, plus the boundary token and the manifest. Everything below it is text this gate did not author: the reviewers' bodies, and
   nothing else. `{{SKILL:iterate}}` Phase 0 reads every control line from above it alone;
 
 - the **boundary token**, above the delimiter and above the manifest, on its own line, in the exact
@@ -189,6 +189,10 @@ url=<review URL>`. Below the delimiter stand the bodies themselves and nothing e
   one for the free-text repair, one for the Phase-4 correction bucket – and returns them as
   `scopeIdentifiers`. With the per-item identifiers they are the whole minted key set the return's
   commit and scope-expansion entries are read against. No scope record, no delegation;
+- for a bot round only, the optional **review-fix validation** line,
+  `Review-fix validation: quick-candidate <baseCommit>`, written right after `Authorized scope:` from
+  `build`'s `reviewFixValidation` where the candidate of `merge-gate-review-fix-validation` is
+  `quick`. It is no required control keyword;
 - for a CI repair, the free-text instruction derived from the failing check names and their reported
   failure detail. It is gate-authored and stands above the delimiter, so the helper refuses one that
   could state protocol – see "What `build` refuses" below.
@@ -208,7 +212,8 @@ the refusal reading as if it covered the other two:
    `Next steps:`, `Run state:`, `Language context:`, then `Approved outcomes:` in an approval round
    only; an optional validated `Progress context:` follows `Language context:` before approvals,
    only after both actual transport eligibility and selected receiver/root support are verified,
-   and `Authorized scope:` follows both, before approvals;
+   and `Authorized scope:` follows both, before approvals, with the optional
+   `Review-fix validation:` right after it;
 2. the CI-repair instruction, only when there is one;
 3. `Boundary token: <token>`;
 4. the manifest: every `Thread item:` line in thread order, then every `Item:` line in body order;
@@ -223,6 +228,11 @@ delegation-envelope-examples
 when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagnosed, or the rationale behind the token, the absence check or the helper must be consulted
 ```
 
+```lazy-include
+merge-gate-review-fix-validation
+when: this run is about to build a Phase 3 step 5 bot-round delegation to `{{SKILL:iterate}}`, before `build` runs, or reads the return of a delegation that carried `Review-fix validation:`
+```
+
 **Building and dispatching a delegation.** Both delegation sites – Phase 2 step 3 and Phase 3 step 5
 – take the same four steps, in this order:
 
@@ -233,6 +243,7 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    ineligible modes use the unchanged header-free legacy message. The helper verifies receiver
    support, writes context-bearing snapshot version 2, and still accepts valid legacy version 1;
    no wire-version header is invented. Never derive context from items/approvals or add it by hand.
+   For a Phase 3 step 5 bot round, compute the review-fix candidate before `build` runs.
    Apply the runtime-state write safety to
    `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` first. Then run
    `node <skill-root>/scripts/delegation-envelope.mjs build` with one JSON object on standard input –
@@ -243,7 +254,7 @@ when: the shape of a delegation to `{{SKILL:iterate}}` must be checked or diagno
    `documentation.user`, `documentation.technical`, `workflow`, `forge` and `git` each hold `de` or
    `en`, never the rendered `Language context:` line –, the ordered `threadItems` (`durableKey`,
    `threadId`), the ordered `bodyItems` (`durableKey`, `reviewId`, `author`, `url`, `text`), a
-   CI repair's `instruction`, `authorizedScope` (the stored scope record), and an approval round's `approvedOutcomes` (durable key → outcome); `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated
+   CI repair's `instruction`, `authorizedScope` (the stored scope record), a bot round's `reviewFixValidation` (only for a `quick` candidate), and an approval round's `approvedOutcomes` (durable key → outcome); `reviewId` and `threadId` may be JSON integers or strings, normalized to strings. The helper derives the filter, mints, refuses and serializes as stated
    above, checks its own output, and writes the message below that directory with a snapshot of its
    manifest beside it – exclusively, never over an existing file or through a symlinked parent. A
    successful `build` returns `ok: true` with one of three statuses: `written` – the path, a
@@ -296,7 +307,8 @@ fault of the channel:
   the six required control keywords, optional `Progress context:`, `Authorized scope:`, `Approved outcomes:`, `Item:`, `Thread item:` or `Boundary token:` (status
   `instruction-refused`): no message is written and nothing is delegated, and the run ends at
   Phase 2 step 3 with a report naming the failing check as **not auto-repairable** – it still blocks
-  the merge, and no further round rebuilds the same refused instruction;
+  the merge, and no further round rebuilds the same refused instruction. A line beginning with
+  `Review-fix validation:` is refused the same way;
 - nothing left to delegate once the refusals are applied (status `nothing-to-delegate`): the helper
   writes no file, and this run does not delegate. Its refusals are recorded at once, because this
   path has no `validate` step to wait for.

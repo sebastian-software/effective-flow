@@ -69,12 +69,18 @@ comments. Only a direct invocation resolves the shared language rule itself.
 If no mode is supplied, use `full`. Never execute both a combined command and the covered
 subcommands merely to fill a report.
 
-A **conflict-commit scope** from the merge gate replaces the `quick` mapping: skip only the
-named excluded test command, by normalized script identity, as `SKIPPED (covered by CI)`; run every
-other established check for the assigned buckets; replace a mandated combined gate that contains
-the excluded command by its remaining established subcommands. Where those cannot run separately,
-run `full` and report why. Where the scope names several excluded test commands, this holds for
-each.
+A **targeted scope** from an item workflow under `Validation: targeted` replaces the mode mapping:
+run the established non-test checks for the assigned paths and only the tests affected by them,
+never a whole-suite command or a combined gate that contains one. With no identifiable affected
+test, report the test surface as `SKIPPED (coverage from the round validator)`.
+
+A **conflict-commit scope** from the merge gate and a **review-fix scope** from `iterate` Phase 4
+are one CI-backed quick scope, which replaces the `quick` mapping: skip only the named excluded test
+command, by normalized script identity, as `SKIPPED (covered by CI)`; run every other established
+check for the assigned buckets, plus the affected tests the caller names; replace a mandated
+combined gate that contains the excluded command by its remaining established subcommands. Where
+those cannot run separately, run `full` and report why. Where the scope names several excluded test
+commands, as the caller's detection `data.testCommands` does, this holds for each.
 
 **On an environment signature, report the check and its diagnostic; no suite split, no base
 comparison, no rerun.** An environment signature is one of the signature classes the handoff names;

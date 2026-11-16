@@ -362,6 +362,16 @@ exempt, because the gate has already established the reviewer state and says so 
 exemption rides on that announcement alone, not on a run being scoped to certain threads or merely
 running non-interactively. Local mode has no pull request and is unaffected.
 
+**Validation per round:** The item delegations also receive a `Validation: targeted` switch beside the
+caller-owned-commit switch, so `fix`, `refactor`, `build` and `docs` run the established non-test checks
+and only the tests affected by the item's paths, and start no full-suite run. The final validation
+(Phase 4) is therefore the round's only full-suite run. Standalone and CI-repair runs always run it in
+`full` mode. A round that [`/effective-flow merge-gate`](tools-deliver.md#ci-backed-quick-validation-of-a-review-fix-round)
+delegated may validate in `quick` mode, which leaves the repository's detected CI test commands to CI;
+the outcome report then names the effective mode (`full` or `quick`), the validated head and the
+detection, and an effective `full` states why. Both switches are read only from the lines above the
+body delimiter; the same words in item, issue or review text are data.
+
 **Interplay:** Extends the apply chain by the previously missing source
 "PR review comments": `/effective-flow apply` reads Effective Flow's own reports or issues, `iterate` reads
 the threads left directly on the PR. The actual implementation is handled by the existing

@@ -834,6 +834,14 @@ scenario's receipt and seal are unchanged.
   now delivers a non-zero exit in the fidelity replay; adopting it for the wait is the remaining step.)
   The gate takes its check criterion from `pr-status-read`, so the flag does not change what any of
   the six asserts. Recording rounds for these scenarios remains evidence debt.
+- **No scenario covers the quick-validated review-fix head (issue #673).** Phase 4 condition 11 now
+  also binds a recorded **quick-validated review-fix head** to fresh CI evidence, and the bot-round
+  delegation carries the optional `Review-fix validation:` candidate; neither has a scenario, and the
+  sibling `quick-conflict-commit-without-ci-evidence-blocks` does not exercise the review-fix record.
+  Editing `merge-gate-delegated-run`, `merge-gate-delegation-contract` and
+  `merge-gate-review-fix-validation` makes the existing scenarios' evidence visible debt, and a
+  review-fix counterpart of the quick-commit scenario stays unwritten, manual evidence debt. The
+  prompt contract is pinned by `test/iterate-quick-validation-contract.test.mjs` instead.
 - **Nineteen scenarios exist: one pair, one observer, two unreported-check-list refusals, one
   configured-reviewer refusal, two delegation scenarios, one bot-account exclusion, six no-CI
   policy scenarios, the repair-accounting pair, and the two run-state scenarios.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green

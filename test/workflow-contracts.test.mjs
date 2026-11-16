@@ -26886,6 +26886,58 @@ test('pr stays commit-only and starts no validation, with or without a record', 
   assert.ok(verificationEvidence().includes('`pr` starts no validation'));
 });
 
+// Invariant: the review-fix validation proposal (issue #673) is offered at exactly the sites that
+// offer the conflict-validation proposal, from the same CI detection, and nowhere an unattended path
+// could lower validation: Profile and Express never name the key. Setup reads it through the
+// guarded `review-fix-validation` operation, which the settings allowlist names.
+test('the review-fix validation proposal is offered where the conflict-validation proposal is, never in Profile or Express', () => {
+  const setup = source('src/tools/setup.md');
+  const step5 = boundedSlice(setup, '### Step 5: Advanced settings', '### Step 6: Merge and write');
+  // Both proposals share one detection precondition, and each is gated only on its own key, so a
+  // project already on `mergeGate.conflictValidation: quick` still gets the review-fix proposal.
+  assert.match(step5, /Each proposal is gated only on its own key being `full` or unset\./);
+  assert.match(
+    step5,
+    /Where `iterate\.reviewFixValidation` is `full` or unset, propose `iterate\.reviewFixValidation: quick` with the same evidence/,
+  );
+  assert.match(step5, /standalone iterate runs and CI-repair rounds stay `full`/);
+
+  // With Advanced `No`, the Guided summary surfaces it as its own hint line.
+  const summary = prose(
+    boundedSlice(
+      setup,
+      '- which mode was chosen (Profile, Express',
+      '- the central behavior values',
+    ),
+  );
+  assert.match(
+    summary,
+    /its `iterate\.reviewFixValidation` proposal as a second one where that holds, each to accept through Advanced or a Targeted change/,
+  );
+
+  const advanced = prose(source('src/shared/setup-advanced-settings.md'));
+  assert.match(advanced, /`iterate\.reviewFixValidation` \(`full`, `quick`, default `full`\)/);
+  assert.match(advanced, /Step 5's `iterate\.reviewFixValidation` proposal/);
+
+  const targeted = prose(source('src/shared/setup-targeted-change.md'));
+  assert.match(targeted, /shows Step 5's `iterate\.reviewFixValidation` proposal in its preview/);
+
+  const status = prose(source('src/shared/setup-status.md'));
+  assert.match(status, /Review-fix validation \(`data\.reviewFixValidation`\)/);
+
+  const allowlist = prose(source('src/shared/setup-allowlist.md'));
+  assert.match(allowlist, /`conflict-validation` and `review-fix-validation` operations/);
+
+  const mention = /review-fix[- ]validation|reviewFixValidation/i;
+  assert.doesNotMatch(source('src/shared/setup-profiles.md'), mention);
+  const express = boundedSlice(
+    setup,
+    '- **Express:** Build the target configuration',
+    '- **Guided:**',
+  );
+  assert.doesNotMatch(express, mention);
+});
+
 // Invariant: the conflict-validation proposal is an offer owned by Step 5 and surfaced only where
 // the user can accept it (Guided block 9, the Guided summary hint, a Targeted `mergeGate.*`
 // preview, the `setup status` report). Profile and Express never reach Step 5, so neither names

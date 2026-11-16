@@ -69,6 +69,8 @@ export const PHASE_ZERO_REFUSALS = Object.freeze({
   'manifest-span-mismatch-aborts': 'ABORT: manifest and body mismatch',
   'unparseable-run-state-aborts': 'ABORT: unparseable run-state switch',
   'unparseable-authorized-scope-aborts': 'ABORT: unparseable authorized scope',
+  'unparseable-review-fix-validation-aborts': 'ABORT: unparseable review-fix validation switch',
+  'duplicated-review-fix-validation-aborts': 'ABORT: duplicated control line',
 });
 
 // The scenarios that read the forge and then stop without writing.

@@ -186,7 +186,8 @@ Run the read-only investigation per "Investigation method", section "Investigate
 
 1. Try to reproduce the bug with `{{AGENT:code-validator}}` for the current technical state. If
    possible, specify a failing test that documents the behavior (file, case, expected failure)
-   without writing it; Phase 3 writes it once the diff baseline exists.
+   without writing it; Phase 3 writes it once the diff baseline exists. Under `Validation: targeted`
+   (`caller-owned-commit`) the reproduction stays, limited to the targeted scope.
    <!-- spawn-site:fix/reproduction -->
 2. Perform a gap analysis for the diagnosis and fix strategy:
    - over-engineering

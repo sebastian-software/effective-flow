@@ -81,7 +81,8 @@ Scope entries are literal paths, never globs. A handed-off set that is empty is 
 - **Validation:** hand `{{AGENT:code-validator}}` the path list as its assigned scopes and state in
   the assignment that the list selects the routing buckets and is reported as the change under
   validation, while each selected bucket's checks still run at repository-native breadth, never
-  narrowed to the listed files.
+  narrowed to the listed files. Under `Validation: targeted` (`caller-owned-commit`) the list is
+  the validator's targeted scope instead.
 - **Review:** route reviewers from the path list and hand each reviewer the absolute `diffPath` plus
   only its routed bucket's slice of the path list. Baseline and tree OIDs stay with the orchestrator.
 - **Formatter:** format the list's non-deleted paths plus the plan file, once.

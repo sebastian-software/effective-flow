@@ -36,15 +36,17 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 # names and never from the live registries. A scenario registered after the freeze does not enter the
 # frozen corpus: its absence here is the pinned protocol, not an omission. Only the names registered
 # later (merge-gate `no-ci-policy-*`, `presence-notice-names-other-run`,
-# `quick-conflict-commit-without-ci-evidence-blocks` and the two repair scenarios, one iterate
-# refusal) are excluded from the live registry below.
+# `quick-conflict-commit-without-ci-evidence-blocks` and the two repair scenarios; iterate
+# `unparseable-authorized-scope-aborts`, `duplicated-review-fix-validation-aborts` and
+# `unparseable-review-fix-validation-aborts`) are excluded from the live registry below.
 FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'no-ci-policy-flag-absent-blocks', 'no-ci-policy-merge-failure-reports',
     'no-ci-policy-reported-check-blocks', 'no-ci-policy-status-read-failure-blocks',
     'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks',
     'presence-notice-names-other-run', 'quick-conflict-commit-without-ci-evidence-blocks',
     'repair-after-base-merge-merges', 'repeated-ineffective-repair-stops')},
-    'iterate': {'unparseable-authorized-scope-aborts'}}
+    'iterate': {'duplicated-review-fix-validation-aborts', 'unparseable-authorized-scope-aborts',
+                'unparseable-review-fix-validation-aborts'}}
 FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
 POLICY = ('workspace-write;approval-never;network-disabled;isolated-home;'
           'attempt-root-writable;ignore-user-config;ignore-rules')

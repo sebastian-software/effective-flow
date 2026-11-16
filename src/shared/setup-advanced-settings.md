@@ -19,7 +19,7 @@ schema in `{{SKILL:setup}}`, and the current config value or default as the pre-
 6. `worktree`: `worktree.enabled` (already asked in Step 4 — carry over), `worktree.setup`, `worktree.baseDir`
 7. `tracker` (skipped in hidden mode, whose tracker is forced to `local`): `tracker.mode` (already asked in Step 4 — carry over), `tracker.remoteToolOverride` (auto/github/forgejo, forge only), `tracker.externalTool` and `tracker.externalToolHint` (free text; required identifier plus optional connection hint for `mode: external`, carried over when already asked in Step 4), and the freshly verified nullable `tracker.externalStartedState` and `tracker.externalDoneState` (the latter terminal and writable, read by the merge gate's offered post-merge transition and by its post-merge observation of an already-terminal issue). Re-run state discovery before changing either; never accept arbitrary free text or a display-name-only match.
 8. `skills`: `skills.enabled` (bool), `skills.include`/`skills.exclude` (global lists) as well as – as an advanced option – `skills.agents.<name>` and `skills.tools.<name>` for individual agents/tools. Additionally offer optionally (do not force) to materialize the built-in per-agent and per-tool recommendations visibly into the config as `skills.agents.<name>.include` or `skills.tools.<name>.include`; for a fallback recommendation (`effective-web › impeccable › frontend-design`), write only the **primary** skill (`effective-web`) — the built-in fallback stays active. Flat recommendations (e.g. `effective-delivery`) are carried over unchanged.
-9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block: see below.
+9. `mergeGate` – the **merge gate** of `{{SKILL:merge-gate}}`, asked as its own block together with `iterate.reviewFixValidation`: see below.
 10. `executionProfiles`: the field-pilot opt-in `executionProfiles.fast.enabled` (strict Boolean) and its confirmed baseline-start and resume actions, owned by the fragment below; activation is automatic in `{{SKILL:build}}`. Profile and Express never ask this block and preserve an existing value.
 
 ```lazy-include
@@ -100,6 +100,13 @@ value or default as the pre-selection:
   `full` (default) validates it fully locally; `quick` lets the CI test job stand in for the local
   test run of a low-risk conflict commit, and counts only once the same row is on the base branch,
   so a pull request cannot lower its own validation. Where Step 5's conflict-validation proposal
+  holds, show it with this question; otherwise pre-select the current value.
+- `iterate.reviewFixValidation` (`full`, `quick`, default `full`), asked right after
+  `mergeGate.conflictValidation` though it is no `mergeGate.*` row: how the final validator of a
+  review-fix round that the gate delegates validates. `full` (default) runs the local full suite;
+  `quick` lets the CI test job stand in for the local test run, counts only once the same row is on
+  the base branch, and holds only where every detected job is a required check; standalone iterate
+  runs and CI-repair rounds stay `full`. Where Step 5's `iterate.reviewFixValidation` proposal
   holds, show it with this question; otherwise pre-select the current value.
 - `mergeGate.requireAllChecks`: `true` (default) requires **every** check to be green; `false` falls
   back to the checks the forge itself marks as required — useful for a project with a permanently

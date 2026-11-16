@@ -228,6 +228,7 @@ per-agent and per-tool skill rows demonstrate optional overrides.
 | mergeGate.botWaitMinutes             | 10                         |
 | mergeGate.bots                       | (empty)                    |
 | mergeGate.botAccounts                | (empty)                    |
+| iterate.reviewFixValidation          | full                       |
 | language.project                     | en                         |
 | language.source                      | en                         |
 | language.documentation.user          | en                         |
@@ -630,6 +631,41 @@ values before removing those source rows. No other tool writes configuration.
 The merge method itself is a delivery property, not a gate property, and lives under
 [Block `delivery`](#block-delivery) as `delivery.mergeMethod`.
 
+## Block `iterate`
+
+One key, resolved by [`/effective-flow merge-gate`](./tools-deliver.md) for the review-fix rounds it
+delegates to [`/effective-flow iterate`](./tools-implement.md#effective-flow-iterate).
+
+| Key                   | Values           | Default | Meaning                                                                                                   |
+| --------------------- | ---------------- | ------- | --------------------------------------------------------------------------------------------------------- |
+| `reviewFixValidation` | `full` / `quick` | `full`  | How the final validation of a gate-delegated review-fix round runs; `quick` defers the test command to CI |
+
+**`iterate.reviewFixValidation` decides how much a review-fix round is validated locally.** It
+affects only the final validation of a round that the merge gate delegates to `iterate` for a bot
+finding; `review.validation` and `applyReview.finalValidation` stay untouched.
+
+- `full` (the default) runs the local full suite once per round, in `iterate`'s final validation.
+- `quick` is a ceiling, like `mergeGate.conflictValidation`. The round validates without the test
+  command that a CI job on the base branch runs on every pull request, and the gate merges only once
+  that job succeeded on the final head. Every other check still runs locally. The round falls back to
+  `full` when CI is not detected, the pull request changed a workflow, manifest or test script
+  between the detection's base commit and the verified head, the round itself changes one, the forge
+  is not GitHub, or any detected job is not a required check of the base branch.
+  `mergeGate.requireAllChecks: true` alone does not qualify.
+- A standalone `iterate` run, local mode and a CI-repair round always validate `full`, whatever the
+  key says.
+- **Base confirmation** works as for `mergeGate.conflictValidation`: `quick` counts only where the
+  same row is on the base branch, and in hidden mode the local file counts. A missing, invalid or
+  unconfirmed value means `full`.
+- **Proposal.** `/effective-flow setup` proposes `quick` at the sites where it proposes
+  `mergeGate.conflictValidation: quick`, under the same CI-detection condition but independently of
+  that key's value: in the advanced merge-gate block, as a hint in the Guided summary, in a Targeted
+  change to a `mergeGate.*` key or to this key, and in `/effective-flow setup status`. Accepting it is the Targeted request
+  `/effective-flow setup set iterate.reviewFixValidation to quick`. A merge-gate run whose
+  review-fix round validated `full` while the conditions held adds the proposal to its report.
+
+Decision record: [merge-gate conflict validation](../adr/merge-gate-conflict-validation.md).
+
 ## Block `plan`
 
 Controls [`/effective-flow plan`](./tools-understand.md) and every tool that reads or writes plan
@@ -870,6 +906,7 @@ rows `plan.dir`, `concept.dir`, `tracker.mode`, and `delivery.prReview`, plus a
 | `mergeGate.checkWaitMinutes`        | `20`                         |
 | `mergeGate.maxRounds`               | `10`                         |
 | `mergeGate.botWaitMinutes`          | `10`                         |
+| `iterate.reviewFixValidation`       | `full`                       |
 | `language.project`                  | `en`                         |
 | `worktree.enabled`                  | `true`                       |
 | `delivery.completion`               | `merge`                      |
