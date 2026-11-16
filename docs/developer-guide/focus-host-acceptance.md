@@ -40,8 +40,13 @@ artifacts are not tracked.
 (`src/tools/focus.md`, `src/shared/focus-session-contract.md`, `src/shared/focus-follow-up.md`,
 `src/shared/retro-native-sources.md`) owes candidate-bound requalification. Other digest-bound
 changes are exempt only when the maintainer demonstrates that they are nonbehavioral for the
-qualified path. The `contextBudget` line in `src/tools/focus.md` is part of that focus source, so
-changing it owes requalification.
+qualified path. The one carve-out is the `contextBudget` line of `src/tools/focus.md` (#681): it is
+the tool's build measurement (#99), which the build reads and strips, so the built focus file never
+carries it. Adding, raising or lowering that line is binding drift that keeps the record, provided
+it stays the last frontmatter line in the exact form `contextBudget: <positive integer>` and the
+built focus digests are unchanged. The digest guard hashes `src/tools/focus.md` without that line,
+so such a change leaves `test/fixtures/focus-digests.sha256` untouched. Every other byte of the file,
+including every other frontmatter field, remains focus source and owes requalification.
 
 For the built files, the maintainer rebuilds the release head and compares the digests with the
 record's table. Material changes to the loaded artifact require candidate-bound acceptance,

@@ -101,6 +101,17 @@ test('Focus acceptance requires requalification for material shared-fragment and
   assert.match(binding, /including changes from eagerly included fragments/);
   assert.match(binding, /or `build\.mjs` rendering/);
   assert.match(binding, /only a documented, demonstrably nonbehavioral difference/);
+  // The one source carve-out (#681) is the budget line, bounded to its exact form and position.
+  assert.match(binding, /The one carve-out is the `contextBudget` line of `src\/tools\/focus\.md`/);
+  assert.match(
+    binding,
+    /last frontmatter line in the exact form `contextBudget: <positive integer>`/,
+  );
+  assert.match(binding, /built focus digests are unchanged/);
+  assert.match(
+    binding,
+    /every other frontmatter field, remains focus source and owes requalification/,
+  );
   assert.doesNotMatch(binding, /owes no requalification/);
   assert.match(acceptance, /supersedes that blanket\s+release obligation/);
 });

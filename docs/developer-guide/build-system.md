@@ -1804,9 +1804,10 @@ only when a measurement points the same way.
 
 To raise a budget, edit the `contextBudget` line in that tool's own file to the measured count plus
 at most ten. Two branches raising different tools' budgets touch different files and merge without
-conflict; two raises of the same tool still conflict, which is intended. Raising the `focus` budget
-(in `src/tools/focus.md`) is a focus-source change and owes candidate-bound requalification under
-the binding-drift rule in [`focus-host-acceptance.md`](focus-host-acceptance.md).
+conflict; two raises of the same tool still conflict, which is intended. Changing the `focus` budget
+(in `src/tools/focus.md`) owes no requalification: the binding-drift rule in
+[`focus-host-acceptance.md`](focus-host-acceptance.md) treats that one line as binding drift, and the
+focus digest guard hashes the file without it. Any other edit to `src/tools/focus.md` still does.
 
 ## Model tiers
 
