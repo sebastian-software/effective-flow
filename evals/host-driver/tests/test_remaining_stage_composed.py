@@ -56,13 +56,23 @@ class ComposedRemainingStageContracts(unittest.TestCase):
             # Validation must accept the fixture's own runtime copies without relaxing
             # the very same reader that rejects the shared source above.
             fixture.validate()
-            for executable, source in ((fixture.node, shared_node),
-                                       (fixture.python, Path(sys.executable).resolve())):
+            for executable in (fixture.node, fixture.python):
                 self.assertEqual(executable.parent, fixture.root)
                 self.assertEqual(executable.stat().st_uid, os.getuid())
                 self.assertEqual(executable.stat().st_nlink, 1)
-                self.assertEqual(executable.stat().st_mode & 0o777, source.stat().st_mode & 0o777)
-                self.assertEqual(fixture.stage.file_digest(executable), digest(source))
+            # The node runtime is a tiny owned wrapper, so its pin never reads node's bytes.
+            self.assertEqual(fixture.node.stat().st_mode & 0o777, 0o700)
+            self.assertEqual(fixture.stage.file_digest(fixture.node),
+                             fixture.corpus['toolchain']['node']['sha256'])
+            self.assertLess(fixture.node.stat().st_size, 4096)
+            source = Path(sys.executable).resolve()
+            self.assertEqual(fixture.python.stat().st_mode & 0o777, source.stat().st_mode & 0o777)
+            self.assertEqual(fixture.stage.file_digest(fixture.python), digest(source))
+            # The pinned wrapper must execute the very node bytes the former copy carried.
+            target = LOCAL_RUN([str(fixture.node), '-p', 'process.execPath'],
+                               capture_output=True, text=True, timeout=10)
+            self.assertEqual(target.returncode, 0, target.stderr)
+            self.assertEqual(target.stdout.strip(), str(shared_node.resolve()))
             node = LOCAL_RUN([str(fixture.node), '--version'], capture_output=True, text=True, timeout=10)
             python = LOCAL_RUN([str(fixture.python), '-B', '-c', 'import sys; print(sys.executable)'],
                                capture_output=True, text=True, timeout=10)

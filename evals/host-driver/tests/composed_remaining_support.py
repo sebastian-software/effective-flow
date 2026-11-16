@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import shlex
 import shutil
 import subprocess
 import sys
@@ -144,6 +146,24 @@ def copy_fixture_executable(source, destination):
     return destination
 
 
+def write_node_wrapper(source, destination):
+    """Pin a tiny owned wrapper that execs the real node, instead of its large bytes."""
+    # exec keeps node's PID, process group and signal delivery identical to a copy.
+    source = Path(source).resolve()
+    if not os.path.isfile('/bin/sh'):
+        raise RuntimeError('fixture node wrapper requires /bin/sh')
+    content = ('#!/bin/sh\nexec ' + shlex.quote(str(source)) + ' "$@"\n').encode()
+    descriptor = os.open(destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o700)
+    try:
+        os.fchmod(descriptor, 0o700)
+        view = memoryview(content)
+        while view:
+            view = view[os.write(descriptor, view):]
+    finally:
+        os.close(descriptor)
+    return destination
+
+
 def wait_for_ready_batch(control, stopped, *, clock=time.monotonic, sleep=time.sleep):
     deadline = clock() + 35
     seen = set()
@@ -197,7 +217,7 @@ class ComposedRemainingFixture(OriginalSealFixture):
         super().__init__(root)
         self.controls = root / 'control'
         self.controls.mkdir()
-        self.node = copy_fixture_executable(shutil.which('node'), root / 'node-runtime')
+        self.node = write_node_wrapper(shutil.which('node'), root / 'node-runtime')
         self.python = copy_fixture_executable(sys.executable, root / 'python-runtime')
         self.operator.write_text(OPERATOR)
         binary = root / 'local-native-fixture'
