@@ -7,8 +7,8 @@ placeholder syntax, and build guards, and it is canonical for the **mechanics** 
 step-by-step procedure for adding a tool or agent, and how each point of the prompt-writing rule
 maps onto the build. `AGENTS.md` stays canonical for the three **rules** it owns — renaming an
 exposed tool ships a deprecated forwarding alias, every `src/tools/*.md` needs a
-`CONTEXT_BUDGET_LINES` entry measured from the build report, and prompt text follows the
-prompt-writing rule.
+per-tool `contextBudget` frontmatter line measured from the build report, and prompt text follows
+the prompt-writing rule.
 
 ## Invocation
 
@@ -350,7 +350,8 @@ suites. Report each layer and its outstanding evidence separately.
 The build aborts with an error message if any of these guards is violated:
 
 - **Frontmatter/quoting guard:** `description` (and, for exposed tools, additionally
-  `catalogHint`) must be strictly double-quoted.
+  `catalogHint`) must be strictly double-quoted. `contextBudget` is the deliberate exception: an
+  unquoted integer (see the context-budget guard below).
 - **Claude effort guard:** The Claude `effort` of every tier in `MODEL_TIER_MAPPINGS` must be
   exactly `low`, `medium`, `high`, `xhigh`, or `max`; a missing, differently cased, or unknown
   value aborts the build. The native Claude sidecar renders it deterministically next to `model`,
@@ -628,15 +629,20 @@ The build aborts with an error message if any of these guards is violated:
   the runtime contract it mirrors.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
-  **up to** ten lines of headroom. No tools share an allowance; current figures are in "Context
-  budget" below. The build prints each measured size next to its budget and aborts if a tool
-  exceeds that limit, naming the tool, its size, and the limit. That printed size is the number to
-  measure a new entry against — the guard counts `split('\n').length`, one line more than `wc -l`
-  on a newline-terminated file. Every entry is a measured backlog rather than a target: it records
-  what a tool costs today, so each later deferral lowers the entries it touches and a large number
-  reads as work outstanding, never as room to fill. The map and the built tool set are reconciled
-  two-sidedly: a tool with no entry fails the build, and so does an entry naming no tool, so a newly
-  added tool cannot ship unmeasured.
+  **up to** ten lines of headroom. No tools share an allowance. Each tool declares its budget as
+  `contextBudget: <n>`, the last frontmatter line of its own `src/tools/<name>.md`, unquoted. The
+  build prints each measured size next to its budget, ordered by limit descending and then tool
+  name ascending by code-unit comparison (the order is generated, not maintained), and aborts if a
+  tool exceeds its limit, naming the tool, its size, and the limit. That printed size is the number
+  to measure a budget against — the guard counts `split('\n').length`, one line more than `wc -l`
+  on a newline-terminated file. Three guards keep the declarations honest, so a newly added tool
+  cannot ship unmeasured: a tool with no `contextBudget` line fails the build (one build names every
+  unbudgeted tool); a malformed line fails it naming the file — repeated, quoted, a block scalar,
+  zero, negative, with a leading zero or sign, decimal or exponent, followed by a trailing comment
+  or text, or not the last frontmatter line; and a non-tool source — `src/SKILL.md`,
+  `src/agents/*.md`, `src/shared/*.md`, the set `CONTEXT_BUDGET_NON_TOOL_SOURCES` in
+  `build-lib.mjs` — must not declare a top-level `contextBudget` in its frontmatter. Body text is
+  never scanned. Rationale and how to raise a budget: "Context budget" below.
 - **Router tool-list placeholder guard:** The `description` in `src/SKILL.md` must carry exactly
   one `{{TOOL_LIST}}` placeholder; any other count aborts the build and reports the number found.
   The list itself is generated from `EXPOSED_TOOLS`, and this guard is what keeps it generated:
@@ -692,7 +698,7 @@ The build aborts with an error message if any of these guards is violated:
 
 This is the canonical procedure. [`AGENTS.md`](../../AGENTS.md), section "Adding a tool or agent",
 keeps a short form of it and stays canonical for the two rules named there — the deprecated
-forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool needs.
+forwarding alias a rename ships, and the `contextBudget` line every tool needs.
 
 1. Create a new source file under `src/tools/<name>.md` or `src/agents/<name>.md`. For an agent,
    declare one top-level `tier:` in its frontmatter: implementers, reviewers and the
@@ -710,11 +716,12 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    `src/tools/<old-name>.md` source. The alias stays out of `TOOL_GROUPS`, and the generated
    `{{DEPRECATED_ALIASES}}` router clause is what still routes the retired name instead of
    printing the catalog. The deprecated-alias guards above enforce all three halves.
-4. Add the tool's entry to `CONTEXT_BUDGET_LINES` in `build.mjs`. How that number is arrived at —
-   the built line count plus up to ten lines of headroom, read off the
+4. Add `contextBudget: <n>` as the last frontmatter line of the new tool source. How that number
+   is arrived at — the built line count plus up to ten lines of headroom, read off the
    `Always-loaded core (lines/budget)` report rather than from `wc -l` — is canonical in
-   [`AGENTS.md`](../../AGENTS.md); the guard itself and its two-sided reconciliation are described
-   under "Guards" above. Every `src/tools/*.md` is measured, internal ones included.
+   [`AGENTS.md`](../../AGENTS.md); the guards are described under "Guards" above. Every
+   `src/tools/*.md` is measured, internal ones included. A new tool fails the build until its own
+   file carries a budget, and no second file has to change.
 5. A new user-invocable tool opts into the next-steps contract deliberately, either way: add a
    ` ```lazy-include ` fence for `next-steps` plus at least one row for the tool's name in
    `src/shared/next-steps.md`'s edge table, or add the tool to the exemption set in `build.mjs`
@@ -743,8 +750,8 @@ forwarding alias a rename ships, and the `CONTEXT_BUDGET_LINES` entry every tool
    first tracker access and names hidden mode instead of writing labels or markers.
 8. Run `node build.mjs`. The guards described above cover missing sources, missing include
    targets, an agent without a valid `tier:`, a spawn site without its table row, unsupported Codex sandbox modes, a missing or
-   unquoted `catalogHint`, missing or duplicate `TOOL_GROUPS` entries, and a tool with no budget
-   entry.
+   unquoted `catalogHint`, missing or duplicate `TOOL_GROUPS` entries, and a tool with a missing or
+   malformed `contextBudget` line.
 
 ## Runtime scripts
 
@@ -1474,8 +1481,8 @@ and directive syntax").
   `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
   its core keeps every record write and transition and makes reading the fragment mandatory before
   such a worktree is created.
-- **Planned-build execution has one explicit boundary.** The current built `build` caller reports 209
-  split-newline lines against a 214-line budget. Its intent/source classification, canonical status,
+- **Planned-build execution has one explicit boundary.** The built `build` caller's current size and
+  budget are in the build report (see "Context budget"). Its intent/source classification, canonical status,
   clarification, configuration/retired-key preflight and approval basis stay eager. Only after those
   guards pass does it read `build-run-contract` and select one fresh `deep` built-in runner or the
   complete inline fallback. The runner loads `build-delegated-run` once; that fragment eagerly owns
@@ -1662,8 +1669,8 @@ The rule for writing prompt text, including its scope, is canonical in
 the build.
 
 - **Length is paid on every run.** The context-budget guard (see "Guards") measures every tool's
-  always-loaded core, and the "**Context budget.**" paragraph below makes each entry a ratchet,
-  not room to fill. An eager `src/shared` fragment is charged to every host that includes it, so
+  always-loaded core, and the "**Context budget.**" paragraph below makes each tool's budget a
+  ratchet, not room to fill. An eager `src/shared` fragment is charged to every host that includes it, so
   one line added there raises several measurements at once. `AGENTS.md` is paid in every session
   but has no guard, so the rule is all that holds it.
 - **State a contract once, in its owning fragment.** Every other source reaches it through an
@@ -1762,25 +1769,45 @@ shell or environment check); `invocationGuidanceForHarness` in `build-lib.mjs` o
 its wording.
 
 **Context budget.** The always-loaded core of every tool is measured and enforced during the
-build (see "Guards"), each against its own per-tool budget. No tool now shares a broad allowance
-with a group. The build prints the measured size and budget in map order; that order is a reading
-aid and deliberately unenforced, so growth or a successful deferral may leave it temporarily
-non-descending until maintainers reorder the map.
+build (see "Guards"), each against its own per-tool budget: the `contextBudget: <n>` line that ends
+the frontmatter of the tool's own source. The build prints the measured size and budget of every
+tool in the `Always-loaded core (lines/budget)` report, ordered by limit descending and then tool
+name ascending; read current figures and exact headroom there, not from this guide. The conditional
+Profile contract stays in the lazy `setup-profiles` fragment and therefore does not count toward
+`setup`'s always-loaded core.
 
-Each budget is the tool's measured size plus at most ten lines. The limit is a ratchet and backlog,
-not a target: moving a mode-gated block behind a `lazy-include` lowers the affected entry rather
-than creating reusable room. Headroom is a flat count instead of a percentage, because a percentage
-would give the largest tools the most unchecked growth. Ten is the ceiling, not a fixed offset, and
-most entries carry less.
+Every budget is a **measured backlog, not a target**. It records what a tool's always-loaded core
+costs today; it is not a size anyone argued for. Moving a mode-gated block behind a `lazy-include`
+lowers the budgets it touches, so a large number reads as work outstanding and never as room to
+fill.
 
-The current report makes that policy visible without a separate budget class:
-`iterate` is 1572/1572, `setup` 1563/1564, `apply-review` 1025/1025, `apply-issues` 937/937,
-`merge-gate` 873/873 (the gate moved into the lazy `merge-gate-delegated-run`), and `cleanup`
-833/833. The four tools that formerly shared a 700-line allowance now carry individual ratchets:
-`plan` 713/713, `docs` 634/637, `build` 640/640, and `fix` 521/521. Read every
-other tool's current measurement and exact headroom from the build report rather than from a
-category-wide assumption. The conditional Profile contract remains in the lazy
-`setup-profiles` fragment and therefore does not count toward `setup`'s always-loaded core.
+Headroom is a flat ten-line ceiling rather than a percentage, because a percentage hands the
+largest tools the most room, which is where unwatched growth is most expensive. Ten lines absorb
+the next justified rule or the short pointer a deferral leaves behind without hiding a regression.
+It is a ceiling, not a fixed offset: most tools carry less, because a deferral that shrank a tool
+was recorded by lowering its budget to the new measurement, not by re-adding the full ten.
+
+The line count is the number of newline-split parts (`split('\n').length`), one more than `wc -l`
+reports for a newline-terminated file, so a budget derived from `wc -l` is a line short of what it
+looks like. Measure with `node build.mjs` and take the figure from the report.
+
+Six budgets once carried a `+6 (goal-completion)` marker. That raise was the one case where the
+line metric and the real context cost pointed in opposite directions: `src/shared/goal-completion.md`
+stated its whole progress contract as a single 2 893-character line, which cost one line of budget
+and roughly 700 tokens in each of its ten eager consumers. Rewriting it as the invariants it
+guarantees dropped the fragment from 4 413 to 3 036 characters while adding six lines, so every
+eager consumer grew by exactly six lines and shrank in tokens. Each marker was that measured delta
+and nothing more; the four other eager consumers (`merge-gate`, `docs`, `build`, `fix`) already
+had enough headroom and were left alone. A later re-measurement folded the deltas into fresh
+measurements, so every budget is again a measurement plus its headroom. Raise a budget this way
+only when a measurement points the same way.
+
+To raise a budget, edit the `contextBudget` line in that tool's own file to the measured count plus
+at most ten. Two branches raising different tools' budgets touch different files and merge without
+conflict; two raises of the same tool still conflict, which is intended. Changing the `focus` budget
+(in `src/tools/focus.md`) owes no requalification: the binding-drift rule in
+[`focus-host-acceptance.md`](focus-host-acceptance.md) treats that one line as binding drift, and the
+focus digest guard hashes the file without it. Any other edit to `src/tools/focus.md` still does.
 
 ## Model tiers
 
@@ -1935,7 +1962,7 @@ actually occurs.
 - [`plan-conventions.md`](plan-conventions.md) – plan-file schema.
 - [`release-and-installation.md`](release-and-installation.md) – version stamp and release.
 - [`AGENTS.md`](../../AGENTS.md) – the always-loaded behavior **rules** (the tool-rename alias,
-  the context-budget entry, writing prompt text, the Claude leaf boundary of agent tool lists, no
-  AI attribution); the build **mechanics** those rules refer to are canonical here. Language,
-  delegation, commit, and plan contracts are the shipped fragments under
+  the per-tool `contextBudget` line, writing prompt text, the Claude leaf boundary of agent tool
+  lists, no AI attribution); the build **mechanics** those rules refer to are canonical here.
+  Language, delegation, commit, and plan contracts are the shipped fragments under
   [`src/shared/`](../../src/shared/).

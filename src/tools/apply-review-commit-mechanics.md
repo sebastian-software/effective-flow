@@ -1,5 +1,6 @@
 ---
 description: "Internal sub-file of apply-review: git commit mutex, worktree isolation and cherry-pick conflict assessment. Loaded by tools/apply-review.md only when a committing strategy was chosen."
+contextBudget: 673
 ---
 
 # Effective Flow Apply Review – Commit mechanics

@@ -1,6 +1,7 @@
 ---
 description: "Generates a descriptive commit message for already-staged changes and runs the commit via git. Use this skill when only the staged changes should be committed, with Conventional Commits like feat:, fix:, chore:, docs:, refactor:, or test:, without Co-Authored-By lines."
 catalogHint: "Commits the staged changes with a fitting commit message."
+contextBudget: 235
 ---
 
 # Effective Flow Commit

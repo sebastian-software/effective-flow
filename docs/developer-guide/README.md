@@ -39,8 +39,8 @@ is no runtime application – you edit `src/`, never `dist/`.
 
 - [`AGENTS.md`](../../AGENTS.md) – the always-loaded contract, canonical for the **rules**:
   the no-AI-attribution rule, the Claude leaf boundary of agent tool lists, the ownership check,
-  the deprecated forwarding alias a tool rename ships, the `CONTEXT_BUDGET_LINES` entry every tool
-  needs, the rule for writing prompt text, and no hand-bumped versions. Language, delegation,
+  the deprecated forwarding alias a tool rename ships, the per-tool `contextBudget` frontmatter line
+  every tool needs, the rule for writing prompt text, and no hand-bumped versions. Language, delegation,
   commit, plan and concept rules are Effective Flow's own shipped contracts under `src/shared/`. The **mechanics** those rules point at are canonical here —
   [`build-system.md`](build-system.md) for placeholder syntax, for adding a tool or agent, and for
   writing prompt text,

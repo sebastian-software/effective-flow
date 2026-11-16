@@ -1,6 +1,7 @@
 ---
 description: "Shows the current Effective Flow version including the short git hash."
 catalogHint: "Shows the installed Effective Flow version."
+contextBudget: 38
 ---
 
 # Effective Flow Version

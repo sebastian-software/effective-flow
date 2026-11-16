@@ -92,6 +92,10 @@ import {
   assertAgentSkillRecommendationRoster,
   parseNativeAgentInventory,
   reconcileNativeAgentInventories,
+  readContextBudget,
+  declaresContextBudget,
+  resolveContextBudgetNonToolSources,
+  CONTEXT_BUDGET_FIELD,
   PLAN_CONTRACT_MAPPING_START,
   PLAN_CONTRACT_MAPPING_END,
   PLAN_CONTRACT_PLACEHOLDERS_START,
@@ -1551,10 +1555,14 @@ try {
         );
       }
     }
+    // Guard (#99): a malformed `contextBudget` line fails here, naming the file; a missing one
+    // fails once every tool has been read, so a single build names every unbudgeted tool.
+    const contextBudget = readContextBudget(fm, { context: `src/tools/${file}` });
     tools.push({
       name,
       description: getField(fm, 'description'),
       catalogHint: getField(fm, 'catalogHint'),
+      contextBudget,
       body,
     });
   }
@@ -2452,122 +2460,45 @@ try {
   }
 
   // --- Context budget report + guard (#99) ---
-  // Every tool keeps its always-loaded core — the built tool file, which no longer
-  // inlines the mode-gated fragments — under a documented line budget.
-  // A routine invocation that never reaches a deferred mode loads only this core.
-  // See docs/developer-guide/build-system.md ("Progressive Disclosure").
-  //
-  // Every file in src/tools is measured, and the reconciliation below keeps this
-  // map and the built tool set in exact correspondence, so a newly added tool
-  // cannot ship unmeasured. Each tool gets its own ratchet rather than a share
-  // of one allowance: its measured always-loaded size plus at most ten lines of
-  // headroom.
-  //
-  // Every number here is a **measured backlog, not a target**. It records what a
-  // tool's always-loaded core costs today; it is not a size anyone argued for.
-  // Each later conversion of an eager include to a `lazy-include` lowers the
-  // entries it touches, so a large number reads as work outstanding and never as
-  // room to fill.
-  //
-  // The allowance above the measured size is a flat line count rather than a
-  // percentage, deliberately: a percentage hands the largest tools the most room,
-  // which is exactly where unwatched growth is most expensive. Ten lines absorb
-  // the next justified rule, or the short pointer a deferral leaves behind,
-  // without hiding a regression. Ten is the **ceiling**, not a fixed offset —
-  // most entries carry less, because a deferral that shrank a tool was recorded
-  // by lowering its entry to the new measurement rather than by re-adding the
-  // full ten. Read an entry's actual headroom off the report below, never as
-  // "ten".
-  //
-  // Measure with `node build.mjs` and read the `Always-loaded core (lines/budget)`
-  // line it prints — that is the exact number this guard compares. It counts
-  // `split('\n').length`, one more than `wc -l` reports for a newline-terminated
-  // file, so a limit derived from `wc -l` is a line short of what it looks like.
-  //
-  // Entries generally run largest first by **measured** size, not by the limit
-  // written down. Later growth or a successful deferral can temporarily disturb
-  // that order; it is a reading aid and deliberately not asserted. Enforcing it
-  // would turn a successful deferral — a tool shrinking, which is the whole point
-  // of this map — into a build failure until someone re-sorts. Re-sort when
-  // convenient instead.
-  //
-  // Six entries below once carried a `+6 (goal-completion)` marker. That raise was the one case
-  // where this line metric and the real context cost point in opposite directions:
-  // `src/shared/goal-completion.md` stated its whole progress contract as a single
-  // 2 893-character Markdown line, which cost one line of budget and roughly 700 tokens in each of
-  // its ten eager consumers. Rewriting it as the invariants it guarantees dropped the fragment
-  // from 4 413 to 3 036 characters while adding six lines, so every eager consumer grew by exactly
-  // six lines and shrank in tokens. Each marker was that measured delta and nothing more, applied
-  // so the entry kept the headroom it had; the four other eager consumers (`merge-gate`, `docs`,
-  // `build`, `fix`) already had enough individual headroom and were left alone. A later
-  // re-measurement folded those six deltas into the fresh measurements below, so the markers are
-  // gone and every entry is again a measurement plus its headroom. Raise an entry this way only
-  // when a measurement points the same way.
-  const CONTEXT_BUDGET_LINES = {
-    iterate: 1847,
-    setup: 1583,
-    'apply-review': 1071,
-    'apply-issues': 994,
-    'merge-gate': 922,
-    cleanup: 870,
-    refactor: 979,
-    deliver: 813,
-    'plan-issue': 813,
-    'issue-buddy': 490,
-    'backlog-audit': 389,
-    review: 878,
-    plan: 795,
-    'apply-review-commit-mechanics': 673,
-    maintain: 716,
-    docs: 654,
-    build: 215,
-    apply: 557,
-    'apply-plan': 566,
-    investigate: 544,
-    retro: 215,
-    focus: 416,
-    fix: 572,
-    'plan-review': 521,
-    pr: 510,
-    'concept-review': 409,
-    'apply-review-remote': 382,
-    concept: 408,
-    commit: 235,
-    'open-plans': 146,
-    'pr-review': 38,
-    version: 38,
-  };
-
-  // Guard: the budget map and the built tool set cover each other exactly. A tool
-  // with no entry would ship unmeasured, and an entry naming no tool would make
-  // the report read as coverage it no longer has — the same two-sided
-  // reconciliation the next-steps exemptions and the deprecated aliases use.
+  // Each tool declares its budget as the last frontmatter line `contextBudget: <n>`; the rationale
+  // lives in docs/developer-guide/build-system.md ("Context budget").
   {
-    const budgeted = new Set(Object.keys(CONTEXT_BUDGET_LINES));
-    const unbudgeted = [...builtToolNames].filter((name) => !budgeted.has(name)).sort();
-    const stale = [...budgeted].filter((name) => !builtToolNames.has(name)).sort();
+    const unbudgeted = tools
+      .filter((t) => t.contextBudget === null)
+      .map((t) => t.name)
+      .sort();
     if (unbudgeted.length > 0) {
       throw new Error(
-        `context budget (#99): CONTEXT_BUDGET_LINES has no entry for ${unbudgeted.join(', ')} — ` +
-          'every src/tools/*.md is measured; take the built size from the "Always-loaded core ' +
-          '(lines/budget)" line this build prints (it counts one more line than wc -l) and add ' +
-          'up to ten lines of headroom',
+        `context budget (#99): no ${CONTEXT_BUDGET_FIELD} frontmatter line for ` +
+          `${unbudgeted.join(', ')} — every src/tools/*.md is measured; take the built size from ` +
+          'the "Always-loaded core (lines/budget)" line this build prints (it counts one more ' +
+          'line than wc -l), add up to ten lines of headroom, and write it as the last ' +
+          `frontmatter line \`${CONTEXT_BUDGET_FIELD}: <n>\` of src/tools/<name>.md`,
       );
     }
-    if (stale.length > 0) {
-      throw new Error(
-        `context budget (#99): CONTEXT_BUDGET_LINES names ${stale.join(', ')}, but there is no ` +
-          'matching src/tools/<name>.md',
-      );
+    // Only tools carry a budget: a declaration in the router, a worker or a shared fragment would
+    // read as a measured budget that no guard compares against.
+    for (const path of resolveContextBudgetNonToolSources(ROOT_DIR)) {
+      const content = normalizeLineEndings(readFileSync(join(ROOT_DIR, path), 'utf8'));
+      if (declaresContextBudget(extractFrontmatter(content))) {
+        throw new Error(
+          `context budget (#99): ${path} declares ${CONTEXT_BUDGET_FIELD} in its frontmatter, ` +
+            'but only src/tools/<name>.md carries a context budget; remove the line',
+        );
+      }
     }
   }
 
-  budgetReport = Object.entries(CONTEXT_BUDGET_LINES).map(([name, limit]) => {
-    const lines = [CLAUDE_SKILL_DIR, CODEX_SKILL_DIR, PORTABLE_SKILL_DIR].map(
-      (skillDir) => readFileSync(join(skillDir, 'tools', `${name}.md`), 'utf8').split('\n').length,
-    );
-    return { name, lines: Math.max(...lines), limit };
-  });
+  const compareCodeUnits = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  budgetReport = tools
+    .map(({ name, contextBudget: limit }) => {
+      const lines = [CLAUDE_SKILL_DIR, CODEX_SKILL_DIR, PORTABLE_SKILL_DIR].map(
+        (skillDir) =>
+          readFileSync(join(skillDir, 'tools', `${name}.md`), 'utf8').split('\n').length,
+      );
+      return { name, lines: Math.max(...lines), limit };
+    })
+    .sort((a, b) => b.limit - a.limit || compareCodeUnits(a.name, b.name));
   const overBudget = budgetReport.filter((r) => r.lines > r.limit);
   if (overBudget.length > 0) {
     throw new Error(

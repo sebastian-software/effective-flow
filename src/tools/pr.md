@@ -1,6 +1,7 @@
 ---
 description: "Creates or reuses a pull request on GitHub (via gh) or Forgejo (via tea) from a prepared committed branch. Detects the host from the origin URL, verifies the exact head and base, pushes the branch if needed, derives title and description for a new pull request, and reports the PR URL."
 catalogHint: "Opens a pull request from your branch (GitHub or Forgejo)."
+contextBudget: 510
 ---
 
 # Effective Flow PR

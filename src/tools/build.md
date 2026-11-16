@@ -1,6 +1,7 @@
 ---
 description: "Orchestrates the complete feature workflow: clarified plan, bounded build runner, guarded question relay and verified completion."
 catalogHint: "Fully implements a new feature – plan, code, tests, review, completion."
+contextBudget: 215
 ---
 
 # Effective Flow Build

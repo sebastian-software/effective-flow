@@ -1,6 +1,7 @@
 ---
 description: "Orchestrates the bugfix workflow: investigation, reproduction, gap analysis, diagnosis validation, routed minimal fix, regression tests, validation and completion."
 catalogHint: "Fixes a specific bug with a minimal, regression-guarded intervention."
+contextBudget: 572
 ---
 
 # Effective Flow Fix

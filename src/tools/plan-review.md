@@ -1,5 +1,6 @@
 ---
 description: "Internal instruction for the deep interactive review of one planning artifact: checks a local plan file or a delegated canonical issue-planning comment and maintains decisions directly in that same artifact."
+contextBudget: 521
 ---
 
 <!-- progress-context-receiver:1 -->

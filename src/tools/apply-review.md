@@ -1,5 +1,6 @@
 ---
 description: "Reads a review report file, evaluates developer notes, hands rejected findings as decision candidates to the central effective-product skill (ADR only for a permanent decision) and delegates implementable findings in parallel to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}} or {{SKILL:docs}}."
+contextBudget: 1071
 ---
 
 # Effective Flow Apply Review

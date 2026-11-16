@@ -14,7 +14,9 @@ import {
   FOCUS_DIGEST_FILE,
   FOCUS_DIGEST_PATHS,
   FOCUS_SOURCE_PATHS,
+  FOCUS_TOOL_SOURCE,
   decideFocusDigestGuard,
+  focusDigestBytes,
   formatDigests,
   gateRowStates,
   parseDigests,
@@ -156,6 +158,36 @@ test('matching digests pass, and the printed format parses back byte-identically
   assert.equal(verdict.verdict, 'match');
 });
 
+test('only a well-formed last-line contextBudget is left out of the focus.md source digest', () => {
+  const head = '---\ndescription: "Checks one session."\ncatalogHint: "Checks one session."\n';
+  const body = '---\n\n# Effective Flow Focus\n\ncontextBudget: 416\n';
+  const digest = (text, path = FOCUS_TOOL_SOURCE) =>
+    sha256(focusDigestBytes(path, Buffer.from(text, 'utf8')));
+  const unbudgeted = digest(head + body);
+  // A budget-only change, adding the line or raising it, keeps the digest of the file without it.
+  assert.equal(digest(`${head}contextBudget: 416\n${body}`), unbudgeted);
+  assert.equal(digest(`${head}contextBudget: 430\n${body}`), unbudgeted);
+  // Every other change still moves the digest.
+  for (const changed of [
+    `${head.replace('one session', 'two sessions')}contextBudget: 416\n${body}`,
+    `${head}contextBudget: 416\nmodel: "x"\n${body}`,
+    `${head}contextBudget: 416\n${body.replace('Focus', 'Fokus')}`,
+    `${head}contextBudget: 0416\n${body}`,
+    `${head}contextBudget:  416\n${body}`,
+    `${head}contextBudget: 416 \n${body}`,
+    `${head}contextBudget: 0\n${body}`,
+    `${head}contextBudget: "416"\n${body}`,
+  ]) {
+    assert.notEqual(digest(changed), unbudgeted, changed);
+  }
+  // The body line above is not frontmatter and stays; no other focus file is normalized.
+  const contract = `${head}contextBudget: 416\n${body}`;
+  assert.equal(digest(contract, FOCUS_SOURCE_PATHS[1]), sha256(Buffer.from(contract, 'utf8')));
+  for (const path of FOCUS_BUILT_PATHS) {
+    assert.equal(digest(contract, path), sha256(Buffer.from(contract, 'utf8')));
+  }
+});
+
 test('the real portable build matches the tracked focus digests', () => {
   const sandbox = mkdtempSync(join(tmpdir(), 'effective-flow-focus-digest-'));
   try {
@@ -174,7 +206,7 @@ test('the real portable build matches the tracked focus digests', () => {
     )['.'];
     const actual = {};
     for (const path of FOCUS_SOURCE_PATHS)
-      actual[path] = sha256(readFileSync(join(ROOT_DIR, path)));
+      actual[path] = sha256(focusDigestBytes(path, readFileSync(join(ROOT_DIR, path))));
     for (const path of FOCUS_BUILT_PATHS) {
       // Only the portable target is read, from the temporary output root, never the checkout's dist/.
       const bytes = readFileSync(join(sandbox, path));

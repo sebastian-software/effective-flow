@@ -1,6 +1,7 @@
 ---
 description: "Creates a complete but deliberately shallow concept for a new application or program in docs/concept/: problem, target users, use cases, first-version scope, non-goals and a coarse technical direction — without code and without a work breakdown. Offers the deep concept review that elaborates the concept and records the first planning steps."
 catalogHint: "Creates the concept for a new application – complete, but still on the surface."
+contextBudget: 408
 ---
 
 # Effective Flow Concept

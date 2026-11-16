@@ -1,6 +1,7 @@
 ---
 description: "Examines the current visible conversation, one supplied export, or one exactly identified and scoped native session through a suitable running-host reader for evidence-backed environmental improvements. Read-only, chat-only output. Never starts a follow-up workflow."
 catalogHint: "Reviews one session for supported improvements – current conversation, supplied export, or available native history."
+contextBudget: 215
 ---
 
 # Effective Flow Retro

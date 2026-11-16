@@ -22,6 +22,28 @@ export const FOCUS_BUILT_PATHS = Object.freeze([
 ]);
 export const FOCUS_DIGEST_PATHS = Object.freeze([...FOCUS_SOURCE_PATHS, ...FOCUS_BUILT_PATHS]);
 
+// The `contextBudget` frontmatter line of src/tools/focus.md is a build measurement (#99), not
+// qualified focus behavior: the build reads it and strips it, so the built focus file never carries
+// it. The source digest of that one file is therefore taken over its bytes without that line, and
+// only when the line has exactly the form `contextBudget: <positive integer>` and is the last
+// frontmatter line. Any other byte of the file, including every other frontmatter field, a budget
+// line elsewhere, or a malformed one, stays in the digest, so the guard still fails on it.
+export const FOCUS_TOOL_SOURCE = 'src/tools/focus.md';
+const CONTEXT_BUDGET_LINE = /^contextBudget: [1-9][0-9]*$/;
+
+// Returns the bytes the guard hashes for `path`: the file unchanged, except src/tools/focus.md with
+// a well-formed last-line `contextBudget` removed.
+export function focusDigestBytes(path, bytes) {
+  if (path !== FOCUS_TOOL_SOURCE) return bytes;
+  const text = Buffer.from(bytes).toString('utf8');
+  if (!text.startsWith('---\n')) return bytes;
+  const end = text.indexOf('\n---\n', 3);
+  if (end === -1) return bytes;
+  const lines = text.slice(4, end).split('\n');
+  if (lines.length < 2 || !CONTEXT_BUDGET_LINE.test(lines.at(-1))) return bytes;
+  return Buffer.from(`---\n${lines.slice(0, -1).join('\n')}${text.slice(end)}`, 'utf8');
+}
+
 export const REPORT_ONLY_ROW = 'T3 observed, report-only';
 export const FOLLOW_UP_ROW = 'T3 observed follow-up (schedule_task, T3/Codex)';
 

@@ -1,6 +1,7 @@
 ---
 description: "Lists all not-yet-implemented plan files from docs/plan/ with a short summary and checks the canonical plan-status marker."
 catalogHint: "Shows which plans are still open when you pick the thread back up."
+contextBudget: 146
 ---
 
 # Effective Flow Open Plans

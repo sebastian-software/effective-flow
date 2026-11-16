@@ -1,6 +1,7 @@
 ---
 description: "Completes issue planning on the resolved tracker target (GitHub/Forgejo or an external tool) with the same quality baseline and optional deep review as {{SKILL:plan}}, persists the parent plan idempotently in one marked comment, may create an exactly approved set of native child issues, and releases only issues without implementation-blocking open points. Generates no code and no plan file."
 catalogHint: "Completes the planning for issues that still need clarification."
+contextBudget: 813
 ---
 
 # Effective Flow Plan Issues

@@ -1,6 +1,7 @@
 ---
 description: "Orchestrates a comprehensive code review, or a deep interactive plan review when a plan-file argument is given: scope determination, design-decision detection, technical validation, domain review, and report generation."
 catalogHint: "Checks code for quality and findings – or, more deeply, an existing plan."
+contextBudget: 878
 ---
 
 # Effective Flow Review
