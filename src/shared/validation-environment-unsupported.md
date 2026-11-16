@@ -41,4 +41,7 @@ passed, full suite not executed (environment)", never "all passed".
 **Precedence.** A caller's handed environment rule, such as the merge gate's "on an environment
 signature, report the check and its diagnostic; no suite split, no base comparison, no rerun",
 governs the signature classes it names; the targeted runs above apply only where the caller hands
-no rule. The forbidden substitutes bind in every case.
+no rule. Under such a rule a preflight failure is reported in its terms: a failed check whose class
+the rule names is reported as that signature class with its diagnostic (`git-checkout` is "version
+control unavailable"), and any other preflight failure is `FAILED`, never `SKIPPED`. The forbidden
+substitutes bind in every case.

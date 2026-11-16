@@ -210,13 +210,26 @@ test('iterate continues in PR mode and stops in local mode, including its direct
     );
 });
 
+// Invariant: under a handed caller rule a preflight failure keeps that rule's terms: a class the
+// rule names is reported as that signature class, and every other preflight failure is FAILED,
+// never SKIPPED, so a skipped suite beside passing checks can never verify a merge-gate resolution.
+test('under a handed rule a preflight failure is a named signature class or FAILED, never SKIPPED', () => {
+  const precedence = prose(slice(unsupported, '**Precedence.**', null, 'rule'));
+  assert.match(
+    precedence,
+    /Under such a rule a preflight failure is reported in its terms: a failed check whose class the rule names is reported as that signature class with its diagnostic \(`git-checkout` is "version control unavailable"\), and any other preflight failure is `FAILED`, never `SKIPPED`\./,
+  );
+  assert.match(precedence, /the targeted runs above apply only where the caller hands no rule/);
+});
+
 // Invariant: a handed merge-gate environment rule and protected validation take precedence over
 // the targeted fallback and the lane decision.
 test('merge-gate rules and protected validation take precedence', () => {
   assert.match(
     unsupported,
-    /A caller's handed environment rule, such as the merge gate's "on an environment signature, report the check and its diagnostic; no suite split, no base comparison, no rerun", governs the signature classes it names; the targeted runs above apply only where the caller hands no rule\. The forbidden substitutes bind in every case\./,
+    /A caller's handed environment rule, such as the merge gate's "on an environment signature, report the check and its diagnostic; no suite split, no base comparison, no rerun", governs the signature classes it names; the targeted runs above apply only where the caller hands no rule\./,
   );
+  assert.match(unsupported, /The forbidden substitutes bind in every case\./);
   assert.match(
     continuation,
     /Under protected validation a local probe failure is recorded as `protected-validation` already requires\. It yields neither a stop nor a `limited` outcome, because remote full-preflight proof stays required\./,

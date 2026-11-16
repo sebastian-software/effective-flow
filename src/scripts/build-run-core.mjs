@@ -497,6 +497,22 @@ const ACCEPTANCE_GATES = ['independent-review', 'final-validation'];
 // An environment-limited validation is provisional evidence: only a recorded PR lane accepts it.
 const LIMITABLE_GATES = ['validation', 'final-validation'];
 const LANES = ['pr', 'merge', 'branch', 'in-place-no-delivery'];
+// The fixed completion options of `worktree-integration` (label or encoded value) a lane reply maps from.
+const LANE_ANSWERS = Object.freeze({
+  'Pull request': 'pr',
+  pr: 'pr',
+  Merge: 'merge',
+  merge: 'merge',
+  'Branch only': 'branch',
+  branch: 'branch',
+});
+// Closed lane keywords a source quote must name; `pr` only detects a quote naming another lane.
+const LANE_KEYWORDS = Object.freeze({
+  pr: /\bpull[- ]requests?\b|\bPRs?\b/,
+  merge: /\bmerg(?:e|es|ed|ing)\b/i,
+  branch: /\bbranch(?:es)?\b/i,
+  'in-place-no-delivery': /\bin[- ]place\b|\bwithout (?:a )?worktree\b/i,
+});
 const PREREQUISITE = /^[a-z0-9][a-z0-9._-]{0,63}$/;
 export function limitationText(prerequisite) {
   return `no local full-suite evidence (environment: ${prerequisite})`;
@@ -1376,6 +1392,29 @@ async function replyAuthority(context, value) {
   )
     fail('AUTHORITY_MISMATCH', 'mode decision lacks a consumed trusted delivery-choice reply');
 }
+// A lane reply answers the Phase 7 question: its checkpoint already held the limited
+// final-validation receipt for the same content, and its answer is the fixed option of this lane.
+async function laneReplyAuthority(context, value, lane) {
+  await replyAuthority(context, value);
+  const reply = await readRecord(context, value.reply);
+  const answer = reply.trustedUser.answer;
+  if (!Object.hasOwn(LANE_ANSWERS, answer) || LANE_ANSWERS[answer] !== lane)
+    fail('AUTHORITY_MISMATCH', 'the delivery-choice answer does not select this lane');
+  const q = await readRecord(context, reply.question);
+  const cp = await readRecord(context, q.checkpoint);
+  for (const ref of Array.isArray(cp.evidence) ? cp.evidence : []) {
+    if (
+      ref?.root !== context.root ||
+      typeof ref.path !== 'string' ||
+      path.dirname(path.join(ref.root, ref.path)) !== context.run ||
+      !path.basename(ref.path).startsWith('gate-final-validation-')
+    )
+      continue;
+    const receipt = await gateReceipt(context, ref);
+    if (receipt.outcome === 'limited' && same(receipt.snapshot, q.snapshot)) return;
+  }
+  fail('AUTHORITY_MISMATCH', 'the lane reply predates the limited final-validation receipt');
+}
 // The bound `delivery.completion` row; a missing row is the documented default `merge`.
 async function configuredCompletion(context) {
   let basis;
@@ -1416,8 +1455,14 @@ async function recordLane(context, input) {
     exact(value, ['kind']);
     if (!context.authorization.planContinuation || input.lane !== 'pr')
       fail('AUTHORITY_MISMATCH', 'only a verified plan continuation proves this pr lane');
-  } else if (value.kind === 'source') sourceAuthority(context, value);
-  else if (value.kind === 'reply') await replyAuthority(context, value);
+  } else if (value.kind === 'source') {
+    sourceAuthority(context, value);
+    // A quote is any substring, so it cannot prove affirmative intent: it binds only a stopping
+    // lane, and only the one lane it names.
+    const named = LANES.filter((lane) => LANE_KEYWORDS[lane].test(value.quote));
+    if (input.lane === 'pr' || named.length !== 1 || named[0] !== input.lane)
+      fail('AUTHORITY_MISMATCH', 'the source quote does not name exactly this stopping lane');
+  } else if (value.kind === 'reply') await laneReplyAuthority(context, value, input.lane);
   else fail('AUTHORITY_MISMATCH', 'the completion lane provenance is not closed');
   return record(context, 'lane.json', {
     ...base(context),

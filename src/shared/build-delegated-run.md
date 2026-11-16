@@ -336,7 +336,10 @@ severity. An admitted Critical residual also requires the existing explicit comp
    run through `question` with origin `delivery-choice`, and the answer is recorded in the
    "Determine mode" slot of `worktree-integration`, so handback step 3 does not ask again. A
    non-interactive run that cannot be answered counts as no-PR. For delegated execution record the
-   lane with `record-lane` and the `final-validation` gate as `limited`. The stop is a terminal
+   lane with `record-lane` after the `final-validation` gate's `limited` receipt, and ask any lane
+   question only from a checkpoint holding that receipt. `record-lane` binds a source quote only to
+   a stopping lane, so an explicit `pr` override that configuration does not name is confirmed
+   through that `delivery-choice` question. The stop is a terminal
    `ABORT` naming the prerequisite id: keep and report the owned worktree and branch, finalize the
    pilot record with `completionStatus: aborted`, and recover through a fresh run once the
    prerequisite holds. Under `Commit: caller-owned` decide nothing: return `DONE` with the

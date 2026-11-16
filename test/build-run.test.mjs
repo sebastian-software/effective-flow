@@ -960,14 +960,109 @@ test('a caller-asserted completion lane without closed provenance is refused', a
     error('AUTHORITY_MISMATCH'),
   );
   await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
-  // The exact original instruction quote is closed provenance, recorded once.
-  await recordLane(live, 'pr', {
+  // A real quote proves only the lane it names: "retain a delivery branch" never proves `pr`.
+  const branchQuote = {
     kind: 'source',
     source: 'instruction',
     index: null,
     quote: 'retain a delivery branch',
-  });
+  };
+  await assert.rejects(recordLane(live, 'pr', branchQuote), error('AUTHORITY_MISMATCH'));
+  await assert.rejects(recordLane(live, 'merge', branchQuote), error('AUTHORITY_MISMATCH'));
+  await assert.rejects(
+    recordLane(live, 'branch', { ...branchQuote, quote: 'Implement the approved Feature plan' }),
+    error('AUTHORITY_MISMATCH'),
+  );
+  await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
+  await recordLane(live, 'merge', { kind: 'configuration' });
   await assert.rejects(recordLane(live, 'merge', { kind: 'configuration' }), error('COLLISION'));
+});
+
+// Invariant: a source quote binds only the one stopping lane it names through the closed lane
+// keywords; a substring cannot prove affirmative intent, so no quote ever proves `pr`.
+test('a source quote naming its stopping lane is accepted and never unlocks a limited validation', async (t) => {
+  const fx = fixture(t);
+  fx.input.source.instruction =
+    'Implement the plan, open a pull request, and retain a delivery branch.';
+  const live = await limitedThroughFinalValidation(await setupDelivery(await start(fx)));
+  const quote = (text) => ({ kind: 'source', source: 'instruction', index: null, quote: text });
+  await assert.rejects(
+    recordLane(live, 'pr', quote('open a pull request')),
+    error('AUTHORITY_MISMATCH'),
+  );
+  await assert.rejects(
+    recordLane(live, 'branch', quote('open a pull request, and retain a delivery branch')),
+    error('AUTHORITY_MISMATCH'),
+  );
+  const lane = await recordLane(live, 'branch', quote('retain a delivery branch'));
+  const value = JSON.parse(readFileSync(path.join(lane.root, lane.path)));
+  assert.equal(value.lane, 'branch');
+  await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
+});
+
+// Phase 7's lane question, asked from a checkpoint that already holds the given gate receipts.
+async function laneQuestion(live, id, answer, evidence = live.gates) {
+  const completedGates = REQUIRED_GATES.slice(0, evidence.length);
+  const checkpoint = await live.call('checkpoint', {
+    ...live.common,
+    checkpointId: `lane-${id}`,
+    agentHandle: 'original-child-handle',
+    completed: completedGates,
+    pending: REQUIRED_GATES.slice(completedGates.length),
+    evidence,
+  });
+  const question = await live.call('question', {
+    ...live.common,
+    questionId: `lane-${id}`,
+    revision: 1,
+    origin: 'delivery-choice',
+    agentHandle: 'original-child-handle',
+    checkpoint,
+    question: 'How should the delivery branch be completed?',
+    options: ['Pull request', 'Merge', 'Branch only'],
+    responseType: 'option',
+  });
+  const reply = await live.call('reply', {
+    ...live.common,
+    question,
+    trustedUser: { ...trusted(question, answer), messageId: `message-${id}` },
+  });
+  const { resume } = await live.call('resume', {
+    ...live.common,
+    question,
+    reply,
+    agentHandle: 'original-child-handle',
+  });
+  return { kind: 'reply', reply, resume };
+}
+
+// Invariant: a lane reply proves only the lane its fixed completion option names, and only when it
+// answers the Phase 7 question asked after the limited final-validation receipt.
+test('a lane reply must answer the post-receipt question with this lane option', async (t) => {
+  const live = await limitedThroughFinalValidation(await setupDelivery(await start(fixture(t))));
+  const merge = await laneQuestion(live, 'merge', 'Merge');
+  await assert.rejects(recordLane(live, 'pr', merge), error('AUTHORITY_MISMATCH'));
+  const pr = await laneQuestion(live, 'pr', 'Pull request');
+  await recordLane(live, 'pr', pr);
+  const prepared = await prepareLimited(live);
+  const value = JSON.parse(readFileSync(path.join(prepared.root, prepared.path)));
+  assert.deepEqual(value.gates, live.acceptance);
+});
+
+test('a lane reply that predates the limited final-validation receipt is refused', async (t) => {
+  const started = await setupDelivery(await start(fixture(t)));
+  const early = await laneQuestion(started, 'early', 'Pull request', []);
+  const live = await limitedThroughFinalValidation(started);
+  await assert.rejects(recordLane(live, 'pr', early), error('AUTHORITY_MISMATCH'));
+  // A checkpoint holding only the provisional Phase 5 validation is still too early.
+  const phase5 = await laneQuestion(
+    live,
+    'phase5',
+    'Pull request',
+    live.gates.slice(0, REQUIRED_GATES.indexOf('validation') + 1),
+  );
+  await assert.rejects(recordLane(live, 'pr', phase5), error('AUTHORITY_MISMATCH'));
+  await assert.rejects(prepareLimited(live), error('INCOMPLETE_GATES'));
 });
 
 // Invariant: a fully passing final validation supersedes a provisional Phase 5 limited

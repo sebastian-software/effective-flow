@@ -239,7 +239,9 @@ order above (scoped instructions, CI workflows and task runners, manifests, neig
   `full`. Under `full`, or with no mode handed, the rules above apply unchanged.
 - **On an environment signature, report the check and its diagnostic; no suite split, no base
   comparison, no rerun.** An environment signature is one of the signature classes the gate hands
-  you. A timeout of your own host tool, or one you cannot attribute, is none of these.
+  you. A test entrypoint stopped at its own environment preflight follows the gate's preflight
+  mapping: the class it names, else `FAILED`, never skipped. A timeout of your own host tool, or one
+  you cannot attribute, is none of these.
 - **Never substitute for a check that cannot run here:** never run the suite, or a
   suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
   or one over a suite-covering directory or glob; never neutralize the preflight by editing the

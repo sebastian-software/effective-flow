@@ -180,6 +180,30 @@ test('an environment signature under full stops before the push', () => {
   );
 });
 
+// Invariant: merge-gate keeps its four signature classes; a stopped preflight is a signature only
+// as `git-checkout` (version control unavailable), and any other failed preflight check is a failing
+// check reported FAILED, never skipped, so it cannot leave "every executed check passed" true.
+test('a non-Git preflight failure is a failing check, never a skipped one', () => {
+  assert.match(
+    modeSection,
+    /\*\*Preflight mapping:\*\* a test entrypoint stopped at its own environment preflight carries a signature only where its failed check is `git-checkout`, which is version control unavailable; any other failed preflight check, such as loopback, sandbox or temporary space, is a failing check, reported `FAILED` and never skipped, so it stops the round as any failing verdict does\./,
+  );
+  assert.match(
+    resolverHandoff,
+    /with the signature classes and the preflight mapping of "Conflict validation mode"/,
+  );
+  assert.match(validatorHandoff, /with the same signature classes and preflight mapping/);
+  assert.match(
+    resolverValidation,
+    /A test entrypoint stopped at its own environment preflight follows the gate's preflight mapping: the class it names, else `FAILED`, never skipped\./,
+  );
+  // The validator reaches the same rule through its environment fragment's precedence.
+  assert.match(
+    prose(readSource('shared', 'validation-environment-unsupported.md')),
+    /any other preflight failure is `FAILED`, never `SKIPPED`/,
+  );
+});
+
 // Invariant: a host-tool timeout or an unattributable timeout is no environment signature, so
 // repositories with long suites keep today's path rather than stopping.
 test('a host-tool timeout is not a stop signature', () => {
