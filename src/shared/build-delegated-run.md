@@ -221,6 +221,8 @@ Start in parallel if possible:
 ### Phase 5: Validation
 
 1. Render the diff baseline and hand the path list to `{{AGENT:code-validator}}` per "Diff baseline".
+   Under `Validation: targeted` (`caller-owned-commit`) that list is its targeted scope, here and in
+   Phase 7's final check.
    <!-- spawn-site:build-delegated-run/validation -->
    If the selected remote environment is the protected native macOS bridge, load the protected-validation
    contract and enforce its previously qualified executor lane, fresh full-candidate proof and same-validator

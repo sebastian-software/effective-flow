@@ -29,7 +29,9 @@
 // `conflict-validation` applies the same base-blob guard to the single row
 // `mergeGate.conflictValidation`, so a pull-request head cannot lower its own conflict validation
 // to `quick`; its `ceiling` is `quick` only for a valid `quick` the base confirms or hidden mode
-// holds.
+// holds. `review-fix-validation` applies the identical decision to the single row
+// `iterate.reviewFixValidation` for merge-gate-delegated review-fix rounds; both operations share
+// one implementation, and each guards only its own fixed key.
 
 import { spawn } from 'node:child_process';
 import nodeFs from 'node:fs/promises';
@@ -40,6 +42,7 @@ export const CONFIG_RESOLVE_OPERATIONS = Object.freeze([
   'resolve',
   'no-ci-policy',
   'conflict-validation',
+  'review-fix-validation',
 ]);
 
 export const CONFIG_RESOLVE_ERROR_CODES = Object.freeze([
@@ -1459,7 +1462,9 @@ const NO_CI_POLICY_PREFIX = 'mergeGate.noCiPolicy.';
 const NO_CI_BASES_KEY = 'mergeGate.noCiPolicy.bases';
 const NO_CI_UNATTENDED_KEY = 'mergeGate.noCiPolicy.unattended';
 const CONFLICT_VALIDATION_KEY = 'mergeGate.conflictValidation';
-const CONFLICT_VALIDATION_VALUES = Object.freeze(['full', 'quick']);
+const REVIEW_FIX_VALIDATION_KEY = 'iterate.reviewFixValidation';
+// The values of both validation-mode keys; any other value is invalid and keeps the ceiling `full`.
+const VALIDATION_MODE_VALUES = Object.freeze(['full', 'quick']);
 const ORIGIN_REMOTE_PREFIX = 'refs/remotes/origin/';
 const OBJECT_ID = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/;
 // The read-only git vectors of the base-branch read; each call appends exactly one operand: the
@@ -1475,8 +1480,8 @@ const lsTreeArgs = ['ls-tree', '-z', '--full-tree'];
 const REGULAR_FILE_MODES = Object.freeze(['100644', '100755']);
 const TREE_MODE = '040000';
 
-// `data.noCiPolicy.baseComparison` and `data.conflictValidation.baseComparison`: how the
-// base-branch rows compare with the working rows.
+// `data.noCiPolicy.baseComparison`, `data.conflictValidation.baseComparison` and
+// `data.reviewFixValidation.baseComparison`: how the base-branch rows compare with the working rows.
 export const NO_CI_BASE_COMPARISONS = Object.freeze([
   'equal',
   'mismatch',
@@ -1510,6 +1515,9 @@ export const CONFLICT_VALIDATION_REASONS = Object.freeze([
   'confirmed',
 ]);
 
+// `data.reviewFixValidation.reason`: the same list, decided by the same shared implementation.
+export const REVIEW_FIX_VALIDATION_REASONS = CONFLICT_VALIDATION_REASONS;
+
 const COMPARISON_REASONS = Object.freeze({
   missing: 'base-blob-missing',
   unreadable: 'base-blob-unreadable',
@@ -1535,6 +1543,7 @@ export function isSafeBaseRef(value) {
 const GUARDED_ROWS = Object.freeze({
   'no-ci-policy': (key) => key.startsWith(NO_CI_POLICY_PREFIX),
   'conflict-validation': (key) => key === CONFLICT_VALIDATION_KEY,
+  'review-fix-validation': (key) => key === REVIEW_FIX_VALIDATION_KEY,
 });
 
 // The comparable form of one guarded row set: one `[key, raw, decoded]` entry per row the guard
@@ -1875,30 +1884,43 @@ export async function resolveNoCiPolicy(input, deps = {}) {
   };
 }
 
-// Decides the conflict-validation ceiling for one base branch. `value` is the working row's value
-// when it is `full` or `quick`, else null with the key in `invalid`; the caller (merge-gate) still
-// owns CI detection, workflow integrity and the effective mode below this ceiling.
-export async function resolveConflictValidation(input, deps = {}) {
+// The validation-mode ceilings, one fixed entry per operation: the single guarded key and the
+// `data` field that reports it. The key is never supplied by the caller.
+const VALIDATION_CEILINGS = Object.freeze({
+  'conflict-validation': Object.freeze({
+    key: CONFLICT_VALIDATION_KEY,
+    field: 'conflictValidation',
+  }),
+  'review-fix-validation': Object.freeze({
+    key: REVIEW_FIX_VALIDATION_KEY,
+    field: 'reviewFixValidation',
+  }),
+});
+
+// Decides one validation-mode ceiling for one base branch; `operation` selects the fixed key and
+// its `GUARDED_ROWS` entry. `value` is the working row's value when it is `full` or `quick`, else
+// null with the key in `invalid`; the caller (merge-gate) still owns CI detection, workflow
+// integrity and the effective mode below this ceiling.
+async function resolveValidationCeiling(operation, input, deps) {
+  const { key, field } = VALIDATION_CEILINGS[operation];
   const validated = validateBaseRefInput(input);
   const { baseRef } = input;
   const resolution = await resolveValidated(validated, deps);
   const { values } = resolution.data;
 
-  const entry = Object.hasOwn(values, CONFLICT_VALIDATION_KEY)
-    ? values[CONFLICT_VALIDATION_KEY]
-    : null;
+  const entry = Object.hasOwn(values, key) ? values[key] : null;
   const configured = entry !== null;
   const valid =
     entry?.state === 'set' &&
     typeof entry.value === 'string' &&
-    CONFLICT_VALIDATION_VALUES.includes(entry.value);
-  const invalid = configured && !valid ? [CONFLICT_VALIDATION_KEY] : [];
+    VALIDATION_MODE_VALUES.includes(entry.value);
+  const invalid = configured && !valid ? [key] : [];
 
   let baseComparison = 'not-applicable';
   if (configured) {
     baseComparison = resolution.hidden
       ? 'hidden-self'
-      : await compareWithBase(resolution, baseRef, 'conflict-validation');
+      : await compareWithBase(resolution, baseRef, operation);
   }
 
   let reason = 'confirmed';
@@ -1914,7 +1936,7 @@ export async function resolveConflictValidation(input, deps = {}) {
     checkoutRoot,
     visibility,
     source,
-    conflictValidation: {
+    [field]: {
       configured,
       value,
       invalid,
@@ -1927,6 +1949,17 @@ export async function resolveConflictValidation(input, deps = {}) {
   };
 }
 
+// Decides the conflict-validation ceiling (`mergeGate.conflictValidation`) for one base branch.
+export async function resolveConflictValidation(input, deps = {}) {
+  return resolveValidationCeiling('conflict-validation', input, deps);
+}
+
+// Decides the review-fix validation ceiling (`iterate.reviewFixValidation`) for one base branch;
+// merge-gate reads it before it delegates a review-fix round to iterate.
+export async function resolveReviewFixValidation(input, deps = {}) {
+  return resolveValidationCeiling('review-fix-validation', input, deps);
+}
+
 // ---------------------------------------------------------------------------------------------
 // Envelopes
 
@@ -1934,6 +1967,7 @@ const HANDLERS = Object.freeze({
   resolve: resolveConfiguration,
   'no-ci-policy': resolveNoCiPolicy,
   'conflict-validation': resolveConflictValidation,
+  'review-fix-validation': resolveReviewFixValidation,
 });
 
 export async function executeOperation(operation, input = {}, deps = {}) {

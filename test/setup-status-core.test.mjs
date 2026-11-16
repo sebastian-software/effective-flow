@@ -32,6 +32,7 @@ import {
   RELEASE_REQUEST_HEADERS,
   REMEDIATIONS,
   REMEDIATION_COVERAGE,
+  REVIEW_FIX_VALIDATION_TEXT,
   SETUP_FORMS,
   compareSemver,
   domainOwnersFrom,
@@ -1647,6 +1648,144 @@ test('conflict validation: no proposal for quick, an invalid value, a non-GitHub
   const outside = await status(t, plain);
   assert.equal(outside.conflictValidation.state, 'not-applicable');
   assert.equal(outside.conflictValidation.reason, 'not-a-git-repository');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Review-fix validation proposal
+
+// Invariant (issue #673, "Reuse, setup, tests"): setup proposes `iterate.reviewFixValidation:
+// quick` under exactly the CI-detection precondition of `mergeGate.conflictValidation: quick`, from
+// one shared CI observation, and always states the required-check condition, because
+// `requireAllChecks: true` alone never makes a review-fix round eligible.
+test('review-fix validation: the sibling proposal shares the detection and always names required checks', async (t) => {
+  const { root } = ciRepository(t, { rows: { 'plan.dir': 'docs/plan' } });
+  const commit = git(root, 'rev-parse', 'refs/remotes/origin/main');
+  const real = createProcessRunner();
+  const calls = [];
+  const runner = (request) => {
+    calls.push(request.args);
+    return real(request);
+  };
+  const data = await status(t, root, { runner });
+  const conflict = data.conflictValidation;
+  const proposal = data.reviewFixValidation;
+  assert.equal(proposal.state, 'proposed', JSON.stringify(proposal));
+  assert.deepEqual(Object.keys(proposal), Object.keys(conflict));
+  const { proposal: text, ...fields } = proposal;
+  const { proposal: _conflictText, ...conflictFields } = conflict;
+  assert.deepEqual(fields, conflictFields, 'the same evidence for both keys');
+  assert.equal(proposal.baseCommit, commit);
+  assert.equal(proposal.requireAllChecks, true);
+  assert.equal(proposal.setupFixable, false);
+  assert.equal(proposal.setupForm, null);
+  assert.ok(text.startsWith('`iterate.reviewFixValidation` is `full` (the default), and CI on'));
+  assert.ok(text.includes('job `Unit tests` in `.github/workflows/ci.yml` runs `pnpm test`'));
+  assert.ok(text.includes(REVIEW_FIX_VALIDATION_TEXT.localOnly));
+  assert.ok(text.includes(REVIEW_FIX_VALIDATION_TEXT.requiredCheck));
+  assert.ok(text.includes(REVIEW_FIX_VALIDATION_TEXT.accept));
+  assert.match(
+    REVIEW_FIX_VALIDATION_TEXT.accept,
+    /`effective-flow setup set iterate\.reviewFixValidation to quick`/,
+  );
+  assert.ok(!text.includes(CONFLICT_VALIDATION_TEXT.localOnly));
+  assert.ok(!conflict.proposal.includes('iterate.reviewFixValidation'));
+  // One CI observation serves both proposals.
+  const originReads = calls.filter(
+    (args) => args.includes('remote') && args.includes('get-url') && args.includes('origin'),
+  );
+  assert.equal(originReads.length, 1);
+});
+
+// Invariant: each proposal reads only its own key, so a configured or invalid value of one key
+// changes only that key's result.
+test('review-fix validation: quick-configured and invalid-value read iterate.reviewFixValidation', async (t) => {
+  const cases = [
+    [{ 'iterate.reviewFixValidation': 'quick' }, ['quick-configured', null], ['proposed', null]],
+    [{ 'iterate.reviewFixValidation': 'off' }, ['invalid-value', null], ['proposed', null]],
+    [{ 'mergeGate.conflictValidation': 'quick' }, ['proposed', null], ['quick-configured', null]],
+    [{ 'iterate.reviewFixValidation': 'full' }, ['proposed', 'full'], ['proposed', null]],
+  ];
+  for (const [rows, [reviewFix, reviewFixValue], [conflict]] of cases) {
+    const { root } = ciRepository(t, { rows });
+    const data = await status(t, root);
+    const label = JSON.stringify(rows);
+    const expect = (result, expected) =>
+      expected === 'proposed'
+        ? assert.equal(result.state, 'proposed', label)
+        : assert.deepEqual([result.state, result.reason], ['not-proposed', expected], label);
+    expect(data.reviewFixValidation, reviewFix);
+    expect(data.conflictValidation, conflict);
+    if (reviewFix === 'proposed') {
+      assert.equal(data.reviewFixValidation.value, reviewFixValue, label);
+      assert.equal(
+        /\(the default\)/.test(data.reviewFixValidation.proposal),
+        reviewFixValue === null,
+        label,
+      );
+    }
+  }
+});
+
+test('review-fix validation: the shared precondition withholds both proposals alike', async (t) => {
+  const cases = [
+    ['no-origin-remote', { remote: null }],
+    ['not-github', { remote: 'https://codeberg.org/acme/widget.git' }],
+    [
+      'ci-undetected',
+      {
+        files: {
+          'package.json': PNPM_TEST_MANIFEST,
+          '.github/workflows/ci.yml': TEST_WORKFLOW.replace(
+            'run: pnpm test',
+            'run: pnpm test || true',
+          ),
+        },
+      },
+    ],
+  ];
+  for (const [reason, options] of cases) {
+    const { root } = ciRepository(t, options);
+    const { conflictValidation, reviewFixValidation } = await status(t, root);
+    assert.equal(reviewFixValidation.state, 'not-proposed', reason);
+    assert.equal(reviewFixValidation.reason, reason, JSON.stringify(reviewFixValidation));
+    assert.equal(reviewFixValidation.proposal, null, reason);
+    assert.deepEqual(reviewFixValidation, conflictValidation, reason);
+  }
+  const { root } = ciRepository(t);
+  git(root, 'update-ref', '-d', 'refs/remotes/origin/main');
+  const { reviewFixValidation: missing } = await status(t, root);
+  assert.equal(missing.reason, 'base-ref-missing');
+
+  const outside = await status(t, tempDir(t));
+  assert.equal(outside.reviewFixValidation.state, 'not-applicable');
+  assert.equal(outside.reviewFixValidation.reason, 'not-a-git-repository');
+});
+
+// Invariant: the failure results of the shared observation, and an unresolved configuration, come
+// out the same for both keys, so neither proposal can survive a check the other could not make.
+test('review-fix validation: configuration, Git and unsafe-base failures match the conflict result', async (t) => {
+  const real = createProcessRunner();
+  const failing = (match) => (request) =>
+    match(request.args)
+      ? Promise.resolve({ status: 128, stdout: '', stderr: 'fatal: broken\n' })
+      : real(request);
+  const cases = [
+    ['configuration-unresolved', {}, failing((args) => args.includes('worktree'))],
+    ['git-failed', {}, failing((args) => args.includes('remote') && args.includes('get-url'))],
+    ['unsafe-base-branch', { 'delivery.baseBranch': 'origin/bad..ref' }, undefined],
+  ];
+  for (const [reason, rows, runner] of cases) {
+    const { root } = ciRepository(t, { rows });
+    const { conflictValidation, reviewFixValidation } = await status(
+      t,
+      root,
+      runner ? { runner } : {},
+    );
+    assert.equal(reviewFixValidation.state, 'could-not-check', reason);
+    assert.equal(reviewFixValidation.reason, reason, JSON.stringify(reviewFixValidation));
+    assert.equal(reviewFixValidation.proposal, null, reason);
+    assert.deepEqual(reviewFixValidation, conflictValidation, reason);
+  }
 });
 
 // ---------------------------------------------------------------------------------------------

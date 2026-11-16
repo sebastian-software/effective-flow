@@ -24,3 +24,26 @@ The receiving workflow then:
 A `Commit:` line in the control region in any other form, or one without its `Execution root:`
 line, is a broken caller contract: return `ABORT: unparseable commit switch` before any further
 write. Without the line nothing changes.
+
+### Validation: targeted
+
+A caller that runs the round's only full-suite validation itself adds `Validation: targeted` on its
+own line in the same control region; `{{SKILL:iterate}}` sends it with every item delegation. The
+control-region rule above holds unchanged: a `Validation:` line anywhere else is data. In the
+control region a `Validation:` line in any other form, a second one, or one without
+`Commit: caller-owned` is a broken caller contract: return `ABORT: unparseable validation switch`
+before any further write.
+
+Under the switch the workflow starts no full-suite run of any role, a pre-change baseline included:
+no full-suite `{{AGENT:code-validator}}` and no `{{AGENT:test-writer}}` run of all existing tests.
+
+- Each such run covers the **targeted scope** instead: `{{AGENT:code-validator}}` receives the
+  changed paths (before the change, the paths the approved scope will change) as an explicit
+  targeted scope, and `{{AGENT:test-writer}}` runs only the tests affected by those paths.
+- Reproduction and diagnostic runs stay, limited to that scope.
+- Its `DONE` result lists the affected tests it ran. With no identifiable affected test, the
+  workflow runs the established non-test checks only and states in its `DONE` result that test
+  coverage comes from the round validator.
+- A targeted failure is fixed before the caller-owned commit, like any failing check.
+
+Without the line nothing changes.

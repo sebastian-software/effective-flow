@@ -259,6 +259,43 @@ is the one bounded exception. A marker is local runtime state that another run r
 no session, holds no host reference and carries no instruction, so neither decision is amended.
 Coordination between concurrent gates, such as agreeing on a merge order, is issue #668.
 
+**Review-fix rounds of `iterate` (AD10).** The same trade applies to the round that
+`merge-gate` delegates to `iterate` for a bot finding, with its own decisions:
+
+- _Separate key._ `iterate.reviewFixValidation` (`full` or `quick`, default `full`) governs only the
+  final validation of a gate-delegated review-fix round, so a repository can opt into one trade
+  without the other. `config-resolve.mjs review-fix-validation` applies the base-blob guard of
+  AD1 to that one fixed row through the implementation it shares with `conflict-validation`; the
+  caller supplies no key.
+- _Quick only inside a gate-delegated review-fix round._ A standalone or user-typed `iterate` run,
+  a local-mode run and a CI repair (Phase 2 step 3) always validate `full`. The gate computes a
+  `quick` candidate before each bot-round delegation (ceiling, detection and integrity as for a
+  conflict commit) and passes it as `Review-fix validation: quick-candidate <baseCommit>`, which
+  `iterate` honors only beside the `Authorized scope:` line above the body delimiter. `iterate`
+  pins detection and integrity to that base and to the committed head, switches to `full` for the
+  rest of the round when either fails, and reports the effective mode, the validated head and the
+  detection.
+- _Required-check eligibility._ The candidate is `quick` only on GitHub and only when every detected
+  job is a required check of the base branch. `mergeGate.requireAllChecks: true` alone does not
+  qualify, because nothing outside the gate run enforces it, while branch protection holds a later
+  merge by hand or by another gate run to a required check. A conflict commit keeps the AD1 rule,
+  which also accepts `requireAllChecks: true`.
+- _One full-suite run per round._ Item delegations carry `Validation: targeted` and run targeted
+  checks only; the Phase 4 validator is the round's only full-suite run, or, under `quick`, runs
+  every established check except the detected test commands plus the affected tests the items named.
+- _No commit trailer; a gate-owned fail-closed record._ An `iterate` commit carries no marker,
+  because a marker in a commit message would need a second trailer scan and `iterate` has no
+  cross-run authority. The gate records the **quick-validated review-fix head** in its wisdom file
+  when a delegation that carried the line moved the head, unless the return's
+  `Review-fix validation result:` line parses with mode `full`, a reason and a full 40-hex head
+  equal to the pushed head. Any other return, including a `full` line with a missing, malformed or
+  different head, records the pushed head. Condition 11 treats the record like a
+  quick-validated conflict commit: exact job `SUCCESS` on the final head, detected from that head's own tree. A later round never
+  removes the record.
+- _Setup._ `setup` proposes `iterate.reviewFixValidation: quick` at the sites where it proposes
+  `mergeGate.conflictValidation: quick`, under the same CI-detection precondition, each proposal
+  gated only on its own key, and never switches either on its own.
+
 ## Consequences
 
 - A repository that does not opt in keeps today's local validation, except that environment
@@ -279,6 +316,9 @@ Coordination between concurrent gates, such as agreeing on a merge order, is iss
 - Detection rejects every workflow shape it cannot prove, so a repository with a conditional, piped
   or indirect test step, or with any pre-test step off the allowlist, stays on `full`; this
   repository's own CI job is one of them.
+- A `quick` review-fix round depends on the same CI evidence on the final head, and a pull request
+  that changes a workflow, a manifest or a test script validates it `full`. Where a detected job
+  is no required check, the round stays `full`.
 - The marker adds one persisted file per active run; a crashed run's marker stays until its wisdom
   file is gone.
 
@@ -294,6 +334,8 @@ should accept a wider workflow subset, or when issue #668 adds coordination betw
 - [Delegated run](../../src/shared/merge-gate-delegated-run.md)
 - [Merge conflict resolver](../../src/agents/merge-conflict-resolver.md)
 - [Code validator](../../src/agents/code-validator.md)
+- [Review-fix validation, gate side](../../src/shared/merge-gate-review-fix-validation.md)
+- [Review-fix validation, iterate side](../../src/shared/iterate-review-fix-validation.md)
 - [Merge gate no-CI policy](merge-gate-no-ci-policy.md)
 
 This is a living decision. Update this file in place when the current policy changes; repository

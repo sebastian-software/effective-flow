@@ -4,11 +4,13 @@
 // other's. A function, a path or a document template moved here would be unhashed behaviour.
 export const SCENARIOS = Object.freeze([
   'duplicated-control-line-aborts',
+  'duplicated-review-fix-validation-aborts',
   'empty-selection-clean-done',
   'manifest-span-mismatch-aborts',
   'relayed-run-state-clean-done',
   'review-in-flight-aborts',
   'unparseable-authorized-scope-aborts',
   'unparseable-item-filter-aborts',
+  'unparseable-review-fix-validation-aborts',
   'unparseable-run-state-aborts',
 ]);

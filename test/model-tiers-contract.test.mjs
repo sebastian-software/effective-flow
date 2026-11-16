@@ -517,6 +517,16 @@ const SPAWN_MENTION_ALLOWLIST = [
     'receiver parsing policy; item-delegation owns spawning',
   ],
   [
+    'shared/caller-owned-commit.md',
+    'Under the switch the workflow starts no full-suite run of any role',
+    'Validation: targeted scope rule for the validator and test-writer runs the item workflows start at their own marked sites; starts nothing',
+  ],
+  [
+    'shared/caller-owned-commit.md',
+    '- Each such run covers the **targeted scope** instead',
+    'Validation: targeted scope handoff for the validator and test-writer runs the item workflows start at their own marked sites; starts nothing',
+  ],
+  [
     'tools/iterate.md',
     'Every one of those delegations carries the literal line',
     'existing item dispatch controls; registered item-delegation owns spawning',

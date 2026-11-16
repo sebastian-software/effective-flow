@@ -273,9 +273,12 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
-    // The merge gate's conflict-commit scope replaces the validator's `quick` mapping, and an
-    // environment signature is reported without a suite split, base comparison or rerun; both
-    // paragraphs close the validation-mode section before the minimal fallback.
+    // An item workflow's targeted scope replaces the validator's mode mapping, the merge gate's
+    // conflict-commit scope and iterate's review-fix scope form one CI-backed quick scope that
+    // replaces the `quick` mapping, and an environment signature is reported without a suite split,
+    // base comparison or rerun; the paragraphs close the validation-mode section before the minimal
+    // fallback. The id predates the targeted and review-fix scopes, which it now covers as well; it
+    // stays unchanged because the comparison's pinned stdout names it.
     Object.freeze({
       id: 'code-validator-conflict-commit-scope',
       edits: Object.freeze([
@@ -283,12 +286,17 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
           from: 'subcommands merely to fill a report.\n\n## Minimal fallback\n',
           to:
             'subcommands merely to fill a report.\n\n' +
-            'A **conflict-commit scope** from the merge gate replaces the `quick` mapping: skip only the\n' +
-            'named excluded test command, by normalized script identity, as `SKIPPED (covered by CI)`; run every\n' +
-            'other established check for the assigned buckets; replace a mandated combined gate that contains\n' +
-            'the excluded command by its remaining established subcommands. Where those cannot run separately,\n' +
-            'run `full` and report why. Where the scope names several excluded test commands, this holds for\n' +
-            'each.\n\n' +
+            'A **targeted scope** from an item workflow under `Validation: targeted` replaces the mode mapping:\n' +
+            'run the established non-test checks for the assigned paths and only the tests affected by them,\n' +
+            'never a whole-suite command or a combined gate that contains one. With no identifiable affected\n' +
+            'test, report the test surface as `SKIPPED (coverage from the round validator)`.\n\n' +
+            'A **conflict-commit scope** from the merge gate and a **review-fix scope** from `iterate` Phase 4\n' +
+            'are one CI-backed quick scope, which replaces the `quick` mapping: skip only the named excluded test\n' +
+            'command, by normalized script identity, as `SKIPPED (covered by CI)`; run every other established\n' +
+            'check for the assigned buckets, plus the affected tests the caller names; replace a mandated\n' +
+            'combined gate that contains the excluded command by its remaining established subcommands. Where\n' +
+            'those cannot run separately, run `full` and report why. Where the scope names several excluded test\n' +
+            "commands, as the caller's detection `data.testCommands` does, this holds for each.\n\n" +
             '**On an environment signature, report the check and its diagnostic; no suite split, no base\n' +
             'comparison, no rerun.** An environment signature is one of the signature classes the handoff names;\n' +
             "report it in the owner's result states. A timeout of your own host tool, or one you cannot\n" +

@@ -1,8 +1,8 @@
 // Sender-side builder and validator for the message `merge-gate` hands to `iterate`.
 //
 // `build` turns structured input into the canonical envelope (six control lines, the optional
-// progress, authorized-scope and approval lines, an optional CI-repair instruction, the boundary
-// token, the manifest, the delimiter, the body spans), checks
+// progress, authorized-scope, review-fix validation and approval lines, an optional CI-repair
+// instruction, the boundary token, the manifest, the delimiter, the body spans), checks
 // its own output with the same structural validator `validate` uses, and writes it to a fresh file
 // below `<cwd>/.effective-flow/merge-gate/` together with a snapshot of the expected structure.
 // `validate` re-reads that file, binds it to the digest `build` returned, and re-runs the text-only
@@ -35,6 +35,16 @@ const SCOPE_LINE_KEYS = Object.freeze(['version', 'scope', 'freeText', 'correcti
 const SCOPE_RECORD_KEYS = Object.freeze(['mergeBase', 'head', 'paths']);
 const OBJECT_ID_FORMAT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const MINTED_IDENTIFIER = /^[A-Z0-9]{32,}$/;
+// The optional review-fix validation line, `Review-fix validation: quick-candidate <baseCommit>`:
+// merge-gate's quick candidate for one review-fix round, naming the full lowercase 40-hex base
+// commit its CI detection used. It is never a required control keyword and is version-neutral like
+// the scope line. It travels only beside the authorized-scope line and never in a CI repair (a
+// delegation with an instruction); `iterate.md` owns its meaning.
+export const REVIEW_FIX_VALIDATION_KEYWORD = 'Review-fix validation';
+export const REVIEW_FIX_QUICK_CANDIDATE = 'quick-candidate';
+const REVIEW_FIX_VALIDATION_KEYS = Object.freeze(['baseCommit']);
+const BASE_COMMIT_FORMAT = /^[0-9a-f]{40}$/;
+const REVIEW_FIX_VALIDATION_LINE = /^quick-candidate ([0-9a-f]{40})$/;
 
 export const DELEGATION_ENVELOPE_OPERATIONS = Object.freeze(['build', 'validate']);
 
@@ -93,6 +103,7 @@ export const INSTRUCTION_FORBIDDEN_PREFIXES = Object.freeze([
   'Language context:',
   'Progress context:',
   'Authorized scope:',
+  'Review-fix validation:',
   'Approved outcomes:',
   'Item:',
   'Thread item:',
@@ -400,6 +411,28 @@ function requireCanonicalScopeLine(text) {
   return line;
 }
 
+// The review-fix quick candidate: exactly `baseCommit`, a full lowercase 40-hex commit SHA.
+function normalizeReviewFixValidation(value) {
+  requireObject(value, 'reviewFixValidation');
+  requireExactKeys(value, REVIEW_FIX_VALIDATION_KEYS, 'reviewFixValidation');
+  if (typeof value.baseCommit !== 'string' || !BASE_COMMIT_FORMAT.test(value.baseCommit)) {
+    fail('INVALID_PAYLOAD', 'reviewFixValidation.baseCommit must be a full lowercase 40-hex SHA');
+  }
+  return { baseCommit: value.baseCommit };
+}
+
+// The line value for one candidate; its only accepted form.
+export function reviewFixValidationValue({ baseCommit }) {
+  return `${REVIEW_FIX_QUICK_CANDIDATE} ${baseCommit}`;
+}
+
+// Parses one review-fix validation line value strictly; returns its base commit, or null.
+export function parseReviewFixValidation(value) {
+  if (typeof value !== 'string') return null;
+  const match = REVIEW_FIX_VALIDATION_LINE.exec(value);
+  return match ? match[1] : null;
+}
+
 // `approvedOutcomes` maps every delegated item's durable key to its approved outcome. It is legal
 // only beside `runState: non-interactive`, because only the approval round carries it, and it must
 // name exactly the durable keys of the thread and body items, so no item travels unapproved and no
@@ -452,6 +485,10 @@ export function normalizeBuildInput(input) {
     input.authorizedScope === undefined || input.authorizedScope === null
       ? null
       : normalizeAuthorizedScope(input.authorizedScope);
+  const reviewFixValidation =
+    input.reviewFixValidation === undefined || input.reviewFixValidation === null
+      ? null
+      : normalizeReviewFixValidation(input.reviewFixValidation);
 
   const rawThreads = input.threadItems ?? [];
   const rawBodies = input.bodyItems ?? [];
@@ -508,6 +545,14 @@ export function normalizeBuildInput(input) {
   if (input.instruction !== undefined && input.instruction !== null) {
     instruction = requireNonEmptyString(input.instruction, 'instruction');
   }
+  // The receiver honours the candidate only beside the scope line, and a CI repair always
+  // validates `full`, so either combination is a sender error rather than an inert line.
+  if (reviewFixValidation !== null && authorizedScope === null) {
+    fail('INVALID_PAYLOAD', 'reviewFixValidation requires authorizedScope');
+  }
+  if (reviewFixValidation !== null && instruction !== null) {
+    fail('INVALID_PAYLOAD', 'reviewFixValidation is never carried by a CI repair instruction');
+  }
 
   const approvedOutcomes =
     input.approvedOutcomes === undefined || input.approvedOutcomes === null
@@ -526,6 +571,7 @@ export function normalizeBuildInput(input) {
     progressContext,
     progressReceiver,
     authorizedScope,
+    reviewFixValidation,
     threadItems,
     bodyItems,
     instruction,
@@ -596,6 +642,8 @@ function callerValues(normalized) {
     const { mergeBase, head, paths } = normalized.authorizedScope;
     values.push(mergeBase, head, ...paths);
   }
+  if (normalized.reviewFixValidation !== null)
+    values.push(normalized.reviewFixValidation.baseCommit);
   for (const item of normalized.threadItems) values.push(item.durableKey, item.threadId);
   for (const item of normalized.bodyItems) {
     values.push(item.durableKey, item.reviewId, item.author, item.url, item.text);
@@ -646,8 +694,9 @@ export function bodyItemLine(identifier, { reviewId, author, url }) {
 }
 
 // The entries above the delimiter, in order: six control lines, optional progress context, the
-// optional authorized scope, the approval line when the control values carry one, the instruction (one entry, which may itself
-// span lines), the token line, the manifest lines.
+// optional authorized scope, the optional review-fix validation line, the approval line when the
+// control values carry one, the instruction (one entry, which may itself span lines), the token
+// line, the manifest lines.
 export function headerLines({ controlValues, instruction, token, manifestLines }) {
   const lines = CONTROL_KEYWORDS.map((keyword) => `${keyword}: ${controlValues[keyword]}`);
   if (controlValues[PROGRESS_KEYWORD] !== undefined) {
@@ -655,6 +704,9 @@ export function headerLines({ controlValues, instruction, token, manifestLines }
   }
   if (controlValues[SCOPE_KEYWORD] !== undefined) {
     lines.push(`${SCOPE_KEYWORD}: ${controlValues[SCOPE_KEYWORD]}`);
+  }
+  if (controlValues[REVIEW_FIX_VALIDATION_KEYWORD] !== undefined) {
+    lines.push(`${REVIEW_FIX_VALIDATION_KEYWORD}: ${controlValues[REVIEW_FIX_VALIDATION_KEYWORD]}`);
   }
   if (controlValues[APPROVAL_KEYWORD] !== undefined) {
     lines.push(`${APPROVAL_KEYWORD}: ${controlValues[APPROVAL_KEYWORD]}`);
@@ -691,7 +743,13 @@ function requireSnapshot(snapshot) {
   if (!controls || typeof controls !== 'object' || Array.isArray(controls)) {
     invalid('controlValues');
   }
-  const allowedControls = [...CONTROL_KEYWORDS, PROGRESS_KEYWORD, SCOPE_KEYWORD, APPROVAL_KEYWORD];
+  const allowedControls = [
+    ...CONTROL_KEYWORDS,
+    PROGRESS_KEYWORD,
+    SCOPE_KEYWORD,
+    REVIEW_FIX_VALIDATION_KEYWORD,
+    APPROVAL_KEYWORD,
+  ];
   if (Object.keys(controls).some((key) => !allowedControls.includes(key)))
     invalid('unknown controlValues key');
   const progress = controls[PROGRESS_KEYWORD];
@@ -717,6 +775,17 @@ function requireSnapshot(snapshot) {
       requireCanonicalScopeLine(scopeLine);
     } catch {
       invalid(`controlValues.${SCOPE_KEYWORD}`);
+    }
+  }
+  // Version-neutral as well, and legal only beside the scope line.
+  const reviewFixLine = controls[REVIEW_FIX_VALIDATION_KEYWORD];
+  const reviewFixCount = reviewFixLine === undefined ? 0 : 1;
+  if (reviewFixLine !== undefined) {
+    if (parseReviewFixValidation(reviewFixLine) === null) {
+      invalid(`controlValues.${REVIEW_FIX_VALIDATION_KEYWORD}`);
+    }
+    if (scopeLine === undefined) {
+      invalid(`controlValues.${REVIEW_FIX_VALIDATION_KEYWORD} requires ${SCOPE_KEYWORD}`);
     }
   }
   for (const keyword of CONTROL_KEYWORDS) {
@@ -776,15 +845,24 @@ function requireSnapshot(snapshot) {
     CONTROL_KEYWORDS.length -
     progressCount -
     scopeCount -
+    reviewFixCount -
     approvalCount -
     1 -
     snapshot.manifestLines.length;
   if (instructionCount !== 0 && instructionCount !== 1) invalid('headerLines length');
+  // A CI repair never carries the review-fix line, so a tampered snapshot cannot pair them either.
+  if (instructionCount === 1 && reviewFixCount === 1) {
+    invalid(
+      `controlValues.${REVIEW_FIX_VALIDATION_KEYWORD} is never carried beside an instruction`,
+    );
+  }
   const expected = headerLines({
     controlValues: controls,
     instruction:
       instructionCount === 1
-        ? header[CONTROL_KEYWORDS.length + progressCount + scopeCount + approvalCount]
+        ? header[
+            CONTROL_KEYWORDS.length + progressCount + scopeCount + reviewFixCount + approvalCount
+          ]
         : null,
     token: snapshot.token,
     manifestLines: snapshot.manifestLines,
@@ -932,6 +1010,52 @@ export function validateStructure(text, snapshotInput) {
       fail('CONTROL_LINE_MISMATCH', `"${SCOPE_KEYWORD}:" differs from the snapshot`, {
         line: scopes[0].line,
       });
+    }
+  }
+
+  // The review-fix validation line: at most once, present exactly when the snapshot declares one,
+  // well formed, and equal to the snapshot's value.
+  const reviewFixLines = [];
+  aboveLines.forEach((line, index) => {
+    const trimmed = line.trimStart();
+    if (!trimmed.startsWith(`${REVIEW_FIX_VALIDATION_KEYWORD}:`)) return;
+    reviewFixLines.push({
+      line: index + 1,
+      value: trimmed.slice(REVIEW_FIX_VALIDATION_KEYWORD.length + 1).trim(),
+    });
+  });
+  if (reviewFixLines.length > 1) {
+    fail('CONTROL_LINE_DUPLICATED', `"${REVIEW_FIX_VALIDATION_KEYWORD}:" appears more than once`, {
+      line: reviewFixLines[1].line,
+    });
+  }
+  const expectedReviewFix = snapshot.controlValues[REVIEW_FIX_VALIDATION_KEYWORD];
+  if (expectedReviewFix === undefined && reviewFixLines.length === 1) {
+    fail('CONTROL_LINE_MISMATCH', `"${REVIEW_FIX_VALIDATION_KEYWORD}:" is not in the snapshot`, {
+      line: reviewFixLines[0].line,
+    });
+  }
+  if (expectedReviewFix !== undefined && reviewFixLines.length === 0) {
+    fail(
+      'CONTROL_LINE_MISSING',
+      `"${REVIEW_FIX_VALIDATION_KEYWORD}:" is missing above the delimiter`,
+      { line: delimiterLine },
+    );
+  }
+  if (reviewFixLines.length === 1) {
+    if (parseReviewFixValidation(reviewFixLines[0].value) === null) {
+      fail('CONTROL_LINE_MISMATCH', `"${REVIEW_FIX_VALIDATION_KEYWORD}:" is malformed`, {
+        line: reviewFixLines[0].line,
+      });
+    }
+    if (reviewFixLines[0].value !== expectedReviewFix) {
+      fail(
+        'CONTROL_LINE_MISMATCH',
+        `"${REVIEW_FIX_VALIDATION_KEYWORD}:" differs from the snapshot`,
+        {
+          line: reviewFixLines[0].line,
+        },
+      );
     }
   }
 
@@ -1338,6 +1462,11 @@ export async function buildEnvelope(input, deps = {}) {
       scope: normalized.authorizedScope,
       ...scopeIdentifiers,
     });
+  }
+  if (normalized.reviewFixValidation !== null) {
+    controlValues[REVIEW_FIX_VALIDATION_KEYWORD] = reviewFixValidationValue(
+      normalized.reviewFixValidation,
+    );
   }
   // Every approved item `build` refused is undelegated, so an approval that leaves no identifier
   // writes no line, exactly as a round without approved items writes none.

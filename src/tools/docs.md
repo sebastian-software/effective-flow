@@ -303,7 +303,7 @@ worktree-record-obligation
      does not define at all is reported by its role rather than by an invented path
    - existing unrelated README links are preserved and excluded from the final documentation
      follow-up-section invariant
-4. Start `{{AGENT:code-validator}}` when doc changes affect technical artifacts or the project build can plausibly check the change.
+4. Start `{{AGENT:code-validator}}` when doc changes affect technical artifacts or the project build can plausibly check the change; under `Validation: targeted` (`caller-owned-commit`) with the changed paths as its targeted scope.
    <!-- spawn-site:docs/validation -->
 5. If errors are found: fix them or delegate again to the appropriate doc agent – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if validation still reports errors afterwards, instead of repeating indefinitely.
 

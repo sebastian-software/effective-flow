@@ -40,6 +40,8 @@ the sandbox's git state" below).
 | `manifest-span-mismatch-aborts`  | two `Item:` entries, one span below the delimiter                                    | report carries `ABORT: manifest and body mismatch` as its last line and no other `ABORT:`; no forge call                   |
 | `unparseable-run-state-aborts`   | `Run state: unattended`                                                              | report carries `ABORT: unparseable run-state switch` as its last line and no other `ABORT:`; no forge call                 |
 | `unparseable-authorized-scope-aborts` | `Authorized scope:` cut off mid-object, its `correction` identifier gone        | report carries `ABORT: unparseable authorized scope` as its last line and no other `ABORT:`; no forge call                 |
+| `unparseable-review-fix-validation-aborts` | `Review-fix validation: quick-candidate <short non-SHA>` beside a valid `Authorized scope:` | report carries `ABORT: unparseable review-fix validation switch` as its last line and no other `ABORT:`; no forge call |
+| `duplicated-review-fix-validation-aborts` | the `Review-fix validation:` line twice above the delimiter | report carries `ABORT: duplicated control line` as its last line and no other `ABORT:`; no forge call |
 | `review-in-flight-aborts`        | non-interactive, no `Review guard:` line, configured reviewer `recensor` pending     | report carries `ABORT: review still in flight` as its last line and names `recensor`; the three Phase-1 reads, each exactly once; no write at all |
 | `empty-selection-clean-done`     | `threads=` names only a thread resolved since the caller read it; a second, open thread — an exact fix request — is unnamed | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
 | `relayed-run-state-clean-done`   | `empty-selection-clean-done` with `Run state: relayed`, which the shipped sender writes | report carries no `ABORT:` and ends `DONE`; the three Phase-1 reads; no write at all                      |
@@ -88,6 +90,15 @@ run-state and authorized-scope lines (step 10), so no earlier rule masks a later
 fixture keeps every other line well-formed, so its refusal can only come from the scope line. The mismatch fixture carries a
 non-empty region below the delimiter, so it cannot land in the one branch where a whitespace-only
 region pairs with zero `Item:` entries.
+
+The two `Review-fix validation:` scenarios (issue #673) extend the Phase-0 corpus to the optional
+candidate line `merge-gate` writes for a bot round. Both start from genuine sender output with an
+authorized scope, so the line is honored and neither refusal can come from a missing delimiter or
+scope. Their evidence is not recorded yet: recording rounds for both remains manual evidence debt.
+The sibling `Validation: targeted` item switch has no scenario here, because it is a handoff from
+`iterate` to its item workflows mid-run, not a Phase-0 refusal or a forge-reading branch this
+evaluator can observe; the prompt-contract tests in `test/iterate-quick-validation-contract.test.mjs`
+cover it, and an eval for it stays unwritten debt.
 
 ## What is here
 

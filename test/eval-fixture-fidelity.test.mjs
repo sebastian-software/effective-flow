@@ -1728,7 +1728,7 @@ function applyMutation(built, mutation) {
 
 test('iterate: every stored delegation is genuine sender output changed in exactly its declared way', () => {
   const fixtures = iterateFixtures();
-  assert.equal(fixtures.length, 8, 'the iterate corpus is expected to hold its eight scenarios');
+  assert.equal(fixtures.length, 10, 'the iterate corpus is expected to hold its ten scenarios');
   for (const { scenario, fixture } of fixtures) {
     const { input, built, snapshot, mutation, message } = fixture.delegation ?? {};
     assert.equal(typeof built, 'string', `${scenario}: the fixture stores no built envelope`);

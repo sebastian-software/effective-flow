@@ -109,12 +109,14 @@ export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'presence prune',
 ]);
 
-// Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy` and
-// `conflict-validation`, which also read one Git blob of the base branch's remote-tracking ref.
+// Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy`,
+// `conflict-validation` and `review-fix-validation`, which also read one Git blob of the base
+// branch's remote-tracking ref.
 export const CONFIG_RESOLVE_ALLOWLISTED_OPERATIONS = Object.freeze([
   'resolve',
   'no-ci-policy',
   'conflict-validation',
+  'review-fix-validation',
 ]);
 
 // Every `conflict-validation.mjs` operation reads only: `ci-detect` and `ci-integrity` read Git

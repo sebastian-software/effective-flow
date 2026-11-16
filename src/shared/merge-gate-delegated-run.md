@@ -397,6 +397,9 @@ any reviewer entry, trigger, or check value.
   documented default are the same value; for this one they are not, because an unparseable line must
   never authorize a commit and a push. Report the key as that rule requires and run the conflict
   branch as `off`.
+- `iterate.reviewFixValidation` (`full`, `quick`, default `full`) is the one `iterate.*` key this
+  gate reads, only through the guarded resolution of `merge-gate-review-fix-validation` before a
+  bot-round delegation.
 - The former `prReview.*` names are retired and never read: the loaded retired-key rule decides at
   this run's first configuration read, before any wait, delegation or write, whether a row stops it.
   This workflow never writes configuration – `{{SKILL:setup}}` migrates the block.
@@ -539,6 +542,8 @@ gate run inline generates it at the start. Use
   verdicts, and the resulting merge commit or the abort reason, plus the records of "Conflict
   validation mode" in `merge-gate-conflict-resolution`, among them the conflict-observed and
   push-confirmed times and any quick-validated conflict commit
+- per bot-round delegation, the records of `merge-gate-review-fix-validation`: the ceiling, the
+  detection, the candidate with every unmet condition, and any **quick-validated review-fix head**
 - trigger (b)'s once-per-run record, written per Phase 2 step 1: its round and whether its merge
   was clean, conflict-resolved or a no-op
 - an undetermined ancestry check, once per run, with its reason
@@ -1161,7 +1166,9 @@ merge. A protected branch that requires an approval is reported as needing a hum
 
 Verify every one of the following against one ordered **fresh** observation batch. Start it with a
 new `pr-status-read` and wait for it to complete; where the wisdom file records a quick-validated
-conflict commit, that read carries `includeCheckIdentity: true`. Never reuse or reinterpret any
+conflict commit, that read carries `includeCheckIdentity: true`. A recorded **quick-validated
+review-fix head** (`merge-gate-review-fix-validation`) is such a commit in this phase and in
+condition 11. Never reuse or reinterpret any
 status result from Phase 2 as this read. Whatever `mergeGate.conflictValidation` resolves to –
 `quick`, `full`, absent, base-mismatched or unreadable – run the ancestry check's two fetches
 (Phase 2 step 1) for this pull request and that read's `baseRef` as `<base>`, unless this round
@@ -1232,9 +1239,11 @@ condition leaves the next returning condition unbounded the day it is added.
     and this condition is satisfied. Otherwise apply
     `## Phase 4 condition 10: Configured reviewer verdicts are assessed` in the loaded
     `merge-gate-configured-reviewer` fragment;
-11. where the wisdom file records a quick-validated conflict commit or the quick-marker scan
-    found one, CI evidence on this batch for every **marked commit**: the recorded one and each in
-    the scan's `data.commits`; a failed fetch or scan leaves them unknown, which is no evidence. Its
+11. where the wisdom file records a quick-validated conflict commit or quick-validated review-fix
+    head, or the quick-marker scan found one, CI evidence on this batch for every **marked commit**: the recorded one and each in
+    the scan's `data.commits`; a failed fetch or scan leaves them unknown, which is no evidence. A
+    recorded review-fix head is a recorded marked commit, exactly as a quick-validated conflict
+    commit is, its tree holding the CI definition its round was validated against. Its
     status read carries `includeCheckIdentity: true`; run the ancestry check's two fetches (Phase 2
     step 1) for that read's `baseRef`, unless this round already made them for that base; then,
     rooted in `RUNTIME_STATE_ROOT`, for each marked commit `<commit>`:
@@ -1257,7 +1266,9 @@ condition leaves the next returning condition unbounded the day it is added.
     object or ref is no evidence; the waiver and the no-CI policy never satisfy this condition.
     Unmet, it stops the run naming what is missing – a CI definition changed since a marked commit
     included – the scan's `data.commits` or failure reason, and the remedy where CI cannot supply
-    the evidence: a merge by hand, or a history rewrite that drops the marked commits. It leaves the
+    the evidence: a merge by hand, or a history rewrite that drops the marked commits. A recorded
+    review-fix head has no marker commit to drop: its remedy is a later gate run, held by branch
+    protection to the required job, or a merge by hand once that job passed. It leaves the
     pushed commit in place: no force push and no local `full` run. Phase 2 step 2's check-wait
     timeout path is unchanged.
 
@@ -1349,6 +1360,9 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
    - the proposal line of "Conflict validation mode" in `merge-gate-conflict-resolution`, once,
      where a conflict was validated under a `full` ceiling while its conditions held – in the
      completion report and in an environment stop report alike;
+   - per bot-round delegation, the review-fix candidate with its one reason line where it was
+     `full`, any quick-validated review-fix head, and, once, the proposal line of
+     `merge-gate-review-fix-validation` where its conditions held;
    - per round, the provisioned-checkout line from the wisdom record with this run's
      worktree-record exit self-check result;
    - a trigger-(b) merge of Phase 2 step 1 with its round, any undetermined ancestry check or
@@ -1504,7 +1518,8 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
 - Give every `build` input `summaryComment: suppressed`, `reviewGuard: established`,
   `nextSteps: suppressed`, this run's `runState`, its `languageContext` and the stored scope record
   as `authorizedScope`, plus an approval round's
-  `approvedOutcomes` whenever it delegates a thread or body item; the helper places each control line, the `Boundary token:` line and the
+  `approvedOutcomes` whenever it delegates a thread or body item, and a bot round's
+  `reviewFixValidation` for a `quick` review-fix candidate (`merge-gate-review-fix-validation`); the helper places each control line, the `Boundary token:` line and the
   whole item manifest **above** the body delimiter and every caller-supplied body **below** it. The
   gate writes none of those lines itself.
 - Build every delegation with the `delegation-envelope` helper's `build`, then `validate` it per

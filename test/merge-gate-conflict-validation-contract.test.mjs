@@ -411,3 +411,66 @@ test('the presence marker lifecycle follows the wisdom file', () => {
   assert.match(presence, /`git diff --name-only origin\/<base>\.\.\.<head>` for each run/);
   assert.match(presence, /"possibly stale" with its age, never active/);
 });
+
+// Invariant: the conflict commit and the review-fix round (issue #673) share ONE CI-backed quick
+// scope in the validator, so the two callers cannot drift: the same excluded-command rule, the same
+// fallback to `full`, and the same `SKIPPED (covered by CI)` result. The scope names its two callers
+// and a targeted scope for item workflows stays a different, narrower scope.
+test('the validator keeps one CI-backed quick scope for the conflict commit and the review-fix round', () => {
+  const scope = prose(
+    slice(validator, 'A **conflict-commit scope**', '**On an environment', 'validator'),
+  );
+  assert.match(
+    scope,
+    /A \*\*conflict-commit scope\*\* from the merge gate and a \*\*review-fix scope\*\* from `iterate` Phase 4 are one CI-backed quick scope, which replaces the `quick` mapping/,
+  );
+  assert.match(scope, /plus the affected tests the caller names/);
+  assert.match(
+    scope,
+    /Where the scope names several excluded test commands, as the caller's detection `data\.testCommands` does, this holds for each\./,
+  );
+  assert.equal(
+    (validator.match(/\*\*(?:conflict-commit|review-fix) scope\*\*/g) ?? []).length,
+    2,
+    'the two callers are named in one paragraph, not defined twice',
+  );
+  const targeted = prose(
+    slice(validator, 'A **targeted scope**', 'A **conflict-commit scope**', 'validator'),
+  );
+  assert.match(targeted, /never a whole-suite command or a combined gate that contains one/);
+  assert.doesNotMatch(
+    targeted,
+    /excluded|SKIPPED \(covered by CI\)/,
+    'the targeted scope excludes no CI-covered command',
+  );
+});
+
+// Invariant: condition 11 is one condition for both marked-commit kinds. The recorded conflict
+// commit and the recorded review-fix head pass through the same detection-at-the-commit, integrity
+// and evidence-match steps, so a review-fix head gets no weaker proof than a conflict commit, and
+// neither kind adds a second path to a merge.
+test('condition 11 covers a recorded conflict commit and a recorded review-fix head through the same steps', () => {
+  const condition = prose(
+    slice(
+      delegatedRun,
+      '11. where the wisdom file records a quick-validated',
+      '#### The set-aside confirmation',
+      'delegated run',
+    ),
+  );
+  assert.match(
+    condition,
+    /records a quick-validated conflict commit or quick-validated review-fix head, or the quick-marker scan found one, CI evidence on this batch for every \*\*marked commit\*\*/,
+  );
+  assert.match(
+    condition,
+    /A recorded review-fix head is a recorded marked commit, exactly as a quick-validated conflict commit is/,
+  );
+  for (const helper of ['ci-detect', 'ci-integrity', 'ci-evidence-match']) {
+    assert.equal(
+      condition.split(`conflict-validation.mjs ${helper} <<<`).length - 1,
+      1,
+      `${helper} is spelled once for both kinds`,
+    );
+  }
+});

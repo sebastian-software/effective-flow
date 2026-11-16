@@ -787,6 +787,40 @@ carries one line proposing `quick`, with the workflow file, the job and the test
 never switches by itself and asks nothing during the run; `/effective-flow setup` makes the same
 offer.
 
+#### CI-backed `quick` validation of a review-fix round
+
+A round that fixes a bot finding runs `/effective-flow iterate`. Each item runs targeted checks for
+its own paths only, and the final validation is the round's only full-suite run. `iterate.reviewFixValidation: quick` (default `full`) lets a repository whose
+pull request CI already runs its test suite skip even that run. The key is set in
+[Block `iterate`](configuration.md#block-iterate).
+
+The gate computes a `quick` candidate before each bot-round delegation and hands it to `iterate`. The
+candidate is `quick` only when all of these hold; otherwise the round validates in `full` mode and
+the report names the first unmet condition:
+
+- the same `iterate.reviewFixValidation: quick` row is on the base branch, so a pull request cannot
+  lower its own validation; in hidden mode the local file counts;
+- the base branch has a detected CI test job, under the rules of the conflict section above;
+- the forge is GitHub and **every** detected job is a required check of the base branch.
+  `mergeGate.requireAllChecks: true` alone is not enough here, because nothing outside the gate run
+  enforces it;
+- the pull request changes no workflow, manifest or test script between the base commit the
+  detection read and the verified head;
+- the round's commits change no workflow, manifest or test script. `iterate` checks this against the
+  committed head after every correction commit and, once it fails, validates `full` for the rest of
+  the round.
+
+Under `quick` the validator runs every established check except the detected CI test commands, plus
+the affected tests the items named. Standalone `iterate` runs and CI-repair rounds always validate
+`full`.
+
+The merge needs the same proof as for a conflict commit. `iterate` reports its effective mode, the
+validated head and the detection; the gate records the head as a quick-validated review-fix head,
+treating a missing or unparseable report as `quick`, and before it merges it requires the CI job's
+complete instance set to have succeeded on the final head. No commit trailer is involved, and a
+later round never removes the record. While the key is `full` and the conditions hold, the
+completion report carries one line proposing `quick`; the run never switches by itself.
+
 #### When the environment itself fails
 
 If a check cannot run because of the environment, not the change, the run stops instead of working
