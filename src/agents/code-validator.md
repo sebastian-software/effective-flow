@@ -74,6 +74,13 @@ run the established non-test checks for the assigned paths and only the tests af
 never a whole-suite command or a combined gate that contains one. With no identifiable affected
 test, report the test surface as `SKIPPED (coverage from the round validator)`.
 
+An **orchestrator-assigned targeted scope** from the `build` workflow, in its correction rounds
+and final check after its one full run, replaces the mode mapping too: its assigned paths select
+only the affected tests, previously failing tests named by identity run by identity, never through
+their suite command, and the non-test checks (format, typecheck, lint, build) run at
+repository-native breadth. With no affected test, report the test surface as
+`SKIPPED (no affected test; full run at Phase 5 tree)`.
+
 A **conflict-commit scope** from the merge gate and a **review-fix scope** from `iterate` Phase 4
 are one CI-backed quick scope, which replaces the `quick` mapping: skip only the named excluded test
 command, by normalized script identity, as `SKIPPED (covered by CI)`; run every other established
@@ -83,9 +90,22 @@ those cannot run separately, run `full` and report why. Where the scope names se
 commands, as the caller's detection `data.testCommands` does, this holds for each.
 
 **On an environment signature, report the check and its diagnostic; no suite split, no base
-comparison, no rerun.** An environment signature is one of the signature classes the handoff names;
-report it in the owner's result states. A timeout of your own host tool, or one you cannot
-attribute, is none of these.
+comparison, no rerun.** This rule applies only when the handoff hands it; report a signature in
+the owner's result states with its class.
+
+```include
+environment-signature-classes
+```
+
+**Build's handoff names no preflight mapping.** A handoff that names the signature classes without
+the preflight mapping, as the `build` workflow's does, is no handed rule for the Precedence
+paragraph of `validation-environment-unsupported`: that fragment's trigger, permitted evidence and
+result `SKIPPED (environment: <prerequisite id>)` apply unchanged to a stopped preflight.
+
+```lazy-include
+build-failure-attribution
+when: the handoff carries the line `Failure attribution: base-ci-then-local`
+```
 
 ```lazy-include
 validation-environment-unsupported
@@ -105,7 +125,8 @@ Return, in project-routing order:
 
 - each bucket and exact assigned scope;
 - exact commands and working directories;
-- terminal states, decisive diagnostics, and warnings;
+- terminal states, decisive diagnostics, and warnings, plus each failure's `attribution:`
+  annotation under a `Failure attribution:` line;
 - validation-generated working-tree changes and skipped prerequisites;
 - one honest overall result and the evidence gaps that remain.
 

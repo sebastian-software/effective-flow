@@ -118,7 +118,9 @@ affected files, acceptance criteria, validation plan, and its own
 plan review section. For documentation plans, the header adds `**Doc category:**` and
 `**Target path:**` per the doc category convention. A new plan uses `language.workflow`
 throughout—header fields, sections, plan review, open points, and status marker are all German or
-all English. An existing plan retains its recognizable language when edited or completed. Explicit
+all English. A known failure the implementing run must not repair goes under the validation plan as
+one exact line, `Expected failure: <test file path> › <title path>` (German `Erwarteter
+Fehlschlag:`); `build` counts it only after you approve it. An existing plan retains its recognizable language when edited or completed. Explicit
 issue input instead produces the canonical issue-planning comment described under `plan-issue`.
 New local plans and canonical planning comments also retain a compact Outcome checkpoint for
 [continuation toward the original outcome](tool-flow.md#continuing-toward-the-original-outcome);

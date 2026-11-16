@@ -1,6 +1,6 @@
 ---
 description: "Internal sub-file of apply-review: git commit mutex, worktree isolation and cherry-pick conflict assessment. Loaded by tools/apply-review.md only when a committing strategy was chosen."
-contextBudget: 673
+contextBudget: 685
 ---
 
 # Effective Flow Apply Review – Commit mechanics
@@ -173,7 +173,7 @@ Integration back into the original branch:
    The call moves each `active` record through `cleanup-ready` and removes its worktree without
    force. `integrationRoot` lets the helper delete a branch `git branch -d <BRANCH_NAME>` refuses
    after the cherry-picks once its exact patch-id proof against `ORIGINAL_ROOT` passes. That in-run
-   proof is the only forced branch deletion; prose never runs `git branch -D` or `git worktree prune`.
+   proof is the only forced component-branch deletion; prose never runs `git branch -D` or `git worktree prune`.
    Handle each item by the lifecycle outcome table, with its denial fallback; name every
    `BRANCH_RETAINED` branch with its unproven commits in the summary.
 

@@ -238,14 +238,17 @@ order above (scoped instructions, CI workflows and task runners, manifests, neig
   validator runs once. As soon as you classify a conflicted path high-risk, validate as under
   `full`. Under `full`, or with no mode handed, the rules above apply unchanged.
 - **On an environment signature, report the check and its diagnostic; no suite split, no base
-  comparison, no rerun.** An environment signature is one of the signature classes the gate hands
-  you. A test entrypoint stopped at its own environment preflight follows the gate's preflight
-  mapping: the class it names, else `FAILED`, never skipped. A timeout of your own host tool, or one
-  you cannot attribute, is none of these.
+  comparison, no rerun.** The gate's handoff switches this rule on with the signature classes and
+  the preflight mapping below: a stopped preflight is the class it names, else `FAILED`, never
+  skipped.
 - **Never substitute for a check that cannot run here:** never run the suite, or a
   suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
   or one over a suite-covering directory or glob; never neutralize the preflight by editing the
   probe or the test script; never set, unset or alter `GIT_DIR` or `GIT_WORK_TREE`.
+
+```include
+environment-signature-classes
+```
 
 Carry the exact commands, their working directory, and their terminal result into the report. Report
 a check that could not run as skipped **with its concrete reason** rather than omitting it; the gate

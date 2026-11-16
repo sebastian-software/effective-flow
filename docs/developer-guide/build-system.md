@@ -1480,7 +1480,11 @@ and directive syntax").
   lifecycle record, which `cleanup` can never remove. `apply-issues` creates its worktrees without
   `worktree-integration`, so it points at `worktree-lifecycle` directly and lazily at Phase 4, while
   its core keeps every record write and transition and makes reading the fragment mandatory before
-  such a worktree is created.
+  such a worktree is created. `environment-signature-classes` is eager in the two agents that
+  classify a check (`code-validator`, `merge-conflict-resolver`) because the class list must be
+  present before a check runs; handoffs only switch the rule on. Its counterpart
+  `build-failure-attribution` is lazy, loaded by `code-validator` only when the handoff carries
+  `Failure attribution: base-ci-then-local`.
 - **Planned-build execution has one explicit boundary.** The built `build` caller's current size and
   budget are in the build report (see "Context budget"). Its intent/source classification, canonical status,
   clarification, configuration/retired-key preflight and approval basis stay eager. Only after those
@@ -1509,7 +1513,8 @@ and directive syntax").
   `delegation-envelope-examples`, `diff-baseline`, `review-depth`, `planning-batch`, `source-upstream-sync`, `setup-profiles`,
   `setup-hidden-mode`, `setup-guided-core-switches`, `setup-advanced-settings`,
   `setup-targeted-change`, `setup-status`, `setup-rename-probe`, `adr-convention`, `plan-publication`,
-  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`, `verification-evidence`.
+  `plan-pr-continuation`, `outcome-continuation`, `focus-follow-up`, `verification-evidence`,
+  `build-failure-attribution`.
   The load trigger (`when:`) sits
   at the decision point where the mode/branch is determined.
   `subagent-progress` is orchestrator-only: active overview owners and returning relays reach its

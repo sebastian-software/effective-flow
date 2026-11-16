@@ -1,7 +1,7 @@
 ---
 description: "Routes explicit issue references to {{SKILL:plan-issue}} and otherwise creates pure implementation plans in docs/plan/, without generating code or changing existing implementation files. Records the classified implementation workflow in the plan header, so the implementing run reads it from there."
 catalogHint: "Routes issue references to issue planning or writes an actionable local plan – without code – and can publish it."
-contextBudget: 795
+contextBudget: 804
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -427,6 +427,12 @@ Rules:
 - Remove irrelevant optional subsections or write a brief "Not relevant" with a rationale.
 - Use concrete file references as soon as they can be derived from the codebase.
 - Formulate the acceptance criteria so that together they yield exactly one measurable completion condition. The implementing workflow derives its completion condition from them; avoid vague criteria without a named check.
+- Under `## Validation plan` (`## Validierungsplan`), a known failure the implementing run must not
+  repair is one exact line (German `Erwarteter Fehlschlag:`):
+  `Expected failure: <test file path> › <title path>`, the runner-reported title path joined by
+  spaced `›`, or, for a non-test check and covering only that diagnostic,
+  `Expected failure: <check command> › <diagnostic>`. Lines carried over from an issue are reported
+  to the caller instead; `{{SKILL:build}}` Phase 1 writes approved ones here verbatim.
 - Write the plan as an implementation guide, not as a pre-implementation.
 - Avoid code blocks in the plan. Use them only when a short code formulation is clearer and shorter than a prose description.
 - If a code example is necessary, limit it to the smallest meaningful fragment and document that it is an example or an interface sketch.

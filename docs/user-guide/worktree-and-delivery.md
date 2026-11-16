@@ -207,6 +207,19 @@ as a `blockers` entry in the cleanup report (see
 [Cleanup keeps a linked worktree](./troubleshooting.md#cleanup-keeps-a-linked-worktree)). The head
 branch is always kept.
 
+### Base-validation worktree
+
+When [`/effective-flow build`](./tools-implement.md#effective-flow-build) must check whether a failing
+test was already failing before your change, it creates one temporary worktree at
+`<worktree.baseDir>/<repo>/<SESSION_ID>-base-validation` on the branch `base-validation/<SESSION_ID>`,
+with the purpose `base-validation`, at the baseline commit. On every exit path – completion,
+failure or abort – the run restores the checkout, removes the output the validator reported as
+generated, and removes the worktree. If that removal is refused, for example because the worktree
+still holds unexpected changes, the record stays released (`cleanup-ready` or `cleanup-failed`),
+never `aborted` or `failed`, so [`/effective-flow cleanup`](./tools-setup.md#effective-flow-cleanup)
+removes it like any other recorded worktree once it is clean. Its branch is deleted only while it
+still points at its creation commit and another ref still contains that commit.
+
 ### Harness-native worktrees
 
 [Claude Code subagents](https://code.claude.com/docs/en/sub-agents) do not provide a portable

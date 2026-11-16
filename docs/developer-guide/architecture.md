@@ -697,6 +697,13 @@ former's internals and is never imported by it ([Build system](build-system.md#r
 step map lists what a resume skips and reruns; the proofs and call shapes are in
 `src/shared/worktree-partial-diff-recovery.md`.
 
+`build`'s failure attribution adds the `base-validation` purpose: path
+`BASE_DIR/REPO_NAME/SESSION_ID-base-validation`, branch `base-validation/<SESSION_ID>`, policy
+`delete-after-integration`, created by the orchestrator at `baselineHead` and removed by it after the
+narrow base run. A never-integrated branch is compare-and-deleted only while its tip is
+`creationOid`, else kept, and `cleanup` applies the same proof
+([`src/shared/worktree-lifecycle.md`](../../src/shared/worktree-lifecycle.md)).
+
 `merge-gate`'s own checkout carries the `merge-gate` purpose: path
 `BASE_DIR/REPO_NAME/SESSION_ID-merge-gate`, `retain`, on the pull request's existing head branch.
 [`src/shared/merge-gate-checkout-boundary.md`](../../src/shared/merge-gate-checkout-boundary.md)
@@ -1110,6 +1117,20 @@ effective-flow/                        (Repo)
 The build caller keeps intent, canonical status, clarification, retired-key/configuration preflight, approval basis and dispatch decisions eager. `apply-plan` resolves the source and follows that same caller in the current run. Exactly one initially fresh built-in workflow runner at `deep` reads `shared/build-delegated-run.md` and owns phases 2–7, with the existing specialist roles, Fast selector and independent quality gates. This workflow orchestrator may spawn its workers; named workers remain leaves. A completed runner cannot accept another plan.
 
 `shared/build-run-contract.md` defines bounded artifact control, same-agent question continuation and terminal evidence. The parent carries request/result references and a visible progress projection; complete plans, diffs, findings and logs remain with the runner and their artifacts. The helper bounds dispatch to 8 KiB and control JSON to 16 KiB UTF-8, without promising a token count or intercepting arbitrary host text. It binds immutable sources and index/worktree/untracked snapshots, so an unchanged HEAD alone cannot validate a resume. Before setup it records the already-resolved execution mode with `authorize-execution`; after setup it binds the fresh receipt with `transition-execution`. Required phase or wisdom evidence uses the runtime-only `retain-evidence` operation, which accepts one exact identifier plus either bounded UTF-8 content or an allowed source artifact, copies exact bytes to a fixed runtime-owned evidence file, and returns a standard file reference. The returned digest identifies the retained bytes only; it does not assert native execution or gate success. Retention remains allowed after verified handoff for runtime-only evidence and is refused after terminal completion. Durable gate receipts and immutable Git deliverables survive baseline cleanup and owned-worktree removal.
+
+A delegated build run spends a validation budget of one full-suite point, Phase 5 step 1; the
+Phase 4 handoff, every correction round and Phase 7 are targeted, and Phase 7 may take one second full
+run under two named conditions (no valid Phase 5 full run, or a changed path on a closed list of CI,
+action, manifest, lockfile, `conftest.py` and build or test configuration files), so a run never
+exceeds two. The validator attributes failures in an evidence order: base CI at job
+level proves `new`, then one narrow local run in a `base-validation` worktree proves `pre-existing`,
+at its own spawn site `build-delegated-run/base-attribution`. Environment signatures, proven
+pre-existing failures and plan-approved `Expected failure:` lines (test identity or one check
+diagnostic) start no correction round; a validator host-tool timeout is reported like a signature,
+as `host-timeout`. The budget state survives resume as retained `validation-budget` evidence. The owners are
+[`build-delegated-run`](../../src/shared/build-delegated-run.md),
+[`build-failure-attribution`](../../src/shared/build-failure-attribution.md) and
+[`environment-signature-classes`](../../src/shared/environment-signature-classes.md).
 
 Completion preserves the approved plan as the source text and applies a bounded status/archive/completion-section transformation only after the existing independent-review and final-validation receipts are bound by `prepare-completion`. `seal-delivery` proves the staged tree against that basis. A changed product byte requires the independent marked `code-validator` formatting-only proof with exact before/after digests, or renewed affected review and final-validation receipts; a plan-only completion transformation keeps the original gates. The explicit completion-transform marker is therefore a separate code-validator site, alongside the caller and nesting-probe sites.
 

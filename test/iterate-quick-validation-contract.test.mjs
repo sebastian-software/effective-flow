@@ -345,7 +345,8 @@ test('under Validation: targeted no role runs a full suite and each runs its tar
 
 // Invariant: every item workflow `iterate` delegates to (fix, refactor, docs, and build through its
 // delegated-run contract) honors the switch where it would otherwise run a full suite, names the
-// owner (`caller-owned-commit`) instead of restating it, and changes nothing without the line.
+// owner (`caller-owned-commit`) instead of restating it, and changes nothing without the line; build
+// under the switch also skips its own validation budget, attribution and signature handling.
 test('each item workflow honors Validation: targeted and keeps its default without it', () => {
   const fix = prose(readSource('tools', 'fix.md'));
   assert.match(
@@ -373,7 +374,8 @@ test('each item workflow honors Validation: targeted and keeps its default witho
   const build = prose(readSource('shared', 'build-delegated-run.md'));
   assert.match(
     build,
-    /Under `Validation: targeted` \(`caller-owned-commit`\) that list is its targeted scope, here and in Phase 7's final check\./,
+    /Under `Validation: targeted` \(`caller-owned-commit`\) that list is its targeted scope, here and in Phase 7's final check, and none of the validation budget below applies: no full run in either phase, no \(a\) or \(b\), no `Failure attribution:` line, and signature handling stays with the caller\./,
+    'a caller-owned targeted build runs none of its own validation budget',
   );
   const runContract = prose(readSource('shared', 'build-run-contract.md'));
   assert.match(

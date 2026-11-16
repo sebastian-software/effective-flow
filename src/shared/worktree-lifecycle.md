@@ -59,7 +59,8 @@ version 1 record has exactly this key set; strings are illustrative:
 together: `delivery` and `partial-diff` at exactly `BASE_DIR/REPO_NAME/SESSION_ID` and
 `plan-publication` or `merge-gate` at `BASE_DIR/REPO_NAME/SESSION_ID-<purpose>` carry `retain`;
 `apply-review` at a direct child of its session directory, on branch
-`apply-review/<SESSION_ID>/<GROUP_NAME>`, carries `delete-after-integration`. `reason` is `null` for
+`apply-review/<SESSION_ID>/<GROUP_NAME>`, and `base-validation` at that `-<purpose>` leaf, on branch
+`base-validation/<SESSION_ID>`, carry `delete-after-integration`. `reason` is `null` for
 `active` and `cleanup-ready` and the exact reason otherwise. `creationOid` is the full commit OID at
 which worktree and branch creation succeeded, captured once and never replaced. The `receipt` is the
 immutable creation snapshot; fresh receipts are compared with it, never written into it. During
@@ -167,8 +168,16 @@ when: a `partial-diff` record's delivery ledger, `ledger init`, `ledger append`,
 **Branch policy.** `retain` leaves the branch. `delete-after-integration` runs
 `git branch -d <BRANCH_NAME>`; when Git refuses, only an `apply-review` call carrying
 `integrationRoot` lets the helper prove every component commit by exact patch-id against the branch
-checked out there and then compare-and-delete the ref. Prose never runs `git branch -D`, and a
-forced deletion outside that proof never happens.
+checked out there and then compare-and-delete the ref; a never-integrated `base-validation` branch
+is compare-and-deleted only while its tip is `creationOid` and another ref reaches it, else kept
+(`advanced`, `unreachable`). Prose never runs `git branch -D`, and a forced deletion outside these
+proofs never happens.
+
+**`base-validation`** is the orchestrator's, at `baselineHead`; setup follows the worktree setup
+policy, the validator installs nothing. Every exit path – completion, failure or abort – restores
+the checkout to `creationOid`, removes the untracked, non-ignored output the validator reported as
+generated, and withdraws the record with `worktree remove` and its denial fallback, never `aborted`
+or `failed`, so a refused removal stays `cleanup-ready` or `cleanup-failed` for `{{SKILL:cleanup}}`.
 
 **Outcomes.** Exit 0 carries `result`, exit 4 an `outcome.code`; any other exit, an unparsable
 envelope or an `error` is handled as not `ok`. `worktree remove` exits 0 with `result.items[]`, one

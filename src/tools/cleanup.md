@@ -1,7 +1,7 @@
 ---
-description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, and merge-gate presence markers whose run's wisdom file is gone; it never forces removal, prunes worktrees, or force-deletes branches. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
+description: "Migrates and cleans up legacy runtime remnants and inventories every linked Git worktree in the current project. After dry-run and explicit confirmation, it may remove only clean, registered, unlocked Effective Flow-created worktrees whose receipt and persisted lifecycle prove cleanup readiness, plus stopped merge-gate worktrees proven to hold no unpushed commits, the files of schema-invalid lifecycle records whose worktree is already gone, and merge-gate presence markers whose run's wisdom file is gone; it never forces removal, prunes worktrees, or force-deletes a branch other than a base-validation branch still at its creation commit. Every run ends with an individual reason and safe next step for each remaining linked worktree. Migration cleanup remains git-aware, confirmation-gated, idempotent, and without backup or auto-commit."
 catalogHint: "Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers."
-contextBudget: 870
+contextBudget: 883
 ---
 
 # Effective Flow Cleanup
@@ -301,8 +301,9 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    markers are not offered.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
    `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
-   reports it as `BRANCH_RETAINED`. Delivery, partial-diff and merge-gate branches remain. Cleanup
-   never runs `git worktree prune` or `git branch -D`.
+   reports it as `BRANCH_RETAINED`; a refused `base-validation` branch is deleted only under the
+   lifecycle's exception. Delivery, partial-diff and merge-gate branches remain. Cleanup never runs
+   `git worktree prune` or `git branch -D`.
 9. If there are no deletable migration artifacts, stale diff baselines, presence-marker or worktree removal candidates, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
@@ -390,7 +391,7 @@ Execute per class:
   carries its `conditions` and `blockers`, and nothing was written. Call `cleanup plan` again, show
   the new dry run, and ask again.
 - `result.items[]`, one per selected item: worktree items follow the lifecycle outcome table, where
-  `BRANCH_RETAINED` keeps an `apply-review` branch Git refused to delete. An `invalid-record:` item
+  `BRANCH_RETAINED` keeps a branch Git refused to delete. An `invalid-record:` item
   changed by its turn is its own `PREVIEW_MISMATCH`; its `REMOVE_FAILED` keeps the record file. A
   legacy item reports `ok` with `removedEntries`, or its code: `LEGACY_CHANGED`, `UNSAFE_TARGET` and
   `WRITE_FAILED` stop that item with the partial state (`removedEntries`, `stoppedAt`), the plan codes

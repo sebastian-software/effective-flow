@@ -164,6 +164,31 @@ effort, and
 `CLAUDE_CODE_EFFORT_LEVEL` overrides the effort. See
 [Getting started](getting-started.md#recommended-calling-model). When `effective-flow pr` has to draft the PR body, it does so on the `mechanical` tier.
 
+**Validation budget:** A run has one full-suite point, the validation in Phase 5. Everything after
+it is targeted: the tests handed to the test writers, the re-check after each correction round and
+the final check in Phase 7, which covers the paths changed since that full run and runs the non-test
+checks at repository-native breadth. A second full run happens at most once, only in Phase 7: when
+Phase 5 produced no valid full run, or when a changed path is on a closed list: a CI workflow,
+`action.yml`/`action.yaml`, a root manifest (such as `package.json`, `Cargo.toml`, `go.mod`,
+`pyproject.toml`) or `pnpm-workspace.yaml`, a root lockfile, `conftest.py`, or a build or test
+configuration file (`*.config.{js,mjs,cjs,ts}`, `tsconfig*.json`, `build.mjs`). The run never
+exceeds two. A check that stops on an environment limit (wall-clock, no space, version control or
+process termination) or a validator host-tool timeout (`host-timeout`) is reported as not executed
+and starts no correction round; a pull-request lane continues with `limited` evidence and the PR's
+CI, every other lane reports the gap and stops.
+
+**Failure attribution:** A failing check is first compared with CI of the baseline commit: a passing
+covering job proves the failure new. If CI gives no proof, one narrow local run in a temporary
+`base-validation` worktree can prove it pre-existing; there is never a reflexive full base run.
+Pre-existing failures and failures your plan names as expected start no correction round and are
+reported with their attribution. The plan names an expected failure as an exact line,
+`Expected failure: <test file path> › <title path>` or, for one diagnostic of a non-test check,
+`Expected failure: <check command> › <diagnostic>`; a line carried over from an issue counts only
+after `build` asks you to approve it in Phase 1. Contracts:
+[`build-delegated-run`](../../src/shared/build-delegated-run.md),
+[`build-failure-attribution`](../../src/shared/build-failure-attribution.md),
+[`environment-signature-classes`](../../src/shared/environment-signature-classes.md).
+
 **Fast field pilot:** `build` and `refactor` are the two workflows that take part in the opt-in
 Quality/Fast pilot; `refactor`'s differences are listed in its section below.
 Without `executionProfiles.fast.enabled: true`, on a portable installation, or while no pilot

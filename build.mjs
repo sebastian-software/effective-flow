@@ -510,6 +510,8 @@ const REPOSITORY_ONLY_ROOT_FILES = [
 const REPOSITORY_ONLY_REFERENCE_ALLOWLIST = [
   // `docs.md` and `doc-categories.md` name it as a target-project path, not this repository's file
   'docs/developer-guide/README.md',
+  // build's Phase 7 closed list (b) names it as a target-project build file, not this repository's
+  'build.mjs',
 ];
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');

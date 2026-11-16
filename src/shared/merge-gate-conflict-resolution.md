@@ -28,8 +28,8 @@ Hand `{{AGENT:merge-conflict-resolver}}`:
   for the conflicted and adjacent paths only, and `full` validation as soon as it classifies a
   conflicted path high-risk; under `full`, its validation rules unchanged;
 - the rule **"on an environment signature, report the check and its diagnostic; no suite split, no
-  base comparison, no rerun"** with the signature classes and the preflight mapping of "Conflict
-  validation mode";
+  base comparison, no rerun"** with the signature classes and the preflight mapping of
+  `environment-signature-classes`, which both roles include;
 - the **forbidden substitutes** for a check that cannot run here: never run the suite, or a
   suite-equivalent selection, outside the project's test entrypoint, such as a bare `node --test`
   or one over a suite-covering directory or glob; never neutralize the preflight by editing the
@@ -224,20 +224,16 @@ for this change; replace a mandated combined gate that contains an excluded comm
 remaining established subcommands. Where those cannot run separately, the validator runs `full` and
 says so, and the effective mode is `full`.
 
-**Classifying the reported results.** An environment signature is one of: the execution
-environment's own wall-clock limit (the runner or container reports a deadline or timeout exit),
-no space left on device, version control unavailable for a check that needs it, or process
-termination unconfirmed. A check with one counts as not executed, and the round ends as a stop
-before the commit and the push that reports the signature class and the affected checks. Under
+**Classifying the reported results.** An environment signature is one of the four classes of
+`environment-signature-classes`. A check with one counts as not executed, and the round ends as a
+stop before the commit and the push that reports the signature class and the affected checks. Under
 effective `full` that holds with or without CI. Under effective `quick` only the excluded test
 command is deferred to CI – each excluded one, none of which runs locally – so any other
 environment check stops the round the same way; the resolution still needs one executed, passing
 check, and the merge needs Phase 4's CI evidence. A timeout of a role's own host tool, and any timeout it cannot attribute, is
-no environment signature and keeps today's path. **Preflight mapping:** a test entrypoint stopped
-at its own environment preflight carries a signature only where its failed check is `git-checkout`,
-which is version control unavailable; any other failed preflight check, such as loopback, sandbox or
-temporary space, is a failing check, reported `FAILED` and never skipped, so it stops the round as
-any failing verdict does.
+no environment signature and keeps today's path. **Preflight mapping:** the one of
+`environment-signature-classes`, which both handoffs name; a preflight check it reports `FAILED`
+stops the round as any failing verdict does.
 
 **Proposal line.** Where the ceiling is `full` because the value is `full` or absent, the provider is
 GitHub and detection is `detected`, the completion report and an environment stop report carry one

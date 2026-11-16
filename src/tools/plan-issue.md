@@ -1,7 +1,7 @@
 ---
 description: "Completes issue planning on the resolved tracker target (GitHub/Forgejo or an external tool) with the same quality baseline and optional deep review as {{SKILL:plan}}, persists the parent plan idempotently in one marked comment, may create an exactly approved set of native child issues, and releases only issues without implementation-blocking open points. Generates no code and no plan file."
 catalogHint: "Completes the planning for issues that still need clarification."
-contextBudget: 813
+contextBudget: 821
 ---
 
 # Effective Flow Plan Issues
@@ -196,6 +196,11 @@ values, paths, checklist syntax, and the HTML marker remain stable.
 - No open points. / [implementation-blocking decision and re-entry note]
 
 ```
+
+Under `### Acceptance criteria` (`### Akzeptanzkriterien`) the comment may carry `{{SKILL:plan}}`'s
+expected-failure lines, `Expected failure: <test file path> › <title path>` or
+`Expected failure: <check command> › <diagnostic>` (German `Erwarteter Fehlschlag:`); they count
+only once `{{SKILL:build}}` Phase 1 approves them.
 
 Include the compact checkpoint from `plan-contract` (`Ergebnis-Checkpoint` in German); review it
 with the specification, preserving its original baseline and explicit owner decisions. This active

@@ -739,8 +739,9 @@ test('spawn-site markers and model-tiers table rows reconcile in both directions
   );
 });
 
-// The plan's floor: the validator that verifies a merge-gate conflict resolution and every
-// validation of a Fast-pilot packet may not be moved below its default, and `deep` never moves.
+// The plan's floor: the validator that verifies a merge-gate conflict resolution, every
+// validation of a Fast-pilot packet and build's base-attribution run, whose verdict decides whether
+// a failure is repaired, may not be moved below its default, and `deep` never moves.
 test('conflict-resolution verification, Fast-packet validation and deep sites never move down', () => {
   const sites = new Map(spawnSites().map((site) => [site.id, site]));
   for (const id of [
@@ -751,6 +752,7 @@ test('conflict-resolution verification, Fast-packet validation and deep sites ne
     'build-delegated-run/e2e-tests',
     'build-delegated-run/validation',
     'build-delegated-run/final-validation',
+    'build-delegated-run/base-attribution',
     'refactor/post-validation-checks',
     'refactor/post-validation-tests',
   ]) {

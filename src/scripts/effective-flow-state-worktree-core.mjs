@@ -65,7 +65,10 @@
 // against the branch checked out at `integrationRoot`, and a proven branch is deleted with the
 // compare-and-delete `git update-ref -d refs/heads/<branch> <branchOid>` once no worktree checks it
 // out. Otherwise the branch stays, the record is still deleted, and the item is BRANCH_RETAINED
-// with the branch and its unproven commits. A `retain` branch is never touched.
+// with the branch and its unproven commits. A `retain` branch is never touched. The one purpose
+// exception is `base-validation`, whose temporary branch is never integrated: when `branch -d`
+// refuses it, a tip still at `creationOid` that another ref also reaches is compare-and-deleted at
+// that OID (see `deleteTemporaryBranch`).
 //
 // `cleanup plan` and `cleanup apply` alone may also claim a `merge-gate` record that a stopped run
 // left `aborted` or `failed` (`mergeGateRelease` of `evaluateEligibility`): condition 6 is waived,
@@ -202,7 +205,10 @@ export const PURPOSES = Object.freeze([
   'plan-publication',
   'apply-review',
   'merge-gate',
+  'base-validation',
 ]);
+// The purposes bound to `delete-after-integration`; every other purpose is bound to `retain`.
+export const DELETE_AFTER_INTEGRATION_PURPOSES = Object.freeze(['apply-review', 'base-validation']);
 export const BRANCH_POLICIES = Object.freeze(['retain', 'delete-after-integration']);
 export const SETUP_STATUSES = Object.freeze([
   'pending',
@@ -294,6 +300,15 @@ export const IN_PROGRESS_MARKERS = Object.freeze([
 export const DEFAULT_BASE_DIR = '.effective-flow/.worktrees';
 export const PLAN_PUBLICATION_SUFFIX = '-plan-publication';
 export const MERGE_GATE_SUFFIX = '-merge-gate';
+export const BASE_VALIDATION_SUFFIX = '-base-validation';
+// The leaf suffix of each purpose at `BASE_DIR/REPO_NAME/SESSION_ID<suffix>`: the purpose table of
+// `record-init` and the session paths of `worktree inspect`. `delivery` and `partial-diff` take the
+// bare session leaf, `apply-review` its own base directory.
+export const PURPOSE_SUFFIXES = Object.freeze({
+  'plan-publication': PLAN_PUBLICATION_SUFFIX,
+  'merge-gate': MERGE_GATE_SUFFIX,
+  'base-validation': BASE_VALIDATION_SUFFIX,
+});
 // The time bound of `worktree remove` and `cleanup apply`. No item starts once less than
 // ITEM_FLOOR_MS of DEFAULT_DEADLINE_MS is left, and every Git call of the operation is bounded by
 // what is left (in its own process group); the reconciliation of an in-flight claim may use
@@ -486,7 +501,9 @@ export function recordProblem(value, fileId) {
     return 'receipt-workflow';
   }
   if (!BRANCH_POLICIES.includes(value.branchPolicy)) return 'branch-policy';
-  const expectedPolicy = value.purpose === 'apply-review' ? 'delete-after-integration' : 'retain';
+  const expectedPolicy = DELETE_AFTER_INTEGRATION_PURPOSES.includes(value.purpose)
+    ? 'delete-after-integration'
+    : 'retain';
   if (value.branchPolicy !== expectedPolicy) return 'branch-policy-purpose';
   if (!isTimestamp(value.createdAt) || !isTimestamp(value.updatedAt)) return 'timestamp';
   if (!RECORD_STATUSES.includes(value.status)) return 'status';
@@ -662,8 +679,7 @@ async function requiredLocation(context, bases, record) {
       parent: await canonicalOrSelf(context.fs, path.join(bases.applyReview, repo, session)),
     };
   }
-  const suffix = { 'plan-publication': PLAN_PUBLICATION_SUFFIX, 'merge-gate': MERGE_GATE_SUFFIX };
-  const leaf = `${session}${suffix[record.purpose] ?? ''}`;
+  const leaf = `${session}${PURPOSE_SUFFIXES[record.purpose] ?? ''}`;
   return { exact: await canonicalOrSelf(context.fs, path.join(bases.worktree, repo, leaf)) };
 }
 
@@ -1555,6 +1571,12 @@ function staticRecordChecks(record) {
     }
   }
   if (
+    record.purpose === 'base-validation' &&
+    record.branch !== `base-validation/${record.sessionId}`
+  ) {
+    fail('INVALID_INPUT', `a base-validation branch must be base-validation/${record.sessionId}`);
+  }
+  if (
     record.receipt.executionRoot !== record.worktreePath ||
     record.receipt.checkout.branch !== record.branch ||
     record.receipt.workflow !== record.workflow ||
@@ -2026,8 +2048,9 @@ async function unrecordedWorktrees(context, roots, worktrees, named, sessionId, 
     sessionRoots = await Promise.all(
       [
         path.join(bases.worktree, repo, sessionId),
-        path.join(bases.worktree, repo, `${sessionId}${PLAN_PUBLICATION_SUFFIX}`),
-        path.join(bases.worktree, repo, `${sessionId}${MERGE_GATE_SUFFIX}`),
+        ...Object.values(PURPOSE_SUFFIXES).map((suffix) =>
+          path.join(bases.worktree, repo, `${sessionId}${suffix}`),
+        ),
         path.join(bases.applyReview, repo, sessionId),
       ].map((candidate) => canonicalOrSelf(context.fs, candidate)),
     );
@@ -2333,8 +2356,15 @@ export async function integrationProof(context, branchOid, targetOid) {
 // `apply-review` squash or rebase flow, where `branch -d` cannot see the integration) may fall back
 // to the patch-id proof, and only then is the branch deleted with `update-ref -d` bound to the
 // exact `branchOid` that was proven: a branch that moved since is `ref-moved` and stays. Without
-// `integrationRoot` the branch is never force-deleted; it is retained as `not-merged` with the
-// commits `HEAD` lacks. Every retained outcome keeps the branch and still lets the record go.
+// `integrationRoot` the branch is retained as `not-merged` with the commits `HEAD` lacks, and the
+// only other forced deletion is the purpose exception of `base-validation`: its temporary branch
+// is never integrated, so `branch -d` may refuse it whatever `HEAD` is. Instead of the patch-id
+// proof, a tip that still equals the record's `creationOid` holds no commit of its own and is
+// compare-and-deleted at that OID (`proof: 'unadvanced'`), but only while the record still binds
+// it (`base-validation/<SESSION_ID>`, `delete-after-integration`; else `binding`) and another ref
+// still reaches `creationOid` (else `unreachable`), so the deletion never drops the last ref to a
+// commit. A tip that moved is retained as `advanced` with its new commits. Every retained outcome
+// keeps the branch and still lets the record go.
 async function deleteTemporaryBranch(context, record, integration, deps) {
   const branch = record.branch;
   const branchOid = await branchTip(context, branch);
@@ -2350,6 +2380,29 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
     unproven,
     detail: refusal,
   });
+  if (record.purpose === 'base-validation') {
+    if (branchOid !== record.creationOid) {
+      const advanced = await revList(context, [
+        `--max-count=${MAX_REPORTED_COMMITS}`,
+        branchOid,
+        '--not',
+        record.creationOid,
+      ]);
+      return retained('advanced', advanced ?? []);
+    }
+    if (
+      branch !== `base-validation/${record.sessionId}` ||
+      record.branchPolicy !== 'delete-after-integration'
+    ) {
+      return retained('binding');
+    }
+    if (!(await reachedElsewhere(context, record.creationOid, branch))) {
+      return retained('unreachable');
+    }
+    const refused = await compareAndDeleteBranch(context, branch, branchOid, deps);
+    if (refused) return retained(refused);
+    return { outcome: 'deleted-after-proof', branch, branchOid, proof: 'unadvanced' };
+  }
   if (!integration) {
     const unmerged = await revList(context, [
       `--max-count=${MAX_REPORTED_COMMITS}`,
@@ -2366,10 +2419,34 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
   if (!targetOid) return retained('target-missing');
   const proof = await integrationProof(context, branchOid, targetOid);
   if (!proof.proven) return retained(proof.reason, proof.unproven);
+  const refused = await compareAndDeleteBranch(context, branch, branchOid, deps);
+  if (refused) return retained(refused);
+  return { outcome: 'deleted-after-proof', branch, branchOid, proof: proof.reason };
+}
+
+// Whether a ref other than `refs/heads/<branch>` contains `oid`. A failed Git call counts as no.
+async function reachedElsewhere(context, oid, branch) {
+  const result = await runGit(context, context.cwd, [
+    'for-each-ref',
+    '--format=%(refname)',
+    '--contains',
+    oid,
+  ]);
+  if (!gitOk(result)) return false;
+  return gitStdout(result)
+    .split('\n')
+    .map((line) => line.trim())
+    .some((ref) => ref !== '' && ref !== `refs/heads/${branch}`);
+}
+
+// Deletes `refs/heads/<branch>` only while it still points at the proven `branchOid` and no
+// worktree checks it out. Returns null once deleted, else the retained reason: `checked-out` or
+// `ref-moved`.
+async function compareAndDeleteBranch(context, branch, branchOid, deps) {
   const checkedOut = (await listWorktrees(context)).some(
     (entry) => entry.branch === `refs/heads/${branch}`,
   );
-  if (checkedOut) return retained('checked-out');
+  if (checkedOut) return 'checked-out';
   await phase(deps, 'beforeBranchDelete', { branch, branchOid });
   const deleted = await runGit(context, context.cwd, [
     'update-ref',
@@ -2377,8 +2454,7 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
     `refs/heads/${branch}`,
     branchOid,
   ]);
-  if (!gitOk(deleted)) return retained('ref-moved');
-  return { outcome: 'deleted-after-proof', branch, branchOid, proof: proof.reason };
+  return gitOk(deleted) ? null : 'ref-moved';
 }
 
 // ---------------------------------------------------------------------------------------------
