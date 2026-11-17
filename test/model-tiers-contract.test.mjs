@@ -626,6 +626,11 @@ const SPAWN_MENTION_ALLOWLIST = [
     '**Inline run.**',
     'host-pr-watch: no-watch rule for a delegated inline run; no spawn',
   ],
+  [
+    'shared/next-steps.md',
+    '**T4 (aborts only):**',
+    'retrospective slot signal T4: defines a signal about sub-agents a run already spawned; instructs no spawn',
+  ],
 ].map(([source, anchor, reason]) => ({ source, anchor, reason }));
 
 function sourceFiles() {

@@ -107,7 +107,7 @@ when: the run's subject is fixed and a session title is about to be applied or e
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ## Recommended skills

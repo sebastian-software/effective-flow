@@ -44,7 +44,7 @@ when: `<plan.dir>` is about to be resolved, so the config locator (including its
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ## Approach
@@ -67,7 +67,7 @@ when: `<plan.dir>` is resolved and the plan files are about to be classified
    - Then a short list of status-unclear plans, if present
    - For every entry with non-empty `duplicates`, point out that the same file name exists at the top level and in `archive/` (this duplicate violates the `Plan file convention` and should be resolved via the appropriate workflow)
    - If no open plans exist: a clear message "No open plans found."
-5. Emit the next-step block per `next-steps` as the last element of the output, after the table. A run that found no open plan matches no row and emits nothing.
+5. Emit the next-step block per `next-steps` as the last element of the output, after the table, naming the first status-unclear plan where a row offers one. A run that found no open plan emits only for a status-unclear plan; the retrospective slot of `next-steps` still applies. A duplicate keeps its report line and gets no invocation.
 
 ## Summary rules
 

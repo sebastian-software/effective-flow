@@ -75,7 +75,7 @@ when: the running environment identifies T3 Code in a top-level run (neither a b
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ```include

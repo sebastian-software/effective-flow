@@ -112,6 +112,9 @@ through the appropriate existing workflow.
 evidence, delegation, or verification friction. A single slow or unsuccessful attempt alone does not
 establish a repository defect, and a clean session can produce no recommendations.
 
+Other tools may recommend `retro` after a demonstrably turbulent run, but only as a suggestion;
+see [When `retro` appears](tool-flow.md#when-retro-appears).
+
 ## `/effective-flow review`
 
 **Purpose:** Orchestrates a comprehensive code review – or, when the argument clearly points to

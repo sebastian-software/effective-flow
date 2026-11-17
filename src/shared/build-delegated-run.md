@@ -73,7 +73,7 @@ when: a plan file must exceptionally be created
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ```lazy-include
@@ -478,8 +478,8 @@ Rules for the findings report:
 9. Summarize what was implemented, tested and documented; describe the state the full suite covered
    (Phase 5, before later corrections), never a snapshot tree id, that later changes were verified
    targeted, and every attribution and approved expected failure
-   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
-10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step.
+   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); name the report path Phase 6 step 9 recorded, also after a merge; state the worktree-record exit self-check result.
+10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step. A delegated execution's `ABORT` emits nothing; the caller alone applies the retrospective slot.
 
 ## Rules
 

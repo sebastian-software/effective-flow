@@ -91,8 +91,10 @@ The same rule applies to review findings: `apply` is shown only when the current
 an admitted report or direct finding issue and can name it. A current-scope, closed, uncertain,
 deduplicated, or eligible-but-not-written observation produces no recursive substitute.
 
-Aborted runs name their blocker instead. These end states also stay silent, even with an associated
-plan; they read no optional planning context:
+Aborted runs name their blocker instead and recommend no next step, with one exception: a run that
+aborts after it had already started a sub-agent for real work can still add `retro` as its only
+option (see [When `retro` appears](#when-retro-appears)). These end states also stay silent, even with
+an associated plan; they read no optional planning context:
 
 - **`/effective-flow setup`** with nothing staged – there is nothing for `commit` to pick up. A
   `/effective-flow setup status` report is the exception when it found a problem setup can fix: it
@@ -107,8 +109,47 @@ plan; they read no optional planning context:
   branch itself.
 
 A delivery that merged its branch in `apply`, `build`, `fix`, `refactor`, `docs`, `maintain`, or
-`iterate` has no generic fallback row: there is no remaining branch from which to open a pull
-request. It can still recommend an unfinished package from its verified associated plan.
+`iterate` has no pull-request row: there is no remaining branch from which to open a pull request.
+It can still recommend an unfinished package from its verified associated plan. When a merged
+`build`, `fix`, `refactor`, or `maintain` delivery wrote a findings or offloaded report, it also
+recommends `/effective-flow apply <report>`: after that package if there is one, otherwise first.
+
+`/effective-flow open-plans` lists a plan whose file name exists both at the top level and in
+`archive/` as a duplicate to resolve, and recommends nothing for it. A plan whose status is unclear
+does get `/effective-flow plan <path>`, also when no plan is open.
+
+After a merge, `merge-gate` considers its candidates in a fixed order: the next step from the
+verified associated plan, the linked-issue reconciliation, that plan's review report when it still
+holds an open finding (`/effective-flow apply <report>`), `open-plans`, then `retro`. The first two
+that apply fill the two slots. A caller that knows the associated
+plan passes it on; without a verified association the gate never searches for a report.
+
+## When `retro` appears
+
+After the next steps above are chosen, a run may add `/effective-flow retro` for the current
+conversation. It appears only when the run's own report states one of four turbulence signals:
+
+- **A repair round went wrong:** a repair round for a pull request ended with an abort, a refused
+  CI-repair instruction, a second reply without the expected answer, or a review cause still open
+  after its second repair attempt. A round that only waited for your approval, or that succeeded,
+  does not count.
+- **A delegated step needed recovery:** a helper had to be resumed once, or its result had to be
+  requested again.
+- **A merge-gate run needed repeated answers:** it asked you at least two of its exceptional
+  questions, such as pending checks, unestablished reviews, a check-list waiver, a conflict
+  resolution, or a set-aside finding.
+- **A run aborted after real work started:** an abort after at least one helper had begun domain
+  work. Aborts caused by a bad argument, setup, configuration, or a missing capability, and stops you
+  initiated, never count.
+
+A run that observed such a signal says so in one report line before the block; without that line
+there is no signal. `retro` never appears when next steps are suppressed or the run is
+non-interactive, and it never pushes out another recommendation: it takes the second slot when that
+is free, or is the only option when nothing else applies. When both slots are taken, it is dropped.
+After an abort the report names the blocker first and `retro` is the block's only option. Its note
+names the basis only in general terms, for example the failed repair round, and never quotes an
+abort reason, check name, or other text from the forge. See [`retro`](tools-quality.md#effective-flow-retro)
+for what the tool does.
 
 ## Chat only
 
@@ -128,65 +169,73 @@ address actual unfinished reconciliation. A parent intentionally kept open for l
 not qualify by itself. The general merged row is omitted when there is no open local plan to list;
 that does not suppress a valid candidate from the associated plan or issue.
 
-| Tool            | Condition                                                             | Then                                            | Or                                              |
-| --------------- | --------------------------------------------------------------------- | ----------------------------------------------- | ----------------------------------------------- |
-| `concept`       | deep review declined                                                  | `/effective-flow review <concept-file>`         | —                                               |
-| `concept`       | deep review done, ready                                               | `/effective-flow plan <work package>`           | `/effective-flow review <concept-file>`         |
-| `concept`       | deep review done, open points remain                                  | `/effective-flow review <concept-file>`         | —                                               |
-| `investigate`   | admitted defect with a clear cause                                    | `/effective-flow fix <report>`                  | —                                               |
-| `investigate`   | admitted structural problem                                           | `/effective-flow refactor <report>`             | —                                               |
-| `investigate`   | admitted missing functionality                                        | `/effective-flow build <report>`                | —                                               |
-| `investigate`   | admitted pure documentation gap or behavior to be documented          | `/effective-flow docs <report>`                 | —                                               |
-| `plan`          | deep review declined                                                  | `/effective-flow apply <plan-file>`             | `/effective-flow review <plan-file>`            |
-| `plan`          | deep review done, ready                                               | `/effective-flow apply <plan-file>`             | `/effective-flow plan <plan-file>`              |
-| `plan`          | deep review done, open points remain                                  | `/effective-flow review <plan-file>`            | `/effective-flow plan <plan-file>`              |
-| `open-plans`    | at least one open plan                                                | `/effective-flow apply`                         | —                                               |
-| `plan-issue`    | released                                                              | `/effective-flow apply #<issue>`                | `/effective-flow plan-issue <issue>`            |
-| `plan-issue`    | retained for planning                                                 | `/effective-flow plan-issue <issue>`            | —                                               |
-| `issue-buddy`   | dry run; would-publish issue in public repository                     | `/effective-flow issue-buddy --publish`         | —                                               |
-| `issue-buddy`   | draft plan PR published; restore plan file from branch first          | `/effective-flow build <plan-file>`             | —                                               |
-| `backlog-audit` | goal epic written                                                     | `/effective-flow apply <epic>`                  | `/effective-flow plan-issue <split issue>`      |
-| `backlog-audit` | split handed off, no epic written                                     | `/effective-flow plan-issue <split issue>`      | —                                               |
-| `backlog-audit` | plan revision recommended                                             | `/effective-flow plan <plan-file>`              | —                                               |
-| `apply`         | plan clarity gate failed                                              | `/effective-flow plan <plan-file>`              | `/effective-flow review <plan-file>`            |
-| `apply`         | findings applied, PR opened                                           | `/effective-flow merge-gate <PR>`               | `/effective-flow apply <remaining source>`      |
-| `apply`         | findings applied, delivery branch retained, no PR                     | `/effective-flow pr`                            | `/effective-flow apply <remaining source>`      |
-| `apply`         | issues processed, PR opened                                           | `/effective-flow merge-gate <PR>`               | `/effective-flow plan-issue <skipped issue>`    |
-| `apply`         | issues skipped, no PR                                                 | `/effective-flow plan-issue <skipped issue>`    | —                                               |
-| `build`         | PR opened                                                             | `/effective-flow merge-gate <PR>`               | `/effective-flow apply <findings report>`       |
-| `build`         | delivery branch retained, no PR                                       | `/effective-flow pr`                            | `/effective-flow apply <findings report>`       |
-| `fix`           | PR opened                                                             | `/effective-flow merge-gate <PR>`               | `/effective-flow apply <findings report>`       |
-| `fix`           | delivery branch retained, no PR                                       | `/effective-flow pr`                            | `/effective-flow apply <findings report>`       |
-| `refactor`      | PR opened                                                             | `/effective-flow merge-gate <PR>`               | `/effective-flow apply <findings report>`       |
-| `refactor`      | delivery branch retained, no PR                                       | `/effective-flow pr`                            | `/effective-flow apply <findings report>`       |
-| `docs`          | PR opened                                                             | `/effective-flow merge-gate <PR>`               | `/effective-flow review <PR>`                   |
-| `docs`          | delivery branch retained, no PR                                       | `/effective-flow pr`                            | —                                               |
-| `maintain`      | PR opened                                                             | `/effective-flow merge-gate <PR>`               | `/effective-flow apply <offloaded report>`      |
-| `maintain`      | delivery branch retained, no PR                                       | `/effective-flow pr`                            | `/effective-flow apply <offloaded report>`      |
-| `iterate`       | PR mode                                                               | `/effective-flow merge-gate <PR>`               | `/effective-flow review <PR>`                   |
-| `iterate`       | local mode, delivery branch retained                                  | `/effective-flow pr`                            | —                                               |
-| `review`        | local report written                                                  | `/effective-flow apply <report>`                | —                                               |
-| `review`        | direct admitted findings published to a tracker                       | `/effective-flow apply #<finding>…`             | `/effective-flow apply <local security report>` |
-| `review`        | plan file mode, ready                                                 | `/effective-flow apply <plan-file>`             | —                                               |
-| `review`        | plan file mode, open points remain                                    | `/effective-flow review <plan-file>`            | `/effective-flow plan <plan-file>`              |
-| `review`        | concept file mode, ready                                              | `/effective-flow plan <work package>`           | —                                               |
-| `review`        | concept file mode, open points remain                                 | `/effective-flow review <concept-file>`         | —                                               |
-| `review`        | pull-request mode                                                     | `/effective-flow merge-gate <PR>`               | `/effective-flow iterate <PR>`                  |
-| `deliver`       | PR opened                                                             | `/effective-flow merge-gate <PR>`               | —                                               |
-| `autopilot`     | draft PR opened, no blocker                                           | `/effective-flow merge-gate <PR>`               | `/effective-flow review <PR>`                   |
-| `autopilot`     | plan-stage blocker, except a public security blocker                  | `/effective-flow review <plan-file>`            | `/effective-flow plan <plan-file>`              |
-| `autopilot`     | implementation-stage blocker recorded in a draft PR                   | `/effective-flow apply <plan-file>`             | —                                               |
-| `autopilot`     | implementation-stage blocker, no PR, except a public security blocker | `/effective-flow apply <plan-file>`             | —                                               |
-| `autopilot`     | security blocker on a public repository, nothing published            | `/effective-flow apply <local security report>` | —                                               |
-| `commit`        | commit created on a non-base branch                                   | `/effective-flow pr`                            | —                                               |
-| `pr`            | always                                                                | `/effective-flow merge-gate <PR>`               | `/effective-flow review <PR>`                   |
-| `merge-gate`    | blocked by review notes                                               | `/effective-flow iterate <PR>`                  | `/effective-flow merge-gate <PR>`               |
-| `merge-gate`    | merged but at least one linked issue is open or unobservable          | `/effective-flow merge-gate <PR>`               | —                                               |
-| `merge-gate`    | merged                                                                | `/effective-flow open-plans`                    | —                                               |
-| `setup`         | staged changes exist                                                  | `/effective-flow commit`                        | —                                               |
-| `setup`         | status report found a setup-fixable problem                           | `/effective-flow setup <setup argument>`        | `/effective-flow setup <second setup argument>` |
-| `cleanup`       | staged removals exist                                                 | `/effective-flow commit`                        | `/effective-flow setup`                         |
-| `cleanup`       | config values referred to setup                                       | `/effective-flow setup`                         | —                                               |
+| Tool            | Condition                                                                       | Then                                                  | Or                                                                 |
+| --------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| `concept`       | deep review declined                                                            | `/effective-flow review <concept-file>`               | —                                                                  |
+| `concept`       | deep review done, ready                                                         | `/effective-flow plan <work package>`                 | `/effective-flow review <concept-file>`                            |
+| `concept`       | deep review done, open points remain                                            | `/effective-flow review <concept-file>`               | —                                                                  |
+| `investigate`   | admitted defect with a clear cause                                              | `/effective-flow fix <report>`                        | —                                                                  |
+| `investigate`   | admitted structural problem                                                     | `/effective-flow refactor <report>`                   | —                                                                  |
+| `investigate`   | admitted missing functionality                                                  | `/effective-flow build <report>`                      | —                                                                  |
+| `investigate`   | admitted pure documentation gap or behavior to be documented                    | `/effective-flow docs <report>`                       | —                                                                  |
+| `plan`          | deep review declined                                                            | `/effective-flow apply <plan-file>`                   | `/effective-flow review <plan-file>`                               |
+| `plan`          | deep review done, ready                                                         | `/effective-flow apply <plan-file>`                   | `/effective-flow plan <plan-file>`                                 |
+| `plan`          | deep review done, open points remain                                            | `/effective-flow review <plan-file>`                  | `/effective-flow plan <plan-file>`                                 |
+| `open-plans`    | at least one open plan                                                          | `/effective-flow apply`                               | `/effective-flow plan <status-unclear plan>`                       |
+| `open-plans`    | no open plan, status-unclear plan                                               | `/effective-flow plan <status-unclear plan>`          | —                                                                  |
+| `plan-issue`    | released                                                                        | `/effective-flow apply #<issue>`                      | `/effective-flow plan-issue <issue>`                               |
+| `plan-issue`    | retained for planning                                                           | `/effective-flow plan-issue <issue>`                  | —                                                                  |
+| `issue-buddy`   | dry run; would-publish issue in public repository                               | `/effective-flow issue-buddy --publish`               | `/effective-flow plan-issue <not-ready or readiness-failed issue>` |
+| `issue-buddy`   | draft plan PR published; restore plan file from branch first                    | `/effective-flow build <plan-file>`                   | `/effective-flow plan-issue <not-ready or readiness-failed issue>` |
+| `issue-buddy`   | completed pass with a not-ready or readiness-failed issue, no other row applies | `/effective-flow plan-issue <issue>`                  | —                                                                  |
+| `backlog-audit` | goal epic written                                                               | `/effective-flow apply <epic>`                        | `/effective-flow plan-issue <split issue>`                         |
+| `backlog-audit` | split handed off, no epic written                                               | `/effective-flow plan-issue <split issue>`            | —                                                                  |
+| `backlog-audit` | plan revision recommended                                                       | `/effective-flow plan <plan-file>`                    | —                                                                  |
+| `apply`         | plan clarity gate failed                                                        | `/effective-flow plan <plan-file>`                    | `/effective-flow review <plan-file>`                               |
+| `apply`         | findings applied, PR opened                                                     | `/effective-flow merge-gate <PR>`                     | `/effective-flow apply <remaining source>`                         |
+| `apply`         | findings applied, delivery branch retained, no PR                               | `/effective-flow pr`                                  | `/effective-flow apply <remaining source>`                         |
+| `apply`         | issues processed, PR opened                                                     | `/effective-flow merge-gate <PR>`                     | `/effective-flow plan-issue <skipped issue>`                       |
+| `apply`         | issues skipped, no PR                                                           | `/effective-flow plan-issue <skipped issue>`          | —                                                                  |
+| `build`         | PR opened                                                                       | `/effective-flow merge-gate <PR>`                     | `/effective-flow apply <findings report>`                          |
+| `build`         | delivery branch retained, no PR                                                 | `/effective-flow pr`                                  | `/effective-flow apply <findings report>`                          |
+| `build`         | delivery merged, findings report written                                        | `/effective-flow apply <findings report>`             | —                                                                  |
+| `fix`           | PR opened                                                                       | `/effective-flow merge-gate <PR>`                     | `/effective-flow apply <findings report>`                          |
+| `fix`           | delivery branch retained, no PR                                                 | `/effective-flow pr`                                  | `/effective-flow apply <findings report>`                          |
+| `fix`           | delivery merged, findings report written                                        | `/effective-flow apply <findings report>`             | —                                                                  |
+| `refactor`      | PR opened                                                                       | `/effective-flow merge-gate <PR>`                     | `/effective-flow apply <findings report>`                          |
+| `refactor`      | delivery branch retained, no PR                                                 | `/effective-flow pr`                                  | `/effective-flow apply <findings report>`                          |
+| `refactor`      | delivery merged, findings report written                                        | `/effective-flow apply <findings report>`             | —                                                                  |
+| `docs`          | PR opened                                                                       | `/effective-flow merge-gate <PR>`                     | `/effective-flow review <PR>`                                      |
+| `docs`          | delivery branch retained, no PR                                                 | `/effective-flow pr`                                  | —                                                                  |
+| `maintain`      | PR opened                                                                       | `/effective-flow merge-gate <PR>`                     | `/effective-flow apply <offloaded report>`                         |
+| `maintain`      | delivery branch retained, no PR                                                 | `/effective-flow pr`                                  | `/effective-flow apply <offloaded report>`                         |
+| `maintain`      | delivery merged, offloaded report written                                       | `/effective-flow apply <offloaded report>`            | —                                                                  |
+| `iterate`       | PR mode                                                                         | `/effective-flow merge-gate <PR>`                     | `/effective-flow review <PR>`                                      |
+| `iterate`       | local mode, delivery branch retained                                            | `/effective-flow pr`                                  | —                                                                  |
+| `review`        | local report written                                                            | `/effective-flow apply <report>`                      | —                                                                  |
+| `review`        | direct admitted findings published to a tracker                                 | `/effective-flow apply #<finding>…`                   | `/effective-flow apply <local security report>`                    |
+| `review`        | plan file mode, ready                                                           | `/effective-flow apply <plan-file>`                   | —                                                                  |
+| `review`        | plan file mode, open points remain                                              | `/effective-flow review <plan-file>`                  | `/effective-flow plan <plan-file>`                                 |
+| `review`        | concept file mode, ready                                                        | `/effective-flow plan <work package>`                 | —                                                                  |
+| `review`        | concept file mode, open points remain                                           | `/effective-flow review <concept-file>`               | —                                                                  |
+| `review`        | pull-request mode                                                               | `/effective-flow merge-gate <PR>`                     | `/effective-flow iterate <PR>`                                     |
+| `deliver`       | PR opened                                                                       | `/effective-flow merge-gate <PR>`                     | `/effective-flow review <PR>`                                      |
+| `autopilot`     | draft PR opened, no blocker                                                     | `/effective-flow merge-gate <PR>`                     | `/effective-flow review <PR>`                                      |
+| `autopilot`     | plan-stage blocker, except a public security blocker                            | `/effective-flow review <plan-file>`                  | `/effective-flow plan <plan-file>`                                 |
+| `autopilot`     | implementation-stage blocker recorded in a draft PR                             | `/effective-flow apply <plan-file>`                   | —                                                                  |
+| `autopilot`     | implementation-stage blocker, no PR, except a public security blocker           | `/effective-flow apply <plan-file>`                   | —                                                                  |
+| `autopilot`     | security blocker on a public repository, nothing published                      | `/effective-flow apply <local security report>`       | —                                                                  |
+| `commit`        | commit created on a non-base branch                                             | `/effective-flow pr`                                  | —                                                                  |
+| `pr`            | always                                                                          | `/effective-flow merge-gate <PR>`                     | `/effective-flow review <PR>`                                      |
+| `merge-gate`    | blocked by review notes                                                         | `/effective-flow iterate <PR>`                        | `/effective-flow merge-gate <PR>`                                  |
+| `merge-gate`    | blocked by failing checks                                                       | `/effective-flow iterate <PR> fix the failing checks` | `/effective-flow investigate failing checks on #<PR>`              |
+| `merge-gate`    | merged but at least one linked issue is open or unobservable                    | `/effective-flow merge-gate <PR>`                     | —                                                                  |
+| `merge-gate`    | merged, associated plan's review report has open findings                       | `/effective-flow apply <report>`                      | `/effective-flow open-plans`                                       |
+| `merge-gate`    | merged                                                                          | `/effective-flow open-plans`                          | —                                                                  |
+| `setup`         | staged changes exist                                                            | `/effective-flow commit`                              | —                                                                  |
+| `setup`         | status report found a setup-fixable problem                                     | `/effective-flow setup <setup argument>`              | `/effective-flow setup <second setup argument>`                    |
+| `cleanup`       | staged removals exist                                                           | `/effective-flow commit`                              | `/effective-flow setup`                                            |
+| `cleanup`       | config values referred to setup                                                 | `/effective-flow setup`                               | —                                                                  |
 
 ## Reading the map
 

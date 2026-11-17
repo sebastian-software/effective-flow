@@ -66,7 +66,7 @@ when: the run's subject is fixed and a session title is about to be applied or e
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 Retain any verified primary outcome/source association, checkpoint and attempt from the input or
@@ -663,8 +663,8 @@ format below. Never inspect or create a report below a linked execution worktree
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
 6. Present `result.summary` as returned; the overflow path presents as its fragment states.
 7. Delete the wisdom file.
-8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat.
-9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.
+8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat; without an admitted finding, only the retrospective slot of `next-steps` applies.
+9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, it matches no next-steps row.
 
 #### Publishing target (forge or external tool)
 

@@ -76,7 +76,7 @@ when: the supplied or resolved execution root must be verified before a push, he
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ## Project conventions

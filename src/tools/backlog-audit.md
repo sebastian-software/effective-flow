@@ -88,7 +88,7 @@ when: a helper envelope on the forge target fails with a tracker error code
 
 ```lazy-include
 next-steps
-when: Phase 9 reaches the completion report
+when: Phase 9 reaches the completion report, or the run aborts after spawning its first domain sub-agent
 ```
 
 ## Arguments and helper calls

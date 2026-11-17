@@ -97,7 +97,7 @@ when: a blocker is recorded, the plan stage ends without `Approved` and zero ope
 
 ```lazy-include
 next-steps
-when: Phase 6 reaches the completion report
+when: Phase 6 reaches the completion report, or the run aborts after spawning its first domain sub-agent
 ```
 
 ## Arguments and helper calls
