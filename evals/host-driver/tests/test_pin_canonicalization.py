@@ -32,6 +32,24 @@ def load_stage():
     return module
 
 
+def reference_canonical(value):
+    """The former Path-based canonical(), kept only as the oracle of the equivalence table."""
+    if not isinstance(value, str):
+        raise ValueError('path must be a string')
+    path = Path(value)
+    if not (path.is_absolute() and str(path) == value and path.resolve() == path):
+        raise ValueError(CANONICAL_MESSAGE + value)
+    return path
+
+
+def verdict(check, value):
+    try:
+        check(value)
+    except ValueError as error:
+        return 'reject', str(error)
+    return 'accept', None
+
+
 def parsed_paths(pinned):
     return Counter(call.args[0]['path'] for call in pinned.call_args_list if call.kwargs.get('json_value'))
 
@@ -44,6 +62,67 @@ class TemporaryRoot(unittest.TestCase):
         self.addCleanup(temp.cleanup)
         self.base = Path(temp.name)
         self.stage = load_stage()
+
+
+class CanonicalEquivalence(TemporaryRoot):
+    def test_canonical_matches_the_former_path_check_except_for_loops(self):
+        base = self.base
+        regular = base / 'file'
+        regular.write_text('canonical\n')
+        real = base / 'real'
+        (real / 'inner').mkdir(parents=True)
+        (base / 'link-leaf').symlink_to(regular)
+        (base / 'link-dir').symlink_to(real)
+        (base / 'dangling').symlink_to(base / 'nowhere')
+        cases = [
+            ('non-string', 42, 'reject'),
+            ('relative', 'relative/path', 'reject'),
+            ('root', '/', 'accept'),
+            ('double root', '//', 'reject'),
+            ('double-root child', '//x', 'reject'),
+            ('triple-root child', '///x', 'reject'),
+            ('inner double slash', str(base) + '//file', 'reject'),
+            ('trailing slash', str(base) + '/', 'reject'),
+            ('dot component', str(base) + '/./file', 'reject'),
+            ('dot-dot component', str(base) + '/real/../file', 'reject'),
+            ('symlinked leaf', str(base / 'link-leaf'), 'reject'),
+            ('symlinked ancestor', str(base / 'link-dir/inner'), 'reject'),
+            ('nonexistent tail', str(base / 'missing/deeper'), 'accept'),
+            ('nonexistent tail below a regular file', str(regular / 'child'), 'accept'),
+            ('dangling symlink leaf', str(base / 'dangling'), 'reject'),
+            ('dangling symlink ancestor', str(base / 'dangling/child'), 'reject'),
+            ('over-long component', str(base / ('x' * 300)), 'accept'),
+            ('plain canonical', str(regular), 'accept'),
+        ]
+        if os.geteuid() != 0:
+            locked = base / 'locked'
+            (locked / 'inside').mkdir(parents=True)
+            locked.chmod(0)
+            self.addCleanup(locked.chmod, 0o700)
+            cases.append(('unsearchable ancestor', str(locked / 'inside'), 'accept'))
+        for label, value, expected in cases:
+            with self.subTest(case=label):
+                old = verdict(reference_canonical, value)
+                self.assertEqual(verdict(self.stage.canonical, value), old)
+                self.assertEqual(old[0], expected)
+
+    def test_nul_byte_keeps_the_realpath_value_error(self):
+        value = str(self.base) + '/nul\x00byte'
+        with self.assertRaises(ValueError) as old:
+            reference_canonical(value)
+        with self.assertRaises(ValueError) as new:
+            self.stage.canonical(value)
+        self.assertEqual(str(new.exception), str(old.exception))
+        self.assertNotIn(CANONICAL_MESSAGE, str(new.exception))
+
+    def test_self_looping_symlink_is_rejected_on_every_python_version(self):
+        loop = self.base / 'loop'
+        loop.symlink_to('loop')
+        for label, value in (('leaf', str(loop)), ('ancestor', str(loop / 'child'))):
+            with self.subTest(case=label):
+                with self.assertRaises(ValueError) as caught:
+                    self.stage.canonical(value)
+                self.assertEqual(str(caught.exception), CANONICAL_MESSAGE + value)
 
 
 class PinReaders(TemporaryRoot):

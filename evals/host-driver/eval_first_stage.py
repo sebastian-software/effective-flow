@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import errno
 import hashlib
 import importlib.util
 import itertools
@@ -63,9 +64,19 @@ def digest(value):
 def canonical(value):
     require(isinstance(value, str), 'path must be a string')
     path = Path(value)
-    require(path.is_absolute() and str(path) == value and path.resolve() == path,
-            'expected canonical absolute path: ' + value)
+    # realpath() leaves a symlink loop unresolved; the final lstat() refuses it on every
+    # Python version, where Path.resolve() raised RuntimeError on 3.11/3.12 and accepted it later.
+    require(path.is_absolute() and str(path) == value and os.path.realpath(value) == value
+            and not _link_or_loop(value), 'expected canonical absolute path: ' + value)
     return path
+
+
+def _link_or_loop(value):
+    try:
+        return stat.S_ISLNK(os.lstat(value).st_mode)
+    except OSError as error:
+        # Missing, unsearchable or overlong paths stay accepted, as with Path.resolve().
+        return error.errno == errno.ELOOP
 
 
 def identity(path, expected):
