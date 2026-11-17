@@ -86,9 +86,20 @@ used and stays unchanged.
    `<!-- effective-flow-autopilot-blockers:end -->`, exactly the blocker lines of the rendered
    appendix, already sanitized, scanned and neutral for a private security blocker; replace an
    existing pair instead of adding a second. The committed plan therefore always differs from its
-   base version.
-4. **Commit.** Delegate the commit to `{{SKILL:commit}}` with the worktree's full verified
-   receipt, exactly that one path, a `docs:` message in `language.git` that names the plan, and
+   base version. Before any staging, scan the complete final plan file there, not only the
+   appendix, with the literal `plan-publication.mjs scan` call: `cwd` the worktree, `runState`
+   `unattended`, `planFile` the plan path. This covers the first publication, a changed-plan rerun
+   and the issue plan-on-base fallback alike. Any `blocking` entry or a failed scan records an
+   `appendix-scan` blocker whose summary says the plan file failed its content scan, publishes
+   nothing and continues at step 6.
+4. **Commit.** Stage exactly the plan path with
+   `git -C <WORKTREE_PATH> add -- ':(literal)<plan path>'`, never `git add -A` or `git add .`. The
+   staged set from `git diff --cached --name-status -z --no-renames` must be exactly one entry naming
+   that path; anything else, or an empty index, stops without committing and records a
+   `post-branch-failure` blocker. Record the pre-commit `HEAD` and the staged-tree OID from
+   `git -C <WORKTREE_PATH> write-tree`, then delegate the commit to `{{SKILL:commit}}` with the
+   worktree's full verified receipt, the expected branch, exactly that one path, the expected
+   staged-tree OID, a `docs:` message in `language.git` that names the plan, and
    `Next steps: suppressed`.
 5. **Pull request.** Delegate to `{{SKILL:pr}}` as a returning committed handoff from the worktree
    with the commit's head, base and OID, the chain lines and these inputs:
