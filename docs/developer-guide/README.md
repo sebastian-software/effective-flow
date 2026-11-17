@@ -74,3 +74,6 @@ is no runtime application – you edit `src/`, never `dist/`.
   gap categories and the scoring procedure.
 - [focus schedule evidence](focus-schedule-evidence.md) – dated addendum to the host evidence:
   T3 Code `schedule_task` behaviour on Codex threads and the go decision for the follow-up mode.
+- [Host-driver test profile](host-driver-test-profile.md) – point-in-time profile of the slow
+  host-driver Python modules on a host without SHA extensions: the composed-fixture before/after
+  timing, hot spots with their decisions, and the stage-loop wait gate.
