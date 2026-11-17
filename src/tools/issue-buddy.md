@@ -1,7 +1,7 @@
 ---
 description: "Runs one bounded, unattended Issue Buddy pass in the primary checkout: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests on public repositories."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 490
+contextBudget: 494
 ---
 
 # Effective Flow Issue Buddy
@@ -56,7 +56,7 @@ when: Phase 3 briefs a fresh read-only readiness leaf
 
 ```lazy-include
 next-steps
-when: Phase 6 reaches the completed pass's final chat report
+when: Phase 6 reaches the completed pass's final chat report, or the pass aborts after spawning its first domain sub-agent
 ```
 
 ## Arguments and helper discipline
@@ -351,4 +351,6 @@ as unavailable. No session title or rename is emitted. On a completed dry run wi
 After publication, name the exact plan path and PR branch; when absent locally, explain restoring
 that file from the branch before `{{SKILL:build}} <plan-file>`. Blocking plans require clarification
 before implementation. Never recommend merging the plan-only draft first. Apply `next-steps` as
-the last chat element only for a completed pass.
+the last chat element only for a completed pass; the retrospective slot of `next-steps` still
+applies. Its `plan-issue` option names the first `not-ready` issue or `READINESS_INVALID` failure;
+publish, persistence, Phase-4 plan-content and environment failures keep their report line only.

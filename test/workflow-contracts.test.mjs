@@ -2381,7 +2381,7 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
 
   // Read-only answers neither write nor confirm, and a retired row is answered with its action.
   assert.match(answers, near('An answer writes nothing', 'asks no confirmation', 10));
-  assert.match(answers, near('asks no confirmation', 'emits no next-steps block', 10));
+  assert.match(answers, near('asks no confirmation', 'matches no next-steps row', 10));
   assert.match(
     answers,
     near('retired row `data\\.retired` lists', 'the action the retired-key rule', 60),
@@ -2514,8 +2514,8 @@ test('the Targeted setup fragment states its preconditions, redirects, and singl
   assert.match(noOp, near('asks no confirmation', 'says so', 10));
   assert.match(write, /A non-interactive run [^.]*\bwrites nothing/);
 
-  // The summary stages nothing, so it offers no next step.
-  assert.match(summary, /It emits no next-steps block/);
+  // The summary stages nothing, so it matches no next-step row.
+  assert.match(summary, /It matches no next-steps row/);
 });
 
 // The check above is satisfied vacuously by a *deleted* pointer: a name nobody references is a
@@ -4759,7 +4759,7 @@ test('next-step apply edges require a concrete admitted artifact', () => {
   const nextSteps = flat(source('src/shared/next-steps.md'));
   assert.match(
     nextSteps,
-    /finding\/review `apply` option exists only when this run actually created an admitted durable report or direct finding issue and can name its concrete path\/reference/,
+    /finding\/review `apply` option exists only when this run actually created an admitted durable report or direct finding issue and can name its concrete path\/reference, or when a merge-gate merge resolved the report its verified associated plan points to and that report still holds an open finding/,
   );
   assert.match(
     nextSteps,
@@ -4780,6 +4780,464 @@ test('next-step apply edges require a concrete admitted artifact', () => {
   );
 });
 
+// --- Retrospective slot and follow-up artifact edges ---
+
+const NEXT_STEPS_PATH = 'src/shared/next-steps.md';
+const SLOT_FENCE_TRIGGER = /aborts after spawning its first domain sub-agent/;
+
+function nextStepsSlot() {
+  return prose(
+    boundedSlice(
+      source(NEXT_STEPS_PATH),
+      '## Retrospective slot',
+      '\n## Generic fallback edge table',
+    ),
+  );
+}
+
+// Invariant: the retrospective slot is one contract section between plan-aware selection and the
+// table, with closed signal lists, so a run recommends `retro` only on a mechanical, reported
+// turbulence signal and never from memory or from forge text.
+test('the retrospective slot is one contract section with closed signals T1 to T4 and bare retro', () => {
+  ordered(
+    source(NEXT_STEPS_PATH),
+    '## Select from the associated plan before the fallback',
+    '## Retrospective slot',
+    '## Generic fallback edge table',
+  );
+  const slot = nextStepsSlot();
+  assert.match(slot, /considers bare `\{\{SKILL:retro\}\}` for the current conversation/);
+  assert.match(slot, /contract rule outside the table, so `retro` stays a non-emitter/);
+  assert.match(
+    slot,
+    /only when at least one of these closed signals holds; an ordinary approval pause never counts/,
+  );
+  // T1: only unsuccessful rounds of a closed list; approval pauses and successful rounds never count.
+  const t1 = boundedSlice(slot, 'T1:', 'T2:');
+  assert.match(t1, /whole-run `ABORT` other than `nested-spawn-unavailable`/);
+  assert.match(
+    t1,
+    /a refused CI-repair instruction, a second keyword-less return, or a reviewer cause still open after its second repair attempt/,
+  );
+  assert.match(t1, /`BLOCKED-USER iterate-approval`, and every successful round, never count/);
+  // T2: the one recovery resume or any completion-protocol retry.
+  const t2 = boundedSlice(slot, 'T2:', 'T3:');
+  assert.match(
+    t2,
+    /needed its one keyword-less recovery resume, or a completion-protocol retry \(Retry 1 or higher\) occurred/,
+  );
+  // T3: two consumed exceptional answers; the routine ids never count.
+  const t3 = boundedSlice(slot, 'T3:', 'T4');
+  assert.match(
+    t3,
+    /at least two relayed answers to the exceptional questions `checks-pending`, `reviews-unestablished`, `check-list-waiver`, `conflict-resolution` or `set-aside`/,
+  );
+  assert.match(t3, /`iterate-approval`, `issue-done` and `iterate-in-flight` never count/);
+  // T4: aborts after real domain work only; capability, entry and user-initiated endings never count.
+  const t4 = boundedSlice(slot, 'T4', 'Report duty and visibility');
+  assert.match(
+    t4,
+    /aborted after it had spawned at least one sub-agent for domain work; a no-op probe is none/,
+  );
+  assert.match(
+    t4,
+    /Never an argument, preflight, configuration or migration abort; never any delegated-run Entry abort, for example `unparseable input line` or `invalid wisdom file`; never a `nested-spawn-unavailable` or other capability abort, or a stop, decline or restriction the user initiated/,
+  );
+});
+
+// Invariant: a signal is mechanical because the run states it in its own report; the slot never
+// infers one from memory, and an unattended or suppressed run never offers retro.
+test('the retrospective slot requires the signal in the run report and excludes suppressed and non-interactive runs', () => {
+  const slot = nextStepsSlot();
+  assert.match(slot, /A run that observed a T-fact states it in one report line before the block/);
+  assert.match(
+    slot,
+    /A signal counts only when that line is in this run's own report; never infer one from memory/,
+  );
+  assert.match(
+    slot,
+    /Never under `Next steps: suppressed`, `Run state: non-interactive` or the unattended planning envelope\. `Run state: relayed` is eligible/,
+  );
+  // Invariant: eligibility is mechanical. Only the literal inputs, or a `non-interactive` state the
+  // tool infers by its documented fallback (iterate's body delimiter without `Run state:`), exclude
+  // the slot; prose that a phase poses no questions is not one of them.
+  assert.match(
+    slot,
+    /Only these literal inputs, or a `non-interactive` state the tool infers by its own documented fallback, exclude it; prose saying a phase poses no questions does not/,
+  );
+});
+
+// Invariant: retro never displaces a real candidate; after an abort only T4 qualifies, the blocker
+// comes first, and an excluded abort appends no block even when another signal holds.
+test('the retrospective slot never displaces a candidate and describes itself by signal class only', () => {
+  const slot = nextStepsSlot();
+  assert.match(
+    slot,
+    /Retro never displaces a candidate: it takes the second slot when that is free, and it is the first and only option when no other valid candidate exists\. With both slots filled, drop it/,
+  );
+  assert.match(
+    slot,
+    /Abort clause\. After an abort only T4 qualifies: the report names the blocker first, and retro is the block's only option\. An abort that T4 excludes appends no block, even when T1–T3 hold/,
+  );
+  // Forge-supplied text (check names, abort reasons) can be attacker-controlled and must never reach
+  // the copy-paste description.
+  assert.match(
+    slot,
+    /Name its basis only by signal class, for example "reviews this run's failed iterate round"; never quote an abort reason, a check name or other forge text/,
+  );
+});
+
+// Invariant: each sentence that contradicted a new edge carries its exception where the rule lives,
+// so a reader of one rule never meets the contradiction.
+test('the eight next-steps contract amendments sit in the sentences that own the rules', () => {
+  const text = prose(source(NEXT_STEPS_PATH));
+  // 1. completed-run emission.
+  assert.match(
+    text,
+    /Emit it only for a completed run\. A run that aborts names the blocking condition instead; only the abort clause of the retrospective slot may then append a block after it/,
+  );
+  // 2. selection step 1.
+  assert.match(
+    text,
+    /aborts, explicit no-action endings, and the finding-admission\/no-finding limits above still end without options, even with an associated plan, except for the retrospective slot below\. The no-action setup\/cleanup\/commit endings below stay silent too, under the same exception/,
+  );
+  // 3. unfinished work only.
+  assert.match(text, /Emit only applicable unfinished work, plus the retrospective slot/);
+  // 4. finding/review apply (the pinned prose test holds the full sentence).
+  assert.match(
+    text,
+    /or when a merge-gate merge resolved the report its verified associated plan points to and that report still holds an open finding \(see "Merged merge-gate run"\)/,
+  );
+  // 5. implemented/archived plan versus offloaded findings.
+  assert.match(
+    text,
+    /Residual findings offloaded to an external review report are not unfinished work of that plan: the report rows below and "Merged merge-gate run" make that report the candidate/,
+  );
+  // 6. merged-delivery bullet names the findings-report rows and the slot.
+  assert.match(
+    text,
+    /a report a `build`, `fix`, `refactor` or `maintain` run wrote takes its `delivery merged` row, behind that package; and the retrospective slot still applies/,
+  );
+  assert.doesNotMatch(
+    text,
+    /A run that aborts names the blocking condition instead, as it does today/,
+  );
+  // 7. several same-kind targets, not only pull requests.
+  assert.match(
+    text,
+    /several same-kind targets \S+ pull requests, issues or plans \S+ name the first one and state in that same line that the remaining ones follow the same way/,
+  );
+  assert.doesNotMatch(text, /When one run opened several pull requests, name the first one/);
+  // 8. retro and focus stay silent; only retro is recommendable, only through the slot.
+  assert.match(text, /`retro` and `focus` deliberately emit no block/);
+  assert.match(
+    text,
+    /Only `retro` is ever recommended, and only through the retrospective slot below; `focus` never is/,
+  );
+});
+
+// Invariant: the merged merge-gate order is stated once, with the composition sentence, and the
+// open-plans omission applies to every cell so an empty plan directory never yields a dead option.
+test('the merged merge-gate candidate order and open-plans omission are stated once', () => {
+  const text = prose(source(NEXT_STEPS_PATH));
+  assert.match(
+    text,
+    /Take candidates in this order: the step-3 result, the linked-issue reconciliation row unless already chosen, the associated plan's review report, `\{\{SKILL:open-plans\}\}`, then the retrospective slot\. The first applicable candidate takes slot one, and the next independently applicable one takes slot two/,
+  );
+  // The review-report candidate needs a validated association; there is no inventory or newest-report guess.
+  assert.match(
+    text,
+    /needs the plan the delegated run validated from its `Associated plan:` line, or an inline gate run's own verified association that passed that same check; without either there is no such candidate, no inventory of `\.effective-flow\/review\/` and no newest-report guess/,
+  );
+  assert.match(
+    text,
+    /resolves inside `<RUNTIME_STATE_ROOT>\/\.effective-flow\/review\/` under the review-report rule of `apply-source-detection`/,
+  );
+  // A deliberately declined finding (ADR variant) is not open work.
+  assert.match(
+    text,
+    /status `Open` or `Not implemented` \(`Offen`, `Nicht umgesetzt`\) without an `\(ADR: <slug>\)` suffix, which marks a deliberately declined finding/,
+  );
+  assert.match(
+    text,
+    /That read is step 2's one local artifact read for the report handle, within its per-handle bound/,
+  );
+  assert.match(
+    text,
+    /Omit every `\{\{SKILL:open-plans\}\}` option when `<plan\.dir>\/` has no open plan for it to list/,
+  );
+});
+
+// Invariant: every `next-steps` load pointer under src/ (tool files and shared fragments such as
+// build-delegated-run.md) also fires on an abort after the first domain sub-agent spawn. An aborting
+// run never reaches the completion report, so without the clause it would never load the contract
+// and the retrospective slot could not fire.
+test('every next-steps lazy fence under src loads on a post-spawn abort too', () => {
+  const found = [];
+  let scanned = 0;
+  for (const entry of readdirSync(new URL('src/', repositoryRoot), { recursive: true }).sort()) {
+    if (!entry.endsWith('.md')) continue;
+    const path = `src/${entry}`;
+    // Independent line scan: every fence whose first line names next-steps, lazy or not.
+    const lines = source(path).split('\n');
+    scanned += lines.filter(
+      (line, index) => line.trim() === 'next-steps' && lines[index - 1]?.startsWith('```'),
+    ).length;
+    for (const match of source(path).matchAll(LAZY_INCLUDE_RE)) {
+      if (match[1].trim() !== 'next-steps') continue;
+      found.push(path);
+      assert.ok(match[2], `${path} must carry a when: trigger on its next-steps pointer`);
+      assert.match(
+        match[2],
+        SLOT_FENCE_TRIGGER,
+        `${path} next-steps trigger must cover an abort after the first domain sub-agent spawn; got: ${match[2]}`,
+      );
+    }
+  }
+  assert.ok(
+    found.includes('src/shared/build-delegated-run.md'),
+    'the shared fragment fence is covered',
+  );
+  assert.ok(found.includes('src/tools/merge-gate.md'), 'the tool fences are covered');
+  assert.equal(found.length, scanned, 'every next-steps fence is a lazy fence the walk checked');
+});
+
+// Invariant: a tool whose own emission sentence says "only when ..." still lets the retrospective
+// slot apply, so the local gate never silently re-excludes it.
+test('the five tool-local emission gates keep the retrospective slot applicable', () => {
+  const stillApplies = /the retrospective slot of `next-steps` still applies/;
+  // Each slice spans exactly one emission sentence or step, so the clause cannot sit elsewhere.
+  const gates = [
+    [
+      'investigate',
+      '6. Emit the next-step block per `next-steps` only for an `admitted` recommendation',
+      '## Report template',
+      stillApplies,
+    ],
+    [
+      'review',
+      '8. If the report contains at least one admitted finding, emit the next-step block',
+      '9. If an explicitly requested standalone audit',
+      /without an admitted finding, only the retrospective slot of `next-steps` applies/,
+    ],
+    [
+      'setup',
+      'Then emit the next-step block per `next-steps` as the last element of the report, but only when this run left staged changes behind',
+      '## Rules',
+      stillApplies,
+    ],
+    [
+      'issue-buddy',
+      'Apply `next-steps` as the last chat element only for a completed pass',
+      'Its `plan-issue` option',
+      stillApplies,
+    ],
+    [
+      'open-plans',
+      '5. Emit the next-step block per `next-steps` as the last element of the output',
+      'A duplicate keeps its report line',
+      stillApplies,
+    ],
+  ];
+  for (const [tool, start, stop, clause] of gates) {
+    assert.match(
+      boundedSlice(prose(source(`src/tools/${tool}.md`)), start, stop),
+      clause,
+      `${tool} must carry the retrospective-slot clause at its emission gate`,
+    );
+  }
+});
+
+// Invariant: the delegated run accepts a plan path only after the same exact-match resolution every
+// plan reference gets; a mismatch is an unparseable input line, never a guess or a skipped check.
+test('the delegated merge-gate run validates Associated plan at Entry and rejects anything else', () => {
+  const run = prose(source('src/shared/merge-gate-delegated-run.md'));
+  assert.match(
+    run,
+    /apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an optional `Associated plan:` line; a line failing it returns `ABORT unparseable input line`\. Only that validated plan feeds the merged-run candidate order of `next-steps`/,
+  );
+  // The check belongs to Entry step 2, before any other write.
+  ordered(
+    source('src/shared/merge-gate-delegated-run.md'),
+    '2. **Roots.**',
+    "the caller's `Associated plan:` check",
+    '3. **Wisdom file.**',
+  );
+  // The delegated run reaches the referenced section: its handoff reads the merge-gate tool file,
+  // whose always-loaded core holds "Dispatching the delegated run".
+  const caller = prose(mergeGateCore(repositoryRoot));
+  assert.match(
+    caller,
+    /read `<skill root>\/tools\/merge-gate\.md` and follow its delegated-run section/,
+  );
+  assert.match(caller, /`Associated plan: <repo-relative path>`, only for a verified association/);
+  // Invariant (single source of the plan check): the full criteria live once, in the always-loaded
+  // core both readers load – the dispatching or inline caller, which drops a failing line before
+  // every dispatch, re-dispatches included, so Entry's strict check never aborts a gate run, and the
+  // delegated run's Entry, which applies the same check by reference as a backstop.
+  assert.match(
+    caller,
+    /Before every dispatch, re-dispatches included, or an inline run, resolve it through `plan-reference-resolve` with `cwd` the root `plan\.dir` resolves against \(the checkout root, or `RUNTIME_STATE_ROOT` in hidden mode\) and `planDir` the configured `plan\.dir`; it passes only on `resolved` with `data\.exact` true inside `<plan\.dir>\/` or `<plan\.dir>\/archive\/`\. Drop a line that fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it/,
+  );
+  // The criteria sit in the eager core, ahead of the lazy delegated-run pointer.
+  ordered(
+    mergeGateCore(repositoryRoot),
+    'Before every dispatch, re-dispatches included',
+    '```lazy-include\nmerge-gate-delegated-run',
+  );
+  // The lazily loaded fragment keeps no second copy of the criteria.
+  assert.doesNotMatch(run, /data\.exact|`planDir`/);
+  assert.match(
+    caller,
+    /The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the retrospective slot in `next-steps` \(T4\); an `Entry abort: yes` return never qualifies/,
+  );
+  // Entry aborts are identifiable to the caller, so T4 never fires on one.
+  assert.match(caller, /an Entry abort adds the line `Entry abort: yes`/);
+  assert.match(run, /one from Entry steps 1 to 5 is an Entry abort of the return contract/);
+});
+
+// Invariant: T3 survives re-dispatch and wisdom-file deletion, Phase 6 states the T-facts in the
+// report (the visibility rule), and the closed B1 path list keeps user restrictions and pending
+// checks out of the failing-checks recommendation.
+test('the delegated merge-gate run counts T3, reports the T-facts and closes the B1 path list', () => {
+  const run = prose(source('src/shared/merge-gate-delegated-run.md'));
+  assert.match(
+    run,
+    /every consumed `Relayed answer:` by question id and round, appended when it is consumed, so the count of consumed exceptional answers survives re-dispatch for Phase 6/,
+  );
+  assert.match(run, /carry the count of consumed exceptional relayed answers into step 2/);
+  assert.match(
+    run,
+    /one line per retrospective-slot fact of `next-steps` this run observed, by signal class, on `ABORT` too; T3 counts the consumed exceptional relayed answers the wisdom file records/,
+  );
+  assert.match(run, /apply its merged merge-gate candidate order/);
+  // B1: exactly this closed set of endings; the excluded endings win, and review notes lead.
+  assert.match(
+    run,
+    /The `blocked by failing checks` row applies only to these endings: the run ended with a red check after a refused or unsuccessful CI repair, at `mergeGate\.maxRounds` with a red check, or with Phase 4 condition 2 unmet because of a red check\. A pending-checks, check-wait-timeout or `no-branch-writes` ending wins over a red check and never takes it\. When review notes block as well, `blocked by review notes` leads/,
+  );
+  assert.match(
+    run,
+    /A dispatched run returning `ABORT` emits nothing here: its caller alone emits that ending's block/,
+  );
+});
+
+// Invariant: the B1 options carry fixed text only. Check names and failure detail come from the forge
+// and may be attacker-controlled, so they never enter a copy-paste invocation.
+test('the failing-checks recommendation uses fixed arguments and the table forbids forge text', () => {
+  const edges = parseNextStepsTable(source(NEXT_STEPS_PATH), { context: NEXT_STEPS_PATH });
+  const gate = edges.filter((edge) => edge.tool === 'merge-gate');
+  assert.deepEqual(
+    gate.map((edge) => edge.condition),
+    [
+      'blocked by review notes',
+      'blocked by failing checks',
+      'merged but at least one linked issue is open or unobservable',
+      "merged, associated plan's review report has open findings",
+      'merged',
+    ],
+  );
+  const failing = gate.find((edge) => edge.condition === 'blocked by failing checks');
+  assert.equal(failing.then, '{{SKILL:iterate}} <PR> fix the failing checks');
+  assert.equal(failing.or, '{{SKILL:investigate}} failing checks on #<PR>');
+  // Only the pull-request number is a placeholder, so nothing forge-supplied can be filled in.
+  assert.deepEqual(
+    [...`${failing.then} ${failing.or}`.matchAll(/<([^>]+)>/g)].map((m) => m[1]),
+    ['PR', 'PR'],
+  );
+  assert.match(
+    prose(source(NEXT_STEPS_PATH)),
+    /text outside a placeholder is fixed, so the `blocked by failing checks` row never carries a check name or failure detail, which the forge supplies and an attacker may control/,
+  );
+});
+
+// Invariant: the new follow-up rows sit beside their tool's existing rows with the argument the run
+// really holds, so a reordering or a dropped `Or` fails here and not in a recommendation.
+test('the follow-up artifact rows and Or edges are present at the planned positions', () => {
+  const edges = parseNextStepsTable(source(NEXT_STEPS_PATH), { context: NEXT_STEPS_PATH });
+  const find = (tool, condition) => {
+    const edge = edges.find((row) => row.tool === tool && row.condition === condition);
+    assert.ok(edge, `missing row ${tool} | ${condition}`);
+    return edge;
+  };
+  for (const tool of ['build', 'fix', 'refactor']) {
+    const row = find(tool, 'delivery merged, findings report written');
+    assert.equal(row.then, '{{SKILL:apply}} <findings report>');
+    assert.equal(row.or, '');
+  }
+  const maintain = find('maintain', 'delivery merged, offloaded report written');
+  assert.equal(maintain.then, '{{SKILL:apply}} <offloaded report>');
+  assert.equal(maintain.or, '');
+  const merged = find('merge-gate', "merged, associated plan's review report has open findings");
+  assert.equal(merged.then, '{{SKILL:apply}} <report>');
+  assert.equal(merged.or, '{{SKILL:open-plans}}');
+  const issueOr = '{{SKILL:plan-issue}} <not-ready or readiness-failed issue>';
+  assert.equal(
+    find('issue-buddy', 'dry run; would-publish issue in public repository').or,
+    issueOr,
+  );
+  assert.equal(
+    find('issue-buddy', 'draft plan PR published; restore plan file from branch first').or,
+    issueOr,
+  );
+  const buddy = find(
+    'issue-buddy',
+    'completed pass with a not-ready or readiness-failed issue, no other row applies',
+  );
+  assert.equal(buddy.then, '{{SKILL:plan-issue}} <issue>');
+  assert.equal(
+    find('open-plans', 'at least one open plan').or,
+    '{{SKILL:plan}} <status-unclear plan>',
+  );
+  assert.equal(
+    find('open-plans', 'no open plan, status-unclear plan').then,
+    '{{SKILL:plan}} <status-unclear plan>',
+  );
+  assert.equal(find('deliver', 'PR opened').or, '{{SKILL:review}} <PR>');
+  // Retro is a slot rule, never a table edge: the guard's target invariant stays untouched.
+  for (const edge of edges) {
+    assert.ok(
+      !edge.then.includes('{{SKILL:retro}}') && !edge.or.includes('{{SKILL:retro}}'),
+      `${edge.tool} | ${edge.condition} must not be a retro row`,
+    );
+  }
+  // Row order inside the merge-gate and issue-buddy groups follows the plan.
+  const order = edges.map((edge) => `${edge.tool}|${edge.condition}`);
+  ordered(
+    order.join('\n'),
+    'issue-buddy|dry run; would-publish issue in public repository',
+    'issue-buddy|draft plan PR published; restore plan file from branch first',
+    'issue-buddy|completed pass with a not-ready or readiness-failed issue, no other row applies',
+    'backlog-audit|goal epic written',
+  );
+  ordered(
+    order.join('\n'),
+    'open-plans|at least one open plan',
+    'open-plans|no open plan, status-unclear plan',
+    'plan-issue|released',
+  );
+});
+
+// Invariant: a run without open plans is not always silent any more; a status-unclear plan and the
+// retrospective slot still produce a block.
+test('open-plans no longer claims a run without open plans always emits nothing', () => {
+  const text = prose(source('src/tools/open-plans.md'));
+  assert.doesNotMatch(text, /A run that found no open plan matches no row and emits nothing/);
+  assert.match(
+    text,
+    /A run that found no open plan emits only for a status-unclear plan; the retrospective slot of `next-steps` still applies\. A duplicate keeps its report line and gets no invocation/,
+  );
+});
+
+// Invariant: a merged delivery still names its findings report in the completion summary, so the
+// `delivery merged, findings report written` row can fill its argument.
+test('the build completion summary keeps the findings report path after a merge', () => {
+  assert.match(
+    prose(source('src/shared/build-delegated-run.md')),
+    /name the report path Phase 6 step 9 recorded, also after a merge/,
+  );
+});
+
 // Invariant: a local review with nothing admitted writes no report and reserves no IDs, and only a
 // report with an admitted finding ends in an executable next-step block.
 test('local review emits next steps for admitted findings but not a closed-only appendix', () => {
@@ -4796,7 +5254,7 @@ test('local review emits next steps for admitted findings but not a closed-only 
     'Delete the wisdom file.',
     'at least one admitted finding, emit the next-step block',
     'as the last element of the report',
-    'only the closed non-executable appendix, emit no next-step block',
+    'only the closed non-executable appendix, it matches no next-steps row',
   );
 });
 
@@ -25187,10 +25645,17 @@ test('the merge-gate caller dispatches the delegated run and relays its question
     'Completion answer',
     'Caller limits',
     'Observer-only re-entry',
+    'Associated plan',
     'Wisdom file',
     'Language context',
     'Skill root',
   ]);
+  // The new line is optional and only a verified association may feed it: the delegated run starts
+  // with zero inherited turns, so a guessed path would put an unverified plan into its selection.
+  assert.match(
+    prose(dispatch),
+    /`Associated plan: <repo-relative path>`, only for a verified association: explicit user input or a retained link from a workflow in this session, never one inferred from pull-request prose or a title match/,
+  );
   for (const line of [
     '`Provider: <github|forgejo>`',
     '`Relayed answer: <question-id>; round=<n>; digest=<hex>; option=<label>`',

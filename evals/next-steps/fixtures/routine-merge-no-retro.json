@@ -1,0 +1,47 @@
+{
+  "name": "routine-merge-no-retro",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "emitter": "merge-gate",
+    "sourceAssociation": null,
+    "outcome": {
+      "completedWork": ["PR 42 merged by the gate"],
+      "delivery": "merged",
+      "pullRequest": 42,
+      "issueState": "no linked issue"
+    },
+    "reportFacts": [
+      "The delegated merge-gate run merged PR 42; no issue is linked to it.",
+      "Rounds 1 and 2 of the delegated iterate run each paused with `BLOCKED-USER iterate-approval`; the user approved both pauses and both rounds then succeeded.",
+      "The user answered one `issue-done` question. No keyword-less resume, no completion-protocol retry and no exceptional question occurred."
+    ],
+    "completed": true,
+    "languageChat": "de",
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build",
+      "retro"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/2026-10-09-open-work.md": "# Package plan\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package C.\n\n## Implementation sequence\n\n- [ ] C: implement the exporter.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n"
+  }
+}

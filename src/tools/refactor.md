@@ -152,7 +152,7 @@ when: a review report is written or an existing one is augmented
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 Current workflow for plan references: Refactoring (`{{SKILL:refactor}}`).

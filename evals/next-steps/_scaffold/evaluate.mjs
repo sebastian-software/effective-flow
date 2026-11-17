@@ -60,6 +60,36 @@ export const EXPECTATIONS = Object.freeze({
     reportIdentity: 'other/renovate-config',
   },
   'external-issue-identity-retained': { first: 'plan-issue OPS-17', exactCount: 1 },
+  'turbulent-merge-offers-retro': {
+    first: 'open-plans',
+    second: ['retro'],
+    exactCount: 2,
+    descriptionForbidden: ['zq41', '9f2c'],
+  },
+  'routine-merge-no-retro': {
+    first: 'open-plans',
+    exactCount: 1,
+  },
+  'post-dispatch-abort-offers-retro': {
+    first: 'retro',
+    exactCount: 1,
+    reportTokens: ['validation environment signature'],
+    descriptionForbidden: ['environment signature'],
+  },
+  'both-slots-full-drops-retro': {
+    first: 'merge-gate 42',
+    second: ['open-plans'],
+    exactCount: 2,
+    descriptionForbidden: ['zq41'],
+  },
+  'merged-plan-pointed-review-report': {
+    first: 'apply .effective-flow/review/2026-10-08-parser-review.md',
+    exactCount: 1,
+  },
+  'merged-delivery-findings-report': {
+    first: 'apply .effective-flow/review/2026-10-08-build-review.md',
+    exactCount: 1,
+  },
 });
 export const BRANCHED_SCENARIOS = Object.freeze(Object.keys(EXPECTATIONS));
 export const usesLifecycleSchema = () => false;
@@ -80,7 +110,8 @@ function normalizedInvocation(invocation, projectRoot, expectedInvocation) {
   const separator = expectedInvocation.indexOf(' ');
   const tool = expectedInvocation.slice(0, separator);
   const artifact = expectedInvocation.slice(separator + 1);
-  if (!artifact.startsWith('docs/plan/')) return invocation;
+  if (!artifact.startsWith('docs/plan/') && !artifact.startsWith('.effective-flow/review/'))
+    return invocation;
   const roots = [projectRoot];
   if (projectRoot.startsWith('/private/tmp/')) roots.push(projectRoot.slice('/private'.length));
   else if (projectRoot.startsWith('/tmp/')) roots.push(`/private${projectRoot}`);
@@ -282,6 +313,11 @@ export function reportFindings(scenario, auxiliaryRecords, fixture) {
   for (const token of expected.reportTokens ?? []) {
     if (!new RegExp(`\\b${token}\\b`).test(report))
       findings.push(`the complete report omits prerequisite token ${token}`);
+  }
+  // Forge-supplied check names and abort reasons never enter an option description.
+  for (const token of expected.descriptionForbidden ?? []) {
+    if (descriptions.includes(token))
+      findings.push(`an option description quotes forge or abort text ${token}`);
   }
   // Already retained complete issue reads must not be repeated. These snapshots reach no canonical
   // decomposition, so the production decomposition helper need not be replaced or reimplemented.

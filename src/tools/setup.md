@@ -43,7 +43,7 @@ when: setup has repaired and validated the runtime ignore state and is about to 
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ```lazy-include
@@ -1068,7 +1068,7 @@ Allowlist run only those of `setup-allowlist`):
 
 Then emit the next-step block per `next-steps` as the last element of the report, but only when this
 run left staged changes behind — which happens solely in the `git rm --cached` migration case. A run
-with nothing staged matches no row and emits nothing.
+with nothing staged matches no row; the retrospective slot of `next-steps` still applies.
 
 ## Rules
 

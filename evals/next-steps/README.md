@@ -6,7 +6,7 @@ rerun implementation, delivery, tracker transitions, or an entire Effective Flow
 integration guards separately protect real completion sites in merge-gate, apply, PR review, and
 automatic delivery. Neither evidence layer alone proves the other.
 
-There are fifteen scenarios and **five fresh model sessions per scenario** (75 runs). Published real
+There are twenty-one scenarios and **five fresh model sessions per scenario** (105 runs). Published real
 rounds are archived under `results/`. Deterministic tests exercise instrument integrity and
 discrimination, not model behavior. `pnpm eval next-steps verify` reports the current archived
 evidence and whether it matches the tree.
@@ -28,6 +28,12 @@ evidence and whether it matches the tree.
 | `outcome-advancing-continuation` | Original P1 proof advances; continue the remaining authorized package without redundant approval. |
 | `outcome-conflicting-source-context` | Competing primary checkpoint claims remain unresolved; do not choose by recency or guess zero. |
 | `external-issue-identity-retained` | With real external/Linear configuration, retain OPS-17 in the planning invocation. |
+| `turbulent-merge-offers-retro` | A merge after a failed iterate round offers `open-plans` first and `retro` second; the description names the signal class, never the abort reason or check name. |
+| `routine-merge-no-retro` | Approval pauses and successful rounds are no turbulence signal; only `open-plans`, no `retro`. |
+| `post-dispatch-abort-offers-retro` | After an abort following the first domain sub-agent, the report names the blocker and `retro` is the only option. |
+| `both-slots-full-drops-retro` | With a turbulence signal but two filled slots (`merge-gate 42`, `open-plans`), `retro` is dropped, never displacing a candidate. |
+| `merged-plan-pointed-review-report` | A merge whose verified associated plan points to a report with an open finding recommends `apply <report>` (C2(b)). |
+| `merged-delivery-findings-report` | A merged build delivery that wrote a findings report with an open finding recommends `apply <report>` (C2(a)). |
 
 Archived/implemented are combined completion signals on one artifact. Missing approval/dependency
 are both prerequisites of one package. Source-context failures remain separate. Cross-repository
@@ -68,7 +74,7 @@ no valid generic fallback.
 
 Free explanations, limitation and purpose wording, approval prose, and output language are not
 graded automatically. Tests verify the resolved German language in each prompt, snapshot and
-project configuration. Before publication, an independent reviewer reads all 75 complete original
+project configuration. Before publication, an independent reviewer reads all 105 complete original
 reports and qualitatively checks their purpose, relevant limitations, dependencies/approval meaning
 and German chat-language compliance. Automated checks protect concrete selection and argument
 identity, final-block shape and length, named package/prerequisite IDs, authority and read-only
