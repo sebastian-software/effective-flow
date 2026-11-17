@@ -51,7 +51,7 @@ when: a wisdom file, runtime migration, investigation directory, or report mutat
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 Retain any verified primary outcome/source association, checkpoint and attempt from the input or
@@ -224,7 +224,7 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
    do not start it unprompted.
 6. Emit the next-step block per `next-steps` only for an `admitted` recommendation, using the concrete
    report path. `current-scope`, `closed`, and unresolved `uncertain` produce no substitute planning
-   or review invocation.
+   or review invocation; the retrospective slot of `next-steps` still applies.
 
 ## Report template
 

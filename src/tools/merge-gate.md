@@ -1,7 +1,7 @@
 ---
 description: "Shepherds an existing pull request from open to merged, then observes receipted tracker issues through their post-merge lifecycle; an already-merged pull request may re-enter in observer-only mode. The ordered gate waits for and repairs checks, evaluates configured automatic-reviewer notes through {{SKILL:iterate}}, enforces the human-comment guard, and merges with the configured method. Every code change is delegated; the tool itself commits and pushes nothing except a guarded base-into-head merge."
 catalogHint: "Drives an open pull request through checks, bot notes, and – if allowed – the merge."
-contextBudget: 922
+contextBudget: 925
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -64,7 +64,7 @@ when: any wisdom, runtime migration, or worktree mutation below `.effective-flow
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ```include
@@ -132,7 +132,7 @@ The delegated run returns exactly one of:
   and what this dispatch has done so far;
 - `SUSPENDED host-pr-watch`, only under `Host: t3-code`, followed by `Kind: <checks|bot>`,
   `Round: <n>`, the pending checks or bots and what this dispatch has done so far;
-- `ABORT <reason>`; `ABORT nested-spawn-unavailable` means it can start no child.
+- `ABORT <reason>`; `ABORT nested-spawn-unavailable` means it can start no child; an Entry abort adds the line `Entry abort: yes`.
 
 `BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in
 `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies
@@ -258,8 +258,7 @@ options:
 After Phase 0 – in observer-only mode after step 2 – the caller dispatches the rest of the gate in the
 host's built-in general-purpose subagent (Claude) or default agent (Codex), never as a `src/agents`
 worker role, with zero inherited turns where supported. The handoff says to read
-`<skill root>/tools/merge-gate.md` and follow its delegated-run section, and passes these input
-lines, each once:
+`<skill root>/tools/merge-gate.md` and follow its delegated-run section; it passes each line once:
 <!-- spawn-site:merge-gate/delegated-run -->
 
 - `PR: <number>` and `Provider: <github|forgejo>`, from Phase 0 with `AMBIGUOUS_HOST` answered;
@@ -274,6 +273,13 @@ lines, each once:
 - on a re-dispatch after `SUSPENDED host-pr-watch` only,
   `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>` per `host-pr-watch`;
 - `Observer-only re-entry: <yes|no>`;
+- `Associated plan: <repo-relative path>`, only for a verified association: explicit user input or a
+  retained link from a workflow in this session, never one inferred from pull-request prose or a
+  title match. Before every dispatch, re-dispatches included, or an inline run, resolve it through
+  `plan-reference-resolve` with `cwd` the root `plan.dir` resolves against (the checkout root, or
+  `RUNTIME_STATE_ROOT` in hidden mode) and `planDir` the configured `plan.dir`; it passes only on
+  `resolved` with `data.exact` true inside `<plan.dir>/` or `<plan.dir>/archive/`. Drop a line that
+  fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it;
 - `Wisdom file: <RUNTIME_STATE_ROOT>/.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`, one
   session ID per gate run, kept across re-dispatches;
 - `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`;
@@ -317,6 +323,8 @@ limits never shrink within a gate run.
 - `ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session, then run it
   here per the delegated-run section with this run's own run state and caller limits.
 - Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file.
+  The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the
+  retrospective slot in `next-steps` (T4); an `Entry abort: yes` return never qualifies.
 
 A non-interactive caller dispatches `Run state: non-interactive` with no completion answer and never
 receives `BLOCKED-USER`; one it receives is invalid. A caller without a spawn mechanism, or whose

@@ -1,0 +1,44 @@
+{
+  "name": "post-dispatch-abort-offers-retro",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "emitter": "iterate",
+    "sourceAssociation": null,
+    "outcome": {
+      "completedWork": [],
+      "delivery": "none",
+      "pullRequest": 42,
+      "ended": "aborted"
+    },
+    "reportFacts": [
+      "The iterate run on PR 42 had spawned its fix workers and its validator; the validator reported an environment signature, so the run pushed nothing and returned `ABORT: validation environment signature`.",
+      "The abort was not an argument, preflight, configuration, migration or Entry abort, no capability abort (every sub-agent spawn succeeded), and the user stopped nothing."
+    ],
+    "completed": false,
+    "languageChat": "de",
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build",
+      "retro"
+    ]
+  },
+  "artifacts": {}
+}

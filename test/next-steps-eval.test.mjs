@@ -70,6 +70,16 @@ function correctReport(name) {
     'current-pr-delivery-leads-next-slice': 'Die Lieferung von PR 42 abschließen.',
     'actual-postmerge-reconciliation-reentry': 'Den offenen Issue-Status nur beobachten.',
     'external-issue-identity-retained': 'Das Linear-Paket OPS-17 vor Umsetzung klären.',
+    'turbulent-merge-offers-retro': 'Offene Pläne auflisten und fortsetzen.',
+    'routine-merge-no-retro': 'Offene Pläne auflisten und fortsetzen.',
+    'post-dispatch-abort-offers-retro': 'Den Verlauf des abgebrochenen Laufs auswerten.',
+    'both-slots-full-drops-retro': 'Den offenen Issue-Status nur beobachten.',
+    'merged-plan-pointed-review-report': 'Den offenen Befund des Berichts umsetzen.',
+    'merged-delivery-findings-report': 'Den offenen Befund des Berichts umsetzen.',
+  };
+  const secondReasons = {
+    'turbulent-merge-offers-retro': 'Die fehlgeschlagene Iterate-Runde dieses Laufs auswerten.',
+    'both-slots-full-drops-retro': 'Offene Pläne auflisten und fortsetzen.',
   };
   const limitation = name.startsWith('missing-')
     ? 'Kein Quellplan wurde zugeordnet.\n'
@@ -77,10 +87,12 @@ function correctReport(name) {
       ? 'Der zugeordnete Plan ist nicht mehr verfügbar.\n'
       : name.startsWith('ambiguous-')
         ? 'Die Zuordnung der zwei Pläne ist mehrdeutig.\n'
-        : '';
+        : name.startsWith('post-dispatch-')
+          ? 'Der Lauf brach mit ABORT: validation environment signature ab; nichts wurde gepusht.\n'
+          : '';
   let report = `Lauf abgeschlossen.\n${limitation}\n## Nächste Schritte\n\n- \`effective-flow ${expected.first}\` — ${reasons[name]}`;
   if (expected.exactCount === 2)
-    report += `\n- \`effective-flow ${expected.second[0]}\` — Das unabhängige Linear-Paket vor Umsetzung klären.`;
+    report += `\n- \`effective-flow ${expected.second[0]}\` — ${secondReasons[name] ?? 'Das unabhängige Linear-Paket vor Umsetzung klären.'}`;
   return report;
 }
 const untouched = {
@@ -90,9 +102,9 @@ const untouched = {
   errors: [],
 };
 
-test('the bounded semantic suite registers fifteen complete scenarios and keeps five real runs per scenario', async () => {
+test('the bounded semantic suite registers twenty-one complete scenarios and keeps five real runs per scenario', async () => {
   assert.equal((await loadSuite('next-steps')).name, 'next-steps');
-  assert.equal(discoverSuite(suite).scenarios.length, 15);
+  assert.equal(discoverSuite(suite).scenarios.length, 21);
   assert.equal(REQUIRED_RUNS, 5);
   assert.deepEqual(suite.expectedProfile, {
     harness: 'codex-cli',
@@ -138,13 +150,39 @@ test('every semantic oracle accepts its concrete invocation and rejects a wrong 
     const wrong =
       EXPECTATIONS[name].first === null
         ? text + '\n## Nächste Schritte\n\n- `effective-flow plan-issue #37` — Den Plan klären.'
-        : text.replace(`effective-flow ${EXPECTATIONS[name].first}`, 'effective-flow open-plans');
+        : text.replace(
+            `effective-flow ${EXPECTATIONS[name].first}`,
+            // A wrong option that is not itself the expected first option of the scenario.
+            `effective-flow ${EXPECTATIONS[name].first === 'open-plans' ? 'cleanup' : 'open-plans'}`,
+          );
     assert.ok(
       reportFindings(name, [reportRecord(wrong)]).some((finding) =>
         /first option|no valid invocation/.test(finding),
       ),
       name,
     );
+  }
+});
+
+// Invariant: a forge check name or abort reason quoted in an option description fails the oracle,
+// so the signal-class-only description rule is discriminated, not merely accepted.
+test('the description oracle rejects every forbidden forge or abort token in an option description', () => {
+  const relevant = suite.scenarios.filter((name) => EXPECTATIONS[name].descriptionForbidden);
+  assert.ok(relevant.length > 0);
+  for (const name of relevant) {
+    const lines = correctReport(name).split('\n');
+    // The retro option's description when the scenario offers one, otherwise the last option's.
+    const retro = lines.findIndex((line) => line.startsWith('- `effective-flow retro`'));
+    const index = retro === -1 ? lines.length - 1 : retro;
+    for (const token of EXPECTATIONS[name].descriptionForbidden) {
+      const injected = lines.with(index, `${lines[index]} Grund: ${token}.`).join('\n');
+      assert.ok(
+        reportFindings(name, [reportRecord(injected)]).includes(
+          `an option description quotes forge or abort text ${token}`,
+        ),
+        `${name}: ${token}`,
+      );
+    }
   }
 });
 

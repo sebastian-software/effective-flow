@@ -626,7 +626,9 @@ The build aborts with an error message if any of these guards is violated:
   table in `docs/user-guide/tool-flow.md`, row by row and column by column, after normalizing each
   side (`{{SKILL:X}}` resolved to its rendered Claude form, surrounding backticks stripped, `—`
   read as empty, cells trimmed) — so the shipped documentation page can never silently drift from
-  the runtime contract it mirrors.
+  the runtime contract it mirrors. The retrospective slot of `next-steps` is a contract rule
+  outside the table, so the guard's invariant is unchanged: table targets are emitting tools, and
+  `retro` and `focus` stay in `NEXT_STEPS_EXEMPT_TOOLS`.
 - **Context-budget guard (#99):** The always-loaded core of **every** tool – the built tool file
   without the lazy fragments – stays under its own **individual ratchet**: the measured size plus
   **up to** ten lines of headroom. No tools share an allowance. Each tool declares its budget as

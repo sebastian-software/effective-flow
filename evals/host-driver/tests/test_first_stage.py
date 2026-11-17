@@ -38,7 +38,10 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 # later (merge-gate `no-ci-policy-*`, `presence-notice-names-other-run`,
 # `quick-conflict-commit-without-ci-evidence-blocks` and the two repair scenarios; iterate
 # `unparseable-authorized-scope-aborts`, `duplicated-review-fix-validation-aborts` and
-# `unparseable-review-fix-validation-aborts`) are excluded from the live registry below.
+# `unparseable-review-fix-validation-aborts`; next-steps `turbulent-merge-offers-retro`,
+# `routine-merge-no-retro`, `post-dispatch-abort-offers-retro`, `both-slots-full-drops-retro`,
+# `merged-plan-pointed-review-report` and `merged-delivery-findings-report`) are excluded from the
+# live registry below.
 FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'no-ci-policy-flag-absent-blocks', 'no-ci-policy-merge-failure-reports',
     'no-ci-policy-reported-check-blocks', 'no-ci-policy-status-read-failure-blocks',
@@ -46,8 +49,19 @@ FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'presence-notice-names-other-run', 'quick-conflict-commit-without-ci-evidence-blocks',
     'repair-after-base-merge-merges', 'repeated-ineffective-repair-stops')},
     'iterate': {'duplicated-review-fix-validation-aborts', 'unparseable-authorized-scope-aborts',
-                'unparseable-review-fix-validation-aborts'}}
+                'unparseable-review-fix-validation-aborts'},
+    'next-steps': {'both-slots-full-drops-retro', 'merged-delivery-findings-report',
+                   'merged-plan-pointed-review-report', 'post-dispatch-abort-offers-retro',
+                   'routine-merge-no-retro', 'turbulent-merge-offers-retro'}}
 FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
+# Per suite: the evaluator's branch-list opening, its closing token, and the pattern of one dropped
+# entry (None derives it from the excluded names, keyed as the table's string keys).
+FROZEN_BRANCH_TABLES = {
+    'merge-gate': ('export const BRANCHED_SCENARIOS = Object.freeze([', ']);',
+                   r'\s*(NO_CI_[A-Z_]+|PRESENCE_NOTICE|QUICK_COMMIT|REPAIR_AFTER_BASE_MERGE|REPEATED_INEFFECTIVE_REPAIR)'
+                   r'_SCENARIO,\s*$'),
+    'iterate': ('export const PHASE_ZERO_REFUSALS = Object.freeze({', '});', None),
+    'next-steps': ('export const EXPECTATIONS = Object.freeze({', '});', None)}
 POLICY = ('workspace-write;approval-never;network-disabled;isolated-home;'
           'attempt-root-writable;ignore-user-config;ignore-rules')
 STAGE_ID = 'iterate-duplicated-control-line-aborts-slots-1-5-v1'
@@ -589,20 +603,27 @@ class OriginalSealFixture(StageFixture):
                 # live evaluator also branches on scenarios registered after the freeze, so those
                 # names are dropped from the synthetic copy's list, which keeps the parity contract
                 # honest instead of widening the frozen registry. The merge-gate list names them by
-                # constant; the iterate list derives from its refusal table, keyed by name.
+                # constant; the iterate list derives from its refusal table and the next-steps list
+                # from its expectation table, both keyed by name. An expectation entry may span
+                # several lines, so a dropped entry that opens a block is dropped through its close.
+                marker, close, entry = FROZEN_BRANCH_TABLES[suite]
                 evaluator = self.source / 'evals' / suite / '_scaffold/evaluate.mjs'
                 text = evaluator.read_text()
-                head, marker, tail = text.partition(
-                    'export const BRANCHED_SCENARIOS = Object.freeze([' if suite == 'merge-gate'
-                    else 'export const PHASE_ZERO_REFUSALS = Object.freeze({')
-                assert marker
-                body, close, rest = tail.partition(']);' if suite == 'merge-gate' else '});')
-                excluded = ((r'\s*(NO_CI_[A-Z_]+|PRESENCE_NOTICE|QUICK_COMMIT|REPAIR_AFTER_BASE_MERGE|REPEATED_INEFFECTIVE_REPAIR)'
-                             r'_SCENARIO,\s*$')
-                            if suite == 'merge-gate' else
-                            r"\s*'(%s)':" % '|'.join(map(re.escape, sorted(FROZEN_EXCLUDED[suite]))))
-                kept = [line for line in body.split('\n') if not re.match(excluded, line)]
-                assert len(body.split('\n')) - len(kept) == len(FROZEN_EXCLUDED[suite])
+                head, found, tail = text.partition(marker)
+                assert found
+                body, closed, rest = tail.partition(close)
+                assert closed
+                excluded = entry or r"\s*'(%s)':" % '|'.join(map(re.escape, sorted(FROZEN_EXCLUDED[suite])))
+                kept, dropped, inside = [], 0, False
+                for line in body.split('\n'):
+                    if inside:
+                        inside = not re.match(r'\s*},\s*$', line)
+                    elif re.match(excluded, line):
+                        dropped += 1
+                        inside = line.rstrip().endswith('{')
+                    else:
+                        kept.append(line)
+                assert not inside and dropped == len(FROZEN_EXCLUDED[suite])
                 evaluator.write_text(head + marker + '\n'.join(kept) + close + rest)
             for record in (r for r in self.records if r['task']['suite'] == suite):
                 task = record['task']

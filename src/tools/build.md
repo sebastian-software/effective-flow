@@ -111,7 +111,7 @@ options:
 
 ```lazy-include
 next-steps
-when: the validated terminal conclusion and continuation are rendered
+when: the validated terminal conclusion and continuation are rendered, or the run aborts after spawning its first domain sub-agent
 ```
 
 ## Approved-plan dispatch seam

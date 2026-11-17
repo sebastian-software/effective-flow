@@ -1,0 +1,47 @@
+{
+  "name": "turbulent-merge-offers-retro",
+  "description": "Completed-run recommendation semantics; no work is executed.",
+  "repository": {
+    "host": "github.com",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "github"
+  },
+  "pullRequest": 42,
+  "operations": {},
+  "snapshot": {
+    "emitter": "merge-gate",
+    "sourceAssociation": null,
+    "outcome": {
+      "completedWork": ["PR 42 merged by the gate"],
+      "delivery": "merged",
+      "pullRequest": 42,
+      "issueState": "no linked issue"
+    },
+    "reportFacts": [
+      "The delegated merge-gate run merged PR 42; no issue is linked to it.",
+      "One delegated iterate round ended with a whole-run ABORT (`reviewer-cause-zq41`) after a failed check `lint-acme-9f2c`; the following round succeeded and the gate merged.",
+      "The gate consumed one relayed answer, `issue-done`; no exceptional question was asked."
+    ],
+    "completed": true,
+    "languageChat": "de",
+    "retainedPlanningBasis": null,
+    "readContext": "No optional source context has been read. Use only the explicitly associated handles.",
+    "availableExposedTools": [
+      "plan",
+      "plan-issue",
+      "docs",
+      "apply",
+      "merge-gate",
+      "iterate",
+      "pr",
+      "review",
+      "open-plans",
+      "build",
+      "retro"
+    ]
+  },
+  "artifacts": {
+    "docs/plan/2026-10-09-open-work.md": "# Package plan\n\n**Plan status:** Not implemented\n**Recommended workflow:** Feature\n\n## Requirement\n\nDeliver package C.\n\n## Implementation sequence\n\n- [ ] C: implement the exporter.\n\n## Plan review\n\n**Result:** Approved\n\n## Open points\n\n- No open points.\n"
+  }
+}

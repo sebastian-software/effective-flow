@@ -26,6 +26,9 @@ In this order, before any other write:
    `ABORT unparseable input line`; no body, answer or wisdom content supplies routing authority.
 2. **Roots.** Verify `RUNTIME_STATE_ROOT` and `Execution root` yourself per the deferred
    `runtime-state-safety`; a verified value that differs from the passed one returns `ABORT`.
+   Then apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an
+   optional `Associated plan:` line; a line failing it returns `ABORT unparseable input line`. Only
+   that validated plan feeds the merged-run candidate order of `next-steps`.
 3. **Wisdom file.** The path must resolve under the verified `RUNTIME_STATE_ROOT/.effective-flow/`,
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
@@ -73,7 +76,7 @@ In this order, before any other write:
   returns `BLOCKED-USER`. A once-per-run record of a relayed gate is written when its answer is
   consumed, never when the question is returned.
 - **Every return ends the run once.** An `ABORT` from Entry steps 1 to 3 writes and deletes
-  nothing. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
+  nothing; one from Entry steps 1 to 5 is an Entry abort of the return contract. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
   `DONE` and `ABORT` run Phase 6 exactly once. `BLOCKED-USER` first ends an in-progress merge as
   Phase 2 step 1's controlled stop, then runs Phase 6 without its report and without deleting the
   wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way; a T3-path run
@@ -491,6 +494,8 @@ gate run inline generates it at the start. Use
   mode with its source (configuration, entry gate or a `no-merge` caller limit)
 - the caller limits of every dispatch, recorded before its first return, so Entry step 3 can reject
   a narrowing re-dispatch
+- every consumed `Relayed answer:` by question id and round, appended when it is consumed, so the
+  count of consumed exceptional answers survives re-dispatch for Phase 6
 - the authenticated login `viewer-read` returned, or the reason it could not be read
 - the presence token and the entry-notice lines of "Run presence"
 - the human-comment guard state and the evidence that set it, plus every login whose top-level
@@ -1338,12 +1343,15 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
 1. Delete the wisdom file – except on a `BLOCKED-USER` return – and every delegation message file
    and snapshot this run wrote that is still present – after a sender stop, the one whose delegation
    never went out. Before that deletion, `release` the presence marker with the token the wisdom
-   file holds, under the same exception.
+   file holds, under the same exception. Also before it, carry the count of consumed exceptional
+   relayed answers into step 2.
 2. Run the worktree-record exit self-check. Then report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
    comment onto the pull request:** the gate has none of its own, and `{{SKILL:iterate}}`'s
    per-round summary is suppressed for every gate-initiated round, so its content arrives here
    instead. The merge itself is visible on the pull request anyway. Report:
    - the resolved pull request, the resolved mode with its source, and every caller limit in force;
+   - one line per retrospective-slot fact of `next-steps` this run observed, by signal class, on
+     `ABORT` too; T3 counts the consumed exceptional relayed answers the wisdom file records;
    - every entry-notice line the wisdom file records about another run's presence marker;
    - the check outcome per round;
    - **every conflict with the base this run met**: the trigger that fired the merge, the resolved
@@ -1480,11 +1488,16 @@ when: Phase 6 reports a run whose repair state carries a stop, before step 1 del
      changed neither this gate result nor the pull request. With no retained candidate, emit nothing.
 3. Emit the next-step block per the shared selection in `next-steps` as the last element of that
    chat report, with the verified source association, complete retained planning basis and observed
-   merge/issue outcomes. Only for generic fallback, prefer the merged-but-linked-issues-open row
-   when an open, timed out, unobservable, or `terminal (cancelled)` outcome leaves actual
-   reconciliation that observer-only re-entry can address. An intentionally open parent for later
-   packages does not qualify by itself. Omit the generic merged row when `<plan.dir>/` has no open
-   plan for `{{SKILL:open-plans}}` to list; that does not suppress an associated plan/issue candidate.
+   merge/issue outcomes; after a merge, apply its merged merge-gate candidate order. Only for
+   generic fallback, prefer the merged-but-linked-issues-open row when an open, timed out,
+   unobservable, or `terminal (cancelled)` outcome leaves actual reconciliation that observer-only
+   re-entry can address. An intentionally open parent for later packages does not qualify by
+   itself. The `blocked by failing checks` row applies only to these endings: the run ended with a
+   red check after a refused or unsuccessful CI repair, at `mergeGate.maxRounds` with a red check,
+   or with Phase 4 condition 2 unmet because of a red check. A pending-checks, check-wait-timeout or
+   `no-branch-writes` ending wins over a red check and never takes it. When review notes block as
+   well, `blocked by review notes` leads, because iterating on the pull request addresses the notes.
+   A dispatched run returning `ABORT` emits nothing here: its caller alone emits that ending's block.
    The block stays chat only: nothing of it is written onto the pull request.
 
 ## Rules

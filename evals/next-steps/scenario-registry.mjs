@@ -16,4 +16,10 @@ export const SCENARIOS = Object.freeze([
   'missing-association-valid-fallback',
   'q2a-canonical-record-lags-merged',
   'unreadable-associated-plan-fallback',
+  'turbulent-merge-offers-retro',
+  'routine-merge-no-retro',
+  'post-dispatch-abort-offers-retro',
+  'both-slots-full-drops-retro',
+  'merged-plan-pointed-review-report',
+  'merged-delivery-findings-report',
 ]);

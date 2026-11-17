@@ -67,7 +67,7 @@ completion-protocol
 
 ```lazy-include
 next-steps
-when: the run reaches its completion report
+when: the run reaches its completion report, or aborts after spawning its first domain sub-agent
 ```
 
 ## Goal
