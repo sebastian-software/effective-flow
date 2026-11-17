@@ -19,7 +19,8 @@ removes prior leftovers, including leftovers after a push, before retrying.
 
 The default mode is a local dry run. `--publish` is allowed only when the repository visibility
 read reports `public`; private repositories are dry-run-only, and unknown visibility stops
-publication. A public operator-run pass may reach the operator's forge credential through the
+publication. An Issue Buddy pass started by an Automation caller with its per-run consent is
+governed by `docs/adr/automation-tool-category.md` instead. A public operator-run pass may reach the operator's forge credential through the
 unsandboxed model steps, so the single-file assertion and content scan are advisory in stage 1.
 Credential isolation and verified bot branch rules are deferred to WP6b and WP7 before scheduled
 publishing.

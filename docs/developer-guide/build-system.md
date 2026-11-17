@@ -366,6 +366,17 @@ The build aborts with an error message if any of these guards is violated:
   same guard also runs during rendering (`transformRefs`), so no accepted placeholder can produce a
   non-existent target. `build` uses the profile form on its five Phase 2 implementer selector
   lines and `refactor` on its five Phase 3 implementer selector lines.
+- **Automation emission guard:** Only the source of a tool in the `Automation` `TOOL_GROUPS`
+  entry, or a shared fragment that only such tools reach through eager or lazy includes, may emit
+  the scored control lines `Decision mode: scored`, `Autopilot run:` and
+  `Private publication: autopilot`. Emission is the line form: a line whose text, after
+  indentation, blockquote markers and one list marker, starts with the bare control line, inside
+  or outside a fence; a line holding only a code span with a control line counts as emission too.
+  Recognition prose spells the line inside an inline code span within prose instead, so it never
+  starts a line with it. A prose pointer `shared/<name>.md` counts as reaching that fragment. Agents, the router and an unreferenced fragment never emit, and
+  while the group is absent no source may. `findAutomationEmissionViolations` (`build-lib.mjs`)
+  names each violating source line; rationale in
+  [`automation-tool-category.md`](../adr/automation-tool-category.md).
 - **Native profile-mapping guard:** Every registered base worker resolves a native model and
   effort from its `tier:` (the guards below). The centralized Fast mapping is complete for Claude
   and Codex, Claude effort uses the supported vocabulary, and each Codex model/reasoning
@@ -1414,8 +1425,45 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   on invalid input, unsafe runtime state, lock conflicts, visibility mismatches, or inconsistent
   publication records. The core keeps report v1 compatible and accepts opt-in report v2 metadata
   for repository visibility and preserved plan leftovers. Leftover metadata is filtered before
-  judgment limits and recovery. The issue-buddy source tool owns unattended orchestration;
+  judgment limits and recovery. An optional `issue` selector restricts collection and recovery
+  authority to one issue and fails with `ISSUE_NOT_OPEN` when that issue is not in the open
+  listing. The issue-buddy source tool owns unattended orchestration;
   plan-publication owns inspection and publication of the single plan file.
+
+- **Autopilot.** Invoke it as `node <skill-root>/scripts/autopilot.mjs <operation>` with one
+  closed-schema JSON object on standard input. `decision-classify` and `decision-extract` are pure:
+  they validate 1–10 option scores and classify them (lead > 3 silent, 1–3 documented, 0 tie;
+  distinct tie re-scores; floor 2; cap 20) and parse a plan's "Decided by score" machine block.
+  `run-init`, `decision-record`, `blocker-record`, `fit-record`, `pr-appendix` and `run-close` write
+  the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
+  runtime-state guard, and `consent-check` reads it for Issue Buddy's per-run private publication;
+  it grants only for a ledger whose recorded visibility is `private`. `run-check` (reads only)
+  confirms an open ledger as `{runId, status: "open", source}` and otherwise fails with
+  `RUN_NOT_OPEN` (exit 2). `fit-record` also accepts `{unavailable: true, sources}`, rendered as
+  `Architecture fit: not assessed — scoring unavailable`. `pr-appendix` sanitizes every free-text
+  field, runs the plan-publication content scan with unattended strictness and leaves local-only
+  content out. `appendix-merge` reads only: it takes `{cwd, runId, appendixSha256, body}`, derives
+  the appendix path from the run directory, and refuses with `APPENDIX_MISMATCH` unless
+  `appendixSha256` equals the digest `pr-appendix` returned and recorded in the ledger and the
+  file still has it, and with `APPENDIX_WITHHELD` while a security blocker stands on a repository
+  whose recorded visibility is not `private`; it replaces the one appendix block of a pull-request
+  body, or appends it, for `pr`'s `Appendix:` input. A `blocked` or `withheld` render and every
+  later `decision-record`, `blocker-record` and `fit-record` withdraw the recorded digest. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
+  removes a run's ledger and appendix only while its run is closed and produced no pull request or
+  the caller's `pr-read` stated it merged or closed; an open run, an open pull request,
+  `unavailable` (forge not readable) and a foreign entry keep it. It acts on a pull-request state
+  only when the entry's `pullRequest` equals the ledger's (otherwise `pull-request-mismatch`), and
+  retains a closed ledger whose outcome and pull request disagree as `ledger-invalid`. The calling contract is
+  [`scored-decisions`](../../src/shared/scored-decisions.md); its leaves are the spawn sites
+  `scored-decisions/score` and `scored-decisions/tie-rescore`. The tool
+  [`autopilot`](../../src/tools/autopilot.md) chains Issue Buddy, `plan-review`, the routed
+  implementing workflow, `commit` and `pr` as declared `WORKFLOW_EDGES`, and starts one spawn of
+  its own, the read-only `deep` leaf `autopilot/architecture-fit`. Its rare branches sit in the
+  autopilot-only lazy fragments `autopilot-issue-source` (with the read-only `standard` Stage B
+  leaf `autopilot-issue-source/issue-classification`, so autopilot never holds issue text) and
+  `autopilot-blockers`, which may emit the scored control lines because only an Automation tool
+  reaches them. A receiving tool honours the lines only after the `run-check` of
+  `scored-decisions` "Recognition".
 
 Unit tests exercise remote-tracker parsing, payloads, provider plans, redaction, capabilities,
 compatibility, and stale writes with fake runners and fixtures. Forgejo capabilities are derived

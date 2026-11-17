@@ -1,7 +1,7 @@
 ---
 description: "Orchestrates the complete feature workflow: clarified plan, bounded build runner, guarded question relay and verified completion."
 catalogHint: "Fully implements a new feature – plan, code, tests, review, completion."
-contextBudget: 215
+contextBudget: 218
 ---
 
 # Effective Flow Build
@@ -51,6 +51,11 @@ the loaded retired-key contract over every successor this workflow can resolve:
 `delivery.baseBranch`, `delivery.branchPrefix`, and `delivery.completion`. Complete its stop or
 report decision before any delegation or write. This preflight does not replace or move any later
 purpose-specific configuration read; perform each one at its documented workflow point.
+
+```lazy-include
+scored-decisions
+when: the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write
+```
 
 ```include
 plan-status

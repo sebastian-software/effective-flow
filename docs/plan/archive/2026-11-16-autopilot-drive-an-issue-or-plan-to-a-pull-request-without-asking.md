@@ -1,6 +1,6 @@
 # Autopilot: drive an issue or plan to a pull request without asking
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -518,3 +518,52 @@ The counts cover three judgment rounds: 23 findings in the internal review, 10 i
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-17
+**Workflow:** `effective-flow build`, continued on the plan pull request #685.
+
+### Requirement
+
+Implemented as planned: `effective-flow autopilot <issue|plan-file>` drives one trusted issue or local plan to a draft pull request without asking the user, resolving every reachable question through scored decisions, and opens the new catalog category "Automation".
+
+### Architecture decisions
+
+All sixteen decisions above were implemented. Deviations and refinements made during implementation and review:
+
+- **Emission rule (decision 16):** a source emits a control line when a line, after indentation, blockquote markers and one list marker, starts with its bare text, or consists only of one code span holding it. Recognition in downstream tools uses inline code inside prose; forwarders copy received lines. Fragments count as Automation-only when only Automation tools reach them, through include fences or prose `shared/<name>.md` pointers.
+- **Recognition (decisions 3, 16):** downstream tools act on the control lines only when they sit in the trusted control region and a literal `autopilot.mjs run-check` confirms an open ledger; a partial or misplaced set stops with `RUN_NOT_OPEN` before any write.
+- **Appendix-only update on an issue-source blocker (decision 14):** autopilot performs the hash-guarded body update itself (`pr-read`, `appendix-merge`, `pr-update-body`), re-checking open, draft, same repository and plan marker, instead of calling `pr`, so `pr` can never push retained implementation work. Recorded in the category ADR.
+- **Issue classification (decisions 1, 10):** Stage B runs in a read-only leaf that returns only the subtype, so the orchestrator never holds untrusted issue text before Issue Buddy's trust filter.
+- **Blocked plan source (decision 13):** the blockers are written into a marker-delimited `### Autopilot blockers` section of the plan before the commit, so the plan-only draft pull request always has a change; a rerun refreshes the existing verified draft instead of opening a second one.
+- **Architecture fit (decision 15):** a failed fit leaf after one retry records `fit-record` `unavailable`; the appendix then states that scoring was unavailable.
+- **Fixed rows:** S-INT (routed intent), S-CTYP (routed type), and S-PPR/S-PDF while a verified plan pull request is held (blocker) are fixed instead of scored.
+- **Cleanup:** ledger listing and pruning are helper operations (`ledger-list`, `ledger-prune`) behind a lazy cleanup fragment; a run closed with its plan pull request still open (`plan-pull-request-unchanged`) is retained until that pull request is merged or closed.
+
+### Affected files
+
+As listed under "Affected files", plus the new lazy fragments `src/shared/autopilot-issue-source.md`, `src/shared/autopilot-blockers.md`, `src/shared/issue-buddy-autopilot.md`, `src/shared/pr-automation-lines.md` and `src/shared/cleanup-autopilot-ledgers.md`, the user-guide pages `tools-understand.md`, `tools-deliver.md` and `tools-setup.md`, and `test/automation-emission-guard.test.mjs`. `test/merge-gate-eval-round.test.mjs` received a longer marker wait (see Test results).
+
+### Implementation details
+
+Delivered in the four planned work packages: decision core (helper with eleven operations plus `run-check`, `ledger-list`, `ledger-prune`, `appendix-merge`; `scored-decisions.md`; category ADR and amendments; emission guard), downstream adoption, Issue Buddy `--issue <N>` with `ISSUE_NOT_OPEN` and the per-run private-publication consent, and the tool with its registrations, cleanup and documentation.
+
+### Test results
+
+- Full CI order on the final state: `pnpm agent:check` passed, `node build.mjs` passed for all three targets, `pnpm test:distribution` passed, `pnpm test` 5951 tests with 5889 passed, 61 skipped and 1 failure.
+- The one failure was `test/merge-gate-eval-round.test.mjs` "one immutable round provisions, seals, retries, and publishes isolated slots", a 10-second marker wait after two full builds that expired under full-suite load (about 7 seconds when the file runs alone; the file passes alone on the base and on this branch). This change adds about 0.3 seconds to that window. The wait was raised to 30 seconds, the value the same test already uses for an earlier marker, and the file then passed under concurrent load.
+- Behavioural eval evidence: `pnpm eval <suite> verify` reports no integrity blockers; evidence debt (stale or absent evidence) is reported for `merge-gate`, `iterate`, `next-steps`, `build-context` and `focus`, not re-recorded.
+- **Not yet done:** the two manual pre-merge smoke runs from the acceptance criteria (a trusted issue source in a private test repository and a plan source in a public test repository with `./local-link.sh`). The completion condition stays open until both pass.
+
+## Review findings
+
+**Date:** 2026-11-17
+**Reviewer:** Node.js reviewer, generic product reviewer (reduced depth for Markdown prompt sources)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    42 |
+| Open / Not implemented |     0 |

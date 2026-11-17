@@ -382,7 +382,9 @@ publish draft, plan-only pull requests for ready issues.
 
 The pass runs in the primary checkout and requires the configured remote tracker to be GitHub.
 Publication is allowed only for a public repository. Private and unknown repositories remain
-dry-run-only. The pass stops when configuration, the repository root, the whole-pass lock, the
+dry-run-only; the one exception is a run that you start with
+[`autopilot`](tools-automation.md#trust-model) on a single issue, which is your consent to publish
+that plan pull request. The pass stops when configuration, the repository root, the whole-pass lock, the
 visibility read, the Git state, or the required built-in subagent mechanism cannot be verified.
 It never asks a question during the pass and never implements code, changes configuration, closes
 issues, writes issue comments or labels, or creates a worktree.

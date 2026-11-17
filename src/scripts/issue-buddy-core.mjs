@@ -280,7 +280,7 @@ function validateInput(operation, input) {
     'pass-lock-release': [['passId'], []],
     'pass-collect': [
       ['passId', 'mode', 'baseBranch', 'planDir', 'branchPrefix', 'visibility'],
-      ['limits', 'staleAttempts', 'repositoryVisibility', 'leftoverPlanFiles'],
+      ['limits', 'staleAttempts', 'repositoryVisibility', 'leftoverPlanFiles', 'issue'],
     ],
     'verdict-record': [
       ['passId', 'issue', 'fingerprint', 'verdict', 'mode', 'reason'],
@@ -326,6 +326,7 @@ function validateInput(operation, input) {
     repositoryVisibility(input.repositoryVisibility);
     leftoverPlanFiles(input.leftoverPlanFiles, input.planDir);
     if (input.visibility !== 'standard') invalid('Issue Buddy requires standard visibility');
+    if (input.issue !== undefined) positive(input.issue);
     if (input.staleAttempts !== undefined && !Array.isArray(input.staleAttempts))
       invalid('staleAttempts must be an array');
     for (const attempt of input.staleAttempts ?? []) {
@@ -937,6 +938,9 @@ async function currentReads(context, input, repository) {
     if (numbers.has(issue.number) || issue.state !== 'open')
       fail('FORGE_READ_FAILED', 'incomplete issue listing');
     numbers.add(issue.number);
+    // A single-issue selector (`--issue <N>`) restricts trust reads, candidates and therefore
+    // recovery authority to that issue; the complete listing is still validated above.
+    if (input.issue !== undefined && issue.number !== input.issue) continue;
     if (!(await trusted(issue.author))) {
       candidates.push({ issue: issue.number, skip: 'untrusted-author' });
       continue;
@@ -1032,10 +1036,17 @@ async function currentReads(context, input, repository) {
     }
     candidates.push(candidate);
   }
+  // A selected issue that is absent from the open listing (closed or missing) is its own stop
+  // result, distinct from every skip reason, so a caller can tell it apart from a pass failure.
+  if (input.issue !== undefined && !numbers.has(input.issue))
+    fail('ISSUE_NOT_OPEN', 'selected issue is not in the open issue listing', {
+      issue: input.issue,
+    });
   const closedIssuePulls = [];
   for (const pr of pulls) {
     const parsed = parsePlanBranch(pr.head);
     if (
+      (input.issue === undefined || parsed?.issue === input.issue) &&
       parsed?.branchPrefix === input.branchPrefix &&
       !numbers.has(parsed.issue) &&
       pr.sameRepository === true
@@ -1073,6 +1084,7 @@ async function collect(context, input, lock) {
     staleAttempts: input.staleAttempts ?? [],
     repositoryVisibility: repositoryVisibility(input.repositoryVisibility),
     leftoverPlanFiles: leftoverPlanFiles(input.leftoverPlanFiles, input.planDir),
+    ...(input.issue !== undefined ? { issue: input.issue } : {}),
   };
   const requestDigest = hash(request);
   if (lock.collection) {
@@ -1228,6 +1240,7 @@ async function collect(context, input, lock) {
       leftoverPlanFiles: request.leftoverPlanFiles,
       repository: repositoryKey,
       limits: request.limits,
+      ...(request.issue !== undefined ? { issue: request.issue } : {}),
       baseOid: reads.oid,
       eligible: slice,
       eligibleCount: eligible.length,

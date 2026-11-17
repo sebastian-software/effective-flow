@@ -94,6 +94,11 @@ the loaded retired-key contract over every successor this workflow can resolve:
 report decision before any delegation or write. This preflight does not replace or move any later
 purpose-specific configuration read; perform each one at its documented workflow point.
 
+```lazy-include
+scored-decisions
+when: the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write
+```
+
 ```include
 completion-protocol
 ```

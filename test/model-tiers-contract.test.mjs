@@ -111,6 +111,16 @@ function isSpawnCandidate(text) {
 // the block among that source's candidates. A stale entry fails as loudly as a missing one.
 const SPAWN_MENTION_ALLOWLIST = [
   [
+    'tools/autopilot.md',
+    '**Sub-agents.** Require a built-in sub-agent mechanism, as Issue Buddy',
+    'capability check, not a spawn site',
+  ],
+  [
+    'tools/autopilot.md',
+    'Autopilot runs Issue Buddy, `{{SKILL:plan-review}}`, the implementing workflow',
+    'same-session workflow chain; each workflow owns its own marked spawns',
+  ],
+  [
     'tools/issue-buddy.md',
     '10. **Subagent capability.** Require a built-in subagent mechanism.',
     'capability check, not a spawn site',

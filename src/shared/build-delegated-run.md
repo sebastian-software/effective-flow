@@ -409,7 +409,8 @@ severity. An admitted Critical residual also requires the existing explicit comp
    `merge`) and in-place without delivery stop; a `null` or invalid row is asked now, in a delegated
    run through `question` with origin `delivery-choice`, and the answer is recorded in the
    "Determine mode" slot of `worktree-integration`, so handback step 3 does not ask again. A
-   non-interactive run that cannot be answered counts as no-PR. For delegated execution record the
+   non-interactive run that cannot be answered counts as no-PR. Under an Automation caller's
+   scored decision mode the recorded explicit `pr` continues (row S-DCH of `scored-decisions`). For delegated execution record the
    lane with `record-lane` after the `final-validation` gate's `limited` receipt, and ask any lane
    question only from a checkpoint holding that receipt. `record-lane` binds a source quote only to
    a stopping lane, so an explicit `pr` override that configuration does not name is confirmed

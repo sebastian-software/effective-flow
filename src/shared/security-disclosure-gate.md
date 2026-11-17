@@ -101,6 +101,13 @@ representation. After explicit publication the direct remote finding is the exec
 the note makes local `apply` skip its copy. The safety report remains local, but the two
 representations are never simultaneously active implementation sources.
 
+### Pre-commit use
+
+Under an Automation caller's scored decision mode, an implementing workflow also applies
+"Classification", "Local dedup" and "Local-first persistence" to its admitted residual findings
+before its handback commit, as `scored-decisions` defines. That use never reaches the publication
+offer: its fixed answer keeps every withheld finding local.
+
 ### Silence in public artifacts
 
 Every public issue body contains no count, title, signature, ID, or other reference to a
