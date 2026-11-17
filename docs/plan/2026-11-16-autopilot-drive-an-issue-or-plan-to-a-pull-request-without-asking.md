@@ -23,11 +23,21 @@ For an issue source, issue-buddy produces the plan first. The run ends in a draf
 - any blockers;
 - a score for how well the change fits the existing architecture and long-term plans, when repository sources for that are known.
 
-This is Feature work: it adds an exposed tool, a new run-state control and a new runtime helper, and it changes how non-interactive runs resolve questions.
+Autopilot is the first tool of a new catalog category, **Automation**. Only tools in this category may set aside the earlier rules:
+
+- scores stay in the dialog and never decide;
+- unattended runs never guess;
+- issue-buddy never implements;
+- private repositories stay dry-run-only.
+
+Quality control still comes from the draft pull request, which a person reviews before anything is merged. Every tool outside the category keeps those rules unchanged. The ADRs are aligned with this in the same pull request (#685) that carries the plan and the implementation.
+
+This is Feature work: it adds a catalog category, an exposed tool, a new run-state control and a new runtime helper, and it changes how non-interactive runs resolve questions when an Automation tool calls them.
 
 ### User decisions (planning dialog, 2026-11-16)
 
 - **Name:** `autopilot`.
+- **Category (2026-11-17):** `autopilot` opens the new catalog category "Automation" (German "Automatik"). Only tools in this category may set aside the earlier rules. The draft PR is the quality gate. The ADRs are aligned in the same PR.
 - **"Deep analysis always":** the deep plan review always runs. The tie re-scoring is a separate, mandatory rule.
 - **End state:** always a **draft** pull request, with every blocker that no score can resolve documented in it. A blocked plan source gets a plan-only draft PR carrying its blockers. The confirmed exceptions, which produce no PR, are:
   - a security blocker on a public repository, which pushes nothing and opens or updates no PR;
@@ -73,7 +83,7 @@ Out of scope:
 **Original outcome:** one `autopilot` invocation turns one trusted issue or plan into a draft PR that contains plan, implementation, a decision record and an architecture-fit score, with zero user questions during the run. The confirmed exceptions produce no PR.
 **Last evaluated attempt:** none.
 **No-progress count:** 0
-**Cumulative approach:** new tool, decision helper, a `Decision mode: scored` question-site table across seven tools and their fragments, pre-commit security classification, issue-buddy single-issue selector and private consent, plan-only draft path, `pr` draft-preserving finish and appendix, ADR amendments plus one new ADR.
+**Cumulative approach:** new "Automation" catalog category with category ADR and emission guard, new tool, decision helper, a `Decision mode: scored` question-site table across seven tools and their fragments, pre-commit security classification, issue-buddy single-issue selector and private consent, plan-only draft path, `pr` draft-preserving finish and appendix, ADR amendments plus one new ADR.
 **Continuation decision:** none.
 
 ## Architecture decisions
@@ -222,22 +232,32 @@ Out of scope:
       - other open plans in `<plan.dir>/`.
     - It uses the calibration bands read as fit: 1–2 conflicts with recorded architecture, 9–10 clearly follows it. It returns a score, a one-sentence reason and the sources it used.
     - With no source, the appendix states "Architecture fit: not assessed — no architecture or roadmap sources found".
-16. **ADRs, amendments and cleanup.**
-    - New `docs/adr/scored-autonomous-decisions.md` records, for autopilot runs only:
-      - the authority change;
+16. **Automation category, ADRs, amendments and cleanup.**
+    - **Catalog:** `build.mjs` gains a new `TOOL_GROUPS` entry, `Automation`, with `when: 'unattended from issue or plan to a draft pull request'`. It sits after "Deliver changes" and contains only `autopilot`. The router catalog, user guide and README show it as its own group.
+    - **The category is the authority boundary.** Downstream tools (`plan`, `plan-review`, `build`, `fix`, `refactor`, `docs`, `pr`, `issue-buddy`) stay in their groups. They resolve questions by score, write the machine block, accept `Private publication: autopilot` or `Keep draft:` from autopilot only when an Automation caller supplies the trusted control lines. Called any other way, they behave as before.
+    - **Build guard:** only a source of a tool listed in the `Automation` group may emit the scored control lines (`Decision mode: scored`, `Autopilot run:`) or the `Private publication: autopilot` input. Downstream tools may only recognize them. The guard fails the build when a tool outside the group emits them.
+    - **One new category ADR,** `docs/adr/automation-tool-category.md`, Accepted. It defines:
+      - which tools belong to the category;
+      - what they may set aside;
+      - the guardrails they must keep: draft PR only, never ready-for-review, never merge, trust model, documented close decisions, blockers in the PR, the public security stop, no AI attribution;
+      - why the reviewable draft PR replaces the interactive question as quality control.
+    - **Autopilot's mechanics in the ADR:** for autopilot specifically, it also records:
       - the threshold, tie, floor and cap rules;
       - ledger persistence and the plan machine block;
       - pre-commit security classification;
       - the per-run private-publication consent with its accepted residual risk (no forge-side branch confinement or credential isolation on private repositories).
-    - Amendments:
+    - **Amendments:** each earlier decision is scoped, not removed. It keeps its text for all other tools and gains one sentence: "Tools of the Automation category are governed by `docs/adr/automation-tool-category.md` instead." The amended sites are:
       - `docs/concept/2026-09-28-scored-decision-options.md`: the non-goals "no persistence of scores" and "no automatic decisions from scores".
       - `docs/concept/2026-09-29-issue-buddy.md`: the non-goal "Issue Buddy never runs apply, build or any implementer", where issue-buddy itself still does not implement, and the private-repository line with its relation to the future acknowledgement key.
       - `docs/adr/plan-only-unattended-publication.md`: the "private repositories are dry-run-only" paragraph, cited by paragraph.
       - `docs/adr/unattended-run-state.md`: its Decision text names scored mode as the one sanctioned exception to "open point or fail-closed abort, never a guess".
-      - `plan-review`'s dialog-only score rules and the R-DEC row of `unattended-planning.md`: they gain the scored-mode exception.
+      - `plan-review`'s dialog-only score rules and the R-DEC row of `unattended-planning.md`: they gain the exception for an Automation caller.
+    - **Same PR:** the category ADR and all amendments are written in work package 1 on the branch of PR #685, so plan, ADR alignment and implementation arrive in one review.
     - **Cleanup:** `effective-flow cleanup` lists autopilot ledgers. It removes one, with a listed reason, only when the run is closed and either produced no PR or its PR is merged or closed, checked with `pr-read`. When the forge is unavailable, the ledger is retained with that reason.
 
 ### Alternatives considered
+
+- **Ad-hoc, autopilot-specific exceptions in each ADR.** Rejected: one category ADR with a build guard keeps the boundary explicit and reusable for later Automation tools, and leaves interactive tools untouched.
 
 - **Extend issue-buddy itself to implement.** Rejected. It would turn a bounded, lock-guarded triage pass into an implementer.
 - **Plan an issue directly with the unattended `plan` envelope.** Rejected. It duplicates the trust filter, trusted-text materialization and publication, and the user asked for issue-buddy.
@@ -258,7 +278,7 @@ Out of scope:
 | `src/tools/autopilot.md`                                                                                                                                                                                                                                                                                    | New exposed tool: arguments, Stage A/B classification, preflight, run-id, routing, chaining, plan restoration and removal, skip-reason map, plan-only draft path, blockers, completion report. Frontmatter `description`, `catalogHint`, `contextBudget`.      |
 | `src/shared/scored-decisions.md`                                                                                                                                                                                                                                                                            | New owning fragment: question-site table with anchors, scoring and tie leaves (spawn sites), fixed answers, floor, cap, failure handling, machine-block format, ledger calls, appendix contract.                                                               |
 | `src/scripts/autopilot.mjs`, `src/scripts/autopilot-core.mjs`                                                                                                                                                                                                                                               | New JSON CLI and core (decision 7 operations).                                                                                                                                                                                                                 |
-| `build.mjs`                                                                                                                                                                                                                                                                                                 | `RUNTIME_SCRIPT_FILES`, `TOOL_GROUPS` ("Implement a change"), `WORKFLOW_EDGES` (`autopilot` → `issue-buddy`, `plan-review`, `build`, `fix`, `refactor`, `docs`, `commit`, `pr`).                                                                               |
+| `build.mjs`                                                                                                                                                                                                                                                                                                 | `RUNTIME_SCRIPT_FILES`, new `TOOL_GROUPS` entry "Automation", the Automation emission guard, `WORKFLOW_EDGES` (`autopilot` → `issue-buddy`, `plan-review`, `build`, `fix`, `refactor`, `docs`, `commit`, `pr`).                                                |
 | `scripts/distribution-smoke.mjs`                                                                                                                                                                                                                                                                            | Ship-list entry for the new helper.                                                                                                                                                                                                                            |
 | `src/shared/unattended-planning.md`                                                                                                                                                                                                                                                                         | Optional scored control lines; machine-block writes; autopilot file-review entry; P-JDG and R-DEC scored-mode rows; pointer to `scored-decisions`.                                                                                                             |
 | `src/tools/plan.md`, `src/tools/plan-review.md`                                                                                                                                                                                                                                                             | Recognize the control lines; scored resolution; dialog-only exception; mandatory deep review in unattended runs (pinned by test).                                                                                                                              |
@@ -269,9 +289,9 @@ Out of scope:
 | `src/shared/next-steps.md`                                                                                                                                                                                                                                                                                  | Rows for autopilot outcomes: draft PR → `merge-gate <PR>`; blocker → the matching repair tool; plan-only draft → the recommended implementing workflow for the plan.                                                                                           |
 | `src/shared/session-title.md`, `src/shared/model-tiers.md`, `src/scripts/config-resolve-core.mjs`                                                                                                                                                                                                           | Work-subject listing, spawn-site rows (scoring, tie re-score, fit), successor row.                                                                                                                                                                             |
 | `src/tools/cleanup.md` (and its core when helper-backed)                                                                                                                                                                                                                                                    | Ledger listing and removal with `pr-read`.                                                                                                                                                                                                                     |
-| `docs/adr/scored-autonomous-decisions.md`                                                                                                                                                                                                                                                                   | New ADR.                                                                                                                                                                                                                                                       |
+| `docs/adr/automation-tool-category.md`                                                                                                                                                                                                                                                                      | New category ADR (decision 16).                                                                                                                                                                                                                                |
 | `docs/adr/unattended-run-state.md`, `docs/adr/plan-only-unattended-publication.md`, `docs/concept/2026-09-28-scored-decision-options.md`, `docs/concept/2026-09-29-issue-buddy.md`                                                                                                                          | Amendments (decision 16).                                                                                                                                                                                                                                      |
-| `docs/user-guide/tools-implement.md`, `docs/user-guide/tool-flow.md`, `docs/user-guide/README.md`, `README.md.src` (+ regenerated `README.md`)                                                                                                                                                              | User documentation: trust model, checkout requirement, routing, end states and exceptions, thresholds, review-publication override, PR appendix.                                                                                                               |
+| new `docs/user-guide/tools-automation.md`, `docs/user-guide/tool-flow.md`, `docs/user-guide/README.md`, `README.md.src` (+ regenerated `README.md`)                                                                                                                                                         | User documentation: trust model, checkout requirement, routing, end states and exceptions, thresholds, review-publication override, PR appendix.                                                                                                               |
 | `docs/developer-guide/build-system.md`                                                                                                                                                                                                                                                                      | New helper and spawn sites.                                                                                                                                                                                                                                    |
 | `test/autopilot-core.test.mjs`                                                                                                                                                                                                                                                                              | New unit tests for the helper.                                                                                                                                                                                                                                 |
 | `test/*-contract.test.mjs` enumerating tools (`execution-profile-contract`, `delegation-mandate-contract`, `model-tiers-contract`, `workflow-contracts`, `setup-status-core`, `helper-call-shape-contract`, `subagent-progress-contract`, `unattended-planning-contract`), issue-buddy tests, cleanup tests | Add `autopilot`; new invariants (acceptance criteria).                                                                                                                                                                                                         |
@@ -285,7 +305,7 @@ Deliver in four reviewable work packages on one branch. Each leaves the suite gr
 1. **Decision core.**
    - `autopilot-core.mjs` and its CLI: the decision 7 operations, sanitization and scan, with unit tests.
    - `scored-decisions.md` with the complete question-site table.
-   - The ADR and its amendments.
+   - The category ADR, all amendments, the new `TOOL_GROUPS` entry and the emission guard with its test.
    - No tool consumes the core yet.
 2. **Downstream adoption.**
    - The control lines, machine block and file-review entry in `unattended-planning`, `plan` and `plan-review`.
@@ -378,7 +398,7 @@ Deliver in four reviewable work packages on one branch. Each leaves the suite gr
 
 ## Acceptance criteria
 
-- [ ] `effective-flow autopilot` is listed in the router catalog under "Implement a change", and `node build.mjs` builds all three targets with a measured `contextBudget`.
+- [ ] `effective-flow autopilot` is listed in the router catalog under the new "Automation" group, and `node build.mjs` builds all three targets with a measured `contextBudget`.
 - [ ] `autopilot-core` unit tests cover:
   - lead 4 → `silent`;
   - lead 3 and lead 1 → `documented`, with the alternatives within 3 points;
@@ -416,7 +436,8 @@ Deliver in four reviewable work packages on one branch. Each leaves the suite gr
   - the appendix-only update changes neither title nor draft state;
   - `Appendix:` is appended after the body check and replaces an existing marker block on update.
 - [ ] Cleanup tests cover ledger removal for closed runs whose PR is merged or closed, and retention when the forge is unavailable.
-- [ ] `docs/adr/scored-autonomous-decisions.md` exists with status Accepted, the amendments in decision 16 are present, and the user guide documents trust model, checkout requirement, routing, end states with exceptions, thresholds, review-publication override and PR appendix.
+- [ ] A build-guard test proves that a fixture tool outside the `Automation` group that emits `Decision mode: scored`, `Autopilot run:` or `Private publication: autopilot` fails the build. `autopilot` passes.
+- [ ] `docs/adr/automation-tool-category.md` exists with status Accepted. Every amended ADR and concept keeps its rule for all other tools and points to the category ADR for Automation tools (decision 16). The user guide documents the Automation category, trust model, checkout requirement, routing, end states with exceptions, thresholds, review-publication override and PR appendix.
 - [ ] CI order passes: `pnpm agent:check`, `pnpm test`, `node build.mjs`, `pnpm test:distribution`.
 - [ ] A manual pre-merge smoke run passes with the locally linked build (`./local-link.sh`):
   - a trusted issue source in a private test repository, which exercises the private consent;
@@ -466,6 +487,8 @@ Deliver in four reviewable work packages on one branch. Each leaves the suite gr
 The counts cover three judgment rounds: 23 findings in the internal review, 10 in the ladder re-review, and 21 in the deep review. A finding that spans two areas is counted in both.
 
 ### Findings
+
+- **User revision (2026-11-17):** the authority change is scoped to a new catalog category, "Automation". One category ADR, a build guard, and aligned ADRs and concepts in the same PR. Incorporated in the Requirement and decision 16, plus Affected files, Approach and acceptance criteria. This is a scope-narrowing change with no new open point.
 
 - **Internal review (1 Critical, 15 Important, 7 Note):** all incorporated or decided in the batch round. The main changes were the question-site table, the draft-preserving finish, plan restoration, the post-check appendix, the dedicated private consent, the file-review entry, the skip-reason map, the tie rule, the security-blocker split, the pre-merge smoke, repo-only fit sources and the checkout rules.
 - **Ladder re-review (7 Important/Note incorporated, 3 decided in the deep review):** incorporated the appendix-only update, visibility for every source, row anchors for prose questions, accurate preflight checks, consent-origin validation, the cleanup criterion and context-exhaustion recovery. The deep review then decided the three remaining points: the plan-only draft path (decision 13), the machine block (decision 7) and the binding plan-PR review (decision 10).
