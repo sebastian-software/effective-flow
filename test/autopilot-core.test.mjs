@@ -1169,7 +1169,7 @@ test('the appendix renders documented, silent, blocker and fit sections between 
   assert.match(appendix, /\*\*Source:\*\* Refs #42; continues plan pull request #99/);
   assert.match(appendix, /chosen: \*\*Keep\*\* \(8\/10 — Keep reason\)/);
   assert.match(appendix, /Alternative: Split \(6\/10 — Split reason\)/);
-  assert.match(appendix, /tie re-scored: X 7\/10 → 8\/10, Y 7\/10 → 5\/10/);
+  assert.match(appendix, /tie re-scored: X 7\/10 → 8\/10 — X deeper; Y 7\/10 → 5\/10 — Y deeper/);
   assert.match(appendix, /1 decision was taken automatically/);
   assert.match(appendix, /### Blockers\n\n- Unit tests failed after repair\./);
   assert.match(appendix, /7\/10 — Follows the ADRs\. Sources: `docs\/adr\/a\.md`/);

@@ -1265,11 +1265,11 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
     if (entry.tieResolved) {
       const tied = [winner, ...entry.alternatives.filter((item) => item.rescore !== undefined)];
       const rounds = tied
-        .map(
-          (item, position) =>
-            `${field(item.label, `${where}.tie[${position}].label`)} ${item.score}/10 → ${item.rescore}/10`,
-        )
-        .join(', ');
+        .map((item, position) => {
+          const at = `${where}.tie[${position}]`;
+          return `${field(item.label, `${at}.label`)} ${item.score}/10 → ${item.rescore}/10 — ${field(item.rescoreReason, `${at}.reason`)}`;
+        })
+        .join('; ');
       lines.push(`  - ${copy.tie}: ${rounds}`);
     }
   }
