@@ -1,7 +1,7 @@
 ---
 description: "Creates or reuses a pull request on GitHub (via gh) or Forgejo (via tea) from a prepared committed branch. Detects the host from the origin URL, verifies the exact head and base, pushes the branch if needed, derives title and description for a new pull request, and reports the PR URL."
 catalogHint: "Opens a pull request from your branch (GitHub or Forgejo)."
-contextBudget: 510
+contextBudget: 516
 ---
 
 # Effective Flow PR
@@ -119,6 +119,18 @@ base-branch-resolution
 - **Creation-only lines,** applied only when step 8 finds no match: `Draft: requested` sets `draft: true` on `pr-create`, and step 6 aborts when the probe lacks `pullRequestDraftCreate`; `Plan marker: <marker line>` places that exact line as its own body line after the prose.
 - **Finalize plan draft:** `Finalize plan draft: <PR number>`, the verified plan pull request whose draft step 8's plan draft finish completes.
 - **Verification evidence:** an optional `Verification evidence: <record>` or `Verification evidence: none` line, trusted only from a returning committed handoff that passed step 2; a direct invocation ignores it.
+- **Automation lines:** `Keep draft: requested` and `Appendix: <sha256>`, only from an
+  Automation caller's scored decision mode.
+
+```lazy-include
+scored-decisions
+when: the trusted handoff or call of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before step 2
+```
+
+```lazy-include
+pr-automation-lines
+when: the call carries `Keep draft: requested` or `Appendix:`, before step 2
+```
 
 ## Approach
 
@@ -262,7 +274,7 @@ when: a returning committed handoff that passed step 2 supplied a `Verification 
    pagination; do not bypass it with guessed `gh` or `tea` flags.
    - **Exactly one exact match:** Reuse its URL as the successful PR result. Preserve its title
      and description, do not invoke `pr-create` or any metadata mutation, skip steps 9 and 10, and
-     continue with the shared restoration and reporting path in steps 11 and 12, except for the plan draft finish below.
+     continue with the shared restoration and reporting path in steps 11 and 12, except for the plan draft finish below and an `Appendix:` update.
    - **Plan draft finish:** `P` is the match's valid `planPrMarker` path, `A` its archive path; each reaches a command only as one single-quoted literal argument (a `'` inside written as `'\''`), never unquoted.
      It applies when a supplied `Finalize plan draft:` number equals the match's; there a differing
      number or a missing marker refuses the finish and is reported. On a direct invocation without

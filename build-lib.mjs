@@ -5496,6 +5496,104 @@ export function assertNoEagerLazyOverlap(eager, lazy, { context } = {}) {
   }
 }
 
+// --- Automation emission guard ---
+//
+// Only tools of the `Automation` catalog group (`docs/adr/automation-tool-category.md`) may emit
+// the control lines that switch downstream tools into scored, unattended mode. Emission is the
+// line form: a line whose text, after optional indentation, blockquote markers and one list
+// marker, starts with a control line's bare text — the shape of an envelope or handoff line, inside
+// or outside a fence — or consists of nothing but one inline code span holding a control line,
+// which a model copies as the line itself. Recognition is any other mention, which spells the line
+// inside an inline code span within prose (`` Accept `Decision mode: scored` only … ``).
+// Forwarding a received line copies it and never spells it.
+export const AUTOMATION_GROUP_TITLE = 'Automation';
+export const AUTOMATION_CONTROL_LINES = Object.freeze([
+  'Decision mode: scored',
+  'Autopilot run:',
+  'Private publication: autopilot',
+]);
+const AUTOMATION_LINE_PREFIX = /^[ \t]*(?:>[ \t]*)*(?:(?:[-*+]|\d+[.)])[ \t]+)?/;
+// A line that is one inline code span and nothing else (after the prefix above).
+const AUTOMATION_SOLE_CODE_SPAN = /^(`+)[ \t]*([\s\S]*?)[ \t]*\1[ \t]*$/;
+// A prose pointer to a shared fragment (`Read \`shared/<name>.md\``), which reaches it lazily.
+const SHARED_FRAGMENT_POINTER = /\bshared\/([a-z0-9][a-z0-9-]*)\.md\b/g;
+
+// Every emitted control line of one source, as `{ line, token }`.
+export function findAutomationEmissions(text) {
+  return normalizeLineEndings(text)
+    .split('\n')
+    .flatMap((line, index) => {
+      const rest = line.replace(AUTOMATION_LINE_PREFIX, '');
+      const span = rest.match(AUTOMATION_SOLE_CODE_SPAN);
+      // Content holding its own delimiter is two spans with prose between them, not one.
+      const spoken = span && !span[2].includes(span[1]) ? span[2] : rest;
+      const token = AUTOMATION_CONTROL_LINES.find((candidate) => spoken.startsWith(candidate));
+      return token ? [{ line: index + 1, token }] : [];
+    });
+}
+
+// The fragment names one source reaches: eager and lazy includes plus prose pointers
+// `shared/<name>.md`.
+function automationReachedFragments(text) {
+  const { eager, lazy } = collectIncludeNames(text);
+  const names = new Set([...eager, ...lazy]);
+  for (const match of text.matchAll(SHARED_FRAGMENT_POINTER)) names.add(match[1]);
+  return names;
+}
+
+// `sources` maps `tools/<name>.md`, `agents/<name>.md`, `shared/<name>.md` and `SKILL.md` to their
+// text; `automationTools` holds the tool names of the `Automation` group. A tool source may emit
+// only when it belongs to the group; a shared fragment only when at least one tool reaches it
+// through eager or lazy includes or a prose pointer `shared/<name>.md`, and every source that
+// reaches it (tool, agent or router) is an Automation tool. Agents and the router never emit.
+// Returns `{ context, line, token, reason }`.
+export function findAutomationEmissionViolations(sources, automationTools) {
+  const allowed = new Set(automationTools);
+  const fragmentText = (name) => sources.get(`shared/${name}.md`);
+  const reachers = new Map();
+  for (const [context, text] of sources) {
+    if (context.startsWith('shared/')) continue;
+    const pending = [...automationReachedFragments(text)];
+    const seen = new Set();
+    while (pending.length > 0) {
+      const name = pending.pop();
+      if (seen.has(name)) continue;
+      seen.add(name);
+      if (!reachers.has(name)) reachers.set(name, new Set());
+      reachers.get(name).add(context);
+      const nested = fragmentText(name);
+      if (nested !== undefined) pending.push(...automationReachedFragments(nested));
+    }
+  }
+  const isAutomationTool = (context) => {
+    const match = context.match(/^tools\/(.+)\.md$/);
+    return match !== null && allowed.has(match[1]);
+  };
+  const violations = [];
+  for (const [context, text] of [...sources].sort(([left], [right]) => left.localeCompare(right))) {
+    const emissions = findAutomationEmissions(text);
+    if (emissions.length === 0) continue;
+    let reason = null;
+    if (context.startsWith('tools/')) {
+      if (!isAutomationTool(context)) reason = 'tool outside the Automation group';
+    } else if (context.startsWith('shared/')) {
+      const name = context.slice('shared/'.length, -'.md'.length);
+      const reached = [...(reachers.get(name) ?? [])];
+      if (reached.length === 0) reason = 'fragment reached by no tool';
+      else {
+        const foreign = reached.filter((reacher) => !isAutomationTool(reacher)).sort();
+        if (foreign.length > 0) reason = `fragment reached by ${foreign.join(', ')}`;
+      }
+    } else {
+      reason = 'agents and the router never emit';
+    }
+    if (reason !== null) {
+      for (const { line, token } of emissions) violations.push({ context, line, token, reason });
+    }
+  }
+  return violations;
+}
+
 // --- Documentation-sync consumer guard ---
 //
 // Keeping documentation in sync is a fixed part of every implementation tool,

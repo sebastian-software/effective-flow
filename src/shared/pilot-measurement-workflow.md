@@ -271,6 +271,7 @@ suspension on success. A declined, unanswered, non-interactive, or failed retry 
 suspension. The completion report then states that no durable state keeps a later measured run off
 Fast, and that the confirmed recovery path is `{{SKILL:setup}}` Guided block 10 `Disable`, after
 which Fast returns only through a confirmed `Enable` there.
+Under an Automation caller's scored decision mode, row S-INC of `scored-decisions` decides.
 
 After any critical incident in the run, persisted or not, no packet that has not yet spawned makes
 a Fast attempt: it runs Quality from its first spawn, still timed by `start-packet` and
@@ -307,6 +308,8 @@ options:
   - label: Keep
     description: Leave the incomplete record in place; only a generation discard or purge clears it
 ```
+
+Under an Automation caller's scored decision mode, row S-PRC of `scored-decisions` decides.
 
 On **Reconcile**, read a fresh `inventory` with the `generationId`, then call `reconcile-record` with
 exactly `runtimeStateRoot`, `repositoryIdentity`, `generationId`, `runId`, `workflowCapability`,

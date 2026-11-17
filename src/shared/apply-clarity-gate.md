@@ -30,7 +30,8 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `{{SKILL:plan}}` or its in-depth
   plan review (`{{SKILL:review}} <planfile>`); an issue or finding goes to
-  `{{SKILL:plan-issue}}`.
+  `{{SKILL:plan-issue}}`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,

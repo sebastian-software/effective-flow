@@ -103,6 +103,7 @@ const EXPECTED_TOOLS = [
   'apply-review',
   'apply-review-commit-mechanics',
   'apply-review-remote',
+  'autopilot',
   'backlog-audit',
   'build',
   'cleanup',
@@ -132,6 +133,8 @@ const EXPECTED_TOOLS = [
 ];
 
 const EXPECTED_RUNTIME_SCRIPTS = [
+  'autopilot-core.mjs',
+  'autopilot.mjs',
   'backlog-audit-core.mjs',
   'backlog-audit.mjs',
   'build-run-core.mjs',

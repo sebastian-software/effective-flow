@@ -224,6 +224,8 @@ Governed by the configuration key `delivery.prReview` with the values `ask` (def
 `off`:
 
 - `always` — publish after PR creation without asking, in every run state.
+- Under an Automation caller's scored decision mode (`scored-decisions`, row S-PRR), the trigger
+  is off for that run whatever the value, `always` included; report it as off by the caller.
 - `off` — no automatic publication. This disables the automatic trigger only; an explicit
   `{{SKILL:review}} <PR>` invocation is never affected.
 - `ask` — resolved by the run state:

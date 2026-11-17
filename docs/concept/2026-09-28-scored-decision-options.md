@@ -65,8 +65,8 @@ The score replaces the binary recommended marker for scored questions. The rende
 
 ### Non-goals
 
-- **No persistence of scores in artifacts.** Plans, concepts, issues, and review reports keep recording only the chosen decision and its rationale; scores exist only in the dialog.
-- **No automatic decisions from scores.** A score never selects an option on its own, and unattended or non-interactive runs keep their existing default resolution.
+- **No persistence of scores in artifacts.** Plans, concepts, issues, and review reports keep recording only the chosen decision and its rationale; scores exist only in the dialog. Tools of the Automation category are governed by `docs/adr/automation-tool-category.md` instead.
+- **No automatic decisions from scores.** A score never selects an option on its own, and unattended or non-interactive runs keep their existing default resolution. Tools of the Automation category are governed by `docs/adr/automation-tool-category.md` instead.
 - **No weighted multi-criteria decision matrix.** One overall fit score per option is the deliberate granularity.
 - **No change to the existing scales or routed fields.** Finding severity, reviewer confidence, file-scope confidence, complexity, scorecards, and the `Recommended workflow` field stay as they are, so a fit score is not confused with any of them.
 - **No scores on any question in the `merge-gate` eval load set, now or later.** This covers the 10 option-bearing questions in the gate, in `iterate`, and in the shared fragments they load, and it applies wherever those shared fragments appear. The recorded eval evidence stays valid.

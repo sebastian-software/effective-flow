@@ -2,7 +2,9 @@
 // One stdin JSON object, one stdout envelope; the core owns validation and local state.
 // Operations: pass-lock-acquire, pass-lock-release, pass-collect, verdict-record, pass-report,
 // and fingerprint. `pass-collect` accepts optional repository visibility and leftover-plan
-// metadata; `pass-report` emits those fields only when the caller opts into `reportVersion: 2`.
+// metadata and an optional single-issue selector (`issue`, failing `ISSUE_NOT_OPEN` when that
+// issue is not open); `pass-report` emits those fields only when the caller opts into
+// `reportVersion: 2`.
 import { realpathSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createProcessRunner, terminateActiveProcessGroups } from './process-runner.mjs';

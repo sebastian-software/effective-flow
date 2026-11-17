@@ -1967,7 +1967,8 @@ test(
         release: finalBuildRelease,
         result: finalBuildPublisherResultPromise,
       });
-      await waitForFile(finalBuildMarker);
+      // Two full builds run before this marker (about 7 s alone); allow suite-wide load.
+      await waitForFile(finalBuildMarker, 30_000);
       const finalBuildSealedLog = readFileSync(slot(5).callLog);
       appendFileSync(slot(5).callLog, '\nmutation after final build\n');
       writeFileSync(finalBuildRelease, 'release');
