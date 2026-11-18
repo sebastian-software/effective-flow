@@ -8,16 +8,22 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+  appendFileSync,
+  chmodSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
   readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
   rmSync,
+  statSync,
   symlinkSync,
   writeFileSync,
+  writeSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -1704,10 +1710,11 @@ function commitAll(cwd, message) {
 
 // A plan-source run whose plan review edited the plan in the primary checkout. `tracked: false`
 // leaves the plan uncommitted (State C).
-async function planRun(t, { tracked = true, review = true } = {}) {
+async function planRun(t, { tracked = true, review = true, executable = false } = {}) {
   const root = repository(t);
   mkdirSync(join(root, 'docs/plan'), { recursive: true });
   writeFileSync(join(root, PLAN_PATH), ORIGINAL);
+  if (executable) chmodSync(join(root, PLAN_PATH), 0o755);
   if (tracked) commitAll(root, 'plan');
   const runId = await init(root, {
     source: { kind: 'plan', planPath: PLAN_PATH, planSha256: digest(ORIGINAL) },
@@ -1837,7 +1844,11 @@ test('plan-reviewed and plan-copy-restore follow a linked-worktree sourceRoot', 
 
   const index = git(session, 'ls-files', '-s');
   const restored = await restore(root, runId, { sourceRoot: session });
-  assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+  assert.deepEqual(restored.data, {
+    result: 'restored',
+    planPath: PLAN_PATH,
+    retainedCopy: retainedIn(root, runId, restored.data.retainedCopy),
+  });
   assert.equal(readFileSync(join(session, PLAN_PATH), 'utf8'), ORIGINAL);
   assert.equal(git(session, 'ls-files', '-s'), index);
   assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
@@ -1965,7 +1976,11 @@ test('plan-copy-restore restores the reviewed copy and leaves the index unchange
   await deliver(t, root, runId);
   const index = git(root, 'ls-files', '-s');
   const restored = await restore(root, runId);
-  assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+  assert.deepEqual(restored.data, {
+    result: 'restored',
+    planPath: PLAN_PATH,
+    retainedCopy: retainedIn(root, runId, restored.data.retainedCopy),
+  });
   assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
   assert.equal(git(root, 'ls-files', '-s'), index);
   assert.equal(git(root, 'status', '--porcelain'), '');
@@ -2043,8 +2058,9 @@ test('plan-copy-restore keeps the copy and names each failed precondition', asyn
 });
 
 // Invariant: the working copy is re-hashed immediately before the restore, so an edit after the
-// checks keeps the copy; a Git failure of the restore itself (a held index.lock) is `kept`, not a
-// helper error.
+// checks keeps the copy; a failure of the install itself is `kept` with a `detail`, not a helper
+// error, the reviewed copy stays retained in the run ledger and is linked back to the plan path
+// (`putBack: true`), and the index is unchanged.
 test('plan-copy-restore keeps an edit made after the checks and a failed restore', async (t) => {
   {
     const { root, runId } = await planRun(t);
@@ -2067,14 +2083,25 @@ test('plan-copy-restore keeps an edit made after the checks and a failed restore
     const { root, runId } = await planRun(t);
     await deliver(t, root, runId);
     const index = git(root, 'ls-files', '-s');
-    writeFileSync(join(root, '.git', 'index.lock'), '');
-    const kept = await restore(root, runId);
-    rmSync(join(root, '.git', 'index.lock'));
+    // Removing the temporary file before the link makes the install fail with ENOENT.
+    const kept = await restore(
+      root,
+      runId,
+      {},
+      {
+        beforePlanInstall: () => {
+          for (const name of planDirLeftovers(root)) rmSync(join(root, dirname(PLAN_PATH), name));
+        },
+      },
+    );
     assert.equal(kept.ok, true, JSON.stringify(kept));
     assert.equal(kept.data.result, 'kept');
     assert.equal(kept.data.reason, 'restore-failed');
-    assert.match(kept.data.detail, /index\.lock/);
+    assert.match(kept.data.detail, /ENOENT/);
+    assert.equal(kept.data.putBack, true);
+    assert.equal(readFileSync(retainedIn(root, runId, kept.data.retainedCopy), 'utf8'), REVIEWED);
     assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+    assert.deepEqual(planDirLeftovers(root), []);
     assert.equal(git(root, 'ls-files', '-s'), index);
   }
 });
@@ -2242,8 +2269,9 @@ test('plan-copy-restore keeps the copy when a Git read fails', async (t) => {
   }
 });
 
-// Invariant: the restore reads from the verified HEAD commit, and HEAD, the index entry and the
-// working copy are each re-checked after the checks and before the write.
+// Invariant: the install writes the bytes read from the verified HEAD commit (no `git restore`
+// runs), and HEAD, the index entry and the working copy are each re-checked after the checks and
+// before the write.
 test('plan-copy-restore re-checks HEAD, the index and the file before restoring the verified commit', async (t) => {
   {
     const { root, runId } = await planRun(t);
@@ -2255,10 +2283,15 @@ test('plan-copy-restore re-checks HEAD, the index and the file before restoring 
       return undefined;
     });
     const restored = await restore(root, runId, {}, { runner });
-    assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
-    const restoreCall = calls.find((args) => args.includes('restore'));
-    assert.ok(restoreCall.includes(`--source=${commit}`), JSON.stringify(restoreCall));
-    assert.ok(!restoreCall.includes('--source=HEAD'));
+    assert.deepEqual(restored.data, {
+      result: 'restored',
+      planPath: PLAN_PATH,
+      retainedCopy: retainedIn(root, runId, restored.data.retainedCopy),
+    });
+    assert.ok(!calls.some((args) => args.includes('restore')), JSON.stringify(calls));
+    const readCall = calls.find((args) => args.includes('--filters'));
+    assert.ok(readCall.includes(`${commit}:${PLAN_PATH}`), JSON.stringify(readCall));
+    assert.ok(!readCall.includes(`HEAD:${PLAN_PATH}`));
   }
   const races = [
     [
@@ -2310,6 +2343,230 @@ test('plan-copy-restore keeps a plan saved after the final check', async (t) => 
     ),
     [],
   );
+});
+
+function planDirLeftovers(root) {
+  return readdirSync(join(root, dirname(PLAN_PATH))).filter(
+    (name) => name !== 'p.md' && name !== 'archive',
+  );
+}
+
+function retainedIn(root, runId, retained) {
+  const dir = join(root, AUTOPILOT_DIR, runId);
+  assert.equal(typeof retained, 'string');
+  assert.equal(dirname(retained), dir);
+  assert.match(retained.slice(dir.length + 1), /^plan-copy-.*\.md$/);
+  return retained;
+}
+
+// Invariant: a plan path recreated between moving the reviewed copy aside and installing HEAD is
+// never overwritten: the user's new file survives byte for byte, the reviewed copy is retained in
+// the run ledger and no temporary file is left in the plan directory.
+test('plan-copy-restore keeps a file recreated at the plan path before the install', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const created = '# Fresh\n\nSaved by the user in the gap.\n';
+  const kept = await restore(
+    root,
+    runId,
+    {},
+    { beforePlanInstall: () => writeFileSync(join(root, PLAN_PATH), created) },
+  );
+  assert.equal(kept.data.result, 'kept');
+  assert.equal(kept.data.reason, 'working-copy-changed');
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), created);
+  assert.equal(readFileSync(retainedIn(root, runId, kept.data.retainedCopy), 'utf8'), REVIEWED);
+  assert.deepEqual(planDirLeftovers(root), []);
+});
+
+// Invariant: a write through a descriptor opened before the move that lands in the moved-aside
+// copy after its hash check is not lost: HEAD is installed and the retained copy holds the write.
+test('plan-copy-restore retains a late write through an open descriptor', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const late = '\nlate write through an open descriptor\n';
+  let fd;
+  const restored = await restore(
+    root,
+    runId,
+    {},
+    {
+      afterPlanRestoreChecks: () => {
+        fd = openSync(join(root, PLAN_PATH), 'r+');
+      },
+      afterPlanAsideVerified: () => {
+        const end = Buffer.byteLength(REVIEWED);
+        writeSync(fd, late, end);
+        closeSync(fd);
+      },
+    },
+  );
+  assert.equal(restored.data.result, 'restored');
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
+  assert.equal(
+    readFileSync(retainedIn(root, runId, restored.data.retainedCopy), 'utf8'),
+    REVIEWED + late,
+  );
+  assert.deepEqual(planDirLeftovers(root), []);
+});
+
+// Invariant: a restore installs HEAD's working-tree bytes without touching the index, keeps the
+// reviewed copy in the run ledger directory (never deleted) and leaves the user checkout clean;
+// `.effective-flow/` is gitignored in the fixture, so the ledger copy does not show in status.
+test('plan-copy-restore installs HEAD and retains the reviewed copy in the run ledger', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const index = git(root, 'ls-files', '-s');
+  const restored = await restore(root, runId);
+  assert.equal(restored.data.result, 'restored');
+  assert.equal(restored.data.planPath, PLAN_PATH);
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
+  assert.equal(readFileSync(retainedIn(root, runId, restored.data.retainedCopy), 'utf8'), REVIEWED);
+  assert.equal(git(root, 'ls-files', '-s'), index);
+  assert.equal(git(root, 'status', '--porcelain'), '');
+  assert.deepEqual(planDirLeftovers(root), []);
+});
+
+const EXDEV = () => {
+  throw Object.assign(new Error('EXDEV: cross-device link not permitted'), { code: 'EXDEV' });
+};
+
+// Invariant: when the reviewed copy cannot be linked into the ledger (EXDEV, since the ledger
+// directory must share the checkout's filesystem), the restore reports `retain-failed` with the
+// cause, copies nothing and puts the user's file back untouched at the plan path.
+test('plan-copy-restore keeps the plan when the retain link fails', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const kept = await restore(root, runId, {}, { retainLink: EXDEV });
+  assert.equal(kept.data.result, 'kept');
+  assert.equal(kept.data.reason, 'retain-failed');
+  assert.match(kept.data.detail, /^EXDEV: cross-device link not permitted$/);
+  assert.equal(kept.data.putBack, true);
+  assert.equal(kept.data.retainedCopy, undefined);
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+  assert.deepEqual(planDirLeftovers(root), []);
+  assert.deepEqual(readdirSync(join(root, AUTOPILOT_DIR, runId)), ['run.json']);
+});
+
+// Invariant: a failed retain never clobbers a file recreated at the plan path: the put-back fails
+// on it, the `detail` names the moved-aside copy, and both files keep their bytes.
+test('plan-copy-restore keeps a recreated plan and the aside copy when the retain fails', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const created = '# Fresh\n\nSaved by the user in the gap.\n';
+  const kept = await restore(
+    root,
+    runId,
+    {},
+    {
+      afterPlanAsideVerified: () => writeFileSync(join(root, PLAN_PATH), created),
+      retainLink: EXDEV,
+    },
+  );
+  assert.equal(kept.data.reason, 'retain-failed');
+  assert.equal(kept.data.putBack, false);
+  const [aside] = planDirLeftovers(root);
+  assert.match(aside, /^p\.md\.autopilot-restore-[0-9a-f]+$/);
+  const asidePath = join(root, dirname(PLAN_PATH), aside);
+  assert.ok(
+    kept.data.detail.includes(`the reviewed copy is kept at ${asidePath}`),
+    kept.data.detail,
+  );
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), created);
+  assert.equal(readFileSync(asidePath, 'utf8'), REVIEWED);
+});
+
+// Invariant: the retained copy passes the runtime-state guard before it is linked; a refusal (here
+// a run directory swapped for a symlink) is `retain-failed`, links nothing through the symlink and
+// puts the plan back.
+test('plan-copy-restore reports a guard refusal of the retained copy as retain-failed', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const runDir = join(root, AUTOPILOT_DIR, runId);
+  const moved = join(root, AUTOPILOT_DIR, 'moved-run');
+  const kept = await restore(
+    root,
+    runId,
+    {},
+    {
+      afterPlanAsideVerified: () => {
+        renameSync(runDir, moved);
+        symlinkSync(moved, runDir);
+      },
+    },
+  );
+  assert.equal(kept.data.reason, 'retain-failed');
+  assert.match(kept.data.detail, /is a symlink/);
+  assert.equal(kept.data.putBack, true);
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+  assert.deepEqual(readdirSync(moved), ['run.json']);
+  assert.deepEqual(planDirLeftovers(root), []);
+});
+
+// Invariant: the install writes HEAD's file mode, so an executable plan (`100755`) stays
+// executable and the checkout stays clean.
+test('plan-copy-restore installs an executable plan with its mode', async (t) => {
+  const { root, runId } = await planRun(t, { executable: true });
+  assert.match(git(root, 'ls-files', '-s', PLAN_PATH), /^100755 /);
+  await deliver(t, root, runId);
+  const restored = await restore(root, runId);
+  assert.equal(restored.data.result, 'restored');
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
+  assert.equal(statSync(join(root, PLAN_PATH)).mode & 0o111, 0o111 & ~process.umask());
+  assert.equal(git(root, 'status', '--porcelain'), '');
+});
+
+// Invariant: a plan copy the restore retained is removed with its closed run only while it is
+// provably the reviewed copy (its hash is the ledger's `reviewedPlanSha256`); a changed copy may
+// hold a late save, so `ledger-list` does not offer the run and `ledger-prune` retains it as
+// `retained-plan-copy` with the copy's path.
+test('ledger-prune removes a matching plan copy and retains a changed one', async (t) => {
+  const closedRestoredRun = async () => {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    const restored = await restore(root, runId);
+    assert.equal(restored.data.result, 'restored');
+    const closed = await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+    assert.equal(closed.ok, true, JSON.stringify(closed));
+    return { root, runId, copy: restored.data.retainedCopy };
+  };
+  {
+    const { root, runId } = await closedRestoredRun();
+    const listed = await op('ledger-list', { cwd: root });
+    assert.equal(listed.data.runs[0].removal, 'removable');
+    assert.equal(listed.data.runs[0].planCopies, undefined);
+    const pruned = await op('ledger-prune', { cwd: root, runs: [{ runId }] });
+    assert.deepEqual(pruned.data.items, [{ runId, result: 'removed', reason: 'no-pull-request' }]);
+    assert.equal(existsSync(join(root, AUTOPILOT_DIR, runId)), false);
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
+  }
+  {
+    const { root, runId, copy } = await closedRestoredRun();
+    appendFileSync(copy, 'late save\n');
+    const listed = await op('ledger-list', { cwd: root });
+    assert.equal(listed.data.runs[0].removal, 'retained-plan-copy');
+    assert.deepEqual(listed.data.runs[0].planCopies, [copy]);
+    const pruned = await op('ledger-prune', { cwd: root, runs: [{ runId }] });
+    assert.deepEqual(pruned.data.items, [
+      { runId, result: 'retained', reason: 'retained-plan-copy', planCopies: [copy] },
+    ]);
+    assert.equal(readFileSync(copy, 'utf8'), `${REVIEWED}late save\n`);
+    assert.ok(existsSync(join(root, AUTOPILOT_DIR, runId, 'run.json')));
+  }
+  {
+    // A ledger without `reviewedPlanSha256` cannot prove any copy is its own.
+    const root = repository(t);
+    const runId = await closedRun(root, 'no-pull-request');
+    const copy = join(root, AUTOPILOT_DIR, runId, 'plan-copy-0123456789abcdef.md');
+    writeFileSync(copy, REVIEWED);
+    const listed = await op('ledger-list', { cwd: root });
+    assert.equal(listed.data.runs[0].removal, 'retained-plan-copy');
+    const pruned = await op('ledger-prune', { cwd: root, runs: [{ runId }] });
+    assert.deepEqual(pruned.data.items, [
+      { runId, result: 'retained', reason: 'retained-plan-copy', planCopies: [copy] },
+    ]);
+    assert.equal(readFileSync(copy, 'utf8'), REVIEWED);
+  }
 });
 
 // Invariant: a tracked plan without a working copy has nothing run-owned to restore, and a
@@ -2385,7 +2642,11 @@ test('plan-copy-restore checks sourceRoot only for a plan source and maps its Gi
   const unsafe = await restore(root, runId, { sourceRoot: outside });
   assert.equal(unsafe.error.code, 'UNSAFE_TARGET');
   const restored = await restore(root, runId, { sourceRoot: session });
-  assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+  assert.deepEqual(restored.data, {
+    result: 'restored',
+    planPath: PLAN_PATH,
+    retainedCopy: retainedIn(root, runId, restored.data.retainedCopy),
+  });
 });
 
 // A repository whose plan checks out with CRLF line endings (`eol=crlf`), so the working copy and
@@ -2429,7 +2690,11 @@ test('plan-copy-restore compares HEAD in working-tree form under eol=crlf', asyn
     await deliver(t, root, runId);
     const index = git(root, 'ls-files', '-s');
     const restored = await restore(root, runId);
-    assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+    assert.deepEqual(restored.data, {
+      result: 'restored',
+      planPath: PLAN_PATH,
+      retainedCopy: retainedIn(root, runId, restored.data.retainedCopy),
+    });
     assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), original);
     assert.equal(git(root, 'ls-files', '-s'), index);
   }

@@ -275,7 +275,8 @@ make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOi
    `git worktree add` in this run; the implementing workflow runs its own self-check.
 3. **Plan copy.** Make the literal `autopilot.mjs plan-copy-restore` call with
    `{cwd, runId, sourceRoot: <SOURCE_ROOT>}` and retain its result, `restored`, `kept` or
-   `not-applicable`, with its reason. The helper alone decides and writes.
+   `not-applicable`, with its reason, `detail` and `retainedCopy`. The helper alone decides and
+   writes.
 4. **Close the ledger.** Make the literal `autopilot.mjs run-close` call with
    `{cwd, runId, outcome}`, plus `pullRequest` for every outcome but `no-pull-request`:
    `pull-request` (the delivered implementation draft, on an issue source the plan pull
@@ -294,7 +295,9 @@ Report in the chat language, with project paths relative to the project root:
 - the counts of silent, documented and tie-resolved decisions, and the remaining budget;
 - every blocker with its kind and, for a security blocker, only its report path and finding ID;
 - every retained worktree and branch with its path, and the restored plan copy when it was kept;
-- the `plan-copy-restore` result and its reason, naming the plan file when `kept`;
+- the `plan-copy-restore` result, its reason and `detail`, naming the plan file when `kept`
+  (`retain-failed`: the reviewed copy stays in the checkout, where `detail` says); and whenever
+  `retainedCopy` is returned, its path: the reviewed copy, which may also hold a late save;
 - every local change in the invocation checkout that row S-LOC of `scored-decisions` left untouched;
 - the architecture-fit score with its sources, or the not-assessed line (no sources, scoring
   unavailable, or not recorded).
