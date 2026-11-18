@@ -45,6 +45,8 @@ configuration:
 - the plan's complete language, for the status marker.
 - the delivery shape: worktree, in-place with delivery, or in-place without delivery.
 - whether hidden mode (`visibility: hidden`) is active; when it is, only the hidden arm applies.
+- optionally, that a scored-mode plan carry-over happened (`scored-decisions`), a verified no-op
+  included, with `reviewedPlanSha256`. The carried copy in `EXECUTION_ROOT` then holds the plan's final content.
 - optionally, the delivery branch's creation OID, when the run recorded one. It refines one report
   line and decides nothing. An absent creation OID is not an error and never blocks: three of the
   delivery shapes record none, and a cosmetic detail may not decide whether a plan is archived.
@@ -159,12 +161,12 @@ Keying on the index removes both and makes this step idempotent.
 
 ### States
 
-| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                        |
-| ------------------------ | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content, set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv -- <P> <A>`. The commit step of the handback commits both. Then run the main-checkout cleanup.                            |
-| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then **stage the content beside the target and place it atomically** as described below, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. Then run the main-checkout cleanup. |
-| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs, so a re-entered handback carries the run's latest content. Never fail. Then run the main-checkout cleanup.                                                                                        |
-| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                           |
+| State                    | Meaning                                                          | Action                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| ------------------------ | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A** — tracked          | `P` is a tracked file in the delivery checkout.                  | Take over the plan's final content (after a carry-over, from `EXECUTION_ROOT`), set the canonical status marker to the implemented value of the plan's own language, run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then `git -C <EXECUTION_ROOT> mv -- <P> <A>`, write the marked content into `A` and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`, so the index holds what was written. The commit step of the handback commits both. Then run the main-checkout cleanup. |
+| **C** — untracked        | Neither path is tracked and nothing exists at `A`.               | Run `mkdir -p -- <plan.dir>/archive` in `EXECUTION_ROOT`, then **stage the content beside the target and place it atomically** as described below, and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'`. No `git mv`: there is nothing tracked to move, and `git mv` on an untracked path exits non-zero. After a carry-over, remove the carried `P` from `EXECUTION_ROOT` only once `A` is staged, so no carried `P` is left behind. Then run the main-checkout cleanup.                   |
+| **D** — already archived | `A` is tracked, by an earlier run or by this one.                | Never re-add at top level. Compare `A`'s content in `EXECUTION_ROOT` with the final, implemented-marked state and refresh it if it differs and `git -C <EXECUTION_ROOT> add -- ':(literal)<A>'` the refresh, so a re-entered handback carries the run's latest content. After a carry-over, remove a carried untracked `P` as in State C. Never fail. Then run the main-checkout cleanup.                                                                                                   |
+| **Archived basis**       | The supplied basis is itself a file under `<plan.dir>/archive/`. | Terminal: report that the basis is already archived, derive no paths, run no probe, change nothing, run no cleanup.                                                                                                                                                                                                                                                                                                                                                                         |
 
 **The mark is applied to the taken-over copy, in `EXECUTION_ROOT`, never to the original in the main
 checkout.** The order is read → take over → mark. This supersedes the earlier
@@ -215,10 +217,12 @@ that `effective-flow open-plans` reports as open. Remove it, under all of these 
    the ordinary, correct outcome and is reported as "nothing to clean up", never as a refusal.
 3. The content comparison for this state passes:
    - **States A and C:** the source-checkout copy still hashes to the value captured when this step
-     read it. A difference means someone edited the plan while the run was in flight.
+     read it; after a carry-over, which this step read from `EXECUTION_ROOT`, to
+     `reviewedPlanSha256`. A difference means someone edited the plan while the run was in flight.
    - **State D:** the source-checkout copy matches the already-archived file with the status marker
-     normalized. A self-comparison would be meaningless when nothing was taken over during this run,
-     and local unmerged edits would be deleted unseen.
+     normalized; after a carry-over it hashes to `reviewedPlanSha256` instead. A self-comparison
+     would be meaningless when nothing was taken over during this run, and local unmerged edits
+     would be deleted unseen.
 4. The hash is re-verified immediately before removal, so a write between the comparison and the
    deletion cannot be lost silently.
 
@@ -234,6 +238,7 @@ gone, which precondition 2 reports as "nothing to clean up". The archived-basis 
 | ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ls-files` detection, `mkdir -p`, status-marker edit, `git mv`, direct write of `A`, `git add` | `EXECUTION_ROOT`, passed explicitly with `git -C` or as an absolute path                                                                                                              |
 | Reading the plan's final content for the take-over                                             | `SOURCE_ROOT` — a project-file read from the plan's source checkout, permitted here because that is where the authoring run left the file, and named explicitly rather than inherited |
+| Reading the plan's final content after a carry-over, removing the carried `P`                  | `EXECUTION_ROOT`, which holds the carried copy                                                                                                                                        |
 | Cleanup probe, cleanup hash, cleanup removal                                                   | `SOURCE_ROOT`, from the retained absolute handle, under the same containment, untracked-only, and hash preconditions                                                                  |
 
 No operation relies on an inherited working directory. The status marker is written in the plan's own

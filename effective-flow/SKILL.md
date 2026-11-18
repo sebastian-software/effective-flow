@@ -1,12 +1,12 @@
 ---
 name: effective-flow
-description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, backlog-audit, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, setup, cleanup, version."
-argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|backlog-audit|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|setup|cleanup|version]"
+description: "Effective Flow — software engineering workflows as tools, invoked via effective-flow <tool>. Thin router skill with lazy loading: a tool's full instructions are read only when the tool is invoked. Tools: concept, investigate, plan, open-plans, plan-issue, issue-buddy, backlog-audit, apply, build, fix, refactor, docs, maintain, iterate, review, retro, focus, deliver, commit, pr, merge-gate, autopilot, setup, cleanup, version."
+argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|backlog-audit|apply|build|fix|refactor|docs|maintain|iterate|review|retro|focus|deliver|commit|pr|merge-gate|autopilot|setup|cleanup|version]"
 ---
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.74.0 (61985a05)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.75.0 (04c2aca7)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -75,10 +75,15 @@ _from a clarified plan/issue to code_
 - `effective-flow pr` — Opens a pull request from your branch (GitHub or Forgejo).
 - `effective-flow merge-gate` — Drives an open pull request through checks, bot notes, and – if allowed – the merge.
 
+### Automation
+_unattended from issue or plan to a draft pull request_
+
+- `effective-flow autopilot` — Takes one issue or plan unattended to a draft pull request, with decisions recorded.
+
 ### Set up & info
 
 - `effective-flow setup` — Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard.
-- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers.
+- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers and autopilot ledgers.
 - `effective-flow version` — Shows the installed Effective Flow version.
 
 ## Language support

@@ -140,12 +140,12 @@ The table between the marker comments is a build-validated runtime contract. Kee
 | Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
 | -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
 |       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
+|       20 | `documentation`               | `documentation`    | `effective-flow-code-documenter` / `effective-flow-docs-writer` | `effective-flow-code-validator`           | `route`          |
+|       30 | `tooling`                     | `tooling`          | `effective-flow-generic-implementer`                       | `effective-flow-code-validator`           | `route`          |
+|       40 | `frontend-js-ts`              | `frontend-js-ts`   | `effective-flow-ui-implementer`                            | `effective-flow-frontend-reviewer`        | `route`          |
+|       50 | `node-backend-cli`            | `node-backend-cli` | `effective-flow-nodejs-implementer`                        | `effective-flow-nodejs-reviewer`          | `route`          |
+|       60 | `rust`                        | `rust-product`     | `effective-flow-rust-implementer`                          | `effective-flow-rust-reviewer`            | `route`          |
+|       70 | `generic-product`             | `generic-product`  | `effective-flow-generic-product-implementer`               | `effective-flow-generic-product-reviewer` | `route-degraded` |
 |       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
 
 <!-- project-routing-table:end -->
@@ -320,7 +320,7 @@ second README, guide, API, CLI, migration, or framework documentation handbook h
 
 Effective Flow retains the assigned audience, category and target path; the resolved language;
 the write boundary; task tracking; and the result returned to the calling workflow. The root
-`README.md` remains the marketing entry point owned by ``effective-flow-marketing-writer``, not this
+`README.md` remains the marketing entry point owned by `effective-flow-marketing-writer`, not this
 agent.
 
 ## Minimal fallback

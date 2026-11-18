@@ -108,7 +108,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/host-pr-watch.md`, when the running environment identifies T3 Code in a top-level run (neither a body delimiter nor a `Run state:` line), before Phase 1.5 asks or Phase 5 step 1 pushes.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -373,7 +373,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -444,7 +444,7 @@ Boundary to `issue-tracker.md`: that building block is tailored to **issues** an
 target. PR review threads are a different API object. A workflow working on a pull request is
 **inherently forge-bound**: it never evaluates the tracker target and merely needs a Git repository,
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
-``tools/apply-issues.md``/`effective-flow plan-issue` are tracker-**bound** — those two follow the
+`tools/apply-issues.md`/`effective-flow plan-issue` are tracker-**bound** — those two follow the
 resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
 availability check** are taken from the focused `remote-helper-contract` building block (not
 reinvented); this building block only adds the PR operations.

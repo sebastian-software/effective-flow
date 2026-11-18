@@ -140,12 +140,12 @@ The table between the marker comments is a build-validated runtime contract. Kee
 | Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
 | -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
 |       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
+|       20 | `documentation`               | `documentation`    | `effective-flow-code-documenter` / `effective-flow-docs-writer` | `effective-flow-code-validator`           | `route`          |
+|       30 | `tooling`                     | `tooling`          | `effective-flow-generic-implementer`                       | `effective-flow-code-validator`           | `route`          |
+|       40 | `frontend-js-ts`              | `frontend-js-ts`   | `effective-flow-ui-implementer`                            | `effective-flow-frontend-reviewer`        | `route`          |
+|       50 | `node-backend-cli`            | `node-backend-cli` | `effective-flow-nodejs-implementer`                        | `effective-flow-nodejs-reviewer`          | `route`          |
+|       60 | `rust`                        | `rust-product`     | `effective-flow-rust-implementer`                          | `effective-flow-rust-reviewer`            | `route`          |
+|       70 | `generic-product`             | `generic-product`  | `effective-flow-generic-product-implementer`               | `effective-flow-generic-product-reviewer` | `route-degraded` |
 |       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
 
 <!-- project-routing-table:end -->
@@ -189,7 +189,7 @@ Before editing, emit a visible notice: **“Reduced-depth product implementation
 
 ## Responsibility
 
-Take on product-code changes assigned to the degraded generic product route. Dedicated frontend JavaScript/TypeScript, Node.js backend/CLI, and Rust routes remain with their specialist implementers. Tooling, CI, configuration, lockfiles, and repository metadata remain with ``effective-flow-generic-implementer``. Generated and vendored files are excluded from direct editing unless the task explicitly targets their documented generator or update mechanism.
+Take on product-code changes assigned to the degraded generic product route. Dedicated frontend JavaScript/TypeScript, Node.js backend/CLI, and Rust routes remain with their specialist implementers. Tooling, CI, configuration, lockfiles, and repository metadata remain with `effective-flow-generic-implementer`. Generated and vendored files are excluded from direct editing unless the task explicitly targets their documented generator or update mechanism.
 
 In mixed repositories, change only the files or domain assigned to this agent. Do not absorb files already assigned to a specialist.
 
@@ -248,7 +248,7 @@ broaden the task into unrelated dependency maintenance.
 1. Confirm the assigned file/domain bucket and emit the reduced-depth notice.
 2. Complete repository-native discovery before editing.
 3. Implement only the agreed product-code scope using established neighboring patterns.
-4. Tell ``effective-flow-test-writer``, ``effective-flow-code-validator``, and the relevant documentation agent which repository-native checks and conventions the evidence supports.
+4. Tell `effective-flow-test-writer`, `effective-flow-code-validator`, and the relevant documentation agent which repository-native checks and conventions the evidence supports.
 5. Report every check that could not run as skipped with its concrete reason. If a command requires a missing runtime, network access, secrets, a destructive migration, or an unapproved dependency, do not improvise; state the prerequisite. Only a direct invocation asks for the required approval; a delegated worker returns `ABORT` with the prerequisite to the orchestrator.
 
 ## Pre-commit gate

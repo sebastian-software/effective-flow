@@ -99,7 +99,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 Retain any verified primary outcome/source association, checkpoint and attempt from the input or
 known handoff. Analysis/report authority grants no primary-state mutation: return evidence and a
@@ -206,8 +206,8 @@ holds **no** second full audit handbook on hand – full depth comes only with t
 
 `review.md` is already mostly orchestration; the delegable part is the
 **finding-quality reasoning** (evidence standards, validation/rejection, dedup judgment,
-prioritization) in Phases 2c/3. The reviewer agents (``effective-flow-frontend-reviewer``,
-``effective-flow-nodejs-reviewer``, ``effective-flow-rust-reviewer``, ``effective-flow-generic-product-reviewer``) keep their line-level checks and
+prioritization) in Phases 2c/3. The reviewer agents (`effective-flow-frontend-reviewer`,
+`effective-flow-nodejs-reviewer`, `effective-flow-rust-reviewer`, `effective-flow-generic-product-reviewer`) keep their line-level checks and
 are **not** part of this delegation.
 
 ## Project conventions
@@ -414,7 +414,7 @@ For an unambiguous plan match:
 
 1. Do not load any code-review configuration, tracker mode, memory file,
    cache, or wisdom file.
-2. Read the internal instruction ``tools/plan-review.md``.
+2. Read the internal instruction `tools/plan-review.md`.
 3. Run it with the resolved plan file and the literal line `Next steps: suppressed`; it returns its
    result here.
 4. Emit the next-step block per `next-steps` for the returned state, then end this `review`
@@ -441,7 +441,7 @@ concept file there. Allowed forms are the full path, the date-slug file name, an
 If exactly one concept file is found:
 
 1. Do not load any code-review configuration, tracker mode, memory file, cache, or wisdom file.
-2. Read the internal instruction ``tools/concept-review.md``.
+2. Read the internal instruction `tools/concept-review.md`.
 3. Run it with the resolved concept file and the literal line `Next steps: suppressed`.
 4. Emit the next-step block per `next-steps` for the returned state, then end this `review`
    workflow; do not start a code review.
@@ -602,8 +602,8 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 1. Observe `review.validation`:
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `review/technical-validation` (`shared/model-selection.md`).
-   - `full`: Start ``effective-flow-code-validator`` in check mode `full` (all safely discovered repository-native checks, no fixes).
-   - `quick`: Start ``effective-flow-code-validator`` in check mode `quick` (prefer a fast combined repository-native check; otherwise run the safely discoverable fast checks and skip the rest with reasons).
+   - `full`: Start `effective-flow-code-validator` in check mode `full` (all safely discovered repository-native checks, no fixes).
+   - `quick`: Start `effective-flow-code-validator` in check mode `quick` (prefer a fast combined repository-native check; otherwise run the safely discoverable fast checks and skip the rest with reasons).
    - `off`: Do not start a validator. Document in the wisdom file and in the report that technical validation was disabled by the profile.
 2. Collect technical problems in the wisdom file under `## Technical findings`.
 3. Use valid `validatorScripts` cache entries only for script detection and profile selection. Do not use cached error lists as the current validation result.
@@ -613,11 +613,11 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 1. **Reviewer selection per routing bucket:**
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `review/quality-review` (`shared/model-selection.md`).
-   - Frontend → ``effective-flow-frontend-reviewer``
-   - Backend / CLI / Node.js → ``effective-flow-nodejs-reviewer``
-   - Rust → ``effective-flow-rust-reviewer``
-   - Other clearly identified product code → emit the reduced-depth notice, then ``effective-flow-generic-product-reviewer``
-   - Tooling/configuration/repository metadata → technical findings from ``effective-flow-code-validator``; do not use a product reviewer
+   - Frontend → `effective-flow-frontend-reviewer`
+   - Backend / CLI / Node.js → `effective-flow-nodejs-reviewer`
+   - Rust → `effective-flow-rust-reviewer`
+   - Other clearly identified product code → emit the reduced-depth notice, then `effective-flow-generic-product-reviewer`
+   - Tooling/configuration/repository metadata → technical findings from `effective-flow-code-validator`; do not use a product reviewer
    - Mixed scopes → all reviewers selected for their own files; never demote a recognized specialist bucket
    - Clarification-required → stop that bucket and ask a focused file-role question
 2. **Directory-split heuristic** (per routing bucket in scope):
@@ -631,7 +631,7 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
    - observe the active finding scope
    - write finding titles, problems, solutions, and other human-readable result prose in the
      concrete Phase-1 `<review-output-language>`; do not resolve configuration independently
-   - **no design-decision check in the reviewer** — the design decisions are reconciled centrally in Phase 3, which keeps the reviewer assignment lean. This instruction overrides contrary default rules in ``effective-flow-frontend-reviewer``, ``effective-flow-nodejs-reviewer``, ``effective-flow-rust-reviewer``, or ``effective-flow-generic-product-reviewer``: in Phase 2c, reviewers must not search for, filter by, or factor design decisions into the confidence.
+   - **no design-decision check in the reviewer** — the design decisions are reconciled centrally in Phase 3, which keeps the reviewer assignment lean. This instruction overrides contrary default rules in `effective-flow-frontend-reviewer`, `effective-flow-nodejs-reviewer`, `effective-flow-rust-reviewer`, or `effective-flow-generic-product-reviewer`: in Phase 2c, reviewers must not search for, filter by, or factor design decisions into the confidence.
    - for each finding:
      - severity
      - area
@@ -791,8 +791,8 @@ format below. Never inspect or create a report below a linked execution worktree
 5. Update valid cache areas (`designDecisions`, `scopeIndex`, `validatorScripts`) only after a successful recomputation. Do not write review findings to the cache.
 6. Present `result.summary` as returned; the overflow path presents as its fragment states.
 7. Delete the wisdom file.
-8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat.
-9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, emit no next-step block.
+8. If the report contains at least one admitted finding, emit the next-step block per `next-steps` as the last element of the report presented in chat; without an admitted finding, only the retrospective slot of `next-steps` applies.
+9. If an explicitly requested standalone audit report contains only the closed non-executable appendix, it matches no next-steps row.
 
 #### Publishing target (forge or external tool)
 

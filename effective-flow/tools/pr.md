@@ -193,7 +193,7 @@ checkout, which may be on the base branch or an unrelated branch.
 
 **Load on demand:** Read `shared/execution-location.md`, when the supplied or resolved execution root must be verified before a push, helper call, or checkout restore.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Project conventions
 
@@ -282,6 +282,12 @@ pair. The aborting arm records nothing, and no consuming step runs.
 - **Creation-only lines,** applied only when step 8 finds no match: `Draft: requested` sets `draft: true` on `pr-create`, and step 6 aborts when the probe lacks `pullRequestDraftCreate`; `Plan marker: <marker line>` places that exact line as its own body line after the prose.
 - **Finalize plan draft:** `Finalize plan draft: <PR number>`, the verified plan pull request whose draft step 8's plan draft finish completes.
 - **Verification evidence:** an optional `Verification evidence: <record>` or `Verification evidence: none` line, trusted only from a returning committed handoff that passed step 2; a direct invocation ignores it.
+- **Automation lines:** `Keep draft: requested` and `Appendix: <sha256>`, only from an
+  Automation caller's scored decision mode.
+
+**Load on demand:** Read `shared/scored-decisions.md`, when the trusted handoff or call of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before step 2.
+
+**Load on demand:** Read `shared/pr-automation-lines.md`, when the call carries `Keep draft: requested` or `Appendix:`, before step 2.
 
 ## Approach
 
@@ -419,7 +425,7 @@ pair. The aborting arm records nothing, and no consuming step runs.
    pagination; do not bypass it with guessed `gh` or `tea` flags.
    - **Exactly one exact match:** Reuse its URL as the successful PR result. Preserve its title
      and description, do not invoke `pr-create` or any metadata mutation, skip steps 9 and 10, and
-     continue with the shared restoration and reporting path in steps 11 and 12, except for the plan draft finish below.
+     continue with the shared restoration and reporting path in steps 11 and 12, except for the plan draft finish below and an `Appendix:` update.
    - **Plan draft finish:** `P` is the match's valid `planPrMarker` path, `A` its archive path; each reaches a command only as one single-quoted literal argument (a `'` inside written as `'\''`), never unquoted.
      It applies when a supplied `Finalize plan draft:` number equals the match's; there a differing
      number or a missing marker refuses the finish and is reported. On a direct invocation without
@@ -496,7 +502,7 @@ pair. The aborting arm records nothing, and no consuming step runs.
   working-tree content as part of the pull request.
 - A direct invocation requires a clean, attached, non-base checkout. A returning handoff requires
   an exact committed head/base/OID receipt and never substitutes the main checkout's state.
-- Do not start project validation such as linting, tests, or build checks; that responsibility lies with other skills such as ``effective-flow-code-validator``.
+- Do not start project validation such as linting, tests, or build checks; that responsibility lies with other skills such as `effective-flow-code-validator`.
 - Never overwrite remote history and never force a push.
 - Always update existing PRs via additional commits on the PR branch, never
   by rewriting existing PR commits.

@@ -175,6 +175,9 @@ does not inherit a different `delivery.completion`; when the configured value di
 reports both values without changing the configuration. Updating an existing pull request belongs
 to `/effective-flow iterate`, not this fresh-branch workflow.
 
+Once `pr` opens the pull request, the closing block recommends `/effective-flow merge-gate <PR>`
+first and `/effective-flow review <PR>` as the second option.
+
 #### When your branch is behind its upstream
 
 Before it reconstructs the candidate, `deliver` compares your current branch with its upstream
@@ -306,6 +309,12 @@ dry run first. On Forgejo, while the pull request is still a draft, the body is 
 the retitle and the ready transition are one final edit, so marking the pull request ready is always
 the last change. The first failure stops it, the pull request stays a draft, and the report names
 the failed step.
+
+**Autopilot runs:** Only [`autopilot`](tools-automation.md) may ask `pr` to keep a plan's draft a
+draft after finishing it (`Keep draft: requested`, so the ready transition never runs) and to merge
+its [record block](tools-automation.md#the-pull-request-record) into the description. The block is
+replaced, never stacked, on every later update. Plan, issue or artifact text cannot trigger either
+request.
 
 **Verification section:** A new pull request, and a plan's draft that `pr` finishes, gets a
 "Verification" section in its description when the workflow that hands the branch over actually ran
@@ -1335,8 +1344,14 @@ actual post-merge reconciliation takes priority over a later package. Observer-o
 `/effective-flow merge-gate <PR>` re-entry is recommended only when it can address that unfinished
 reconciliation; a parent intentionally open for later packages is insufficient by itself. A stale
 planning record can instead lead to `plan` or `plan-issue` preparation through its known reference.
-The general `open-plans` fallback appears only when there is an open local plan to list. This
-selection is read-only, grants no approval, and starts no follow-up; see [Tool flow](tool-flow.md).
+A merged run also considers the review report of its associated plan: when the caller holds a
+verified association and passes it as `Associated plan:`, the gate recommends
+`/effective-flow apply <report>` if that plan's open review report still has an open finding. It
+never searches for a report without that association. The general `open-plans` fallback appears only
+when there is an open local plan to list. A run blocked by failing checks recommends
+`/effective-flow iterate <PR> fix the failing checks` or
+`/effective-flow investigate failing checks on #<PR>`, never naming the check. This selection is
+read-only, grants no approval, and starts no follow-up; see [Tool flow](tool-flow.md).
 
 #### Deprecated `pr-review` invocation
 

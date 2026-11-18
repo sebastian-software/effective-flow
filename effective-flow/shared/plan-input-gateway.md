@@ -10,8 +10,8 @@ local artifact creation:
 
 This shared building block is the single source of truth for **which
 apply source type** a given argument is. It is used by `effective-flow apply`
-(router) as well as by ``tools/apply-plan.md``, ``tools/apply-review.md``, and
-``tools/apply-issues.md`` for the upstream argument classification. `effective-flow plan` uses only
+(router) as well as by `tools/apply-plan.md`, `tools/apply-review.md`, and
+`tools/apply-issues.md` for the upstream argument classification. `effective-flow plan` uses only
 Stage A as a planning gateway: it delegates an unambiguous `issue-reference` to
 `effective-flow plan-issue` and never performs Stage B itself.
 
@@ -31,12 +31,12 @@ directory, abort classification without falling back to `EXECUTION_ROOT`.
 
 | Type              | Meaning                                                                                                       | Responsible skill                             |
 | ----------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `plan`            | plan file under `<plan.dir>/`                                                                                 | ``tools/apply-plan.md``                        |
-| `review-report`   | review report file under `.effective-flow/review/`                                                            | ``tools/apply-review.md`` (local)              |
-| `review-epic`     | tracking/epic issue of a `effective-flow review` run                                                               | ``tools/apply-review.md`` (remote, epic)       |
-| `review-finding`  | single finding issue of a `effective-flow review` run                                                              | ``tools/apply-review.md`` (remote, issue list) |
-| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | ``tools/apply-issues.md``                      |
-| `plain-issue`     | freely written human issue                                                                                    | ``tools/apply-issues.md``                      |
+| `plan`            | plan file under `<plan.dir>/`                                                                                 | `tools/apply-plan.md`                        |
+| `review-report`   | review report file under `.effective-flow/review/`                                                            | `tools/apply-review.md` (local)              |
+| `review-epic`     | tracking/epic issue of a `effective-flow review` run                                                               | `tools/apply-review.md` (remote, epic)       |
+| `review-finding`  | single finding issue of a `effective-flow review` run                                                              | `tools/apply-review.md` (remote, issue list) |
+| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | `tools/apply-issues.md`                      |
+| `plain-issue`     | freely written human issue                                                                                    | `tools/apply-issues.md`                      |
 
 Special results: `none` (empty/no argument) and `ambiguous` (not uniquely
 resolvable). `issue-reference` is an **intermediate result** from stage A for an issue reference
@@ -86,7 +86,7 @@ access — the host/CLI detection and availability check of the "Remote helper c
 `issue-tracker-forge.md` on the forge target, or the single established connection of the
 `tracker-target` contract on an external target; a skill that uses stage B therefore also embeds
 `issue-tracker.md` and reaches `issue-tracker-forge.md` on the forge target.
-``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
+`tools/apply-plan.md` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
 Per issue, read classification values, body, and comments **once fresh** from the tracker and
@@ -104,7 +104,7 @@ other read error stops classification instead of guessing. On an external target
 resolved connection's proven native-child listing capability. For a found active canonical
 decomposition, pass that comment and the fresh normalized child list to
 `decomposition-container-compare`. Such a parent is a `container-issue` even when the native list
-is empty; retain its integrity result for ``tools/apply-issues.md``. A malformed canonical
+is empty; retain its integrity result for `tools/apply-issues.md`. A malformed canonical
 decomposition marker is likewise retained as an integrity-blocked container instead of being
 downgraded to a plain issue. An all-`declined` record set is inactive and does not by itself make a
 container. Never infer containment from issue prose, a matching title, or an unverified provider
@@ -139,16 +139,16 @@ body structure.
 ### Ownership and target
 
 From the final source type follows exactly one responsible skill and — for
-``tools/apply-review.md`` — the flow:
+`tools/apply-review.md` — the flow:
 
 | Source type       | Responsible skill        | Target / note                                    |
 | ----------------- | ------------------------ | ------------------------------------------------ |
-| `plan`            | ``tools/apply-plan.md``   | –                                                |
-| `review-report`   | ``tools/apply-review.md`` | `local` target, report flow                      |
-| `review-epic`     | ``tools/apply-review.md`` | tracker target of the reference, epic mode       |
-| `review-finding`  | ``tools/apply-review.md`` | tracker target of the reference, issue-list mode |
-| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill                 |
-| `plain-issue`     | ``tools/apply-issues.md`` | single work item                                 |
+| `plan`            | `tools/apply-plan.md`   | –                                                |
+| `review-report`   | `tools/apply-review.md` | `local` target, report flow                      |
+| `review-epic`     | `tools/apply-review.md` | tracker target of the reference, epic mode       |
+| `review-finding`  | `tools/apply-review.md` | tracker target of the reference, issue-list mode |
+| `container-issue` | `tools/apply-issues.md` | container expansion in the skill                 |
+| `plain-issue`     | `tools/apply-issues.md` | single work item                                 |
 
 "Not `local`" never means "the forge" here: an epic or finding reference of an external tool
 selects that tool, and the tracker-bound flow runs against it.

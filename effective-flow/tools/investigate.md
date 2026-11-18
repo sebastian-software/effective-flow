@@ -90,7 +90,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when a wisdom file, runtime migration, investigation directory, or report mutation is imminent.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 Retain any verified primary outcome/source association, checkpoint and attempt from the input or
 known handoff. Analysis/report authority grants no primary-state mutation: return evidence and a
@@ -472,7 +472,7 @@ If the scorecard does not support the diagnosis, name the concrete next diagnost
    do not start it unprompted.
 6. Emit the next-step block per `next-steps` only for an `admitted` recommendation, using the concrete
    report path. `current-scope`, `closed`, and unresolved `uncertain` produce no substitute planning
-   or review invocation.
+   or review invocation; the retrospective slot of `next-steps` still applies.
 
 ## Report template
 

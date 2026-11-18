@@ -68,7 +68,7 @@ fail-closed; never capture again to recover, because that would silently lose th
 ### Path scope
 
 When a delegation handoff supplies an owned or affected file set — `effective-flow iterate` and
-``tools/apply-review.md`` run several items in one checkout — pass that set as `scope`, plus every
+`tools/apply-review.md` run several items in one checkout — pass that set as `scope`, plus every
 path whose later expansion the caller approved, so a sibling's edits never enter this run's change.
 Scope entries are literal paths, never globs. A handed-off set that is empty is passed as
 `scope: []` and renders no change; omit `scope` only when no set was handed off at all.
@@ -76,7 +76,7 @@ Scope entries are literal paths, never globs. A handed-off set that is empty is 
 ### Consumers
 
 - **Documentation sync:** the path list is the run's actually changed file set.
-- **Validation:** hand ``effective-flow-code-validator`` the path list as its assigned scopes and state in
+- **Validation:** hand `effective-flow-code-validator` the path list as its assigned scopes and state in
   the assignment that the list selects the routing buckets and is reported as the change under
   validation, while each selected bucket's checks still run at repository-native breadth, never
   narrowed to the listed files. Under `Validation: targeted` (`caller-owned-commit`) the list is

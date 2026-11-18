@@ -39,11 +39,11 @@ control region a `Validation:` line in any other form, a second one, or one with
 before any further write.
 
 Under the switch the workflow starts no full-suite run of any role, a pre-change baseline included:
-no full-suite ``effective-flow-code-validator`` and no ``effective-flow-test-writer`` run of all existing tests.
+no full-suite `effective-flow-code-validator` and no `effective-flow-test-writer` run of all existing tests.
 
-- Each such run covers the **targeted scope** instead: ``effective-flow-code-validator`` receives the
+- Each such run covers the **targeted scope** instead: `effective-flow-code-validator` receives the
   changed paths (before the change, the paths the approved scope will change) as an explicit
-  targeted scope, and ``effective-flow-test-writer`` runs only the tests affected by those paths.
+  targeted scope, and `effective-flow-test-writer` runs only the tests affected by those paths.
 - Reproduction and diagnostic runs stay, limited to that scope.
 - Its `DONE` result lists the affected tests it ran. With no identifiable affected test, the
   workflow runs the established non-test checks only and states in its `DONE` result that test

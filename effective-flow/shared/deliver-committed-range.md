@@ -98,7 +98,8 @@ If the committed-range route noted a focused-question outcome and asked no provi
 
 An unanswered or skipped question, or a non-interactive run, resolves to **Cancel**: nothing is
 pushed, no pull request is created, and the report says so. A noted question outcome reaches the
-call below only through the answer **Publish via pr**.
+call below only through the answer **Publish via pr**. Under an Automation caller's scored
+decision mode this site is a blocker (row S-DLV of `scored-decisions`).
 
 Before calling `pr`, re-check that the source `HEAD` equals `headOid` and that the tree and index
 are still clean, untracked paths included; otherwise end with one notice. Then call

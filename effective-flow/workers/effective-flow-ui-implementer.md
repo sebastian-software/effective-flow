@@ -177,7 +177,7 @@ Do not remove or shorten existing comments unless the task explicitly requires i
 
 1. Read the affected files and their patterns.
 2. Implement only the agreed scope.
-3. State clearly what ``effective-flow-test-writer`` and ``effective-flow-code-validator`` should safeguard afterwards.
+3. State clearly what `effective-flow-test-writer` and `effective-flow-code-validator` should safeguard afterwards.
 4. Do not introduce unsolicited side refactorings.
 
 ## Pre-commit gate

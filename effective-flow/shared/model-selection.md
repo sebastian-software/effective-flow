@@ -11,6 +11,8 @@ the host's model catalog, the parent model, a worker name, or a remembered table
 1. Call `select` immediately before every Quality spawn, including analysis and delegated
    workflows. Supply `harness: codex|claude`, the generated **Model selection site**, and `role`
    for a role-based site. For a correction without a site, supply the underlying base `role`.
+   `role` is always the bare role name, such as `code-validator`; the helper rejects the rendered
+   `effective-flow-<role>` form, which `data.spawn.role` returns for a native selection.
    `native: true` is only for an installed native named role; portable and built-in workers
    use `false`. A missing model in the host's advertised catalog does not change the selection.
    For an unnamed handoff with no declared site, use explicit `fallback: true` and a `reason`;

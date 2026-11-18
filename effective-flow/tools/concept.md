@@ -11,7 +11,7 @@ which technical direction it points. The concept is **complete but deliberately 
 mandatory section is filled, none of them is specified to implementation depth.
 
 It is not an implementation plan and contains no work breakdown. Once the user is satisfied with
-the concept, the deep concept review (``tools/concept-review.md``, offered at the end of this run
+the concept, the deep concept review (`tools/concept-review.md`, offered at the end of this run
 and re-entered later through `effective-flow review <concept-file>`) elaborates it and records the first
 planning steps.
 
@@ -96,7 +96,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Recommended skills
 
@@ -375,7 +375,7 @@ Ask the user: **Start the deep concept review now?**
 - Yes -- Elaborate the concept now, clarify decisions and record the first planning steps
 - No -- Continue later via review <concept-file>
 
-On `Yes`: read the internal instruction ``tools/concept-review.md`` and run it with the
+On `Yes`: read the internal instruction `tools/concept-review.md` and run it with the
 just-written concept file. The write boundary stays unchanged: only that file may be changed. The
 delegation payload carries the literal line `Next steps: suppressed` on its own line, because that
 run returns its result here.

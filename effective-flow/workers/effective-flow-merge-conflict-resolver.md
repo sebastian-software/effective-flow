@@ -137,12 +137,12 @@ The table between the marker comments is a build-validated runtime contract. Kee
 | Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
 | -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
 |       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
+|       20 | `documentation`               | `documentation`    | `effective-flow-code-documenter` / `effective-flow-docs-writer` | `effective-flow-code-validator`           | `route`          |
+|       30 | `tooling`                     | `tooling`          | `effective-flow-generic-implementer`                       | `effective-flow-code-validator`           | `route`          |
+|       40 | `frontend-js-ts`              | `frontend-js-ts`   | `effective-flow-ui-implementer`                            | `effective-flow-frontend-reviewer`        | `route`          |
+|       50 | `node-backend-cli`            | `node-backend-cli` | `effective-flow-nodejs-implementer`                        | `effective-flow-nodejs-reviewer`          | `route`          |
+|       60 | `rust`                        | `rust-product`     | `effective-flow-rust-implementer`                          | `effective-flow-rust-reviewer`            | `route`          |
+|       70 | `generic-product`             | `generic-product`  | `effective-flow-generic-product-implementer`               | `effective-flow-generic-product-reviewer` | `route-degraded` |
 |       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
 
 <!-- project-routing-table:end -->
@@ -182,7 +182,7 @@ Do not invent commands, install a toolchain or dependency without approval, or c
 
 This role declares **no** recommended central skill: resolving a merge conflict has no declared
 central domain owner, and the independent validation depth comes from the gate's separate
-``effective-flow-code-validator`` verification. Discovery therefore has no preferred list to apply here and
+`effective-flow-code-validator` verification. Discovery therefore has no preferred list to apply here and
 stays a no-op unless the project's own `skills.agents.merge-conflict-resolver` configuration adds
 one.
 
@@ -418,7 +418,7 @@ temporary space, is a failing check, reported `FAILED` and never skipped.
 
 Carry the exact commands, their working directory, and their terminal result into the report. Report
 a check that could not run as skipped **with its concrete reason** rather than omitting it; the gate
-and the independent ``effective-flow-code-validator`` verification both read that list, and a silently
+and the independent `effective-flow-code-validator` verification both read that list, and a silently
 missing check reads as a passing one.
 
 ## Staging

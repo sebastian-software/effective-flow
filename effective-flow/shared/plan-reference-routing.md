@@ -38,7 +38,7 @@ error code. Report a true `data.archiveIgnored` (unsafe archive, unsearched). Ou
    - Bugfix or `effective-flow fix` → `effective-flow fix`
    - Refactoring or `effective-flow refactor` → `effective-flow refactor`
    - Documentation or `effective-flow docs` → `effective-flow docs`
-3. If the current skill is ``tools/apply-plan.md``: use the recommendation as the target workflow and continue.
+3. If the current skill is `tools/apply-plan.md`: use the recommendation as the target workflow and continue.
 4. If the recommendation matches the current workflow: continue.
 5. If the recommendation points to a different workflow:
    - emit a clearly visible message stating which workflow is recommended

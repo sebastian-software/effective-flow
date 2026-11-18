@@ -437,7 +437,8 @@ For each point:
    domain options go in the question text, each preceded by its score and reason, and "Decide later" remains permissible
    as an explicit choice or free-text answer.
 6. Scores are dialog-only: never write them into open points, the review section, or any other
-   artifact section.
+   artifact section. The one exception is an Automation caller's scored mode
+   (`unattended-planning`), whose "Decided by score" machine block records them.
 
 After the user's answer:
 

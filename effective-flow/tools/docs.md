@@ -257,6 +257,8 @@ Rules:
 
 If the project has an `AGENTS.md`, read it before analysis and implementation and follow its guidance for documentation style, file formats, examples, tests, validation and commits.
 
+**Load on demand:** Read `shared/scored-decisions.md`, when the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write.
+
 ## Recommended skills
 
 - `effective-delivery`
@@ -385,7 +387,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -412,10 +414,10 @@ Delete the wisdom file at the end.
 
 ## Routing
 
-- Root `README.md` as the marketing entry point of the standard doc structure: ``effective-flow-marketing-writer``
-- User and project documentation (incl. user docs under `docs/user-guide/` and technical docs under `docs/developer-guide/`): ``effective-flow-docs-writer``
-- In-code API documentation, inline comments, and CLI help texts: ``effective-flow-code-documenter``
-- Technical check for generated artifacts, CLI help, build files or code files: ``effective-flow-code-validator``
+- Root `README.md` as the marketing entry point of the standard doc structure: `effective-flow-marketing-writer`
+- User and project documentation (incl. user docs under `docs/user-guide/` and technical docs under `docs/developer-guide/`): `effective-flow-docs-writer`
+- In-code API documentation, inline comments, and CLI help texts: `effective-flow-code-documenter`
+- Technical check for generated artifacts, CLI help, build files or code files: `effective-flow-code-validator`
 
 The roles and the standard structure (marketing root README, user docs, technical docs) are described in `Doc categories` under "Prescribed standard doc structure"; they apply as the prose default as long as neither the user, the plan, nor an established repository documentation structure reported by the documentation owner specifies otherwise.
 
@@ -436,7 +438,7 @@ every specialized branch independently.
 
 An initial setup of the project documentation is not a separate tool but a mode of this workflow. It applies when (a) the assignment is explicitly "set up project documentation initially" **or** (b) no doc structure exists yet.
 
-- In **one** run, create the three roles of the standard structure: ``effective-flow-marketing-writer`` for the root `README.md`, ``effective-flow-docs-writer`` for `docs/user-guide/README.md` (plus initial guides) and `docs/developer-guide/README.md`. Because both follow-up targets then exist, the conditional rule emits both links in the prescribed order.
+- In **one** run, create the three roles of the standard structure: `effective-flow-marketing-writer` for the root `README.md`, `effective-flow-docs-writer` for `docs/user-guide/README.md` (plus initial guides) and `docs/developer-guide/README.md`. Because both follow-up targets then exist, the conditional rule emits both links in the prescribed order.
 - Choose the order so both follow-up targets exist before the root README applies the conditional rule (create the category entry points first or in the same run).
 - If part of the structure already exists, scaffold only the missing parts and link the existing ones; existing files are not silently overwritten but handled via the replacement clarification.
 - The scaffold mode uses the regular phases, the delivery/worktree setup, the goal-driven completion control and the commit gate of this workflow; **no** new top-level tool is created.
@@ -449,11 +451,11 @@ Current workflow for plan references: Documentation (`effective-flow docs`).
 
 **Load on demand:** Read `shared/plan-reference-routing.md`, when the argument could point to an existing plan file.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → `tools/apply-plan.md`/`tools/apply-issues.md`/`tools/apply-review.md`) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
 Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
@@ -480,7 +482,8 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `effective-flow plan` or its in-depth
   plan review (`effective-flow review <planfile>`); an issue or finding goes to
-  `effective-flow plan-issue`.
+  `effective-flow plan-issue`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,
@@ -496,7 +499,7 @@ the plan passes the gate:
   `**Doc category:**` / `**Target path:**` from the header area
 - the target-path line is always required; the doc-category line is required only when the target lies inside the four `docs/` categories, since `Doc categories` sanctions its omission for the root `README.md`, an explicitly named existing file, in-code documentation, and a divergent established structure
 - ask the user for the missing value only when a required line is absent or when a present category contradicts its target path, and add the lines in the plan file before implementation
-- if the target path points to an existing file: clarify replacement or a new slug with the user before ``effective-flow-docs-writer`` starts
+- if the target path points to an existing file: clarify replacement or a new slug with the user before `effective-flow-docs-writer` starts
 
 ## Workflow
 
@@ -508,7 +511,7 @@ the plan passes the gate:
    that mode and create the three roles of the standard structure in a coordinated single run.
 2. Determine the Effective Flow route and doc category per `Doc categories`:
    - User guide, developer guide, operations or runbooks
-   - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to ``effective-flow-marketing-writer``
+   - for the marketing entry point (root `README.md`) the category is omitted: it is not one of the four `docs/` categories, the target path is `README.md` and the implementation goes to `effective-flow-marketing-writer`
    - for in-code documentation or for an existing file explicitly named in the plan outside the category directories, the category may be omitted; record this explicitly in the doc plan
    - when the owner reports an established repository documentation structure, that structure takes precedence per `Doc categories`: the category is omitted, and the divergent structure is named in the doc plan for the user's approval
 3. Set the target path for the final document:
@@ -568,9 +571,9 @@ worktree may already be withdrawn. The self-check never removes or claims a work
 2. Start the appropriate agent:
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `docs/implementation` (`shared/model-selection.md`).
-   - ``effective-flow-marketing-writer`` for the root `README.md` as the marketing entry point
-   - ``effective-flow-docs-writer`` for category guides, category entry-point READMEs (e.g. `docs/user-guide/README.md`, `docs/developer-guide/README.md`), API/CLI docs, migration, changelog and skill documentation – **not** for the root marketing README
-   - ``effective-flow-code-documenter`` for repository-native API/code documentation, inline comments and CLI help texts in code files
+   - `effective-flow-marketing-writer` for the root `README.md` as the marketing entry point
+   - `effective-flow-docs-writer` for category guides, category entry-point READMEs (e.g. `docs/user-guide/README.md`, `docs/developer-guide/README.md`), API/CLI docs, migration, changelog and skill documentation – **not** for the root marketing README
+   - `effective-flow-code-documenter` for repository-native API/code documentation, inline comments and CLI help texts in code files
 3. For clearly separated file and doc areas, both agents may run in parallel.
 4. Give the agents:
    - the approved documentation plan including doc category and target path
@@ -584,7 +587,7 @@ worktree may already be withdrawn. The self-check never removes or claims a work
 
 1. Have the active `effective-delivery` owner verify the changed documentation against its owning
    implementation and examples, and return the exact evidence and remaining gaps. The owner
-   designs the verification and judges the evidence; ``effective-flow-code-validator`` executes the
+   designs the verification and judges the evidence; `effective-flow-code-validator` executes the
    established repository checks (step 4). Neither re-runs the other's work, and a check that
    neither can run is reported as an evidence gap rather than silently dropped.
 2. Check Effective Flow's write paths:
@@ -607,7 +610,7 @@ worktree may already be withdrawn. The self-check never removes or claims a work
      does not define at all is reported by its role rather than by an invented path
    - existing unrelated README links are preserved and excluded from the final documentation
      follow-up-section invariant
-4. Start ``effective-flow-code-validator`` when doc changes affect technical artifacts or the project build can plausibly check the change; under `Validation: targeted` (`caller-owned-commit`) with the changed paths as its targeted scope.
+4. Start `effective-flow-code-validator` when doc changes affect technical artifacts or the project build can plausibly check the change; under `Validation: targeted` (`caller-owned-commit`) with the changed paths as its targeted scope.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `docs/validation` (`shared/model-selection.md`).
 5. If errors are found: fix them or delegate again to the appropriate doc agent – per "Goal-driven completion control": bound the internal correction rounds and escalate to the user if validation still reports errors afterwards, instead of repeating indefinitely.
@@ -617,7 +620,7 @@ worktree may already be withdrawn. The self-check never removes or claims a work
 1. If this change implemented a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
-2. If a plan file was used as the basis, without changing the status marker beforehand:
+2. If a plan file was used as the basis (under scored decision mode, the plan copy `scored-decisions` names), without changing the status marker beforehand:
    - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 4 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
    - add `## Testergebnisse` or `## Test results`, matching the plan language, with the checks
      that were run

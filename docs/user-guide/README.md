@@ -18,6 +18,8 @@ New to Effective Flow? Read in this order:
      `refactor`, `docs`, `maintain`, `iterate`.
    - [Ensure quality](tools-quality.md) – `review`, `retro`, `focus`.
    - [Deliver changes](tools-deliver.md) – `deliver`, `commit`, `pr`, `merge-gate`.
+   - [Automation](tools-automation.md) – `autopilot`, unattended from an issue or plan to a draft
+     pull request.
    - [Set up & info](tools-setup.md) – profile-first `setup`, explicit Express/Guided modes, the read-only
      `setup status` diagnosis, `cleanup`, and `version`.
 3. In-depth guides:
@@ -48,6 +50,7 @@ New to Effective Flow? Read in this order:
 | [tools-implement.md](tools-implement.md)             | Tool reference: implementation                          |
 | [tools-quality.md](tools-quality.md)                 | Tool reference: review, retro, and focus                 |
 | [tools-deliver.md](tools-deliver.md)                 | Tool reference: local delivery, commit, PR & merge gate |
+| [tools-automation.md](tools-automation.md)           | Tool reference: unattended autopilot to a draft PR      |
 | [tools-setup.md](tools-setup.md)                     | Tool reference: profiles, setup, cleanup & version      |
 | [configuration.md](configuration.md)                 | Project-setup ADR and profile overlay reference         |
 | [model-tiering-pilot.md](model-tiering-pilot.md)     | Pilot data, privacy, retention, and deletion            |

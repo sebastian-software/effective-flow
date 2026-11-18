@@ -105,6 +105,28 @@
       ]
     },
     {
+      "id": "autopilot/architecture-fit",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "autopilot-issue-source/issue-classification",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "standard"
+        }
+      ]
+    },
+    {
       "id": "backlog-audit/architecture-context",
       "downAllowed": true,
       "panel": false,
@@ -808,6 +830,28 @@
         },
         {
           "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "scored-decisions/score",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "scored-decisions/tie-rescore",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": null,
           "tier": "deep"
         }
       ]

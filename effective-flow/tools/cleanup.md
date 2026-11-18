@@ -20,6 +20,8 @@ remove a worktree through a verified Effective Flow lifecycle record.
 - never delete before the new counterpart exists and the carry-over is complete or deliberately discarded
 - inventory outdated `.gitignore` entries but leave them untouched and route their repair to `effective-flow setup`
 - inventory stale diff baselines and discard one only after dry run and confirmation
+- inventory autopilot run ledgers and remove one only after dry run and confirmation, when its run
+  is closed and produced no pull request or its pull request is merged or closed
 - inventory every linked worktree from Git's machine-readable output and match it to verified
   execution-location and lifecycle evidence
 - after a separate dry-run and confirmation, remove only independently proven cleanup-ready
@@ -86,11 +88,11 @@ An orchestrator considering longer delegated work or receiving trusted progress 
 Returning orchestrators relay material changes through their own immediate-parent context;
 same-session calls integrate into the existing overview without inventing a recipient.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a stale diff baseline will be discarded, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a stale diff baseline will be discarded, an autopilot ledger will be pruned, or a confirmed carry-over copy or its directory creation, the runtime migration, or a memory or tracker-marker mutation is imminent.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker), or any confirmed Phase 3 or Phase 5 mutation below `.effective-flow/` is about to run, even when Phase 1 found no legacy runtime directory (for example a carry-over copy or directory creation, a worktree lifecycle lock, claim, removal, reconcile, record write or deletion, a stale diff-baseline discard, or the confirmed removal of a legacy file such as a transitional `.effective-flow/config.json`).
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when Phase 1 step 6 finds at least one legacy runtime directory and no valid `runtimeMigration.directory.version: 1` marker in `.effective-flow/memory.json`, a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` marker), or any confirmed Phase 3 or Phase 5 mutation below `.effective-flow/` is about to run, even when Phase 1 found no legacy runtime directory (for example a carry-over copy or directory creation, a worktree lifecycle lock, claim, removal, reconcile, record write or deletion, a stale diff-baseline discard, an autopilot ledger prune, or the confirmed removal of a legacy file such as a transitional `.effective-flow/config.json`).
 
 ## Effective Flow-owned worktree lifecycle
 
@@ -387,13 +389,13 @@ translate an existing ADR.
 
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
+This shared fragment connects `effective-flow review` and `tools/apply-review.md` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
 
 The tracker target (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`effective-flow investigate`) are exempt from it and remain purely local on every target under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
+It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (`tools/apply-review.md`) – stays in the respective skill.
 
-In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
+In addition, `tools/apply-issues.md` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/`tools/apply-review.md`; the checkbox-ticking mechanics for epic bodies are used by `tools/apply-issues.md` analogously for container issues.
 
 ### Configuration
 
@@ -459,7 +461,7 @@ The query stays deliberately two-way: it runs only when no configuration pins a 
 
 The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything in the sibling fragment `issue-tracker-forge.md` — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
 
-`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (``tools/apply-issues.md``, `effective-flow plan-issue`) and review publication.
+`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (`tools/apply-issues.md`, `effective-flow plan-issue`) and review publication.
 
 The complete external contract — connection discovery with its fail-closed rules, the required capabilities, the write discipline, the classification mapping, the container mechanism, and the reference syntax — lives in the `tracker-target` fragment. Every source that embeds this fragment **must** carry its own deferred pointer to `tracker-target`, so a run loads that contract as soon as the resolved target is `external` and never for a `local` or `forge` run. A run that resolves `external` without that contract available aborts instead of improvising.
 
@@ -482,8 +484,9 @@ If the project has an `AGENTS.md`, read it before cleaning up and follow its gui
   runtime state, and the project setup ADR are never deleted. The recognized legacy
   `config.json` exception remains governed by the legacy classes below. The only current
   runtime-state deletions allowed are the lifecycle record of a successfully reconciled
-  `cleanup apply` claim, a confirmed stale diff baseline, and a confirmed merge-gate presence
-  marker removed by `presence prune`; no other active runtime file is a cleanup target.
+  `cleanup apply` claim, a confirmed stale diff baseline, a confirmed merge-gate presence
+  marker removed by `presence prune`, and a confirmed autopilot run ledger removed by
+  `ledger-prune`; no other active runtime file is a cleanup target.
 - **Never target the main or current execution worktree.** `RUNTIME_STATE_ROOT` and the worktree
   from which cleanup is running are never removal candidates. A linked current execution
   worktree still appears in the final retained-worktree report.
@@ -526,6 +529,12 @@ Merge-gate presence markers (`.effective-flow/merge-gate-presence/<SESSION_ID>.j
 class. A marker's run is over only when its wisdom file
 `.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md` is absent; with that file present the
 run is possibly suspended and its marker stays. Age, `possiblyStale` included, never decides.
+
+Autopilot run ledgers (`.effective-flow/autopilot/<run-id>/`) are a fourth class, owned by the
+fragment below: its inventory, dry-run listing, confirmation and execution apply in the phases it
+names.
+
+**Load on demand:** Read `shared/cleanup-autopilot-ledgers.md`, when Phase 1 step 4 finds the directory `<RUNTIME_STATE_ROOT>/.effective-flow/autopilot/`.
 
 ## Workflow
 
@@ -572,6 +581,8 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
    `node <skill-root>/scripts/effective-flow-state.mjs presence list <<< '{"cwd":"<RUNTIME_STATE_ROOT>"}'`.
    A marker with `wisdomFile: "absent"` is a removal candidate; any other is kept as possibly
    suspended (`present`) or unverifiable (`unreadable`).
+   **Autopilot ledgers:** when `.effective-flow/autopilot/` exists, inventory them as
+   `cleanup-autopilot-ledgers` defines.
 5. Capture the existing legacy remnants in the project root:
    - **Runtime directories and legacy `config.json`:** the plan's `legacy:` and `config:` items,
      ready or blocked.
@@ -605,7 +616,8 @@ file named by no record ID is blocked as `itemId: null` with `fileNameSha256`), 
 8. For `firmo-` labels, determine whether the `effective-flow-` counterpart exists.
 9. Give the user a compact inventory (class → artifacts found → whether a new counterpart exists),
    worktree counts (removal candidate, retained, recordless or not reliably checkable), stale
-   diff baselines by run ID, and presence markers by session ID and PR. Never end for lack of migration remnants; worktree preview and the
+   diff baselines by run ID, presence markers by session ID and PR, and autopilot ledgers by run
+   ID, outcome and pull request. Never end for lack of migration remnants; worktree preview and the
    final report still run.
 
 ### Phase 2: Carry-over check
@@ -675,13 +687,13 @@ Before any deletion, list exactly what will be removed — **without** deleting 
    deletes only the record file; a worktree it names that is still present is never removed.
 7. List retained and recordless worktrees separately with their concrete reason. They are not
    offered for confirmation. List presence-marker candidates by session ID, PR and age; kept
-   markers are not offered.
+   markers are not offered. List autopilot ledgers as `cleanup-autopilot-ledgers` defines.
 8. Explain that worktree removal uses only `git worktree remove <path>` without force. An
    `apply-review` branch is deleted only by `git branch -d`; when Git refuses, cleanup keeps it and
    reports it as `BRANCH_RETAINED`; a refused `base-validation` branch is deleted only under the
    lifecycle's exception. Delivery, partial-diff and merge-gate branches remain. Cleanup never runs
    `git worktree prune` or `git branch -D`.
-9. If there are no deletable migration artifacts, stale diff baselines, presence-marker or worktree removal candidates, call the
+9. If there are no deletable migration artifacts, stale diff baselines, presence-marker, ledger or worktree removal candidates, call the
    action set a no-op, but continue to Phase 6 so the mandatory retained-worktree report is
    still produced.
 
@@ -726,6 +738,7 @@ Execute per class:
   `node <skill-root>/scripts/effective-flow-state.mjs presence prune <<< '{"cwd":"<RUNTIME_STATE_ROOT>","sessionIds":["<SESSION_ID>"]}'`.
   It re-checks each wisdom file and removes a marker only while that file is absent (`removed`);
   `possibly-suspended`, `missing`, `not-regular`, `wisdom-unreadable` and `changed` markers stay.
+- **Autopilot ledgers:** confirm and prune as `cleanup-autopilot-ledgers` defines.
 - **`.gitignore`:** leave every line untouched. Report the exact outdated entries and route the
   user to `effective-flow setup`, the sole owner of normalization and repair.
 - **`firmo-` labels:** only on the forge target with a successful helper probe; skipped on an external target. Build the full normalized label transitions through the remote helper: first add `effective-flow-<x>` on the issue, **then** detach `firmo-<x>` (add-new before remove-old, so an abort leaves no issue unclassified). The label **definition** in the tracker remains. Inspect the dry-run steps before applying; if a step fails, report the completed steps and preserve the still-classified issue.
@@ -761,8 +774,9 @@ Report to the user:
 
 - what was carried over (files to `.effective-flow/`) and which config values `effective-flow setup` owns
 - what was deleted, separated into tracked (via `git rm`, staged) and physically removed,
-  including discarded stale diff baselines and pruned presence markers, plus every kept marker
-  with its `prune` result or `wisdomFile` state
+  including discarded stale diff baselines, pruned presence markers and removed autopilot
+  ledgers, plus every kept marker with its `prune` result or `wisdomFile` state and every kept
+  ledger with its reason
 - which outdated `.gitignore` lines remain and that `effective-flow setup` owns their repair, not this run
 - whether the Git common directory's `info/exclude` carries the `.effective-flow/` line, reported as
   hidden mode's active ignore entry that this run left untouched
@@ -814,7 +828,7 @@ claim from a retained status is the confirmed cleanup-only claim of an `aborted`
 
 Then emit the next-step block per `next-steps` as the last element of the report: the staged-removals
 row when this run staged deletions, the configuration row when it only referred config values on. A
-report that found neither matches no row and emits nothing.
+report that found neither matches no row.
 
 ## Rules
 
@@ -826,8 +840,9 @@ report that found neither matches no row and emits nothing.
   unselected simultaneous legacy directory.
 - Preserve the active `.effective-flow/` directory and all unrelated runtime state. Mutate below
   it only for the explicitly confirmed carry-over copies, migration and `cleanup apply` above, a
-  confirmed stale diff-baseline discard, or a confirmed `presence prune`, always through
-  runtime-state safety. Remove a presence marker only through `presence prune`. Do not mutate the
+  confirmed stale diff-baseline discard, a confirmed `presence prune`, or a confirmed
+  `ledger-prune`, always through runtime-state safety. Remove a presence marker only through
+  `presence prune`. Remove an autopilot ledger only through `ledger-prune`. Do not mutate the
   project setup ADR or a global skill installation.
 - Do not create commits or backup directories.
 - Do not write config yourself; config carry-over runs through `effective-flow setup`.

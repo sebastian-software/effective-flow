@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.74.0",
+  "version": "1.75.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -23,6 +23,7 @@
     "commit",
     "pr",
     "merge-gate",
+    "autopilot",
     "setup",
     "cleanup",
     "version"
@@ -204,6 +205,46 @@
       "mode": null
     },
     {
+      "from": "autopilot",
+      "to": "issue-buddy",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "plan-review",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "build",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "fix",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "refactor",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "docs",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "commit",
+      "mode": null
+    },
+    {
+      "from": "autopilot",
+      "to": "pr",
+      "mode": null
+    },
+    {
       "from": "apply",
       "to": "apply-plan",
       "mode": null
@@ -292,6 +333,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "docs",
         "iterate",
         "merge-gate"
@@ -299,6 +341,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.docs"
         },
         {
@@ -322,6 +368,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -333,6 +380,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.docs-writer"
         },
         {
@@ -372,6 +423,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -383,6 +435,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.code-documenter"
         },
         {
@@ -422,6 +478,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "fix",
         "iterate",
@@ -440,6 +497,18 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -491,6 +560,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -531,6 +601,34 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -634,6 +732,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "backlog-audit",
         "build",
         "cleanup",
@@ -698,6 +797,46 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -932,6 +1071,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "iterate",
         "merge-gate",
         "refactor"
@@ -939,6 +1079,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -982,6 +1126,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -1007,6 +1152,30 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -1120,6 +1289,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "iterate",
         "merge-gate"
@@ -1127,6 +1297,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.build"
         },
         {
@@ -1150,6 +1324,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "iterate",
         "merge-gate"
@@ -1157,6 +1332,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.build"
         },
         {
@@ -1180,6 +1359,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "fix",
         "iterate",
         "merge-gate"
@@ -1187,6 +1367,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.fix"
         },
         {
@@ -1210,6 +1394,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -1222,6 +1407,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.code-validator"
         },
         {
@@ -1295,6 +1484,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "fix",
         "investigate",
         "iterate",
@@ -1303,6 +1493,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.fix"
         },
         {
@@ -1330,6 +1524,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "commit",
         "deliver",
@@ -1345,6 +1540,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.commit"
         },
         {
@@ -1400,6 +1599,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "commit",
         "deliver",
@@ -1464,6 +1664,50 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -1743,6 +1987,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "iterate",
         "maintain",
@@ -1753,6 +1998,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.frontend-reviewer"
         },
         {
@@ -1788,6 +2037,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "fix",
         "iterate",
@@ -1798,6 +2048,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.ui-implementer"
         },
         {
@@ -1833,6 +2087,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "fix",
         "iterate",
@@ -1843,6 +2098,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.test-writer"
         },
         {
@@ -1878,6 +2137,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "fix",
         "iterate",
@@ -1888,6 +2148,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.rust-implementer"
         },
         {
@@ -1923,6 +2187,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "fix",
         "iterate",
@@ -1933,6 +2198,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.nodejs-implementer"
         },
         {
@@ -1968,6 +2237,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "backlog-audit",
         "build",
         "cleanup",
@@ -2088,6 +2358,110 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.code-validator"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.e2e-tester"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.frontend-reviewer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.generic-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.generic-product-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.generic-product-reviewer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.nodejs-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.nodejs-reviewer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.rust-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.rust-reviewer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.test-writer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "agents.ui-implementer"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -2707,6 +3081,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "backlog-audit",
         "build",
         "cleanup",
@@ -2777,6 +3152,50 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-review"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -3028,6 +3447,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -3039,6 +3459,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.code-documenter"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.code-documenter"
         },
         {
@@ -3078,6 +3502,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -3089,6 +3514,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.docs-writer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.docs-writer"
         },
         {
@@ -3128,6 +3557,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -3139,6 +3569,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.marketing-writer"
         },
         {
@@ -3228,6 +3662,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -3268,6 +3703,34 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -3371,6 +3834,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "backlog-audit",
         "build",
         "cleanup",
@@ -3435,6 +3899,46 @@
         },
         {
           "tool": "apply",
+          "scope": "tools.refactor"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.autopilot"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.build"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.commit"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.docs"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.fix"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.issue-buddy"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.plan-issue"
+        },
+        {
+          "tool": "autopilot",
+          "scope": "tools.pr"
+        },
+        {
+          "tool": "autopilot",
           "scope": "tools.refactor"
         },
         {
@@ -3709,6 +4213,7 @@
       "classification": "delegate",
       "tools": [
         "apply",
+        "autopilot",
         "build",
         "docs",
         "fix",
@@ -3720,6 +4225,10 @@
       "reach": [
         {
           "tool": "apply",
+          "scope": "agents.marketing-writer"
+        },
+        {
+          "tool": "autopilot",
           "scope": "agents.marketing-writer"
         },
         {

@@ -7,7 +7,7 @@ the artifact's open-points section.
 ### Default coverage
 
 The gap step, the validation step and the internal review step run on every run. In an interactive
-run the deep review (``tools/plan-review.md``) is user-requested depth: it is offered only after the
+run the deep review (`tools/plan-review.md`) is user-requested depth: it is offered only after the
 batch round and its ladder, never run as a default step. A user's explicit request for a full
 re-review or for the deep review is honored as user-requested depth. An unattended run keeps its
 own deep-review site.
@@ -24,7 +24,7 @@ including critical findings that still need a decision after its revision, join 
 ### Batch round
 
 After the internal review step, every pending point reaches the user in one round, before
-completion and before the deep review is offered, in the ``tools/plan-review.md`` Phase 3 decision
+completion and before the deep review is offered, in the `tools/plan-review.md` Phase 3 decision
 format. Consecutive ask calls with no analysis in between count as one round when the host caps
 the questions per call. With no pending point there is no round.
 

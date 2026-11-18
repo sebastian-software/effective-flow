@@ -80,7 +80,7 @@ one, otherwise the source skill's default, naming that skill. An absent artifact
 language, and `delivery.baseBranch` follows the Step 4 base-branch rule. For a key whose retired
 row `data.retired` lists, name that row and the action the retired-key rule of the configuration
 building block assigns to it, and say that a Targeted change of any key offers its migration. An
-answer writes nothing, asks no confirmation, and emits no next-steps block. A mixed request answers
+answer writes nothing, asks no confirmation, and matches no next-steps row. A mixed request answers
 first, then shows the change preview.
 
 ### Owner questions
@@ -184,5 +184,5 @@ would have shown, and writes nothing.
 
 Step 8 for Targeted reports the mode `Targeted`, the interpreted operations, the rows written or
 "nothing written" with the reason, the source path, retired rows rewritten and bot collapses, and
-each refused or redirected operation with its route. It emits no next-steps block: a Targeted run
+each refused or redirected operation with its route. It matches no next-steps row: a Targeted run
 stages nothing.

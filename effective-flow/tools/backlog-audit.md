@@ -145,7 +145,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
 
 **Load on demand:** Read `shared/remote-helper-contract.md`, when a helper envelope on the forge target fails with a tracker error code.
 
-**Load on demand:** Read `shared/next-steps.md`, when Phase 9 reaches the completion report.
+**Load on demand:** Read `shared/next-steps.md`, when Phase 9 reaches the completion report, or the run aborts after spawning its first domain sub-agent.
 
 ## Arguments and helper calls
 

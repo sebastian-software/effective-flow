@@ -30,6 +30,9 @@ In this order, before any other write:
    `ABORT unparseable input line`; no body, answer or wisdom content supplies routing authority.
 2. **Roots.** Verify `RUNTIME_STATE_ROOT` and `Execution root` yourself per the deferred
    `runtime-state-safety`; a verified value that differs from the passed one returns `ABORT`.
+   Then apply the caller's `Associated plan:` check from "Dispatching the delegated run" to an
+   optional `Associated plan:` line; a line failing it returns `ABORT unparseable input line`. Only
+   that validated plan feeds the merged-run candidate order of `next-steps`.
 3. **Wisdom file.** The path must resolve under the verified `RUNTIME_STATE_ROOT/.effective-flow/`,
    its name must match `.wisdom-accumulation-*.tmp.md`, and it must be absent or a regular file,
    absent on a dispatch without a `Relayed answer:` line; otherwise return `ABORT invalid wisdom file` and touch nothing at that path, never cleaning up a
@@ -78,7 +81,7 @@ In this order, before any other write:
   returns `BLOCKED-USER`. A once-per-run record of a relayed gate is written when its answer is
   consumed, never when the question is returned.
 - **Every return ends the run once.** An `ABORT` from Entry steps 1 to 3 writes and deletes
-  nothing. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
+  nothing; one from Entry steps 1 to 5 is an Entry abort of the return contract. Every other return finalizes a pilot reservation per Phase 6 and `pilot-measurement`, and
   `DONE` and `ABORT` run Phase 6 exactly once. `BLOCKED-USER` first ends an in-progress merge as
   Phase 2 step 1's controlled stop, then runs Phase 6 without its report and without deleting the
   wisdom file, which the re-dispatch continues. `SUSPENDED host-pr-watch` ends the same way; a T3-path run
@@ -182,7 +185,7 @@ This gate is a delegator twice over, and the mandate governs the second kind. Ha
 code change to `effective-flow iterate` is a workflow-to-workflow delegation: each round runs in a
 dispatched subagent per `merge-gate-delegation-contract` and keeps that tool's own mechanics and
 gates, including its interactive path – the mandate's own carve-out. Handing a conflicted merge
-to ``effective-flow-merge-conflict-resolver`` and the resolved tree to ``effective-flow-code-validator`` is a
+to `effective-flow-merge-conflict-resolver` and the resolved tree to `effective-flow-code-validator` is a
 delegation to **named worker roles**, which is exactly what the mandate binds: those two are
 mandatory, never a judgment call. Where the mandate's inline fallback would apply – no sub-agent
 mechanism, or a delegation declined at run time – this gate does not resolve inline: it says so
@@ -286,7 +289,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -301,8 +304,8 @@ apply, and `mergeGate.maxRounds` is this workflow's concrete bound. The completi
 pull request's own checks plus the Phase-4 preconditions, read from the forge rather than
 self-assessed. This workflow therefore starts **no** validator and **no** reviewer of its own; the
 independent verification happens in CI, inside the delegated `effective-flow iterate` run, and – for a
-resolved merge conflict – inside the delegated ``effective-flow-merge-conflict-resolver`` and
-``effective-flow-code-validator`` roles. Delegating a check is not starting one here.
+resolved merge conflict – inside the delegated `effective-flow-merge-conflict-resolver` and
+`effective-flow-code-validator` roles. Delegating a check is not starting one here.
 
 ## Checkout provisioning boundary
 
@@ -488,7 +491,7 @@ grants it authority it would not grant a comment.
 of Git write, and both are the same operation on the same branch:** the **clean** base-into-head
 merge – `origin/<base>` merged into the head branch as a merge commit and pushed normally, when that
 merge applies without a conflict – and the **conflict-resolving** base-into-head merge, where the
-same merge conflicts, ``effective-flow-merge-conflict-resolver`` resolves the conflicted files, and the gate
+same merge conflicts, `effective-flow-merge-conflict-resolver` resolves the conflicted files, and the gate
 commits and pushes the result. Each is a **kind** of write, not a one-time allowance: either applies
 in every Phase-2 round in which one of step 1's two triggers calls for it – (a) a fresh read
 reporting `BEHIND` or `DIRTY`, until a base-merge-unavailable record exists, or (b) a failing
@@ -515,7 +518,7 @@ make it unavailable, and the run then reports the conflict and makes **no commit
 
 **Which gate stands in for `pre-commit-gate` on the second kind of write.** This workflow carries no
 `pre-commit-gate` include and runs no project validation itself, so the stand-in is named rather than
-left to inference: the ``effective-flow-code-validator`` verification of the "Conflict-resolution delegation
+left to inference: the `effective-flow-code-validator` verification of the "Conflict-resolution delegation
 contract", delegated in **`full`** mode unless the effective mode of "Conflict validation mode" is
 `quick`, which hands it that fragment's conflict-commit scope instead. No commit of this kind is
 ever written without that gate having run and passed.
@@ -561,7 +564,7 @@ would leave an `off` run with a merge it never aborts.
 
 **The head branch is untrusted input, and this is the threat model.** This gate operates on any open
 pull request, including one from an external contributor whose head branch this repository does not
-control. ``effective-flow-merge-conflict-resolver`` discovers its validation commands from files that head
+control. `effective-flow-merge-conflict-resolver` discovers its validation commands from files that head
 branch supplies – scoped instructions, CI workflows, task runners, manifests, package scripts – and
 executes them in the provisioned checkout with full filesystem and network access, fully
 automatically whenever `mergeGate.conflictResolution` is `auto`, which is the default. A project that
@@ -603,8 +606,8 @@ When that pointer loads, apply `## Configured reviewer configuration` in the fra
 any reviewer entry, trigger, or check value.
 
 - `mergeGate.conflictResolution` decides what the gate does when the base-into-head merge of Phase 2
-  conflicts. `auto` (the default) resolves it through ``effective-flow-merge-conflict-resolver``, has the
-  resolved tree verified by ``effective-flow-code-validator``, and pushes one merge commit. `off` makes no
+  conflicts. `auto` (the default) resolves it through `effective-flow-merge-conflict-resolver`, has the
+  resolved tree verified by `effective-flow-code-validator`, and pushes one merge commit. `off` makes no
   commit and no push: the merge is aborted, the conflict is reported, and the **branch** ends exactly
   where it did before this capability existed – the checkout of Phase 2 step 1 is still provisioned
   before the mode is read and is cleaned up on the same stop path. `ask` poses the question **once
@@ -715,6 +718,8 @@ gate run inline generates it at the start. Use
   mode with its source (configuration, entry gate or a `no-merge` caller limit)
 - the caller limits of every dispatch, recorded before its first return, so Entry step 3 can reject
   a narrowing re-dispatch
+- every consumed `Relayed answer:` by question id and round, appended when it is consumed, so the
+  count of consumed exceptional answers survives re-dispatch for Phase 6
 - the authenticated login `viewer-read` returned, or the reason it could not be read
 - the presence token and the entry-notice lines of "Run presence"
 - the human-comment guard state and the evidence that set it, plus every login whose top-level
@@ -761,7 +766,7 @@ gate run inline generates it at the start. Use
   `VERIFIED_HEAD_SHA`; and, where a configured policy did not apply, its latest cause
 - per round, where the base-into-head merge conflicted: the trigger that fired the merge, the
   observed merge state and which entry point detected the conflict, the resolved
-  `mergeGate.conflictResolution` mode with its source, the conflicted paths with their risk classification, ``effective-flow-merge-conflict-resolver``'s per-file
+  `mergeGate.conflictResolution` mode with its source, the conflicted paths with their risk classification, `effective-flow-merge-conflict-resolver`'s per-file
   resolution record including every adjacent file with the check that demanded it, both verification
   verdicts, and the resulting merge commit or the abort reason, plus the records of "Conflict
   validation mode" in `merge-gate-conflict-resolution`, among them the conflict-observed and
@@ -1547,12 +1552,15 @@ that fragment's report-and-stop path.
 1. Delete the wisdom file – except on a `BLOCKED-USER` return – and every delegation message file
    and snapshot this run wrote that is still present – after a sender stop, the one whose delegation
    never went out. Before that deletion, `release` the presence marker with the token the wisdom
-   file holds, under the same exception.
+   file holds, under the same exception. Also before it, carry the count of consumed exceptional
+   relayed answers into step 2.
 2. Run the worktree-record exit self-check. Then report to the user in chat. **Neither this workflow nor any run it delegates posts a summary
    comment onto the pull request:** the gate has none of its own, and `effective-flow iterate`'s
    per-round summary is suppressed for every gate-initiated round, so its content arrives here
    instead. The merge itself is visible on the pull request anyway. Report:
    - the resolved pull request, the resolved mode with its source, and every caller limit in force;
+   - one line per retrospective-slot fact of `next-steps` this run observed, by signal class, on
+     `ABORT` too; T3 counts the consumed exceptional relayed answers the wisdom file records;
    - every entry-notice line the wisdom file records about another run's presence marker;
    - the check outcome per round;
    - **every conflict with the base this run met**: the trigger that fired the merge, the resolved
@@ -1689,11 +1697,16 @@ that fragment's report-and-stop path.
      changed neither this gate result nor the pull request. With no retained candidate, emit nothing.
 3. Emit the next-step block per the shared selection in `next-steps` as the last element of that
    chat report, with the verified source association, complete retained planning basis and observed
-   merge/issue outcomes. Only for generic fallback, prefer the merged-but-linked-issues-open row
-   when an open, timed out, unobservable, or `terminal (cancelled)` outcome leaves actual
-   reconciliation that observer-only re-entry can address. An intentionally open parent for later
-   packages does not qualify by itself. Omit the generic merged row when `<plan.dir>/` has no open
-   plan for `effective-flow open-plans` to list; that does not suppress an associated plan/issue candidate.
+   merge/issue outcomes; after a merge, apply its merged merge-gate candidate order. Only for
+   generic fallback, prefer the merged-but-linked-issues-open row when an open, timed out,
+   unobservable, or `terminal (cancelled)` outcome leaves actual reconciliation that observer-only
+   re-entry can address. An intentionally open parent for later packages does not qualify by
+   itself. The `blocked by failing checks` row applies only to these endings: the run ended with a
+   red check after a refused or unsuccessful CI repair, at `mergeGate.maxRounds` with a red check,
+   or with Phase 4 condition 2 unmet because of a red check. A pending-checks, check-wait-timeout or
+   `no-branch-writes` ending wins over a red check and never takes it. When review notes block as
+   well, `blocked by review notes` leads, because iterating on the pull request addresses the notes.
+   A dispatched run returning `ABORT` emits nothing here: its caller alone emits that ending's block.
    The block stays chat only: nothing of it is written onto the pull request.
 
 ## Rules
@@ -1702,8 +1715,8 @@ that fragment's report-and-stop path.
   "Git write boundary"; delegate every other code change to `effective-flow iterate`.
 - Never rewrite the head branch's history: no `commit --amend`, no rebase, no squashing of its
   commits, no force-push. The forge-side `delivery.mergeMethod` of Phase 5 is not covered.
-- Resolve a conflict only through ``effective-flow-merge-conflict-resolver``, never inline, and only where
-  `mergeGate.conflictResolution` allows it; never commit a resolved tree ``effective-flow-code-validator``
+- Resolve a conflict only through `effective-flow-merge-conflict-resolver`, never inline, and only where
+  `mergeGate.conflictResolution` allows it; never commit a resolved tree `effective-flow-code-validator`
   did not verify, or a modified path the worker's own record does not name and justify.
 - **Never treat an unverified resolution as a verified one**: two verification layers that together
   executed **no** check, and any verdict short of an affirmative pass, are treated exactly as `ABORT`.

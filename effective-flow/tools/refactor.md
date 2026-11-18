@@ -104,12 +104,12 @@ The table between the marker comments is a build-validated runtime contract. Kee
 | Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
 | -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
 |       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
+|       20 | `documentation`               | `documentation`    | `effective-flow-code-documenter` / `effective-flow-docs-writer` | `effective-flow-code-validator`           | `route`          |
+|       30 | `tooling`                     | `tooling`          | `effective-flow-generic-implementer`                       | `effective-flow-code-validator`           | `route`          |
+|       40 | `frontend-js-ts`              | `frontend-js-ts`   | `effective-flow-ui-implementer`                            | `effective-flow-frontend-reviewer`        | `route`          |
+|       50 | `node-backend-cli`            | `node-backend-cli` | `effective-flow-nodejs-implementer`                        | `effective-flow-nodejs-reviewer`          | `route`          |
+|       60 | `rust`                        | `rust-product`     | `effective-flow-rust-implementer`                          | `effective-flow-rust-reviewer`            | `route`          |
+|       70 | `generic-product`             | `generic-product`  | `effective-flow-generic-product-implementer`               | `effective-flow-generic-product-reviewer` | `route-degraded` |
 |       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
 
 <!-- project-routing-table:end -->
@@ -303,6 +303,8 @@ remain Effective Flow contract.
 
 If the project has an `AGENTS.md`, read it before analysis and refactoring and follow its guidance for structure, boundaries, tests, review and commits.
 
+**Load on demand:** Read `shared/scored-decisions.md`, when the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write.
+
 ## Completion protocol
 
 When you use internal sub-agents, give them this response protocol:
@@ -347,7 +349,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -378,8 +380,8 @@ Contents:
 ## Project routing
 
 Classify affected files and domains with the canonical “Project routing” contract above. Use
-``effective-flow-generic-implementer`` only for tooling-class routes; clearly identified unsupported
-product code receives the reduced-depth notice and ``effective-flow-generic-product-implementer``.
+`effective-flow-generic-implementer` only for tooling-class routes; clearly identified unsupported
+product code receives the reduced-depth notice and `effective-flow-generic-product-implementer`.
 
 Current workflow for review-report backlinks: `effective-flow refactor`.
 
@@ -413,7 +415,7 @@ Only `admitted` residual root causes may enter a review-report file under
 Goal:
 
 - Independently admitted material harm or structural irreversibility remains actionable.
-- ``tools/apply-review.md`` can process only the admitted findings later in the familiar format.
+- `tools/apply-review.md` can process only the admitted findings later in the familiar format.
 - The plan file stays completion documentation and only points to the external report.
 
 Status is still read in either complete report language, but it is only a candidate selector:
@@ -509,7 +511,7 @@ Rules:
 
 **Load on demand:** Read `shared/review-report-format.md`, when a review report is written or an existing one is augmented.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 Current workflow for plan references: Refactoring (`effective-flow refactor`).
 
@@ -553,7 +555,7 @@ error code. Report a true `data.archiveIgnored` (unsafe archive, unsearched). Ou
    - Bugfix or `effective-flow fix` → `effective-flow fix`
    - Refactoring or `effective-flow refactor` → `effective-flow refactor`
    - Documentation or `effective-flow docs` → `effective-flow docs`
-3. If the current skill is ``tools/apply-plan.md``: use the recommendation as the target workflow and continue.
+3. If the current skill is `tools/apply-plan.md`: use the recommendation as the target workflow and continue.
 4. If the recommendation matches the current workflow: continue.
 5. If the recommendation points to a different workflow:
    - emit a clearly visible message stating which workflow is recommended
@@ -576,7 +578,7 @@ embed. This reference rule does not duplicate that check separately.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → `tools/apply-plan.md`/`tools/apply-issues.md`/`tools/apply-review.md`) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
 Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
@@ -603,7 +605,8 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `effective-flow plan` or its in-depth
   plan review (`effective-flow review <planfile>`); an issue or finding goes to
-  `effective-flow plan-issue`.
+  `effective-flow plan-issue`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,
@@ -682,13 +685,13 @@ post-validation); each write-capable boundary revalidates it and roots every ope
 
 Start in parallel:
 
-1. ``effective-flow-code-validator``
+1. `effective-flow-code-validator`
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `refactor/baseline-checks` (`shared/model-selection.md`).
    - TypeScript errors
    - lint errors
    - build status
-2. ``effective-flow-test-writer``
+2. `effective-flow-test-writer`
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `refactor/baseline-tests` (`shared/model-selection.md`).
    - run all existing tests and document the result
@@ -778,11 +781,11 @@ eligibility is never evaluated again.
    is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `refactor/initial-implementation` (`shared/model-selection.md`).
-   - Frontend: `Use the `effective-flow-ui-implementer` skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
-   - Backend/CLI: `Use the `effective-flow-nodejs-implementer` skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
-   - Rust: `Use the `effective-flow-rust-implementer` skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
-   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the `effective-flow-generic-product-implementer` skill for this phase.` Fast: `effective-flow-generic-product-implementer` (portable build: Fast unavailable, Quality only).
-   - Tooling/CI/configuration/repository metadata: `Use the `effective-flow-generic-implementer` skill for this phase.` Fast: `effective-flow-generic-implementer` (portable build: Fast unavailable, Quality only).
+   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
+   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
+   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` (portable build: Fast unavailable, Quality only).
+   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` (portable build: Fast unavailable, Quality only).
    - Use every bucket selected by project routing; preserve specialist buckets in mixed scopes.
    - Never demote unsupported product code to the tooling-only generic implementer.
 2. Assignment, repeated with the Phase 2 baseline evidence in every implementer handoff of Phases
@@ -822,9 +825,9 @@ surface prevents completion under the blocking rule of the detail contract.
 ### Phase 4: Review
 
 1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer project
-   routing selects, including ``effective-flow-generic-product-reviewer`` for degraded product buckets.
+   routing selects, including `effective-flow-generic-product-reviewer` for degraded product buckets.
    Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
-   CI path goes to ``effective-flow-generic-product-reviewer`` with its reduced-depth notice, under an
+   CI path goes to `effective-flow-generic-product-reviewer` with its reduced-depth notice, under an
    explicit bounded implementation full-pass assignment from `effective-flow refactor`; supply only the
    floor-hit tooling/CI path list and each path's confirmed route.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
@@ -866,10 +869,10 @@ surface prevents completion under the blocking rule of the detail contract.
 
 Render the diff baseline, then start in parallel:
 
-1. ``effective-flow-code-validator`` with the path list per "Diff baseline"
+1. `effective-flow-code-validator` with the path list per "Diff baseline"
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `refactor/post-validation-checks` (`shared/model-selection.md`).
-2. ``effective-flow-test-writer``
+2. `effective-flow-test-writer`
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `refactor/post-validation-tests` (`shared/model-selection.md`).
    - runs all existing tests again, or the targeted scope under `Validation: targeted`

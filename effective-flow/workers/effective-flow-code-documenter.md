@@ -140,12 +140,12 @@ The table between the marker comments is a build-validated runtime contract. Kee
 | Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
 | -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
 |       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
+|       20 | `documentation`               | `documentation`    | `effective-flow-code-documenter` / `effective-flow-docs-writer` | `effective-flow-code-validator`           | `route`          |
+|       30 | `tooling`                     | `tooling`          | `effective-flow-generic-implementer`                       | `effective-flow-code-validator`           | `route`          |
+|       40 | `frontend-js-ts`              | `frontend-js-ts`   | `effective-flow-ui-implementer`                            | `effective-flow-frontend-reviewer`        | `route`          |
+|       50 | `node-backend-cli`            | `node-backend-cli` | `effective-flow-nodejs-implementer`                        | `effective-flow-nodejs-reviewer`          | `route`          |
+|       60 | `rust`                        | `rust-product`     | `effective-flow-rust-implementer`                          | `effective-flow-rust-reviewer`            | `route`          |
+|       70 | `generic-product`             | `generic-product`  | `effective-flow-generic-product-implementer`               | `effective-flow-generic-product-reviewer` | `route-degraded` |
 |       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
 
 <!-- project-routing-table:end -->
@@ -206,6 +206,6 @@ existing documentation check that could not run. Add no generator or dependency.
   translation was requested. Only a direct invocation resolves the shared language rule itself.
 - Touch only assigned documentation comments, doc examples, or CLI help surfaces; change no
   runtime logic.
-- Tell ``effective-flow-code-validator`` which established documentation check applies, or report that no
+- Tell `effective-flow-code-validator` which established documentation check applies, or report that no
   safe check was found.
 - Return changed files, checked interfaces, evidence, and remaining gaps to the caller.

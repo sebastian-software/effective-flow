@@ -96,7 +96,7 @@ Increment a counter only after the corresponding correction work was actually di
 - `reviewerImplementationDelegations`: one for each configured-reviewer implementation delegation
   successfully dispatched to `effective-flow iterate`; triggers, assessments, deferred/rejected items,
   Phase-4 returns without implementation, and keyword-less resumes are zero;
-- `conflictResolutionAttempts`: one each time ``effective-flow-merge-conflict-resolver`` is actually
+- `conflictResolutionAttempts`: one each time `effective-flow-merge-conflict-resolver` is actually
   started for a base-into-head conflict; a clean merge, `off`, an unanswered gate, or a stop before
   the resolver starts is zero.
 

@@ -35,8 +35,8 @@ A producer maps only checks it observed in this run, each with `check` (what ran
   with `comparison` `{"base": "<diff-baseline baselineTree>", "unchanged": true}`; without such a
   comparison the failure is `failed`.
 
-Its only source is the per-command outcomes that this run's ``effective-flow-code-validator`` and
-``effective-flow-test-writer`` reported (for deliver, its own step 4.3 commands); qualitative reviewer
+Its only source is the per-command outcomes that this run's `effective-flow-code-validator` and
+`effective-flow-test-writer` reported (for deliver, its own step 4.3 commands); qualitative reviewer
 output and review findings are never mapped. A plan, a command named only in prose, CI that has
 not run, and a zero exit of an evidence-reporting tool without an observed outcome are never
 `executed`. Keep text fields to short single-line command and scope names, never log output. The
@@ -61,10 +61,16 @@ hidden mode); `visibility`; `producer`; and `checks`. The snapshot per producer:
   `cargo test (targeted)`), never a fixed command, with its files summarized in `scope`, and the
   full suite as `unavailable`, provenance `not-run`, with the prerequisite id and reason class as
   `limitation`. In every targeted Phase 7, each targeted check run is mapped the same way, marked
-  `(targeted)`. Without a signature the full suite is `skipped`, provenance `not-run`, with the
-  `limitation` `full suite ran before later corrections; changes since verified targeted` after a
-  valid Phase 5 full run, or `no valid full-suite run; changes verified targeted` on the cumulative
-  path; after a signature or host-tool timeout the `limited` mapping above applies. A failure annotated `pre-existing` or
+  `(targeted)`. After a signature or host-tool timeout, in the second full run too, the `limited`
+  mapping above applies. Otherwise the full suite maps from the retained budget state. When the
+  step 1 render's `currentTree` equals the `phase5Tree` of a valid Phase 5 full run with
+  `zeroFailures`, it is `passed`, provenance `executed`, scope `full suite on the verified tree`,
+  with no `limitation`; a valid run with attributed failures keeps the `failed` mapping below. A
+  used second full run maps as `passed` or `failed` from its result only when it was valid and ran
+  on the step 1 render's `currentTree`. In every other case the full suite is `skipped`, provenance
+  `not-run`, with the `limitation` `full suite ran before later corrections; changes since verified
+targeted` after a valid Phase 5 full run, or `no valid full-suite run; changes verified targeted`
+  on the cumulative path. A failure annotated `pre-existing` or
   `expected` maps as `failed` with a `limitation` naming the attribution, such as
   `pre-existing on base` or `approved expected failure`; it is `baseline-failure` only when its
   comparison ran against the exact `baselineTree`. No private snapshot tree id, such as

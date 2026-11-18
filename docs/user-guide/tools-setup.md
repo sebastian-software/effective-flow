@@ -648,7 +648,8 @@ removes it. The same holds for the hidden local configuration `.effective-flow/p
 and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
 state, not leftovers. It may copy confirmed runtime files into
 `.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
-stale diff baseline, or remove a merge-gate presence marker whose run is provably over; otherwise
+stale diff baseline, remove a merge-gate presence marker whose run is provably over, or remove a
+finished autopilot ledger; otherwise
 it preserves active runtime state. A true no-op means there are no
 migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
 report still appears.
@@ -659,6 +660,12 @@ Cleanup offers to remove such a marker only when its run's wisdom file
 (`.effective-flow/.wisdom-accumulation-<session>.tmp.md`) is gone, which proves the run is over.
 While that file exists the run may be suspended and its marker stays, however old it is, even one
 reported as possibly stale. This is a third deletion class with its own confirmation.
+
+Each [`autopilot`](tools-automation.md) run keeps a private ledger below
+`.effective-flow/autopilot/<run-id>/`. Cleanup offers to remove one only when its run is closed
+and it produced no pull request or its pull request is merged or closed, which it reads from the
+forge. An open run, an open pull request, or a pull request the forge cannot report keeps the
+ledger. This is a fourth deletion class with its own confirmation.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the

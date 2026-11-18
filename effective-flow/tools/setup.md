@@ -79,7 +79,7 @@ same-session calls integrate into the existing overview without inventing a reci
 
 **Load on demand:** Read `shared/runtime-state-safety.md`, when setup has repaired and validated the runtime ignore state and is about to write a runtime marker, or is about to write or delete the hidden local configuration, a Targeted run's hidden write included.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when the config locator selected a transitional JSON source and setup has repaired and validated the runtime ignore/index state before the config-migration marker's memory operation.
 
@@ -275,7 +275,8 @@ If two or more declared sources state ADR file naming conventions that do not al
 
 Name every speaking source and its outcome when asking — its file path and its classified outcome,
 including the sources that agree with one another. Do not quote prose from any source into the
-question or its options.
+question or its options. Under an Automation caller's scored decision mode, row S-ADR of
+`scored-decisions` decides.
 
 Unlike the ADR-directory question of the calling tool, this fence is deliberately **unconditional**
 rather than guided-path only, because it decides the path a file is written to rather than a
@@ -590,7 +591,7 @@ If the project has an `AGENTS.md`, read it before writing and follow its guidanc
 The Effective Flow configuration is optional and controls the defaults of the following blocks. Its source of truth is the project setup ADR table (see the building block above for encoding and locator). The respective skills are the authoritative source for valid values and defaults; this skill only summarizes them and must not count as the sole truth when the schema is extended. Unknown keys of an existing config are always preserved.
 
 - **`review`** (source: `effective-flow review`): `profile` (full/focused/fast), `autoConfirmScope` (bool), `designDecisionSources` (full/standard/minimal), `validation` (full/quick/off)
-- **`applyReview`** (source: ``tools/apply-review.md``): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
+- **`applyReview`** (source: `tools/apply-review.md`): `defaultCommitStrategy` (worktrees/single/none/`null` = ask at run time), `finalValidation` (full/changedScope/off), `stashPolicy` (interactive/keep/discard/apply), `worktree.baseDir`, `worktree.setup` (auto/none/command)
 - **`language`** (source: shared "Language resolution"): `project` and optional `source`,
   `documentation.user`, `documentation.technical`, `workflow`, `forge`, `git`, `chat` overrides
   (`de`/`en`; a missing artifact-surface override inherits `language.project`, whose default is
@@ -600,7 +601,7 @@ The Effective Flow configuration is optional and controls the defaults of the fo
 - **`mergeGate`** (source: `effective-flow merge-gate`): `completion` (ask/merge/report, default `ask` — may a gate run merge at the end or only report merge-readiness), `conflictResolution` (off/ask/auto, default `auto` — may a gate run resolve a conflict between the head branch and its base, verify the result, and push the merge commit), `conflictValidation` (full/quick, default `full` — how a gate run validates its conflict-resolution commit; set only on Step 5's proposal or an explicit request), `requireAllChecks` (bool, default `true`), `checkWaitMinutes` (positive integer, default `20`), `maxRounds` (positive integer, default `10`), `botWaitMinutes` (positive integer, default `10`), `bots` (comma list of automatic-reviewer logins, default empty), `bots.<login>.trigger` (the literal trigger comment text for one bot, unset by default), `bots.<login>.check` (the commit-status or check-run context that proves whether that bot has run, unset by default), `botAccounts` (comma list of non-reviewer bot logins, default empty — automated accounts whose comments the gate does not count as human), `noCiPolicy.bases` (comma list of exact, case-sensitive base branch names, unset by default — the declared no-CI policy for bases that run no CI) and `noCiPolicy.unattended` (bool, default `false` — lets a non-interactive gate run use that policy), recorded, changed or removed only on an explicit operator choice in Guided block 9 or a Targeted change; Profile and Express never enable it. This block was named `prReview.*` in an earlier generation; those names are retired and never read by other runs, and this skill migrates such rows in place (Step 6), as it does the retired `worktree.baseBranch`, `worktree.branchPrefix` and `worktree.completion` rows of the `delivery` block. **Not** the same thing as `delivery.prReview`: that key decides whether a run publishes **its own findings** onto a pull request it created and keeps its name, while `mergeGate.*` configures the merge gate.
 - **`iterate`** (source: `effective-flow iterate`, resolved by `effective-flow merge-gate`): `reviewFixValidation` (full/quick, default `full` — how the final validator of a review-fix round the gate delegates validates; set only on Step 5's proposal or an explicit request, in Guided block 9 or a Targeted change).
 - **`worktree`** (source: `effective-flow build`, section "Delivery and worktree integration"): `enabled` (bool, default `true`), `setup` (auto/none/command), `baseDir`
-- **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in ``tools/apply-review.md`` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
+- **`tracker`** (source: `effective-flow review`, section "Issue-tracker integration" – likewise embedded in `tools/apply-review.md` and the other tracker workflows): `mode` (local/remote/external, default `local`), `remoteToolOverride` (auto/github/forgejo, default `auto`, forge only), `externalTool` (short identifier of the tool holding the issues, no whitelist, required for `mode: external`), `externalToolHint` (free text: MCP server name, workspace, team/project key, identifier convention, state names), `externalStartedState` (nullable stable native state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence), `externalDoneState` (nullable stable native **terminal** state ID, or exact accepted token only when the connection exposes no ID; freshly tracker-verified before persistence; read by the offered post-merge terminal transition and by the post-merge observation that tells an already-terminal issue reconciled as done from one withdrawn)
 - **`visibility`** (source: the configuration building block, locator step 0): `standard` (default) or `hidden`. Written only as `visibility | hidden` into the local `.effective-flow/project-setup.md`, never into a tracked ADR; in hidden mode the configuration resolver forces its fixed values (the hidden file's rows are listed under "Safe defaults").
 - **`skills`** (source: building block "Skill discovery"): `enabled` (bool, default `true` — toggles dynamic skill usage), `include` (list — prefer these skills project-wide), `exclude` (list — never apply these skills), `agents.<name>` and `tools.<name>` (each `include`/`exclude` for a single agent or a single tool). Keys are the source agent/tool names (e.g. `ui-implementer`, `plan`).
 - **`executionProfiles`** (source: the configuration building block): `fast.enabled` (strict Boolean, unset by default — missing or `false` is disabled, a malformed, ambiguous, or unreadable value invalid, and both run Quality; `true` only admits the project to the `effective-flow build` field pilot; never a provider model name). Set only in Guided block 10; Profile and Express preserve an existing value.
@@ -1499,7 +1500,7 @@ Allowlist run only those of `setup-allowlist`):
 
 Then emit the next-step block per `next-steps` as the last element of the report, but only when this
 run left staged changes behind — which happens solely in the `git rm --cached` migration case. A run
-with nothing staged matches no row and emits nothing.
+with nothing staged matches no row; the retrospective slot of `next-steps` still applies.
 
 ## Rules
 
@@ -1534,6 +1535,6 @@ with nothing staged matches no row and emits nothing.
   write happens only through the common confirmed Step 6 path; Step 1 keeps its independent
   `.gitignore` repair lifecycle.
 - On an abort during the questions, leave no half-written ADR; write only once at the end.
-- Do not start project validation; linting, tests, and build checks are the job of other skills such as ``effective-flow-code-validator``.
+- Do not start project validation; linting, tests, and build checks are the job of other skills such as `effective-flow-code-validator`.
 - Do not create commits. Untracking an old `config.json` only stages an index change (`git rm --cached`) without committing; Step 7's next-step block names who commits it.
 - Do not process or store any secrets; the configuration contains only behavior defaults.

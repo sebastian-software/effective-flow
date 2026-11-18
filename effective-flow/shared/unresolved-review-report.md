@@ -10,7 +10,7 @@ Only `admitted` residual root causes may enter a review-report file under
 Goal:
 
 - Independently admitted material harm or structural irreversibility remains actionable.
-- ``tools/apply-review.md`` can process only the admitted findings later in the familiar format.
+- `tools/apply-review.md` can process only the admitted findings later in the familiar format.
 - The plan file stays completion documentation and only points to the external report.
 
 Status is still read in either complete report language, but it is only a candidate selector:

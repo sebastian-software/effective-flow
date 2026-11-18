@@ -90,6 +90,8 @@ the loaded retired-key contract over every successor this workflow can resolve:
 report decision before any delegation or write. This preflight does not replace or move any later
 purpose-specific configuration read; perform each one at its documented workflow point.
 
+**Load on demand:** Read `shared/scored-decisions.md`, when the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write.
+
 ## Plan status convention
 
 `<plan.dir>` is the plan directory from the Effective Flow configuration (project-setup ADR) `plan.dir` (default
@@ -140,7 +142,7 @@ Current workflow for plan references: Feature (`effective-flow build`).
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → `tools/apply-plan.md`/`tools/apply-issues.md`/`tools/apply-review.md`) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
 Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
@@ -167,13 +169,14 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `effective-flow plan` or its in-depth
   plan review (`effective-flow review <planfile>`); an issue or finding goes to
-  `effective-flow plan-issue`.
+  `effective-flow plan-issue`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,
 to avoid duplicate maintenance.
 
-A referenced unbuilt Feature plan must pass the clarification gate. Failure refers to `effective-flow plan` or `effective-flow review <planfile>` and ends this run. Passing skips Phase 1: referencing that plan is approval for phases 2–7, because the user deliberately chose it and it passed clarification. Preserve any verified association supplied by ``tools/apply-plan.md``; it follows this caller in the current run and creates no additional runner boundary. Initial state documentation and every execution gate still apply.
+A referenced unbuilt Feature plan must pass the clarification gate. Failure refers to `effective-flow plan` or `effective-flow review <planfile>` and ends this run. Passing skips Phase 1: referencing that plan is approval for phases 2–7, because the user deliberately chose it and it passed clarification. Preserve any verified association supplied by `tools/apply-plan.md`; it follows this caller in the current run and creates no additional runner boundary. Initial state documentation and every execution gate still apply.
 
 ## Phase 1: Planning when no unbuilt plan was referenced
 
@@ -183,7 +186,7 @@ Ask the user: **Implementation plan approved?**
 - Yes -- Approval granted, continue with phases 2–7
 - Adjust -- Enter feedback as free text
 
-**Load on demand:** Read `shared/next-steps.md`, when the validated terminal conclusion and continuation are rendered.
+**Load on demand:** Read `shared/next-steps.md`, when the validated terminal conclusion and continuation are rendered, or the run aborts after spawning its first domain sub-agent.
 
 ## Approved-plan dispatch seam
 

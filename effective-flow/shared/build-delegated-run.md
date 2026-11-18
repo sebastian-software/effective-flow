@@ -123,7 +123,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -175,7 +175,7 @@ worktree may already be withdrawn. The self-check never removes or claims a work
 
 **Load on demand:** Read `shared/plan-numbering.md`, when a plan file must exceptionally be created.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 **Load on demand:** Read `shared/worktree-integration.md`, when the delivery/worktree mode is determined (Phase 2, step 0).
 
@@ -221,7 +221,7 @@ At an existing user gate, `checkpoint` partitions every required gate into compl
 
 The build-context checkout-basis, source-membership and drift readers preserve these replacement boundaries. The drift observer matches actual helper checkpoint modes (`100644`/`100755`); basis readers retain their own tuple formats. Protected preparation matches the full raw request snapshot using safe ancestors, `lstat` and opaque leaf `readlink`, including dangling links and links within retained archive directories, before existing export classification. Exact excluded archive obstructions never enter export/materialization. Exported files still pass strict `physicalFile`, `verifyExecutionFile` and `createTransport` checks; full raw snapshots, exact manifests and execution-closure comparisons remain mandatory.
 
-`question` allows one outstanding question, naming its actual origin: `delivery-choice` (including plan-PR continuation), `residual-findings`, `completion-recovery`, `pr-review-publication`, or new `design-scope` clarification. Preserve the exact finite options or free-text requirement; do not turn a design question into invented yes/no consent. A question grants no authority.
+Under an Automation caller's scored decision mode, `scored-decisions` resolves every question in the caller's session, so no `question` or `BLOCKED-USER` pause arises. `question` allows one outstanding question, naming its actual origin: `delivery-choice` (including plan-PR continuation), `residual-findings`, `completion-recovery`, `pr-review-publication`, or new `design-scope` clarification. Preserve the exact finite options or free-text requirement; do not turn a design question into invented yes/no consent. A question grants no authority.
 
 Before `BLOCKED-USER`, await every worker, release all lifecycle/pilot locks and retain transient pilot state only in the original agent. Keep its logical build and owned record active under this run ID, including dirty work without a plan PR. The caller verifies and presents the exact question/options in resolved chat language. This is a user pause, not terminal exit or general failed/aborted-worktree adoption.
 
@@ -353,11 +353,11 @@ check, and Fast→Quality transition, with `build` as the record's `workflow`.
    is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `build-delegated-run/initial-implementation` (`shared/model-selection.md`).
-   - Frontend: `Use the `effective-flow-ui-implementer` skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
-   - Backend/CLI: `Use the `effective-flow-nodejs-implementer` skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
-   - Rust: `Use the `effective-flow-rust-implementer` skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
-   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the `effective-flow-generic-product-implementer` skill for this phase.` Fast: `effective-flow-generic-product-implementer` (portable build: Fast unavailable, Quality only).
-   - Tooling/CI/configuration/repository metadata: `Use the `effective-flow-generic-implementer` skill for this phase.` Fast: `effective-flow-generic-implementer` (portable build: Fast unavailable, Quality only).
+   - Frontend: `Use the effective-flow-ui-implementer skill for this phase.` Fast: `effective-flow-ui-implementer` (portable build: Fast unavailable, Quality only).
+   - Backend/CLI: `Use the effective-flow-nodejs-implementer skill for this phase.` Fast: `effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).
+   - Rust: `Use the effective-flow-rust-implementer skill for this phase.` Fast: `effective-flow-rust-implementer` (portable build: Fast unavailable, Quality only).
+   - Other clearly identified product code: emit the contract’s reduced-depth notice, then use `Use the effective-flow-generic-product-implementer skill for this phase.` Fast: `effective-flow-generic-product-implementer` (portable build: Fast unavailable, Quality only).
+   - Tooling/CI/configuration/repository metadata: `Use the effective-flow-generic-implementer skill for this phase.` Fast: `effective-flow-generic-implementer` (portable build: Fast unavailable, Quality only).
    - Fullstack: both in parallel or in clearly separated subphases
 
 2. Check for the done protocol when delegating internally, and check the result against the
@@ -391,16 +391,16 @@ Start in parallel if possible, and assign each writer only new tests and the exi
 change affects, never a whole-suite run; outside `Validation: targeted`, Phase 5 step 1 is the
 run's one full-suite point:
 
-1. ``effective-flow-test-writer`` for unit tests and component tests
+1. `effective-flow-test-writer` for unit tests and component tests
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/unit-tests` (`shared/model-selection.md`).
-2. ``effective-flow-e2e-tester`` for new user flows if a real flow was added
+2. `effective-flow-e2e-tester` for new user flows if a real flow was added
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/e2e-tests` (`shared/model-selection.md`).
 
 ### Phase 5: Validation
 
-1. Render the diff baseline and hand the path list to ``effective-flow-code-validator`` per "Diff baseline".
+1. Render the diff baseline and hand the path list to `effective-flow-code-validator` per "Diff baseline".
    Under `Validation: targeted` (`caller-owned-commit`) that list is its targeted scope, here and in
    Phase 7's final check, and none of the validation budget below applies: no full run in either
    phase, no (a) or (b), no `Failure attribution:` line, and signature handling stays with the caller.
@@ -431,15 +431,17 @@ run's one full-suite point:
    check was cancelled or left unexecuted by an environment signature or a host-tool timeout (a
    `SKIPPED` because no established command exists does not count) and every remaining failure was
    repaired and re-verified, proven `pre-existing`, or matched as approved `expected`. When Phase 5
-   ends, keep the budget state `{phase5Tree, validFullRun, reason, secondFullUsed}` in the wisdom
-   file and, for delegated execution, retain it with `retain-evidence` as `validation-budget`:
-   `phase5Tree` is the `currentTree` of the render that started the full run, `reason` names why the
-   run is or is not valid (such as the signature class), and `secondFullUsed` is `false`.
+   ends, keep the budget state `{phase5Tree, validFullRun, zeroFailures, reason, secondFullUsed}` in
+   the wisdom file and, for delegated execution, retain it with `retain-evidence` as
+   `validation-budget`: `phase5Tree` is the `currentTree` of the render that started the full run,
+   `zeroFailures` is `true` only for a valid full run that ended with no failure at all, attributed
+   ones included, `reason` names why the run is or is not valid (such as the signature class), and
+   `secondFullUsed` is `false`.
 
    **Base attribution.** When the validator returns `attribution: pending-base-run`, wait until
    that candidate run has ended; never run the base in parallel with it. Then create the
    `base-validation` worktree with its lifecycle record per `worktree-lifecycle`, and start
-   ``effective-flow-code-validator`` there with `Failure attribution: base-ci-then-local`, a
+   `effective-flow-code-validator` there with `Failure attribution: base-ci-then-local`, a
    `Base attribution run:` line naming only the pending identities, the same signature rule, and the
    reason step 2 ran.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
@@ -467,9 +469,9 @@ run's one full-suite point:
 
 ### Phase 6: Review
 
-1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including ``effective-flow-generic-product-reviewer`` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `effective-flow review` default, which delivers only Critical + Important.
+1. Render the diff baseline and hand the path list per "Diff baseline" to every reviewer the canonical routing contract selects, including `effective-flow-generic-product-reviewer` for degraded product buckets. Tooling-only buckets still receive technical validation and do not route to the product fallback. Explicitly instruct each reviewer to deliver **all severities** (Critical + Important + Note), so the later plan-file report serves as a complete audit trail — deviating from the `effective-flow review` default, which delivers only Critical + Important.
    Retain this render's `currentTree` as `reviewTree`; a `review-depth` floor hit on a tooling or
-   CI path goes to ``effective-flow-generic-product-reviewer`` with its reduced-depth notice, under an
+   CI path goes to `effective-flow-generic-product-reviewer` with its reduced-depth notice, under an
    explicit bounded implementation full-pass assignment from `effective-flow build`; supply only the
    floor-hit tooling/CI path list and each path's confirmed route.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
@@ -536,7 +538,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 ### Phase 7: Completion
 
-1. Render the diff baseline and hand the path list to ``effective-flow-code-validator`` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
+1. Render the diff baseline and hand the path list to `effective-flow-code-validator` per "Diff baseline" one last time as a final check; repair a failure through the routed Quality implementer.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/final-validation` (`shared/model-selection.md`).
 
@@ -579,7 +581,8 @@ severity. An admitted Critical residual also requires the existing explicit comp
    `merge`) and in-place without delivery stop; a `null` or invalid row is asked now, in a delegated
    run through `question` with origin `delivery-choice`, and the answer is recorded in the
    "Determine mode" slot of `worktree-integration`, so handback step 3 does not ask again. A
-   non-interactive run that cannot be answered counts as no-PR. For delegated execution record the
+   non-interactive run that cannot be answered counts as no-PR. Under an Automation caller's
+   scored decision mode the recorded explicit `pr` continues (row S-DCH of `scored-decisions`). For delegated execution record the
    lane with `record-lane` after the `final-validation` gate's `limited` receipt, and ask any lane
    question only from a checkpoint holding that receipt. `record-lane` binds a source quote only to
    a stopping lane, so an explicit `pr` override that configuration does not name is confirmed
@@ -591,7 +594,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 2. For delegated execution first record the existing passed (or PR-lane `limited`) review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `effective-flow plan`: update that file.
-   - if the user referenced an unbuilt plan file: update the referenced file.
+   - if the user referenced an unbuilt plan file: update the referenced file (under scored decision mode, the plan copy `scored-decisions` names).
    - if, exceptionally, no plan file exists: create `<plan.dir>/` and assign the date-slug name per `Plan file convention`.
    - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 6 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
    - Content:
@@ -638,7 +641,7 @@ Rules for the findings report:
 - If no reviewers were started in Phase 6 (e.g. because the change required no review): write a short note with justification in the section instead.
 
 4. Delete the wisdom file after persisting the bounded required gate evidence per `build-run-contract`.
-5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use ``effective-flow-code-validator`` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render and only the checks this run observed; a step 1 repair without a fresh render before the passing validator run builds none. Then discard the diff baseline.
+5. Render the diff baseline and, if a formatter is configured, hand the path list to it per "Diff baseline". For delegated execution retain the exact before/after path digests. For delegated execution only, if product bytes changed, use `effective-flow-code-validator` for the bounded independent formatting-only check required by `build-run-contract`, passing just those changed paths and the retained basis; its judgment must name each exact digest and its actual independent handle. If this reveals a semantic correction, use the existing affected review/validation path and fresh receipts instead of preserving an old pass. Pure plan completion needs only the deterministic preservation proof. When step 6 will run a handback, build the verification record per `verification-evidence` from the step 1 render and only the checks this run observed; a step 1 repair without a fresh render before the passing validator run builds none. Then discard the diff baseline.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
    Model selection site: `build-delegated-run/completion-transform-check` (`shared/model-selection.md`).
 6. If delivery or worktree execution was active: perform the handback per "Delivery and worktree integration" (plan status switch to `Umgesetzt`/`Implemented` and archive move to `<plan.dir>/archive/` at the delivery point, commit the changes, ownership-safe worktree cleanup if applicable, completion action `pr`/`merge`/`branch`, defer the checkout). Hand only the **admitted residual** Phase-6 finding set to that handback — never `current-scope`, `closed`, or unresolved `uncertain` candidates — so an automatic PR review publishes the already-gated set instead of reviewing the pull request a second time. If the workflow exceptionally runs in-place without delivery, perform the same status switch and archive move directly in the working tree.
@@ -648,8 +651,8 @@ Rules for the findings report:
 9. Summarize what was implemented, tested and documented; describe the state the full suite covered
    (Phase 5, before later corrections), never a snapshot tree id, that later changes were verified
    targeted, and every attribution and approved expected failure
-   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); state the worktree-record exit self-check result.
-10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step.
+   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the plan's archive path, or `unarchived` when archival was blocked, the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); name the report path Phase 6 step 9 recorded, also after a merge; state the worktree-record exit self-check result.
+10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step. A delegated execution's `ABORT` emits nothing; the caller alone applies the retrospective slot.
 
 ## Rules
 

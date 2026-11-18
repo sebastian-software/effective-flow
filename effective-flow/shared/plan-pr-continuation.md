@@ -118,6 +118,7 @@ A remaining candidate counts only when all five checks hold:
   `config-migration` defines, and an invalid row counts as `null`, because the handback asks for it
   the same way. When that completion is `merge` or `branch`, return and report it. When it is `pr`
   or `null`, an interactive run asks once; a non-interactive run stops.
+  Under an Automation caller's scored decision mode, row S-PPR of `scored-decisions` decides.
 
 If Plan pull-request discovery was unavailable and the effective completion is `pr` or `null`: Ask the user: **Could not check for a published plan pull request (<reason>). Continue on a new branch without one, or stop?**
 - Continue -- Deliver on a new branch, exactly as if no plan pull request exists
@@ -162,6 +163,7 @@ republication with the plan file's absolute and repository-relative paths, the r
 its own ask. Require its publication line to be **updated**. Then fetch again, rerun all five
 checks and the hash comparison, which must now be equal, and continue with the new fetched head OID.
 Any other publication line or any failed check stops. A non-interactive run stops without asking.
+Under an Automation caller's scored decision mode, row S-PDF of `scored-decisions` decides.
 Either stop reports both locations and overwrites neither copy.
 
 ### Provisioning
@@ -248,7 +250,9 @@ checkout whose file the hash comparison read, which in a worktree session is not
 including `Next steps: suppressed`. It adds the line `Finalize plan draft: <PR number>` with the
 verified number **only** when `plan-archival` reported "archived a tracked plan (State A)", or
 "already archived (State D)" with `A` carrying the implemented-marked content on the delivery
-branch. Any other archival outcome, such as a collision or a failed probe, omits that line, because
+branch. Under an Automation caller's scored decision mode it adds `Keep draft: requested` beside
+that line, so the finish updates title and body and leaves the pull request a draft. Any other
+archival outcome, such as a collision or a failed probe, omits that line, because
 archival never aborts the handback: the pull request stays a draft, and the report names the
 archival outcome. `effective-flow pr` then reuses that pull request and finishes it before the
 handback's PR review publication. When the finish fails, the pull request stays a draft, and the

@@ -144,7 +144,7 @@ Rules:
 
 **Load on demand:** Read `shared/session-rename.md`, when the run's subject is fixed and a session title is about to be applied or emitted.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Recommended skills
 
@@ -447,7 +447,7 @@ On a revision run:
 - Append this run's review to `## Plan review` / `## Plan-Review` as a **dated subsection**; never
   overwrite the existing section, so earlier passes stay readable.
 - Report a changed classification and obtain explicit confirmation before rewriting
-  `**Recommended workflow:**`. ``tools/apply-plan.md`` and `effective-flow open-plans` both route on that
+  `**Recommended workflow:**`. `tools/apply-plan.md` and `effective-flow open-plans` both route on that
   field, so it never flips silently.
 - Offer Phase 6b again, as on any other run.
 
@@ -711,7 +711,7 @@ plan-review receiver/root marker before adding optional progress context; otherw
 legacy controls only. Returning reviews use their own upstream context; same-session reviews
 integrate directly without a fabricated recipient.
 
-In an unattended run always delegate the exact generated file to ``tools/plan-review.md`` with `Run state: non-interactive`, `Next steps: suppressed`, the concrete six-key `Language context:` and verified roots per `unattended-planning`; do not send the planning envelope.
+In an unattended run always delegate the exact generated file to `tools/plan-review.md` with `Run state: non-interactive`, `Next steps: suppressed`, the concrete six-key `Language context:` and verified roots per `unattended-planning`; do not send the planning envelope.
 
 If the internal plan review from Phase 6 no longer contains any critical findings,
 ask the user whether the deep interactive plan review should be started now.
@@ -720,7 +720,7 @@ Ask the user: **Start the deep interactive plan review now?**
 - Yes -- Search now for unknown, imprecise, and decision-requiring points
 - No -- Continue later via review <plan-file>
 
-On `Yes`: Read the internal instruction ``tools/plan-review.md`` and run it with the
+On `Yes`: Read the internal instruction `tools/plan-review.md` and run it with the
 just-created plan file. Continue to observe the write boundary: only the
 plan file under `<plan.dir>/` may be changed. The delegation payload carries the literal line
 `Next steps: suppressed` on its own line, because that run returns its result here.

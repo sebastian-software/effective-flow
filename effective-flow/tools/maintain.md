@@ -15,7 +15,7 @@ A project is maintained without changing its behavior: outdated dependencies are
 Sharp scope boundary – `maintain` is deliberately lean:
 
 - **In scope:** dependency updates, security/audit fixes, breaking-change adaptation.
-- **Not in scope:** general refactoring or dead code (→ `effective-flow refactor`), bugfixes unrelated to dependencies (→ `effective-flow fix`), pure formatting/config upkeep (→ ``effective-flow-code-validator``), new functionality (→ `effective-flow build`).
+- **Not in scope:** general refactoring or dead code (→ `effective-flow refactor`), bugfixes unrelated to dependencies (→ `effective-flow fix`), pure formatting/config upkeep (→ `effective-flow-code-validator`), new functionality (→ `effective-flow build`).
 - **Not a scheduler:** automatic, time-triggered bumping is handled by tools like Renovate or Dependabot. `maintain` is the interactive "clean up now" run.
 
 **Load on demand:** Read `shared/language-rules.md`, when an artifact output language or delegated language context must be resolved.
@@ -108,12 +108,12 @@ The table between the marker comments is a build-validated runtime contract. Kee
 | Priority | Route                         | Matcher            | Implementer                                           | Reviewer                             | Decision         |
 | -------: | ----------------------------- | ------------------ | ----------------------------------------------------- | ------------------------------------ | ---------------- |
 |       10 | `excluded-generated-vendored` | `excluded`         | —                                                     | —                                    | `exclude`        |
-|       20 | `documentation`               | `documentation`    | ``effective-flow-code-documenter`` / ``effective-flow-docs-writer`` | ``effective-flow-code-validator``           | `route`          |
-|       30 | `tooling`                     | `tooling`          | ``effective-flow-generic-implementer``                       | ``effective-flow-code-validator``           | `route`          |
-|       40 | `frontend-js-ts`              | `frontend-js-ts`   | ``effective-flow-ui-implementer``                            | ``effective-flow-frontend-reviewer``        | `route`          |
-|       50 | `node-backend-cli`            | `node-backend-cli` | ``effective-flow-nodejs-implementer``                        | ``effective-flow-nodejs-reviewer``          | `route`          |
-|       60 | `rust`                        | `rust-product`     | ``effective-flow-rust-implementer``                          | ``effective-flow-rust-reviewer``            | `route`          |
-|       70 | `generic-product`             | `generic-product`  | ``effective-flow-generic-product-implementer``               | ``effective-flow-generic-product-reviewer`` | `route-degraded` |
+|       20 | `documentation`               | `documentation`    | `effective-flow-code-documenter` / `effective-flow-docs-writer` | `effective-flow-code-validator`           | `route`          |
+|       30 | `tooling`                     | `tooling`          | `effective-flow-generic-implementer`                       | `effective-flow-code-validator`           | `route`          |
+|       40 | `frontend-js-ts`              | `frontend-js-ts`   | `effective-flow-ui-implementer`                            | `effective-flow-frontend-reviewer`        | `route`          |
+|       50 | `node-backend-cli`            | `node-backend-cli` | `effective-flow-nodejs-implementer`                        | `effective-flow-nodejs-reviewer`          | `route`          |
+|       60 | `rust`                        | `rust-product`     | `effective-flow-rust-implementer`                          | `effective-flow-rust-reviewer`            | `route`          |
+|       70 | `generic-product`             | `generic-product`  | `effective-flow-generic-product-implementer`               | `effective-flow-generic-product-reviewer` | `route-degraded` |
 |       80 | `ambiguous`                   | `otherwise`        | —                                                     | —                                    | `clarify`        |
 
 <!-- project-routing-table:end -->
@@ -294,7 +294,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -355,7 +355,7 @@ Only `admitted` residual root causes may enter a review-report file under
 Goal:
 
 - Independently admitted material harm or structural irreversibility remains actionable.
-- ``tools/apply-review.md`` can process only the admitted findings later in the familiar format.
+- `tools/apply-review.md` can process only the admitted findings later in the familiar format.
 - The plan file stays completion documentation and only points to the external report.
 
 Status is still read in either complete report language, but it is only a candidate selector:
@@ -451,7 +451,7 @@ Rules:
 
 **Load on demand:** Read `shared/review-report-format.md`, when a review report is written or an existing one is augmented.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Workflow
 
@@ -556,10 +556,10 @@ worktree may already be withdrawn. The self-check never removes or claims a work
 
 Start in parallel with the verified execution-location receipt:
 
-1. ``effective-flow-code-validator`` – type checking, lint, build status.
+1. `effective-flow-code-validator` – type checking, lint, build status.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `maintain/baseline-checks` (`shared/model-selection.md`).
-2. ``effective-flow-test-writer`` – run only the existing tests and document the result; write no new tests in this phase.
+2. `effective-flow-test-writer` – run only the existing tests and document the result; write no new tests in this phase.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `maintain/baseline-tests` (`shared/model-selection.md`).
 
@@ -593,7 +593,7 @@ Before asking, score each option except "Selection" for this context: start its 
 3. Work through the approved groups **one after another**. For each group the skill applies the version jump, updates the lockfile via the detected manager, researches breaking changes, and where needed adapts local code to the changed API – carried out via every implementer selected in phase 0.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `maintain/api-adaptation` (`shared/model-selection.md`).
-   Emit the reduced-depth notice before ``effective-flow-generic-product-implementer``; reserve ``effective-flow-generic-implementer`` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
+   Emit the reduced-depth notice before `effective-flow-generic-product-implementer`; reserve `effective-flow-generic-implementer` for tooling/CI/configuration. The task is only to adapt to the changed API, with no new behavior. Afterwards `maintain` compares against the baseline:
    - green → **one clean commit per group** (see commit rules), with the description in resolved `language.git` and a stable Conventional Commit type, e.g. `chore(deps): …`.
    - red and repairable → follow up with an adaptation via the implementer, validate again – limit the internal correction rounds per "Goal-driven completion control"; if the group stays red afterwards, treat it as "not sensibly repairable" instead of repeating indefinitely.
    - red and not sensibly repairable → roll the group back (manifest and lockfile to the state before the group) and mark it as "manual".
@@ -629,7 +629,7 @@ surface prevents completion under the blocking rule of the detail contract.
 Only if code was adapted for breaking changes in phase 3:
 
 1. Start every reviewer selected by project routing for the changed files, including
-   ``effective-flow-generic-product-reviewer`` for degraded product buckets.
+   `effective-flow-generic-product-reviewer` for degraded product buckets.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `maintain/review` (`shared/model-selection.md`).
 2. Fix critical findings before completion.
@@ -647,7 +647,7 @@ Pure dependency bumps without code adaptation need no reviewer pass; note that b
 
 ### Phase 5: Report and completion
 
-1. Run ``effective-flow-code-validator`` one last time as a final check.
+1. Run `effective-flow-code-validator` one last time as a final check.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `maintain/final-validation` (`shared/model-selection.md`).
 2. Summarize based on the update-specific reporting from the skill:

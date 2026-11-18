@@ -68,9 +68,9 @@ In remote mode, use these labels and create missing labels idempotently. The hel
 | `critical`, `important`, `note`                                                                | severity of the finding (exactly one per finding issue; `note` for note findings) |
 | `wontfix`                                                                                      | deliberately do not implement finding → ADR instead of code                       |
 | `effective-flow-follow-up-closed`                                                              | admission gate terminalized a finding; not an implementation source               |
-| `effective-flow-issue-done`                                                                    | issue implemented by ``tools/apply-issues.md`` (PR created)                        |
+| `effective-flow-issue-done`                                                                    | issue implemented by `tools/apply-issues.md` (PR created)                        |
 | `effective-flow-issue-in-progress`                                                             | forge fallback showing issue-backed implementation has started                    |
-| `effective-flow-needs-planning`                                                                | skipped by ``tools/apply-issues.md``; planning via `effective-flow plan-issue` needed   |
+| `effective-flow-needs-planning`                                                                | skipped by `tools/apply-issues.md`; planning via `effective-flow plan-issue` needed   |
 | `effective-flow-goal-epic`                                                                     | goal epic maintained by `effective-flow backlog-audit`                                 |
 | `effective-flow-goal-obsolete`                                                                 | contradicts the current architecture per `effective-flow backlog-audit`; stays open    |
 

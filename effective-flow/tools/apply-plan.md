@@ -177,8 +177,8 @@ Rules:
 
 This shared building block is the single source of truth for **which
 apply source type** a given argument is. It is used by `effective-flow apply`
-(router) as well as by ``tools/apply-plan.md``, ``tools/apply-review.md``, and
-``tools/apply-issues.md`` for the upstream argument classification. `effective-flow plan` uses only
+(router) as well as by `tools/apply-plan.md`, `tools/apply-review.md`, and
+`tools/apply-issues.md` for the upstream argument classification. `effective-flow plan` uses only
 Stage A as a planning gateway: it delegates an unambiguous `issue-reference` to
 `effective-flow plan-issue` and never performs Stage B itself.
 
@@ -198,12 +198,12 @@ directory, abort classification without falling back to `EXECUTION_ROOT`.
 
 | Type              | Meaning                                                                                                       | Responsible skill                             |
 | ----------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `plan`            | plan file under `<plan.dir>/`                                                                                 | ``tools/apply-plan.md``                        |
-| `review-report`   | review report file under `.effective-flow/review/`                                                            | ``tools/apply-review.md`` (local)              |
-| `review-epic`     | tracking/epic issue of a `effective-flow review` run                                                               | ``tools/apply-review.md`` (remote, epic)       |
-| `review-finding`  | single finding issue of a `effective-flow review` run                                                              | ``tools/apply-review.md`` (remote, issue list) |
-| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | ``tools/apply-issues.md``                      |
-| `plain-issue`     | freely written human issue                                                                                    | ``tools/apply-issues.md``                      |
+| `plan`            | plan file under `<plan.dir>/`                                                                                 | `tools/apply-plan.md`                        |
+| `review-report`   | review report file under `.effective-flow/review/`                                                            | `tools/apply-review.md` (local)              |
+| `review-epic`     | tracking/epic issue of a `effective-flow review` run                                                               | `tools/apply-review.md` (remote, epic)       |
+| `review-finding`  | single finding issue of a `effective-flow review` run                                                              | `tools/apply-review.md` (remote, issue list) |
+| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | `tools/apply-issues.md`                      |
+| `plain-issue`     | freely written human issue                                                                                    | `tools/apply-issues.md`                      |
 
 Special results: `none` (empty/no argument) and `ambiguous` (not uniquely
 resolvable). `issue-reference` is an **intermediate result** from stage A for an issue reference
@@ -253,7 +253,7 @@ access — the host/CLI detection and availability check of the "Remote helper c
 `issue-tracker-forge.md` on the forge target, or the single established connection of the
 `tracker-target` contract on an external target; a skill that uses stage B therefore also embeds
 `issue-tracker.md` and reaches `issue-tracker-forge.md` on the forge target.
-``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
+`tools/apply-plan.md` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
 Per issue, read classification values, body, and comments **once fresh** from the tracker and
@@ -271,7 +271,7 @@ other read error stops classification instead of guessing. On an external target
 resolved connection's proven native-child listing capability. For a found active canonical
 decomposition, pass that comment and the fresh normalized child list to
 `decomposition-container-compare`. Such a parent is a `container-issue` even when the native list
-is empty; retain its integrity result for ``tools/apply-issues.md``. A malformed canonical
+is empty; retain its integrity result for `tools/apply-issues.md`. A malformed canonical
 decomposition marker is likewise retained as an integrity-blocked container instead of being
 downgraded to a plain issue. An all-`declined` record set is inactive and does not by itself make a
 container. Never infer containment from issue prose, a matching title, or an unverified provider
@@ -306,16 +306,16 @@ body structure.
 ### Ownership and target
 
 From the final source type follows exactly one responsible skill and — for
-``tools/apply-review.md`` — the flow:
+`tools/apply-review.md` — the flow:
 
 | Source type       | Responsible skill        | Target / note                                    |
 | ----------------- | ------------------------ | ------------------------------------------------ |
-| `plan`            | ``tools/apply-plan.md``   | –                                                |
-| `review-report`   | ``tools/apply-review.md`` | `local` target, report flow                      |
-| `review-epic`     | ``tools/apply-review.md`` | tracker target of the reference, epic mode       |
-| `review-finding`  | ``tools/apply-review.md`` | tracker target of the reference, issue-list mode |
-| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill                 |
-| `plain-issue`     | ``tools/apply-issues.md`` | single work item                                 |
+| `plan`            | `tools/apply-plan.md`   | –                                                |
+| `review-report`   | `tools/apply-review.md` | `local` target, report flow                      |
+| `review-epic`     | `tools/apply-review.md` | tracker target of the reference, epic mode       |
+| `review-finding`  | `tools/apply-review.md` | tracker target of the reference, issue-list mode |
+| `container-issue` | `tools/apply-issues.md` | container expansion in the skill                 |
+| `plain-issue`     | `tools/apply-issues.md` | single work item                                 |
 
 "Not `local`" never means "the forge" here: an epic or finding reference of an external tool
 selects that tool, and the tracker-bound flow runs against it.
@@ -373,7 +373,7 @@ argument type; report which target the argument selected.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → `tools/apply-plan.md`/`tools/apply-issues.md`/`tools/apply-review.md`) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
 Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
@@ -400,7 +400,8 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `effective-flow plan` or its in-depth
   plan review (`effective-flow review <planfile>`); an issue or finding goes to
-  `effective-flow plan-issue`.
+  `effective-flow plan-issue`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,
@@ -422,7 +423,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -451,12 +452,12 @@ If the project has an `AGENTS.md`, read it before evaluating the plan and honor 
    - output a short list of the open plans with number, title and path
    - ask the user for the specific plan file
    - do not start any implementation before a specific file is selected
-3. If an argument is present, classify it first via the "apply-source detection". For ``tools/apply-plan.md``, stage A suffices (no tracker I/O needed):
+3. If an argument is present, classify it first via the "apply-source detection". For `tools/apply-plan.md`, stage A suffices (no tracker I/O needed):
    - source type `plan` → continue with step 4.
-   - source type `review-report`, an issue reference (`review-epic` / `review-finding` / `container-issue` / `plain-issue`) or `ambiguous` → this argument does not belong to ``tools/apply-plan.md``. Point to the responsible skill (``tools/apply-review.md`` for review reports and review issues, ``tools/apply-issues.md`` for other issues, or `effective-flow apply` for automatic routing) and end the skill. When ``tools/apply-plan.md`` runs as a delegation from `effective-flow apply`, this case should not occur; the switch remains as a safeguard.
+   - source type `review-report`, an issue reference (`review-epic` / `review-finding` / `container-issue` / `plain-issue`) or `ambiguous` → this argument does not belong to `tools/apply-plan.md`. Point to the responsible skill (`tools/apply-review.md` for review reports and review issues, `tools/apply-issues.md` for other issues, or `effective-flow apply` for automatic routing) and end the skill. When `tools/apply-plan.md` runs as a delegation from `effective-flow apply`, this case should not occur; the switch remains as a safeguard.
 4. For a `plan` argument: use the shared plan-reference rule in routing mode.
 
-Current workflow for plan references: ``tools/apply-plan.md`` routing.
+Current workflow for plan references: `tools/apply-plan.md` routing.
 
 ## Plan references
 
@@ -498,7 +499,7 @@ error code. Report a true `data.archiveIgnored` (unsafe archive, unsearched). Ou
    - Bugfix or `effective-flow fix` → `effective-flow fix`
    - Refactoring or `effective-flow refactor` → `effective-flow refactor`
    - Documentation or `effective-flow docs` → `effective-flow docs`
-3. If the current skill is ``tools/apply-plan.md``: use the recommendation as the target workflow and continue.
+3. If the current skill is `tools/apply-plan.md`: use the recommendation as the target workflow and continue.
 4. If the recommendation matches the current workflow: continue.
 5. If the recommendation points to a different workflow:
    - emit a clearly visible message stating which workflow is recommended
@@ -541,7 +542,7 @@ embed. This reference rule does not duplicate that check separately.
    emits its own next-step block.
 
 4. Pass as context:
-   - that ``tools/apply-plan.md`` has already checked the plan status, the workflow recommendation and the clarification gate
+   - that `tools/apply-plan.md` has already checked the plan status, the workflow recommendation and the clarification gate
    - the full plan path as source association; return any archive move and observed outcome with it
    - the verified original outcome/parent association, checkpoint and retained attempt reference;
      transfer source ownership to the receiving workflow along with progress ownership. This router

@@ -45,7 +45,7 @@ Resolve the target once per run, before the first tracker read, following the pr
    in the run's status output, so a reader can see where this run's issues live.
 
 Both issue-carrying flows follow the resolved target: the issue-driven flow
-(``tools/apply-issues.md``, `effective-flow plan-issue`, and the routing in `effective-flow apply`) and review
+(`tools/apply-issues.md`, `effective-flow plan-issue`, and the routing in `effective-flow apply`) and review
 publication (`effective-flow review` finding issues, their container, deduplication, and
 classification). One run never splits them across two targets.
 
@@ -217,7 +217,7 @@ through a forge-gated include, because the exact strings are needed here and now
 Keep those exact strings and store them in whichever classification primitive the resolved
 connection exposes — labels, tags, workflow states, or a custom field. Report the chosen primitive
 in the run summary. If the connection exposes **no** classification primitive, the lifecycle cannot
-be represented: ``tools/apply-issues.md`` and `effective-flow plan-issue` abort rather than losing
+be represented: `tools/apply-issues.md` and `effective-flow plan-issue` abort rather than losing
 `effective-flow-needs-planning` or `effective-flow-issue-done`, and review publication aborts
 rather than creating findings without severity and action.
 
@@ -269,7 +269,7 @@ conditional capability. It does **not** inherit the checklist fallback:
 
 `effective-flow plan-issue` discovers all three guarantees from the selected connection before it
 proposes a split. The first two are the existing native-container contract that
-``tools/apply-issues.md`` later needs to expand the parent and that `effective-flow merge-gate` needs to
+`tools/apply-issues.md` later needs to expand the parent and that `effective-flow merge-gate` needs to
 reconcile it; decomposition is unavailable unless that complete mechanism was selected. A
 connection that can create a free issue and attach it later does not satisfy atomic create, and a
 connection that can read and populate a relation but cannot write its completion does not satisfy

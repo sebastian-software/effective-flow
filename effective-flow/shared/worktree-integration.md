@@ -28,7 +28,7 @@ PR creation.
   is used, where it lives and which setup runs in it.
 
 Scope boundary: this fragment is **not** the per-finding worktree mechanism from
-``tools/apply-review.md`` (`applyReview.worktree`). That one isolates parallel local
+`tools/apply-review.md` (`applyReview.worktree`). That one isolates parallel local
 review findings and folds commits back onto the current branch via cherry-pick.
 This fragment creates delivery branches for PR, merge or "branch only". Both
 may use the same physical `baseDir`, since session and path segments
@@ -732,10 +732,9 @@ The procedure:
    locally and the main checkout unchanged. Non-selected changes in the main checkout remain
    untouched.
 
-A heuristic partial-diff selection by "all changed files
-except <plan.dir>" is not allowed. The workflow must know the files to include or
-ask. This reliably keeps newly created plans, `.effective-flow/` state and other
-local working files outside the PR.
+A heuristic partial-diff selection by "all changed files except <plan.dir>" is not allowed.
+The workflow must know the files to include or ask. This reliably keeps newly created plans,
+`.effective-flow/` state and other local working files outside the PR.
 
 Only `effective-flow deliver` writes a delivery ledger, so only its retained `partial-diff` records can
 be resumed; this handback's failed worktree never is, and `plan-pr-continuation` adopts only purpose
@@ -835,7 +834,9 @@ stop and report the conflict instead of overwriting history.
    still reachable in order from the exact delivery branch and never amend, squash, reorder, or
    replace it. Then inventory only the uncommitted residual output: known code, test and
    documentation deliverables plus the plan state from step 1. An unselected changed path blocks
-   handback rather than being swept into the commit.
+   handback rather than being swept into the commit. Under an Automation caller's scored decision
+   mode, first run the pre-commit security classification of `scored-decisions`; a `local-only`
+   finding stops the handback here, before anything is staged, committed or pushed.
    - When residual output exists, stage exclusively its literal known paths, reconcile the complete
      staged set, and record the exact staged-tree OID and pre-commit `HEAD`. Delegate the actual
      commit to `effective-flow commit` with the full verified execution-location receipt, expected branch,
@@ -891,7 +892,9 @@ If Delivery was active and no valid value for `delivery.completion` is set: Ask 
      a title-type hint, so the PR title carries a valid Conventional Commit type — with a squash
      merge it is the release signal — and the literal line `Next steps: suppressed` on its own
      line, because `effective-flow pr` returns its result here and the implementing workflow is the one
-     that closes this run. A verification producer (`build`, `fix`, `refactor`) also passes its
+     that closes this run. Under scored decision mode, run the Automation caller's pre-delivery
+     steps first and pass the further lines `scored-decisions` names under "Before `pr`". A
+     verification producer (`build`, `fix`, `refactor`) also passes its
      `Verification evidence:` line verbatim on its own line; every other caller passes no `Verification evidence:` line. Hand
      the base over typed rather than as one bare value: pass **both** recorded results, the resolved base ref and the resolved local base branch, each named as
      such, so the delegated run recomputes neither and needs no arm name beside them —

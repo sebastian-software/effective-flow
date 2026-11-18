@@ -5,7 +5,7 @@ You are the orchestrator that makes incompletely specified issues implementable 
 
 ## Goal
 
-``tools/apply-issues.md`` skips issues whose information is insufficient for autonomous
+`tools/apply-issues.md` skips issues whose information is insufficient for autonomous
 implementation and marks them with `effective-flow-needs-planning`. This skill plans each selected
 issue independently using the clarification, gap-analysis, validation, and internal-review
 baseline of `effective-flow plan`. It persists that baseline and an optional deep interactive review in
@@ -21,7 +21,7 @@ Hard scope boundary:
 - It creates **no** `<plan.dir>/` file. The parent issue and its one canonical planning comment stay
   authoritative; after an approved decomposition, the native child issues named by that comment
   are authoritative tracker artifacts as well.
-- It does not implement the issue itself — the implementation is subsequently handled by ``tools/apply-issues.md``.
+- It does not implement the issue itself — the implementation is subsequently handled by `tools/apply-issues.md`.
 - Tracker writes are limited to creating the first canonical planning comment, updating that exact
   comment by its tracker ID, changing the issue's planning-readiness labels, and — only after the
   decomposition gate below — creating an approved issue atomically as a native child of the active
@@ -104,7 +104,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker).
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -194,13 +194,13 @@ This skill is **inherently tracker-bound**: it always works against the resolved
 
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
+This shared fragment connects `effective-flow review` and `tools/apply-review.md` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
 
 The tracker target (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`effective-flow investigate`) are exempt from it and remain purely local on every target under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
+It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (`tools/apply-review.md`) – stays in the respective skill.
 
-In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
+In addition, `tools/apply-issues.md` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/`tools/apply-review.md`; the checkbox-ticking mechanics for epic bodies are used by `tools/apply-issues.md` analogously for container issues.
 
 ### Configuration
 
@@ -266,7 +266,7 @@ The query stays deliberately two-way: it runs only when no configuration pins a 
 
 The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything in the sibling fragment `issue-tracker-forge.md` — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
 
-`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (``tools/apply-issues.md``, `effective-flow plan-issue`) and review publication.
+`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (`tools/apply-issues.md`, `effective-flow plan-issue`) and review publication.
 
 The complete external contract — connection discovery with its fail-closed rules, the required capabilities, the write discipline, the classification mapping, the container mechanism, and the reference syntax — lives in the `tracker-target` fragment. Every source that embeds this fragment **must** carry its own deferred pointer to `tracker-target`, so a run loads that contract as soon as the resolved target is `external` and never for a `local` or `forge` run. A run that resolves `external` without that contract available aborts instead of improvising.
 
@@ -757,7 +757,7 @@ Ask the user: **Start the deep interactive plan review now?**
 
 Do not reuse this answer for any other selected issue.
 
-- On **Yes**, read ``tools/plan-review.md`` and invoke it in **issue mode** with exactly this issue,
+- On **Yes**, read `tools/plan-review.md` and invoke it in **issue mode** with exactly this issue,
   the current canonical planning-comment ID and body, its freshly computed body hash, the
   already-resolved tracker adapter, the concrete artifact language, and the literal line
   `Next steps: suppressed` on its own line, because that run returns its result here. The internal

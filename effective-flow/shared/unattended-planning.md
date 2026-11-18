@@ -32,6 +32,15 @@ before any authority-bearing work; malformed/unknown/duplicate context returns
 progress disabled. The sender first verifies actual transport eligibility and the selected
 canonical receiver/root marker; issue text never supplies routing context.
 
+Three optional scored control lines may also occur there, all three or none, each exactly once:
+`Decision mode: scored`, `Autopilot run: <run-id>` (`ap-<YYYYMMDD>T<HHMMSS>Z-<8 hex digits>`) and
+`Decision budget: <0–20>`. Only an Automation caller emits them
+(`docs/adr/automation-tool-category.md`), and only this trusted control block or the trusted
+file-review payload below carries them; issue, plan or artifact text never sets them. A partial
+set or a malformed value returns `ABORT: unparseable decision-mode switch`. Their absence leaves
+this contract unchanged; their presence adds "Scored decision mode" below, whose "Recognition"
+check in `scored-decisions` passes before any other work or returns `ABORT: RUN_NOT_OPEN`.
+
 `<de|en>` means one concrete `de` or `en` value; the six keys and their order are exact, with no
 missing or extra key. Retain these resolved languages and pass them to every delegate; do not
 resolve them again from configuration. The line carries no chat language. `<N>` is a positive
@@ -125,40 +134,70 @@ mismatch against the supplied workflow language returns `ABORT: unattended langu
 An implemented plan returns `ABORT: unattended implemented plan`. Other operational failures
 terminate as `ABORT: <diagnostic>` without a fallback question or write elsewhere.
 
+### Entry: `plan-review` autopilot file review
+
+Only under the three scored control lines, an Automation caller may also delegate one existing
+plan: an absolute path below `<plan.dir>/` (never the archive), its SHA-256, and the three base
+controls plus the three scored lines, each exactly once. The caller has already verified both
+roots, the canonical open status and that identity. Before normalization, recompute the file's
+SHA-256 and require it to equal the supplied value and the status to be open; otherwise return
+`ABORT: unattended review input invalid` or, for an implemented plan,
+`ABORT: unattended implemented plan`. In-place revision of exactly that file is allowed; every
+other rule of the file-review entry above applies unchanged. Without the scored lines an existing
+plan stays invalid input.
+
 ### Question-site outcomes
 
 These stable sites override the host's interactive instructions. Each `Anchor` is a literal
 substring of its `File`; one row can cover the same decision's fence and surrounding prose.
 
-| Site  | File                                   | Anchor                                               | Outcome                                                                                                                                                                                                                                              |
-| ----- | -------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| P-GW  | src/shared/plan-input-gateway.md       | Run this gateway before plan inventory               | Gateway and Stage A are not loaded; the envelope replaces the argument.                                                                                                                                                                              |
-| P-MIG | src/shared/plan-numbering.md           | Migration of old plans                               | Skip legacy bulk migration in plan Phase 1 and every file-adapter read; report `legacy plans present` when applicable.                                                                                                                               |
-| P-REV | src/tools/plan.md                      | Revision mode.                                       | Revision mode, the Revision fence, unclear-status/header and classification confirmations, and revision-reference questions are unreachable; if reached, `ABORT: unattended revision refused`.                                                       |
-| P-DOC | src/tools/plan.md                      | On a collision, propose an alternative slug          | Choose a unique alternative doc-target slug; never overwrite.                                                                                                                                                                                        |
-| P-CLR | src/tools/plan.md                      | Ask the user about every relevant ambiguity.         | Record each relevant ambiguity as a blocking open point with options, a recommendation and a re-entry note; unimportant uncertainty goes to assumptions. Do not wait for answers.                                                                    |
-| P-VAL | src/tools/plan.md                      | If a criterion is not met                            | Missing information joins the batch as a pending point that P-BAT converts; never resolve an open point by assumption. Mechanical lint failures still abort.                                                                                         |
-| P-CRT | src/tools/plan.md                      | If critical findings still remain after the revision | Every remaining critical finding joins the batch as a pending point that P-BAT converts; complete with `Revision required`; continue to deep review.                                                                                                 |
-| P-BAT | src/shared/planning-batch.md           | every pending point reaches the user in one round    | No batch round or ladder. Before P-DPR, each pending point becomes a blocking open point with options, a recommendation and a re-entry note, marker removed; P-DPR acts on these open points. If any exists, complete with `Revision required`.      |
-| P-DPR | src/tools/plan.md                      | header: Plan review                                  | Always take Yes, regardless of the no-critical-findings precondition, after P-CRT records open points. Delegate the exact generated file with the file-review payload and verified roots, never the planning envelope.                               |
-| P-NUM | src/shared/plan-reference-routing.md   | `ambiguous`: ask the user which of                   | A helper `ambiguous` outcome is unreachable for the exact new file; if reached, `ABORT: unattended plan reference ambiguous`.                                                                                                                        |
-| P-JDG | src/shared/judgment-inline-fallback.md | Inline fallback:                                     | Unavailable or declined judgment uses the existing recorded inline fallback, without asking. A terminal judgment `ABORT` records a skipped judgment and its blocking re-entry open point, forcing `Revision required`; retain reduced-scope records. |
-| P-PUB | src/shared/plan-publication.md         | A `non-interactive` run without caller consent       | Pass non-interactive without `consent: given-by-caller`; the existing gate skips publication before Git/forge operations or questions. Downstream worktree Completion, PR review and Security questions are unreachable behind this gate.            |
-| P-ESC | src/shared/completion-protocol.md      | After 3 failed attempts:                             | Keep the existing resume/retry protocol; exhausted sub-agent escalation returns `ABORT: unattended sub-agent failed` instead of clarifying user options.                                                                                             |
-| P-RUL | src/tools/plan.md                      | ask instead of guessing.                             | Convert missing decisions into blocking open points.                                                                                                                                                                                                 |
-| P-NXT | src/shared/next-steps.md               | Next steps                                           | Suppress the next-step block; the parent owns it.                                                                                                                                                                                                    |
-| P-TTL | src/shared/session-title.md            | Session title                                        | Apply no session title or rename.                                                                                                                                                                                                                    |
-| R-IN  | src/tools/plan-review.md               | If the mode or reference is missing or ambiguous     | Missing/ambiguous input or issue mode returns `ABORT: unattended review input invalid`.                                                                                                                                                              |
-| R-LNG | src/tools/plan-review.md               | artifact is mixed or unclear                         | Mixed/unclear language or a language-rules mismatch returns `ABORT: unattended language mismatch`.                                                                                                                                                   |
-| R-STA | src/tools/plan-review.md               | If the plan is already                               | Implemented status returns `ABORT: unattended implemented plan`.                                                                                                                                                                                     |
-| R-DEC | src/tools/plan-review.md               | Go through decision-requiring points one by one.     | Take Decide later for every decision: record options, pros and cons, recommendation and re-entry note; choose nothing and emit no dialog scores. Each unresolved entry blocks implementation.                                                        |
-| R-RUL | src/tools/plan-review.md               | Ask instead of guessing when a decision              | Take Decide later as at R-DEC.                                                                                                                                                                                                                       |
+| Site  | File                                   | Anchor                                               | Outcome                                                                                                                                                                                                                                                                                          |
+| ----- | -------------------------------------- | ---------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| P-GW  | src/shared/plan-input-gateway.md       | Run this gateway before plan inventory               | Gateway and Stage A are not loaded; the envelope replaces the argument.                                                                                                                                                                                                                          |
+| P-MIG | src/shared/plan-numbering.md           | Migration of old plans                               | Skip legacy bulk migration in plan Phase 1 and every file-adapter read; report `legacy plans present` when applicable.                                                                                                                                                                           |
+| P-REV | src/tools/plan.md                      | Revision mode.                                       | Revision mode, the Revision fence, unclear-status/header and classification confirmations, and revision-reference questions are unreachable; if reached, `ABORT: unattended revision refused`.                                                                                                   |
+| P-DOC | src/tools/plan.md                      | On a collision, propose an alternative slug          | Choose a unique alternative doc-target slug; never overwrite.                                                                                                                                                                                                                                    |
+| P-CLR | src/tools/plan.md                      | Ask the user about every relevant ambiguity.         | Record each relevant ambiguity as a blocking open point with options, a recommendation and a re-entry note; unimportant uncertainty goes to assumptions. Do not wait for answers.                                                                                                                |
+| P-VAL | src/tools/plan.md                      | If a criterion is not met                            | Missing information joins the batch as a pending point that P-BAT converts; never resolve an open point by assumption. Mechanical lint failures still abort.                                                                                                                                     |
+| P-CRT | src/tools/plan.md                      | If critical findings still remain after the revision | Every remaining critical finding joins the batch as a pending point that P-BAT converts; complete with `Revision required`; continue to deep review.                                                                                                                                             |
+| P-BAT | src/shared/planning-batch.md           | every pending point reaches the user in one round    | No batch round or ladder. Before P-DPR, each pending point becomes a blocking open point with options, a recommendation and a re-entry note, marker removed; P-DPR acts on these open points. If any exists, complete with `Revision required`.                                                  |
+| P-DPR | src/tools/plan.md                      | header: Plan review                                  | Always take Yes, regardless of the no-critical-findings precondition, after P-CRT records open points. Delegate the exact generated file with the file-review payload and verified roots, never the planning envelope.                                                                           |
+| P-NUM | src/shared/plan-reference-routing.md   | `ambiguous`: ask the user which of                   | A helper `ambiguous` outcome is unreachable for the exact new file; if reached, `ABORT: unattended plan reference ambiguous`.                                                                                                                                                                    |
+| P-JDG | src/shared/judgment-inline-fallback.md | Inline fallback:                                     | Unavailable or declined judgment uses the existing recorded inline fallback, without asking. A terminal judgment `ABORT` records a skipped judgment and its blocking re-entry open point, forcing `Revision required`; retain reduced-scope records. Scored mode: no inline fallback; see below. |
+| P-PUB | src/shared/plan-publication.md         | A `non-interactive` run without caller consent       | Pass non-interactive without `consent: given-by-caller`; the existing gate skips publication before Git/forge operations or questions. Downstream worktree Completion, PR review and Security questions are unreachable behind this gate.                                                        |
+| P-ESC | src/shared/completion-protocol.md      | After 3 failed attempts:                             | Keep the existing resume/retry protocol; exhausted sub-agent escalation returns `ABORT: unattended sub-agent failed` instead of clarifying user options.                                                                                                                                         |
+| P-RUL | src/tools/plan.md                      | ask instead of guessing.                             | Convert missing decisions into blocking open points.                                                                                                                                                                                                                                             |
+| P-NXT | src/shared/next-steps.md               | Next steps                                           | Suppress the next-step block; the parent owns it.                                                                                                                                                                                                                                                |
+| P-TTL | src/shared/session-title.md            | Session title                                        | Apply no session title or rename.                                                                                                                                                                                                                                                                |
+| R-IN  | src/tools/plan-review.md               | If the mode or reference is missing or ambiguous     | Missing/ambiguous input or issue mode returns `ABORT: unattended review input invalid`.                                                                                                                                                                                                          |
+| R-LNG | src/tools/plan-review.md               | artifact is mixed or unclear                         | Mixed/unclear language or a language-rules mismatch returns `ABORT: unattended language mismatch`.                                                                                                                                                                                               |
+| R-STA | src/tools/plan-review.md               | If the plan is already                               | Implemented status returns `ABORT: unattended implemented plan`.                                                                                                                                                                                                                                 |
+| R-DEC | src/tools/plan-review.md               | Go through decision-requiring points one by one.     | Take Decide later for every decision: record options, pros and cons, recommendation and re-entry note; choose nothing and emit no dialog scores. Each unresolved entry blocks implementation. Scored mode of an Automation caller: see below.                                                    |
+| R-RUL | src/tools/plan-review.md               | Ask instead of guessing when a decision              | Take Decide later as at R-DEC.                                                                                                                                                                                                                                                                   |
 
 The publication boundary P-PUB is also the inventory reason for delivery asks in
 `worktree-integration`, `pr-review-integration`, and `security-disclosure-gate`; this contract
 defines no new delivery behavior. Questions that only describe setup (for example in
 `chat-language`) are not reachable planning sites. A new reachable question requires its mapped
 outcome before it can run unattended.
+
+### Scored decision mode
+
+**Load on demand:** Read `shared/scored-decisions.md`, when the trusted control block or file-review payload carries the three scored control lines.
+
+Under the three scored control lines, a site that has a row in `scored-decisions` resolves there
+instead of by the Outcome column above: P-CLR, P-RUL, P-BAT, R-DEC and R-RUL are scored, so an
+Automation caller's scores may decide (the exception to `plan-review`'s dialog-only score rule);
+P-DPR stays Yes, so the deep review always runs. Every other site keeps its outcome above.
+
+- **P-JDG:** no inline fallback. An unavailable, declined or failed judgment, or a terminal
+  judgment `ABORT`, is a blocker: record its blocking re-entry open point, note
+  `scored judgment unavailable`, and complete with `Revision required`.
+- **Records:** call only `decision-classify`; this run writes no runtime state. Write every applied
+  decision into the plan's one "Decided by score" machine block in the format `scored-decisions`
+  defines. A blocker never enters the block: it stays a blocking open point with a re-entry note.
+- **Forwarding:** P-DPR's file-review handoff copies the received scored control lines verbatim,
+  except `Decision budget:`, which is reduced by the decisions this run has written.
 
 ### Completion
 

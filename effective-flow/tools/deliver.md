@@ -507,7 +507,7 @@ When an internal sub-agent ends without `DONE` or `ABORT`, its result counts as 
    - inform the user
    - clarify the options as free text: complete manually, continue with the next phase, abort the workflow
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Goal
 

@@ -142,6 +142,8 @@ the loaded retired-key contract over every successor this workflow can resolve:
 report decision before any delegation or write. This preflight does not replace or move any later
 purpose-specific configuration read; perform each one at its documented workflow point.
 
+**Load on demand:** Read `shared/scored-decisions.md`, when the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write.
+
 ## Completion protocol
 
 When you use internal sub-agents, give them this response protocol:
@@ -186,7 +188,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -273,11 +275,11 @@ Current workflow for plan references: Bugfix (`effective-flow fix`).
 
 **Load on demand:** Read `shared/plan-reference-routing.md`, when the argument could point to an existing plan file.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → `tools/apply-plan.md`/`tools/apply-issues.md`/`tools/apply-review.md`) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
 Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
@@ -304,7 +306,8 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `effective-flow plan` or its in-depth
   plan review (`effective-flow review <planfile>`); an issue or finding goes to
-  `effective-flow plan-issue`.
+  `effective-flow plan-issue`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,
@@ -326,7 +329,7 @@ Run the read-only investigation per "Investigation method", section "Investigate
 
 ### Phase 2: Reproduction
 
-1. Try to reproduce the bug with ``effective-flow-code-validator`` for the current technical state. If
+1. Try to reproduce the bug with `effective-flow-code-validator` for the current technical state. If
    possible, specify a failing test that documents the behavior (file, case, expected failure)
    without writing it; Phase 3 writes it once the diff baseline exists. Under `Validation: targeted`
    (`caller-owned-commit`) the reproduction stays, limited to the targeted scope.
@@ -440,15 +443,15 @@ worktree may already be withdrawn. The self-check never removes or claims a work
    its verified execution-location receipt, then run any applicable owned setup. Pass that
    receipt into phases 3–4 (fix, verification); each write-capable boundary revalidates it and
    roots every operation there. Last, capture the diff baseline per "Diff baseline".
-1. If Phase 2 specified a failing test, ``effective-flow-test-writer`` writes it and confirms that it
+1. If Phase 2 specified a failing test, `effective-flow-test-writer` writes it and confirms that it
    fails as expected, before any implementer starts; if it does not, start no implementer and
    return to Phase 2 with the result. Re-entering Phase 3 skips step 0, keeping the receipt and
    diff baseline, and resumes here: the test-writer revises the already written test in place.
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `fix/failing-test` (`shared/model-selection.md`).
 2. Start every implementer selected by the canonical routing contract. Before
-   ``effective-flow-generic-product-implementer``, emit the reduced-depth notice. Never send product code
-   to ``effective-flow-generic-implementer``.
+   `effective-flow-generic-product-implementer`, emit the reduced-depth notice. Never send product code
+   to `effective-flow-generic-implementer`.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `fix/implementation` (`shared/model-selection.md`).
 3. Give a precise assignment:
@@ -480,20 +483,20 @@ surface prevents completion under the blocking rule of the detail contract.
 
 ### Phase 4: Verification
 
-1. First ``effective-flow-test-writer``
+1. First `effective-flow-test-writer`
    Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
    Model selection site: `fix/regression-test` (`shared/model-selection.md`).
    - confirms that the Phase 3 failing test now passes, or writes a regression test
 2. Then render the diff baseline, retain its `currentTree` as `reviewTree`, and hand the path list per "Diff baseline" to, in parallel if possible:
    Tier `standard` for `effective-flow-code-validator`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium`. Tier `deep` for `effective-flow-generic-product-reviewer`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `fix/verification` (`shared/model-selection.md`).
-   - ``effective-flow-code-validator``: repository-native lint, type, build and documentation checks that
+   - `effective-flow-code-validator`: repository-native lint, type, build and documentation checks that
      can be discovered safely
-   - for every degraded generic product bucket, ``effective-flow-generic-product-reviewer``: a read-only
+   - for every degraded generic product bucket, `effective-flow-generic-product-reviewer`: a read-only
      qualitative review with the reduced-depth limitation, reporting all severities; critical
      findings must be fixed before completion
    - after the incorporation pass, on a `review-depth` floor hit or trigger, or when `reviewTree` is unavailable:
-     ``effective-flow-generic-product-reviewer`` with its reduced-depth notice for the full pass. Label
+     `effective-flow-generic-product-reviewer` with its reduced-depth notice for the full pass. Label
      the handoff as an explicit bounded implementation full-pass assignment from `effective-flow fix`;
      supply only its triggering path list and each path's confirmed route. When `reviewTree` is
      unavailable, this reviewer also stands in for the routed reviewers; give it the full

@@ -36,13 +36,13 @@ Whether an enumerated surface is genuinely stale is the owner's judgment, not a 
 
 ### Worker routing
 
-- ``effective-flow-code-documenter`` — in-code documentation, inline comments, CLI help text
+- `effective-flow-code-documenter` — in-code documentation, inline comments, CLI help text
   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
   Model selection site: `documentation-sync-contract/code-documenter` (`shared/model-selection.md`).
-- ``effective-flow-docs-writer`` — user and technical documents, including category entry points
+- `effective-flow-docs-writer` — user and technical documents, including category entry points
   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
   Model selection site: `documentation-sync-contract/docs-writer` (`shared/model-selection.md`).
-- ``effective-flow-marketing-writer`` — the root `README.md` in its marketing entry-point role
+- `effective-flow-marketing-writer` — the root `README.md` in its marketing entry-point role
   Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`).
   Model selection site: `documentation-sync-contract/marketing-writer` (`shared/model-selection.md`).
 
@@ -76,7 +76,7 @@ only when that line is absent does the chain rule of the second branch decide (a
   only when the surface is in fact unaffected. Run no completion, plan-status switch, delivery
   action, or derived-work materialization while a surface is still `blocked`;
 - **non-interactive delegation** (without a `Run state:` line: a run anywhere below
-  ``tools/apply-review.md``, ``tools/apply-issues.md``, `effective-flow iterate` or `effective-flow merge-gate`
+  `tools/apply-review.md`, `tools/apply-issues.md`, `effective-flow iterate` or `effective-flow merge-gate`
   in the delegation chain, not only a direct sub-agent of one — `effective-flow merge-gate` delegates
   through `effective-flow iterate` and runs this gate in no phase of its own): return every remaining blocked surface to the owning
   orchestrator as `current-scope`. The owner performs its bounded documentation correction in the
@@ -91,7 +91,7 @@ JSDoc/TSDoc, rustdoc, CLI help text — are allowed.
 In a non-interactive delegation the gate additionally writes only inside files the run already
 owns. When a separate documentation file is required, return the blocked `current-scope` surface
 to the owner rather than violating the path-ownership and commit-integrity contracts of
-``tools/apply-review.md`` and `effective-flow iterate`.
+`tools/apply-review.md` and `effective-flow iterate`.
 
 ### Reporting
 

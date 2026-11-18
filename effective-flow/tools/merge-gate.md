@@ -103,7 +103,7 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/effective-flow-dir-migration.md`, when any wisdom, runtime migration, or worktree mutation below `.effective-flow/` is imminent.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Effective Flow configuration (project setup ADR)
 
@@ -176,7 +176,7 @@ translate an existing ADR.
 ## Issue implementation lifecycle
 
 This fragment is the provider-neutral contract for an issue that is the implementation basis of
-``tools/apply-issues.md`` or remote ``tools/apply-review.md``. It keeps three different facts separate:
+`tools/apply-issues.md` or remote `tools/apply-review.md`. It keeps three different facts separate:
 
 - the tracker's native workflow state (unstarted, started, later active, or terminal);
 - Effective Flow classifications such as `effective-flow-issue-done`, which means that delivery is
@@ -337,7 +337,7 @@ Boundary to `issue-tracker.md`: that building block is tailored to **issues** an
 target. PR review threads are a different API object. A workflow working on a pull request is
 **inherently forge-bound**: it never evaluates the tracker target and merely needs a Git repository,
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
-``tools/apply-issues.md``/`effective-flow plan-issue` are tracker-**bound** — those two follow the
+`tools/apply-issues.md`/`effective-flow plan-issue` are tracker-**bound** — those two follow the
 resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
 availability check** are taken from the focused `remote-helper-contract` building block (not
 reinvented); this building block only adds the PR operations.
@@ -726,7 +726,7 @@ The delegated run returns exactly one of:
   and what this dispatch has done so far;
 - `SUSPENDED host-pr-watch`, only under `Host: t3-code`, followed by `Kind: <checks|bot>`,
   `Round: <n>`, the pending checks or bots and what this dispatch has done so far;
-- `ABORT <reason>`; `ABORT nested-spawn-unavailable` means it can start no child.
+- `ABORT <reason>`; `ABORT nested-spawn-unavailable` means it can start no child; an Entry abort adds the line `Entry abort: yes`.
 
 `BLOCKED-USER` is a keyword of this channel and of "Returned outcome record" in
 `merge-gate-delegation-contract` only; the completion protocol's keyword-less resume never applies
@@ -842,8 +842,7 @@ If `mergeGate.completion` is `ask` or unset, no `no-merge` caller limit applies,
 After Phase 0 – in observer-only mode after step 2 – the caller dispatches the rest of the gate in the
 host's built-in general-purpose subagent (Claude) or default agent (Codex), never as a `src/agents`
 worker role, with zero inherited turns where supported. The handoff says to read
-`<skill root>/tools/merge-gate.md` and follow its delegated-run section, and passes these input
-lines, each once:
+`<skill root>/tools/merge-gate.md` and follow its delegated-run section; it passes each line once:
 Tier `standard`: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `model-tiers`, no downward move).
 Model selection site: `merge-gate/delegated-run` (`shared/model-selection.md`).
 
@@ -859,6 +858,13 @@ Model selection site: `merge-gate/delegated-run` (`shared/model-selection.md`).
 - on a re-dispatch after `SUSPENDED host-pr-watch` only,
   `Resumed wait: host-pr-watch; kind=<checks|bot>; round=<n>` per `host-pr-watch`;
 - `Observer-only re-entry: <yes|no>`;
+- `Associated plan: <repo-relative path>`, only for a verified association: explicit user input or a
+  retained link from a workflow in this session, never one inferred from pull-request prose or a
+  title match. Before every dispatch, re-dispatches included, or an inline run, resolve it through
+  `plan-reference-resolve` with `cwd` the root `plan.dir` resolves against (the checkout root, or
+  `RUNTIME_STATE_ROOT` in hidden mode) and `planDir` the configured `plan.dir`; it passes only on
+  `resolved` with `data.exact` true inside `<plan.dir>/` or `<plan.dir>/archive/`. Drop a line that
+  fails, also on a nonzero exit or `ok: false`, so it never aborts the gate; "Entry" repeats it;
 - `Wisdom file: <RUNTIME_STATE_ROOT>/.effective-flow/.wisdom-accumulation-<SESSION_ID>.tmp.md`, one
   session ID per gate run, kept across re-dispatches;
 - `Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>`;
@@ -902,6 +908,8 @@ limits never shrink within a gate run.
 - `ABORT nested-spawn-unavailable`: say once that the gate runs inline in this session, then run it
   here per the delegated-run section with this run's own run state and caller limits.
 - Any other `ABORT`: report it and, unless it is `ABORT invalid wisdom file`, delete the wisdom file.
+  The delegated run emits nothing on `ABORT`, so this caller alone applies the abort clause of the
+  retrospective slot in `next-steps` (T4); an `Entry abort: yes` return never qualifies.
 
 A non-interactive caller dispatches `Run state: non-interactive` with no completion answer and never
 receives `BLOCKED-USER`; one it receives is invalid. A caller without a spawn mechanism, or whose

@@ -17,7 +17,7 @@ The second delegation of this workflow is a **worker-role** delegation, not a wo
 it is separate from the `effective-flow iterate` contract above precisely because nothing it carries is
 the same. It is issued from Phase 2 step 1, only from an observed conflict, and only once per round.
 
-Hand ``effective-flow-merge-conflict-resolver``:
+Hand `effective-flow-merge-conflict-resolver`:
 
 - the **provisioned checkout's absolute root** – the invocation checkout or the Effective
   Flow-owned worktree of this step, never a second one it provisions for itself;
@@ -69,13 +69,13 @@ stated for the reason the second bullet gives:
   an unnamed path: abort the merge, report it, commit nothing;
 
 - **verify independently, second.** Hand the resolved but uncommitted tree to
-  ``effective-flow-code-validator`` for an independent execution and report of the repository's checks, so
+  `effective-flow-code-validator` for an independent execution and report of the repository's checks, so
   the resolution is not verified only by the role that produced it. A failing verdict from **either**
   role is treated as `ABORT`; the two roles disagreeing is not a tie to break. This is the only
   validation this workflow commissions directly, and it still happens inside delegated roles – the
   gate starts none of its own, and the review below is delegated too.
 
-  Hand ``effective-flow-code-validator``:
+  Hand `effective-flow-code-validator`:
   - the **provisioned checkout's absolute root** – the same checkout, with the merge still in
     progress and the worker's paths staged;
   - its **assigned scope**: the union of the conflicted paths and every adjacent path the worker
@@ -94,7 +94,7 @@ stated for the reason the second bullet gives:
   - the **resolved language values**, so the validator does not re-read the project setup ADR – its
     own language rule forbids that, so a validator handed none has no compliant option.
 
-  **``effective-flow-code-validator``'s own result declares the working-tree changes its validation
+  **`effective-flow-code-validator`'s own result declares the working-tree changes its validation
   generated.** Those paths come into existence **after** the reconciliation above and are therefore
   never measured against the worker's record – a reconciliation run afterwards would abort a correct
   resolution over a file the validator itself wrote. They are not staged either: the merge commit
@@ -104,7 +104,7 @@ stated for the reason the second bullet gives:
 - **fail closed on an unverified resolution.** The resolution counts as verified only when these two
   layers together **executed at least one** of the repository's own checks and every executed check
   passed. A run in which every check was reported skipped – by the worker, with its reason, or by
-  ``effective-flow-code-validator`` returning `SKIPPED` – and any verdict that is not an affirmative pass
+  `effective-flow-code-validator` returning `SKIPPED` – and any verdict that is not an affirmative pass
   are treated **exactly as `ABORT`**: abort the merge, report that the resolution could not be
   verified together with every check that did not run, and push nothing. An unprovable verification
   is never an assumed pass, exactly as an unstated merge state, an unstated `required` flag, an
@@ -151,14 +151,14 @@ observed in the wisdom file first.
    - **`auto`** (the default): continue with step 2.
 2. **Capture the conflict state** – the conflicted paths, their staged and unstaged status, and the
    two sides per file – determine the candidate mode per "Conflict validation mode", and delegate
-   to ``effective-flow-merge-conflict-resolver`` per "Conflict-resolution delegation contract". The human-comment guard does **not** block this
+   to `effective-flow-merge-conflict-resolver` per "Conflict-resolution delegation contract". The human-comment guard does **not** block this
    delegation, for the reason stated beside the CI repair.
    Tier `deep`: Claude Code Agent tool `model: opus`, `effort: high`; Codex spawn `model: gpt-6.1-sol`, `reasoning_effort: high` (rules: `model-tiers`).
    Model selection site: `merge-gate-conflict-resolution/resolver` (`shared/model-selection.md`).
 3. **Consume the worker's outcome.** `ABORT` ends this step as a controlled stop under step 1's last
    bullet. `DONE` continues.
 4. **Reconcile, then verify independently** – in that order, per that contract, ending with the
-   resolved but uncommitted tree handed to ``effective-flow-code-validator`` in the effective mode of
+   resolved but uncommitted tree handed to `effective-flow-code-validator` in the effective mode of
    "Conflict validation mode". A modified path the record does not name and justify, a failing
    verdict from either role, a verification that executed **no** check at all, or a stop that
    section's classification names ends this step as a stop that commits nothing.

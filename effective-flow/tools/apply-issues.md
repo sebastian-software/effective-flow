@@ -8,7 +8,7 @@ You are the orchestrator that analyzes arbitrary issues from the resolved tracke
 
 ## Goal
 
-This skill takes one or more issue references of the resolved tracker target (the forge behind `origin` via `gh`/`tea`, or the configured external tool) and works through them via the existing implementation skills. Unlike ``tools/apply-review.md``, it does **not** process the structured finding issues produced by `effective-flow review`, but **free-form human issues** without plan or finding structure. That is why each issue's content is first **analyzed and classified** before it is routed:
+This skill takes one or more issue references of the resolved tracker target (the forge behind `origin` via `gh`/`tea`, or the configured external tool) and works through them via the existing implementation skills. Unlike `tools/apply-review.md`, it does **not** process the structured finding issues produced by `effective-flow review`, but **free-form human issues** without plan or finding structure. That is why each issue's content is first **analyzed and classified** before it is routed:
 
 - Feature → `effective-flow build`
 - Bugfix → `effective-flow fix`
@@ -174,7 +174,7 @@ the handoff.
 ### Goal controls
 
 1. **Declare the completion condition up front.** Before the implementation work begins, formulate exactly one explicit, measurable completion condition. Derive it from the acceptance criteria and the validation plan of the basis (plan file, diagnosis or agreed scope). A good condition names the target state, the concrete check and the scope boundary – i.e. also what is deliberately not changed.
-2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: ``effective-flow-code-validator`` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
+2. **Verify independently.** Do not check the condition by self-assessment, but via the independent instances anyway provided for it: `effective-flow-code-validator` for technical checks and the appropriate reviewer for content ones. The condition counts as fulfilled only once these instances confirm it.
 3. **Loop with a bound.** If verification does not confirm the condition, fix the cause and verify again. Bound the internal correction rounds (guideline: three). If the condition still does not hold afterwards, abort the internal loop and escalate to the user instead of running on indefinitely – approach as in the retry escalation of the done protocol.
 4. **Visible progress.** Every run keeps a visible phase task list and concise chat updates even when only a few phases remain; the generic task-tracking thresholds govern only ad-hoc subtask lists and never this overview. Whatever task tooling the harness offers must produce these guarantees:
    - Exactly one workflow owns the progress overview: `effective-flow apply-plan` hands ownership to its target workflow before that workflow's phases begin; `effective-flow apply-issues` and `effective-flow apply-review` retain ownership; a delegated subworkflow reports instead of a second progress overview.
@@ -198,7 +198,7 @@ Write a summary after each phase and pass it to later phases. Delete the file at
 
 ## Tracker integration
 
-This skill is **inherently tracker-bound**: it always works against the resolved tracker target. The local/remote switch from `effective-flow review`/``tools/apply-review.md`` is **not** evaluated. Resolve the target per "Tracker target" in the following shared building block. On the forge target this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, classification, container, and write rules of the loaded `tracker-target` contract apply instead, and a missing connection or capability aborts before the first write. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
+This skill is **inherently tracker-bound**: it always works against the resolved tracker target. The local/remote switch from `effective-flow review`/`tools/apply-review.md` is **not** evaluated. Resolve the target per "Tracker target" in the following shared building block. On the forge target this skill uses the provider-neutral remote helper, its probe/dry-run/apply envelope, and its structured error cases; on an external target the connection, capability, classification, container, and write rules of the loaded `tracker-target` contract apply instead, and a missing connection or capability aborts before the first write. The finding/epic-specific body formats do not apply here; the exact checklist patch operation is reused analogously for container issues.
 
 **Hidden mode stops this skill.** When the configuration resolves `visibility: hidden` (the main checkout's local configuration, config locator step 0), stop before any tracker access or write — no probe, label migration, comment, label, or status transition — with one message: hidden mode is active, it pins the tracker to `local`, and this skill works only against a forge or external tracker. Planning from a pasted issue text stays available through `effective-flow plan <text>`.
 
@@ -272,13 +272,13 @@ translate an existing ADR.
 
 ## Issue-tracker integration (remote mode)
 
-This shared fragment connects `effective-flow review` and ``tools/apply-review.md`` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
+This shared fragment connects `effective-flow review` and `tools/apply-review.md` with an issue tracker. Its own mechanics describe the **forge** target: the issue tracker of the Git forge behind the `origin` remote (GitHub via `gh`, Forgejo via `tea`). A project may instead resolve the `external` target, whose contract is named under "Tracker target" below. Publication is **opt-in** via the Effective Flow configuration (project setup ADR) and disabled by default (`local`). On the `local` target both skills behave unchanged – findings run through the Markdown report file under `.effective-flow/review/`, no issues are created and no CLI is invoked. On a publishing target a local report is written only for findings withheld by the "Security disclosure gate" in `issue-tracker-forge.md`.
 
 The tracker target (`tracker.mode`) affects exclusively **reviews**. **Investigations** (`effective-flow investigate`) are exempt from it and remain purely local on every target under `.effective-flow/investigation/` (never committed, never as an issue). Of the Effective Flow artifacts, only **plans** are committed.
 
-It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (``tools/apply-review.md``) – stays in the respective skill.
+It encapsulates the **shared** building blocks: this core carries the `tracker` config schema including migration, the mode determination, and the tracker-target handoff, and the sibling fragment "Issue-tracker forge mechanics" (`issue-tracker-forge.md`) carries the provider-neutral remote-helper contract, the label convention, the security disclosure gate, the remote prose language, and the canonical issue and epic body formats. Every source that reaches the forge target loads that sibling as well, eagerly or through its own deferred pointer. The actual orchestration – when issues are **created** (`effective-flow review`) and when they are **read and processed** (`tools/apply-review.md`) – stays in the respective skill.
 
-In addition, ``tools/apply-issues.md`` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/``tools/apply-review.md``; the checkbox-ticking mechanics for epic bodies are used by ``tools/apply-issues.md`` analogously for container issues.
+In addition, `tools/apply-issues.md` and `effective-flow plan-issue` use this fragment for the same provider-neutral helper operations. These two skills process **arbitrary** human issues instead of the finding issues produced by `effective-flow review`; they are **inherently tracker-bound** and do **not** evaluate the local/remote toggle – they resolve the tracker target (see "Tracker target") and work against it. On the forge target they only need a Git repository, an `origin` remote and an authenticated CLI. The finding-/epic-specific sections of `issue-tracker-forge.md` (issue body format, epic body format, `R-XXXXXXX` convention) apply only to `effective-flow review`/`tools/apply-review.md`; the checkbox-ticking mechanics for epic bodies are used by `tools/apply-issues.md` analogously for container issues.
 
 ### Configuration
 
@@ -344,7 +344,7 @@ The query stays deliberately two-way: it runs only when no configuration pins a 
 
 The determined mode names the **target** that owns issue identity for this run: `local` (Markdown report), `forge` (`remote` — the issue tracker of the `origin` remote), or `external` (the tool named by `tracker.externalTool`). Everything in the sibling fragment `issue-tracker-forge.md` — the helper contract, the label convention with its `firmo-` compatibility and one-time `sf-` migration, the tracker operations, and the finding and epic body formats — describes the **forge** target.
 
-`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (``tools/apply-issues.md``, `effective-flow plan-issue`) and review publication.
+`external` requires a non-empty `tracker.externalTool`. Without it the configuration is invalid: abort before any tracker access, name the missing key, and point to `effective-flow setup`. Never guess a tool, and never fall back to the forge or to `local`. While the mode is `local` or `remote`, `tracker.externalTool` and `tracker.externalToolHint` are ignored for routing and reported once as ignored. Both issue-carrying flows follow the resolved target: the issue-driven flow (`tools/apply-issues.md`, `effective-flow plan-issue`) and review publication.
 
 The complete external contract — connection discovery with its fail-closed rules, the required capabilities, the write discipline, the classification mapping, the container mechanism, and the reference syntax — lives in the `tracker-target` fragment. Every source that embeds this fragment **must** carry its own deferred pointer to `tracker-target`, so a run loads that contract as soon as the resolved target is `external` and never for a `local` or `forge` run. A run that resolves `external` without that contract available aborts instead of improvising.
 
@@ -353,7 +353,7 @@ The complete external contract — connection discovery with its fail-closed rul
 ## Issue implementation lifecycle
 
 This fragment is the provider-neutral contract for an issue that is the implementation basis of
-``tools/apply-issues.md`` or remote ``tools/apply-review.md``. It keeps three different facts separate:
+`tools/apply-issues.md` or remote `tools/apply-review.md`. It keeps three different facts separate:
 
 - the tracker's native workflow state (unstarted, started, later active, or terminal);
 - Effective Flow classifications such as `effective-flow-issue-done`, which means that delivery is
@@ -444,8 +444,8 @@ checklist. The optional container and mechanism travel in the receipt for post-m
 
 This shared building block is the single source of truth for **which
 apply source type** a given argument is. It is used by `effective-flow apply`
-(router) as well as by ``tools/apply-plan.md``, ``tools/apply-review.md``, and
-``tools/apply-issues.md`` for the upstream argument classification. `effective-flow plan` uses only
+(router) as well as by `tools/apply-plan.md`, `tools/apply-review.md`, and
+`tools/apply-issues.md` for the upstream argument classification. `effective-flow plan` uses only
 Stage A as a planning gateway: it delegates an unambiguous `issue-reference` to
 `effective-flow plan-issue` and never performs Stage B itself.
 
@@ -465,12 +465,12 @@ directory, abort classification without falling back to `EXECUTION_ROOT`.
 
 | Type              | Meaning                                                                                                       | Responsible skill                             |
 | ----------------- | ------------------------------------------------------------------------------------------------------------- | --------------------------------------------- |
-| `plan`            | plan file under `<plan.dir>/`                                                                                 | ``tools/apply-plan.md``                        |
-| `review-report`   | review report file under `.effective-flow/review/`                                                            | ``tools/apply-review.md`` (local)              |
-| `review-epic`     | tracking/epic issue of a `effective-flow review` run                                                               | ``tools/apply-review.md`` (remote, epic)       |
-| `review-finding`  | single finding issue of a `effective-flow review` run                                                              | ``tools/apply-review.md`` (remote, issue list) |
-| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | ``tools/apply-issues.md``                      |
-| `plain-issue`     | freely written human issue                                                                                    | ``tools/apply-issues.md``                      |
+| `plan`            | plan file under `<plan.dir>/`                                                                                 | `tools/apply-plan.md`                        |
+| `review-report`   | review report file under `.effective-flow/review/`                                                            | `tools/apply-review.md` (local)              |
+| `review-epic`     | tracking/epic issue of a `effective-flow review` run                                                               | `tools/apply-review.md` (remote, epic)       |
+| `review-finding`  | single finding issue of a `effective-flow review` run                                                              | `tools/apply-review.md` (remote, issue list) |
+| `container-issue` | generic issue with a sub-issue checklist, without a review label (`effective-flow-review-*`/`firmo-review-*`) | `tools/apply-issues.md`                      |
+| `plain-issue`     | freely written human issue                                                                                    | `tools/apply-issues.md`                      |
 
 Special results: `none` (empty/no argument) and `ambiguous` (not uniquely
 resolvable). `issue-reference` is an **intermediate result** from stage A for an issue reference
@@ -520,7 +520,7 @@ access — the host/CLI detection and availability check of the "Remote helper c
 `issue-tracker-forge.md` on the forge target, or the single established connection of the
 `tracker-target` contract on an external target; a skill that uses stage B therefore also embeds
 `issue-tracker.md` and reaches `issue-tracker-forge.md` on the forge target.
-``tools/apply-plan.md`` does not need stage B — for a plan skill, stage A is enough
+`tools/apply-plan.md` does not need stage B — for a plan skill, stage A is enough
 to recognize an issue reference as a foreign type and forward it.
 
 Per issue, read classification values, body, and comments **once fresh** from the tracker and
@@ -538,7 +538,7 @@ other read error stops classification instead of guessing. On an external target
 resolved connection's proven native-child listing capability. For a found active canonical
 decomposition, pass that comment and the fresh normalized child list to
 `decomposition-container-compare`. Such a parent is a `container-issue` even when the native list
-is empty; retain its integrity result for ``tools/apply-issues.md``. A malformed canonical
+is empty; retain its integrity result for `tools/apply-issues.md`. A malformed canonical
 decomposition marker is likewise retained as an integrity-blocked container instead of being
 downgraded to a plain issue. An all-`declined` record set is inactive and does not by itself make a
 container. Never infer containment from issue prose, a matching title, or an unverified provider
@@ -573,16 +573,16 @@ body structure.
 ### Ownership and target
 
 From the final source type follows exactly one responsible skill and — for
-``tools/apply-review.md`` — the flow:
+`tools/apply-review.md` — the flow:
 
 | Source type       | Responsible skill        | Target / note                                    |
 | ----------------- | ------------------------ | ------------------------------------------------ |
-| `plan`            | ``tools/apply-plan.md``   | –                                                |
-| `review-report`   | ``tools/apply-review.md`` | `local` target, report flow                      |
-| `review-epic`     | ``tools/apply-review.md`` | tracker target of the reference, epic mode       |
-| `review-finding`  | ``tools/apply-review.md`` | tracker target of the reference, issue-list mode |
-| `container-issue` | ``tools/apply-issues.md`` | container expansion in the skill                 |
-| `plain-issue`     | ``tools/apply-issues.md`` | single work item                                 |
+| `plan`            | `tools/apply-plan.md`   | –                                                |
+| `review-report`   | `tools/apply-review.md` | `local` target, report flow                      |
+| `review-epic`     | `tools/apply-review.md` | tracker target of the reference, epic mode       |
+| `review-finding`  | `tools/apply-review.md` | tracker target of the reference, issue-list mode |
+| `container-issue` | `tools/apply-issues.md` | container expansion in the skill                 |
+| `plain-issue`     | `tools/apply-issues.md` | single work item                                 |
 
 "Not `local`" never means "the forge" here: an epic or finding reference of an external tool
 selects that tool, and the tracker-bound flow runs against it.
@@ -640,7 +640,7 @@ argument type; report which target the argument selected.
 
 ## Clarification gate (fully clarified?)
 
-Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → ``tools/apply-plan.md``/``tools/apply-issues.md``/``tools/apply-review.md``) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
+Before a basis (plan file, issue, or review finding) is implemented, this gate checks whether it is **fully clarified** and **implementable without a follow-up question**. The gate applies at **both** entry points: in the apply chain (`effective-flow apply` → `tools/apply-plan.md`/`tools/apply-issues.md`/`tools/apply-review.md`) **and** on direct invocation of an implementing workflow (`effective-flow build`, `effective-flow fix`, `effective-flow refactor`, `effective-flow docs`) with a plan file.
 
 Guiding principle: **No assumptions except the absolutely obvious.** When in doubt, prefer one clarification round too many over one too few.
 
@@ -667,7 +667,8 @@ Pure, uncritical assumptions with no implementation relevance do not block.
   and end the current skill instead of partially implementing or guessing.
   Target skill of the clarification: a plan file goes to `effective-flow plan` or its in-depth
   plan review (`effective-flow review <planfile>`); an issue or finding goes to
-  `effective-flow plan-issue`.
+  `effective-flow plan-issue`. Under an Automation caller's scored decision mode, a failure is a
+  blocker instead, and its "Decided by score" records count as decisions (`scored-decisions`).
 
 The gate replaces the former separate "check open points" check: where a workflow previously
 ran this check on its own, this gate now serves as the single authoritative instance,
@@ -708,10 +709,10 @@ Do not expose internal tracking IDs or session details in comments.
 
 1. Resolve the tracker target per "Tracker target" in the included building block. On the forge target, determine host and CLI and check availability/authentication per "Remote helper contract"; precondition there is a git repository with an `origin` remote, and a missing `origin`, CLI, or authentication is reported clearly and aborts without side effects. For every candidate forge parent, request native children through `issue-sub-issues-read`: GitHub uses the normalized result as its native container mechanism, while Forgejo's `UNSUPPORTED_CAPABILITY` leaves only the existing checklist detection available. On an external target, establish exactly one connection and verify the capabilities this skill needs — read issue and comments, list issues by classification, create a comment, add/remove a classification value, and patch an exact checklist entry. Settle the container mechanism here: select a native parent/sub-issue relation only when the connection proves it can write a sub-item's completion state; otherwise select the checklist fallback. Defer every completion write of the selected mechanism until post-merge reconciliation. The phase-specific state-list and transition capabilities from "Issue implementation lifecycle" are required only for issues that survive the clarity and approval gates; resolve them before their first started transition, never as a prerequisite for listing or skipping issues. Any fail-closed class aborts before the first affected write (no silent fallback to the forge or to a local flow).
 2. Read the user argument and classify it via the "apply-source detection" (stage A and — for issue references — stage B):
-   - source type `container-issue` or `plain-issue` → ``tools/apply-issues.md`` processes it itself; continue. Multiple issue references (number, `#123` or issue URL) are allowed as a list.
-   - source type `plan` or `review-report` → point to the responsible skill (``tools/apply-plan.md`` or ``tools/apply-review.md``, or `effective-flow apply` for automatic routing) and end the skill.
-   - source type `review-epic` or `review-finding` → these are epic/finding issues produced by `effective-flow review`; ``tools/apply-review.md`` is responsible for them. Point to it and end.
-   - `ambiguous` → ask instead of guessing. When ``tools/apply-issues.md`` runs as a delegation from `effective-flow apply`, foreign types should not occur; the switch remains as a safeguard.
+   - source type `container-issue` or `plain-issue` → `tools/apply-issues.md` processes it itself; continue. Multiple issue references (number, `#123` or issue URL) are allowed as a list.
+   - source type `plan` or `review-report` → point to the responsible skill (`tools/apply-plan.md` or `tools/apply-review.md`, or `effective-flow apply` for automatic routing) and end the skill.
+   - source type `review-epic` or `review-finding` → these are epic/finding issues produced by `effective-flow review`; `tools/apply-review.md` is responsible for them. Point to it and end.
+   - `ambiguous` → ask instead of guessing. When `tools/apply-issues.md` runs as a delegation from `effective-flow apply`, foreign types should not occur; the switch remains as a safeguard.
    - No argument (`none`): list open issues that carry neither `effective-flow-issue-done` nor `effective-flow-needs-planning`, and ask the user which ones to process. On the forge target, exclude the legacy prefix `firmo-` equivalently (see "Label convention"); on an external target that legacy prefix is forge history and is neither queried nor written. Do **not** use a heuristic auto-selection.
 3. On the forge, create the required labels idempotently (`effective-flow-issue-in-progress`, `effective-flow-issue-done`, `effective-flow-needs-planning`). The helper's label creation reads the repository's existing labels first and creates only what is genuinely missing, so a repeated run adds no second copy; it reports per label whether it created one. Where it cannot read the existing labels, it aborts rather than creating — treat that as a blocked run, not as a reason to create the label another way. On an external target, ensure the two Effective Flow classifications `effective-flow-issue-done` and `effective-flow-needs-planning` in the connection's classification primitive; native started state remains separate and is resolved only for implementable items. Never create a `firmo-`/`sf-` variant in a foreign workspace; if the target exposes no classification primitive, abort instead of losing the lifecycle.
 
@@ -809,7 +810,7 @@ Each analysis sub-agent receives the issue body **and the issue comments** and t
   existing target-behavior, measurable-acceptance-criterion, and file/area checks rather than
   rejected solely for missing the new sections.
 - **Prompt suggestion:** a directly usable plain-text task for the target skill.
-- **Confidence:** `High` / `Medium` / `Low` regarding the file scope (analogous to the pre-analysis in ``tools/apply-review.md``).
+- **Confidence:** `High` / `Medium` / `Low` regarding the file scope (analogous to the pre-analysis in `tools/apply-review.md`).
 - **Affected files:** best estimate of the touched files (for the conflict consideration in Phase 4).
 
 Write each result into the wisdom file. When in doubt, an issue counts as `insufficient` — better to hand off cleanly to `effective-flow plan-issue` than to implement on an unclear basis.
@@ -828,7 +829,7 @@ This is the approval boundary of this workflow: the classification is fixed, and
 ```
 
 2. Per "Goal-driven completion control" (principle 1), declare the explicit completion condition for phases 4–5: every `sufficient` issue is transitioned at least to started, implemented via the matching implementation skill, and has either a newly created PR or a new commit on the specified target PR with one validated lifecycle receipt, a PR-link comment, and label `effective-flow-issue-done`; container completion stays pending for `effective-flow merge-gate`. Every `insufficient` issue carries `effective-flow-needs-planning` together with a comment; the project-configured checks of the delegated workflows are green; nothing outside the chosen issues is changed.
-3. **Dropping the gate:** if ``tools/apply-issues.md`` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip the following gate entirely and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
+3. **Dropping the gate:** if `tools/apply-issues.md` itself runs as a non-interactive sub-agent of a higher-level orchestrator (recognizable from the call context, e.g. "[Context from …]"), skip the following gate entirely and continue directly with Phase 4. A direct call by the user does **not** count as such a delegation.
 4. Otherwise obtain the approval:
 
 If the run is not a non-interactive delegation: Ask the user: **Start implementing the sufficiently specified issues?**
@@ -839,10 +840,10 @@ If the run is not a non-interactive delegation: Ask the user: **Start implementi
 
 ### Phase 4: Routing & delegation
 
-The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of ``tools/apply-review.md`` (Phase 4 remote): branch off the base branch from the `delivery` config block, one PR via `effective-flow pr`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
+The commit/PR strategy is by default **"one PR per issue"** (no commit-strategy question). Every implementable issue without a target PR is its own sub-group in its own delivery branch, preferably with worktree isolation, analogous to the remote mode of `tools/apply-review.md` (Phase 4 remote): branch off the base branch from the `delivery` config block, one PR via `effective-flow pr`. File-overlapping issues run sequentially to avoid working-tree conflicts; non-overlapping ones run in parallel.
 
 Every worktree this workflow creates carries the `worktree-lifecycle` contract. It is loaded
-directly through the pointer below rather than referenced through ``tools/apply-review.md``: a
+directly through the pointer below rather than referenced through `tools/apply-review.md`: a
 reference by analogy is not a contract, and a worktree created without its record can never be
 removed by `effective-flow cleanup`, which requires that record as its only proof of ownership. Before
 any such worktree is created, reading that fragment is mandatory, not a judgement call. Write the

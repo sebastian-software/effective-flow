@@ -165,7 +165,7 @@ requirement.
 - Choose the commit type by **effect**, not by file type: behavior-changing changes – including pure **config/env/secrets/CI** with deployment or runtime effect (e.g. corrected values in env/secret artifacts that take effect remotely via sync) – are `fix:` (or `feat:` for new functionality). `chore:` only for **deploy-neutral** changes without behavioral effect (pure maintenance, formatting, tooling without runtime effect). This also applies to the **squash PR title**, which determines the release-please bump on a squash merge.
 - Do not expose internal tracking IDs in commit messages, e.g. review finding IDs like `R-0000001`, local plan/review IDs like `F1`, or placeholders like `[Finding-ID]`. Such IDs belong in wisdom/report context, not in the Git history.
 
-**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report.
+**Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
 ## Recommended skills
 
@@ -203,7 +203,7 @@ names the base branch as its head. A direct invocation does not fabricate a deli
    equal the caller's expected staged-tree OID; a mismatch stops without committing.
 5. Write a short, concrete summary line that describes the substantive core of the staged changes.
 6. Do not run any standalone project validation; linting, tests, and other quality checks are the
-   job of other skills such as ``effective-flow-code-validator`` and ``effective-flow-test-writer``.
+   job of other skills such as `effective-flow-code-validator` and `effective-flow-test-writer`.
 7. Revalidate a supplied receipt and run `git commit` for exactly the staged changes.
 8. After success, resolve the created commit OID, its parent, branch, and tree OID. Require the
    commit to be the new `HEAD`, its parent to be the pre-commit `HEAD`, its branch to equal the
@@ -217,7 +217,7 @@ names the base branch as its head. A direct invocation does not fabricate a deli
 10. Emit the next-step block per `next-steps` as the last element of that report, unless the caller
     passed the literal line `Next steps: suppressed`. The block needs a commit that `git commit`
     actually created on a branch other than the base branch; a run with nothing staged, a commit a
-    hook blocked, or a commit made on the base branch itself matches no row and emits nothing.
+    hook blocked, or a commit made on the base branch itself matches no row.
 
 ## Rules
 

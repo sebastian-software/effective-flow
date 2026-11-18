@@ -10,8 +10,8 @@ step that runs after a delivery created a pull request. It owns **which** findin
 which gates run first and in what order, the judgment handoff to `effective-delivery`, the
 trigger, and the idempotency key.
 
-Three of its four call sites — the delivery completion action, ``tools/apply-issues.md``, and
-``tools/apply-review-remote.md`` — carry neither the PR plumbing nor the security gate in their own
+Three of its four call sites — the delivery completion action, `tools/apply-issues.md`, and
+`tools/apply-review-remote.md` — carry neither the PR plumbing nor the security gate in their own
 context. This fragment therefore loads both itself instead of assuming a host supplied them:
 
 ## PR review comment integration
@@ -43,7 +43,7 @@ Boundary to `issue-tracker.md`: that building block is tailored to **issues** an
 target. PR review threads are a different API object. A workflow working on a pull request is
 **inherently forge-bound**: it never evaluates the tracker target and merely needs a Git repository,
 an `origin` remote, and an authenticated CLI. That makes it tracker-independent in the same way
-``tools/apply-issues.md``/`effective-flow plan-issue` are tracker-**bound** — those two follow the
+`tools/apply-issues.md`/`effective-flow plan-issue` are tracker-**bound** — those two follow the
 resolved target, while PR work always stays on the forge. The **host detection, CLI probing, and
 availability check** are taken from the focused `remote-helper-contract` building block (not
 reinvented); this building block only adds the PR operations.
@@ -535,6 +535,13 @@ representation. After explicit publication the direct remote finding is the exec
 the note makes local `apply` skip its copy. The safety report remains local, but the two
 representations are never simultaneously active implementation sources.
 
+### Pre-commit use
+
+Under an Automation caller's scored decision mode, an implementing workflow also applies
+"Classification", "Local dedup" and "Local-first persistence" to its admitted residual findings
+before its handback commit, as `scored-decisions` defines. That use never reaches the publication
+offer: its fixed answer keeps every withheld finding local.
+
 ### Silence in public artifacts
 
 Every public issue body contains no count, title, signature, ID, or other reference to a
@@ -573,7 +580,7 @@ exactly one of these three **input states**:
 Resolve the state from the caller's declaration, not from the size of the set it handed over: an
 **empty** set from a review that did run is `reviewed-empty`, while a declaration that the workflow
 supplies **no complete finding set** is `no-review-capability`. `effective-flow fix` and `effective-flow docs`
-make that declaration deliberately — `fix` routes only ``effective-flow-generic-product-reviewer`` for
+make that declaration deliberately — `fix` routes only `effective-flow-generic-product-reviewer` for
 degraded buckets, so its specialist buckets carry no reviewer findings, and `docs` has no review
 phase at all. The three state names are stable identifiers and are never translated.
 
@@ -743,6 +750,8 @@ Governed by the configuration key `delivery.prReview` with the values `ask` (def
 `off`:
 
 - `always` — publish after PR creation without asking, in every run state.
+- Under an Automation caller's scored decision mode (`scored-decisions`, row S-PRR), the trigger
+  is off for that run whatever the value, `always` included; report it as off by the caller.
 - `off` — no automatic publication. This disables the automatic trigger only; an explicit
   `effective-flow review <PR>` invocation is never affected.
 - `ask` — resolved by the run state:
