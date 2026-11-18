@@ -348,6 +348,23 @@ launch retains the original qualification and its original 24-hour expiry, inclu
 expiry check after reservation. There is no refresh, replacement qualification or refunded
 reservation when slow checks cross that expiry.
 
+Every recheck above, like each first-stage reauthentication, re-reads and re-verifies every pinned
+input from the filesystem; nothing is reused across calls, processes or these boundaries. Only
+duplicated work inside one call is removed. `pinned()` canonicalizes a reference once, then hashes
+that path through the unchecked body of `file_digest()` or reads its JSON with `read_bound_json()`
+relative to a no-follow descriptor of that path's parent, so neither repeats the path check. A JSON
+pin whose parent directory is searchable but not readable is therefore refused. The public
+`file_digest()` and `read_bound_json()` entries keep their own checks. `authenticate()` parses
+each task's `state`, `runMetadata` and `buildIdentity` once, and one `remaining_context_data()`
+call hands the corpus and original jobs it pinned to its own `authenticate()`, which refuses a
+changed corpus reference instead of pinning again. `add_expected()` no longer canonicalizes, so a
+noncanonical identity path that no earlier pin refused fails the coverage check with
+`immutable identity coverage incomplete`. `canonical()` accepts and rejects what the former
+`Path.resolve()` fixed-point check did, except that a symlink loop in any component is now refused
+with `ValueError` on every Python version (Python 3.13 and later accepted it, 3.11 and 3.12 raised
+`RuntimeError`). Measurements:
+[host-driver test profile](../../docs/developer-guide/host-driver-test-profile.md).
+
 ### Accounting and acceptance
 
 `run_remaining_stage` uses the existing `Driver.run_slot` and unchanged D1 shutdown and D2

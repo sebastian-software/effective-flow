@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import concurrent.futures
+import errno
 import hashlib
 import importlib.util
 import itertools
@@ -63,9 +64,19 @@ def digest(value):
 def canonical(value):
     require(isinstance(value, str), 'path must be a string')
     path = Path(value)
-    require(path.is_absolute() and str(path) == value and path.resolve() == path,
-            'expected canonical absolute path: ' + value)
+    # realpath() leaves a symlink loop unresolved; the final lstat() refuses it on every
+    # Python version, where Path.resolve() raised RuntimeError on 3.11/3.12 and accepted it later.
+    require(path.is_absolute() and str(path) == value and os.path.realpath(value) == value
+            and not _link_or_loop(value), 'expected canonical absolute path: ' + value)
     return path
+
+
+def _link_or_loop(value):
+    try:
+        return stat.S_ISLNK(os.lstat(value).st_mode)
+    except OSError as error:
+        # Missing, unsearchable or overlong paths stay accepted, as with Path.resolve().
+        return error.errno == errno.ELOOP
 
 
 def identity(path, expected):
@@ -112,7 +123,15 @@ def sha_bytes(data):
 
 def file_digest(path):
     # Toolchain archives may be large; pin their bytes without retaining them in memory.
-    path = canonical(str(path))
+    return _file_digest(canonical(str(path)))
+
+
+def _file_digest(path):
+    """Body of file_digest without its canonical() check.
+
+    Precondition: path is the return value of canonical(). Only file_digest and pinned() may
+    call it.
+    """
     fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     try:
         before = os.fstat(fd)
@@ -140,9 +159,19 @@ def reference(ref):
 
 
 def pinned(ref, *, json_value=False, maximum=RECEIPT_LIMIT):
-    reference(ref)
+    # reference() inlined: canonicalize once and read only through the Path canonical() returned.
+    keys(ref, ('path', 'sha256'), 'file reference')
+    path = canonical(ref['path'])
+    digest(ref['sha256'])
     if json_value:
-        value = read_bound_json(ref['path'], expected_digest=ref['sha256'], maximum=maximum)[0]
+        # Precondition: the parent is derived from canonical()'s return value. With directory_fd,
+        # read_bound_json() skips its own resolve() check and opens the name relative to it.
+        parent_fd = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+        try:
+            value = read_bound_json(path.name, directory_fd=parent_fd, expected_digest=ref['sha256'],
+                                    maximum=maximum)[0]
+        finally:
+            os.close(parent_fd)
         pending = [value]
         while pending:
             item = pending.pop()
@@ -153,7 +182,7 @@ def pinned(ref, *, json_value=False, maximum=RECEIPT_LIMIT):
             elif isinstance(item, float):
                 require(math.isfinite(item), 'nonfinite number is not strict JSON')
         return value
-    require(file_digest(ref['path']) == ref['sha256'], 'immutable file digest changed: ' + ref['path'])
+    require(_file_digest(path) == ref['sha256'], 'immutable file digest changed: ' + ref['path'])
     return ref
 
 
@@ -206,7 +235,8 @@ def task_paths(round_root, scenario, slot):
 
 
 def add_expected(mapping, path, value):
-    path = str(canonical(str(path)))
+    # No canonical() here: the coverage check compares these paths with pinned, canonical keys.
+    path = str(path)
     digest(value)
     require(path not in mapping or mapping[path] == value, 'conflicting immutable identity map')
     mapping[path] = value
@@ -330,7 +360,12 @@ def reference_count(value):
     return count
 
 def authenticate(corpus_ref, grant_ref, *, initial, closed, _remaining=None):
-    corpus = pinned(corpus_ref, json_value=True, maximum=CORPUS_LIMIT)
+    if _remaining is None:
+        corpus = pinned(corpus_ref, json_value=True, maximum=CORPUS_LIMIT)
+    else:
+        # remaining_context_data() pinned this exact reference earlier in the same call.
+        require(_remaining['corpusRef'] == corpus_ref, 'remaining corpus reference changed')
+        corpus = _remaining['corpusData']
     grant = pinned(grant_ref, json_value=True, maximum=GRANT_LIMIT)
     keys(corpus, ('schemaVersion', 'kind', 'source', 'namespace', 'config', 'operator', 'toolchain',
                   'qualification', 'driverFiles', 'suites'), 'corpus')
@@ -470,19 +505,20 @@ def authenticate(corpus_ref, grant_ref, *, initial, closed, _remaining=None):
             keys(expected, PREPARED_KEYS, 'prepared digests')
             for key in PREPARED_KEYS:
                 add_expected(expected_inputs, paths[key], expected[key])
+            values = {}
             for key in ('prompt', 'runMetadata', 'state', 'buildIdentity'):
                 require(record[key]['path'] == str(paths[key]), 'prepared record reference path changed')
-                pinned(record[key], json_value=key != 'prompt')
+                values[key] = pinned(record[key], json_value=key != 'prompt')
                 if key != 'state':
                     require(record[key]['sha256'] == expected[key], 'prepared record digest changed')
             add_expected(expected_inputs, paths['state'], record['state']['sha256'])
-            state = pinned(record['state'], json_value=True)
+            state = values['state']
             keys(state, ('schemaVersion', 'currentAttempt', 'discardedAttempts', 'expectedDigests'), 'state')
             require(type(state['schemaVersion']) is int and state['schemaVersion'] == 1
                     and type(state['currentAttempt']) is int and state['currentAttempt'] == 1
                     and type(state['discardedAttempts']) is int and state['discardedAttempts'] == 0
                     and state['expectedDigests'] == expected, 'attempt is not original pending attempt1')
-            metadata = pinned(record['runMetadata'], json_value=True)
+            metadata = values['runMetadata']
             keys(metadata, ('schemaVersion', 'scenario', 'slot', 'attempt', 'projectRoot', 'skillRoot', 'promptDigest', 'fixtureDigest', 'profile'), 'metadata')
             require(type(metadata['schemaVersion']) is int and metadata['schemaVersion'] == 1
                     and metadata['scenario'] == scenario and type(metadata['slot']) is int and metadata['slot'] == slot
@@ -491,7 +527,7 @@ def authenticate(corpus_ref, grant_ref, *, initial, closed, _remaining=None):
                     and metadata['profile'] == profiles[name] and metadata['promptDigest'] == expected['prompt']
                     and original_slot['promptDigest'] == expected['prompt'] and metadata['fixtureDigest'] == expected['fixture'],
                     'original metadata identity changed')
-            build = pinned(record['buildIdentity'], json_value=True)
+            build = values['buildIdentity']
             require(build == manifest['identities'][scenario] and build['scenario'] == scenario, 'original build identity changed')
             map_identity(expected_inputs, build, root, paths['skillRoot'])
             member_id = (name, scenario, slot)
@@ -564,7 +600,8 @@ def remaining_closed_proof(task, paths, artifact, corpus_ref, first_grant_ref, d
     original = task_identity(task) in state['originalJobs']
     if original:
         job_ref = state['originalJobs'][task_identity(task)]
-        job = pinned(job_ref, json_value=True, maximum=1024 * 1024)
+        # remaining_context_data() pinned this exact reference earlier in the same call.
+        job = state['originalJobData'][task_identity(task)]
         require(job_ref['path'] == str(artifact / 'worker-job.json'), 'original job path changed')
         closed_proof(task, paths, artifact, corpus_ref, first_grant_ref, driver_files)
     else:
@@ -704,7 +741,7 @@ def remaining_context_data(context, *, initial=False, batch=0, active=True):
             and inventory['kind'] == 'effective-flow-host-first-stage-closures'
             and isinstance(inventory['closures'], list) and len(inventory['closures']) == 5,
             'invalid original closure inventory')
-    original_jobs, projections, fixture_modes = {}, [], []
+    original_jobs, original_job_data, projections, fixture_modes = {}, {}, [], []
     allowed_cohort_files = {'launch-gate', 'host-events.jsonl', 'first-stage-summary.json',
                             'remaining-stage-admission.json', 'remaining-stage-cancellation.json',
                             'remaining-stage-events.jsonl', 'remaining-stage-summary.json'}
@@ -732,6 +769,7 @@ def remaining_context_data(context, *, initial=False, batch=0, active=True):
                 'original closure inventory file coverage changed')
         allowed_paths.update(str(p) for p in (artifact, *artifact.parents) if cohort == p or cohort in p.parents)
         original_jobs[task_identity(entry['task'])] = entry['job']
+        original_job_data[task_identity(entry['task'])] = job
         projection = inspect_consumption(job, Path(entry['job']['path']), entry['job']['sha256'],
                                          fixture_only=job['fixtureTools'], wrapper_attempted=True)
         require(projection == {'consumptionState': 'reserved', 'chargedRoots': 1, 'actualModelStarted': True},
@@ -747,7 +785,9 @@ def remaining_context_data(context, *, initial=False, batch=0, active=True):
             and summary.get('qualifiedHost') is (not fixture_modes[0]), 'original summary not completed/bound')
     order = [task_identity(t) for t in remaining]
     closed_count = 150 if batch == 26 else max(0, batch - 1) * 6
-    state = {'originalJobs': original_jobs, 'order': order, 'context': context,
+    # Lives for this call only and is never returned; every call pins its inputs afresh.
+    state = {'originalJobs': original_jobs, 'originalJobData': original_job_data,
+             'corpusRef': context['corpus'], 'corpusData': corpus, 'order': order, 'context': context,
              'closed': set(original_jobs) | set(order[:closed_count]),
              'active': set(order[closed_count:closed_count + 6]) if batch and active else set()}
     data = authenticate(context['corpus'], grant['firstStageGrant'], initial=False, closed=range(1, 6), _remaining=state)

@@ -156,3 +156,88 @@ Also not reached by the profiled modules, and unchanged:
 ## Open evidence debt
 
 None. The host qualifies for both manual bullets.
+
+## After #686 (2026-11-17)
+
+Re-measurement for issue [#686](https://github.com/sebastian-software/effective-flow/issues/686),
+which removes duplicated canonicalization and duplicated pins inside one call (commit a, items
+1 to 4) and replaces the `Path.resolve()` fixed point in `canonical()` with a loop-safe
+`os.path.realpath()` check (commit b, item 5). The decisions are recorded in
+[the host-driver README](../../evals/host-driver/README.md).
+
+Same host class as above: Intel Core i7-8700, no `sha_ni`, the same mitigation state, Incus LXC
+guest with rootless Podman, Python 3.11.2 in the container, `TMPDIR` unset so `/tmp` on the same
+runner-owned ZFS bind mount. "Before" is a detached checkout of `1b1fd1c7`; "after (a)" and
+"after" are detached checkouts of the two code commits. Each state ran in its own fresh
+container, one run at a time. Other workloads shared the host (load average about 1 to 6).
+
+Absolute numbers differ from the section above: this session's "before" self CPU of
+`test_first_stage` was 272.7 s against 165.7 s there, on the same code paths. Compare numbers only
+within this section.
+
+### Wall time per module
+
+Command per module, as above:
+`PYTHONPATH=evals/host-driver/tests:evals/host-driver python3 -B -m unittest -v <module>`. Each
+round ran every module after, then before. All 18 runs passed.
+
+| Module                           | State  | Run 1    | Run 2    | Run 3    | Median   | Median drop       |
+| -------------------------------- | ------ | -------- | -------- | -------- | -------- | ----------------- |
+| `test_first_stage`               | Before | 296.22 s | 298.22 s | 256.75 s | 296.22 s |                   |
+| `test_first_stage`               | After  | 132.17 s | 129.45 s | 117.06 s | 129.45 s | 166.77 s (56.3 %) |
+| `test_remaining_stage_worker`    | Before | 337.28 s | 215.43 s | 213.85 s | 215.43 s |                   |
+| `test_remaining_stage_worker`    | After  | 165.45 s | 106.53 s | 97.36 s  | 106.53 s | 108.90 s (50.6 %) |
+| `test_remaining_stage_admission` | Before | 156.50 s | 135.99 s | 134.11 s | 135.99 s |                   |
+| `test_remaining_stage_admission` | After  | 80.82 s  | 67.25 s  | 68.96 s  | 68.96 s  | 67.03 s (49.3 %)  |
+
+In every module the slowest after run is faster than the fastest before run, so the wall-time
+result is conclusive.
+
+### Self CPU per module
+
+One unprofiled `profile_modules.py` run per state over all 58 test ids, with the method above. All
+runs succeeded.
+
+| Module                           | Tests | State  | Wall    | Self user | Self system | Self user+system | Drop              |
+| -------------------------------- | ----: | ------ | ------- | --------: | ----------: | ---------------: | ----------------- |
+| `test_first_stage`               |    36 | Before | 453.1 s |  139.23 s |    133.49 s |         272.72 s |                   |
+| `test_first_stage`               |    36 | After  | 133.9 s |   44.15 s |     45.72 s |          89.87 s | 182.85 s (67.0 %) |
+| `test_remaining_stage_worker`    |     8 | Before | 264.7 s |   84.15 s |     76.30 s |         160.45 s |                   |
+| `test_remaining_stage_worker`    |     8 | After  | 108.1 s |   34.28 s |     33.03 s |          67.31 s | 93.14 s (58.0 %)  |
+| `test_remaining_stage_admission` |    14 | Before | 151.3 s |   46.66 s |     45.93 s |          92.59 s |                   |
+| `test_remaining_stage_admission` |    14 | After  | 75.2 s  |   23.43 s |     23.14 s |          46.57 s | 46.02 s (49.7 %)  |
+
+Children time is unchanged within noise (at most 4.2 s user and 1.6 s system per module).
+
+### Profiled attribution
+
+Profiled runs of the same three sampled tests as above, one per state, including one after
+commit (a). `canonical()` share is its cumulative thread CPU divided by the test's profiled
+thread CPU. Call counts come from a separate `sys.setprofile` count of the same tests, because
+the fixtures load several copies of `eval_first_stage.py` and cProfile mislabeled some entries of
+those copies in the worker test after commit (b).
+
+| Sampled test module              | State     | Thread CPU | `canonical()` share | `canonical()` calls | `pinned()` calls |
+| -------------------------------- | --------- | ---------: | ------------------: | ------------------: | ---------------: |
+| `test_first_stage`               | Before    |   265.79 s |              65.0 % |             220,410 |           92,988 |
+| `test_first_stage`               | After (a) |    93.74 s |              51.1 % |              77,562 |           76,248 |
+| `test_first_stage`               | After     |    79.25 s |              46.2 % |              77,562 |           76,248 |
+| `test_remaining_stage_worker`    | Before    |   179.95 s |              62.0 % |             154,071 |           64,973 |
+| `test_remaining_stage_worker`    | After (a) |    65.23 s |              48.1 % |              56,071 |           53,686 |
+| `test_remaining_stage_worker`    | After     |    59.82 s |      not attributed |              56,071 |           53,686 |
+| `test_remaining_stage_admission` | Before    |    54.12 s |              59.5 % |              50,918 |           21,468 |
+| `test_remaining_stage_admission` | After (a) |    22.84 s |              43.7 % |              18,418 |           17,712 |
+| `test_remaining_stage_admission` | After     |    21.63 s |              39.1 % |              18,418 |           17,712 |
+
+`authenticate()` ran 36, 25 and 8 times per sampled test in every state, so the drop comes from
+work per call, not from fewer calls. Items 1 to 4 (commit a) account for nearly all of it: they
+cut profiled thread CPU by 64.7 %, 63.8 % and 57.8 % of the before value. They cut `canonical()`
+calls by 65 %, 64 % and 64 %, and `pinned()` calls by 18 %, 17 % and 17 %. Item 5 (commit b)
+changes no call count. It cut profiled thread CPU by a further 5.5, 3.0 and 2.2 points. That
+share is overstated: cProfile inflates the Python-level `pathlib` frames that item 5 removes, and
+the unprofiled runs did not measure commit (a) separately. Item 5 is a loop-safety change, and
+no unprofiled saving is claimed for it.
+
+What remains: `canonical()` is still the largest single cost, through the `lstat` walk inside
+`realpath()`, once per pin. Every call still re-reads and re-verifies every pinned input. The
+off-CPU share of wall time and `test_remaining_stage_composed` were not addressed.
