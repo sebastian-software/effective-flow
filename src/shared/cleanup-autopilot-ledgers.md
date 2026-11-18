@@ -36,4 +36,4 @@ options:
   (both omitted for a run without a pull request). The helper re-reads each ledger and removes its
   directory only while the rule still holds (`removed`); a `retained` item names its reason
   (`run-open`, `pull-request-open`, `pull-request-mismatch`, `forge-unavailable`,
-  `unexpected-entry`, `ledger-invalid`) and stays.
+  `unexpected-entry`, `ledger-invalid`, `retained-plan-copy` with its `planCopies` paths) and stays.

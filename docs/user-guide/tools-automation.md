@@ -84,8 +84,12 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    Autopilot never marks it ready for review and never merges.
 6. **Tidy up.** For a plan file, the reviewed plan travels on the delivery branch, archived with
    the review edits and the completion notes. Once the pull request's head is confirmed to carry
-   it, autopilot restores your checkout's copy of a committed plan to its committed state. It keeps
-   the copy, and says why, when you edited or staged it meanwhile or the delivery is unconfirmed.
+   it, autopilot replaces your checkout's copy of a committed plan with its committed state. The
+   reviewed copy is kept in `.effective-flow/autopilot/<run-id>/plan-copy-<hex>.md` (it may also
+   hold a save you made late); the index is never touched and a file you re-created is never
+   overwritten. The ledger must be on the checkout's filesystem, otherwise the copy stays in place.
+   Autopilot leaves the plan as it is, and says why, when you edited or staged it meanwhile or the
+   delivery is unconfirmed.
    Other local changes outside the plan's affected files stay untouched and are listed in the
    report; a change to one of those files, or a local commit not on the base branch, is a
    blocker.
@@ -159,9 +163,10 @@ local-only finding never appear in it.
 
 **Output:** The draft pull request URL or the reason there is none, the number of automatic, close
 and tie-resolved decisions, every blocker and retained worktree, whether your plan copy was
-restored, every local change left untouched, and the architecture-fit score,
-followed by the [next-step recommendation](tool-flow.md).
+restored and where the retained copy is, every local change left untouched, and the
+architecture-fit score, followed by the [next-step recommendation](tool-flow.md).
 
 **Cleaning up:** `/effective-flow cleanup` lists autopilot ledgers and, after confirmation, removes
 one when its run is closed and its pull request is merged or closed, or when it produced none. A
-ledger whose pull request cannot be read on the forge is kept.
+ledger whose pull request cannot be read on the forge is kept, and so is a run whose retained plan
+copy changed since review (shown as `retained-plan-copy`).

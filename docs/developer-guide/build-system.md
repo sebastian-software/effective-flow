@@ -1460,10 +1460,15 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   archive path (exactly `<dir>/archive/<file>`) or `unarchived: true`, which the appendix source
   line names; `delivery-confirm` stores the verified pushed head. `run-close` returns the recorded
   fit object without its timestamp, or `null`. `plan-copy-restore` (`{cwd, runId, sourceRoot}`) is
-  the helper's one project-file write: it restores a plan source's tracked plan in the invocation
-  checkout to `HEAD` only after a confirmed delivery whose head carries the recorded archive path,
-  with `HEAD:<P>` unchanged since preflight, nothing staged and the working copy still at
-  `reviewedPlanSha256`, and otherwise returns `kept` or `not-applicable`, each with its reason. `pr-appendix` sanitizes every free-text
+  the helper's one project-file write: only after a confirmed delivery whose head carries the
+  recorded archive path, with `HEAD:<P>` unchanged since preflight, nothing staged and the working
+  copy still at `reviewedPlanSha256`, it moves the reviewed copy aside, re-hashes it, retains it as
+  `plan-copy-<16 hex>.md` in the run ledger directory (hard link plus unlink, so the ledger must
+  share the checkout's filesystem, else `retain-failed`) and installs `HEAD`'s working-tree bytes
+  through an exclusive temp file and a no-clobber hard link. It never touches the index; a plan
+  file recreated meanwhile yields `kept`/`working-copy-changed` and survives. A failed retain or
+  install puts the reviewed copy back without clobbering and reports `putBack`; success returns
+  `retainedCopy`. Otherwise it returns `kept` or `not-applicable`, each with its reason. `pr-appendix` sanitizes every free-text
   field, runs the plan-publication content scan with unattended strictness and leaves local-only
   content out. `appendix-merge` reads only: it takes `{cwd, runId, appendixSha256, body}`, derives
   the appendix path from the run directory, and refuses with `APPENDIX_MISMATCH` unless
@@ -1474,7 +1479,9 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   later `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
   withdraw the recorded digest; `delivery-confirm` does not. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
   removes a run's ledger and appendix only while its run is closed and produced no pull request or
-  the caller's `pr-read` stated it merged or closed; an open run, an open pull request,
+  the caller's `pr-read` stated it merged or closed, and deletes a retained plan copy only while it
+  is a regular file still hashing to `reviewedPlanSha256`, otherwise retaining the run as
+  `retained-plan-copy` with `planCopies`; an open run, an open pull request,
   `unavailable` (forge not readable) and a foreign entry keep it. It acts on a pull-request state
   only when the entry's `pullRequest` equals the ledger's (otherwise `pull-request-mismatch`), and
   retains a closed ledger whose outcome and pull request disagree as `ledger-invalid`. The calling contract is

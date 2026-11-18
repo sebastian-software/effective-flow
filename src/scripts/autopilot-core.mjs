@@ -27,9 +27,11 @@
 //   only when every precondition holds; otherwise it reports `kept` or `not-applicable`. It never
 //   overwrites the plan path (a no-clobber install, no `git restore`, so the index stays
 //   unchanged) and never deletes the reviewed copy: that copy is hard-linked into the run ledger
-//   directory through the runtime-state guard and reported as `retainedCopy`. The ledger directory
-//   must be on the plan checkout's filesystem; otherwise (EXDEV) it reports `retain-failed` and
-//   copies nothing.
+//   directory through the runtime-state guard and reported as `retainedCopy`. A failed retain or
+//   install puts the reviewed copy back without clobbering and reports `putBack`. The ledger
+//   directory must be on the plan checkout's filesystem; otherwise (EXDEV) it reports
+//   `retain-failed` and copies nothing. `retain-failed` also carries `retainedCopy` when the
+//   moved-aside name cannot be removed after the link.
 // - `appendix-merge` (reads only): replaces the one appendix block of a pull-request body or
 //   appends it, for `pr`'s `Appendix:` input; it reads the run's appendix only when its SHA-256 is
 //   the one `pr-appendix` recorded, and never while a security blocker stands on a repository whose
@@ -1838,9 +1840,11 @@ async function requireSourceRoot(ctx, value) {
 //   a Git read fails (the `sourceRoot` checks included), `retain-failed` with a `detail` and
 //   `putBack` when the reviewed copy cannot be linked into the run ledger (a guard refusal, or
 //   EXDEV: the ledger directory must be on the checkout's filesystem; with `putBack: false` the
-//   `detail` names where the copy is), or `restore-failed` with a `detail` when moving the copy
-//   aside or the install fails (the latter with `retainedCopy` and `putBack`, whether the retained
-//   copy was linked back to the plan path). A kept copy is never an error.
+//   `detail` names where the copy is; when the moved-aside name cannot be removed after a
+//   successful link, `retain-failed` also carries `retainedCopy`), or `restore-failed` with a
+//   `detail` when moving the copy aside or the install fails (the latter with `retainedCopy` and
+//   `putBack`, whether the retained copy was linked back to the plan path). A kept copy is never an
+//   error.
 async function planCopyRestoreOperation(input, deps) {
   closed(input, ['cwd', 'runId', 'sourceRoot'], [], 'input');
   requireRunId(input.runId);
