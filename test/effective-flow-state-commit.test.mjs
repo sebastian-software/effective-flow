@@ -49,6 +49,7 @@ import {
   createProcessRunner,
   terminateActiveProcessGroups,
 } from '../src/scripts/process-runner.mjs';
+import { waitForMarker } from './support/marker-wait.mjs';
 
 const GIT_ENV = {
   ...process.env,
@@ -143,14 +144,6 @@ function expectOutcome(envelope, code) {
 function expectResult(envelope) {
   assert.equal(envelope.ok, true, JSON.stringify(envelope));
   return envelope.result;
-}
-
-async function waitForFile(target) {
-  for (let attempt = 0; attempt < 400; attempt += 1) {
-    if (existsSync(target)) return;
-    await delay(25);
-  }
-  throw new Error(`${target} never appeared`);
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -810,7 +803,7 @@ test('commit create is INTERRUPTED during a running pre-commit hook', async (t) 
     input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
     signalDeps(target),
   );
-  await waitForFile(marker);
+  await waitForMarker(marker, { settled: pending });
   target.emit('SIGTERM');
   const outcome = expectOutcome(await pending, 'INTERRUPTED');
   assert.equal(outcome.commit, null);
@@ -832,7 +825,7 @@ test('commit create is INTERRUPTED with the SHA when the commit landed', async (
     input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
     signalDeps(target),
   );
-  await waitForFile(marker);
+  await waitForMarker(marker, { settled: pending });
   target.emit('SIGHUP');
   const outcome = expectOutcome(await pending, 'INTERRUPTED');
   assert.equal(outcome.signal, 'SIGHUP');
@@ -956,12 +949,12 @@ test('commit create is INTERRUPTED during a stalled clean filter in git add', as
   slowFilterAttributes(root);
   const marker = defineSlowFilter(root);
   const target = new EventEmitter();
-  const started = Date.now();
   const pending = commitCreate(
     input(root, { paths: ['data.bin'], expect: { 'data.bin': expected } }),
     signalDeps(target),
   );
-  await waitForFile(marker);
+  await waitForMarker(marker, { settled: pending });
+  const started = Date.now();
   target.emit('SIGTERM');
   const outcome = expectOutcome(await pending, 'INTERRUPTED');
   assert.ok(Date.now() - started < 10_000, 'the signal stops the stalled filter');
@@ -985,7 +978,6 @@ test('commit create is INTERRUPTED during a stalled clean filter in the trust ch
   writeFileSync(join(root, 'tracked.txt'), 'changed\n');
   let marker;
   const target = new EventEmitter();
-  const started = Date.now();
   const pending = commitCreate(
     input(root, { expect: { 'tracked.txt': blob(root, 'tracked.txt') } }),
     signalDeps(target, {
@@ -997,8 +989,9 @@ test('commit create is INTERRUPTED during a stalled clean filter in the trust ch
       },
     }),
   );
-  while (marker === undefined) await delay(10);
-  await waitForFile(marker);
+  // The marker path is known only under the lock; a call that settles earlier fails the wait.
+  await waitForMarker(() => marker, { settled: pending });
+  const started = Date.now();
   target.emit('SIGINT');
   const outcome = expectOutcome(await pending, 'INTERRUPTED');
   assert.ok(Date.now() - started < 10_000, 'the signal stops the stalled filter');

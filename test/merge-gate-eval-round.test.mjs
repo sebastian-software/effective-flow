@@ -62,6 +62,7 @@ import {
 } from '../evals/merge-gate/_scaffold/run-state-seed.mjs';
 import { SEALED_OBSERVATION_SCHEMA } from '../evals/merge-gate/_scaffold/sealed-observation.mjs';
 import nextStepsSuite from '../evals/next-steps/suite.config.mjs';
+import { waitForMarker } from './support/marker-wait.mjs';
 
 // Every suite the shared scaffold runs, with the outcome chain its evaluator exposes. The contract
 // checks below are the loader's and the parity rule's, so each suite is held to them.
@@ -203,16 +204,36 @@ function runCoreChild(exportName, argumentsValue, { env = {} } = {}) {
   );
 }
 
+// Never rejects, so `Promise.all`, the teardown and the marker waits can all rely on it. A spawn
+// failure (`error` before the child has a pid) settles it at once with `code: null`; an `error`
+// from a running child, such as a failed `kill`, is recorded and reported with the later `exit`.
 function childResult(child) {
   return new Promise((resolveResult) => {
     let stdout = '';
     let stderr = '';
+    let error;
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
     child.stdout.on('data', (chunk) => (stdout += chunk));
     child.stderr.on('data', (chunk) => (stderr += chunk));
-    child.on('exit', (code, signal) => resolveResult({ code, signal, stdout, stderr }));
+    child.on('error', (failure) => {
+      if (child.pid === undefined) {
+        resolveResult({ code: null, signal: null, stdout, stderr, error: failure });
+      } else {
+        error ??= failure;
+      }
+    });
+    child.on('exit', (code, signal) =>
+      resolveResult({ code, signal, stdout, stderr, ...(error === undefined ? {} : { error }) }),
+    );
   });
+}
+
+// The one rendering of a child's outcome in a failed marker wait: how it ended and the tail of
+// its stderr, bounded so a noisy child cannot drown the message.
+function describeChild({ code, signal, error, stderr }) {
+  const failure = error === undefined ? '' : `, error ${error.message}`;
+  return `code ${code}, signal ${signal}${failure}; stderr: ${stderr.slice(-4096)}`;
 }
 
 function runSlotStub(paths, operation = 'pr-comments-read') {
@@ -223,14 +244,6 @@ function runSlotStub(paths, operation = 'pr-comments-read') {
   );
   child.stdin.end(JSON.stringify({ cwd: paths.projectRoot }));
   return childResult(child);
-}
-
-async function waitForFile(path, timeoutMs = 10_000) {
-  const deadline = Date.now() + timeoutMs;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) throw new Error(`timed out waiting for ${path}`);
-    await new Promise((resolveWait) => setTimeout(resolveWait, 10));
-  }
 }
 
 function legacyLog(projectRoot, { merge = false, wrongRoot = false } = {}) {
@@ -1500,7 +1513,7 @@ test(
       );
       const interruptedSealResult = childResult(interruptedSeal);
       parked.push({ child: interruptedSeal, release: null, result: interruptedSealResult });
-      await waitForFile(sealMarker);
+      await waitForMarker(sealMarker, { settled: interruptedSealResult, describe: describeChild });
       interruptedSeal.kill('SIGKILL');
       assert.equal((await interruptedSealResult).signal, 'SIGKILL');
       const resumedSeal = sealAttempt(suite, {
@@ -1549,7 +1562,10 @@ test(
       );
       const interruptedRetryResult = childResult(interruptedRetry);
       parked.push({ child: interruptedRetry, release: null, result: interruptedRetryResult });
-      await waitForFile(retryMarker);
+      await waitForMarker(retryMarker, {
+        settled: interruptedRetryResult,
+        describe: describeChild,
+      });
       const pendingRetry = roundStatus(suite, prepared.manifestPath, { base }).find(
         ({ slot: number }) => number === 3,
       );
@@ -1806,7 +1822,10 @@ test(
         release: blockingRecoveryRelease,
         result: blockingRecoveryResult,
       });
-      await waitForFile(blockingRecoveryMarker);
+      await waitForMarker(blockingRecoveryMarker, {
+        settled: blockingRecoveryResult,
+        describe: describeChild,
+      });
       const waitingPublisherMarker = resolve(temporary, 'publisher-is-waiting');
       const waitingPublisher = runCoreChild('publishRound', publicationArguments, {
         env: {
@@ -1814,14 +1833,23 @@ test(
           EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: '3000',
         },
       });
-      await waitForFile(waitingPublisherMarker);
+      const waitingPublisherResultPromise = childResult(waitingPublisher);
+      parked.push({
+        child: waitingPublisher,
+        release: null,
+        result: waitingPublisherResultPromise,
+      });
+      await waitForMarker(waitingPublisherMarker, {
+        settled: waitingPublisherResultPromise,
+        describe: describeChild,
+      });
       const sealedLog = readFileSync(slot(5).callLog);
       appendFileSync(slot(5).callLog, '\nmutation while publication waits\n');
       // The holder leaves the lock only now, so the waiting publisher's own budget has to cover
       // two synchronous parent-side file operations rather than another process's startup.
       writeFileSync(blockingRecoveryRelease, 'release');
       assert.equal((await blockingRecoveryResult).code, 0);
-      const waitingPublisherResult = await childResult(waitingPublisher);
+      const waitingPublisherResult = await waitingPublisherResultPromise;
       assert.notEqual(waitingPublisherResult.code, 0);
       assert.match(waitingPublisherResult.stderr, /changed after sealing/);
       assert.equal(
@@ -1841,7 +1869,10 @@ test(
       });
       const predecessorResultPromise = childResult(predecessor);
       parked.push({ child: predecessor, release: releaseSignal, result: predecessorResultPromise });
-      await waitForFile(releaseMarker, 30_000);
+      await waitForMarker(releaseMarker, {
+        settled: predecessorResultPromise,
+        describe: describeChild,
+      });
       assert.equal(existsSync(displacedLock), false);
       renameSync(publicationLock, displacedLock);
       ownsDisplacedLock = true;
@@ -1892,7 +1923,10 @@ test(
         release: serializationRelease,
         result: firstPublisherResult,
       });
-      await waitForFile(serializationMarker);
+      await waitForMarker(serializationMarker, {
+        settled: firstPublisherResult,
+        describe: describeChild,
+      });
       const refusedLiveRecovery = runCoreChild('recoverPublication', {
         resultsDir,
         publicationRoot,
@@ -1916,7 +1950,10 @@ test(
       });
       const secondPublisherResult = childResult(secondPublisher);
       parked.push({ child: secondPublisher, release: null, result: secondPublisherResult });
-      await waitForFile(secondPublisherMarker);
+      await waitForMarker(secondPublisherMarker, {
+        settled: secondPublisherResult,
+        describe: describeChild,
+      });
       writeFileSync(serializationRelease, 'release');
       const serializedResults = await Promise.all([firstPublisherResult, secondPublisherResult]);
       assert.ok(
@@ -1943,7 +1980,10 @@ test(
         release: recoverySerializationRelease,
         result: firstRecoveryResult,
       });
-      await waitForFile(recoverySerializationMarker);
+      await waitForMarker(recoverySerializationMarker, {
+        settled: firstRecoveryResult,
+        describe: describeChild,
+      });
       const secondRecovery = runCoreChild('recoverPublication', { resultsDir, publicationRoot });
       const secondRecoveryResult = await childResult(secondRecovery);
       assert.notEqual(secondRecoveryResult.code, 0);
@@ -1967,8 +2007,10 @@ test(
         release: finalBuildRelease,
         result: finalBuildPublisherResultPromise,
       });
-      // Two full builds run before this marker (about 7 s alone); allow suite-wide load.
-      await waitForFile(finalBuildMarker, 30_000);
+      await waitForMarker(finalBuildMarker, {
+        settled: finalBuildPublisherResultPromise,
+        describe: describeChild,
+      });
       const finalBuildSealedLog = readFileSync(slot(5).callLog);
       appendFileSync(slot(5).callLog, '\nmutation after final build\n');
       writeFileSync(finalBuildRelease, 'release');
@@ -2036,7 +2078,7 @@ test(
         // from stranding the run when an assertion below its marker fails.
         const publisherResult = childResult(publisher);
         parked.push({ child: publisher, release: null, result: publisherResult });
-        await waitForFile(pauseMarker);
+        await waitForMarker(pauseMarker, { settled: publisherResult, describe: describeChild });
         if (phase === 'candidate-ready') {
           const competing = runCoreChild('publishRound', publicationArguments, {
             env: { EFFECTIVE_FLOW_EVAL_PUBLICATION_LOCK_WAIT_MS: '100' },
@@ -2065,7 +2107,10 @@ test(
       });
       const corruptPublisherResult = childResult(corruptPublisher);
       parked.push({ child: corruptPublisher, release: null, result: corruptPublisherResult });
-      await waitForFile(corruptMarker);
+      await waitForMarker(corruptMarker, {
+        settled: corruptPublisherResult,
+        describe: describeChild,
+      });
       const journalPath = resolve(publicationRoot, '.results-publication.json');
       const corruptJournal = JSON.parse(readFileSync(journalPath, 'utf8'));
       appendFileSync(
