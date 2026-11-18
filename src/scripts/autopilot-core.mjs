@@ -47,7 +47,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readdir, realpath } from 'node:fs/promises';
+import { link, lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { hasClosingKeyword, scanEntries } from './plan-publication-core.mjs';
@@ -1761,7 +1761,9 @@ async function requireSourceRoot(ctx, value) {
 // copy hashing to `reviewedPlanSha256`. `HEAD`, the index entry and the working copy are
 // re-checked immediately before the restore. Every `HEAD:<P>` comparison uses the working-tree
 // form, so end-of-line and smudge filters never make an unchanged plan look changed. Results:
-// - `{ result: 'restored', planPath }`;
+// - `{ result: 'restored', planPath }`, after the working copy was moved aside and verified to
+//   still hash to `reviewedPlanSha256`, so a save landing after the last check is put back, never
+//   overwritten;
 // - `{ result: 'not-applicable', reason }` when nothing in `sourceRoot` is run-owned:
 //   `issue-source`, `untracked` (no `HEAD:<P>`, which covers a plan archival already moved there),
 //   `missing` (no working copy) or `unchanged` (the working copy equals `HEAD:<P>` in
@@ -1829,6 +1831,36 @@ async function restorePlanCopy(ctx, root, ledger, deps, { planPath, notApplicabl
   const current = await readPlanFile(root, planPath);
   if (current.state !== 'file') return kept('working-copy-unsafe');
   if (current.sha256 !== source.reviewedPlanSha256) return kept('working-copy-changed');
+  // The check above and a write by `git restore` leave a window in which an editor can save the
+  // plan. Moving the file aside first closes it: the rename captures whatever is on disk at that
+  // instant, and it is hashed again before anything is discarded.
+  const target = path.join(root, ...planPath.split('/'));
+  if (typeof deps.afterPlanRestoreChecks === 'function') await deps.afterPlanRestoreChecks();
+  const aside = `${target}.autopilot-restore-${randomBytes(6).toString('hex')}`;
+  try {
+    await rename(target, aside);
+  } catch (error) {
+    return kept('restore-failed', { detail: String(error?.message ?? error) });
+  }
+  const putBack = async () => {
+    try {
+      await link(aside, target);
+      await unlink(aside);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let moved;
+  try {
+    moved = sha256(await readBoundedRegular(aside, MAX_PLAN_BYTES, 'the plan'));
+  } catch {
+    moved = null;
+  }
+  if (moved !== source.reviewedPlanSha256) {
+    const back = await putBack();
+    return kept('working-copy-changed', back ? {} : { detail: `saved copy kept at ${aside}` });
+  }
   const restored = await runGit(ctx, root, [
     'restore',
     '--worktree',
@@ -1837,10 +1869,14 @@ async function restorePlanCopy(ctx, root, ledger, deps, { planPath, notApplicabl
     `:(literal)${planPath}`,
   ]);
   if (restored?.error || restored?.status !== 0) {
+    const back = await putBack();
     return kept('restore-failed', {
-      detail: restored?.error?.message ?? errorDetail(restored?.stderr),
+      detail:
+        (restored?.error?.message ?? errorDetail(restored?.stderr)) +
+        (back ? '' : `; the reviewed copy is kept at ${aside}`),
     });
   }
+  await unlink(aside).catch(() => {});
   return { result: 'restored', planPath };
 }
 

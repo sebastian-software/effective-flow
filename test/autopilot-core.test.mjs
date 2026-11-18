@@ -11,6 +11,7 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
   readFileSync,
   realpathSync,
   renameSync,
@@ -19,7 +20,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
 import {
@@ -2283,6 +2284,32 @@ test('plan-copy-restore re-checks HEAD, the index and the file before restoring 
     assert.deepEqual(kept.data, { result: 'kept', reason, planPath: PLAN_PATH }, label);
     assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED, label);
   }
+});
+
+// Invariant: an edit saved after the last precondition check but before the restore writes is
+// kept, never overwritten, and no aside copy is left behind.
+test('plan-copy-restore keeps a plan saved after the final check', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const late = `${REVIEWED}\nlate edit\n`;
+  const kept = await restore(
+    root,
+    runId,
+    {},
+    { afterPlanRestoreChecks: () => writeFileSync(join(root, PLAN_PATH), late) },
+  );
+  assert.deepEqual(kept.data, {
+    result: 'kept',
+    reason: 'working-copy-changed',
+    planPath: PLAN_PATH,
+  });
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), late);
+  assert.deepEqual(
+    readdirSync(join(root, dirname(PLAN_PATH))).filter((name) =>
+      name.includes('autopilot-restore'),
+    ),
+    [],
+  );
 });
 
 // Invariant: a tracked plan without a working copy has nothing run-owned to restore, and a
