@@ -1,6 +1,6 @@
 # Autopilot: fix the smoke-run findings
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -273,3 +273,76 @@ Deep plan review of 2026-11-18. Earlier rounds in this run (gap analysis, intern
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-18
+
+### Implemented
+
+- **Helper (`src/scripts/autopilot-core.mjs`, `autopilot.mjs`):**
+  - New operations:
+    - `plan-reviewed {cwd, runId, sourceRoot}`: hashes the reviewed copy in the invocation checkout itself and records `reviewedPlanSha256` and `sourceRoot`. It is refused once a delivery is recorded.
+    - `delivery-record {cwd, runId, archivePath | unarchived}`: plan sources only.
+    - `delivery-confirm {cwd, runId, headOid}`.
+    - `plan-copy-restore {cwd, runId, sourceRoot}`: gated, and restores from the verified commit in working-tree form. Results are `restored`, `kept` with a reason, or `not-applicable` with a reason. Git read failures map to `kept`/`git-read-failed`.
+  - `run-close` returns the stored fit object.
+  - `fit-record` accepts `unavailable` only without sources.
+  - `pr-appendix` renders the recorded archive path.
+- **Build (`build-lib.mjs`):** `transformRefs` is code-span-aware for internal tool, agent and agent-profile placeholders, and `splitInlineCodeSpans` follows CommonMark block boundaries and escapes. `collectRenderedWorkerRefs` matches identifiers inside longer spans.
+- **Baseline proof (`scripts/compare-native-agent-baseline.mjs`):** declared the intended `code-span-placeholder-pairs` body delta.
+- **Prompt sources:**
+  - `autopilot.md`:
+    - preflight fields;
+    - call order, `plan-reviewed` → `delivery-record` → `pr-appendix` → `delivery-confirm` → `plan-copy-restore` → `run-close`, with plan-source conditions;
+    - fit sources read from the delivery head;
+    - Phase 6 report.
+  - `scored-decisions.md`:
+    - carry-over bullet: the single owner, and a verified no-op counts;
+    - handback output;
+    - rows S-LOC (`fixed`, conditional blocker) and S-PDCF/S-PDAD/S-PDSL (`blocker`);
+    - narrowed S-STSH and "Fixed answers".
+  - `plan-archival.md`:
+    - carry-over input and roots-table row;
+    - State A stages after `git mv`, and State D stages its refresh;
+    - State C carry-over cleanup;
+    - cleanup precondition 3 against `reviewedPlanSha256`.
+  - `build-delegated-run.md` and `docs.md`: point to the copy `scored-decisions` names. Build also tracks `zeroFailures`.
+  - `verification-evidence.md`: identical-tree zero-failure arm, and a gated second-full-run arm.
+  - `model-selection.md`: bare role form.
+  - `worktree-integration.md`: rewrapped anchor.
+  - `autopilot-issue-source.md`: plan-on-base pointer.
+- **Docs:** `docs/developer-guide/build-system.md` (helper operations, code-span rendering) and `docs/user-guide/tools-automation.md`.
+- **`contextBudget`:** `autopilot` 444 → 474 (built 469).
+
+### Deviations from the plan
+
+- `plan-reviewed` takes a required `sourceRoot` and records it, and `plan-copy-restore` requires the same root. The reviewed copy lives in the invocation checkout, which in a worktree session is not `RUNTIME_STATE_ROOT`.
+- `delivery-record` and `plan-reviewed` are plan-source only. The issue plan-on-base path skips them.
+- `plan-copy-restore` adds the `kept` reasons `review-unrecorded`, `source-root-mismatch`, `git-read-failed` and `head-unreadable`, and the `not-applicable` reason `missing`.
+- `plan-archival` has no "Paths" section, so `autopilot.md` states the quoting rule inline. The overlap rule lives in the "Fixed answers" bullet.
+- The three-row partial-diff coverage uses the ids S-PDCF, S-PDAD and S-PDSL. The local-change row is S-LOC.
+
+### Test results
+
+- **Phase 5 full CI order:** all passed.
+  - `pnpm agent:check`
+  - `pnpm test`: 6011 tests, 5950 pass, 0 fail, 61 skipped.
+  - `node build.mjs`
+  - `pnpm test:distribution`
+- **Phase 7:** targeted over the Delta since the Phase 5 tree. No path required a second full run.
+  - 39 affected test files: 2537 tests, 2496 pass, 0 fail, 41 skipped.
+  - `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` passed.
+- **Not run:** the two manual plan-source smoke runs from the acceptance criteria are outstanding.
+
+## Review findings
+
+**Date:** 2026-11-18
+**Reviewer:** effective-flow-nodejs-reviewer, effective-flow-generic-product-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    19 |
+| Open / Not implemented |     0 |

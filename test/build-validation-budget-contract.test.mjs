@@ -147,7 +147,8 @@ test('the budget state is persisted and fails conservatively', () => {
   includesAll(
     budget,
     [
-      'When Phase 5 ends, keep the budget state `{phase5Tree, validFullRun, reason, secondFullUsed}`',
+      'When Phase 5 ends, keep the budget state `{phase5Tree, validFullRun, zeroFailures, reason, secondFullUsed}`',
+      '`zeroFailures` is `true` only for a valid full run that ended with no failure at all, attributed ones included',
       'retain it with `retain-evidence` as `validation-budget`',
       '`phase5Tree` is the `currentTree` of the render that started the full run',
       '`secondFullUsed` is `false`',
@@ -525,14 +526,22 @@ test('the protected bridge keeps its full-candidate proof', () => {
   );
 });
 
-// Invariant: the evidence map shows the Phase 5 full suite as `skipped` with a limitation, maps
-// attributed failures as `failed` (`baseline-failure` only against the exact `baselineTree`), and
-// never leaks a private tree id; the completion report never claims full verification over a gap.
+// Invariant: the evidence map follows tree identity: the Phase 5 full suite is `passed` only when
+// the Phase 7 tree equals the zero-failure Phase 5 tree, a used second full run maps from its
+// result, attributed failures stay `failed` (`baseline-failure` only against the exact
+// `baselineTree`), and a differing tree is `skipped` with a limitation; no private tree id leaks
+// and the completion report never claims full verification over a gap.
 test('evidence and completion report never overstate the verification', () => {
   includesAll(
     evidence,
     [
-      'Without a signature the full suite is `skipped`, provenance `not-run`',
+      "When the step 1 render's `currentTree` equals the `phase5Tree` of a valid Phase 5 full run with `zeroFailures`, it is `passed`, provenance `executed`, scope `full suite on the verified tree`, with no `limitation`",
+      'a valid run with attributed failures keeps the `failed` mapping below',
+      // The second full run counts only when valid and on the final tree; a signature-cancelled
+      // one takes the `limited` mapping, any other falls through to `skipped`.
+      "A used second full run maps as `passed` or `failed` from its result only when it was valid and ran on the step 1 render's `currentTree`",
+      'After a signature or host-tool timeout, in the second full run too, the `limited` mapping above applies. Otherwise the full suite maps from the retained budget state.',
+      'In every other case the full suite is `skipped`, provenance `not-run`',
       '`full suite ran before later corrections; changes since verified targeted`',
       '`no valid full-suite run; changes verified targeted` on the cumulative path',
       'each targeted check run is mapped the same way, marked `(targeted)`',

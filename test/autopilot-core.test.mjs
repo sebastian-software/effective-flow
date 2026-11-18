@@ -1,16 +1,21 @@
 // Unit tests of the autopilot decision core: score validation and classification (silent,
 // documented, tie, tie re-score, floor, stop option, budget), the plan machine block, the run
 // ledger in temporary Git repositories (consent, local-only storage, close), the pull-request
-// appendix with its sanitization and content scan, and `cleanup`'s ledger inventory and removal.
+// appendix with its sanitization and content scan, `cleanup`'s ledger inventory and removal, the
+// reviewed-plan and delivery records, and the gated restore of the run's own plan edit.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -33,6 +38,7 @@ import {
   mergeAppendix,
   renderAppendix,
   sanitizeField,
+  archivePathFor,
   validateAppendixMarkers,
 } from '../src/scripts/autopilot-core.mjs';
 import { main } from '../src/scripts/autopilot.mjs';
@@ -878,7 +884,12 @@ test('run-close reports counts and refuses further writes', async (t) => {
     blockers: 0,
     budgetRemaining: DECISION_CAP - 2,
   });
-  assert.equal(closedRun.data.fit, 7);
+  assert.deepEqual(closedRun.data.fit, {
+    assessed: true,
+    score: 7,
+    reason: 'Follows ADRs',
+    sources: ['docs/adr/a.md'],
+  });
   const again = await op('blocker-record', {
     cwd: root,
     runId,
@@ -1336,19 +1347,15 @@ test('plan and source paths reject control characters and backticks and are sani
 
 // Invariant: when architecture or roadmap sources exist but scoring produced no score, the fit
 // section says exactly "scoring unavailable"; the no-sources form keeps its own line, and the
-// unavailable form names its sources and carries no score.
+// unavailable form carries no score and takes no source list, so the fallback can never exceed the
+// source limit or turn into a blocker.
 test('fit-record records an unavailable fit and the appendix renders its line', async (t) => {
   const root = repository(t);
   const runId = await init(root);
-  const recordedFit = await op('fit-record', {
-    cwd: root,
-    runId,
-    unavailable: true,
-    sources: ['docs/adr/a.md', 'docs/adr/a.md'],
-  });
+  const recordedFit = await op('fit-record', { cwd: root, runId, unavailable: true });
   assert.deepEqual(recordedFit.data, {
     recorded: true,
-    fit: { assessed: false, unavailable: true, sources: ['docs/adr/a.md'] },
+    fit: { assessed: false, unavailable: true },
   });
   const rendered = await op('pr-appendix', { cwd: root, runId });
   assert.match(
@@ -1357,8 +1364,10 @@ test('fit-record records an unavailable fit and the appendix renders its line', 
   );
   assert.doesNotMatch(rendered.data.appendix, /no architecture or roadmap sources found/);
   for (const input of [
+    { unavailable: true, sources: ['docs/adr/a.md'] },
     { unavailable: true, sources: [] },
-    { unavailable: true },
+    { unavailable: true, sources: Array.from({ length: 21 }, (_, i) => `docs/adr/${i}.md`) },
+    { unavailable: false },
     { unavailable: true, sources: ['docs/adr/a.md'], score: 5 },
     { unavailable: true, notAssessed: true },
   ]) {
@@ -1652,4 +1661,798 @@ test('the CLI writes one envelope and exits 2 on an unknown operation', async ()
   assert.equal(envelope.ok, false);
   assert.equal(JSON.parse(written).error.code, 'INVALID_INPUT');
   assert.equal(exit, 2);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Architecture fit at close, reviewed plan, delivery records
+
+// Invariant: `run-close` returns the stored fit object without its timestamp, so the report can
+// tell a score, "no sources", "scoring unavailable" and "never recorded" apart.
+test('run-close returns every stored fit shape and null when none was recorded', async (t) => {
+  const root = repository(t);
+  const cases = [
+    [null, null],
+    [{ notAssessed: true }, { assessed: false }],
+    [{ unavailable: true }, { assessed: false, unavailable: true }],
+    [
+      { score: 8, reason: 'Fits.', sources: ['docs/adr/a.md'] },
+      { assessed: true, score: 8, reason: 'Fits.', sources: ['docs/adr/a.md'] },
+    ],
+  ];
+  for (const [input, expected] of cases) {
+    const runId = await init(root);
+    if (input) assert.equal((await op('fit-record', { cwd: root, runId, ...input })).ok, true);
+    const closedRun = await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+    assert.deepEqual(closedRun.data.fit, expected, JSON.stringify(input));
+  }
+});
+
+const PLAN_PATH = 'docs/plan/p.md';
+const ARCHIVE_PATH = 'docs/plan/archive/p.md';
+const ORIGINAL = '# Plan\n\n**Plan status:** Not implemented\n';
+const REVIEWED = '# Plan\n\n**Plan status:** Not implemented\n\nReviewed.\n';
+
+function digest(value) {
+  return createHash('sha256').update(value).digest('hex');
+}
+
+function commitAll(cwd, message) {
+  git(cwd, 'add', '-A');
+  git(cwd, 'commit', '-q', '-m', message);
+}
+
+// A plan-source run whose plan review edited the plan in the primary checkout. `tracked: false`
+// leaves the plan uncommitted (State C).
+async function planRun(t, { tracked = true, review = true } = {}) {
+  const root = repository(t);
+  mkdirSync(join(root, 'docs/plan'), { recursive: true });
+  writeFileSync(join(root, PLAN_PATH), ORIGINAL);
+  if (tracked) commitAll(root, 'plan');
+  const runId = await init(root, {
+    source: { kind: 'plan', planPath: PLAN_PATH, planSha256: digest(ORIGINAL) },
+    visibility: 'public',
+  });
+  if (review) {
+    writeFileSync(join(root, PLAN_PATH), REVIEWED);
+    const reviewed = await op('plan-reviewed', { cwd: root, runId, sourceRoot: root });
+    assert.equal(reviewed.ok, true, JSON.stringify(reviewed));
+  }
+  return { root, runId };
+}
+
+let branches = 0;
+// The implementing workflow's delivery: a linked worktree on its own branch that commits the
+// reviewed plan archived (or unarchived), then the two ledger writes.
+async function deliver(t, root, runId, { archive = true, record = true, confirm = true } = {}) {
+  const worktree = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-autopilot-wt-')));
+  t.after(() => rmSync(worktree, { recursive: true, force: true }));
+  git(root, 'worktree', 'add', '-q', '-b', `delivery-${(branches += 1)}`, worktree);
+  mkdirSync(join(worktree, 'docs/plan'), { recursive: true });
+  writeFileSync(join(worktree, PLAN_PATH), REVIEWED);
+  git(worktree, 'add', PLAN_PATH);
+  if (archive) {
+    mkdirSync(join(worktree, 'docs/plan/archive'));
+    git(worktree, 'mv', PLAN_PATH, ARCHIVE_PATH);
+  }
+  commitAll(worktree, 'deliver');
+  const headOid = git(worktree, 'rev-parse', 'HEAD');
+  if (record) {
+    const recorded = await op('delivery-record', {
+      cwd: root,
+      runId,
+      ...(archive ? { archivePath: ARCHIVE_PATH } : { unarchived: true }),
+    });
+    assert.equal(recorded.ok, true, JSON.stringify(recorded));
+  }
+  if (confirm) {
+    const confirmed = await op('delivery-confirm', { cwd: root, runId, headOid });
+    assert.equal(confirmed.ok, true, JSON.stringify(confirmed));
+  }
+  return { worktree, headOid };
+}
+
+function restore(root, runId, extra = {}, options = {}) {
+  return executeOperation(
+    'plan-copy-restore',
+    { cwd: root, runId, sourceRoot: root, ...extra },
+    deps(options),
+  );
+}
+
+// Invariant: the reviewed-plan digest is the helper's own hash of the plan file in the invocation
+// checkout, recorded with that checkout's root only for a plan source on an open run, and
+// `run-check` hands both to the implementing workflow.
+test('plan-reviewed hashes the plan itself and run-check returns it in source', async (t) => {
+  const { root, runId } = await planRun(t);
+  assert.equal(ledger(root, runId).source.reviewedPlanSha256, digest(REVIEWED));
+  assert.equal(ledger(root, runId).source.sourceRoot, root);
+  const checked = await op('run-check', { cwd: root, runId });
+  assert.deepEqual(checked.data.source, {
+    kind: 'plan',
+    planPath: PLAN_PATH,
+    planSha256: digest(ORIGINAL),
+    reviewedPlanSha256: digest(REVIEWED),
+    sourceRoot: root,
+  });
+
+  const review = (extra = {}) =>
+    op('plan-reviewed', { cwd: root, runId, sourceRoot: root, ...extra });
+  const extra = await review({ sha256: digest(REVIEWED) });
+  assert.equal(extra.error.code, 'INVALID_INPUT');
+  const withoutRoot = await op('plan-reviewed', { cwd: root, runId });
+  assert.equal(withoutRoot.error.code, 'INVALID_INPUT');
+  assert.equal((await review({ sourceRoot: 'docs' })).error.code, 'INVALID_INPUT');
+  assert.equal((await review({ sourceRoot: join(root, 'docs') })).error.code, 'UNSAFE_TARGET');
+  assert.equal((await review({ sourceRoot: repository(t) })).error.code, 'UNSAFE_TARGET');
+  const issueRun = await init(root);
+  const issue = await review({ runId: issueRun });
+  assert.equal(issue.error.code, 'INVALID_INPUT');
+
+  rmSync(join(root, PLAN_PATH));
+  symlinkSync(join(root, '.gitignore'), join(root, PLAN_PATH));
+  const linked = await review();
+  assert.equal(linked.error.code, 'UNSAFE_TARGET');
+  rmSync(join(root, PLAN_PATH));
+  const missing = await review();
+  assert.equal(missing.error.code, 'NOT_FOUND');
+  assert.equal(ledger(root, runId).source.reviewedPlanSha256, digest(REVIEWED));
+
+  await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  writeFileSync(join(root, PLAN_PATH), REVIEWED);
+  const closedRun = await review();
+  assert.equal(closedRun.error.code, 'RUN_CLOSED');
+});
+
+// Invariant: in a harness worktree session the invocation checkout is a linked worktree, not
+// `cwd`; `plan-reviewed` hashes the plan there and records that root, and `plan-copy-restore`
+// restores only in the recorded root and keeps the copy for any other one.
+test('plan-reviewed and plan-copy-restore follow a linked-worktree sourceRoot', async (t) => {
+  const { root, runId } = await planRun(t, { review: false });
+  const session = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-autopilot-session-')));
+  t.after(() => rmSync(session, { recursive: true, force: true }));
+  git(root, 'worktree', 'add', '-q', '-b', 'session', session);
+  const sessionReviewed = `${REVIEWED}Reviewed in the session.
+`;
+  writeFileSync(join(session, PLAN_PATH), sessionReviewed);
+  writeFileSync(join(root, PLAN_PATH), REVIEWED);
+  const reviewed = await op('plan-reviewed', { cwd: root, runId, sourceRoot: session });
+  assert.deepEqual(reviewed.data, {
+    recorded: true,
+    reviewedPlanSha256: digest(sessionReviewed),
+    sourceRoot: session,
+  });
+  const checked = await op('run-check', { cwd: root, runId });
+  assert.equal(checked.data.source.sourceRoot, session);
+  assert.equal(checked.data.source.reviewedPlanSha256, digest(sessionReviewed));
+
+  await deliver(t, root, runId);
+  const mismatch = await restore(root, runId);
+  assert.deepEqual(mismatch.data, {
+    result: 'kept',
+    reason: 'source-root-mismatch',
+    planPath: PLAN_PATH,
+  });
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+
+  const index = git(session, 'ls-files', '-s');
+  const restored = await restore(root, runId, { sourceRoot: session });
+  assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+  assert.equal(readFileSync(join(session, PLAN_PATH), 'utf8'), ORIGINAL);
+  assert.equal(git(session, 'ls-files', '-s'), index);
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+});
+
+// Invariant: `delivery-record` takes exactly the archive path plan archival produces, or an
+// unarchived delivery, and only on an open plan-source run.
+test('delivery-record accepts only the archive path or an unarchived delivery', async (t) => {
+  const { root, runId } = await planRun(t);
+  assert.equal(archivePathFor(PLAN_PATH), ARCHIVE_PATH);
+  for (const input of [
+    { archivePath: 'docs/plan/archive/other.md' },
+    { archivePath: 'docs/archive/p.md' },
+    { archivePath: '/abs/docs/plan/archive/p.md' },
+    { archivePath: ARCHIVE_PATH, unarchived: true },
+    { unarchived: false },
+    { archivePath: ARCHIVE_PATH, headOid: 'a'.repeat(40) },
+    {},
+  ]) {
+    const refused = await op('delivery-record', { cwd: root, runId, ...input });
+    assert.equal(refused.error.code, 'INVALID_INPUT', JSON.stringify(input));
+  }
+  const archived = await op('delivery-record', { cwd: root, runId, archivePath: ARCHIVE_PATH });
+  assert.deepEqual(archived.data, { recorded: true, delivery: { archivePath: ARCHIVE_PATH } });
+  const unarchived = await op('delivery-record', { cwd: root, runId, unarchived: true });
+  assert.deepEqual(unarchived.data, { recorded: true, delivery: { unarchived: true } });
+  assert.equal(ledger(root, runId).delivery.archivePath, undefined);
+
+  const issueRun = await init(root);
+  const issue = await op('delivery-record', { cwd: root, runId: issueRun, unarchived: true });
+  assert.equal(issue.error.code, 'INVALID_INPUT');
+  await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  const closedRun = await op('delivery-record', { cwd: root, runId, unarchived: true });
+  assert.equal(closedRun.error.code, 'RUN_CLOSED');
+});
+
+// Invariant: `delivery-confirm` records only a full object id on an open run, and a new
+// `delivery-record` describes a new delivery, so it drops an earlier confirmation.
+test('delivery-confirm records the verified head and a new record drops it', async (t) => {
+  const { root, runId } = await planRun(t);
+  for (const headOid of ['abc123', 'A'.repeat(40), 'a'.repeat(41), 42]) {
+    const refused = await op('delivery-confirm', { cwd: root, runId, headOid });
+    assert.equal(refused.error.code, 'INVALID_INPUT', String(headOid));
+  }
+  const extra = await op('delivery-confirm', {
+    cwd: root,
+    runId,
+    headOid: 'a'.repeat(40),
+    archivePath: ARCHIVE_PATH,
+  });
+  assert.equal(extra.error.code, 'INVALID_INPUT');
+  await op('delivery-record', { cwd: root, runId, archivePath: ARCHIVE_PATH });
+  const confirmed = await op('delivery-confirm', { cwd: root, runId, headOid: 'b'.repeat(64) });
+  assert.deepEqual(confirmed.data, { recorded: true, headOid: 'b'.repeat(64) });
+  assert.equal(ledger(root, runId).delivery.archivePath, ARCHIVE_PATH);
+  assert.equal(ledger(root, runId).delivery.headOid, 'b'.repeat(64));
+  await op('delivery-record', { cwd: root, runId, archivePath: ARCHIVE_PATH });
+  assert.equal(ledger(root, runId).delivery.headOid, undefined);
+  await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  const closedRun = await op('delivery-confirm', { cwd: root, runId, headOid: 'a'.repeat(40) });
+  assert.equal(closedRun.error.code, 'RUN_CLOSED');
+});
+
+// Invariant: `plan-reviewed` and `delivery-record` change what the appendix renders and withdraw a
+// rendered digest; `delivery-confirm` does not, so `appendix-merge` still accepts the digest
+// rendered before the confirmed head.
+test('plan-reviewed and delivery-record withdraw the appendix and delivery-confirm keeps it', async (t) => {
+  for (const [operation, input] of [
+    ['plan-reviewed', {}],
+    ['delivery-record', { archivePath: ARCHIVE_PATH }],
+  ]) {
+    const { root, runId } = await planRun(t);
+    if (operation === 'plan-reviewed') input.sourceRoot = root;
+    const rendered = await op('pr-appendix', { cwd: root, runId });
+    assert.equal(rendered.data.status, 'rendered');
+    const changed = await op(operation, { cwd: root, runId, ...input });
+    assert.equal(changed.ok, true, JSON.stringify(changed));
+    assert.equal(ledger(root, runId).appendixSha256, undefined, operation);
+    const refused = await op('appendix-merge', {
+      cwd: root,
+      runId,
+      appendixSha256: rendered.data.sha256,
+      body: '',
+    });
+    assert.equal(refused.error.code, 'APPENDIX_MISMATCH', operation);
+  }
+  const { root, runId } = await planRun(t);
+  await op('delivery-record', { cwd: root, runId, archivePath: ARCHIVE_PATH });
+  const rendered = await op('pr-appendix', { cwd: root, runId });
+  await op('delivery-confirm', { cwd: root, runId, headOid: 'c'.repeat(40) });
+  assert.equal(ledger(root, runId).appendixSha256, rendered.data.sha256);
+  const merged = await op('appendix-merge', {
+    cwd: root,
+    runId,
+    appendixSha256: rendered.data.sha256,
+    body: 'Prose.\n',
+  });
+  assert.equal(merged.ok, true, JSON.stringify(merged));
+  assert.equal(merged.data.body, `Prose.\n\n${rendered.data.appendix}`);
+});
+
+// Invariant: the appendix names the archived plan path from `delivery-record`; an unarchived
+// delivery or none at all keeps the original path.
+test('pr-appendix renders the recorded archive path, else the original path', async (t) => {
+  const { root, runId } = await planRun(t);
+  const none = await op('pr-appendix', { cwd: root, runId });
+  assert.match(none.data.appendix, /\*\*Source:\*\* plan `docs\/plan\/p\.md`\n/);
+  await op('delivery-record', { cwd: root, runId, unarchived: true });
+  const unarchived = await op('pr-appendix', { cwd: root, runId });
+  assert.match(unarchived.data.appendix, /\*\*Source:\*\* plan `docs\/plan\/p\.md`\n/);
+  await op('delivery-record', { cwd: root, runId, archivePath: ARCHIVE_PATH });
+  const archived = await op('pr-appendix', { cwd: root, runId });
+  assert.match(archived.data.appendix, /\*\*Source:\*\* plan `docs\/plan\/archive\/p\.md`\n/);
+  assert.doesNotMatch(archived.data.appendix, /`docs\/plan\/p\.md`/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// plan-copy-restore
+
+// Invariant: the run's own review edit of a tracked plan is restored to HEAD only when the
+// delivery is confirmed, its head carries the archived plan, HEAD:<P> is the preflight plan,
+// nothing is staged and the working copy is exactly the reviewed text; index entries never change.
+test('plan-copy-restore restores the reviewed copy and leaves the index unchanged', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const index = git(root, 'ls-files', '-s');
+  const restored = await restore(root, runId);
+  assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
+  assert.equal(git(root, 'ls-files', '-s'), index);
+  assert.equal(git(root, 'status', '--porcelain'), '');
+  const again = await restore(root, runId);
+  assert.deepEqual(again.data, {
+    result: 'not-applicable',
+    reason: 'unchanged',
+    planPath: PLAN_PATH,
+  });
+});
+
+// Invariant: every failed precondition keeps the user's copy byte for byte, names the
+// precondition, and leaves the index entries unchanged.
+test('plan-copy-restore keeps the copy and names each failed precondition', async (t) => {
+  const cases = [
+    [
+      'user edit',
+      'working-copy-changed',
+      async ({ root }) => writeFileSync(join(root, PLAN_PATH), `${REVIEWED}User edit.\n`),
+    ],
+    ['staged change', 'staged-change', async ({ root }) => git(root, 'add', PLAN_PATH)],
+    [
+      'moved HEAD',
+      'head-moved',
+      async ({ root }) => {
+        writeFileSync(join(root, PLAN_PATH), `${ORIGINAL}Upstream.\n`);
+        commitAll(root, 'newer plan');
+        writeFileSync(join(root, PLAN_PATH), REVIEWED);
+      },
+    ],
+    ['no confirmed delivery', 'delivery-unconfirmed', null, { confirm: false }],
+    ['no delivery record', 'delivery-unconfirmed', null, { record: false, confirm: false }],
+    [
+      'archive missing on the head',
+      'archive-not-on-head',
+      async ({ root, runId }) => {
+        const headOid = git(root, 'rev-parse', 'HEAD');
+        await op('delivery-confirm', { cwd: root, runId, headOid });
+      },
+    ],
+    ['delivery-confirm without delivery-record', 'unarchived', null, { record: false }],
+    [
+      'symlinked parent directory',
+      'working-copy-unsafe',
+      async ({ root }) => {
+        renameSync(join(root, 'docs/plan'), join(root, 'docs/real'));
+        symlinkSync(join(root, 'docs/real'), join(root, 'docs/plan'));
+      },
+    ],
+    ['unarchived delivery', 'unarchived', null, { archive: false }],
+    [
+      'symlinked plan',
+      'working-copy-unsafe',
+      async ({ root }) => {
+        writeFileSync(join(root, 'reviewed.md'), REVIEWED);
+        rmSync(join(root, PLAN_PATH));
+        symlinkSync(join(root, 'reviewed.md'), join(root, PLAN_PATH));
+      },
+    ],
+  ];
+  for (const [label, reason, mutate, delivery = {}] of cases) {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId, delivery);
+    if (mutate) await mutate({ root, runId });
+    const before = existsSync(join(root, PLAN_PATH))
+      ? readFileSync(join(root, PLAN_PATH), 'utf8')
+      : null;
+    const index = git(root, 'ls-files', '-s');
+    const kept = await restore(root, runId);
+    assert.equal(kept.ok, true, `${label}: ${JSON.stringify(kept)}`);
+    assert.deepEqual(kept.data, { result: 'kept', reason, planPath: PLAN_PATH }, label);
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), before, label);
+    assert.equal(git(root, 'ls-files', '-s'), index, label);
+  }
+});
+
+// Invariant: the working copy is re-hashed immediately before the restore, so an edit after the
+// checks keeps the copy; a Git failure of the restore itself (a held index.lock) is `kept`, not a
+// helper error.
+test('plan-copy-restore keeps an edit made after the checks and a failed restore', async (t) => {
+  {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    const late = `${REVIEWED}Late edit.\n`;
+    const kept = await restore(
+      root,
+      runId,
+      {},
+      { beforePlanRestore: () => writeFileSync(join(root, PLAN_PATH), late) },
+    );
+    assert.deepEqual(kept.data, {
+      result: 'kept',
+      reason: 'working-copy-changed',
+      planPath: PLAN_PATH,
+    });
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), late);
+  }
+  {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    const index = git(root, 'ls-files', '-s');
+    writeFileSync(join(root, '.git', 'index.lock'), '');
+    const kept = await restore(root, runId);
+    rmSync(join(root, '.git', 'index.lock'));
+    assert.equal(kept.ok, true, JSON.stringify(kept));
+    assert.equal(kept.data.result, 'kept');
+    assert.equal(kept.data.reason, 'restore-failed');
+    assert.match(kept.data.detail, /index\.lock/);
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+    assert.equal(git(root, 'ls-files', '-s'), index);
+  }
+});
+
+// Invariant: nothing in the invocation checkout is run-owned for an issue source, an untracked
+// plan, a plan already archived there (in-place delivery) or a working copy equal to HEAD.
+test('plan-copy-restore is not applicable when nothing in the checkout is run-owned', async (t) => {
+  {
+    const root = repository(t);
+    const runId = await init(root);
+    const issue = await restore(root, runId);
+    assert.deepEqual(issue.data, { result: 'not-applicable', reason: 'issue-source' });
+  }
+  {
+    const { root, runId } = await planRun(t, { tracked: false });
+    await deliver(t, root, runId);
+    const untracked = await restore(root, runId);
+    assert.deepEqual(untracked.data, {
+      result: 'not-applicable',
+      reason: 'untracked',
+      planPath: PLAN_PATH,
+    });
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+  }
+  {
+    const { root, runId } = await planRun(t);
+    mkdirSync(join(root, 'docs/plan/archive'));
+    git(root, 'mv', PLAN_PATH, ARCHIVE_PATH);
+    commitAll(root, 'archive in place');
+    await op('delivery-record', { cwd: root, runId, archivePath: ARCHIVE_PATH });
+    await op('delivery-confirm', { cwd: root, runId, headOid: git(root, 'rev-parse', 'HEAD') });
+    const archived = await restore(root, runId);
+    assert.deepEqual(archived.data, {
+      result: 'not-applicable',
+      reason: 'untracked',
+      planPath: PLAN_PATH,
+    });
+  }
+  {
+    const { root, runId } = await planRun(t, { review: false });
+    await deliver(t, root, runId);
+    const unchanged = await restore(root, runId);
+    assert.deepEqual(unchanged.data, {
+      result: 'not-applicable',
+      reason: 'unchanged',
+      planPath: PLAN_PATH,
+    });
+  }
+});
+
+// Invariant: `sourceRoot` must be its own toplevel of the repository `cwd` belongs to and the root
+// `plan-reviewed` recorded, the input is closed, and a closed run is rejected.
+test('plan-copy-restore checks sourceRoot, its closed input and an open run', async (t) => {
+  const { root, runId } = await planRun(t);
+  const { worktree } = await deliver(t, root, runId);
+  const subdirectory = await restore(root, runId, { sourceRoot: join(root, 'docs') });
+  assert.equal(subdirectory.error.code, 'UNSAFE_TARGET');
+  const other = repository(t);
+  const foreign = await restore(root, runId, { sourceRoot: other });
+  assert.equal(foreign.error.code, 'UNSAFE_TARGET');
+  const relative = await restore(root, runId, { sourceRoot: 'docs' });
+  assert.equal(relative.error.code, 'INVALID_INPUT');
+  const extra = await restore(root, runId, { force: true });
+  assert.equal(extra.error.code, 'INVALID_INPUT');
+  const linked = await restore(root, runId, { sourceRoot: worktree });
+  assert.deepEqual(linked.data, {
+    result: 'kept',
+    reason: 'source-root-mismatch',
+    planPath: PLAN_PATH,
+  });
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+  {
+    // Without a plan-reviewed record no root or digest is known, so the edit stays.
+    const unreviewed = await planRun(t, { review: false });
+    await deliver(t, unreviewed.root, unreviewed.runId);
+    writeFileSync(join(unreviewed.root, PLAN_PATH), REVIEWED);
+    const kept = await restore(unreviewed.root, unreviewed.runId);
+    assert.deepEqual(kept.data, {
+      result: 'kept',
+      reason: 'review-unrecorded',
+      planPath: PLAN_PATH,
+    });
+    assert.equal(readFileSync(join(unreviewed.root, PLAN_PATH), 'utf8'), REVIEWED);
+  }
+  await op('run-close', { cwd: root, runId, outcome: 'no-pull-request' });
+  const closedRun = await restore(root, runId);
+  assert.equal(closedRun.error.code, 'RUN_CLOSED');
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+});
+
+// Invariant: once a delivery is recorded, the reviewed digest is frozen: a later `plan-reviewed`
+// is refused, so an edit made after delivery can never become the text the restore discards.
+test('plan-reviewed is refused after a delivery and the later edit is kept', async (t) => {
+  const { root, runId } = await planRun(t);
+  await deliver(t, root, runId);
+  const edited = `${REVIEWED}Edited after delivery.\n`;
+  writeFileSync(join(root, PLAN_PATH), edited);
+  const refused = await op('plan-reviewed', { cwd: root, runId, sourceRoot: root });
+  assert.equal(refused.error.code, 'INVALID_STATE');
+  assert.equal(ledger(root, runId).source.reviewedPlanSha256, digest(REVIEWED));
+  const kept = await restore(root, runId);
+  assert.deepEqual(kept.data, {
+    result: 'kept',
+    reason: 'working-copy-changed',
+    planPath: PLAN_PATH,
+  });
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), edited);
+});
+
+// A process runner that answers chosen git calls itself and passes every other call through.
+function interceptingRunner(intercept) {
+  const base = createProcessRunner();
+  return (options) => intercept(options) ?? base(options);
+}
+
+// Invariant: a Git read that fails (nonzero exit, spawn error or timeout, an unknown revision
+// included) keeps the copy as `git-read-failed` with a detail; it is never `not-applicable`.
+test('plan-copy-restore keeps the copy when a Git read fails', async (t) => {
+  {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    await op('delivery-confirm', { cwd: root, runId, headOid: 'd'.repeat(40) });
+    const kept = await restore(root, runId);
+    assert.equal(kept.data.result, 'kept');
+    assert.equal(kept.data.reason, 'git-read-failed');
+    assert.match(kept.data.detail, /^git ls-tree failed/);
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED);
+  }
+  const failures = [
+    [
+      'ls-tree exit',
+      (args) => args.includes('ls-tree'),
+      { status: 128, stdout: '', stderr: 'fatal: simulated' },
+    ],
+    [
+      'ls-tree spawn error',
+      (args) => args.includes('ls-tree'),
+      { error: new Error('spawn timed out') },
+    ],
+    [
+      'rev-parse exit',
+      (args) => args.includes('HEAD^{commit}'),
+      { status: 128, stdout: '', stderr: 'fatal: simulated' },
+    ],
+    [
+      'ls-files exit',
+      (args) => args.includes('ls-files') && args.includes('-s'),
+      { status: 128, stdout: '', stderr: 'fatal: simulated' },
+    ],
+  ];
+  for (const [label, matches, result] of failures) {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    const runner = interceptingRunner(({ args }) =>
+      args.includes('-C') && args[args.indexOf('-C') + 1] === root && matches(args)
+        ? result
+        : undefined,
+    );
+    const kept = await restore(root, runId, {}, { runner });
+    assert.equal(kept.ok, true, `${label}: ${JSON.stringify(kept)}`);
+    assert.equal(kept.data.result, 'kept', label);
+    assert.equal(kept.data.reason, 'git-read-failed', label);
+    assert.equal(typeof kept.data.detail, 'string', label);
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED, label);
+  }
+});
+
+// Invariant: the restore reads from the verified HEAD commit, and HEAD, the index entry and the
+// working copy are each re-checked after the checks and before the write.
+test('plan-copy-restore re-checks HEAD, the index and the file before restoring the verified commit', async (t) => {
+  {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    const commit = git(root, 'rev-parse', 'HEAD');
+    const calls = [];
+    const runner = interceptingRunner(({ args }) => {
+      calls.push(args);
+      return undefined;
+    });
+    const restored = await restore(root, runId, {}, { runner });
+    assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+    const restoreCall = calls.find((args) => args.includes('restore'));
+    assert.ok(restoreCall.includes(`--source=${commit}`), JSON.stringify(restoreCall));
+    assert.ok(!restoreCall.includes('--source=HEAD'));
+  }
+  const races = [
+    [
+      'moved HEAD',
+      'head-moved',
+      (root) => git(root, 'commit', '-q', '--allow-empty', '-m', 'race'),
+    ],
+    ['staged plan', 'staged-change', (root) => git(root, 'add', PLAN_PATH)],
+    [
+      'symlinked plan',
+      'working-copy-unsafe',
+      (root) => {
+        writeFileSync(join(root, 'reviewed.md'), REVIEWED);
+        rmSync(join(root, PLAN_PATH));
+        symlinkSync(join(root, 'reviewed.md'), join(root, PLAN_PATH));
+      },
+    ],
+  ];
+  for (const [label, reason, race] of races) {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    const kept = await restore(root, runId, {}, { beforePlanRestore: () => race(root) });
+    assert.deepEqual(kept.data, { result: 'kept', reason, planPath: PLAN_PATH }, label);
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED, label);
+  }
+});
+
+// Invariant: a tracked plan without a working copy has nothing run-owned to restore, and a
+// symlinked parent directory is never followed when hashing the reviewed plan.
+test('plan-copy-restore reports a missing copy and plan-reviewed refuses a symlinked directory', async (t) => {
+  {
+    const { root, runId } = await planRun(t);
+    await deliver(t, root, runId);
+    rmSync(join(root, PLAN_PATH));
+    const missing = await restore(root, runId);
+    assert.deepEqual(missing.data, {
+      result: 'not-applicable',
+      reason: 'missing',
+      planPath: PLAN_PATH,
+    });
+    assert.equal(existsSync(join(root, PLAN_PATH)), false);
+  }
+  {
+    const { root, runId } = await planRun(t);
+    renameSync(join(root, 'docs/plan'), join(root, 'docs/real'));
+    symlinkSync(join(root, 'docs/real'), join(root, 'docs/plan'));
+    const refused = await op('plan-reviewed', { cwd: root, runId, sourceRoot: root });
+    assert.equal(refused.error.code, 'UNSAFE_TARGET');
+  }
+});
+
+// Invariant: an issue source answers before any root check, a Git read that fails while checking
+// `sourceRoot` keeps the copy as `git-read-failed`, and a directory outside any repository stays
+// an UNSAFE_TARGET error.
+test('plan-copy-restore checks sourceRoot only for a plan source and maps its Git failures', async (t) => {
+  {
+    const root = repository(t);
+    const runId = await init(root);
+    for (const sourceRoot of [join(root, 'docs'), join(root, 'no-such-directory')]) {
+      const issue = await restore(root, runId, { sourceRoot });
+      assert.deepEqual(
+        issue.data,
+        { result: 'not-applicable', reason: 'issue-source' },
+        sourceRoot,
+      );
+    }
+    assert.equal((await restore(root, runId, { sourceRoot: 'docs' })).error.code, 'INVALID_INPUT');
+  }
+  const { root, runId } = await planRun(t, { review: false });
+  const session = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-autopilot-session-')));
+  t.after(() => rmSync(session, { recursive: true, force: true }));
+  git(root, 'worktree', 'add', '-q', '-b', 'session-git', session);
+  writeFileSync(join(session, PLAN_PATH), REVIEWED);
+  const failingCommonDir = interceptingRunner(({ args }) =>
+    args[args.indexOf('-C') + 1] === session && args.includes('--git-common-dir')
+      ? { status: 128, stdout: '', stderr: 'fatal: simulated common-dir failure' }
+      : undefined,
+  );
+  const reviewFailure = await executeOperation(
+    'plan-reviewed',
+    { cwd: root, runId, sourceRoot: session },
+    deps({ runner: failingCommonDir }),
+  );
+  assert.equal(reviewFailure.error.code, 'GIT_FAILED');
+  assert.equal(ledger(root, runId).source.reviewedPlanSha256, undefined);
+  assert.equal((await op('plan-reviewed', { cwd: root, runId, sourceRoot: session })).ok, true);
+  await deliver(t, root, runId);
+  const kept = await restore(root, runId, { sourceRoot: session }, { runner: failingCommonDir });
+  assert.deepEqual(kept.data, {
+    result: 'kept',
+    reason: 'git-read-failed',
+    planPath: PLAN_PATH,
+    detail: 'git rev-parse failed: fatal: simulated common-dir failure',
+  });
+  assert.equal(readFileSync(join(session, PLAN_PATH), 'utf8'), REVIEWED);
+  const outside = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-autopilot-outside-')));
+  t.after(() => rmSync(outside, { recursive: true, force: true }));
+  const unsafe = await restore(root, runId, { sourceRoot: outside });
+  assert.equal(unsafe.error.code, 'UNSAFE_TARGET');
+  const restored = await restore(root, runId, { sourceRoot: session });
+  assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+});
+
+// A repository whose plan checks out with CRLF line endings (`eol=crlf`), so the working copy and
+// the preflight hash differ from the raw blob. Returns the run and the working-tree texts.
+async function crlfPlanRun(t) {
+  const root = repository(t);
+  writeFileSync(join(root, '.gitattributes'), '*.md text eol=crlf\n');
+  mkdirSync(join(root, 'docs/plan'), { recursive: true });
+  writeFileSync(join(root, PLAN_PATH), ORIGINAL);
+  commitAll(root, 'crlf plan');
+  rmSync(join(root, PLAN_PATH));
+  git(root, 'checkout', '--', PLAN_PATH);
+  const original = ORIGINAL.replace(/\n/g, '\r\n');
+  assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), original);
+  const runId = await init(root, {
+    source: { kind: 'plan', planPath: PLAN_PATH, planSha256: digest(original) },
+    visibility: 'public',
+  });
+  return { root, runId, original };
+}
+
+// Invariant: `HEAD:<P>` is compared in working-tree form (`git cat-file --filters`), so an
+// end-of-line conversion never turns an unchanged plan into a kept copy, and the preflight hash of
+// the converted working copy still matches HEAD for a real restore.
+test('plan-copy-restore compares HEAD in working-tree form under eol=crlf', async (t) => {
+  {
+    const { root, runId } = await crlfPlanRun(t);
+    assert.equal((await op('plan-reviewed', { cwd: root, runId, sourceRoot: root })).ok, true);
+    await deliver(t, root, runId);
+    const unchanged = await restore(root, runId);
+    assert.deepEqual(unchanged.data, {
+      result: 'not-applicable',
+      reason: 'unchanged',
+      planPath: PLAN_PATH,
+    });
+  }
+  {
+    const { root, runId, original } = await crlfPlanRun(t);
+    writeFileSync(join(root, PLAN_PATH), REVIEWED.replace(/\n/g, '\r\n'));
+    assert.equal((await op('plan-reviewed', { cwd: root, runId, sourceRoot: root })).ok, true);
+    await deliver(t, root, runId);
+    const index = git(root, 'ls-files', '-s');
+    const restored = await restore(root, runId);
+    assert.deepEqual(restored.data, { result: 'restored', planPath: PLAN_PATH });
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), original);
+    assert.equal(git(root, 'ls-files', '-s'), index);
+  }
+});
+
+// Invariant: a HEAD entry the helper cannot compare (a symlink, or a blob over the plan bound) is
+// its own kept reason, never `head-moved` or `unchanged`.
+test('plan-copy-restore keeps the copy when HEAD:<P> is unreadable', async (t) => {
+  for (const [label, commitHead] of [
+    [
+      'symlink entry',
+      (root) => {
+        writeFileSync(join(root, 'target.md'), ORIGINAL);
+        symlinkSync('../../target.md', join(root, PLAN_PATH));
+      },
+    ],
+    ['oversized blob', (root) => writeFileSync(join(root, PLAN_PATH), 'x'.repeat(600 * 1024))],
+  ]) {
+    const root = repository(t);
+    mkdirSync(join(root, 'docs/plan'), { recursive: true });
+    commitHead(root);
+    commitAll(root, label);
+    rmSync(join(root, PLAN_PATH));
+    writeFileSync(join(root, PLAN_PATH), REVIEWED);
+    const runId = await init(root, {
+      source: { kind: 'plan', planPath: PLAN_PATH, planSha256: digest(ORIGINAL) },
+      visibility: 'public',
+    });
+    assert.equal((await op('plan-reviewed', { cwd: root, runId, sourceRoot: root })).ok, true);
+    const kept = await restore(root, runId);
+    assert.deepEqual(
+      kept.data,
+      { result: 'kept', reason: 'head-unreadable', planPath: PLAN_PATH },
+      label,
+    );
+    assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), REVIEWED, label);
+  }
+});
+
+// Invariant: a directory without a working tree (the repository's own `.git` directory, or a bare
+// repository) is an unsafe sourceRoot, never a Git read failure.
+test('plan-reviewed and plan-copy-restore refuse a sourceRoot without a working tree', async (t) => {
+  const { root, runId } = await planRun(t, { review: false });
+  const bare = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-autopilot-bare-')));
+  t.after(() => rmSync(bare, { recursive: true, force: true }));
+  git(bare, 'init', '-q', '--bare');
+  for (const sourceRoot of [join(root, '.git'), bare]) {
+    const reviewed = await op('plan-reviewed', { cwd: root, runId, sourceRoot });
+    assert.equal(reviewed.error.code, 'UNSAFE_TARGET', `plan-reviewed ${sourceRoot}`);
+    const restored = await restore(root, runId, { sourceRoot });
+    assert.equal(restored.error.code, 'UNSAFE_TARGET', `plan-copy-restore ${sourceRoot}`);
+  }
 });

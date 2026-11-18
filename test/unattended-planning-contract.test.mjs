@@ -342,7 +342,7 @@ const QUESTION_INVENTORY = Object.freeze(
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',
-        'ask. This reliably keeps newly created plans, `.effective-flow/` state and other',
+        'The workflow must know the files to include or ask. This reliably keeps newly created plans,',
       ],
       [
         'not-a-site: P-PUB skips publication before this downstream delivery path is loaded',

@@ -424,7 +424,8 @@ test('the adopted selector lines render the exact per-target Fast representation
       const phase = text.slice(from, to);
       for (const agent of agents) {
         const worker = `effective-flow-${agent}`;
-        const quality = `\`Use the \`${worker}\` skill for this phase.\``;
+        // One valid code span: the worker name renders bare inside it (plan decision 7).
+        const quality = `\`Use the ${worker} skill for this phase.\``;
         const lines = phase.split('\n').filter((line) => line.includes(quality));
         assert.equal(lines.length, 1, `${where} ${agent}: one selector line`);
         assert.match(lines[0], /^ {3}- /, `${where} ${agent}: the selector is a step 1 item`);
@@ -526,7 +527,8 @@ test('the executable baseline proof preserves every Quality native configuration
       'Expected delta test-writer-validation-environment: effective-flow-test-writer\n' +
       'Expected delta merge-conflict-resolver-forbidden-substitutes: effective-flow-merge-conflict-resolver\n' +
       'Expected delta code-validator-build-validation-budget: effective-flow-code-validator\n' +
-      'Expected delta merge-conflict-resolver-environment-signature-classes: effective-flow-merge-conflict-resolver\n',
+      'Expected delta merge-conflict-resolver-environment-signature-classes: effective-flow-merge-conflict-resolver\n' +
+      'Expected delta code-span-placeholder-pairs: effective-flow-code-documenter, effective-flow-code-validator, effective-flow-docs-writer, effective-flow-generic-implementer, effective-flow-generic-implementer-fast, effective-flow-generic-product-implementer, effective-flow-generic-product-implementer-fast, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-test-writer, effective-flow-ui-implementer, effective-flow-ui-implementer-fast\n',
   );
 });
 

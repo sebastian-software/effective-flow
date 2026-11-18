@@ -318,7 +318,7 @@ worktree-record-obligation
 1. If this change implemented a finding from an existing review-report file in `.effective-flow/review/`:
    - add a short implementation note as the last entry directly in the affected finding
    - begin the note with `✅` and name at least the date and workflow
-2. If a plan file was used as the basis, without changing the status marker beforehand:
+2. If a plan file was used as the basis (under scored decision mode, the plan copy `scored-decisions` names), without changing the status marker beforehand:
    - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 4 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
    - add `## Testergebnisse` or `## Test results`, matching the plan language, with the checks
      that were run

@@ -77,11 +77,18 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    in one pull request.
 4. **Fit.** After the implementation is committed, a read-only reviewer scores from 1 to 10 how
    well the change fits your accepted ADRs in `docs/adr/`, `docs/developer-guide/architecture.md`,
-   `docs/concept/` and your other open plans. With none of these, the record says "not assessed —
+   `docs/concept/` and your other open plans, as committed on the delivery branch. With none of these, the record says "not assessed —
    no architecture or roadmap sources found". When the reviewer still fails after one retry, it
    says "not assessed — scoring unavailable". Neither is a blocker.
 5. **Deliver.** `pr` opens or finishes the **draft** pull request and appends the autopilot record.
    Autopilot never marks it ready for review and never merges.
+6. **Tidy up.** For a plan file, the reviewed plan travels on the delivery branch, archived with
+   the review edits and the completion notes. Once the pull request's head is confirmed to carry
+   it, autopilot restores your checkout's copy of a committed plan to its committed state. It keeps
+   the copy, and says why, when you edited or staged it meanwhile or the delivery is unconfirmed.
+   Other local changes outside the plan's affected files stay untouched and are listed in the
+   report; a change to one of those files, or a local commit not on the base branch, is a
+   blocker.
 
 Review publication is off for the whole run, even when `delivery.prReview` is `always`: the draft
 pull request is reviewed by a person, and `merge-gate` is the next step.
@@ -138,8 +145,8 @@ does not mention security.
 `pr` appends one marked block to the draft pull request description, replaced – never stacked – on
 every later update:
 
-- **Source:** `Refs #<N>` (never a closing keyword) or the plan path, plus the plan pull request it
-  continued;
+- **Source:** `Refs #<N>` (never a closing keyword) or the plan path – its archived path once the
+  plan was archived on the delivery branch – plus the plan pull request it continued;
 - **Close decisions:** each question with the chosen option, its score and reason, every
   alternative within 3 points, and both rounds of a tie;
 - **Automatic decisions:** the number of clear-winner decisions;
@@ -151,7 +158,8 @@ footer lines are removed, and secrets or absolute local paths block the record. 
 local-only finding never appear in it.
 
 **Output:** The draft pull request URL or the reason there is none, the number of automatic, close
-and tie-resolved decisions, every blocker and retained worktree, and the architecture-fit score,
+and tie-resolved decisions, every blocker and retained worktree, whether your plan copy was
+restored, every local change left untouched, and the architecture-fit score,
 followed by the [next-step recommendation](tool-flow.md).
 
 **Cleaning up:** `/effective-flow cleanup` lists autopilot ledgers and, after confirmation, removes
