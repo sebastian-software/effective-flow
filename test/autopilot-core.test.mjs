@@ -2516,11 +2516,10 @@ test('plan-copy-restore installs an executable plan with its mode', async (t) =>
   assert.equal(git(root, 'status', '--porcelain'), '');
 });
 
-// Invariant: a plan copy the restore retained is removed with its closed run only while it is
-// provably the reviewed copy (its hash is the ledger's `reviewedPlanSha256`); a changed copy may
-// hold a late save, so `ledger-list` does not offer the run and `ledger-prune` retains it as
-// `retained-plan-copy` with the copy's path.
-test('ledger-prune removes a matching plan copy and retains a changed one', async (t) => {
+// Invariant: a plan copy the restore retained is never deleted by the prune, since no check can
+// exclude a save landing between check and unlink; `ledger-list` and `ledger-prune` retain its
+// closed run as `retained-plan-copy` with the copy's path, identical to the reviewed copy or not.
+test('ledger-prune retains a run holding a plan copy whether or not it changed', async (t) => {
   const closedRestoredRun = async () => {
     const { root, runId } = await planRun(t);
     await deliver(t, root, runId);
@@ -2531,13 +2530,15 @@ test('ledger-prune removes a matching plan copy and retains a changed one', asyn
     return { root, runId, copy: restored.data.retainedCopy };
   };
   {
-    const { root, runId } = await closedRestoredRun();
+    const { root, runId, copy } = await closedRestoredRun();
     const listed = await op('ledger-list', { cwd: root });
-    assert.equal(listed.data.runs[0].removal, 'removable');
-    assert.equal(listed.data.runs[0].planCopies, undefined);
+    assert.equal(listed.data.runs[0].removal, 'retained-plan-copy');
+    assert.deepEqual(listed.data.runs[0].planCopies, [copy]);
     const pruned = await op('ledger-prune', { cwd: root, runs: [{ runId }] });
-    assert.deepEqual(pruned.data.items, [{ runId, result: 'removed', reason: 'no-pull-request' }]);
-    assert.equal(existsSync(join(root, AUTOPILOT_DIR, runId)), false);
+    assert.deepEqual(pruned.data.items, [
+      { runId, result: 'retained', reason: 'retained-plan-copy', planCopies: [copy] },
+    ]);
+    assert.equal(readFileSync(copy, 'utf8'), REVIEWED);
     assert.equal(readFileSync(join(root, PLAN_PATH), 'utf8'), ORIGINAL);
   }
   {

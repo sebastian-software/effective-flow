@@ -1479,8 +1479,8 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   later `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
   withdraw the recorded digest; `delivery-confirm` does not. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
   removes a run's ledger and appendix only while its run is closed and produced no pull request or
-  the caller's `pr-read` stated it merged or closed, and deletes a retained plan copy only while it
-  is a regular file still hashing to `reviewedPlanSha256`, otherwise retaining the run as
+  the caller's `pr-read` stated it merged or closed, and never deletes a retained plan copy (no
+  check excludes a concurrent save before the unlink), retaining a run that holds one as
   `retained-plan-copy` with `planCopies`; an open run, an open pull request,
   `unavailable` (forge not readable) and a foreign entry keep it. It acts on a pull-request state
   only when the entry's `pullRequest` equals the ledger's (otherwise `pull-request-mismatch`), and

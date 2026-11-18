@@ -168,5 +168,6 @@ architecture-fit score, followed by the [next-step recommendation](tool-flow.md)
 
 **Cleaning up:** `/effective-flow cleanup` lists autopilot ledgers and, after confirmation, removes
 one when its run is closed and its pull request is merged or closed, or when it produced none. A
-ledger whose pull request cannot be read on the forge is kept, and so is a run whose retained plan
-copy changed since review (shown as `retained-plan-copy`).
+ledger whose pull request cannot be read on the forge is kept, and so is a run that still holds a
+retained plan copy (shown as `retained-plan-copy`); cleanup never deletes that copy, so remove it yourself
+once you have checked it for a late save.

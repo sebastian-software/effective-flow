@@ -39,9 +39,9 @@
 // - `ledger-list` (reads only) and `ledger-prune`: `cleanup`'s inventory and removal of run
 //   ledgers. A ledger is removable only when its run is closed and it produced no pull request or
 //   its pull request is merged or closed, as the caller's `pr-read` stated; an unavailable forge
-//   retains it. A retained plan copy (`plan-copy-<16 hex>.md`) is removed with its run only while
-//   it is a regular file hashing to the ledger's `reviewedPlanSha256`; any other copy may hold a
-//   late save and retains the run as `retained-plan-copy` with the copies' paths.
+//   retains it. A retained plan copy (`plan-copy-<16 hex>.md`) is never deleted here: no check
+//   can exclude a save through an open descriptor or an atomic replacement between the check and
+//   the unlink, so any run holding one is retained as `retained-plan-copy` with the copies' paths.
 //
 // Classification: lead > 3 is `silent`, lead 1–3 `documented` with every alternative within 3
 // points, lead 0 a `tie`. Tie re-scores rank only the tied options, must be pairwise distinct, and
@@ -1181,10 +1181,8 @@ async function ledgerListOperation(input, deps) {
     const pullRequest = Number.isSafeInteger(ledger.pullRequest) ? ledger.pullRequest : null;
     const removal = ledgerRemoval(ledger, undefined);
     const pending = removal.removable || removal.reason === 'pull-request-state-missing';
-    // A copy that may hold a late save retains the run whatever its pull request's state is.
-    const { differing } = pending
-      ? await planCopies(runDirectory(ctx, name), ledger)
-      : { differing: [] };
+    // A retained plan copy keeps the run whatever its pull request's state is.
+    const copies = pending ? await planCopies(runDirectory(ctx, name)) : [];
     runs.push({
       runId: name,
       state: 'valid',
@@ -1194,14 +1192,14 @@ async function ledgerListOperation(input, deps) {
       source: ledger.source,
       // `needs-pull-request-state`: closed with a pull request, so `pr-read` decides.
       removal:
-        differing.length > 0
+        copies.length > 0
           ? 'retained-plan-copy'
           : removal.reason === 'pull-request-state-missing'
             ? 'needs-pull-request-state'
             : removal.removable
               ? 'removable'
               : removal.reason,
-      ...(differing.length > 0 ? { planCopies: differing } : {}),
+      ...(copies.length > 0 ? { planCopies: copies } : {}),
     });
   }
   return { directory: names === null ? 'absent' : 'present', runs, ignored };
@@ -1209,35 +1207,16 @@ async function ledgerListOperation(input, deps) {
 
 const PLAN_COPY = /^plan-copy-[0-9a-f]{16}\.md$/;
 
-// The plan copies `plan-copy-restore` retained in a run directory (absolute paths), split into
-// `matching`, provably the run's own reviewed copy (a regular file hashing to the ledger's
-// `reviewedPlanSha256`), and `differing`: every other copy, which may hold a late save.
-async function planCopies(directory, ledger, names) {
-  const matching = [];
-  const differing = [];
-  for (const name of (names ?? (await readdir(directory))).filter((n) => PLAN_COPY.test(n))) {
-    const target = path.join(directory, name);
-    ((await planCopyMatches(target, ledger)) ? matching : differing).push(target);
-  }
-  return { matching, differing };
+// The plan copies `plan-copy-restore` retained in a run directory (absolute paths). Each may hold
+// a late save, and none is ever deleted by the prune.
+async function planCopies(directory, names) {
+  return (names ?? (await readdir(directory)))
+    .filter((name) => PLAN_COPY.test(name))
+    .map((name) => path.join(directory, name));
 }
 
-async function planCopyMatches(target, ledger) {
-  const reviewed = ledger.source?.reviewedPlanSha256;
-  if (typeof reviewed !== 'string' || !SHA256.test(reviewed)) return false;
-  try {
-    // `lstat` first, so a FIFO is never opened.
-    if (!(await lstat(target)).isFile()) return false;
-    return sha256(await readBoundedRegular(target, MAX_PLAN_BYTES, 'the plan copy')) === reviewed;
-  } catch (error) {
-    if (error instanceof AutopilotError || error?.code === 'ENOENT') return false;
-    throw error;
-  }
-}
-
-// Removes one run directory: its matching plan copies, an appendix beside the ledger, the ledger,
-// then the empty directory. Any other entry, and a plan copy that may hold a late save, keeps the
-// directory and its ledger.
+// Removes one run directory: an appendix beside the ledger, the ledger, then the empty directory.
+// Any other entry, and every retained plan copy, keeps the directory and its ledger.
 // `pullRequest` is the number the caller read with `ledger-list` and passed to `pr-read`; it must
 // be the ledger's own, so a state read for another pull request never removes this ledger.
 async function pruneRun(ctx, runId, pullRequestState, pullRequest) {
@@ -1272,20 +1251,9 @@ async function pruneRun(ctx, runId, pullRequestState, pullRequest) {
     const info = await lstat(target);
     if (!info.isFile()) return { runId, result: 'retained', reason: 'unexpected-entry' };
   }
-  const retainedCopies = (paths) => ({
-    runId,
-    result: 'retained',
-    reason: 'retained-plan-copy',
-    planCopies: paths,
-  });
-  const copies = await planCopies(directory, ledger, entries);
-  if (copies.differing.length > 0) return retainedCopies(copies.differing);
-  for (const target of copies.matching) {
-    // Hashed again immediately before the unlink: a write through a descriptor opened before the
-    // restore can land in the copy at any time.
-    if (!(await planCopyMatches(target, ledger))) return retainedCopies([target]);
-    await assertDirectoryChain(ctx.cwd, directory);
-    await guardedUnlink(ctx, target);
+  const copies = await planCopies(directory, entries);
+  if (copies.length > 0) {
+    return { runId, result: 'retained', reason: 'retained-plan-copy', planCopies: copies };
   }
   // The appendix first, so an interrupted removal still leaves a readable ledger.
   for (const name of [APPENDIX_FILE, LEDGER_FILE].filter((entry) => entries.includes(entry))) {
