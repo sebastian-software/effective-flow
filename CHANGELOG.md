@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.75.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.74.0...effective-flow-v1.75.0) (2026-11-18)
+
+
+### Features
+
+* **autopilot:** drive an issue or plan to a draft pull request without asking ([#685](https://github.com/sebastian-software/effective-flow/issues/685)) ([9d66ee5](https://github.com/sebastian-software/effective-flow/commit/9d66ee5367f11cd59bbb03bd2b6e32fba7b726f6))
+* **next-steps:** recommend retro after turbulent runs and follow-up artifacts ([#683](https://github.com/sebastian-software/effective-flow/issues/683)) ([101bc95](https://github.com/sebastian-software/effective-flow/commit/101bc95a0ea6dc378cd4ae14a4231381c6bc3a0a))
+
+
+### Bug Fixes
+
+* **autopilot:** carry the reviewed plan and correct the smoke-run defects ([#692](https://github.com/sebastian-software/effective-flow/issues/692)) ([3cb1e25](https://github.com/sebastian-software/effective-flow/commit/3cb1e25387913b83c89f12e55d72f75df8a26a93))
+
 ## [1.74.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.73.0...effective-flow-v1.74.0) (2026-11-16)
 
 
