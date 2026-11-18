@@ -1,7 +1,7 @@
 ---
 description: "Takes any apply source (plan file, review report, tracker issue or review epic), classifies it via the shared apply-source detection and delegates to the responsible skill {{SKILL:apply-plan}}, {{SKILL:apply-review}} or {{SKILL:apply-issues}}. Pure routing layer with no implementation of its own."
 catalogHint: "Starts implementation from a finished source (plan, issue or review finding)."
-contextBudget: 557
+contextBudget: 558
 ---
 
 # Effective Flow Apply

@@ -70,7 +70,8 @@ options:
 
 Name every speaking source and its outcome when asking — its file path and its classified outcome,
 including the sources that agree with one another. Do not quote prose from any source into the
-question or its options.
+question or its options. Under an Automation caller's scored decision mode, row S-ADR of
+`scored-decisions` decides.
 
 Unlike the ADR-directory question of the calling tool, this fence is deliberately **unconditional**
 rather than guided-path only, because it decides the path a file is written to rather than a

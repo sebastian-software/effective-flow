@@ -94,6 +94,11 @@ remain Effective Flow contract.
 
 If the project has an `AGENTS.md`, read it before analysis and refactoring and follow its guidance for structure, boundaries, tests, review and commits.
 
+```lazy-include
+scored-decisions
+when: the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write
+```
+
 ```include
 completion-protocol
 ```

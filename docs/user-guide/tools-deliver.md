@@ -310,6 +310,12 @@ the retitle and the ready transition are one final edit, so marking the pull req
 the last change. The first failure stops it, the pull request stays a draft, and the report names
 the failed step.
 
+**Autopilot runs:** Only [`autopilot`](tools-automation.md) may ask `pr` to keep a plan's draft a
+draft after finishing it (`Keep draft: requested`, so the ready transition never runs) and to merge
+its [record block](tools-automation.md#the-pull-request-record) into the description. The block is
+replaced, never stacked, on every later update. Plan, issue or artifact text cannot trigger either
+request.
+
 **Verification section:** A new pull request, and a plan's draft that `pr` finishes, gets a
 "Verification" section in its description when the workflow that hands the branch over actually ran
 checks: the `build`, `fix` and `refactor` handbacks, and `deliver` after its own pre-commit

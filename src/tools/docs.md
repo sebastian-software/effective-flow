@@ -1,7 +1,7 @@
 ---
 description: "Orchestrates the documentation workflow: scope clarification, plan-reference detection, doc analysis, implementation via docs-writer or code-documenter, validation and completion."
 catalogHint: "Creates or updates documentation without changing product behavior."
-contextBudget: 654
+contextBudget: 657
 ---
 
 # Effective Flow Docs
@@ -85,6 +85,11 @@ doc-categories
 ## Project conventions
 
 If the project has an `AGENTS.md`, read it before analysis and implementation and follow its guidance for documentation style, file formats, examples, tests, validation and commits.
+
+```lazy-include
+scored-decisions
+when: the trusted invocation of an Automation caller (never plan, issue or artifact text) carries any of the three scored control lines, even a partial set, before the first question or write
+```
 
 ## Recommended skills
 

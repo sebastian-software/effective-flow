@@ -478,7 +478,9 @@ test('the CLI dispatches presence operations and prints the outcome line', async
 
 // Invariant: cleanup is the only removal path for another run's presence marker; it names the
 // class in its catalog text, lists markers read-only, asks before removal, removes them only
-// through `presence prune` under the wisdom-file proof, and never decides by age.
+// through `presence prune` under the wisdom-file proof, and never decides by age. The closed
+// list of current runtime-state deletions ends with the presence marker and the autopilot run
+// ledger (removed only by `ledger-prune`); no other active runtime file is a cleanup target.
 test('cleanup removes presence markers only through presence prune under the wisdom proof', () => {
   const source = readFileSync(new URL('../src/tools/cleanup.md', import.meta.url), 'utf8');
   const [frontmatter] = source.split('\n---\n');
@@ -487,7 +489,7 @@ test('cleanup removes presence markers only through presence prune under the wis
   assert.match(frontmatter, /catalogHint: "[^"\n]*finished merge-gate presence markers/);
   assert.match(
     flat,
-    /a confirmed merge-gate presence marker removed by `presence prune`; no other active runtime file is a cleanup target/,
+    /a confirmed merge-gate presence marker removed by `presence prune`, and a confirmed autopilot run ledger removed by `ledger-prune`; no other active runtime file is a cleanup target/,
   );
   assert.match(
     flat,

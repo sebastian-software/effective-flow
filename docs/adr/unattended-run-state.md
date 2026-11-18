@@ -20,7 +20,10 @@ instructions in force and gives contract checks no explicit entry point.
 
 Across Effective Flow tools, an unanswered question in a non-interactive run becomes an open
 point or a fail-closed abort, never a guess. Non-interactive execution does not grant consent for
-publication or other actions that require authority from the caller.
+publication or other actions that require authority from the caller. The one sanctioned exception
+to "open point or fail-closed abort, never a guess" is scored decision mode
+(`Decision mode: scored`), which only an Automation-category caller may set. Tools of the
+Automation category are governed by `docs/adr/automation-tool-category.md` instead.
 
 The first application is `plan` and its deep file-mode `plan-review`. A caller explicitly selects
 `Run state: non-interactive`; the ordinary interactive path is unchanged. The shared

@@ -2660,6 +2660,7 @@ test('the retired-key contract detects at the first configuration read and names
       ['deliver', null, delivery.slice(0, 2)],
       ['apply-issues', null, delivery.slice(0, 2)],
       ['issue-buddy', null, delivery.slice(0, 2)],
+      ['autopilot', null, delivery.slice(0, 2)],
       ['apply-review', 'remote', delivery.slice(0, 2)],
       ['apply-review', 'local', []],
       ['pr', null, ['delivery.baseBranch']],

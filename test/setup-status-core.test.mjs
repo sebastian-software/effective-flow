@@ -553,6 +553,7 @@ test('a worktree row names every exposed tool that stops, and deliver only repor
   );
   assert.deepEqual(base.stop, [
     'apply',
+    'autopilot',
     'build',
     'deliver',
     'docs',
@@ -716,10 +717,11 @@ test('a resolver tool no exposed tool reaches keeps its own name and is marked',
   const projectionPath = projectionFile(t, { ...PROJECTION, workflowEdges: [] });
   const row = retiredRow(await status(t, root, { projectionPath }), 'worktree.branchPrefix');
   assert.equal(row.toolMapping, 'exposed');
-  assert.deepEqual(row.unmappedTools, ['apply-issues', 'apply-review']);
+  assert.deepEqual(row.unmappedTools, ['apply-issues', 'apply-review', 'autopilot']);
   assert.deepEqual(row.stop, [
     'apply-issues',
     'apply-review',
+    'autopilot',
     'build',
     'deliver',
     'docs',

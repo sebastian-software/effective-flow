@@ -53,6 +53,8 @@ import {
   assertNoUnresolvedPlaceholders,
   collectIncludeNames,
   assertNoEagerLazyOverlap,
+  AUTOMATION_GROUP_TITLE,
+  findAutomationEmissionViolations,
   assertDocumentationSyncConsumers,
   findRuntimeStateSafetyViolations,
   findRuntimeDirMigrationViolations,
@@ -130,6 +132,8 @@ const LICENSE_SRC = join(ROOT_DIR, 'LICENSE');
 // Allowlist of the dependency-free runtime scripts shipped into every target.
 // A script absent from this list is never copied, whichever subsystem owns it.
 const RUNTIME_SCRIPT_FILES = [
+  'autopilot.mjs',
+  'autopilot-core.mjs',
   'backlog-audit.mjs',
   'backlog-audit-core.mjs',
   'build-run.mjs',
@@ -319,6 +323,11 @@ const TOOL_GROUPS = [
     tools: ['deliver', 'commit', 'pr', 'merge-gate'],
   },
   {
+    title: 'Automation',
+    when: 'unattended from issue or plan to a draft pull request',
+    tools: ['autopilot'],
+  },
+  {
     title: 'Set up & info',
     tools: ['setup', 'cleanup', 'version'],
   },
@@ -370,6 +379,13 @@ const WORKFLOW_EDGES = [
   ),
   { from: 'plan', to: 'plan-issue' },
   { from: 'issue-buddy', to: 'plan' },
+  // The Automation tool chains these same-session (docs/adr/automation-tool-category.md).
+  ...['issue-buddy', 'plan-review', 'build', 'fix', 'refactor', 'docs', 'commit', 'pr'].map(
+    (to) => ({
+      from: 'autopilot',
+      to,
+    }),
+  ),
   { from: 'apply', to: 'apply-plan' },
   { from: 'apply', to: 'apply-review' },
   { from: 'apply', to: 'apply-issues' },
@@ -431,6 +447,15 @@ const WORKFLOW_POINTER_REFERENCES = [
   ...['apply-issues', 'iterate', 'maintain', 'merge-gate', 'plan', 'review'].map((from) => ({
     from,
     to: 'apply-review-remote',
+  })),
+  // The question-site table of the lazy `scored-decisions` names `src/tools/plan-review.md` as a
+  // question source; the implementing workflows and `pr` never run plan-review through it.
+  ...['build', 'fix', 'refactor', 'docs', 'pr'].map((from) => ({ from, to: 'plan-review' })),
+  // autopilot's lazy source detection, worktree and delivery fragments name the apply chain; it
+  // routes a non-plain issue to `apply` and never runs these itself.
+  ...['apply-plan', 'apply-review', 'apply-issues', 'apply-review-remote'].map((to) => ({
+    from: 'autopilot',
+    to,
   })),
 ];
 
@@ -512,6 +537,8 @@ const REPOSITORY_ONLY_REFERENCE_ALLOWLIST = [
   'docs/developer-guide/README.md',
   // build's Phase 7 closed list (b) names it as a target-project build file, not this repository's
   'build.mjs',
+  // autopilot's architecture-fit sources name it as a target-project path, not this repository's
+  'docs/developer-guide/architecture.md',
 ];
 
 const releasePleaseManifestPath = join(ROOT_DIR, '.release-please-manifest.json');
@@ -1452,6 +1479,26 @@ try {
             ({ context, line, reason, target, includeChain }) =>
               `${context}:${line}: ${reason} (${target}; via ${includeChain.join(' -> ')})`,
           )
+          .join('\n  '),
+    );
+  }
+  // Automation emission guard: only sources of `Automation` group tools emit the scored control
+  // lines (docs/adr/automation-tool-category.md). The group may still be absent; then no source
+  // may emit them.
+  const automationTools =
+    TOOL_GROUPS.find((group) => group.title === AUTOMATION_GROUP_TITLE)?.tools ?? [];
+  const automationEmissionViolations = findAutomationEmissionViolations(
+    new Map([...runtimeStateSources, ['SKILL.md', readFileSync(ROUTER_SRC, 'utf8')]]),
+    automationTools,
+  );
+  if (automationEmissionViolations.length > 0) {
+    throw new Error(
+      'Automation emission guard: only tools of the Automation group may emit the scored ' +
+        'control lines; downstream tools recognize them only in inline code within prose, and a ' +
+        'fragment emits only when every include or `shared/<name>.md` pointer reaching it is an ' +
+        'Automation tool:\n  ' +
+        automationEmissionViolations
+          .map(({ context, line, token, reason }) => `${context}:${line}: ${token} (${reason})`)
           .join('\n  '),
     );
   }

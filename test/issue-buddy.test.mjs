@@ -15,6 +15,8 @@ import {
   SKIP_REASONS,
 } from '../src/scripts/issue-buddy-core.mjs';
 import { main } from '../src/scripts/issue-buddy.mjs';
+import { executeOperation as autopilotOperation } from '../src/scripts/autopilot-core.mjs';
+import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 
 const NOW = '2026-10-19T12:00:00.000Z';
 const OID = 'a'.repeat(40);
@@ -2721,4 +2723,154 @@ test('unproven or malformed pending verdict evidence preserves bytes and retains
       assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
       assert.equal((await f.run('pass-lock-acquire')).ok, true);
     });
+});
+
+// ---------------------------------------------------------------------------------------------
+// Single-issue selector (`--issue <N>`) and the autopilot private-publication consent binding.
+
+const callsFor = (f, pattern) =>
+  f.calls.filter((call) => call.executable === 'gh' && pattern.test(call.args.at(-1)));
+
+// Invariant: the selector restricts collection, trust reads and recovery authority to the one
+// selected issue; every other open issue yields no candidate, skip, recovery or verdict authority.
+test('the issue selector collects and recovers only the selected issue', async (t) => {
+  const f = await fixture(t, {
+    issues: [issue(1), issue(2), issue(3)],
+    branches: [branch(2), branch(3)],
+  });
+  const orphan = await collected(f, { issue: 2 });
+  assert.equal(orphan.issue, 2);
+  assert.deepEqual(orphan.eligible, []);
+  assert.deepEqual(orphan.skipped, [{ issue: 2, reason: 'plan-branch-exists' }]);
+  assert.deepEqual(
+    orphan.authorizedRecovery.map((entry) => [entry.issue, entry.kind]),
+    [[2, 'orphan-branch']],
+  );
+  assert.deepEqual(orphan.recovery.orphanBranches, [{ issue: 2, headRef: branch(2) }]);
+  assert.deepEqual(
+    callsFor(f, /\/issues\/\d+\/comments/).map(
+      (call) => call.args.at(-1).match(/issues\/(\d+)/)[1],
+    ),
+    ['2'],
+  );
+  // The selector is part of the collection request: a replay with another issue is refused.
+  assert.equal((await f.collect({ issue: 1 })).error.code, 'INVALID_PAYLOAD');
+
+  await f.next();
+  const ready = await collected(f, { issue: 1 });
+  assert.deepEqual(
+    ready.eligible.map((entry) => entry.issue),
+    [1],
+  );
+  assert.equal(ready.eligibleCount, 1);
+  assert.deepEqual(ready.skipped, []);
+  assert.deepEqual(ready.authorizedRecovery, []);
+  const foreign = await f.record(ready, 'not-ready', {
+    issue: 3,
+    fingerprint: orphan.authorizedRecovery[0].fingerprint,
+  });
+  assert.equal(foreign.error.code, 'INVALID_PAYLOAD');
+  assert.equal((await f.record(ready, 'not-ready')).ok, true);
+});
+
+// Invariant: without the selector the collection result keeps its exact pre-selector shape.
+test('a collection without the selector carries no issue field', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const c = await collected(f);
+  assert.equal(Object.hasOwn(c, 'issue'), false);
+  assert.deepEqual(
+    c.eligible.map((entry) => entry.issue),
+    [1, 2],
+  );
+});
+
+// Invariant: the selector keeps the trust filter; an untrusted author's selected issue is
+// skipped and never becomes a candidate or recovery.
+test('a selected issue by an untrusted author is skipped', async (t) => {
+  const f = await fixture(t, {
+    issues: [issue(1, { user: { login: 'stranger' } }), issue(2)],
+    permission: { stranger: 'read' },
+    branches: [branch(1)],
+  });
+  const c = await collected(f, { issue: 1 });
+  assert.deepEqual(c.skipped, [{ issue: 1, reason: 'untrusted-author' }]);
+  assert.deepEqual(c.eligible, []);
+  assert.deepEqual(c.authorizedRecovery, []);
+});
+
+// Invariant: a selected issue that is not in the open listing (closed or missing) is its own
+// stop result, `ISSUE_NOT_OPEN`, distinct from every skip reason; it grants no authority and
+// reports as the pass's collection failure.
+test('a missing or closed selected issue yields the ISSUE_NOT_OPEN stop result', async (t) => {
+  const f = await fixture(t, { issues: [issue(1)] });
+  const stopped = await f.collect({ issue: 7 });
+  assert.equal(stopped.ok, false);
+  assert.equal(stopped.error.code, 'ISSUE_NOT_OPEN');
+  assert.deepEqual(stopped.error.details, { issue: 7 });
+  assert.equal(SKIP_REASONS.includes('ISSUE_NOT_OPEN'), false);
+  assert.deepEqual(callsFor(f, /\/issues\/\d+\/comments/), []);
+  const r = await f.report(null, {
+    outcome: 'failed',
+    failures: [{ issue: null, stage: 'collect', code: 'ISSUE_NOT_OPEN' }],
+  });
+  assert.equal(r.ok, true, JSON.stringify(r));
+  assert.deepEqual(r.data.verdicts, []);
+  assert.deepEqual(r.data.pullRequestsOpened, []);
+});
+
+// Invariant: the selector is a positive safe integer; anything else fails before forge reads.
+test('an invalid issue selector is rejected before any forge read', async (t) => {
+  const f = await fixture(t);
+  for (const value of [0, -1, 1.5, '1', null]) {
+    assert.equal((await f.collect({ issue: value })).error.code, 'INVALID_PAYLOAD', String(value));
+  }
+  assert.deepEqual(callsFor(f, /./), []);
+});
+
+// Invariant: the consent Issue Buddy requires before a private publication binds the received
+// run id to the selected issue in the repository its own collection resolved: the persisted
+// `collect.repository` is a valid `consent-check` source, and another issue is refused.
+test('the collected repository and selected issue bind the autopilot consent-check', async (t) => {
+  const f = await fixture(t, { issues: [issue(5)] });
+  const c = await collected(f, { issue: 5, repositoryVisibility: 'private' });
+  const root = await fs.realpath(await fs.mkdtemp(path.join(tmpdir(), 'issue-buddy-consent-')));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const env = {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Effective Flow Test',
+    GIT_AUTHOR_EMAIL: 'effective-flow@example.invalid',
+    GIT_COMMITTER_NAME: 'Effective Flow Test',
+    GIT_COMMITTER_EMAIL: 'effective-flow@example.invalid',
+  };
+  for (const args of [
+    ['init', '-q', '--initial-branch=main'],
+    ['commit', '-q', '--allow-empty', '-m', 'fixture'],
+  ])
+    assert.equal(spawnSync('git', args, { cwd: root, env }).status, 0);
+  await fs.writeFile(path.join(root, '.gitignore'), '.effective-flow/\n');
+  const deps = { runner: createProcessRunner(), env, now: () => Date.parse(NOW) };
+  const ledger = await autopilotOperation(
+    'run-init',
+    {
+      cwd: root,
+      source: { kind: 'issue', issue: c.issue, repository: c.repository },
+      visibility: 'private',
+      language: 'en',
+    },
+    deps,
+  );
+  assert.equal(ledger.ok, true, JSON.stringify(ledger));
+  const runId = ledger.data.runId;
+  const check = (extra) =>
+    autopilotOperation(
+      'consent-check',
+      { cwd: root, runId, issue: c.issue, repository: c.repository, ...extra },
+      deps,
+    );
+  assert.deepEqual((await check({})).data, { consent: 'granted', runId });
+  assert.equal((await check({ issue: 6 })).data.reason, 'wrong-source');
+  await autopilotOperation('run-close', { cwd: root, runId, outcome: 'no-pull-request' }, deps);
+  assert.equal((await check({})).data.reason, 'run-closed');
 });
