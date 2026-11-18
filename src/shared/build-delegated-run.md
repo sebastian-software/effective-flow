@@ -252,10 +252,12 @@ run's one full-suite point:
    check was cancelled or left unexecuted by an environment signature or a host-tool timeout (a
    `SKIPPED` because no established command exists does not count) and every remaining failure was
    repaired and re-verified, proven `pre-existing`, or matched as approved `expected`. When Phase 5
-   ends, keep the budget state `{phase5Tree, validFullRun, reason, secondFullUsed}` in the wisdom
-   file and, for delegated execution, retain it with `retain-evidence` as `validation-budget`:
-   `phase5Tree` is the `currentTree` of the render that started the full run, `reason` names why the
-   run is or is not valid (such as the signature class), and `secondFullUsed` is `false`.
+   ends, keep the budget state `{phase5Tree, validFullRun, zeroFailures, reason, secondFullUsed}` in
+   the wisdom file and, for delegated execution, retain it with `retain-evidence` as
+   `validation-budget`: `phase5Tree` is the `currentTree` of the render that started the full run,
+   `zeroFailures` is `true` only for a valid full run that ended with no failure at all, attributed
+   ones included, `reason` names why the run is or is not valid (such as the signature class), and
+   `secondFullUsed` is `false`.
 
    **Base attribution.** When the validator returns `attribution: pending-base-run`, wait until
    that candidate run has ended; never run the base in parallel with it. Then create the
@@ -422,7 +424,7 @@ severity. An admitted Critical residual also requires the existing explicit comp
 
 2. For delegated execution first record the existing passed (or PR-lane `limited`) review/final-validation receipts and `prepare-completion`. Document completion by preserving the approved plan text and appending `## Build completion` (`## Workflow-Abschluss` for German), without changing the status marker beforehand:
    - if Phase 1 created a new plan file via `{{SKILL:plan}}`: update that file.
-   - if the user referenced an unbuilt plan file: update the referenced file.
+   - if the user referenced an unbuilt plan file: update the referenced file (under scored decision mode, the plan copy `scored-decisions` names).
    - if, exceptionally, no plan file exists: create `<plan.dir>/` and assign the date-slug name per `Plan file convention`.
    - the status marker stays unchanged here (`**Planungsstatus:** Nicht umgesetzt` or `**Plan status:** Not implemented`): the status switch to `Umgesetzt`/`Implemented` and the archiving to `<plan.dir>/archive/` are handled by step 6 below at the delivery point per "Delivery and worktree integration" (exception: in-place without delivery, see there).
    - Content:
@@ -478,7 +480,7 @@ Rules for the findings report:
 9. Summarize what was implemented, tested and documented; describe the state the full suite covered
    (Phase 5, before later corrections), never a snapshot tree id, that later changes were verified
    targeted, and every attribution and approved expected failure
-   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); name the report path Phase 6 step 9 recorded, also after a merge; state the worktree-record exit self-check result.
+   invoked, and never say "fully verified" while a gap exists; for an active delivery/worktree mode, additionally name the plan's archive path, or `unarchived` when archival was blocked, the delivery branch, the final checkout state and the result of the completion action (PR URL, merge or retained branch); name the report path Phase 6 step 9 recorded, also after a merge; state the worktree-record exit self-check result.
 10. Prepare the next-step block per `next-steps`. For inline execution emit it last; for delegated execution persist the terminal/continuation evidence per `build-run-contract` and return only the bounded result reference so the caller can render the conclusion and next step. A delegated execution's `ABORT` emits nothing; the caller alone applies the retrospective slot.
 
 ## Rules

@@ -2740,6 +2740,125 @@ test('profile refs render the exact Claude, Codex, and portable contracts', () =
   );
 });
 
+// Invariant: a placeholder inside an inline code span renders as the bare name, so the span keeps
+// exactly its own backtick pair: an exact span is one pair, never doubled, and a longer span stays
+// one valid span in every target.
+test('transformRefs renders internal placeholders in code spans without extra backticks', () => {
+  for (const target of ['claude', 'codex', 'portable']) {
+    assert.equal(
+      transformRefs('Run `{{SKILL:apply-plan}}` now.', target, refConfig),
+      'Run `tools/apply-plan.md` now.',
+    );
+    assert.equal(
+      transformRefs('- `plan` → `{{SKILL:apply-plan}} <arg>`', target, refConfig),
+      '- `plan` → `tools/apply-plan.md <arg>`',
+    );
+    assert.equal(
+      transformRefs('Ask `{{AGENT:nodejs-implementer}}`.', target, refConfig),
+      'Ask `effective-flow-nodejs-implementer`.',
+    );
+    assert.equal(
+      transformRefs(
+        '`Use the {{AGENT:nodejs-implementer}} skill for this phase.`',
+        target,
+        refConfig,
+      ),
+      '`Use the effective-flow-nodejs-implementer skill for this phase.`',
+    );
+    assert.equal(
+      transformRefs('``a `{{AGENT:code-validator}}` b``', target, refConfig),
+      '``a `effective-flow-code-validator` b``',
+    );
+    // Outside a span the backticked rendering stays, also next to a span on the same line.
+    assert.equal(
+      transformRefs('`x` then {{SKILL:apply-plan}} and `y`', target, refConfig),
+      '`x` then `tools/apply-plan.md` and `y`',
+    );
+  }
+  // A lone backtick opens no span, and a span never crosses a blank line.
+  assert.equal(
+    transformRefs('a ` b {{AGENT:code-validator}}\n\n` c', 'claude', refConfig),
+    'a ` b `effective-flow-code-validator`\n\n` c',
+  );
+});
+
+// Invariant: a span candidate ends where another block starts (a list item, a heading, a table
+// row) and an escaped backtick opens no span, so an unmatched backtick never pulls a placeholder
+// on a later line into a code span.
+test('transformRefs ends span candidates at block starts and skips escaped backticks', () => {
+  const name = '`effective-flow-code-validator`';
+  for (const [source, expected] of [
+    ['- a `x\n- b {{AGENT:code-validator}} `y\n', `- a \`x\n- b ${name} \`y\n`],
+    ['1. a `x\n2) b {{AGENT:code-validator}} `y\n', `1. a \`x\n2) b ${name} \`y\n`],
+    ['# A `x\n{{AGENT:code-validator}} `y\n', `# A \`x\n${name} \`y\n`],
+    ['| a `x |\n| {{AGENT:code-validator}} ` |\n', `| a \`x |\n| ${name} \` |\n`],
+    ['> a `x\n> {{AGENT:code-validator}} `y\n', `> a \`x\n> ${name} \`y\n`],
+    ['a \\`{{AGENT:code-validator}}` b', `a \\\`${name}\` b`],
+  ]) {
+    assert.equal(transformRefs(source, 'claude', refConfig), expected, JSON.stringify(source));
+  }
+  // A list item's continuation line still belongs to its span, and a double backslash escapes
+  // only itself.
+  assert.equal(
+    transformRefs('- a `x\n  {{AGENT:code-validator}}` b', 'claude', refConfig),
+    '- a `x\n  effective-flow-code-validator` b',
+  );
+  assert.equal(
+    transformRefs('a \\\\`{{AGENT:code-validator}}` b', 'claude', refConfig),
+    'a \\\\`effective-flow-code-validator` b',
+  );
+});
+
+// Invariant: an exposed tool renders its invocation the same inside and outside a code span.
+test('transformRefs keeps the exposed-tool rendering inside code spans', () => {
+  assert.equal(
+    transformRefs('`{{SKILL:fix}} <arg>` and `{{SKILL:build}}`', 'claude', refConfig),
+    '`/effective-flow fix <arg>` and `/effective-flow build`',
+  );
+  assert.equal(
+    transformRefs('`{{SKILL:fix}} <arg>`', 'codex', refConfig),
+    '`$effective-flow fix <arg>`',
+  );
+  assert.equal(
+    transformRefs('`{{SKILL:fix}} <arg>`', 'portable', refConfig),
+    '`effective-flow fix <arg>`',
+  );
+});
+
+// Invariant: inside a code span the Fast profile renders the bare native name, and the portable
+// Quality-only notice follows the span instead of entering it.
+test('transformRefs places the portable AGENT_PROFILE notice after the code span', () => {
+  const exact = '`{{AGENT_PROFILE:nodejs-implementer:fast}}`.';
+  const longer = '`spawn {{AGENT_PROFILE:nodejs-implementer:fast}} now`.';
+  for (const target of ['claude', 'codex']) {
+    assert.equal(
+      transformRefs(exact, target, profileRefConfig),
+      '`effective-flow-nodejs-implementer-fast`.',
+    );
+    assert.equal(
+      transformRefs(longer, target, profileRefConfig),
+      '`spawn effective-flow-nodejs-implementer-fast now`.',
+    );
+  }
+  assert.equal(
+    transformRefs(exact, 'portable', profileRefConfig),
+    '`effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).',
+  );
+  assert.equal(
+    transformRefs(longer, 'portable', profileRefConfig),
+    '`spawn effective-flow-nodejs-implementer now` (portable build: Fast unavailable, Quality only).',
+  );
+});
+
+// Invariant: fenced code blocks keep the backticked rendering, so a fence is never read as a span.
+test('transformRefs keeps the backticked rendering inside fenced code blocks', () => {
+  const fenced = '1. Run:\n\n   ```text\n   {{AGENT:code-validator}} `x`\n   ```\n';
+  assert.equal(
+    transformRefs(fenced, 'claude', refConfig),
+    '1. Run:\n\n   ```text\n   `effective-flow-code-validator` `x`\n   ```\n',
+  );
+});
+
 // Invariant: `{{BUILD_TARGET}}` renders the consumer target itself, so a shared fragment can tell a
 // portable installation from a native one without inferring it from the host that runs it.
 test('BUILD_TARGET renders the consumer target and rejects an unknown one', () => {
@@ -4099,6 +4218,43 @@ test('renderBody does not add portable worker instructions when no worker is ref
   });
   assert.doesNotMatch(rendered, /Portable worker delegation/);
   assert.equal(rendered, 'Run effective-flow fix.\n');
+});
+
+// Invariant: punctuation next to a rendered worker name inside a longer span still delimits it,
+// so a placeholder written as `(…)`, `…,` or `….` reaches the worker-reference guards.
+test('collectRenderedWorkerRefs accepts punctuation-delimited workers inside spans', () => {
+  const known = new Set(['effective-flow-nodejs-implementer', 'effective-flow-code-validator']);
+  assert.deepEqual(
+    collectRenderedWorkerRefs(
+      '`spawn (effective-flow-nodejs-implementer), then effective-flow-code-validator.`',
+      'effective-flow-',
+      known,
+    ),
+    ['effective-flow-code-validator', 'effective-flow-nodejs-implementer'],
+  );
+  assert.deepEqual(
+    collectRenderedWorkerRefs(
+      '`run effective-flow-code-validator-x; effective-flow-code-validator/x`',
+      'effective-flow-',
+      known,
+    ),
+    [],
+  );
+});
+
+// Invariant: a worker named inside a longer code span, as transformRefs renders a placeholder there,
+// still reaches the worker-reference guards.
+test('collectRenderedWorkerRefs finds known workers inside longer code spans', () => {
+  const known = new Set(['effective-flow-nodejs-implementer', 'effective-flow-code-validator']);
+  assert.deepEqual(
+    collectRenderedWorkerRefs(
+      '`Use the effective-flow-nodejs-implementer skill.` `effective-flow-code-validator` ' +
+        '`workers/effective-flow-project-setup.md` effective-flow-code-validator-x',
+      'effective-flow-',
+      known,
+    ),
+    ['effective-flow-code-validator', 'effective-flow-nodejs-implementer'],
+  );
 });
 
 test('collectRenderedWorkerRefs filters exact known namespaced worker identifiers', () => {

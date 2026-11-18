@@ -91,6 +91,18 @@ string) and use the Mustache syntax `{{…}}`:
 | `{{MODEL_TIER_TABLE}}`          | Harness values per tier          | The marked table between `<!-- model-tier-table:start -->` and `<!-- model-tier-table:end -->`: Claude column in `dist/claude`, Codex column in `dist/codex`, both keyed by spawn mechanism in `dist/portable`; allowed once, in `src/shared/model-tiers.md` only |
 | `{{MODEL_TIER_ROLE_SELECTION}}` | Native role selection            | Codex's generated base, mechanical/deep tier, retry, and built-in/default selection contract; Claude's direct Harness-values instruction; allowed once, in `src/shared/model-tiers.md` only                                                                       |
 
+**Inside an inline code span** the internal-tool (`{{SKILL:X}}` of an internal tool), `{{AGENT:X}}` and
+`{{AGENT_PROFILE:X:fast}}` references render as the bare name, so a span written as
+`` `{{AGENT:X}}` `` keeps exactly its own backtick pair instead of a doubled one, and a longer span
+stays one valid span. A code span follows CommonMark: a backtick run closed by the next run of the
+same length, never crossing a blank line or a fence; `splitInlineCodeSpans` in `build-lib.mjs` does
+the split. The portable `{{AGENT_PROFILE:X:fast}}` notice is placed after the span. Exposed tools
+render the same everywhere, and fenced code blocks keep the backticked rendering. The reference
+guard accepts a whitespace-delimited worker identifier inside a longer span as a reference.
+`scripts/compare-native-agent-baseline.mjs` allows this change as the pattern delta
+`code-span-placeholder-pairs` (a global RegExp edit that must match at least once, beside the
+literal `from`/`to` edits that must occur exactly once).
+
 A third form is the **spawn-site marker**, a line of its own inside the paragraph or list item of a
 spawn instruction in `src/tools` or `src/shared`:
 
@@ -1436,13 +1448,27 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   closed-schema JSON object on standard input. `decision-classify` and `decision-extract` are pure:
   they validate 1–10 option scores and classify them (lead > 3 silent, 1–3 documented, 0 tie;
   distinct tie re-scores; floor 2; cap 20) and parse a plan's "Decided by score" machine block.
-  `run-init`, `decision-record`, `blocker-record`, `fit-record`, `pr-appendix` and `run-close` write
-  the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
+  `run-init`, `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed`, `delivery-record`,
+  `delivery-confirm`, `pr-appendix` and `run-close` write the run ledger under `.effective-flow/autopilot/<run-id>/` of the primary checkout through the
   runtime-state guard, and `consent-check` reads it for Issue Buddy's per-run private publication;
   it grants only for a ledger whose recorded visibility is `private`. `run-check` (reads only)
   confirms an open ledger as `{runId, status: "open", source}` and otherwise fails with
-  `RUN_NOT_OPEN` (exit 2). `fit-record` also accepts `{unavailable: true, sources}`, rendered as
-  `Architecture fit: not assessed — scoring unavailable`. `pr-appendix` sanitizes every free-text
+  `RUN_NOT_OPEN` (exit 2); a plan source carries `reviewedPlanSha256` and `sourceRoot` once
+  `plan-reviewed` (`{cwd, runId, sourceRoot}`) hashed the reviewed plan in the invocation checkout
+  itself. `fit-record` also accepts `{unavailable: true}` without sources,
+  rendered as `Architecture fit: not assessed — scoring unavailable`. `delivery-record` stores the
+  archive path (exactly `<dir>/archive/<file>`) or `unarchived: true`, which the appendix source
+  line names; `delivery-confirm` stores the verified pushed head. `run-close` returns the recorded
+  fit object without its timestamp, or `null`. `plan-copy-restore` (`{cwd, runId, sourceRoot}`) is
+  the helper's one project-file write: only after a confirmed delivery whose head carries the
+  recorded archive path, with `HEAD:<P>` unchanged since preflight, nothing staged and the working
+  copy still at `reviewedPlanSha256`, it moves the reviewed copy aside, re-hashes it, retains it as
+  `plan-copy-<16 hex>.md` in the run ledger directory (hard link plus unlink, so the ledger must
+  share the checkout's filesystem, else `retain-failed`) and installs `HEAD`'s working-tree bytes
+  through an exclusive temp file and a no-clobber hard link. It never touches the index; a plan
+  file recreated meanwhile yields `kept`/`working-copy-changed` and survives. A failed retain or
+  install puts the reviewed copy back without clobbering and reports `putBack`; success returns
+  `retainedCopy`. Otherwise it returns `kept` or `not-applicable`, each with its reason. `pr-appendix` sanitizes every free-text
   field, runs the plan-publication content scan with unattended strictness and leaves local-only
   content out. `appendix-merge` reads only: it takes `{cwd, runId, appendixSha256, body}`, derives
   the appendix path from the run directory, and refuses with `APPENDIX_MISMATCH` unless
@@ -1450,9 +1476,12 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   file still has it, and with `APPENDIX_WITHHELD` while a security blocker stands on a repository
   whose recorded visibility is not `private`; it replaces the one appendix block of a pull-request
   body, or appends it, for `pr`'s `Appendix:` input. A `blocked` or `withheld` render and every
-  later `decision-record`, `blocker-record` and `fit-record` withdraw the recorded digest. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
+  later `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
+  withdraw the recorded digest; `delivery-confirm` does not. `ledger-list` reads every run ledger for `cleanup`, and `ledger-prune`
   removes a run's ledger and appendix only while its run is closed and produced no pull request or
-  the caller's `pr-read` stated it merged or closed; an open run, an open pull request,
+  the caller's `pr-read` stated it merged or closed, and never deletes a retained plan copy (no
+  check excludes a concurrent save before the unlink), retaining a run that holds one as
+  `retained-plan-copy` with `planCopies`; an open run, an open pull request,
   `unavailable` (forge not readable) and a foreign entry keep it. It acts on a pull-request state
   only when the entry's `pullRequest` equals the ledger's (otherwise `pull-request-mismatch`), and
   retains a closed ledger whose outcome and pull request disagree as `ledger-invalid`. The calling contract is

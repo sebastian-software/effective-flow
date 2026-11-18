@@ -198,7 +198,8 @@ test('Codex Fast selectors choose Fast sidecars without inline model overrides',
   for (const tool of ['build', 'refactor']) {
     const phase = phaseText('codex', tool);
     for (const worker of FAST_IMPLEMENTERS) {
-      const quality = `\`Use the \`${worker}\` skill for this phase.\``;
+      // One valid code span: the worker name renders bare inside it (plan decision 7).
+      const quality = `\`Use the ${worker} skill for this phase.\``;
       const lines = phase.split('\n').filter((line) => line.includes(quality));
       assert.equal(lines.length, 1, `${tool} ${worker}: one selector line`);
       assert.ok(lines[0].includes(`Fast: \`${worker}-fast\`.`), `${tool} ${worker}: ${lines[0]}`);

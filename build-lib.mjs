@@ -4465,6 +4465,112 @@ export function assertRouterInvocationGuidance(routerBody, harness) {
   }
 }
 
+// Splits Markdown into fenced-block segments and prose blocks, then splits each block into text
+// and inline code spans. A code span is a backtick run closed by the next run of exactly the same
+// length (CommonMark); a run without a closer stays literal text, and so does a backtick preceded
+// by an odd number of backslashes when it would open a span. A span candidate never crosses a
+// fence, a blank line or the start of another block: a list item (`-`, `*`, `+`, `1.` or `1)`), a
+// block quote line (`>`), an ATX heading or a table row (`|`); a heading or table row is a block of
+// its own line. This is an approximation for the build's sources, not a full CommonMark parser:
+// indented code blocks, HTML blocks and setext headings are read as prose. Returns
+// `[{ kind: 'fence' | 'text' | 'code', text }]`, whose texts concatenate to the input; a `code`
+// segment includes its own backtick runs.
+export function splitInlineCodeSpans(body) {
+  const segments = [];
+  const push = (kind, value) => {
+    if (value === '') return;
+    const last = segments.at(-1);
+    if (last && last.kind === kind && kind !== 'code') last.text += value;
+    else segments.push({ kind, text: value });
+  };
+  const scanParagraph = (paragraph) => {
+    let index = 0;
+    let textStart = 0;
+    while (index < paragraph.length) {
+      if (paragraph[index] !== '`') {
+        index += 1;
+        continue;
+      }
+      let backslashes = 0;
+      while (paragraph[index - 1 - backslashes] === '\\') backslashes += 1;
+      if (backslashes % 2 === 1) {
+        index += 1;
+        continue;
+      }
+      let runEnd = index;
+      while (paragraph[runEnd] === '`') runEnd += 1;
+      const length = runEnd - index;
+      let search = runEnd;
+      let close = -1;
+      while (search < paragraph.length) {
+        const next = paragraph.indexOf('`', search);
+        if (next === -1) break;
+        let nextEnd = next;
+        while (paragraph[nextEnd] === '`') nextEnd += 1;
+        if (nextEnd - next === length) {
+          close = next;
+          break;
+        }
+        search = nextEnd;
+      }
+      if (close === -1) {
+        index = runEnd;
+        continue;
+      }
+      push('text', paragraph.slice(textStart, index));
+      push('code', paragraph.slice(index, close + length));
+      index = close + length;
+      textStart = index;
+    }
+    push('text', paragraph.slice(textStart));
+  };
+  const lines = body.split(/(?<=\n)/);
+  let fence = null;
+  let paragraph = '';
+  const flush = () => {
+    scanParagraph(paragraph);
+    paragraph = '';
+  };
+  for (const line of lines) {
+    const content = line.replace(/\r?\n$/, '');
+    // Any indentation: the sources nest fences inside list items.
+    const marker = content.match(/^[ \t]*(`{3,}|~{3,})/);
+    if (fence !== null) {
+      push('fence', line);
+      if (
+        marker &&
+        marker[1][0] === fence[0] &&
+        marker[1].length >= fence.length &&
+        content.trim() === marker[1]
+      ) {
+        fence = null;
+      }
+      continue;
+    }
+    if (marker && !(marker[1][0] === '`' && content.slice(marker[0].length).includes('`'))) {
+      flush();
+      fence = marker[1];
+      push('fence', line);
+      continue;
+    }
+    if (content.trim() === '') {
+      flush();
+      push('text', line);
+      continue;
+    }
+    if (/^[ \t]*(?:#{1,6}(?:[ \t]|$)|\|)/.test(content)) {
+      flush();
+      paragraph = line;
+      flush();
+      continue;
+    }
+    if (/^[ \t]*(?:[-*+]|\d{1,9}[.)])(?:[ \t]|$)|^[ \t]*>/.test(content)) flush();
+    paragraph += line;
+  }
+  flush();
+  return segments;
+}
+
 // --- Reference transforms ---
 //
 // {{SKILL:X}} -> harness-specific exposed tool invocation, or
@@ -4479,6 +4585,13 @@ export function assertRouterInvocationGuidance(routerBody, harness) {
 // {{BUILD_TARGET}} -> the rendered target itself (`claude`, `codex`, or
 // `portable`), so a shared fragment can tell a portable installation from a
 // native one deterministically even when a portable skill runs on a native host.
+//
+// Inside an inline code span the internal-tool and agent placeholders render as
+// the bare name, so the span keeps exactly its own backtick pair: a span that is
+// exactly the placeholder renders as one pair and a longer span stays one valid
+// span. Exposed tools render the same everywhere, and the portable
+// AGENT_PROFILE notice follows the span instead of entering it. Fenced code
+// blocks keep the backticked rendering.
 //
 // The command name (`/<skillName>` on Claude, `$<skillName>` on Codex) and the
 // agent prefix are passed in from the single source of truth in build.mjs, so a
@@ -4529,22 +4642,37 @@ export function transformRefs(
   if (/\{\{BUILD_TARGET\}\}/.test(body) && !RENDERED_TARGETS.includes(harness)) {
     throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
   }
-  return body
-    .replace(/\{\{FLOW\}\}/g, () => command)
-    .replace(/\{\{BUILD_TARGET\}\}/g, () => harness)
-    .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
-      exposedTools.includes(raw) ? skillInvocation(raw) : `\`tools/${raw}.md\``,
-    )
-    .replace(AGENT_PROFILE_REF_RE, (_, raw) => {
-      const name = agentName(raw);
-      if (harness === 'claude') return `\`${name}-fast\``;
-      if (harness === 'codex') return `\`${name}-fast\``;
-      if (harness === 'portable') {
-        return `\`${name}\` (portable build: Fast unavailable, Quality only)`;
-      }
-      throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+  const portableProfileNotice = ' (portable build: Fast unavailable, Quality only)';
+  // `code` renders a placeholder inside a code span: the bare name, with any portable
+  // AGENT_PROFILE notice collected in `notices` for placement after the span.
+  const render = (text, { code = false, notices = [] } = {}) => {
+    const span = (name) => (code ? name : `\`${name}\``);
+    return text
+      .replace(/\{\{FLOW\}\}/g, () => command)
+      .replace(/\{\{BUILD_TARGET\}\}/g, () => harness)
+      .replace(/\{\{SKILL:([^}]+)\}\}/g, (_, raw) =>
+        exposedTools.includes(raw) ? skillInvocation(raw) : span(`tools/${raw}.md`),
+      )
+      .replace(AGENT_PROFILE_REF_RE, (_, raw) => {
+        const name = agentName(raw);
+        if (harness === 'claude') return span(`${name}-fast`);
+        if (harness === 'codex') return span(`${name}-fast`);
+        if (harness === 'portable') {
+          if (!code) return `${span(name)}${portableProfileNotice}`;
+          if (!notices.includes(portableProfileNotice)) notices.push(portableProfileNotice);
+          return name;
+        }
+        throw new Error(`Unknown rendered target "${harness}"${contextSuffix(context)}`);
+      })
+      .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => span(agentName(raw)));
+  };
+  return splitInlineCodeSpans(body)
+    .map(({ kind, text }) => {
+      if (kind !== 'code') return render(text);
+      const notices = [];
+      return `${render(text, { code: true, notices })}${notices.join('')}`;
     })
-    .replace(/\{\{AGENT:([^}]+)\}\}/g, (_, raw) => `\`${agentName(raw)}\``);
+    .join('');
 }
 
 export const PORTABLE_WORKER_DELEGATION = [
@@ -4556,11 +4684,21 @@ export const PORTABLE_WORKER_DELEGATION = [
 // Enumerate exact rendered worker identifiers. Build-time completeness guards
 // use this on every rendered router/tool/shared/worker file, so a missing native
 // sidecar or portable contract cannot hide behind source-level validation.
+// Besides a span that is exactly the identifier, an identifier inside a longer code span counts when
+// whitespace, a span edge or one of `,.;:()` delimits it, because transformRefs renders a
+// placeholder there as the bare name.
 export function collectRenderedWorkerRefs(text, agentPrefix = 'effective-flow-', knownWorkers) {
   const refs = new Set();
-  const re = new RegExp(`\\\`(${escapeRegex(agentPrefix)}[a-z0-9]+(?:-[a-z0-9]+)*)\\\``, 'g');
-  for (const match of text.matchAll(re)) {
-    if (!knownWorkers || knownWorkers.has(match[1])) refs.add(match[1]);
+  const identifier = `${escapeRegex(agentPrefix)}[a-z0-9]+(?:-[a-z0-9]+)*`;
+  const add = (name) => {
+    if (!knownWorkers || knownWorkers.has(name)) refs.add(name);
+  };
+  for (const match of text.matchAll(new RegExp(`\\\`(${identifier})\\\``, 'g'))) add(match[1]);
+  const inSpan = new RegExp(`(?<=^|[\\s,.;:()])(${identifier})(?=[\\s,.;:()]|$)`, 'g');
+  for (const { kind, text: segment } of splitInlineCodeSpans(text)) {
+    if (kind !== 'code') continue;
+    const content = segment.replace(/^`+|`+$/g, '');
+    for (const match of content.matchAll(inSpan)) add(match[1]);
   }
   return [...refs].sort();
 }

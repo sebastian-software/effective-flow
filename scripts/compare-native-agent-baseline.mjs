@@ -499,6 +499,19 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // Code-span-aware reference rendering (plan decision 7): an internal-tool or worker placeholder
+    // that is exactly a code span renders as one backtick pair instead of a doubled one. A pattern
+    // edit, last in order, because a worker may show it any number of times.
+    Object.freeze({
+      id: 'code-span-placeholder-pairs',
+      edits: Object.freeze([
+        Object.freeze({
+          pattern:
+            /(?<!`)``((?:effective-flow-[a-z0-9]+(?:-[a-z0-9]+)*|tools\/[a-z0-9-]+\.md))``(?!`)/g,
+          replacement: '`$1`',
+        }),
+      ]),
+    }),
   ]),
 });
 
@@ -531,9 +544,18 @@ function configurationLine(harness, key, value) {
   return harness === 'codex' ? `\n${key} = "${value}"\n` : `\n${key}: ${value}\n`;
 }
 
+// A literal edit (`from`, `to`) must occur exactly once; a pattern edit (`pattern`, a global
+// RegExp, and `replacement`) replaces every match and must match at least once.
 function applyEdits(text, edits) {
   let result = text;
-  for (const { from, to } of edits) {
+  for (const edit of edits) {
+    if (edit.pattern) {
+      const next = result.replace(edit.pattern, edit.replacement);
+      if (next === result) return null;
+      result = next;
+      continue;
+    }
+    const { from, to } = edit;
     if (result.split(from).length !== 2) return null;
     result = result.replace(from, () => to);
   }

@@ -8,16 +8,30 @@
 // Operations (one JSON object in, one `{ ok, operation, data | error }` envelope out):
 // - `decision-classify` (pure): validation, classification, tie rule, floor and budget.
 // - `decision-extract` (pure, reads only): the "Decided by score" machine block of a plan file.
-// - `run-init`, `decision-record`, `blocker-record`, `fit-record`, `run-close`: the run ledger
+// - `run-init`, `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed`,
+//   `delivery-record`, `delivery-confirm`, `run-close`: the run ledger
 //   `<cwd>/.effective-flow/autopilot/<run-id>/run.json`, written only through the
 //   `runtime-state-guard.mjs` primitives; `cwd` must be the primary checkout (RUNTIME_STATE_ROOT).
+//   `plan-reviewed` hashes the reviewed plan itself; `delivery-record` stores the archive path (or
+//   an unarchived delivery) and `delivery-confirm` the verified pushed head.
 // - `consent-check` (reads only): an open ledger whose recorded source is the given issue and whose
 //   recorded visibility is `private`.
 // - `run-check` (reads only): an open ledger for the run id, or RUN_NOT_OPEN.
 // - `pr-appendix`: renders, sanitizes and scans the appendix, writes it beside the ledger and
 //   records its SHA-256 in the ledger. A `blocked` or `withheld` result and every later
-//   `decision-record`, `blocker-record` and `fit-record` withdraw that digest, so only a render of
-//   the current ledger can be merged.
+//   `decision-record`, `blocker-record`, `fit-record`, `plan-reviewed` and `delivery-record`
+//   withdraw that digest, so only a render of the current ledger can be merged. `delivery-confirm`
+//   changes nothing the appendix renders and keeps it.
+// - `plan-copy-restore`: the one project-file write. It replaces the run's own review edit of a
+//   tracked plan in the invocation checkout (`sourceRoot`) with `HEAD`'s working-tree bytes, and
+//   only when every precondition holds; otherwise it reports `kept` or `not-applicable`. It never
+//   overwrites the plan path (a no-clobber install, no `git restore`, so the index stays
+//   unchanged) and never deletes the reviewed copy: that copy is hard-linked into the run ledger
+//   directory through the runtime-state guard and reported as `retainedCopy`. A failed retain or
+//   install puts the reviewed copy back without clobbering and reports `putBack`. The ledger
+//   directory must be on the plan checkout's filesystem; otherwise (EXDEV) it reports
+//   `retain-failed` and copies nothing. `retain-failed` also carries `retainedCopy` when the
+//   moved-aside name cannot be removed after the link.
 // - `appendix-merge` (reads only): replaces the one appendix block of a pull-request body or
 //   appends it, for `pr`'s `Appendix:` input; it reads the run's appendix only when its SHA-256 is
 //   the one `pr-appendix` recorded, and never while a security blocker stands on a repository whose
@@ -25,7 +39,9 @@
 // - `ledger-list` (reads only) and `ledger-prune`: `cleanup`'s inventory and removal of run
 //   ledgers. A ledger is removable only when its run is closed and it produced no pull request or
 //   its pull request is merged or closed, as the caller's `pr-read` stated; an unavailable forge
-//   retains it.
+//   retains it. A retained plan copy (`plan-copy-<16 hex>.md`) is never deleted here: no check
+//   can exclude a save through an open descriptor or an atomic replacement between the check and
+//   the unlink, so any run holding one is retained as `retained-plan-copy` with the copies' paths.
 //
 // Classification: lead > 3 is `silent`, lead 1–3 `documented` with every alternative within 3
 // points, lead 0 a `tie`. Tie re-scores rank only the tied options, must be pairwise distinct, and
@@ -38,7 +54,7 @@
 
 import { createHash, randomBytes } from 'node:crypto';
 import { constants as fsConstants } from 'node:fs';
-import { lstat, open, readdir } from 'node:fs/promises';
+import { link, lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
 import { hasClosingKeyword, scanEntries } from './plan-publication-core.mjs';
@@ -46,15 +62,20 @@ import {
   O_NOFOLLOW,
   RUNTIME_STATE_DIR,
   RuntimeStateError,
+  asBuffer,
   assertDirectoryChain,
   atomicWrite,
   createNoClobber,
   ensureGuardedDirectory,
+  errorDetail,
   gitBaseEnv,
+  guardTarget,
   guardedMkdir,
   guardedRmdir,
   guardedUnlink,
+  resolveDirectory,
   resolveRuntimeRoot,
+  runGit,
 } from './runtime-state-guard.mjs';
 
 export const AUTOPILOT_OPERATIONS = Object.freeze([
@@ -64,10 +85,14 @@ export const AUTOPILOT_OPERATIONS = Object.freeze([
   'decision-record',
   'blocker-record',
   'fit-record',
+  'plan-reviewed',
+  'delivery-record',
+  'delivery-confirm',
   'consent-check',
   'run-check',
   'pr-appendix',
   'appendix-merge',
+  'plan-copy-restore',
   'run-close',
   'ledger-list',
   'ledger-prune',
@@ -98,6 +123,8 @@ export const SITE_ID = /^S-[A-Z]{2,5}$/;
 const REPOSITORY = /^[a-z0-9.-]+\/[a-z0-9_.-]+\/[a-z0-9_.-]+$/;
 const FINDING_ID = /^[A-Za-z][A-Za-z0-9._-]{0,63}$/;
 const SHA256 = /^[0-9a-f]{64}$/;
+// A Git object id: SHA-1 or SHA-256 repositories.
+const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 export const VISIBILITIES = Object.freeze(['public', 'private', 'unknown']);
 export const LANGUAGES = Object.freeze(['en', 'de']);
@@ -854,13 +881,13 @@ function fitSources(value, emptyHint) {
 }
 
 // Three forms: a score with reason and sources; `notAssessed` when no architecture or roadmap
-// source exists; `unavailable` with the sources found when scoring could not produce a score.
+// source exists; `unavailable` when scoring could not produce a score. The `unavailable` fallback
+// takes no source list, so it can never exceed the source limit or turn into a blocker.
 async function fitRecordOperation(input, deps) {
   if (isObject(input) && input.notAssessed === true) {
     closed(input, ['cwd', 'runId', 'notAssessed'], [], 'input');
   } else if (isObject(input) && input.unavailable === true) {
-    closed(input, ['cwd', 'runId', 'unavailable', 'sources'], [], 'input');
-    fitSources(input.sources, 'use notAssessed without any');
+    closed(input, ['cwd', 'runId', 'unavailable'], [], 'input');
   } else {
     closed(input, ['cwd', 'runId', 'score', 'reason', 'sources'], [], 'input');
     if (!Number.isInteger(input.score) || input.score < SCORE_MIN || input.score > SCORE_MAX) {
@@ -874,12 +901,7 @@ async function fitRecordOperation(input, deps) {
   const ledger = await openLedger(ctx, input.runId);
   if (input.notAssessed) ledger.fit = { assessed: false, recordedAt: timestamp(deps) };
   else if (input.unavailable) {
-    ledger.fit = {
-      assessed: false,
-      unavailable: true,
-      sources: [...new Set(input.sources)],
-      recordedAt: timestamp(deps),
-    };
+    ledger.fit = { assessed: false, unavailable: true, recordedAt: timestamp(deps) };
   } else {
     ledger.fit = {
       assessed: true,
@@ -893,6 +915,118 @@ async function fitRecordOperation(input, deps) {
   await writeLedger(ctx, ledger);
   const { recordedAt: _recordedAt, ...fit } = ledger.fit;
   return { recorded: true, fit };
+}
+
+// The plan file below `root` at a repository-relative path, read with the bounded no-follow
+// regular-file read after proving that every parent component is a real directory. Returns
+// `{ state: 'file', bytes, sha256 }`, `{ state: 'missing' }` or `{ state: 'unsafe', code }`.
+async function readPlanFile(root, relative) {
+  const target = path.join(root, ...relative.split('/'));
+  try {
+    if (!(await assertDirectoryChain(root, path.dirname(target), { allowMissing: true }))) {
+      return { state: 'missing' };
+    }
+    const bytes = await readBoundedRegular(target, MAX_PLAN_BYTES, 'the plan');
+    return { state: 'file', bytes, sha256: sha256(bytes) };
+  } catch (error) {
+    if (error instanceof AutopilotError && error.code === 'NOT_FOUND') return { state: 'missing' };
+    if (error instanceof AutopilotError || error instanceof RuntimeStateError) {
+      return { state: 'unsafe', code: error.code };
+    }
+    throw error;
+  }
+}
+
+function requirePlanSource(ledger, operation) {
+  if (ledger.source?.kind !== 'plan') invalid(`${operation} requires a plan source`);
+  return ledger.source;
+}
+
+// After plan review: the helper hashes the reviewed plan at `source.planPath` below the invocation
+// checkout `sourceRoot` itself (which differs from `cwd` in a harness worktree session) and stores
+// the digest as `source.reviewedPlanSha256` with that checkout's physical toplevel as
+// `source.sourceRoot`, so no model-computed hash enters the ledger and the carry-over and the
+// restore act on the reviewed copy. A later call replaces both, but only before any delivery
+// record: afterwards the delivered head carries the reviewed text, and a new digest would let the
+// restore discard an edit made after delivery (INVALID_STATE).
+async function planReviewedOperation(input, deps) {
+  closed(input, ['cwd', 'runId', 'sourceRoot'], [], 'input');
+  requireRunId(input.runId);
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  const source = requirePlanSource(ledger, 'plan-reviewed');
+  if (ledger.delivery !== undefined) {
+    fail('INVALID_STATE', 'plan-reviewed is not allowed once a delivery is recorded');
+  }
+  let root;
+  try {
+    root = await requireSourceRoot(ctx, input.sourceRoot);
+  } catch (error) {
+    if (error instanceof GitReadFailure) fail('GIT_FAILED', error.message);
+    throw error;
+  }
+  const plan = await readPlanFile(root, source.planPath);
+  if (plan.state === 'missing') fail('NOT_FOUND', 'the reviewed plan does not exist');
+  if (plan.state === 'unsafe') {
+    fail(plan.code, 'the reviewed plan is not a bounded regular file below sourceRoot');
+  }
+  source.reviewedPlanSha256 = plan.sha256;
+  source.sourceRoot = root;
+  withdrawAppendix(ledger);
+  await writeLedger(ctx, ledger);
+  return { recorded: true, reviewedPlanSha256: plan.sha256, sourceRoot: root };
+}
+
+// The one archive path plan archival produces for a plan: `<dir>/archive/<file>`.
+export function archivePathFor(planPath) {
+  return path.posix.join(path.posix.dirname(planPath), 'archive', path.posix.basename(planPath));
+}
+
+// After the handback commit and before `pr-appendix`: the delivered plan state, either the
+// archive path or an unarchived delivery. A new record replaces an earlier one, including its
+// confirmed head, because it describes a new delivery.
+async function deliveryRecordOperation(input, deps) {
+  if (isObject(input) && Object.hasOwn(input, 'unarchived')) {
+    closed(input, ['cwd', 'runId', 'unarchived'], [], 'input');
+    if (input.unarchived !== true) invalid('unarchived must be true');
+  } else {
+    closed(input, ['cwd', 'runId', 'archivePath'], [], 'input');
+    relativePath(input.archivePath, 'archivePath');
+  }
+  requireRunId(input.runId);
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  const source = requirePlanSource(ledger, 'delivery-record');
+  if (input.archivePath !== undefined && input.archivePath !== archivePathFor(source.planPath)) {
+    invalid(`archivePath must be ${archivePathFor(source.planPath)}`);
+  }
+  ledger.delivery =
+    input.archivePath === undefined
+      ? { unarchived: true, recordedAt: timestamp(deps) }
+      : { archivePath: input.archivePath, recordedAt: timestamp(deps) };
+  withdrawAppendix(ledger);
+  await writeLedger(ctx, ledger);
+  const { recordedAt: _recordedAt, ...delivery } = ledger.delivery;
+  return { recorded: true, delivery };
+}
+
+// After `pr` returned a verified pushed head: records that head. It changes nothing the appendix
+// renders, so it keeps a rendered appendix mergeable.
+async function confirmDeliveryOperation(input, deps) {
+  closed(input, ['cwd', 'runId', 'headOid'], [], 'input');
+  requireRunId(input.runId);
+  if (typeof input.headOid !== 'string' || !OBJECT_ID.test(input.headOid)) {
+    invalid('headOid must be a full lowercase Git object id');
+  }
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  ledger.delivery = {
+    ...(isObject(ledger.delivery) ? ledger.delivery : {}),
+    headOid: input.headOid,
+    confirmedAt: timestamp(deps),
+  };
+  await writeLedger(ctx, ledger);
+  return { recorded: true, headOid: input.headOid };
 }
 
 async function consentCheckOperation(input, deps) {
@@ -971,8 +1105,17 @@ async function runCloseOperation(input, deps) {
     runId: ledger.runId,
     outcome: ledger.outcome,
     counts: counts(ledger),
-    fit: ledger.fit && ledger.fit.assessed ? ledger.fit.score : null,
+    fit: storedFit(ledger),
   };
+}
+
+// The recorded architecture fit without its timestamp, or `null` when none was recorded:
+// `{assessed: true, score, reason, sources}`, `{assessed: false}` or
+// `{assessed: false, unavailable: true}`.
+function storedFit(ledger) {
+  if (!isObject(ledger.fit)) return null;
+  const { recordedAt: _recordedAt, ...fit } = ledger.fit;
+  return fit;
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -1037,6 +1180,9 @@ async function ledgerListOperation(input, deps) {
     }
     const pullRequest = Number.isSafeInteger(ledger.pullRequest) ? ledger.pullRequest : null;
     const removal = ledgerRemoval(ledger, undefined);
+    const pending = removal.removable || removal.reason === 'pull-request-state-missing';
+    // A retained plan copy keeps the run whatever its pull request's state is.
+    const copies = pending ? await planCopies(runDirectory(ctx, name)) : [];
     runs.push({
       runId: name,
       state: 'valid',
@@ -1046,18 +1192,31 @@ async function ledgerListOperation(input, deps) {
       source: ledger.source,
       // `needs-pull-request-state`: closed with a pull request, so `pr-read` decides.
       removal:
-        removal.reason === 'pull-request-state-missing'
-          ? 'needs-pull-request-state'
-          : removal.removable
-            ? 'removable'
-            : removal.reason,
+        copies.length > 0
+          ? 'retained-plan-copy'
+          : removal.reason === 'pull-request-state-missing'
+            ? 'needs-pull-request-state'
+            : removal.removable
+              ? 'removable'
+              : removal.reason,
+      ...(copies.length > 0 ? { planCopies: copies } : {}),
     });
   }
   return { directory: names === null ? 'absent' : 'present', runs, ignored };
 }
 
-// Removes one run directory: its ledger, an appendix beside it, then the empty directory. Any other
-// entry keeps the directory and its ledger.
+const PLAN_COPY = /^plan-copy-[0-9a-f]{16}\.md$/;
+
+// The plan copies `plan-copy-restore` retained in a run directory (absolute paths). Each may hold
+// a late save, and none is ever deleted by the prune.
+async function planCopies(directory, names) {
+  return (names ?? (await readdir(directory)))
+    .filter((name) => PLAN_COPY.test(name))
+    .map((name) => path.join(directory, name));
+}
+
+// Removes one run directory: an appendix beside the ledger, the ledger, then the empty directory.
+// Any other entry, and every retained plan copy, keeps the directory and its ledger.
 // `pullRequest` is the number the caller read with `ledger-list` and passed to `pr-read`; it must
 // be the ledger's own, so a state read for another pull request never removes this ledger.
 async function pruneRun(ctx, runId, pullRequestState, pullRequest) {
@@ -1084,13 +1243,17 @@ async function pruneRun(ctx, runId, pullRequestState, pullRequest) {
   if (!removal.removable) return { runId, result: 'retained', reason: removal.reason };
   const entries = await readdir(directory);
   const known = new Set([LEDGER_FILE, APPENDIX_FILE]);
-  if (entries.some((name) => !known.has(name))) {
+  if (entries.some((name) => !known.has(name) && !PLAN_COPY.test(name))) {
     return { runId, result: 'retained', reason: 'unexpected-entry' };
   }
-  for (const name of entries) {
+  for (const name of entries.filter((entry) => known.has(entry))) {
     const target = path.join(directory, name);
     const info = await lstat(target);
     if (!info.isFile()) return { runId, result: 'retained', reason: 'unexpected-entry' };
+  }
+  const copies = await planCopies(directory, entries);
+  if (copies.length > 0) {
+    return { runId, result: 'retained', reason: 'retained-plan-copy', planCopies: copies };
   }
   // The appendix first, so an interrupted removal still leaves a readable ledger.
   for (const name of [APPENDIX_FILE, LEDGER_FILE].filter((entry) => entries.includes(entry))) {
@@ -1226,6 +1389,13 @@ function scored(entry, field, sanitized) {
   return `${entry.score}/10 — ${field(entry.reason, sanitized)}`;
 }
 
+// The plan path the appendix names: the archive path `delivery-record` recorded, otherwise (an
+// unarchived delivery or none at all) the original plan path.
+function appendixPlanPath(ledger) {
+  const archivePath = ledger.delivery?.archivePath;
+  return typeof archivePath === 'string' ? archivePath : ledger.source.planPath;
+}
+
 // Renders the appendix text for a ledger. Every free-text field passes `sanitizeField`; the result
 // lists which rules applied. Local-only decisions are left out entirely, with no count. A security
 // blocker, a blocker with a local-only reference and a blocker without a summary render one
@@ -1242,7 +1412,7 @@ export function renderAppendix(ledger, { planPullRequest } = {}) {
   const reference =
     ledger.source.kind === 'issue'
       ? [copy.issue(ledger.source.issue)]
-      : [copy.plan(field(ledger.source.planPath, 'source.planPath'))];
+      : [copy.plan(field(appendixPlanPath(ledger), 'source.planPath'))];
   if (planPullRequest !== undefined) reference.push(copy.planPr(planPullRequest));
   lines.push(`${copy.source} ${reference.join('; ')}`, '');
 
@@ -1482,6 +1652,332 @@ async function appendixMergeOperation(input, deps) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Plan copy restore: the run's own review edit in the invocation checkout
+
+// A Git read in `sourceRoot` that failed (spawn error, timeout or an unexpected exit status). The
+// restore maps it to `kept` with `git-read-failed`, never to `not-applicable`.
+class GitReadFailure extends Error {}
+
+async function readGit(ctx, root, args, { allowed = [0] } = {}) {
+  const result = await runGit(ctx, root, args);
+  if (result?.error || !allowed.includes(result?.status)) {
+    const command = args[0];
+    const detail = result?.error?.message ?? errorDetail(result?.stderr);
+    throw new GitReadFailure(`git ${command} failed${detail ? `: ${detail}` : ''}`);
+  }
+  return {
+    status: result.status,
+    stdout: asBuffer(result.stdout),
+    stderr: asBuffer(result.stderr),
+  };
+}
+
+// The one tree entry `git ls-tree -z <rev> -- :(literal)<path>` lists for exactly that path, as
+// `{ mode, type, oid }`, or `null` when a successful listing has none. A failed listing (an
+// unknown revision included) throws GitReadFailure.
+async function treeEntry(ctx, root, rev, relative) {
+  const result = await readGit(ctx, root, ['ls-tree', '-z', rev, '--', `:(literal)${relative}`]);
+  for (const record of result.stdout.toString('utf8').split('\0')) {
+    const match = record.match(/^(\d{6}) (\w+) ([0-9a-f]+)\t([\s\S]*)$/);
+    if (match && match[4] === relative) return { mode: match[1], type: match[2], oid: match[3] };
+  }
+  return null;
+}
+
+// Whether the index holds exactly the stage-0 entry `HEAD:<path>` has, so nothing is staged.
+async function indexMatches(ctx, root, relative, head) {
+  const listed = await readGit(ctx, root, ['ls-files', '-s', '-z', '--', `:(literal)${relative}`]);
+  const entries = listed.stdout
+    .toString('utf8')
+    .split('\0')
+    .filter((record) => record !== '')
+    .map((record) => record.match(/^(\d{6}) ([0-9a-f]+) (\d)\t([\s\S]*)$/));
+  if (entries.length !== 1 || !entries[0]) return false;
+  const [, mode, oid, stage, entryPath] = entries[0];
+  return stage === '0' && entryPath === relative && mode === head.mode && oid === head.oid;
+}
+
+// `<commit>:<path>` in working-tree form, which is what a checkout writes and what the working
+// copy and the preflight `planSha256` hash: `git cat-file --filters` applies the checkout's
+// end-of-line conversion and smudge filters. `null` for a non-regular entry or a blob over the
+// plan bound, in either form. The restore hashes these bytes and installs the same buffer, so the
+// installed file is exactly the content every `HEAD:<P>` comparison saw.
+async function workingFormBytes(ctx, root, commit, relative, entry) {
+  if (entry.type !== 'blob' || !['100644', '100755'].includes(entry.mode)) return null;
+  const size = Number(
+    (await readGit(ctx, root, ['cat-file', '-s', entry.oid])).stdout.toString('utf8').trim(),
+  );
+  if (!Number.isSafeInteger(size) || size > MAX_PLAN_BYTES) return null;
+  const filtered = (await readGit(ctx, root, ['cat-file', '--filters', `${commit}:${relative}`]))
+    .stdout;
+  if (filtered.length > MAX_PLAN_BYTES) return null;
+  return filtered;
+}
+
+// The commit `HEAD` names, or `null` for an unborn `HEAD` (`--verify -q` exits 1 without output).
+// Any other failure throws GitReadFailure.
+async function headCommit(ctx, root) {
+  const result = await readGit(ctx, root, ['rev-parse', '--verify', '-q', 'HEAD^{commit}'], {
+    allowed: [0, 1],
+  });
+  const oid = result.stdout.toString('utf8').trim();
+  if (result.status === 1) {
+    if (oid === '' && result.stderr.length === 0) return null;
+    throw new GitReadFailure(`git rev-parse failed: ${errorDetail(result.stderr)}`);
+  }
+  if (!OBJECT_ID.test(oid)) throw new GitReadFailure('git rev-parse returned no commit id');
+  return oid;
+}
+
+function requireAbsoluteSourceRoot(value) {
+  if (typeof value !== 'string' || !path.isAbsolute(value)) {
+    invalid('sourceRoot must be an absolute path');
+  }
+  return value;
+}
+
+async function canonical(value, label) {
+  try {
+    return await realpath(value);
+  } catch {
+    fail('UNSAFE_TARGET', `cannot resolve ${label}`);
+  }
+}
+
+// `sourceRoot` must be its own `--show-toplevel` and belong to the repository `cwd` belongs to; a
+// linked worktree of it is allowed. A directory outside any repository, a `.git`, common or bare
+// repository directory, a subdirectory and another repository are UNSAFE_TARGET; a Git read that fails otherwise (spawn error, timeout, another
+// exit status) throws GitReadFailure.
+async function requireSourceRoot(ctx, value) {
+  const root = await resolveDirectory(requireAbsoluteSourceRoot(value), 'sourceRoot');
+  const top = await runGit(ctx, root, ['rev-parse', '--show-toplevel']);
+  // Outside any repository, or a `.git`, common or bare repository directory: no working tree.
+  if (
+    !top?.error &&
+    top?.status !== 0 &&
+    /not a git repository|must be run in a work tree/i.test(errorDetail(top?.stderr))
+  ) {
+    fail('UNSAFE_TARGET', 'sourceRoot is not inside a git working tree');
+  }
+  if (top?.error || top?.status !== 0) {
+    throw new GitReadFailure(
+      `git rev-parse failed: ${top?.error?.message ?? errorDetail(top?.stderr)}`,
+    );
+  }
+  const toplevel = asBuffer(top.stdout).toString('utf8').trim();
+  if ((await canonical(toplevel, 'the toplevel of sourceRoot')) !== root) {
+    fail('UNSAFE_TARGET', 'sourceRoot is not the toplevel of its working tree');
+  }
+  const common = async (where, label) =>
+    canonical(
+      (
+        await readGit(ctx, where, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+      ).stdout
+        .toString('utf8')
+        .trim(),
+      `the git common directory of ${label}`,
+    );
+  if ((await common(root, 'sourceRoot')) !== (await common(ctx.cwd, 'cwd'))) {
+    fail('UNSAFE_TARGET', 'sourceRoot does not belong to the repository of cwd');
+  }
+  return root;
+}
+
+// Replaces the tracked plan `<P>` in `sourceRoot` with the working-tree bytes of the verified
+// `HEAD` commit when all of these hold: `sourceRoot` is the checkout `plan-reviewed` recorded; a
+// confirmed delivery head; a recorded archive path listed on that head; `HEAD:<P>` in working-tree
+// form still hashing to the preflight `planSha256`; an index entry equal to `HEAD:<P>`; and a
+// working copy hashing to `reviewedPlanSha256`. `HEAD`, the index entry and the working copy are
+// re-checked immediately before the write. Every `HEAD:<P>` comparison uses the working-tree form,
+// so end-of-line and smudge filters never make an unchanged plan look changed. The plan path is
+// never overwritten and the reviewed copy is never deleted: the working copy is moved aside and
+// re-hashed, hard-linked into the run ledger directory (`retainedCopy`, an absolute path), and
+// `HEAD`'s bytes are installed by a hard link from an exclusive temporary file, so a file recreated
+// at the plan path in the meantime wins. No `git restore` runs, so the index is never touched. Results:
+// - `{ result: 'restored', planPath, retainedCopy }`;
+// - `{ result: 'not-applicable', reason }` when nothing in `sourceRoot` is run-owned:
+//   `issue-source`, `untracked` (no `HEAD:<P>`, which covers a plan archival already moved there),
+//   `missing` (no working copy) or `unchanged` (the working copy equals `HEAD:<P>` in
+//   working-tree form);
+// - `{ result: 'kept', reason, planPath }` naming the failed precondition: `source-root-mismatch`
+//   (checked first, before anything in `sourceRoot` is read), `working-copy-unsafe`,
+//   `head-unreadable` (`HEAD:<P>` is no regular file or exceeds the plan bound),
+//   `delivery-unconfirmed`, `unarchived`, `archive-not-on-head`, `head-moved`, `staged-change`,
+//   `review-unrecorded`, `working-copy-changed` (also when a file was recreated at the plan path
+//   before the install, then with `retainedCopy`), `git-read-failed` with a one-line `detail` when
+//   a Git read fails (the `sourceRoot` checks included), `retain-failed` with a `detail` and
+//   `putBack` when the reviewed copy cannot be linked into the run ledger (a guard refusal, or
+//   EXDEV: the ledger directory must be on the checkout's filesystem; with `putBack: false` the
+//   `detail` names where the copy is; when the moved-aside name cannot be removed after a
+//   successful link, `retain-failed` also carries `retainedCopy`), or `restore-failed` with a
+//   `detail` when moving the copy aside or the install fails (the latter with `retainedCopy` and
+//   `putBack`, whether the retained copy was linked back to the plan path). A kept copy is never an
+//   error.
+async function planCopyRestoreOperation(input, deps) {
+  closed(input, ['cwd', 'runId', 'sourceRoot'], [], 'input');
+  requireRunId(input.runId);
+  const ctx = await rootContext(input, deps);
+  const ledger = await openLedger(ctx, input.runId);
+  requireAbsoluteSourceRoot(input.sourceRoot);
+  const { source } = ledger;
+  // Nothing in an issue source's checkout is run-owned, so its root is never even checked.
+  if (source?.kind !== 'plan') return { result: 'not-applicable', reason: 'issue-source' };
+  const planPath = source.planPath;
+  const notApplicable = (reason) => ({ result: 'not-applicable', reason, planPath });
+  const kept = (reason, extra = {}) => ({ result: 'kept', reason, planPath, ...extra });
+  try {
+    const root = await requireSourceRoot(ctx, input.sourceRoot);
+    if (typeof source.sourceRoot === 'string' && source.sourceRoot !== root) {
+      return kept('source-root-mismatch');
+    }
+    return await restorePlanCopy(ctx, root, ledger, deps, { planPath, notApplicable, kept });
+  } catch (error) {
+    if (error instanceof GitReadFailure) return kept('git-read-failed', { detail: error.message });
+    throw error;
+  }
+}
+
+async function restorePlanCopy(ctx, root, ledger, deps, { planPath, notApplicable, kept }) {
+  const { source } = ledger;
+  const commit = await headCommit(ctx, root);
+  const head = commit === null ? null : await treeEntry(ctx, root, commit, planPath);
+  if (head === null) return notApplicable('untracked');
+  const working = await readPlanFile(root, planPath);
+  if (working.state === 'missing') return notApplicable('missing');
+  if (working.state === 'unsafe') return kept('working-copy-unsafe');
+  const headBytes = await workingFormBytes(ctx, root, commit, planPath, head);
+  if (headBytes === null) return kept('head-unreadable');
+  const headSha256 = sha256(headBytes);
+  if (working.sha256 === headSha256) return notApplicable('unchanged');
+
+  const delivery = isObject(ledger.delivery) ? ledger.delivery : {};
+  if (typeof delivery.headOid !== 'string') return kept('delivery-unconfirmed');
+  if (typeof delivery.archivePath !== 'string') return kept('unarchived');
+  const archived = await treeEntry(ctx, root, delivery.headOid, delivery.archivePath);
+  if (archived === null || archived.type !== 'blob') return kept('archive-not-on-head');
+  if (headSha256 !== source.planSha256) return kept('head-moved');
+  if (!(await indexMatches(ctx, root, planPath, head))) return kept('staged-change');
+  if (typeof source.reviewedPlanSha256 !== 'string' || typeof source.sourceRoot !== 'string') {
+    return kept('review-unrecorded');
+  }
+  if (working.sha256 !== source.reviewedPlanSha256) return kept('working-copy-changed');
+
+  if (typeof deps.beforePlanRestore === 'function') await deps.beforePlanRestore();
+  // Immediately before the write: the same HEAD commit, an unchanged index entry and the reviewed
+  // working copy. The install writes the bytes read from that verified commit, which hash to the
+  // preflight `planSha256`, not whatever `HEAD` names now.
+  if ((await headCommit(ctx, root)) !== commit) return kept('head-moved');
+  if (!(await indexMatches(ctx, root, planPath, head))) return kept('staged-change');
+  const current = await readPlanFile(root, planPath);
+  if (current.state !== 'file') return kept('working-copy-unsafe');
+  if (current.sha256 !== source.reviewedPlanSha256) return kept('working-copy-changed');
+  // The check above and the install leave a window in which an editor can save the plan. Moving
+  // the file aside first closes it: the rename captures whatever is on disk at that instant, and it
+  // is hashed again before anything is installed.
+  const target = path.join(root, ...planPath.split('/'));
+  if (typeof deps.afterPlanRestoreChecks === 'function') await deps.afterPlanRestoreChecks();
+  const aside = `${target}.autopilot-restore-${randomBytes(6).toString('hex')}`;
+  try {
+    await rename(target, aside);
+  } catch (error) {
+    return kept('restore-failed', { detail: String(error?.message ?? error) });
+  }
+  if (typeof deps.afterPlanMovedAside === 'function') await deps.afterPlanMovedAside();
+  // Puts the moved-aside copy back without clobbering a file recreated at the plan path.
+  const putBack = async () => {
+    try {
+      await link(aside, target);
+      await unlink(aside);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  let moved;
+  try {
+    moved = sha256(await readBoundedRegular(aside, MAX_PLAN_BYTES, 'the plan'));
+  } catch {
+    moved = null;
+  }
+  if (moved !== source.reviewedPlanSha256) {
+    const back = await putBack();
+    return kept('working-copy-changed', back ? {} : { detail: `saved copy kept at ${aside}` });
+  }
+  if (typeof deps.afterPlanAsideVerified === 'function') await deps.afterPlanAsideVerified();
+
+  // The reviewed copy is never deleted: a write through a descriptor opened before the move lands
+  // in this inode after the hash check, so the same inode is hard-linked into the run ledger
+  // directory, through the runtime-state guard and under a fresh name (a no-clobber link, so the
+  // ledger directory must be on the checkout's filesystem; EXDEV is `retain-failed`, and nothing
+  // is copied). A failed link restores nothing and puts the copy back.
+  const directory = runDirectory(ctx, ledger.runId);
+  const retainedCopy = path.join(directory, `plan-copy-${randomBytes(8).toString('hex')}.md`);
+  try {
+    await guardTarget(ctx, retainedCopy);
+    await assertDirectoryChain(ctx.cwd, directory);
+    await (deps.retainLink ?? link)(aside, retainedCopy);
+  } catch (error) {
+    const back = await putBack();
+    return kept('retain-failed', {
+      detail:
+        String(error?.message ?? error) + (back ? '' : `; the reviewed copy is kept at ${aside}`),
+      putBack: back,
+    });
+  }
+  // Puts the retained copy back at the plan path without clobbering a file recreated there.
+  const linkBack = async () => {
+    try {
+      await link(retainedCopy, target);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+  try {
+    await unlink(aside);
+  } catch (error) {
+    return kept('retain-failed', {
+      detail: `cannot remove ${aside}: ${error?.code ?? error?.message}`,
+      retainedCopy,
+      putBack: await linkBack(),
+    });
+  }
+
+  // Installs `HEAD`'s bytes from an exclusive temporary sibling by a hard link, which never
+  // replaces an existing plan path; the temporary file is removed on every path. A failed install
+  // puts the retained copy back at the plan path, also without clobbering.
+  const temporary = `${target}.autopilot-install-${randomBytes(6).toString('hex')}`;
+  let created = false;
+  try {
+    const handle = await open(
+      temporary,
+      fsConstants.O_CREAT | fsConstants.O_EXCL | fsConstants.O_WRONLY | O_NOFOLLOW,
+      head.mode === '100755' ? 0o755 : 0o644,
+    );
+    created = true;
+    try {
+      await handle.writeFile(headBytes);
+    } finally {
+      await handle.close();
+    }
+    if (typeof deps.beforePlanInstall === 'function') await deps.beforePlanInstall();
+    await link(temporary, target);
+  } catch (error) {
+    if (error?.code === 'EEXIST' && created) {
+      return kept('working-copy-changed', { retainedCopy });
+    }
+    return kept('restore-failed', {
+      detail: String(error?.message ?? error),
+      retainedCopy,
+      putBack: await linkBack(),
+    });
+  } finally {
+    if (created) await unlink(temporary).catch(() => {});
+  }
+  return { result: 'restored', planPath, retainedCopy };
+}
+
+// ---------------------------------------------------------------------------------------------
 // Dispatch and envelopes
 
 const HANDLERS = Object.freeze({
@@ -1491,10 +1987,14 @@ const HANDLERS = Object.freeze({
   'decision-record': decisionRecordOperation,
   'blocker-record': blockerRecordOperation,
   'fit-record': fitRecordOperation,
+  'plan-reviewed': planReviewedOperation,
+  'delivery-record': deliveryRecordOperation,
+  'delivery-confirm': confirmDeliveryOperation,
   'consent-check': consentCheckOperation,
   'run-check': runCheckOperation,
   'pr-appendix': prAppendixOperation,
   'appendix-merge': appendixMergeOperation,
+  'plan-copy-restore': planCopyRestoreOperation,
   'run-close': runCloseOperation,
   'ledger-list': ledgerListOperation,
   'ledger-prune': ledgerPruneOperation,

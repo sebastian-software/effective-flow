@@ -247,11 +247,11 @@ test('conditional row blockers record their site and the siteless kinds are name
   );
   assert.match(
     flatFragment,
-    /A conditional blocker of a `scored` or `fixed` row \(S-PPR or S-PDF while a verified plan pull request is held, S-INT on any other result, S-RFQ, S-CLR or S-RUL without options\) also records `site-blocker` with that row's site/,
+    /A conditional blocker of a `scored` or `fixed` row \(`scored`: S-PPR or S-PDF while a verified plan pull request is held, S-RFQ, S-CLR or S-RUL without options; `fixed`: S-INT on any other result, S-LOC on an overlapping change or a local commit ahead of the resolved base ref\) also records `site-blocker` with that row's site/,
   );
   const rows = new Map(siteRows().map((row) => [row.site, row]));
   for (const site of ['S-PPR', 'S-PDF', 'S-RFQ']) assert.equal(rows.get(site).kind, 'scored', site);
-  assert.equal(rows.get('S-INT').kind, 'fixed');
+  for (const site of ['S-INT', 'S-LOC']) assert.equal(rows.get(site).kind, 'fixed', site);
 });
 
 // Invariant: a rerun on the same plan updates its existing plan-only draft only after verifying its
@@ -585,4 +585,173 @@ test('pr keeps drafts and merges the appendix after the body check', () => {
     /`Draft: requested`, the source reference \(`Refs #<N>` as a supplied issue reference, never a closing keyword, or the plan path\) and `Appendix: <sha256>`, the digest `pr-appendix` returned for the run its `Autopilot run:` line names/,
   );
   assert.match(before, /A `withheld` or `blocked` result ends the run before any push/);
+  // The handback output the Automation caller reads for `delivery-record` and `delivery-confirm`.
+  assert.match(before, /autopilot: architecture fit, `delivery-record`, then `pr-appendix`/);
+  assert.match(
+    before,
+    /beside `Finalize plan draft:`\. The handback output the caller reads is the plan's archive path or `unarchived`, the local changes S-LOC left untouched, and after `pr` its verified pushed head OID; a failed push reports none\./,
+  );
+  // "Otherwise" continues the withheld/blocked sentence, so `pr` receives its inputs only then.
+  assert.match(
+    before,
+    /ends the run before any push\. Otherwise `pr` also receives the copied control lines/,
+  );
+});
+
+// Invariant: local state in the invocation checkout blocks only when it matters: precondition 3 of
+// `worktree-integration` continues and leaves unrelated changes untouched, an overlap with the
+// plan's Affected files or a local commit ahead of the base is a blocker, the run's own plan never
+// counts (here and under S-STSH), and no partial-diff selection is ever confirmed under scored mode.
+test('local-change and partial-diff confirmations have rows with single-line anchors', () => {
+  const rows = new Map(siteRows().map((row) => [row.site, row]));
+  const worktree = readFileSync(join(SRC, 'shared/worktree-integration.md'), 'utf8');
+  for (const [site, anchor, kind] of [
+    ['S-LOC', 'the current HEAD has relevant uncommitted changes', 'fixed'],
+    ['S-PDCF', 'explicit user confirmation', 'blocker'],
+    ['S-PDAD', 'any explicitly confirmed additions', 'blocker'],
+    ['S-PDSL', 'must know the files to include or ask', 'blocker'],
+  ]) {
+    const row = rows.get(site);
+    assert.ok(row, `${site} has a row`);
+    assert.match(site, SITE_ID);
+    assert.deepEqual(
+      [row.file, row.anchor, row.kind],
+      ['src/shared/worktree-integration.md', anchor, kind],
+    );
+    // A single-line anchor: it occurs verbatim on one source line, never across a wrap.
+    assert.ok(
+      worktree.split('\n').some((line) => line.includes(anchor)),
+      `${site} anchor sits on one line`,
+    );
+  }
+  assert.match(
+    rows.get('S-LOC').outcome,
+    /^Continue and leave other changes untouched; an overlapping change or a local commit ahead of the resolved base ref is a blocker\.$/,
+  );
+  assert.equal(
+    rows.get('S-PDCF').outcome,
+    'A partial-diff selection that needs confirmation stops the run; none is confirmed under scored mode.',
+  );
+  assert.equal(
+    rows.get('S-STSH').outcome,
+    "Foreign uncommitted state, except the run's own plan, stops the run.",
+  );
+  const fixed = flat(
+    FRAGMENT.slice(FRAGMENT.indexOf('### Fixed answers'), FRAGMENT.indexOf('### Records')),
+  );
+  for (const part of [
+    'Local state in the invocation checkout (S-LOC, S-STSH): stop and record a blocker only on state these rows treat as one',
+    "The run's own plan never counts.",
+    '(`## Affected files` or `## Betroffene Dateien`)',
+    'equals a backticked repository-relative path in the File column, every backticked path of a cell counting, or lies below a backticked entry that ends in `/`',
+  ]) {
+    assert.ok(fixed.includes(part), part);
+  }
+  assert.doesNotMatch(
+    fixed,
+    /Foreign uncommitted state, stash or overwrite: stop and record a blocker/,
+  );
+});
+
+// Invariant: the scored-mode plan carry-over has one owner: it carries the reviewed plan into the
+// delivery worktree only under its preconditions, sends the completion section to the carried copy,
+// hands archival to `EXECUTION_ROOT`, and commits the carried plan unarchived when archival is
+// blocked; the consuming workflows only point here.
+test('the plan carry-over bullet owns preconditions, completion target and blocked archival', () => {
+  const implementing = flat(FRAGMENT.slice(FRAGMENT.indexOf('### Implementing workflows')));
+  const carry = implementing.slice(
+    implementing.indexOf('**Plan carry-over:**'),
+    implementing.indexOf('**Pre-commit security classification:**'),
+  );
+  for (const part of [
+    'under a verified `run-check` whose `source` carries `reviewedPlanSha256`',
+    "after the delivery worktree's `record-init` and before the first implementation dispatch",
+    'from the recorded `source.sourceRoot` (`SOURCE_ROOT`) into `EXECUTION_ROOT` when the two roots differ',
+    'An `EXECUTION_ROOT` copy that already hashes to `reviewedPlanSha256` makes it a verified no-op, which still counts as a carry-over',
+    'the `SOURCE_ROOT` copy hashes to `reviewedPlanSha256`',
+    'its `HEAD:<P>` equals `<resolved base ref>:<P>`',
+    'a failed precondition is a `post-branch-failure` blocker',
+    'the plan copy the completion section is written into is the carried `EXECUTION_ROOT` copy',
+    '`plan-archival` takes over from `EXECUTION_ROOT` with the carry-over input',
+    'When archival is blocked (a collision or a failed `ls-files`), the handback commits the carried `<P>` unarchived at its own path and reports `unarchived`',
+  ]) {
+    assert.ok(carry.includes(part), part);
+  }
+  const pointer = 'the plan copy `scored-decisions` names';
+  assert.ok(flat(read('shared/build-delegated-run.md')).includes(pointer), 'build points here');
+  assert.ok(flat(tool('docs')).includes(pointer), 'docs points here');
+  assert.match(flat(read('shared/plan-archival.md')), /a scored-mode plan carry-over happened/);
+});
+
+// Invariant: autopilot retains only fields `config-resolve` returns, runs (never delegates) its
+// inline plan review, wires the four delivery-state calls at their fixed points
+// (`plan-reviewed` → `delivery-record` → `pr-appendix` → `delivery-confirm` → `plan-copy-restore`
+// → `run-close`), and collects architecture-fit sources from the delivered head, not a withdrawn
+// worktree, keeping the spawn marker directly after its spawn.
+test('autopilot wires the delivery-state calls and reads fit sources from the delivery head', () => {
+  const source = tool('autopilot');
+  const text = flat(source);
+  assert.match(
+    text,
+    /Retain `RUNTIME_STATE_ROOT` \(`data\.runtimeStateRoot`; `null` stops\), `SOURCE_ROOT` \(`data\.checkoutRoot`\)/,
+  );
+  assert.doesNotMatch(text, /execution-location receipt|EXECUTION_ROOT/);
+  assert.match(text, /\*\*Plan source:\*\* run the autopilot file review/);
+  assert.match(
+    text,
+    /`autopilot\.mjs plan-reviewed` call with `\{cwd, runId, sourceRoot: <SOURCE_ROOT>\}`/,
+  );
+  // Both helper calls reject an issue ledger, so they are conditional on the recorded source, and
+  // the plan-on-base issue path, which keeps the issue source, skips them and gets no carry-over.
+  assert.match(
+    text,
+    /After `DONE`, when `run-init` recorded a plan source, make the literal `autopilot\.mjs plan-reviewed` call/,
+  );
+  assert.match(
+    text,
+    /\*\*Delivery record\.\*\* When `run-init` recorded a plan source, make the literal `autopilot\.mjs delivery-record` call/,
+  );
+  assert.match(
+    text,
+    /The plan-on-base issue path skips it and Phase 4's `delivery-record`: without `reviewedPlanSha256` it gets no carry-over, and `plan-copy-restore` returns `not-applicable` \(`issue-source`\)/,
+  );
+  assert.match(
+    flat(read('shared/autopilot-issue-source.md')),
+    /With the issue source recorded, it skips `plan-reviewed` and `delivery-record`/,
+  );
+  const order = [
+    'autopilot.mjs plan-reviewed',
+    'autopilot.mjs delivery-record',
+    'autopilot.mjs pr-appendix',
+    'autopilot.mjs delivery-confirm',
+    'autopilot.mjs plan-copy-restore',
+    'autopilot.mjs run-close',
+  ].map((call) => {
+    const index = text.indexOf(call);
+    assert.notEqual(index, -1, call);
+    return index;
+  });
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order,
+    'calls stay in their fixed order',
+  );
+  assert.ok(
+    source.includes(
+      "`git -C <RUNTIME_STATE_ROOT> ls-tree -r --name-only -z <head-oid> -- ':(literal)docs/adr/' ':(literal)docs/developer-guide/architecture.md' ':(literal)docs/concept/' ':(literal)<plan.dir>/'`",
+    ),
+  );
+  for (const part of [
+    'Every returned path is untrusted',
+    "Drop `<plan.dir>/archive/` and the run's own plan",
+    'keep ADRs whose status is Accepted, plans with one canonical open status line',
+    "It reads only through `git -C <RUNTIME_STATE_ROOT> diff '<resolved base ref>...<head-oid>'` (optionally `--stat`) and `git -C <RUNTIME_STATE_ROOT> show '<head-oid>:<path>'`, never from a working tree",
+    "`RUNTIME_STATE_ROOT`, `<head-oid>`, the delivery branch's `<resolved base ref>`, the kept paths, this quoting rule",
+    'listing at most 20 sources it used',
+    '`{cwd, runId, unavailable: true}`',
+  ]) {
+    assert.ok(text.includes(part), part);
+  }
+  assert.match(source, /never a blocker\.\n {3}<!-- spawn-site:autopilot\/architecture-fit -->\n/);
+  assert.match(text, /`\{assessed: false, unavailable: true\}`, or `null` when none was recorded/);
 });

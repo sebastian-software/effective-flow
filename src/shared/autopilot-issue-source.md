@@ -121,4 +121,5 @@ under `<plan.dir>/` in the base-tip checkout whose header carries exactly one
 path with that file (file review, extraction, implementation), keeping the issue source in the
 ledger and `Refs #<N>` as reference. No match, several matches, or a match only under
 `<plan.dir>/archive/` stops with no pull request. On this path a blocker follows the plan-source
-handling of `autopilot-blockers`.
+handling of `autopilot-blockers`. With the issue source recorded, it skips `plan-reviewed` and
+`delivery-record` (`autopilot` Phases 3 and 4).

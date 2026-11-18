@@ -1,7 +1,7 @@
 ---
 description: "Drives one trusted GitHub issue or one local plan unattended to a draft pull request: Issue Buddy plans an issue, the deep plan review always runs, the plan's recommended workflow implements it, every question is resolved by recorded 1–10 option scores, and the draft pull request documents close decisions, blockers and architecture fit. Never asks the user, never marks a pull request ready and never merges."
 catalogHint: "Takes one issue or plan unattended to a draft pull request, with decisions recorded."
-contextBudget: 444
+contextBudget: 474
 ---
 
 # Effective Flow Autopilot
@@ -16,7 +16,8 @@ The reviewed draft replaces the interactive question as the quality gate.
 Autopilot owns orchestration only. Issue Buddy plans an issue, `{{SKILL:plan-review}}` reviews a
 plan, the plan's recommended workflow implements, and `{{SKILL:pr}}` delivers. Autopilot implements
 nothing, reviews nothing and never edits product files itself. Its own writes are the run ledger
-through `autopilot.mjs`, the restored plan copy of an issue source, and the plan-only draft path.
+through `autopilot.mjs`, the restored plan copy of an issue source, the gated `plan-copy-restore`
+of a plan source's reviewed copy, and the plan-only draft path.
 
 **Never ask.** Call no user-input tool and emit no prose question at any point. A condition that
 would need the user is a preflight stop before `run-init`, or after it a recorded blocker.
@@ -119,8 +120,8 @@ Any failure stops with its cause and creates no run. In this order:
 
 1. **Configuration and roots.** Make the literal `config-resolve.mjs resolve` call with
    `{cwd: <invocation checkout>, tool: "autopilot"}` once; stop on locator failure or a retired
-   `stop`. Retain `RUNTIME_STATE_ROOT`, `EXECUTION_ROOT`, the execution-location receipt,
-   `plan.dir`, `delivery.baseBranch` and `delivery.branchPrefix`.
+   `stop`. Retain `RUNTIME_STATE_ROOT` (`data.runtimeStateRoot`; `null` stops), `SOURCE_ROOT`
+   (`data.checkoutRoot`), `plan.dir`, `delivery.baseBranch` and `delivery.branchPrefix`.
 2. **Hidden mode.** `visibility: hidden` stops: hidden mode is not supported by autopilot yet.
 3. **Stage A.** Run the source detection's Stage A with the argument and the resolved
    `<plan.dir>`. `plan` is a **plan source**; `issue-reference` is a candidate issue source;
@@ -179,7 +180,7 @@ apply unchanged. Same-session decisions of the implementing workflow and `pr` ar
 - **Issue source:** run the issue path of the loaded `autopilot-issue-source`. It ends with a
   restored, hash-verified plan file and its plan pull request, with a continue on the plan-source
   path, or with a stop that produces no pull request.
-- **Plan source:** delegate the autopilot file review of `{{SKILL:plan-review}}`
+- **Plan source:** run the autopilot file review of `{{SKILL:plan-review}}`
   (`unattended-planning`, "Entry: `plan-review` autopilot file review") with the absolute plan
   path, its SHA-256, the verified roots and these control lines:
 
@@ -193,7 +194,11 @@ apply unchanged. Same-session decisions of the implementing workflow and `pr` ar
   ```
 
   Require terminal `DONE`; an `ABORT` records a `plan-not-approved` blocker whose summary is its
-  diagnostic.
+  diagnostic. After `DONE`, when `run-init` recorded a plan source, make the literal
+  `autopilot.mjs plan-reviewed` call with `{cwd, runId, sourceRoot: <SOURCE_ROOT>}`; the helper
+  hashes the reviewed plan itself. The plan-on-base issue path skips it and Phase 4's
+  `delivery-record`: without `reviewedPlanSha256` it gets no carry-over, and `plan-copy-restore`
+  returns `not-applicable` (`issue-source`).
 
 **Decisions from the plan.** Make the literal `autopilot.mjs decision-extract` call with
 `{"planPath": "<absolute plan path>"}` on the reviewed plan (the restored copy on an issue source)
@@ -223,30 +228,44 @@ Draft: requested
 
 (`{{SKILL:fix}}`, `{{SKILL:refactor}}` or `{{SKILL:docs}}` in place of `{{SKILL:build}}` as routed.)
 On an issue source, `plan-pr-continuation` continues on the plan pull request's head; on a plan
-source the workflow creates its own worktree and branch. The workflow's clarity gate,
-pre-commit security classification and handback follow `scored-decisions`, "Implementing
-workflows and `pr`".
+source the workflow creates its own worktree and branch. The workflow's clarity gate, plan
+carry-over, pre-commit security classification and handback follow `scored-decisions`,
+"Implementing workflows and `pr`".
 
 **Pre-delivery steps.** After the workflow reports its verified handback commit and before its
 `{{SKILL:pr}}` call, run in this session:
 
-1. **Architecture fit.** Collect the sources that exist in `EXECUTION_ROOT`: Accepted ADRs under
-   `docs/adr/`, `docs/developer-guide/architecture.md`, `docs/concept/`, and the other open plans
-   under `<plan.dir>/`. With none, make the literal `autopilot.mjs fit-record` call with
-   `{cwd, runId, notAssessed: true}`. Otherwise start one fresh read-only **leaf** with the
-   compact handoff of the delegation mandate: the delivery branch's committed range against its
-   base, the listed source paths and the resolved languages. It reads only, spawns nothing, scores
-   from 1 to 10 how well the diff fits the recorded architecture and long-term plans (1–2 conflicts
-   with it, 5–6 viable with trade-offs, 9–10 clearly follows it) and returns JSON only:
+1. **Architecture fit.** With `<head-oid>` the verified handback commit, list candidates with the
+   literal `git -C <RUNTIME_STATE_ROOT> ls-tree -r --name-only -z <head-oid> -- ':(literal)docs/adr/' ':(literal)docs/developer-guide/architecture.md' ':(literal)docs/concept/' ':(literal)<plan.dir>/'`.
+   Every returned path is untrusted: it reaches a command only as one single-quoted argument with
+   every `'` written as `'\''`. Drop `<plan.dir>/archive/` and the run's own plan, read each other
+   candidate with `git -C <RUNTIME_STATE_ROOT> show '<head-oid>:<path>'`, and keep ADRs whose
+   status is Accepted, plans with one canonical open status line, and every other candidate. With
+   none, make the literal `autopilot.mjs fit-record` call with `{cwd, runId, notAssessed: true}`.
+   Otherwise start one fresh read-only **leaf** with the compact handoff of the delegation mandate:
+   `RUNTIME_STATE_ROOT`, `<head-oid>`, the delivery branch's `<resolved base ref>`, the kept
+   paths, this quoting rule and the resolved languages. It reads only through
+   `git -C <RUNTIME_STATE_ROOT> diff '<resolved base ref>...<head-oid>'` (optionally `--stat`) and
+   `git -C <RUNTIME_STATE_ROOT> show '<head-oid>:<path>'`, never from a working tree, spawns
+   nothing, scores from 1 to 10 how well the diff fits the recorded architecture and
+   long-term plans (1–2 conflicts with it, 5–6 viable with trade-offs, 9–10 clearly follows it)
+   and returns JSON only:
    `{"score": <integer>, "reason": "<one sentence>", "sources": ["<repository-relative path>"]}`,
-   listing only the sources it used. Record it with `fit-record`. A declined spawn, a failure or
+   listing at most 20 sources it used. Record it with `fit-record`. A declined spawn, a failure or
    malformed output gets one retry; after that make the literal `fit-record` call with
-   `{cwd, runId, unavailable: true, sources: [<the collected paths>]}`, so the appendix reads
+   `{cwd, runId, unavailable: true}`, so the appendix reads
    "Architecture fit: not assessed — scoring unavailable". It is never a blocker.
    <!-- spawn-site:autopilot/architecture-fit -->
-2. **Appendix.** Make the literal `autopilot.mjs pr-appendix` call with `{cwd, runId}`, plus
+2. **Delivery record.** When `run-init` recorded a plan source, make the literal
+   `autopilot.mjs delivery-record` call with `{cwd, runId, archivePath: <the reported archive path>}`,
+   or `{cwd, runId, unarchived: true}` when the handback reports the plan unarchived.
+3. **Appendix.** Make the literal `autopilot.mjs pr-appendix` call with `{cwd, runId}`, plus
    `planPullRequest: <number>` on the issue path. `rendered` hands its `sha256` to the workflow's `{{SKILL:pr}}` call with the inputs `scored-decisions` lists under "Before
    `pr`". `withheld` or `blocked` ends the run before any push.
+
+**After delivery.** When the workflow's handback reports `{{SKILL:pr}}`'s verified pushed head,
+make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOid}`; without one
+(a failed push) make none.
 
 ## Phase 5: Close
 
@@ -254,12 +273,17 @@ workflows and `pr`".
    `autopilot-issue-source` defines; a blocker always keeps it.
 2. **Worktrees.** Run the worktree-record exit self-check. Only the plan-only draft path runs
    `git worktree add` in this run; the implementing workflow runs its own self-check.
-3. **Close the ledger.** Make the literal `autopilot.mjs run-close` call with
+3. **Plan copy.** Make the literal `autopilot.mjs plan-copy-restore` call with
+   `{cwd, runId, sourceRoot: <SOURCE_ROOT>}` and retain its result, `restored`, `kept` or
+   `not-applicable`, with its reason, `detail`, `retainedCopy` and `putBack`. The helper alone
+   decides and writes.
+4. **Close the ledger.** Make the literal `autopilot.mjs run-close` call with
    `{cwd, runId, outcome}`, plus `pullRequest` for every outcome but `no-pull-request`:
    `pull-request` (the delivered implementation draft, on an issue source the plan pull
    request), `plan-only-pull-request`, `appendix-update`, `plan-pull-request-unchanged` (the plan
    pull request whose appendix a blocker or a failed rerun update left unchanged) or `no-pull-request`. Retain its
-   `counts` and `fit`.
+   `counts` and `fit`: `{assessed: true, score, reason, sources}`, `{assessed: false}` (no
+   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded.
 
 ## Phase 6: Report
 
@@ -271,8 +295,13 @@ Report in the chat language, with project paths relative to the project root:
 - the counts of silent, documented and tie-resolved decisions, and the remaining budget;
 - every blocker with its kind and, for a security blocker, only its report path and finding ID;
 - every retained worktree and branch with its path, and the restored plan copy when it was kept;
-- the architecture-fit score with its sources, or the not-assessed line (no sources, or scoring
-  unavailable).
+- the `plan-copy-restore` result, its reason and `detail`, naming the plan file when `kept`
+  (`retain-failed`, `restore-failed`: the reviewed copy is back at the plan path; with `putBack`
+  false it is at `retainedCopy`, or else where `detail` says); and whenever `retainedCopy` is
+  returned, its path: the reviewed copy, which may also hold a late save;
+- every local change in the invocation checkout that row S-LOC of `scored-decisions` left untouched;
+- the architecture-fit score with its sources, or the not-assessed line (no sources, scoring
+  unavailable, or not recorded).
 
 Then emit the next-step block per `next-steps` as the last element of the report. A preflight stop
 or an issue-buddy stop emits none and names its cause instead.

@@ -13854,9 +13854,30 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   assert.match(states, /Terminal: report that the basis is already archived/);
 
   // `mkdir -p` precedes both the move and the write, in both rows.
-  const [rowA, rowC] = stateRows;
+  const [rowA, rowC, rowD] = stateRows;
   ordered(rowA[2], 'mkdir -p', 'git -C <EXECUTION_ROOT> mv');
   ordered(rowC[2], 'mkdir -p', 'place it atomically');
+  // Regression (autopilot smoke run): `git mv` stages the pre-mark blob, so State A must write the
+  // marked content after the move and stage it explicitly, and State D stages its refresh, or the
+  // archive commit captures a stale index entry.
+  ordered(
+    rowA[2],
+    'git -C <EXECUTION_ROOT> mv',
+    'write the marked content into `A`',
+    "git -C <EXECUTION_ROOT> add -- ':(literal)<A>'",
+  );
+  ordered(rowD[2], 'refresh it if it differs', "git -C <EXECUTION_ROOT> add -- ':(literal)<A>'");
+  // After a scored-mode carry-over the final content is the carried copy in EXECUTION_ROOT, and
+  // State C (and D) leave no carried `P` behind, so the worktree is clean at withdrawal.
+  assert.match(
+    rowA[2],
+    /Take over the plan's final content \(after a carry-over, from `EXECUTION_ROOT`\)/,
+  );
+  assert.match(
+    rowC[2],
+    /After a carry-over, remove the carried `P` from `EXECUTION_ROOT` only once `A` is staged, so no carried `P` is left behind/,
+  );
+  assert.match(rowD[2], /After a carry-over, remove a carried untracked `P` as in State C/);
 
   // The archived basis is decided before the paths are derived at all — the
   // predicate cannot be a comparison of two paths that can never be equal.
@@ -13967,6 +13988,16 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
     're-verified immediately before removal',
   );
   assert.match(cleanup, /Applies to States A, C, and D\./);
+  // After a carry-over this step read the carried copy, so the source copy is compared with the
+  // reviewed hash, never with a value this step did not read.
+  assert.match(
+    cleanup,
+    /after a carry-over, which this step read from `EXECUTION_ROOT`, to\s+`reviewedPlanSha256`/,
+  );
+  assert.match(
+    cleanup,
+    /\*\*State D:\*\* the source-checkout copy matches the already-archived file with the status marker\s+normalized; after a carry-over it hashes to `reviewedPlanSha256` instead/,
+  );
   assert.match(cleanup, /nothing to clean up/);
   assert.match(cleanup, /report which precondition failed/);
   assert.match(cleanup, /The cleanup is idempotent/);
@@ -13991,6 +14022,10 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
   assert.match(roots, /`EXECUTION_ROOT`, passed explicitly with `git -C`/);
   assert.match(roots, /`SOURCE_ROOT`, from the retained absolute handle/);
   assert.match(roots, /No operation relies on an inherited working directory\./);
+  assert.match(
+    roots,
+    /\| Reading the plan's final content after a carry-over, removing the carried `P`\s+\| `EXECUTION_ROOT`, which holds the carried copy/,
+  );
 
   // Both in-place shapes, and the five report shapes.
   const inPlace = section(fragment, '### In-place execution contexts', '\n### ');
@@ -14029,6 +14064,10 @@ test('the plan-archival fragment states its detection, states and cleanup', () =
     assert.ok(inputs.includes(input), `missing declared input: ${input}`);
   }
   assert.match(inputs, /optionally, the delivery branch's creation OID/);
+  assert.match(
+    inputs,
+    /optionally, that a scored-mode plan carry-over happened \(`scored-decisions`\), a verified no-op\s+included, with `reviewedPlanSha256`/,
+  );
   assert.match(inputs, /decides nothing/);
   assert.match(inputs, /An absent creation OID is not an error and never blocks/);
 

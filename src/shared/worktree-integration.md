@@ -302,10 +302,9 @@ The procedure:
    locally and the main checkout unchanged. Non-selected changes in the main checkout remain
    untouched.
 
-A heuristic partial-diff selection by "all changed files
-except <plan.dir>" is not allowed. The workflow must know the files to include or
-ask. This reliably keeps newly created plans, `.effective-flow/` state and other
-local working files outside the PR.
+A heuristic partial-diff selection by "all changed files except <plan.dir>" is not allowed.
+The workflow must know the files to include or ask. This reliably keeps newly created plans,
+`.effective-flow/` state and other local working files outside the PR.
 
 Only `{{SKILL:deliver}}` writes a delivery ledger, so only its retained `partial-diff` records can
 be resumed; this handback's failed worktree never is, and `plan-pr-continuation` adopts only purpose

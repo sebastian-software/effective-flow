@@ -256,6 +256,26 @@ test('allows a reasoned one-step standard move and rejects forbidden retry/porta
   );
 });
 
+// Invariant: `role` is the bare role name `model-selection.md` states; the rendered
+// `effective-flow-<role>` form that `data.spawn.role` returns is rejected, never normalized.
+test('rejects the rendered prefixed role form', async () => {
+  const envelope = await rejected(
+    'select',
+    { harness: 'claude', role: 'effective-flow-code-documenter' },
+    'INVALID_INPUT',
+  );
+  assert.match(envelope.error.message, /Unknown worker role/);
+  await rejected(
+    'select',
+    {
+      harness: 'codex',
+      site: 'apply-issues/code-documenter',
+      role: 'effective-flow-code-documenter',
+    },
+    'INVALID_INPUT',
+  );
+});
+
 test('rejects missing selectors and site/role mismatches without guessing a default', async () => {
   await rejected('select', { harness: 'codex' }, 'INVALID_INPUT');
   await rejected(

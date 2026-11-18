@@ -148,7 +148,48 @@ test('the lean-orchestrator body delta composes with the model-tiers delta', () 
       'merge-conflict-resolver-forbidden-substitutes',
       'code-validator-build-validation-budget',
       'merge-conflict-resolver-environment-signature-classes',
+      'code-span-placeholder-pairs',
     ],
+  );
+});
+
+// Invariant: the code-span delta permits only collapsing a doubled backtick pair around a rendered
+// worker or internal-tool reference, any number of times; any other body change still fails.
+test('the code-span placeholder delta collapses only doubled reference pairs', () => {
+  const before =
+    `${BASE_BODY}Tell \`\`effective-flow-code-validator\`\` and \`\`tools/apply-plan.md\`\`; ` +
+    `ask \`\`effective-flow-code-validator\`\` again.\n`;
+  const after =
+    `${BASE_BODY}Tell \`effective-flow-code-validator\` and \`tools/apply-plan.md\`; ` +
+    `ask \`effective-flow-code-validator\` again.\n`;
+  assert.deepEqual(
+    compareNativeSidecar(
+      'claude',
+      'effective-flow-rust-reviewer',
+      claude({ effort: 'high', body: before }),
+      claude({ effort: 'high', body: after }),
+    ),
+    ['code-span-placeholder-pairs'],
+  );
+  assert.throws(
+    () =>
+      compareNativeSidecar(
+        'claude',
+        'effective-flow-rust-reviewer',
+        claude({ effort: 'high', body: before }),
+        claude({ effort: 'high', body: after.replace('again', 'once more') }),
+      ),
+    /body drift outside the expected deltas/,
+  );
+  assert.throws(
+    () =>
+      compareNativeSidecar(
+        'claude',
+        'effective-flow-rust-reviewer',
+        claude({ effort: 'high', body: `${BASE_BODY}\`\`plain\`\`\n` }),
+        claude({ effort: 'high', body: `${BASE_BODY}\`plain\`\n` }),
+      ),
+    /body drift outside the expected deltas/,
   );
 });
 
