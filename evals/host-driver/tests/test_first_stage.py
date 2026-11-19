@@ -645,7 +645,7 @@ class OriginalSealFixture(StageFixture):
         self.publish_synthetic_pins()
         self.reload_stage()
 
-    def compute(self, operation, tasks):
+    def compute(self, operation, tasks, timeout=30):
         request = self.root / 'seal-request.json'
         output = self.root / 'seal-response.json'
         rows = [{'name': suite['name'], 'manifest': suite['roundManifest']['path'],
@@ -673,7 +673,7 @@ class OriginalSealFixture(StageFixture):
         with mock.patch.object(subprocess, 'Popen', local_only), \
              mock.patch.object(os, 'waitpid', owned_wait), mock.patch.object(os, 'kill', owned_kill):
             result = LOCAL_RUN(command, cwd=str(self.root), env=environment, text=True,
-                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=30)
+                               stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=timeout)
         if result.returncode:
             raise AssertionError('original seal fixture failed: ' + result.stderr)
         result = json.loads(output.read_text())

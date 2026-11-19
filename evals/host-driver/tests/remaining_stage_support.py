@@ -11,8 +11,15 @@ from pathlib import (
 import sys
 import tempfile
 import threading
+import time
+import traceback
 from unittest import (
     mock,
+)
+from liveness_wait import (
+    CASE_TIMEOUT_SECONDS,
+    TEARDOWN_MARGIN_SECONDS,
+    remaining_seconds,
 )
 from test_first_stage import (
     OriginalSealFixture,
@@ -34,6 +41,8 @@ class RemainingStageFixtureMixin:
         cls.guards.close()
 
     def setUp(self):
+        # Per-case deadline inside the runner's default Python budget, leaving teardown room.
+        self.case_deadline = time.monotonic() + CASE_TIMEOUT_SECONDS - TEARDOWN_MARGIN_SECONDS
         old_path = list(sys.path)
         self.addCleanup(lambda: sys.path.__setitem__(slice(None), old_path))
         self.temp = tempfile.TemporaryDirectory(prefix='remaining-stage-unit-', dir=str(TEST_TEMP_ROOT))
@@ -65,24 +74,52 @@ class RemainingStageFixtureMixin:
             {'attempted': True, 'refused': False, 'job': job, 'jobPath': job_path, 'jobDigest': digest(job_path)})
         return result
 
+    def assert_sealed_batches(self, state, expected):
+        """Assert the sealed batch count and name the first recorded fixture error on mismatch."""
+        error = state['sealError']
+        detail = ('no batch fixture error recorded' if error is None else 'first batch fixture error:\n'
+                  + ''.join(traceback.format_exception(type(error), error, error.__traceback__)))
+        self.assertEqual(len(state['batches']), expected, detail)
+
     def install_batch_fixture(self, driver, fault=None):
         order = independent_remainder([r['task'] for r in self.f.records])
         lock = threading.Lock()
-        state = {'active': 0, 'maximum': 0, 'calls': [], 'batches': []}
+        state = {'active': 0, 'maximum': 0, 'calls': [], 'batches': [], 'sealError': None}
+        def record_error(error):
+            with lock:
+                if state['sealError'] is None:
+                    state['sealError'] = error
         def seal_batch():
             batch = len(state['batches'])
             tasks = order[batch * 6:(batch + 1) * 6]
-            self.f.compute('seal', tasks)
+            try:
+                # A slow seal alone never breaks the barrier; a raised error does, including the
+                # compute() timeout, which is capped at the time left in this case.
+                self.f.compute('seal', tasks, timeout=remaining_seconds(self.case_deadline))
+            except BaseException as error:
+                record_error(error)
+                raise
             state['batches'].append([tuple(task[key] for key in ('suite', 'scenario', 'slot')) for task in tasks])
-        barrier = threading.Barrier(6, action=seal_batch, timeout=30)
+        barrier = threading.Barrier(6, action=seal_batch)
         def run(task):
             with lock:
                 state['calls'].append(task)
                 state['active'] += 1
                 state['maximum'] = max(state['maximum'], state['active'])
             try:
-                result = self.reserve_fixture_task(driver, task)
-                barrier.wait()
+                try:
+                    result = self.reserve_fixture_task(driver, task)
+                except BaseException as error:
+                    # Record first, then release the waiting peers at once.
+                    record_error(error)
+                    barrier.abort()
+                    raise
+                try:
+                    # Arrival-skew backstop only, capped at the time left in this case.
+                    barrier.wait(timeout=remaining_seconds(self.case_deadline))
+                except threading.BrokenBarrierError as error:
+                    record_error(error)
+                    raise
                 outcome = self.f.close_task(task, result, compute=False)
                 return fault(task, outcome, result) if fault else outcome
             finally:

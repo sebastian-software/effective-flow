@@ -8,6 +8,8 @@ from pathlib import (
     Path,
 )
 import signal
+import threading
+import time
 from unittest import (
     mock,
 )
@@ -72,13 +74,13 @@ class RemainingStageCohortContracts(RemainingStageFixtureMixin, unittest.TestCas
             return data
         with mock.patch.object(self.f.stage, 'remaining_context_data', scheduler_snapshot):
             summary = self.f.stage.run_remaining_stage(driver.remaining_stage, driver)
+        self.assert_sealed_batches(state, 25)
         self.assertEqual(len(final_checks), 1)
         self.assertTrue(summary['stageCompleted'], summary)
         self.assertTrue(summary['coverageComplete'])
         self.assertTrue(summary['accountingComplete'])
         self.assertEqual((summary['chargedRoots'], summary['reservedRoots'], summary['started']), (155, 155, 155))
         self.assertEqual(state['maximum'], 6)
-        self.assertEqual(len(state['batches']), 25)
         self.assertTrue(all(len(batch) == 6 for batch in state['batches']))
         expected = independent_remainder([r['task'] for r in self.f.records])
         self.assertEqual([t for batch in state['batches'] for t in batch],
@@ -106,8 +108,8 @@ class RemainingStageCohortContracts(RemainingStageFixtureMixin, unittest.TestCas
             return outcome
         state = self.install_batch_fixture(driver, fault)
         summary = self.f.stage.run_remaining_stage(driver.remaining_stage, driver)
+        self.assert_sealed_batches(state, 1)
         self.assertEqual(len(state['calls']), 6)
-        self.assertEqual(len(state['batches']), 1)
         self.assertTrue(summary['blocked'])
         self.assertFalse(summary['stageCompleted'])
         self.assertFalse(summary['coverageComplete'])
@@ -147,12 +149,84 @@ class RemainingStageCohortContracts(RemainingStageFixtureMixin, unittest.TestCas
             return outcome
         state = self.install_batch_fixture(driver, fault)
         summary = self.f.stage.run_remaining_stage(driver.remaining_stage, driver)
-        self.assertEqual((len(state['calls']), len(state['batches'])), (6, 1))
+        self.assert_sealed_batches(state, 1)
+        self.assertEqual(len(state['calls']), 6)
         self.assertFalse(summary['stageCompleted'])
         self.assertTrue(summary['blocked'])
         self.assertEqual(summary['chargedRoots'], 11)
         self.assertTrue(all(row['chargedRoots'] == 0 for row in summary['results'][6:]))
         driver.close()
+
+
+class BatchFixtureFailFastContracts(RemainingStageFixtureMixin, unittest.TestCase):
+    """The batch fixture must fail fast and name the first error instead of reporting `0 != 1`."""
+    BUDGET_SECONDS = 5.0
+
+    def first_batch_slots(self, driver):
+        tasks = independent_remainder([r['task'] for r in self.f.records])[:6]
+        self.assertEqual(len(tasks), 6)
+        for task in tasks:
+            driver.admissions.setdefault(tuple(task[key] for key in ('suite', 'scenario', 'slot')), {})
+        return tasks
+
+    def run_first_batch(self, driver, tasks):
+        """Run one batch on six daemon threads; return the threads still alive after a shared budget."""
+        errors = []
+        def target(task):
+            try:
+                driver.run_slot(task)
+            except BaseException as error:  # the barrier failure each thread may see is not under test
+                errors.append(error)
+        threads = [threading.Thread(target=target, args=(task,), daemon=True) for task in tasks]
+        for thread in threads:
+            thread.start()
+        deadline = time.monotonic() + self.BUDGET_SECONDS
+        for thread in threads:
+            thread.join(max(0.0, deadline - time.monotonic()))
+        return [thread for thread in threads if thread.is_alive()]
+
+    def assert_failure_names(self, state, *fragments):
+        with self.assertRaises(AssertionError) as caught:
+            self.assert_sealed_batches(state, 1)
+        for fragment in fragments:
+            self.assertIn(fragment, str(caught.exception))
+
+    def test_reservation_error_aborts_barrier_and_is_recorded_once(self):
+        driver = self.start()
+        tasks = self.first_batch_slots(driver)
+        state = self.install_batch_fixture(driver)
+        raised = RuntimeError('reservation fixture fault')
+        reserve = self.reserve_fixture_task
+        def faulty_reserve(target_driver, task):
+            if task is tasks[2]:
+                raise raised
+            return reserve(target_driver, task)
+        patch = mock.patch.object(self, 'reserve_fixture_task', faulty_reserve)
+        patch.start()
+        self.addCleanup(patch.stop)
+        alive = self.run_first_batch(driver, tasks)
+        self.assertEqual(alive, [], 'every run thread returns within the budget once the barrier is aborted')
+        self.assertIs(state['sealError'], raised)
+        self.assert_failure_names(state, 'RuntimeError', 'reservation fixture fault')
+
+    def test_seal_error_is_recorded_first_and_not_replaced_by_broken_barrier(self):
+        driver = self.start()
+        tasks = self.first_batch_slots(driver)
+        state = self.install_batch_fixture(driver)
+        raised = AssertionError('original seal fixture failed: injected')
+        compute = self.f.compute
+        def faulty_compute(operation, batch, **options):
+            if operation == 'seal':
+                raise raised
+            return compute(operation, batch, **options)
+        patch = mock.patch.object(self.f, 'compute', faulty_compute)
+        patch.start()
+        self.addCleanup(patch.stop)
+        alive = self.run_first_batch(driver, tasks)
+        self.assertEqual(alive, [], 'every run thread returns within the budget once the seal action failed')
+        self.assertIs(state['sealError'], raised)
+        self.assertNotIsInstance(state['sealError'], threading.BrokenBarrierError)
+        self.assert_failure_names(state, 'AssertionError', 'original seal fixture failed: injected')
 
 
 if __name__ == '__main__':
