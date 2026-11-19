@@ -1,6 +1,6 @@
 # Bound memory when verifying Git evidence blobs in build runs
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Bugfix (`effective-flow fix`)
 **Issue:** #693

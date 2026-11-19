@@ -26,6 +26,7 @@ import {
 export const BUILD_RUN_VERSION = 1;
 export const MAX_DISPATCH_BYTES = 8 * 1024;
 export const MAX_CONTROL_BYTES = 16 * 1024;
+// Shared budget: retain-evidence input, retained-directory inventory and obstruction bytes, and committed Git evidence.
 export const MAX_RETAINED_EVIDENCE_BYTES = 1024 * 1024;
 export const BUILD_RUN_OPERATIONS = Object.freeze([
   'create',
@@ -271,7 +272,9 @@ async function git(deps, cwd, args, allowed = [0], binary = false) {
   });
   if (result.error || !allowed.includes(result.status))
     fail('REPOSITORY_MISMATCH', 'Git identity or evidence check failed');
-  return binary ? Buffer.from(result.stdout) : String(result.stdout).trim();
+  if (!binary) return String(result.stdout).trim();
+  // Return the runner's buffer as is; copy only other byte shapes, such as a Uint8Array.
+  return Buffer.isBuffer(result.stdout) ? result.stdout : Buffer.from(result.stdout);
 }
 async function runtimeGuard(input, deps, mutation, target) {
   const root = await safeDirectory(absolute(input.runtimeStateRoot));
@@ -412,7 +415,15 @@ async function gitArtifact(ref, context, deps) {
     (await git(deps, context.root, ['cat-file', '-t', ref.blob])) !== 'blob'
   )
     fail('MISSING_EVIDENCE', 'Git evidence identity does not match');
+  // Check the blob size before reading it, so an oversized blob is never loaded into memory.
+  const size = await git(deps, context.root, ['cat-file', '-s', ref.blob]);
+  if (!/^\d+$/.test(size)) fail('MISSING_EVIDENCE', 'Git evidence size is unreadable');
+  if (Number(size) > MAX_RETAINED_EVIDENCE_BYTES)
+    fail('TOO_LARGE', 'Git evidence exceeds byte limit');
   const bytes = await git(deps, context.root, ['cat-file', 'blob', ref.blob], [0], true);
+  // A replace ref can change the object between both reads; enforce the limit on actual bytes.
+  if (bytes.length > MAX_RETAINED_EVIDENCE_BYTES)
+    fail('TOO_LARGE', 'Git evidence exceeds byte limit');
   if (contentDigest(bytes) !== ref.digest) fail('DIGEST_MISMATCH', 'Git evidence digest changed');
 }
 async function evidence(ref, request, context, deps, durable = false) {

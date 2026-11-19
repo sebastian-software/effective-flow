@@ -27,6 +27,7 @@ import {
   limitationText,
   MAX_CONTROL_BYTES,
   MAX_DISPATCH_BYTES,
+  MAX_RETAINED_EVIDENCE_BYTES,
   REQUIRED_GATES,
 } from '../src/scripts/build-run-core.mjs';
 import { executeOperation as executeTrackerOperation } from '../src/scripts/remote-tracker-core.mjs';
@@ -640,6 +641,103 @@ async function issue(live, gate, evidence = live.evidence, extra = {}) {
     ...extra,
   });
 }
+function committedBlob(live, bytes) {
+  const hashed = spawnSync('git', ['-C', live.root, 'hash-object', '-w', '--stdin'], {
+    env,
+    input: bytes,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  assert.equal(hashed.status, 0, String(hashed.stderr));
+  const blob = String(hashed.stdout).trim();
+  const tree = spawnSync('git', ['-C', live.root, 'mktree'], {
+    env,
+    encoding: 'utf8',
+    input: `100644 blob ${blob}\tbig.bin\n`,
+  });
+  assert.equal(tree.status, 0, tree.stderr);
+  const commit = git(live.root, 'commit-tree', tree.stdout.trim(), '-m', 'detached evidence blob');
+  return {
+    repositoryIdentity: live.repositoryIdentity,
+    commit,
+    blob,
+    path: 'big.bin',
+    digest: contentDigest(bytes),
+  };
+}
+function recordGitCalls(t, live, override = () => undefined) {
+  const original = live.deps.runner;
+  const calls = [];
+  live.deps.runner = (call) => {
+    calls.push(call.args.slice(2));
+    const answered = override(call);
+    if (answered) return answered;
+    if (call.args.includes('cat-file') && call.stdoutBuffer) {
+      const result = spawnSync(call.executable, call.args, {
+        cwd: call.cwd,
+        env,
+        maxBuffer: 4 * 1024 * 1024,
+      });
+      return {
+        status: result.status,
+        stdout: result.stdout,
+        stderr: result.stderr,
+        error: result.error,
+      };
+    }
+    return original(call);
+  };
+  t.after(() => {
+    live.deps.runner = original;
+  });
+  return calls;
+}
+const catFileCalls = (calls, mode, blob) =>
+  calls.filter((args) => args[0] === 'cat-file' && args[1] === mode && args[2] === blob);
+
+test('a committed evidence blob above the retained-evidence limit is rejected on its size before any content read', async (t) => {
+  const live = await setupDelivery(await start(fixture(t)));
+  const bytes = Buffer.alloc(MAX_RETAINED_EVIDENCE_BYTES + 1, 0xab);
+  const ref = committedBlob(live, bytes);
+  const calls = recordGitCalls(t, live);
+  calls.length = 0;
+  await assert.rejects(issue(live, 'implementation', [ref]), error('TOO_LARGE'));
+  assert.equal(catFileCalls(calls, '-s', ref.blob).length, 1);
+  assert.equal(catFileCalls(calls, 'blob', ref.blob).length, 0);
+});
+
+test('a binary committed evidence blob at exactly the limit is read once and judged by digest only', async (t) => {
+  const live = await setupDelivery(await start(fixture(t)));
+  const bytes = Buffer.alloc(MAX_RETAINED_EVIDENCE_BYTES, 0x61);
+  bytes.set([0x00, 0xff, 0xc3, 0x28, 0xa0, 0xa1, 0x00, 0xfe], 0);
+  bytes.set([0x00, 0xff, 0xc3, 0x28], MAX_RETAINED_EVIDENCE_BYTES - 4);
+  const ref = committedBlob(live, bytes);
+  const calls = recordGitCalls(t, live);
+  calls.length = 0;
+  await issue(live, 'implementation', [ref]);
+  assert.equal(catFileCalls(calls, 'blob', ref.blob).length, 1);
+  await assert.rejects(
+    issue(live, 'implementation', [{ ...ref, digest: contentDigest('other bytes') }]),
+    error('DIGEST_MISMATCH'),
+  );
+});
+
+test('a committed evidence read that returns more than the limit is rejected even when the reported size was in budget', async (t) => {
+  const live = await setupDelivery(await start(fixture(t)));
+  const ref = committedBlob(live, Buffer.from('small evidence\n'));
+  recordGitCalls(t, live, (call) => {
+    if (call.args.includes('cat-file') && call.args.includes('-s'))
+      return { status: 0, stdout: String(MAX_RETAINED_EVIDENCE_BYTES), stderr: '' };
+    if (
+      call.args.includes('cat-file') &&
+      call.args.includes('blob') &&
+      call.args.includes(ref.blob)
+    )
+      return { status: 0, stdout: Buffer.alloc(MAX_RETAINED_EVIDENCE_BYTES + 1), stderr: '' };
+    return undefined;
+  });
+  await assert.rejects(issue(live, 'implementation', [ref]), error('TOO_LARGE'));
+});
+
 async function completed(fx, { limited = [], lane = null } = {}) {
   let live = await setupDelivery(await start(fx));
   const evidence = [durable(live)];
