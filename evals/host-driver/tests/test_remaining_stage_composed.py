@@ -18,20 +18,26 @@ from unittest import mock
 from test_first_stage import TEST_TEMP_ROOT, LOCAL_POPEN, LOCAL_RUN, digest
 from remaining_stage_support import RemainingStageFixtureMixin
 from composed_remaining_support import (
-    ComposedRemainingFixture, complete_ready_batch, copy_fixture_executable,
-    wait_for_ready_batch,
+    COMPOSED_WAIT_BACKSTOP_SECONDS, ComposedRemainingFixture, WrapperProcesses, batch_two_gone,
+    closures_gone, complete_ready_batch, copy_fixture_executable, describe_exits, describe_wrappers,
+    log_tail, ready_batch_gone, recovery_claims_gone, wait_for_ready_batch, wrapper_ordinal,
 )
+from liveness_wait import TEARDOWN_MARGIN_SECONDS, report_failure, wait_until
+
+
+# Child stderr lines with this prefix carry per-phase elapsed times and the remaining headroom.
+PHASE_TIMING_PREFIX = 'composed-phase-timing: '
+
+
+def coordinator_outcome(future):
+    """Describe the coordinator future without blocking on a pending one."""
+    if not future.done():
+        return 'coordinator pending'
+    return 'coordinator done, exception ' + repr(future.exception(timeout=0))
 
 
 class ComposedRemainingStageContracts(unittest.TestCase):
     """Real wrapper recovery and worker admission; six harmless native commands only."""
-
-    def wait_for(self, condition, description):
-        deadline = time.monotonic() + 35
-        while not condition():
-            if time.monotonic() >= deadline:
-                self.fail('fixture barrier timed out: ' + description)
-            time.sleep(.01)
 
     def assert_original_closure(self, original, artifacts):
         changed = [path for path in original if digest(path) != original[path]]
@@ -98,14 +104,18 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                 "from test_remaining_stage_composed import ComposedRemainingStageContracts\n"
                 "case = ComposedRemainingStageContracts()\n"
                 "try:\n"
-                "    case._run_composed_batch(Path(sys.argv[2]), unknown=sys.argv[3] == '1')\n"
+                "    case._run_composed_batch(Path(sys.argv[2]), unknown=sys.argv[3] == '1',\n"
+                "                             deadline=float(sys.argv[4]))\n"
                 "finally:\n"
                 "    case.doCleanups()\n"
             )
+            # The child receives the absolute deadline of the very inner timeout passed below;
+            # time.monotonic() is system-wide on Linux, so the child can use it as given.
+            deadline = time.monotonic() + (120 if unknown else 180)
             try:
                 result = LOCAL_RUN([str(python), '-B', '-c', script, str(Path(__file__).resolve().parent),
-                                    str(root), str(int(unknown))], capture_output=True, text=True,
-                                   timeout=120 if unknown else 180)
+                                    str(root), str(int(unknown)), repr(deadline)], capture_output=True,
+                                   text=True, timeout=120 if unknown else 180)
             except subprocess.TimeoutExpired as error:
                 for output, stream in ((error.stdout, sys.stdout), (error.stderr, sys.stderr)):
                     if isinstance(output, bytes):
@@ -115,9 +125,21 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                         stream.write(output)
                         stream.flush()
                 raise
+            for line in result.stderr.splitlines():
+                if line.startswith(PHASE_TIMING_PREFIX):
+                    sys.stderr.write(line + '\n')
+                    sys.stderr.flush()
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
-    def _run_composed_batch(self, root, *, unknown):
+    def _run_composed_batch(self, root, *, unknown, deadline):
+        started = time.monotonic()
+        phases = {}
+
+        def phase(name):
+            phases[name] = round(time.monotonic() - started, 3)
+
+        # Every parent-side wait leaves the teardown margin before the inner subprocess timeout.
+        wait_limit = deadline - TEARDOWN_MARGIN_SECONDS
         old_path = list(sys.path)
         self.addCleanup(lambda: sys.path.__setitem__(slice(None), old_path))
         self.f = ComposedRemainingFixture(root)
@@ -132,8 +154,10 @@ class ComposedRemainingStageContracts(unittest.TestCase):
         admission_path = Path(admitted['admission']['path'])
         admission_bytes = admission_path.read_bytes()
         driver = self.f.real_coordinator(admitted)
-        first = [Path(self.f.remaining_grant['orderedTasks'][i]['artifactDir']) for i in range(6)]
+        ordered = self.f.remaining_grant['orderedTasks']
+        first = [Path(ordered[i]['artifactDir']) for i in range(6)]
         starts, lock = [], threading.Lock()
+        wrappers = WrapperProcesses()
         # Hold real startup recovery at its existing bakery claims. Claims are
         # test-owned and never part of any receipt or stored closure inventory.
         claims = []
@@ -145,29 +169,61 @@ class ComposedRemainingStageContracts(unittest.TestCase):
         def real_local_popen(command, *args, **kwargs):
             # Observe actual wrapper launches without replacing
             # run_slot, execute_wrapper, the worker, recovery or context authentication.
-            if (len(command) > 2 and command[1] == str(self.f.driver.parent / 'host-run.mjs')):
+            wrapper = len(command) > 2 and command[1] == str(self.f.driver.parent / 'host-run.mjs')
+            if wrapper:
+                # The job file is written before launch, so its ordinal is known here.
+                ordinal = wrapper_ordinal(command)
                 with lock:
                     starts.append(command)
-            return LOCAL_POPEN(command, *args, **kwargs)
+            process = LOCAL_POPEN(command, *args, **kwargs)
+            if wrapper:
+                wrappers.record(ordinal, process)
+            return process
 
+        def artifact_dir(ordinal):
+            return Path(ordered[ordinal - 1]['artifactDir'])
+
+        def liveness():
+            return describe_wrappers(wrappers.snapshot()) + '; ' + coordinator_outcome(future)
+
+        def wait_for(condition, description, gone, logs=('runner.stderr.log',)):
+            # The coordinator future is the stop callback; only a gone wrapper makes this raise.
+            wait_until(condition, description, stopped=future.done,
+                       gone=lambda: describe_exits(gone(wrappers.snapshot()), artifact_dir, logs),
+                       liveness=liveness, backstop=COMPOSED_WAIT_BACKSTOP_SECONDS, deadline=wait_limit)
+
+        phase('setup')
         with mock.patch.dict(sys.modules, {'eval_first_stage': self.f.stage}), \
              mock.patch.object(subprocess, 'Popen', real_local_popen), \
              concurrent.futures.ThreadPoolExecutor(max_workers=1) as coordinator:
             future = coordinator.submit(self.f.stage.run_remaining_stage, driver.remaining_stage, driver)
             try:
-                self.wait_for(lambda: len(starts) == 6 or future.done(), 'six wrapper starts')
-                self.assertEqual(len(starts), 6)
-                self.wait_for(lambda: sum(len(list(path.parent.glob('host-profile-cleaner-*.json')))
-                    for path in cleanup_paths) >= len(claims) + 2 or future.done(),
-                    'overlapping real startup recovery claims')
-                self.assertFalse(future.done(), 'startup failed before the recovery barrier')
+                wait_for(lambda: len(starts) == 6, 'six wrapper starts', recovery_claims_gone)
+                self.assertEqual(len(starts), 6, coordinator_outcome(future))
+                phase('starts')
+                wait_for(lambda: sum(len(list(path.parent.glob('host-profile-cleaner-*.json')))
+                    for path in cleanup_paths) >= len(claims) + 2,
+                    'overlapping real startup recovery claims', recovery_claims_gone)
+                self.assertFalse(future.done(), 'startup failed before the recovery barrier: '
+                                 + coordinator_outcome(future))
+                phase('recovery')
                 for claim in claims:
                     claim.unlink()
-                ready = wait_for_ready_batch(self.f.controls, future.done)
+                try:
+                    ready = wait_for_ready_batch(self.f.controls, future.done,
+                        gone=lambda: describe_exits(ready_batch_gone(wrappers.snapshot(), self.f.controls),
+                                                    artifact_dir),
+                        liveness=liveness, deadline=wait_limit)
+                except AssertionError:
+                    # A refused worker exits early; keep the receipt regression assertion first.
+                    self.assert_original_closure(original, first)
+                    raise
                 if future.done():
                     self.assert_original_closure(original, first)
-                self.assertFalse(future.done(), 'real worker startup refused before native fixtures')
+                self.assertFalse(future.done(), 'real worker startup refused before native fixtures: '
+                                 + coordinator_outcome(future))
                 self.assertEqual([ready[i]['ordinal'] for i in ready], list(range(1, 7)))
+                phase('ready')
 
                 def check_context():
                     # This is the receipt regression assertion, also on pre-fix worker refusal.
@@ -187,19 +243,26 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                     with self.assertRaisesRegex(ValueError, 'future remainder artifact exists'):
                         self.f.stage.remaining_context_data(driver.remaining_stage, batch=1)
                     future_root.rmdir()
+                    phase('context')
 
                 # Hold the unknown job (or the last clean job) until five real seals close.
                 def check_closures(held):
-                    self.wait_for(lambda: all((root / 'operator-result.json').exists()
-                        for ordinal, root in enumerate(first, 1) if ordinal != held), 'five real closures')
+                    wait_for(lambda: all((root / 'operator-result.json').exists()
+                        for ordinal, root in enumerate(first, 1) if ordinal != held), 'five real closures',
+                        lambda processes: closures_gone(processes, first, held))
+                    # A slot that raised writes no operator-result.json: assert the retained
+                    # closure and the coordinator state before reading any result.
+                    self.assert_original_closure(original, first)
+                    self.assertFalse(future.done(), 'coordinator finished before five real closures: '
+                                     + coordinator_outcome(future))
                     self.assertTrue(all(json.loads((root / 'operator-result.json').read_text())['state'] == 'sealed'
                         for ordinal, root in enumerate(first, 1) if ordinal != held))
                     self.assertFalse((self.f.controls / 'batch-two-reached').exists())
                     self.assertFalse(any(Path(row['artifactDir']).exists()
                                          for row in self.f.remaining_grant['orderedTasks'][6:]))
-                    self.assert_original_closure(original, first)
                     for path, pin in cleanup_pins.items():
                         self.assertEqual((path.read_bytes(), path.stat().st_mtime_ns), pin)
+                    phase('closures')
 
                 held = complete_ready_batch(ready, unknown=unknown,
                     set_unknown=lambda ordinal: (self.f.controls / 'unknown').write_text(str(ordinal) + '\n'),
@@ -209,10 +272,20 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                     # Hold the last refusal writer until five refusals are durably persisted, so
                     # block() after the first refusal cannot turn an in-flight refusal into
                     # reservation-unknown accounting.
-                    self.wait_for(lambda: (self.f.controls / 'refusal-writer-held').exists()
+                    wait_for(lambda: (self.f.controls / 'refusal-writer-held').exists()
                         and all((self.f.controls / ('refusal-persisted-' + str(i))).exists()
-                            for i in range(7, 12)) or future.done(), 'five authenticated original refusals')
-                    self.assertFalse(future.done())
+                            for i in range(7, 12)), 'five authenticated original refusals',
+                        lambda processes: batch_two_gone(processes, self.f.controls),
+                        ('runner.stderr.log', 'qualification.stderr.log'))
+                    self.assertFalse(future.done(), 'coordinator finished before five original refusals: '
+                                     + coordinator_outcome(future))
+                    # An expired OPERATOR backstop is an ordinary qualification refusal, visible
+                    # only in the batch-two qualification logs.
+                    self.assertTrue((self.f.controls / 'batch-two-reached').exists(),
+                        'batch two never reached the qualifier barrier:\n' + '\n'.join(
+                            '--- qualification.stderr.log tail of ordinal ' + str(ordinal) + ':\n'
+                            + log_tail(artifact_dir(ordinal) / 'qualification.stderr.log')
+                            for ordinal in range(7, 13)))
                     remaining = self.f.remaining_grant['orderedTasks'][6:12]
                     self.assertFalse((Path(remaining[-1]['artifactDir']) / 'launch-refusal.json').exists())
                     for ordinal, task in enumerate(remaining[:5], 7):
@@ -223,7 +296,16 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                         self.assertEqual(driver.accounting_projection(task, artifact), {'consumptionState': 'not-reserved',
                             'chargedRoots': 0, 'actualModelStarted': False})
                     (self.f.controls / 'release-refusal-writer').touch()
-                summary = future.result(timeout=35)
+                    phase('batchTwo')
+                pending = ('final batch-two refusal and stage summary' if not unknown
+                           else 'held unknown job close and stage summary')
+                try:
+                    summary = future.result(timeout=max(0, min(COMPOSED_WAIT_BACKSTOP_SECONDS,
+                                                               wait_limit - time.monotonic())))
+                except concurrent.futures.TimeoutError:
+                    raise report_failure('coordinator did not finish: pending phase ' + pending
+                                         + '; ' + liveness()) from None
+                phase('summary')
             finally:
                 # Release every owned claim/harmless command even if an assertion failed.
                 for claim in claims:
@@ -231,10 +313,17 @@ class ComposedRemainingStageContracts(unittest.TestCase):
                 for ordinal in range(1, 7):
                     (self.f.controls / ('release-' + str(ordinal))).touch()
                 (self.f.controls / 'release-refusal-writer').touch()
-                if not future.done():
-                    driver.block()
-                    future.result(timeout=35)
-                driver.close()
+                try:
+                    if not future.done():
+                        driver.block()
+                        future.result(timeout=TEARDOWN_MARGIN_SECONDS)
+                    driver.close()
+                finally:
+                    phase('teardown')
+                    sys.stderr.write(PHASE_TIMING_PREFIX + json.dumps({
+                        'unknown': unknown, 'elapsedSeconds': phases,
+                        'headroomSeconds': round(deadline - time.monotonic(), 3)}) + '\n')
+                    sys.stderr.flush()
         self.assertEqual(self.f.closures_path.read_bytes(), inventory_bytes)
         self.assert_original_closure(original, first)
         for path, pin in cleanup_pins.items():

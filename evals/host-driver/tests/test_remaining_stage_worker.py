@@ -40,7 +40,8 @@ class RemainingStageWorkerContracts(RemainingStageFixtureMixin, unittest.TestCas
                     return outcome
                 state = self.install_batch_fixture(driver, fault)
                 summary = self.f.stage.run_remaining_stage(driver.remaining_stage, driver)
-                self.assertEqual((len(state['calls']), len(state['batches'])), (6, 1))
+                self.assert_sealed_batches(state, 1)
+                self.assertEqual(len(state['calls']), 6)
                 self.assertTrue(summary['blocked'])
                 self.assertFalse(summary['stageCompleted'])
                 self.assertEqual(summary['chargedRoots'], 11)
