@@ -6,7 +6,8 @@ modules under `evals/host-driver/tests/` on a host without SHA extensions. It re
 the composed-fixture node wrapper, a per-test profile of `test_first_stage`,
 `test_remaining_stage_worker` and `test_remaining_stage_admission`, and one decision per hot spot.
 Hot spots that remain are tracked in
-[#686](https://github.com/sebastian-software/effective-flow/issues/686).
+[#686](https://github.com/sebastian-software/effective-flow/issues/686). The last section,
+"Deliberate load procedure (#695)", describes how to run the suite under deliberate load.
 
 ## Host
 
@@ -83,7 +84,9 @@ One profiled run failed:
 `test_remaining_stage_worker.RemainingStageWorkerContracts.test_changed_prior_seal_or_future_batch_artifact_stops_next_batch`
 (`(6, 0) != (6, 1)`: no batch was sealed). The fixture's six-thread barrier has a 30 s timeout,
 and cProfile overhead (about 4x in-process time) pushed the six reservations past it. The same
-test passed in its unprofiled run and in the full suite. Its profile data is included.
+test passed in its unprofiled run and in the full suite. Its profile data is included. This
+profile run is a slow-host reproduction of that barrier arrival-skew failure; see
+"Deliberate load procedure (#695)".
 
 ## Per-module results
 
@@ -241,3 +244,71 @@ no unprofiled saving is claimed for it.
 What remains: `canonical()` is still the largest single cost, through the `lstat` walk inside
 `realpath()`, once per pin. Every call still re-reads and re-verifies every pinned input. The
 off-CPU share of wall time and `test_remaining_stage_composed` were not addressed.
+
+## Deliberate load procedure (#695)
+
+Developer procedure for issue
+[#695](https://github.com/sebastian-software/effective-flow/issues/695). Two cases failed under
+load: the composed six-worker recovery case
+(`test_remaining_stage_composed.ComposedRemainingStageContracts.test_real_six_worker_recovery_preserves_original_closures_and_next_batch_gate`,
+a fixed 35 s `wait_for('six wrapper starts')`) and the batch-failure case
+(`test_remaining_stage.RemainingStageCohortContracts.test_current_batch_failure_blocks_every_future_batch_and_preserves_original_charges`).
+The waits are now scoped to liveness (`evals/host-driver/tests/liveness_wait.py`) instead of fixed
+timeouts. To check a change to these waits, run the suite under at least the load that failed: two
+additional full suites in parallel (load1 mean 8.8, peak 18 in the issue), or a stressor that holds
+the host `load1` at or above 8.8. Read `load1` from `/proc/loadavg` of the host, for example every
+5 s.
+
+The measurements below come from the host described in "Host" (i7-8700, 12 logical CPUs, rootless
+Podman container, Python 3.11.2, Node.js 24.22.2) at base `04c2aca7`, before the liveness waits.
+
+### Method A: full suite under load
+
+Start N CPU busy loops in the same container, run `pnpm test`, then stop the loops:
+
+```sh
+for i in $(seq 8); do sh -c 'while :; do :; done' & done
+pnpm test
+kill $(jobs -p)
+```
+
+Alternatively run two additional full suites in parallel, each in its own checkout. The target is a
+`load1` mean of at least 8.8. With 8 busy loops (`load1` mean 14.4, peak 21.9, wall 1385 s) neither
+named case failed: the composed recovery case took 77.3 s and the batch-failure case 27.0 s. Full
+suite load alone did not reproduce the failure on this host. With the liveness waits, three
+consecutive runs of the same procedure passed every test of `test_remaining_stage`,
+`test_remaining_stage_worker` and `test_remaining_stage_composed`.
+
+### Method B: targeted reproduction
+
+From the repository root, with 16 busy loops in the same container, run these concurrently: 2
+copies of the composed recovery case (stop after 210 s) and 3 copies of the batch-failure case
+(stop after 150 s). Each copy is:
+
+```sh
+PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=evals/host-driver/tests:evals/host-driver \
+  python3 -B -m unittest -v <test id>
+```
+
+At `load1` mean 8.4 (peak 16.5) both composed copies failed: the fixed 35 s
+`wait_for('six wrapper starts')` expired, the child exited 1 and the parent reported `1 != 0`. The
+batch-failure case passed but slowed from about 27 s to 77 to 87 s.
+
+Method B loads the host beyond the composed case's unchanged 180 s inner timeout: its setup and
+wrapper starts ran about five times slower than on a quiet host. With the liveness waits the
+batch-failure case still passes, and the composed case now stops at the per-wait deadline cap with
+a message that lists every wrapper as still running, instead of at a fixed 35 s wait. Use method B
+to check that a stall is reported with the producers' liveness, not as a pass criterion.
+
+The composed child prints one stderr line prefixed `composed-phase-timing: ` with the cumulative
+elapsed seconds at the end of each phase (setup, starts, recovery, ready, context, closures,
+batchTwo, summary, teardown) and `headroomSeconds` to the 120 s or 180 s inner timeout. The parent
+forwards that line on success; on failure it is part of the child's captured output. Use it to read
+phase timings and the remaining headroom under load.
+
+### Profiling script as a reproduction
+
+`evals/host-driver/diagnostics/profile_modules.py` is a slow-host reproduction of the barrier
+arrival-skew failure: its cProfile overhead (about 4x in-process time) reproduced the failing
+`(6, 0)` result described in "Profile method". It is not a reproduction of the `compute()`
+timeout, because cProfile slows only in-process Python and not the node `compute()` subprocess.
