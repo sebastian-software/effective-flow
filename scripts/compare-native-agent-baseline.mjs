@@ -7,7 +7,8 @@
 // tree (tracked plus untracked, non-ignored files) into temporary output roots.
 // Every worker in the baseline inventories (base, Fast and tier variants) must retain
 // the same Claude and Codex sidecar bytes in the working build, apart from the deltas in
-// EXPECTED_NATIVE_DELTAS; the report names each delta and the workers showing it.
+// EXPECTED_NATIVE_DELTAS; the report names each delta and the workers showing it. Base workers
+// added since the pinned base are permitted only when listed in EXPECTED_ADDED_WORKERS.
 // Importing the module runs nothing; main runs only when the file is executed
 // directly.
 
@@ -83,6 +84,36 @@ const DEEP_TIER_WORKERS = Object.freeze(
     'ui-implementer',
   ].map((name) => `${WORKER_PREFIX}${name}`),
 );
+// Base workers added since the pinned base. Each must be absent from the base inventory and present
+// in both working native inventories; it has no baseline bytes to compare, so the inventory
+// reconciliation alone covers it. Any other base-worker membership change fails the proof.
+export const EXPECTED_ADDED_WORKERS = Object.freeze(['effective-flow-acceptance-reviewer']);
+
+// Returns the declared added workers present in `workingBaseWorkers`; throws unless removing exactly
+// the declared added workers from the working base inventory yields the base inventory in order.
+export function reconcileAddedBaseWorkers(
+  harness,
+  baselineBaseWorkers,
+  workingBaseWorkers,
+  added = EXPECTED_ADDED_WORKERS,
+) {
+  for (const worker of added) {
+    if (baselineBaseWorkers.includes(worker)) {
+      throw new Error(`${harness} declared added worker ${worker} already exists at base`);
+    }
+    if (!workingBaseWorkers.includes(worker)) {
+      throw new Error(
+        `${harness} declared added worker ${worker} is missing from the working build`,
+      );
+    }
+  }
+  const retained = workingBaseWorkers.filter((worker) => !added.includes(worker));
+  if (JSON.stringify(baselineBaseWorkers) !== JSON.stringify(retained)) {
+    throw new Error(`${harness} base worker membership changed`);
+  }
+  return [...added];
+}
+
 export const EXPECTED_NATIVE_DELTAS = Object.freeze({
   // Per-spawn model tiers move the ten `deep` workers to the `deep` tier: Claude effort xhigh to
   // high, and the Codex model gpt-5.6-sol to gpt-6.1-sol (reasoning effort stays high).
@@ -710,9 +741,7 @@ function compareBaseline(baseOutput, workingOutput) {
     const baselineDir = join(baseOutput, 'dist', harness, 'agents');
     const workingDir = join(workingOutput, 'dist', harness, 'agents');
     const baseline = inventory(baseOutput, harness, true);
-    if (JSON.stringify(baseline.baseWorkers) !== JSON.stringify(native.baseWorkers)) {
-      throw new Error(`${harness} base worker membership changed`);
-    }
+    reconcileAddedBaseWorkers(harness, baseline.baseWorkers, native.baseWorkers);
     const workers = [
       ...baseline.baseWorkers,
       ...baseline.fastWorkers,
@@ -744,9 +773,10 @@ function compareBaseline(baseOutput, workingOutput) {
 }
 
 // `usage` maps an expected-delta id to the workers showing it; ids are reported in the order of
-// EXPECTED_NATIVE_DELTAS, workers sorted.
-export function formatBaselineReport(base, usage) {
+// EXPECTED_NATIVE_DELTAS, workers sorted, after the sorted `added` workers.
+export function formatBaselineReport(base, usage, added = []) {
   let report = `Native agents match ${base}\n`;
+  if (added.length > 0) report += `Expected added workers: ${[...added].sort().join(', ')}\n`;
   for (const { id } of [...EXPECTED_NATIVE_DELTAS.configuration, ...EXPECTED_NATIVE_DELTAS.body]) {
     const workers = usage.get(id);
     if (workers === undefined || workers.size === 0) continue;
@@ -779,7 +809,7 @@ function main(args) {
   } finally {
     rmSync(temporary, { recursive: true, force: true });
   }
-  process.stdout.write(formatBaselineReport(base, usage));
+  process.stdout.write(formatBaselineReport(base, usage, EXPECTED_ADDED_WORKERS));
 }
 
 function isEntryPoint() {

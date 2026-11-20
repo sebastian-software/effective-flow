@@ -142,8 +142,8 @@ export const CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS = Object.freeze([
 ]);
 
 // The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
-// computations, and `thread-ledger-lookup`, a local read of runtime state. Never a mutation, never
-// a local write.
+// computations, and `thread-ledger-lookup`, a local read of runtime state. Never a forge mutation;
+// the only local write is `pr-acceptance-sources`' private runtime snapshot under `.effective-flow/`.
 export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'repository-resolve',
   'probe',
@@ -156,6 +156,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'issue-list',
   'issue-sub-issues-read',
   'pr-read',
+  'pr-acceptance-sources',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',

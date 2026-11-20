@@ -245,9 +245,10 @@ backstop for one that carries open points.
 | review        | plan file mode, open points remain                                              | {{SKILL:review}} <plan-file>                  | {{SKILL:plan}} <plan-file>                                 |
 | review        | concept file mode, ready                                                        | {{SKILL:plan}} <work package>                 | —                                                          |
 | review        | concept file mode, open points remain                                           | {{SKILL:review}} <concept-file>               | —                                                          |
+| review        | pull-request mode, at least one published `incomplete` criterion                | {{SKILL:iterate}} <PR>                        | {{SKILL:merge-gate}} <PR>                                  |
 | review        | pull-request mode                                                               | {{SKILL:merge-gate}} <PR>                     | {{SKILL:iterate}} <PR>                                     |
 | deliver       | PR opened                                                                       | {{SKILL:merge-gate}} <PR>                     | {{SKILL:review}} <PR>                                      |
-| autopilot     | draft PR opened, no blocker                                                     | {{SKILL:merge-gate}} <PR>                     | {{SKILL:review}} <PR>                                      |
+| autopilot     | draft PR opened, no blocker                                                     | {{SKILL:review}} <PR>                         | {{SKILL:merge-gate}} <PR>                                  |
 | autopilot     | plan-stage blocker, except a public security blocker                            | {{SKILL:review}} <plan-file>                  | {{SKILL:plan}} <plan-file>                                 |
 | autopilot     | implementation-stage blocker recorded in a draft PR                             | {{SKILL:apply}} <plan-file>                   | —                                                          |
 | autopilot     | implementation-stage blocker, no PR, except a public security blocker           | {{SKILL:apply}} <plan-file>                   | —                                                          |

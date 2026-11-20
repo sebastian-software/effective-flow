@@ -7304,6 +7304,7 @@ test('resolveAgentTier rejects each reappearing legacy model or effort field', (
 test('every checked-in agent declares the planned default tier', () => {
   const expected = {
     deep: [
+      'acceptance-reviewer',
       'frontend-reviewer',
       'generic-implementer',
       'generic-product-implementer',

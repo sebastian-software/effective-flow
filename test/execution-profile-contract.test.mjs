@@ -70,6 +70,7 @@ const PROHIBITED_FAST_ACTIVATION_PATTERNS = [
 ];
 
 const EXPECTED_WORKERS = [
+  'acceptance-reviewer',
   'code-documenter',
   'code-validator',
   'docs-writer',
