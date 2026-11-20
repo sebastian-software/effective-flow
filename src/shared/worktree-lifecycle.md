@@ -118,10 +118,10 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
 
-A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`), or cleanup's `plan-preserved`
-`issue-planning` record, whose worktree is fully gone, unregistered and its path absent, is
-removable without conditions 3, 4, 5 and 7 and the toplevel part of 2; no Git call runs in the
-vanished path. A half-gone worktree keeps every condition.
+A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`), a released `issue-planning`
+one, or cleanup's `plan-preserved` `issue-planning` record, whose worktree is fully gone,
+unregistered and its path absent, is removable without conditions 3, 4, 5 and 7 and the toplevel
+part of 2; no Git call runs in the vanished path. A half-gone worktree keeps every condition.
 Cleanup's confirmed claim of a `merge-gate` record in any of its four removable statuses waives
 condition 6 for a no-unpushed-commits proof, re-derived under the lock without fetching: no merge,
 cherry-pick, revert, rebase or sequencer in progress and an empty

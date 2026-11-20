@@ -4199,6 +4199,50 @@ test('cleanup lists and removes a released issue-planning worktree and its branc
   assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '');
 });
 
+// Invariant: a released `issue-planning` record whose worktree is already gone (an earlier removal
+// removed it, then failed to delete the record) is retried by cleanup through the gone route,
+// whether its temporary branch still exists or the earlier attempt already deleted it. A half-gone
+// worktree keeps the full conditions.
+test('cleanup retries a released issue-planning record whose worktree is already gone', async (t) => {
+  for (const status of ['cleanup-ready', 'cleanup-failed']) {
+    for (const deleteBranch of [false, true]) {
+      const root = repository(t);
+      const { worktree, record } = await initializedIssuePlanning(root, unintegratedCommit(root));
+      await moveTo(root, record, 'cleanup-ready');
+      if (status === 'cleanup-failed') {
+        writeRecordFile(root, record.recordId, {
+          ...readRecord(root, record.recordId),
+          status,
+          reason: 'the worktree was removed but the record could not be deleted',
+        });
+      }
+      git(root, 'worktree', 'remove', worktree.worktreePath);
+      if (deleteBranch) git(root, 'branch', '-q', '-D', ISSUE_PLANNING_BRANCH);
+      const label = `${status} deleteBranch=${deleteBranch}`;
+      const planned = await plan(root);
+      assert.ok(
+        planEntry(planned, record.recordId).item,
+        `${label}: ${JSON.stringify(planned.blocked)}`,
+      );
+      const result = expectOk(await applyPlanned(root, planned));
+      assert.deepEqual(
+        result.items.map(({ ok, reconciledAbsent }) => [ok, reconciledAbsent]),
+        [[true, true]],
+        `${label}: ${JSON.stringify(result)}`,
+      );
+      assert.equal(existsSync(recordFile(root)), false, label);
+      assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '', label);
+    }
+  }
+  const root = repository(t);
+  const { worktree, record } = await initializedIssuePlanning(root, unintegratedCommit(root));
+  await moveTo(root, record, 'cleanup-ready');
+  rmSync(worktree.worktreePath, { recursive: true });
+  const half = planEntry(await plan(root), record.recordId);
+  assert.equal(half.item, undefined);
+  assert.ok(half.blocked?.conditions.length > 0);
+});
+
 // Invariant (preserved plan): an `issue-planning` record Issue Buddy kept `aborted` with reason
 // `plan-preserved` has a supported removal path through cleanup alone. While the untracked plan
 // still lies in its worktree it is blocked by condition 7 (cleanup never discards a plan); once the

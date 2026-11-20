@@ -82,7 +82,9 @@
 // that status for it, and every other condition stays required. Its worktree still holding the
 // untracked preserved plan fails condition 7, so cleanup never discards a plan: once the user moved
 // or discarded the plan, the record is an ordinary `worktree:` item removed after confirmation, a
-// fully gone one through the gone route.
+// fully gone one through the gone route. A released (`cleanup-ready` or `cleanup-failed`)
+// `issue-planning` record whose worktree is gone, e.g. after a failed record deletion, takes the gone
+// route too, also when its temporary branch is already deleted.
 //
 // A record file `readRecord` reports invalid is the `invalid-record:<RECORD_ID>` class of `cleanup
 // plan` and `cleanup apply` (`assessInvalidRecord`), never a `worktree:` entry. Its proofs come
@@ -1035,8 +1037,8 @@ export async function deferSignals(deps, recordId, fn) {
 // Returns every failed condition number, ascending. `statuses` are the statuses condition 1
 // accepts (`cleanup-ready` and `cleanup-failed`; `worktree remove` adds `active`). `removal` marks
 // the callers that remove (`worktree remove`, `cleanup plan`/`apply`, `worktree inspect`), the
-// only ones where a fully gone `partial-diff` worktree counts (see `goneRemovable`) and where a
-// retained release quarantine fails condition 7 as well (`quarantineRetained`): `git worktree
+// only ones where a fully gone `partial-diff` or `issue-planning` worktree counts (see
+// `goneRemovable`) and where a retained release quarantine fails condition 7 as well (`quarantineRetained`): `git worktree
 // remove` deletes an ignored quarantine with the only copy of the bytes it holds. For the same
 // reason a ledger endpoint at whose place an ignored untracked file stands (the endpoint itself,
 // below a directory in its place, or in place of a parent directory), or ledger endpoints that
@@ -1084,7 +1086,12 @@ export function evaluateEligibility(
   ) {
     failed.push(5);
   }
-  if (!release && (!facts.creationIsCommit || !facts.creationAncestor)) failed.push(6);
+  // A fully gone `issue-planning` worktree whose temporary branch an earlier removal attempt
+  // already deleted has no tip left to reach `creationOid` from: only the commit itself is required.
+  const branchDeleted = gone && facts.purpose === 'issue-planning' && facts.branchTip === null;
+  if (!release && (!facts.creationIsCommit || (!facts.creationAncestor && !branchDeleted))) {
+    failed.push(6);
+  }
   if (
     !gone &&
     (!facts.clean ||
@@ -1102,22 +1109,28 @@ export function evaluateEligibility(
   return failed;
 }
 
-// Invariant: a released `partial-diff` record (`cleanup-ready` or `cleanup-failed`) whose worktree
-// is fully gone (no registration in `git worktree list --porcelain` and `lstat` of its path is
-// ENOENT) is removable. That proof, the same the release's `gone` route takes, replaces conditions
-// 3, 4, 5 and 7 and the toplevel half of condition 2; conditions 1, the receipt fields of 2, 6, 8
-// and 9 stay required, no Git call runs inside the vanished path, and the claim and removal
-// sequence is unchanged (the post-claim reconcile of an absent worktree). A half-gone worktree
+// Invariant: a released `partial-diff` or `issue-planning` record (`cleanup-ready` or
+// `cleanup-failed`) whose worktree is fully gone (no registration in `git worktree list --porcelain`
+// and `lstat` of its path is ENOENT) is removable. That proof, the same the release's `gone` route
+// takes, replaces conditions 3, 4, 5 and 7 and the toplevel half of condition 2; conditions 1, the
+// receipt fields of 2, 6, 8 and 9 stay required, no Git call runs inside the vanished path, and the
+// claim and removal sequence is unchanged (the post-claim reconcile of an absent worktree). A half-gone worktree
 // (registered without its directory, or present without its registration) and every other purpose
 // keep the full conditions: cleanup never prunes. Under `mergeGateRelease` (`release`), a fully
 // gone `merge-gate` record in a MERGE_GATE_RELEASE_STATUSES status takes the same route with
 // condition 6 waived; its branch must be gone or pass the no-unpushed-commits proof instead.
 // The preserved-plan release takes the same gone route with every condition but 3, 4, 5 and 7.
+// A released `issue-planning` record (`cleanup-ready` or `cleanup-failed`) takes it as well, so a
+// removal whose worktree is already gone, e.g. one whose record deletion failed after `git worktree
+// remove`, is retried; its temporary branch may be gone too (condition 6 of `evaluateEligibility`).
 function goneRemovable(facts, release = false, preserved = false) {
   if (facts.gone !== true) return false;
   if (release) return MERGE_GATE_RELEASE_STATUSES.includes(facts.status);
   if (preserved) return true;
-  return facts.purpose === 'partial-diff' && CLAIMABLE_STATUSES.includes(facts.status);
+  return (
+    (facts.purpose === 'partial-diff' || facts.purpose === 'issue-planning') &&
+    CLAIMABLE_STATUSES.includes(facts.status)
+  );
 }
 
 function mergeGateReleaseApplies(facts, mergeGateRelease) {
