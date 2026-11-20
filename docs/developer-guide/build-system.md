@@ -1077,7 +1077,9 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   both forms are limited to 1 MiB of actual bytes. A source is checked against the caller's
   allowed single-file roots and copied byte-for-byte. The helper exclusively creates
   `evidence-<evidenceId>.txt` below the verified runtime run and returns the standard file
-  reference, so callers never choose a write path. For example:
+  reference, so callers never choose a write path. Committed Git evidence references are limited
+  to the same 1 MiB: the helper checks the blob size with `git cat-file -s` before reading it and
+  refuses a larger blob with `TOO_LARGE`. For example:
 
   ```json
   {"runtimeStateRoot":"/repo","repositoryIdentity":"/repo/.git","runId":"run-1","requestDigest":"sha256:<digest>","evidenceId":"final-plan","source":{"root":"/repo","path":"docs/plan/current.md","digest":"sha256:<digest>"}}
