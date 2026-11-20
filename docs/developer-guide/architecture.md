@@ -722,7 +722,10 @@ Issue planning adds the `issue-planning` purpose on the same pattern: path
 `delete-after-integration`, with the same unadvanced compare-and-delete exception. Its planning runs
 also share the per-issue claims of the state helper's `planning-claim` group
 (`effective-flow-state-planning-claim-core.mjs`), one record per issue below
-`.effective-flow/planning-claims/<TARGET_KEY>/<ISSUE_KEY>.json`.
+`.effective-flow/planning-claims/<TARGET_KEY>/<ISSUE_KEY>.json`. `acquire`, `release` and each
+`prune` item run under a per-issue guard directory (`.<ISSUE_KEY>.guard` beside the record, the
+pattern of the `lock` guard), so a removal can never unlink the claim a new run acquired between its
+verification and its unlink; a guard held for more than 10 s is reported and never broken by age.
 
 `merge-gate`'s own checkout carries the `merge-gate` purpose: path
 `BASE_DIR/REPO_NAME/SESSION_ID-merge-gate`, `retain`, on the pull request's existing head branch.

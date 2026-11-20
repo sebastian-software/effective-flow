@@ -679,6 +679,94 @@ test('prune re-checks the record identity before the unlink', async (t) => {
   assert.equal(readRecord(root).pid, 9999, 'the swapped record is kept');
 });
 
+// Invariant: every change of one issue's record runs under that issue's guard, so a removal that
+// verified a claim can never unlink the claim a new run acquired while another removal ran: the
+// guard is held across the verification and the unlink, a second caller never changes the record
+// while it is held (RUNTIME_STATE_UNSAFE, nothing changed), and the guard is gone afterwards and
+// invisible to `list`.
+test('acquire, release and prune change one issue under its guard', async (t) => {
+  const root = fakeRoot(t);
+  const { claimId, acquiredAt } = await acquire(root);
+  const record = recordPath(root);
+  const key = planningClaimKey({ target: FORGE, issue: 693 });
+  const guard = join(record, '..', `.${key.issueKey}.guard`);
+  const before = readFileSync(record, 'utf8');
+  const quick = {
+    monotonicNow: (() => {
+      let tick = 0;
+      return () => (tick += 60_000);
+    })(),
+    sleep: async () => {},
+  };
+
+  // A held guard stops all three operations without touching the record.
+  mkdirSync(guard);
+  assert.deepEqual(
+    (await list(root)).claims.map(({ issueKey }) => issueKey),
+    [key.issueKey],
+  );
+  expectError(
+    await call('release', root, { target: FORGE, issue: 693, claimId }, quick),
+    'RUNTIME_STATE_UNSAFE',
+  );
+  expectError(
+    await call(
+      'acquire',
+      root,
+      { target: FORGE, issue: 693, workflow: 'issue-buddy', passId: PASS_ID },
+      quick,
+    ),
+    'RUNTIME_STATE_UNSAFE',
+  );
+  expectError(
+    await prune(
+      root,
+      [{ targetKey: key.targetKey, issueKey: key.issueKey, acquiredAt, confirmStale: true }],
+      {
+        ...quick,
+        now: NOW + STALE_AFTER_MS + 1,
+      },
+    ),
+    'RUNTIME_STATE_UNSAFE',
+  );
+  assert.equal(readFileSync(record, 'utf8'), before);
+  assert.equal(existsSync(guard), true, 'a foreign guard is never broken');
+  rmSync(guard, { recursive: true });
+
+  // The guard is held while the record is unlinked and removed afterwards.
+  const { unlink } = await import('node:fs/promises');
+  const seen = [];
+  const spy = {
+    fs: {
+      unlink: async (target) => {
+        if (String(target) === record) seen.push(existsSync(guard));
+        return unlink(target);
+      },
+    },
+  };
+  expectOk(await call('release', root, { target: FORGE, issue: 693, claimId }, spy));
+  assert.deepEqual(seen, [true]);
+  assert.equal(existsSync(guard), false);
+  const again = await acquire(root, {}, { now: NOW - STALE_AFTER_MS - 1 });
+  expectOk(
+    await prune(
+      root,
+      [
+        {
+          targetKey: key.targetKey,
+          issueKey: key.issueKey,
+          acquiredAt: again.acquiredAt,
+          confirmStale: true,
+        },
+      ],
+      spy,
+    ),
+  );
+  assert.deepEqual(seen, [true, true]);
+  assert.equal(existsSync(guard), false);
+  assert.deepEqual(readdirSync(join(record, '..')), []);
+});
+
 // Invariant: missing claims and invalid records are reported, never removed; duplicates refused.
 test('prune reports missing and invalid claims and refuses duplicates', async (t) => {
   const root = fakeRoot(t);

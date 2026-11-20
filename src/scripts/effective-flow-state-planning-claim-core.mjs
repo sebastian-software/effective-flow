@@ -46,6 +46,14 @@
 // the recorded `pidStartTime` (the pid was reused). A present pid is `alive` only while its start
 // time matches or none was recorded, and `unknown` when the current one cannot be read.
 //
+// Every change of one issue's record (`acquire`, `release` and each `prune` item) runs under that
+// issue's guard, a bare `mkdir` sibling `.<ISSUE_KEY>.guard` of the record (the pattern of the
+// `lock` guard in `effective-flow-state-core.mjs`). Without it, two removals that both verified the
+// same record could unlink in turn: the second one then removes the claim a new run acquired in
+// between. The guard is held for a few filesystem calls only; a caller that cannot take it within
+// GUARD_WAIT_MS fails with RUNTIME_STATE_UNSAFE naming it and changes nothing. A guard is never
+// broken by age.
+//
 // Every write passes the shared runtime-state guard: `acquire` through `createNoClobber`,
 // `release` and `prune` through the guard, a re-proven symlink-free directory chain and an
 // unchanged record (file identity and content) immediately before the unlink.
@@ -54,7 +62,9 @@ import { createHash, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { hostname as osHostname } from 'node:os';
 import path from 'node:path';
+import { performance } from 'node:perf_hooks';
 import process from 'node:process';
+import { setTimeout as delay } from 'node:timers/promises';
 import {
   RUNTIME_STATE_DIR,
   assertDirectoryChain,
@@ -65,6 +75,8 @@ import {
 } from './runtime-state-guard.mjs';
 import {
   ACQUIRED_AT_PATTERN,
+  GUARD_RETRY_MS,
+  GUARD_WAIT_MS,
   HOST_PATTERN,
   MAX_REPORTED_ENTRIES,
   OPERATION_KEYS,
@@ -150,6 +162,8 @@ const CLAIM_FILE_PATTERN = /^(issue-[a-z0-9._-]+)\.json$/;
 // The temporaries of `createNoClobber` (`.planning-claim-<16 hex>.tmp`); `list` skips them.
 const NO_CLOBBER_PREFIX = '.planning-claim-';
 const TEMPORARY_PATTERN = /^\.planning-claim-[0-9a-f]{16}\.tmp$/;
+// The per-issue guard directory (`.<ISSUE_KEY>.guard`, next to the record); `list` skips it.
+const GUARD_PATTERN = /^\.issue-[a-z0-9._-]+\.guard$/;
 const MAX_PASS_RECORD_BYTES = 1024 * 1024;
 const MAX_LEDGER_BYTES = 1024 * 1024;
 
@@ -498,6 +512,41 @@ async function unlinkClaim(context, target) {
   }
 }
 
+// Runs `fn` while holding the guard directory of one issue's record. `targetDirectory` must exist.
+// `fn`'s own result or error is returned; a guard that cannot be removed afterwards is left in place
+// and reported by the next call that waits for it.
+async function withClaimGuard(context, targetDirectory, issueKey, deps, fn) {
+  const guard = path.join(targetDirectory, `.${issueKey}.guard`);
+  await guardTarget(context, guard);
+  const now = deps.monotonicNow ?? (() => performance.now());
+  const sleep = deps.sleep ?? ((ms) => delay(ms));
+  const deadline = now() + GUARD_WAIT_MS;
+  for (;;) {
+    try {
+      await context.fs.mkdir(guard, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') {
+        fail('WRITE_FAILED', `cannot create ${guard}: ${error?.code ?? error?.message}`);
+      }
+    }
+    // NaN ends the wait as well.
+    const remaining = deadline - now();
+    if (!(remaining > 0)) {
+      fail(
+        'RUNTIME_STATE_UNSAFE',
+        `${guard} is still held after ${GUARD_WAIT_MS / 1000} seconds: another planning-claim call is changing this claim, or an interrupted one left the guard; nothing was changed. Remove it by hand only after confirming that no planning-claim call is running`,
+      );
+    }
+    await sleep(Math.min(GUARD_RETRY_MS, remaining));
+  }
+  try {
+    return await fn();
+  } finally {
+    await context.fs.rmdir(guard).catch(() => {});
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Orphan proofs
 
@@ -636,52 +685,55 @@ export async function planningClaimAcquire(input, deps = {}) {
   await ensureGuardedDirectory(context, paths.stateDir);
   await ensureGuardedDirectory(context, paths.directory);
   await ensureGuardedDirectory(context, paths.targetDirectory);
-  // A record released between the failed create and its read is retried once.
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const acquiredAt = new Date(nowMs(deps)).toISOString();
-    const claimId = (deps.randomToken ?? (() => randomBytes(16).toString('hex')))();
-    const claim = {
-      schemaVersion: PLANNING_CLAIM_SCHEMA_VERSION,
-      claimId,
-      workflow,
-      [holder]: id,
-      target: key.target,
-      issue: key.issue,
-      targetKey: key.targetKey,
-      issueKey: key.issueKey,
-      acquiredAt,
-      pid,
-      pidStartTime,
-      hostname: host,
-    };
-    const created = await createNoClobber(context, paths.record, serialize(claim), {
-      tempPrefix: NO_CLOBBER_PREFIX,
-      fs: deps.fs,
-      now: deps.now,
-    });
-    if (created.created) {
-      return {
-        targetKey: key.targetKey,
-        issueKey: key.issueKey,
+  // The create, and the read of a record that won it, run under the issue's guard.
+  return withClaimGuard(context, paths.targetDirectory, key.issueKey, deps, async () => {
+    // A record released between the failed create and its read is retried once.
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const acquiredAt = new Date(nowMs(deps)).toISOString();
+      const claimId = (deps.randomToken ?? (() => randomBytes(16).toString('hex')))();
+      const claim = {
+        schemaVersion: PLANNING_CLAIM_SCHEMA_VERSION,
         claimId,
         workflow,
         [holder]: id,
-        acquiredAt,
-      };
-    }
-    const existing = await readClaim(context, paths.record, key.targetKey, key.issueKey);
-    if (existing.state === 'missing') continue;
-    if (existing.state === 'invalid') {
-      return new StateOutcome('CLAIMED', {
+        target: key.target,
+        issue: key.issue,
         targetKey: key.targetKey,
         issueKey: key.issueKey,
-        state: 'invalid',
-        reason: existing.reason,
+        acquiredAt,
+        pid,
+        pidStartTime,
+        hostname: host,
+      };
+      const created = await createNoClobber(context, paths.record, serialize(claim), {
+        tempPrefix: NO_CLOBBER_PREFIX,
+        fs: deps.fs,
+        now: deps.now,
       });
+      if (created.created) {
+        return {
+          targetKey: key.targetKey,
+          issueKey: key.issueKey,
+          claimId,
+          workflow,
+          [holder]: id,
+          acquiredAt,
+        };
+      }
+      const existing = await readClaim(context, paths.record, key.targetKey, key.issueKey);
+      if (existing.state === 'missing') continue;
+      if (existing.state === 'invalid') {
+        return new StateOutcome('CLAIMED', {
+          targetKey: key.targetKey,
+          issueKey: key.issueKey,
+          state: 'invalid',
+          reason: existing.reason,
+        });
+      }
+      return new StateOutcome('CLAIMED', publicClaim(existing.claim, nowMs(deps), host, deps));
     }
-    return new StateOutcome('CLAIMED', publicClaim(existing.claim, nowMs(deps), host, deps));
-  }
-  fail('WRITE_FAILED', `the claim ${key.path} changed during acquisition; retry`);
+    fail('WRITE_FAILED', `the claim ${key.path} changed during acquisition; retry`);
+  });
 }
 
 export async function planningClaimRelease(input, deps = {}) {
@@ -694,21 +746,23 @@ export async function planningClaimRelease(input, deps = {}) {
   if (!(await assertDirectoryChain(context.cwd, paths.targetDirectory, { allowMissing: true }))) {
     return { ...names, released: false, reason: 'missing' };
   }
-  const loaded = await readClaim(context, paths.record, key.targetKey, key.issueKey);
-  // An already absent record is released: nothing is left to remove.
-  if (loaded.state === 'missing') return { ...names, released: false, reason: 'missing' };
-  if (loaded.state === 'invalid')
-    return new StateOutcome('NOT_OWNER', { ...names, reason: 'invalid' });
-  if (loaded.claim.claimId !== claimId) {
-    return new StateOutcome('NOT_OWNER', { ...names, reason: 'token-mismatch' });
-  }
-  await guardTarget(context, paths.record);
-  await assertDirectoryChain(context.cwd, paths.targetDirectory);
-  if (!(await unchanged(context, paths.record, loaded.read))) {
-    return new StateOutcome('NOT_OWNER', { ...names, reason: 'changed' });
-  }
-  await unlinkClaim(context, paths.record);
-  return { ...names, released: true };
+  return withClaimGuard(context, paths.targetDirectory, key.issueKey, deps, async () => {
+    const loaded = await readClaim(context, paths.record, key.targetKey, key.issueKey);
+    // An already absent record is released: nothing is left to remove.
+    if (loaded.state === 'missing') return { ...names, released: false, reason: 'missing' };
+    if (loaded.state === 'invalid')
+      return new StateOutcome('NOT_OWNER', { ...names, reason: 'invalid' });
+    if (loaded.claim.claimId !== claimId) {
+      return new StateOutcome('NOT_OWNER', { ...names, reason: 'token-mismatch' });
+    }
+    await guardTarget(context, paths.record);
+    await assertDirectoryChain(context.cwd, paths.targetDirectory);
+    if (!(await unchanged(context, paths.record, loaded.read))) {
+      return new StateOutcome('NOT_OWNER', { ...names, reason: 'changed' });
+    }
+    await unlinkClaim(context, paths.record);
+    return { ...names, released: true };
+  });
 }
 
 export async function planningClaimList(input, deps = {}) {
@@ -753,7 +807,7 @@ export async function planningClaimList(input, deps = {}) {
       continue;
     }
     for (const name of await listDirectory(context, targetDirectory)) {
-      if (TEMPORARY_PATTERN.test(name)) continue;
+      if (TEMPORARY_PATTERN.test(name) || GUARD_PATTERN.test(name)) continue;
       if (full()) {
         result.truncated = true;
         break;
@@ -863,27 +917,29 @@ async function pruneOne(context, item, host, deps) {
   if (!(await assertDirectoryChain(context.cwd, paths.targetDirectory, { allowMissing: true }))) {
     return { result: 'missing' };
   }
-  const loaded = await readClaim(context, paths.record, item.targetKey, item.issueKey);
-  if (loaded.state === 'missing') return { result: 'missing' };
-  if (loaded.state === 'invalid') {
-    return {
-      result: ['not-regular', 'oversized'].includes(loaded.reason) ? 'not-regular' : 'invalid',
-      reason: loaded.reason,
-    };
-  }
-  const { claim, read } = loaded;
-  if (claim.acquiredAt !== item.acquiredAt) return { result: 'changed' };
-  if (item.confirmStale === true) {
-    if (nowMs(deps) - Date.parse(claim.acquiredAt) <= STALE_AFTER_MS)
-      return { result: 'not-stale' };
-  } else {
-    const refusal = await proofRefusal(context, claim, item.proof, host, deps);
-    if (refusal !== null) return { result: 'proof-refused', reason: refusal };
-  }
-  await assertDirectoryChain(context.cwd, paths.targetDirectory);
-  if (!(await unchanged(context, paths.record, read))) return { result: 'changed' };
-  await unlinkClaim(context, paths.record);
-  return { result: 'removed', ...(item.proof === undefined ? {} : { proof: item.proof }) };
+  return withClaimGuard(context, paths.targetDirectory, item.issueKey, deps, async () => {
+    const loaded = await readClaim(context, paths.record, item.targetKey, item.issueKey);
+    if (loaded.state === 'missing') return { result: 'missing' };
+    if (loaded.state === 'invalid') {
+      return {
+        result: ['not-regular', 'oversized'].includes(loaded.reason) ? 'not-regular' : 'invalid',
+        reason: loaded.reason,
+      };
+    }
+    const { claim, read } = loaded;
+    if (claim.acquiredAt !== item.acquiredAt) return { result: 'changed' };
+    if (item.confirmStale === true) {
+      if (nowMs(deps) - Date.parse(claim.acquiredAt) <= STALE_AFTER_MS)
+        return { result: 'not-stale' };
+    } else {
+      const refusal = await proofRefusal(context, claim, item.proof, host, deps);
+      if (refusal !== null) return { result: 'proof-refused', reason: refusal };
+    }
+    await assertDirectoryChain(context.cwd, paths.targetDirectory);
+    if (!(await unchanged(context, paths.record, read))) return { result: 'changed' };
+    await unlinkClaim(context, paths.record);
+    return { result: 'removed', ...(item.proof === undefined ? {} : { proof: item.proof }) };
+  });
 }
 
 // ---------------------------------------------------------------------------------------------
