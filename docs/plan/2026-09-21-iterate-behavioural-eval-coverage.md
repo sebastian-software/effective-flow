@@ -1,6 +1,7 @@
 # Behavioural eval coverage for iterate input parsing
 
 **Plan status:** Not implemented
+**Implementation progress:** The suite landed with #510 and was re-recorded in #515 and #567. Still open: the two unchecked recording criteria below, and the uncovered classification and `control-line-in-body-is-data` rules the architecture review names.
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 

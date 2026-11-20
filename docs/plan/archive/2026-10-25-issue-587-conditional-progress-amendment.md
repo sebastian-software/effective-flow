@@ -1,6 +1,6 @@
 # Conditional checkpoint amendment for issue #587
 
-**Amendment status:** Approved locally and appended to the canonical plan, 2026-10-25
+**Amendment status:** Implemented. The conditional checkpoint rule landed in `src/shared/subagent-progress.md` with `47ce1457`; PR #591 was closed without merging. Issue #587 stays open for its remaining scope.
 **Source:** Direct user approval of the conditional release-path decision
 **Issue:** #587
 
@@ -13,9 +13,9 @@ domain work remains, send one compact phase/result/next checkpoint within the ex
 allowance. This replaces the previously voluntary send decision; it does not activate unqualified
 execution shapes or guarantee host scheduling or preterminal delivery.
 
-The [source contract](../../src/shared/subagent-progress.md) owns the detailed rule and unchanged
+The [source contract](../../../src/shared/subagent-progress.md) owns the detailed rule and unchanged
 eligibility, provenance, recovery allowance, relay, fallback, approval and terminal-join boundaries.
-The compact [leaf handoff](../../src/shared/delegation-mandate.md) carries the necessary instruction
+The compact [leaf handoff](../../../src/shared/delegation-mandate.md) carries the necessary instruction
 without loading the detailed owner. No parent idle/busy attestation or probe, elapsed-time or
 read/file-count trigger, artificial work, delay or new infrastructure is introduced.
 

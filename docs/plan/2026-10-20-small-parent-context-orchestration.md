@@ -1,6 +1,7 @@
 # Keep parent contexts small during planned feature delivery
 
 **Plan status:** Not implemented
+**Implementation progress:** Source implementation merged with `47ce1457` (2026-11-01). Still open: the behavioural scenario recordings, the paired workloads and the native lanes recorded below; the plan stays open until those gates pass.
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
