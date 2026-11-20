@@ -10,7 +10,7 @@ preterminal delivery, active direct-child/dispatch provenance, checkpoint compli
 joins govern acceptance. Independently serialized plaintext, full handoffs, and raw-native replay
 are not universal gates; missing evidence is not a demonstrated violation.
 
-The [approved local #587 amendment](../plan/2026-10-25-issue-587-conditional-progress-amendment.md)
+The [approved local #587 amendment](../plan/archive/2026-10-25-issue-587-conditional-progress-amendment.md)
 records the current conditional checkpoint rule owned by `src/shared/subagent-progress.md`.
 The historical productive trials below used the then-approved voluntary rule. Their no-send,
 missing-report and rejected outcomes retain their original classifications; the new obligation
