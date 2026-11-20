@@ -1121,7 +1121,7 @@ test('the lifecycle binds base-validation to its path, branch and policy with th
   const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
   assert.match(
     frontmatter,
-    /force-deletes a branch other than a base-validation branch still at its creation commit/,
+    /force-deletes a branch other than a base-validation (?:or issue-planning )?branch still at its creation commit/,
   );
   assert.doesNotMatch(frontmatter, /force-deletes branches/, 'the old absolute claim is false now');
 });
@@ -1144,5 +1144,35 @@ test('every base-validation exit path releases the record for cleanup', () => {
   assert.match(
     readShared(OBLIGATION).replace(/\s+/g, ' '),
     /Set a record left `active` once with `worktree transition` – a `base-validation` record to `cleanup-ready`, any other to `aborted` after a controlled stop, otherwise to `failed`/,
+  );
+});
+
+// --- Worktree purpose `issue-planning` (parallel issue planning) ---
+
+// Invariant: the issue-planning worktree follows the base-validation pattern: the helper accepts
+// the purpose, the lifecycle binds it to `issue-planning/<SESSION_ID>` and
+// `delete-after-integration` and extends the unadvanced compare-and-delete exception to it, and the
+// cleanup prose and description name the same exception, so no source still claims base-validation
+// is the only force-deleted branch.
+test('the lifecycle binds issue-planning to its branch and policy with the unadvanced exception', () => {
+  assert.ok(PURPOSES.includes('issue-planning'), 'the helper accepts the issue-planning purpose');
+  assertClauses(flatLifecycle, [
+    [
+      /carry `delete-after-integration`, as does `issue-planning` on `issue-planning\/<SESSION_ID>`/,
+      'purpose table binding',
+    ],
+    [
+      /else kept \(`advanced`, `unreachable`\), and so is an `issue-planning` branch/,
+      'unadvanced exception',
+    ],
+  ]);
+  assert.match(
+    flatCleanup,
+    /a refused `base-validation` branch is deleted only under the lifecycle's exception, as is an `issue-planning` branch/,
+  );
+  const frontmatter = readSource('tools', 'cleanup.md').split('\n---\n')[0];
+  assert.match(
+    frontmatter,
+    /force-deletes a branch other than a base-validation or issue-planning branch still at its creation commit/,
   );
 });

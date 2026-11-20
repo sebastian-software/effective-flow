@@ -66,15 +66,23 @@
 // compare-and-delete `git update-ref -d refs/heads/<branch> <branchOid>` once no worktree checks it
 // out. Otherwise the branch stays, the record is still deleted, and the item is BRANCH_RETAINED
 // with the branch and its unproven commits. A `retain` branch is never touched. The one purpose
-// exception is `base-validation`, whose temporary branch is never integrated: when `branch -d`
-// refuses it, a tip still at `creationOid` that another ref also reaches is compare-and-deleted at
-// that OID (see `deleteTemporaryBranch`).
+// exception is the temporary branch of `base-validation` and `issue-planning`
+// (TEMPORARY_BRANCH_PURPOSES), which is never integrated: when `branch -d` refuses it, a tip still
+// at `creationOid` that another ref also reaches is compare-and-deleted at that OID (see
+// `deleteTemporaryBranch`).
 //
 // `cleanup plan` and `cleanup apply` alone may also claim a `merge-gate` record that a stopped run
 // left `aborted` or `failed` (`mergeGateRelease` of `evaluateEligibility`): condition 6 is waived,
 // and a fail-closed no-unpushed-commits proof, re-derived under the lock before the claim, guards
 // the removal instead. Its failures are the entry's `blockers`; the record is never rewritten
 // before the claim and its branch is retained.
+//
+// The same cleanup-only flag admits an `issue-planning` record that Issue Buddy kept `aborted` with
+// reason `plan-preserved` (PRESERVED_PLAN_REASON, `preservedPlanRelease`): condition 1 accepts
+// that status for it, and every other condition stays required. Its worktree still holding the
+// untracked preserved plan fails condition 7, so cleanup never discards a plan: once the user moved
+// or discarded the plan, the record is an ordinary `worktree:` item removed after confirmation, a
+// fully gone one through the gone route.
 //
 // A record file `readRecord` reports invalid is the `invalid-record:<RECORD_ID>` class of `cleanup
 // plan` and `cleanup apply` (`assessInvalidRecord`), never a `worktree:` entry. Its proofs come
@@ -206,9 +214,18 @@ export const PURPOSES = Object.freeze([
   'apply-review',
   'merge-gate',
   'base-validation',
+  'issue-planning',
 ]);
 // The purposes bound to `delete-after-integration`; every other purpose is bound to `retain`.
-export const DELETE_AFTER_INTEGRATION_PURPOSES = Object.freeze(['apply-review', 'base-validation']);
+export const DELETE_AFTER_INTEGRATION_PURPOSES = Object.freeze([
+  'apply-review',
+  'base-validation',
+  'issue-planning',
+]);
+// The purposes whose worktree sits on a temporary branch `<purpose>/<SESSION_ID>` that is never
+// integrated: `record-init` binds the branch to exactly that name, and `deleteTemporaryBranch`
+// compare-and-deletes it while its tip is still `creationOid` (`proof: 'unadvanced'`).
+export const TEMPORARY_BRANCH_PURPOSES = Object.freeze(['base-validation', 'issue-planning']);
 export const BRANCH_POLICIES = Object.freeze(['retain', 'delete-after-integration']);
 export const SETUP_STATUSES = Object.freeze([
   'pending',
@@ -229,6 +246,10 @@ export const MERGE_GATE_RELEASE_STATUSES = Object.freeze([
   'failed',
   ...CLAIMABLE_STATUSES,
 ]);
+// The `aborted` reason of an `issue-planning` record whose worktree Issue Buddy kept because it
+// holds a preserved plan; only `cleanup plan` and `cleanup apply` claim such a record.
+export const PRESERVED_PLAN_REASON = 'plan-preserved';
+export const PRESERVED_PLAN_RELEASE_STATUSES = Object.freeze(['aborted', ...CLAIMABLE_STATUSES]);
 // `from` → allowed `to` of `worktree transition`.
 export const TRANSITIONS = Object.freeze({
   active: Object.freeze(['cleanup-ready', 'aborted', 'failed']),
@@ -301,6 +322,7 @@ export const DEFAULT_BASE_DIR = '.effective-flow/.worktrees';
 export const PLAN_PUBLICATION_SUFFIX = '-plan-publication';
 export const MERGE_GATE_SUFFIX = '-merge-gate';
 export const BASE_VALIDATION_SUFFIX = '-base-validation';
+export const ISSUE_PLANNING_SUFFIX = '-issue-planning';
 // The leaf suffix of each purpose at `BASE_DIR/REPO_NAME/SESSION_ID<suffix>`: the purpose table of
 // `record-init` and the session paths of `worktree inspect`. `delivery` and `partial-diff` take the
 // bare session leaf, `apply-review` its own base directory.
@@ -308,6 +330,7 @@ export const PURPOSE_SUFFIXES = Object.freeze({
   'plan-publication': PLAN_PUBLICATION_SUFFIX,
   'merge-gate': MERGE_GATE_SUFFIX,
   'base-validation': BASE_VALIDATION_SUFFIX,
+  'issue-planning': ISSUE_PLANNING_SUFFIX,
 });
 // The time bound of `worktree remove` and `cleanup apply`. No item starts once less than
 // ITEM_FLOOR_MS of DEFAULT_DEADLINE_MS is left, and every Git call of the operation is bounded by
@@ -670,6 +693,11 @@ async function canonicalOrSelf(fs, target) {
   return (await canonical(fs, target)) ?? target;
 }
 
+// The one branch name a record of TEMPORARY_BRANCH_PURPOSES may carry.
+function temporaryBranchName(record) {
+  return `${record.purpose}/${record.sessionId}`;
+}
+
 // The paths of the purpose table for one record: `{exact}` or `{parent}` (a direct child).
 async function requiredLocation(context, bases, record) {
   const repo = path.basename(context.cwd);
@@ -1029,8 +1057,13 @@ export function evaluateEligibility(
 ) {
   const failed = [];
   const release = mergeGateReleaseApplies(facts, mergeGateRelease);
-  const accepted = release ? MERGE_GATE_RELEASE_STATUSES : statuses;
-  const gone = removal && goneRemovable(facts, release);
+  const preserved = preservedPlanRelease(facts, mergeGateRelease);
+  const accepted = release
+    ? MERGE_GATE_RELEASE_STATUSES
+    : preserved
+      ? PRESERVED_PLAN_RELEASE_STATUSES
+      : statuses;
+  const gone = removal && goneRemovable(facts, release, preserved);
   if (!facts.schemaValid || !facts.ownershipCreated || !accepted.includes(facts.status)) {
     failed.push(1);
   }
@@ -1079,14 +1112,28 @@ export function evaluateEligibility(
 // keep the full conditions: cleanup never prunes. Under `mergeGateRelease` (`release`), a fully
 // gone `merge-gate` record in a MERGE_GATE_RELEASE_STATUSES status takes the same route with
 // condition 6 waived; its branch must be gone or pass the no-unpushed-commits proof instead.
-function goneRemovable(facts, release = false) {
+// The preserved-plan release takes the same gone route with every condition but 3, 4, 5 and 7.
+function goneRemovable(facts, release = false, preserved = false) {
   if (facts.gone !== true) return false;
   if (release) return MERGE_GATE_RELEASE_STATUSES.includes(facts.status);
+  if (preserved) return true;
   return facts.purpose === 'partial-diff' && CLAIMABLE_STATUSES.includes(facts.status);
 }
 
 function mergeGateReleaseApplies(facts, mergeGateRelease) {
   return mergeGateRelease === true && facts.purpose === 'merge-gate';
+}
+
+// Whether the cleanup-only flag admits an `issue-planning` record kept `aborted` with reason
+// PRESERVED_PLAN_REASON (see the header): never without the flag, so `worktree remove`, `worktree
+// inspect` and an adoption keep condition 1 for it.
+function preservedPlanRelease(facts, mergeGateRelease) {
+  return (
+    mergeGateRelease === true &&
+    facts.purpose === 'issue-planning' &&
+    facts.status === 'aborted' &&
+    facts.reason === PRESERVED_PLAN_REASON
+  );
 }
 
 // Whether the no-unpushed-commits proof applies to a `merge-gate` record under the release: a
@@ -1368,6 +1415,7 @@ export async function gatherFacts(
     schemaValid: true,
     ownershipCreated: record.ownership === OWNERSHIP,
     status: record.status,
+    reason: record.reason,
     purpose: record.purpose,
     registrationCount: registrations.length,
     linked: Boolean(entry) && entry !== worktrees[0] && !entry.bare,
@@ -1571,10 +1619,10 @@ function staticRecordChecks(record) {
     }
   }
   if (
-    record.purpose === 'base-validation' &&
-    record.branch !== `base-validation/${record.sessionId}`
+    TEMPORARY_BRANCH_PURPOSES.includes(record.purpose) &&
+    record.branch !== temporaryBranchName(record)
   ) {
-    fail('INVALID_INPUT', `a base-validation branch must be base-validation/${record.sessionId}`);
+    fail('INVALID_INPUT', `a ${record.purpose} branch must be ${temporaryBranchName(record)}`);
   }
   if (
     record.receipt.executionRoot !== record.worktreePath ||
@@ -2357,11 +2405,12 @@ export async function integrationProof(context, branchOid, targetOid) {
 // to the patch-id proof, and only then is the branch deleted with `update-ref -d` bound to the
 // exact `branchOid` that was proven: a branch that moved since is `ref-moved` and stays. Without
 // `integrationRoot` the branch is retained as `not-merged` with the commits `HEAD` lacks, and the
-// only other forced deletion is the purpose exception of `base-validation`: its temporary branch
-// is never integrated, so `branch -d` may refuse it whatever `HEAD` is. Instead of the patch-id
-// proof, a tip that still equals the record's `creationOid` holds no commit of its own and is
-// compare-and-deleted at that OID (`proof: 'unadvanced'`), but only while the record still binds
-// it (`base-validation/<SESSION_ID>`, `delete-after-integration`; else `binding`) and another ref
+// only other forced deletion is the purpose exception of TEMPORARY_BRANCH_PURPOSES
+// (`base-validation`, `issue-planning`): their temporary branch is never integrated, so
+// `branch -d` may refuse it whatever `HEAD` is. Instead of the patch-id proof, a tip that still
+// equals the record's `creationOid` holds no commit of its own and is compare-and-deleted at that
+// OID (`proof: 'unadvanced'`), but only while the record still binds it (`<purpose>/<SESSION_ID>`,
+// `delete-after-integration`; else `binding`) and another ref
 // still reaches `creationOid` (else `unreachable`), so the deletion never drops the last ref to a
 // commit. A tip that moved is retained as `advanced` with its new commits. Every retained outcome
 // keeps the branch and still lets the record go.
@@ -2380,7 +2429,7 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
     unproven,
     detail: refusal,
   });
-  if (record.purpose === 'base-validation') {
+  if (TEMPORARY_BRANCH_PURPOSES.includes(record.purpose)) {
     if (branchOid !== record.creationOid) {
       const advanced = await revList(context, [
         `--max-count=${MAX_REPORTED_COMMITS}`,
@@ -2391,7 +2440,7 @@ async function deleteTemporaryBranch(context, record, integration, deps) {
       return retained('advanced', advanced ?? []);
     }
     if (
-      branch !== `base-validation/${record.sessionId}` ||
+      branch !== temporaryBranchName(record) ||
       record.branchPolicy !== 'delete-after-integration'
     ) {
       return retained('binding');

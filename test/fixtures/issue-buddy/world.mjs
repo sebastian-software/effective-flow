@@ -253,7 +253,7 @@ export const collectInput = (passId, extra = {}) => ({
   ...extra,
 });
 export async function acquire(world) {
-  return checked(await world.buddy('pass-lock-acquire')).passId;
+  return checked(await world.buddy('pass-open')).passId;
 }
 export async function collect(world, passId, extra) {
   return checked(await world.buddy('pass-collect', collectInput(passId, extra)));
@@ -344,5 +344,5 @@ export async function report(world, passId, collected, extra = {}) {
   );
 }
 export async function release(world, passId) {
-  checked(await world.buddy('pass-lock-release', { passId }));
+  checked(await world.buddy('pass-close', { passId }));
 }

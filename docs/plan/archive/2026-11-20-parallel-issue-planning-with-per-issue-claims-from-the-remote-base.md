@@ -1,6 +1,6 @@
 # Parallel issue planning with per-issue claims from the remote base
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -21,6 +21,7 @@ The new behavior:
    - otherwise `origin/main`.
 
    This is the base resolution Issue Buddy uses today (`src/tools/issue-buddy.md` Phase 0 step 9). Most repositories have only `main` and no configuration, and resolve to `origin/main`. The local branch, cleanliness or position of the invoking checkout no longer matters. Runs may be started from the primary checkout or from any linked or harness worktree of the same repository.
+
 2. **One run per issue.** An issue may be planned by at most one run at a time, across Issue Buddy (batch and `--issue`), issue-sourced autopilot and `effective-flow plan-issue`.
 3. **Different issues in parallel.** Different issues may always be planned in parallel. No repository-wide lock spans a planning run any more.
 4. **Batch skips.** An Issue Buddy batch pass skips an issue that another run is planning, records it as skipped (`issue-in-progress`) and keeps going with the remaining issues.
@@ -50,8 +51,9 @@ The new behavior:
 - **One helper derives the claim key.** It is a single operation that derives `<target-key>`/`<issue-key>`:
   - on a forge target, from the `remote-tracker.mjs repository-resolve` result (repository identity);
   - on an external target, from the resolved tracker-target id plus the external issue key.
-  
+
   Issue Buddy, autopilot and `plan-issue` all use it, so the keys cannot diverge between workflows.
+
 - **The claim lives in its own operation group of the state helper.** It goes in `effective-flow-state.mjs` as `planning-claim key|acquire|release|list|prune`, not inside `issue-buddy-core.mjs`, because three workflows need it.
   - `acquire` also refuses while a legacy `.effective-flow/issue-buddy/pass.lock` exists. Today `rejectLegacyLocks` runs only inside the Issue Buddy mutex (`src/scripts/issue-buddy-core.mjs:526-543`).
 - **Claims are never broken automatically.** A killed or abandoned run blocks only its own issue.
@@ -116,30 +118,30 @@ The new behavior:
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/scripts/effective-flow-state.mjs`, new `src/scripts/effective-flow-state-planning-claim-core.mjs` | `planning-claim key/acquire/release/list/prune` on the presence-marker pattern; legacy-lock refusal; ledger-verified adoption for autopilot |
-| `src/scripts/effective-flow-state-worktree-core.mjs` | Purpose `issue-planning` on the `base-validation` pattern |
-| `src/scripts/issue-buddy-core.mjs` | Pass records under `passes/`; four-step `pass-collect`; claim-scoped recovery, stale accounting and `clearTrusted`; merge-only cache; per-issue journal digest; bounded mutex retry |
-| `src/scripts/issue-buddy.mjs` | `pass-open`/`pass-close` replace `pass-lock-acquire`/`pass-lock-release` |
-| `src/scripts/autopilot-core.mjs` | Claim inside `run-init`, release in `run-close`, internal unrendered token field |
-| `build.mjs` (`RUNTIME_SCRIPT_FILES`) | Ship the new core module |
-| `src/tools/issue-buddy.md` | Intro, helper discipline paragraph, Phase 0 steps 1, 7 and 9, planning worktree after collect, the Phase 2 HEAD check (on the planning worktree), Phase 1 leftover inventory from worktree records, Phase 5 preservation, the release section and the skip reason `issue-in-progress` |
-| `src/shared/unattended-planning.md` | `Execution root:` control line and its validation |
-| `src/shared/autopilot-issue-source.md` | Drop "Checkout preconditions" 1, 4 and 5; `ISSUE_CLAIMED` from `run-init` and `open-pull-request` as stops; remove "Existing plan pull request"; "Restore the plan" and "Plan on the base" via the delivery worktree |
-| `src/shared/plan-pr-continuation.md` | Adopt the autopilot delivery worktree as `SOURCE_ROOT` |
-| `src/tools/autopilot.md` | Preflight step 7, claim in `run-init`, release in `run-close`, delivery worktree, Phase 5 cleanup |
-| `src/shared/issue-buddy-autopilot.md` | Claim adoption through `Autopilot run:`; wording on lock and root |
-| `src/tools/plan-issue.md` | Claim from the start of Phase 2, skip or stop on a held claim, read-only examination at the fetched OID without a worktree, release on every exit |
-| `src/tools/cleanup.md` | New sections for planning claims and orphaned pass records (list, confirmed `prune`), and for kept `issue-planning` worktrees |
-| `src/shared/runtime-state-safety.md` | Execution-location wording for planning and delivery worktrees as `sourceRoot` |
-| `test/issue-buddy.test.mjs`, `test/issue-buddy-git.test.mjs`, `test/issue-buddy-pass.test.mjs`, `test/issue-buddy-contract.test.mjs`, `test/fixtures/issue-buddy/world.mjs` | Adjust lock tests (`:365`, `:1360`, `:2362`) and contract labels ("Whole-pass lock.", primary-root text at `:45-60`); add parallel, claim, recovery-scope, trusted-text and journal cases |
-| new `test/planning-claim.test.mjs` | Claim primitive, key derivation, prune proofs, legacy-lock refusal |
-| `test/effective-flow-state-worktree.test.mjs`, `test/worktree-lifecycle-contract.test.mjs` | Purpose `issue-planning` |
-| `test/autopilot-core.test.mjs` | Claim in `run-init`, release in `run-close`, token not rendered |
-| `test/unattended-planning-contract.test.mjs`, `test/workflow-contracts.test.mjs`, `test/helper-call-shape-contract.test.mjs` | `Execution root:` line, removed continuation path, `plan-issue` claim contract, renamed operations |
-| `docs/user-guide/tools-automation.md` (`:47`, `:124-125`, `:136-137`), `docs/user-guide/tools-understand.md` (Issue Buddy, `plan-issue`), `docs/user-guide/remote-tracker.md` (`:744` ff.), `docs/developer-guide/architecture.md` (`:518-520`) | Parallel planning, claims, base-tip start, existing-PR stop, claim cleanup, `issue-in-progress` vs. lifecycle label |
-| new ADR `docs/adr/parallel-issue-planning.md` | Record the switch from the repo-wide pass lock to per-issue claims. Mark the lock statement in `docs/adr/plan-only-unattended-publication.md:14-17` as superseded by it |
+| File                                                                                                                                                                                                                                            | Description                                                                                                                                                                                                                                                                           |
+| ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/effective-flow-state.mjs`, new `src/scripts/effective-flow-state-planning-claim-core.mjs`                                                                                                                                          | `planning-claim key/acquire/release/list/prune` on the presence-marker pattern; legacy-lock refusal; ledger-verified adoption for autopilot                                                                                                                                           |
+| `src/scripts/effective-flow-state-worktree-core.mjs`                                                                                                                                                                                            | Purpose `issue-planning` on the `base-validation` pattern                                                                                                                                                                                                                             |
+| `src/scripts/issue-buddy-core.mjs`                                                                                                                                                                                                              | Pass records under `passes/`; four-step `pass-collect`; claim-scoped recovery, stale accounting and `clearTrusted`; merge-only cache; per-issue journal digest; bounded mutex retry                                                                                                   |
+| `src/scripts/issue-buddy.mjs`                                                                                                                                                                                                                   | `pass-open`/`pass-close` replace `pass-lock-acquire`/`pass-lock-release`                                                                                                                                                                                                              |
+| `src/scripts/autopilot-core.mjs`                                                                                                                                                                                                                | Claim inside `run-init`, release in `run-close`, internal unrendered token field                                                                                                                                                                                                      |
+| `build.mjs` (`RUNTIME_SCRIPT_FILES`)                                                                                                                                                                                                            | Ship the new core module                                                                                                                                                                                                                                                              |
+| `src/tools/issue-buddy.md`                                                                                                                                                                                                                      | Intro, helper discipline paragraph, Phase 0 steps 1, 7 and 9, planning worktree after collect, the Phase 2 HEAD check (on the planning worktree), Phase 1 leftover inventory from worktree records, Phase 5 preservation, the release section and the skip reason `issue-in-progress` |
+| `src/shared/unattended-planning.md`                                                                                                                                                                                                             | `Execution root:` control line and its validation                                                                                                                                                                                                                                     |
+| `src/shared/autopilot-issue-source.md`                                                                                                                                                                                                          | Drop "Checkout preconditions" 1, 4 and 5; `ISSUE_CLAIMED` from `run-init` and `open-pull-request` as stops; remove "Existing plan pull request"; "Restore the plan" and "Plan on the base" via the delivery worktree                                                                  |
+| `src/shared/plan-pr-continuation.md`                                                                                                                                                                                                            | Adopt the autopilot delivery worktree as `SOURCE_ROOT`                                                                                                                                                                                                                                |
+| `src/tools/autopilot.md`                                                                                                                                                                                                                        | Preflight step 7, claim in `run-init`, release in `run-close`, delivery worktree, Phase 5 cleanup                                                                                                                                                                                     |
+| `src/shared/issue-buddy-autopilot.md`                                                                                                                                                                                                           | Claim adoption through `Autopilot run:`; wording on lock and root                                                                                                                                                                                                                     |
+| `src/tools/plan-issue.md`                                                                                                                                                                                                                       | Claim from the start of Phase 2, skip or stop on a held claim, read-only examination at the fetched OID without a worktree, release on every exit                                                                                                                                     |
+| `src/tools/cleanup.md`                                                                                                                                                                                                                          | New sections for planning claims and orphaned pass records (list, confirmed `prune`), and for kept `issue-planning` worktrees                                                                                                                                                         |
+| `src/shared/runtime-state-safety.md`                                                                                                                                                                                                            | Execution-location wording for planning and delivery worktrees as `sourceRoot`                                                                                                                                                                                                        |
+| `test/issue-buddy.test.mjs`, `test/issue-buddy-git.test.mjs`, `test/issue-buddy-pass.test.mjs`, `test/issue-buddy-contract.test.mjs`, `test/fixtures/issue-buddy/world.mjs`                                                                     | Adjust lock tests (`:365`, `:1360`, `:2362`) and contract labels ("Whole-pass lock.", primary-root text at `:45-60`); add parallel, claim, recovery-scope, trusted-text and journal cases                                                                                             |
+| new `test/planning-claim.test.mjs`                                                                                                                                                                                                              | Claim primitive, key derivation, prune proofs, legacy-lock refusal                                                                                                                                                                                                                    |
+| `test/effective-flow-state-worktree.test.mjs`, `test/worktree-lifecycle-contract.test.mjs`                                                                                                                                                      | Purpose `issue-planning`                                                                                                                                                                                                                                                              |
+| `test/autopilot-core.test.mjs`                                                                                                                                                                                                                  | Claim in `run-init`, release in `run-close`, token not rendered                                                                                                                                                                                                                       |
+| `test/unattended-planning-contract.test.mjs`, `test/workflow-contracts.test.mjs`, `test/helper-call-shape-contract.test.mjs`                                                                                                                    | `Execution root:` line, removed continuation path, `plan-issue` claim contract, renamed operations                                                                                                                                                                                    |
+| `docs/user-guide/tools-automation.md` (`:47`, `:124-125`, `:136-137`), `docs/user-guide/tools-understand.md` (Issue Buddy, `plan-issue`), `docs/user-guide/remote-tracker.md` (`:744` ff.), `docs/developer-guide/architecture.md` (`:518-520`) | Parallel planning, claims, base-tip start, existing-PR stop, claim cleanup, `issue-in-progress` vs. lifecycle label                                                                                                                                                                   |
+| new ADR `docs/adr/parallel-issue-planning.md`                                                                                                                                                                                                   | Record the switch from the repo-wide pass lock to per-issue claims. Mark the lock statement in `docs/adr/plan-only-unattended-publication.md:14-17` as superseded by it                                                                                                               |
 
 ## Implementation details
 
@@ -249,15 +251,15 @@ The new behavior:
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 1 | 2 | 3 |
-| Security | 0 | 1 | 0 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 2 | 3 | 1 |
-| Testability | 0 | 1 | 1 |
-| Scope | 0 | 3 | 2 |
-| Maintainability | 0 | 0 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        1 |         2 |    3 |
+| Security        |        0 |         1 |    0 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        2 |         3 |    1 |
+| Testability     |        0 |         1 |    1 |
+| Scope           |        0 |         3 |    2 |
+| Maintainability |        0 |         0 |    1 |
 
 ### Findings
 
@@ -294,3 +296,41 @@ The new behavior:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Requirement:** Issue planning (Issue Buddy, issue-sourced autopilot, `plan-issue`) starts from the resolved remote base, allows one run per issue, plans different issues in parallel, and keeps autopilot's draft-PR end state. Autopilot stops on an issue that already has an open pull request.
+
+**Architecture decisions as built:**
+
+- The per-issue planning claim is the state-helper group `planning-claim key|acquire|release|list|prune`. `key`, `acquire`, `release` and `list` are allowlisted, like the presence operations. `prune` is never allowlisted and needs an orphan proof or confirmed staleness. Liveness is identity-checked by pid and process start time (`pidStartTime`).
+- The Issue Buddy whole-pass lock is replaced by pass records (`passes/<passId>.json`, `pass-open`/`pass-close`). Cleanup uses `pass-list`, `pass-prune` and `trusted-prune`.
+  - `pass-collect` runs in four steps, with no network or forge call under the mutation mutex, and a bounded 10 s retry.
+  - Recovery, stale accounting and trusted-text removal are scoped to claimed issues.
+  - Cache writes merge per issue, and the verdict journal is compared per issue and per attempt.
+- Autopilot claims inside `run-init` before the ledger, stores the token only in the internal ledger field `planningClaim`, and releases it in `run-close` after writing the closed ledger.
+  - Issue Buddy adopts that claim exclusively per run (`adoptions/<runId>.json`) and grants no recovery under an autopilot run.
+- The new worktree purpose `issue-planning` follows the `base-validation` pattern. A kept, `plan-preserved` worktree can be removed by `cleanup` once its plan was handled.
+- Deviation from the plan: "Plan on the base" uses an `issue-planning` worktree instead of a `delivery` worktree, so no retained branch is left behind. `Execution root:` is an optional trusted control line that Issue Buddy always sends.
+
+**Affected files:** 49 files changed. The scripts are `src/scripts/effective-flow-state-planning-claim-core.mjs` (new), `effective-flow-state-core.mjs`, `effective-flow-state.mjs`, `effective-flow-state-worktree-core.mjs`, `issue-buddy-core.mjs`, `issue-buddy.mjs`, `autopilot-core.mjs`, `claude-settings-core.mjs`, `build.mjs` and `scripts/distribution-smoke.mjs`. The contracts are `src/tools/{issue-buddy,autopilot,plan-issue,cleanup}.md` and `src/shared/{autopilot-issue-source,issue-buddy-autopilot,unattended-planning,plan-pr-continuation,runtime-state-safety,setup-allowlist,worktree-lifecycle}.md`. Docs, a new ADR `docs/adr/parallel-issue-planning.md`, and unit, git-level and contract tests complete the change.
+
+**Test results:**
+
+- Phase 5 full run: `pnpm agent:check` and `node build.mjs` passed.
+  - `pnpm test` had 1 failure in `test/merge-gate-eval-round.test.mjs`, a publication-lock timeout under load in a file this change does not touch. The targeted rerun passed 46/46, and base CI was green.
+  - `pnpm test:distribution` first failed because the new core module was missing from the smoke list. This was fixed and re-verified.
+- After the review corrections, a second full run passed every check: `pnpm agent:check`, `pnpm test` (6076 passed, 0 failed, 61 skipped), `node build.mjs` and `pnpm test:distribution`.
+- The plan's manual check (two parallel autopilot runs from T3 worktrees, plus the `ISSUE_CLAIMED` and `open-pull-request` stops) is not executed yet.
+
+## Review findings
+
+**Date:** 2026-11-20
+**Reviewer:** effective-flow-nodejs-reviewer, effective-flow-generic-product-reviewer (reduced depth, Markdown contracts), scoped re-check by effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    17 |
+| Open / Not implemented |     0 |

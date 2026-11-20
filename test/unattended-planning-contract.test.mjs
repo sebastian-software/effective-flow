@@ -935,3 +935,28 @@ test('continuation decisions preserve the unattended no-question and single-gene
     /overrides every question or confirmation.*including questions from loaded central skills/,
   );
 });
+
+// Invariant: the plan writer can be pointed at the Issue Buddy planning worktree only through the
+// trusted `Execution root:` control line, validated as a registered worktree of the same Git common
+// directory before any write; without it the execution checkout applies unchanged.
+test('unattended planning defines and validates the Execution root control line', () => {
+  const planning = shared('unattended-planning').replace(/\s+/g, ' ');
+  assert.match(
+    planning,
+    /One optional `Execution root: <absolute path>` control line may also occur there, at most once/,
+  );
+  assert.match(planning, /Without it the execution checkout of step 4 applies unchanged/);
+  assert.match(
+    planning,
+    /a malformed or non-absolute `Execution root:` returns `ABORT: unparseable execution-root switch`/,
+  );
+  assert.match(
+    planning,
+    /its physical path must be exactly one worktree record of `git -C <RUNTIME_STATE_ROOT> worktree list --porcelain`, and `git -C <path> rev-parse --path-format=absolute --git-common-dir` must equal the same probe on `RUNTIME_STATE_ROOT`, so it is a registered worktree of the same Git common directory; otherwise return `ABORT: execution root invalid`/,
+  );
+  assert.match(planning, /Resolve `EXECUTION_ROOT` from it, or else from the execution checkout/);
+  const buddy = source('tools', 'issue-buddy.md');
+  assert.ok(
+    buddy.includes('Execution root: <absolute PLANNING_ROOT>\n--- end of control lines ---'),
+  );
+});

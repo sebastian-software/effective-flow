@@ -479,11 +479,12 @@ dependency-free loopback mutex in `issue-buddy-core.mjs`. Its endpoint is exclus
 all processes that share the runtime state must therefore use the same host and network namespace
 and have local listen permission. Bind failures stop before any directory creation or write, with
 no alternate port, file fallback, invented holder identity, or trusted-payload service.
-Initial `pass.lock` publication uses a fully written temporary file and create-only same-directory
-hardlink; later replacements use temporary-file-plus-rename. The runtime therefore requires
-same-directory hardlink support. The durable `pass.lock` still requires an explicit matching pass ID
-for operator release. Unknown legacy operation or per-write locks remain refusal conditions with an
-operator hint and are never broken automatically.
+A pass record's initial publication uses a fully written temporary file and create-only
+same-directory hardlink; later replacements use temporary-file-plus-rename. The runtime therefore
+requires same-directory hardlink support. The mutex holds no network or forge call and is retried
+for at most 10 s, so parallel passes for different issues serialize only their short local state
+steps. A legacy `pass.lock` and unknown legacy operation or per-write locks remain refusal
+conditions with an operator hint and are never broken automatically.
 The delegation-envelope pair makes no network call: it writes `merge-gate`'s outgoing `iterate`
 messages below `<RUNTIME_STATE_ROOT>/.effective-flow/merge-gate/` and validates them there. The
 diff-baseline pair makes no network call either: it runs local `git` against a private index and

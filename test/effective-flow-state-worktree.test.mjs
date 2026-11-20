@@ -4050,3 +4050,200 @@ test('cleanup blocks a stopped base-validation record by condition 1', async (t)
     assert.deepEqual(blocked?.conditions, [1], status);
   }
 });
+
+// ---------------------------------------------------------------------------------------------
+// Purpose `issue-planning` (parallel issue planning)
+
+const ISSUE_PLANNING_BRANCH = `issue-planning/${SESSION}`;
+
+// A linked worktree at the `issue-planning` leaf on its temporary branch at `base`.
+function issuePlanningWorktree(root, base = 'HEAD') {
+  return addWorktree(root, {
+    path: join(baseDir(root), `${SESSION}-issue-planning`),
+    branch: ISSUE_PLANNING_BRANCH,
+    base,
+  });
+}
+
+function issuePlanningRecord(root, worktree, overrides = {}) {
+  return makeRecord(root, worktree, {
+    purpose: 'issue-planning',
+    overrides: { branchPolicy: 'delete-after-integration', ...overrides },
+  });
+}
+
+async function initializedIssuePlanning(root, base) {
+  const worktree = issuePlanningWorktree(root, base);
+  const record = issuePlanningRecord(root, worktree);
+  expectOk(await call('worktree record-init', { cwd: root, executionRoot: root, record }));
+  return { worktree, record };
+}
+
+// Invariant: `issue-planning` follows the `base-validation` pattern: bound to
+// `delete-after-integration` (`retain` refused), at `<base>/<repo>/<SESSION_ID>-issue-planning`
+// on branch `issue-planning/<SESSION_ID>`; another branch is INVALID_INPUT, another path
+// NOT_ELIGIBLE with the `path` proof. The record schema is unchanged.
+test('record-init: issue-planning at its path, branch and policy only', async (t) => {
+  const root = repository(t);
+  const { record } = await initializedIssuePlanning(root);
+  assert.deepEqual(readRecord(root), record);
+  assert.equal(record.worktreePath, join(baseDir(root), `${SESSION}-issue-planning`));
+  assert.deepEqual(Object.keys(record).sort(), [...RECORD_KEYS].sort());
+  assert.equal(recordProblem(record), null);
+  assert.equal(recordProblem({ ...record, branchPolicy: 'retain' }), 'branch-policy-purpose');
+
+  const misplaced = repository(t);
+  const elsewhere = addWorktree(misplaced, {
+    path: join(baseDir(misplaced), `${SESSION}-base-validation`),
+    branch: ISSUE_PLANNING_BRANCH,
+  });
+  const outcome = expectOutcome(
+    await call('worktree record-init', {
+      cwd: misplaced,
+      executionRoot: misplaced,
+      record: issuePlanningRecord(misplaced, elsewhere),
+    }),
+    'NOT_ELIGIBLE',
+  );
+  assert.deepEqual(outcome.proofs, ['path']);
+
+  for (const otherBranch of ['issue-planning/other-session', `base-validation/${SESSION}`]) {
+    const envelope = await executeOperationWith(root, {
+      ...record,
+      branch: otherBranch,
+      receipt: { ...record.receipt, checkout: { kind: 'branch', branch: otherBranch } },
+    });
+    assert.equal(
+      envelope.error?.code,
+      'INVALID_INPUT',
+      `${otherBranch}: ${JSON.stringify(envelope)}`,
+    );
+  }
+});
+
+// Invariant: the session roots of `worktree inspect` include the `<SESSION_ID>-issue-planning` leaf.
+test('inspect: an unrecorded issue-planning worktree is reported for its session', async (t) => {
+  const root = repository(t);
+  const worktree = issuePlanningWorktree(root);
+  const inspected = expectOk(
+    await call('worktree inspect', { cwd: root, executionRoot: root, sessionId: SESSION }),
+  );
+  assert.deepEqual(
+    inspected.unrecorded.map((entry) => entry.path),
+    [worktree.worktreePath],
+  );
+});
+
+// Invariant (purpose exception): an unadvanced issue-planning branch that `git branch -d` refuses
+// is compare-and-deleted at `creationOid`; an advanced one is BRANCH_RETAINED with its commits.
+test('remove: an issue-planning branch is deleted when unadvanced and kept when advanced', async (t) => {
+  const root = repository(t);
+  const baseline = unintegratedCommit(root);
+  const { worktree, record } = await initializedIssuePlanning(root, baseline);
+  const [item] = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  ).items;
+  assert.equal(item.ok, true, JSON.stringify(item));
+  assert.deepEqual(item.branch, {
+    outcome: 'deleted-after-proof',
+    branch: ISSUE_PLANNING_BRANCH,
+    branchOid: baseline,
+    proof: 'unadvanced',
+  });
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '');
+
+  const advanced = repository(t);
+  const moved = await initializedIssuePlanning(advanced, unintegratedCommit(advanced));
+  git(moved.worktree.worktreePath, 'commit', '-q', '--allow-empty', '-m', 'plan');
+  const tip = git(moved.worktree.worktreePath, 'rev-parse', 'HEAD');
+  const [kept] = expectOk(
+    await call('worktree remove', {
+      cwd: advanced,
+      executionRoot: advanced,
+      sessionId: SESSION,
+      recordIds: [moved.record.recordId],
+    }),
+  ).items;
+  assert.deepEqual(
+    [kept.ok, kept.code, kept.branch.reason, kept.branch.unproven],
+    [false, 'BRANCH_RETAINED', 'advanced', [tip]],
+  );
+  assert.equal(git(advanced, 'rev-parse', `refs/heads/${ISSUE_PLANNING_BRANCH}`), tip);
+});
+
+// Invariant: cleanup lists a released issue-planning record as a `worktree:` item with its purpose
+// and policy and removes it with its unadvanced branch.
+test('cleanup lists and removes a released issue-planning worktree and its branch', async (t) => {
+  const root = repository(t);
+  const { worktree, record } = await initializedIssuePlanning(root, unintegratedCommit(root));
+  await moveTo(root, record, 'cleanup-ready');
+  const planned = await plan(root);
+  const { item } = planEntry(planned, record.recordId);
+  assert.ok(item, JSON.stringify(planned.blocked));
+  assert.deepEqual(
+    [item.purpose, item.branchPolicy, item.blockers],
+    ['issue-planning', 'delete-after-integration', []],
+  );
+  const result = expectOk(await applyPlanned(root, planned));
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, branch }) => [itemId, ok, branch?.outcome]),
+    [[`worktree:${record.recordId}`, true, 'deleted-after-proof']],
+  );
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '');
+});
+
+// Invariant (preserved plan): an `issue-planning` record Issue Buddy kept `aborted` with reason
+// `plan-preserved` has a supported removal path through cleanup alone. While the untracked plan
+// still lies in its worktree it is blocked by condition 7 (cleanup never discards a plan); once the
+// user moved or discarded it, cleanup lists it as a `worktree:` item and removes it with its
+// unadvanced branch. Another `aborted` reason, and `worktree remove` outside cleanup, keep
+// condition 1.
+test('cleanup removes a kept issue-planning worktree with a preserved plan once the plan is gone', async (t) => {
+  const root = repository(t);
+  const { worktree, record } = await initializedIssuePlanning(root, unintegratedCommit(root));
+  await moveTo(root, record, 'aborted', 'plan-preserved');
+  const planFile = join(worktree.worktreePath, 'docs-plan-issue-7.md');
+  writeFileSync(planFile, '# Preserved plan\n');
+  const kept = planEntry(await plan(root), record.recordId);
+  assert.equal(kept.item, undefined);
+  assert.deepEqual(kept.blocked?.conditions, [7]);
+  assert.equal(kept.blocked?.reason, 'plan-preserved');
+
+  rmSync(planFile);
+  const [outside] = expectOk(
+    await call('worktree remove', {
+      cwd: root,
+      executionRoot: root,
+      sessionId: SESSION,
+      recordIds: [record.recordId],
+    }),
+  ).items;
+  assert.equal(outside.ok, false, JSON.stringify(outside));
+  assert.deepEqual(outside.conditions, [1]);
+
+  const planned = await plan(root);
+  const { item } = planEntry(planned, record.recordId);
+  assert.ok(item, JSON.stringify(planned.blocked));
+  assert.deepEqual([item.status, item.reason], ['aborted', 'plan-preserved']);
+  const result = expectOk(await applyPlanned(root, planned));
+  assert.deepEqual(
+    result.items.map(({ itemId, ok, branch }) => [itemId, ok, branch?.outcome]),
+    [[`worktree:${record.recordId}`, true, 'deleted-after-proof']],
+  );
+  assert.equal(existsSync(worktree.worktreePath), false);
+  assert.equal(git(root, 'branch', '--list', ISSUE_PLANNING_BRANCH), '');
+
+  const other = repository(t);
+  const stopped = await initializedIssuePlanning(other, unintegratedCommit(other));
+  await moveTo(other, stopped.record, 'aborted', 'stopped');
+  const blocked = planEntry(await plan(other), stopped.record.recordId);
+  assert.equal(blocked.item, undefined);
+  assert.deepEqual(blocked.blocked?.conditions, [1]);
+});

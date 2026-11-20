@@ -27489,3 +27489,195 @@ test('the conflict-validation proposal is offered in Guided block 9, the summary
   assert.doesNotMatch(express, mention);
   assert.match(express, /Jump directly to Step 6/);
 });
+
+// --- Parallel issue planning with per-issue claims ---
+
+// Invariant: autopilot never continues on an existing open pull request: the "Existing plan pull
+// request" continuation is gone, `open-pull-request` maps to a stop that closes the run with
+// `no-pull-request`, and only Tracker and GitHub origin remain as source preconditions, so any
+// checkout of the repository may start an issue source.
+test('autopilot issue source stops on an existing open pull request and accepts any checkout', () => {
+  const issueSource = source('src/shared/autopilot-issue-source.md');
+  const text = prose(issueSource);
+  assert.doesNotMatch(
+    issueSource,
+    /### Existing plan pull request|continue under "Existing plan pull request"/,
+  );
+  assert.doesNotMatch(text, /Primary checkout\.|Clean state\.|Base tip\.|base-tip checkout/);
+  includesAll(
+    text,
+    [
+      'Skip `open-pull-request`: stop with the reason and no pull request.',
+      'Every stop here is a confirmed no-PR exception: `run-close` with `outcome: "no-pull-request"`.',
+      '1. Tracker.',
+      '2. GitHub origin.',
+      '`ISSUE_CLAIMED` from `run-init` stops and names the holder',
+      'Either creates no run, no ledger and no pull request, so no `run-close` follows.',
+      'The claim token stays inside the helper',
+    ],
+    'the autopilot issue source',
+  );
+  const mapping = section(issueSource, '### Plan through Issue Buddy');
+  ordered(mapping, 'Skip `open-pull-request`', 'Every stop here is a confirmed no-PR exception');
+  // The restored plan lives in the run-owned delivery worktree, never in the invoking checkout.
+  includesAll(
+    text,
+    [
+      "Restore the plan in this run's own delivery worktree on the plan head branch, never in the invocation or primary checkout.",
+      "`git -C <RUNTIME_STATE_ROOT> worktree add <DELIVERY_ROOT> '<head-branch>'` without `-b`",
+      'which `plan-pr-continuation` adopts as its `SOURCE_ROOT` and execution root',
+    ],
+    'the delivery worktree restore',
+  );
+  assert.match(
+    prose(source('src/shared/plan-pr-continuation.md')),
+    /an Automation caller's run-owned delivery worktree: under an autopilot issue source, the worktree `autopilot-issue-source` created on the head branch[\s\S]{0,300}Adopt it as `SOURCE_ROOT` and execution root/,
+  );
+  const autopilot = prose(source('src/tools/autopilot.md'));
+  assert.match(
+    autopilot,
+    /On an issue source it releases the planning claim for every outcome and returns `planningClaim: \{targetKey, issueKey, released\}`/,
+  );
+});
+
+// Invariant: `plan-issue` claims each issue at the start of its Phase 2, stops a single-issue run or
+// skips in a multi-issue run on a held claim, releases on every exit path, and examines the code
+// read-only at the fetched resolved base OID without a worktree.
+test('plan-issue claims per issue, stops or skips on a held claim and examines read-only', () => {
+  const planIssue = source('src/tools/plan-issue.md');
+  const phase2 = prose(section(planIssue, '### Phase 2: Planning per issue (interactive)'));
+  ordered(
+    planIssue,
+    '### Phase 2: Planning per issue (interactive)',
+    '**Planning claim.** At the start of Phase 2 for each issue, before step 1, claim it',
+    '**Release on every exit.**',
+    '1. Read the issue fresh from the tracker',
+  );
+  includesAll(
+    phase2,
+    [
+      'node <skill-root>/scripts/effective-flow-state.mjs planning-claim acquire',
+      '"workflow":"plan-issue"',
+      'a single-issue run stops naming it; a multi-issue run reports the issue as skipped with its holder and continues with the next one.',
+      'node <skill-root>/scripts/effective-flow-state.mjs planning-claim release',
+      "after the issue's comment and label writes (Phase 4), and on every other exit path for that issue",
+      'The examination reads the code at the fetched resolved base, never a working tree, and creates no worktree',
+      "`git -C <RUNTIME_STATE_ROOT> fetch origin 'refs/heads/<base>:refs/remotes/origin/<base>'`",
+      "it reads with `git ls-tree`, `git show '<oid>:<path>'` and `git grep <pattern> <oid>`.",
+      '`remote-tracker.mjs repository-resolve` result',
+      '`{kind: "external", id: <tracker.externalTool>}`',
+    ],
+    'the plan-issue claim contract',
+  );
+  assert.match(
+    prose(planIssue),
+    /Hold each issue's planning claim from the start of its Phase 2 until its comment and label writes are done, and release it on every exit path/,
+  );
+  assert.match(
+    prose(planIssue),
+    /Release the issue's planning claim, then set the issue task to `completed`/,
+  );
+});
+
+// Invariant: no planning base is hard-coded: every issue-planning contract resolves the configured
+// `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`, and no source contract names
+// `develop` as a default or fallback base.
+test('no source contract names develop as a default base', () => {
+  const sources = [];
+  const walk = (directory) => {
+    for (const entry of readdirSync(new URL(directory, repositoryRoot), { withFileTypes: true })) {
+      const path = `${directory}${entry.name}`;
+      if (entry.isDirectory()) walk(`${path}/`);
+      else if (entry.name.endsWith('.md')) sources.push(path);
+    }
+  };
+  walk('src/');
+  for (const path of sources) {
+    const text = prose(source(path));
+    assert.doesNotMatch(
+      text,
+      /(?:default|fallback|defaults to|else)[^.]{0,60}`?(?:origin\/)?develop`?\b|`?(?:origin\/)?develop`? (?:is|as) (?:the )?(?:default|base)/i,
+      `${path} must not name develop as a default base`,
+    );
+  }
+  for (const [path, order] of [
+    [
+      'src/tools/issue-buddy.md',
+      /`delivery\.baseBranch`[\s\S]{0,120}else local `origin\/HEAD`, else `origin\/main`/,
+    ],
+    [
+      'src/tools/plan-issue.md',
+      /the configured `delivery\.baseBranch`, else `origin\/HEAD`, else `origin\/main`/,
+    ],
+    [
+      'src/shared/autopilot-issue-source.md',
+      /the configured `delivery\.baseBranch`, else `origin\/HEAD`, else `origin\/main`/,
+    ],
+  ]) {
+    assert.match(prose(source(path)), order, `${path} resolves the base without a default branch`);
+  }
+});
+
+// Invariant: cleanup never judges a pass record orphaned itself and never closes a pass for it:
+// it inventories through `pass-list`, prunes a record only through `pass-prune` with a
+// helper-verified `process-dead` proof (offered only for `liveness: dead`) or confirmed staleness,
+// removes unlisted trusted text only through `trusted-prune`, and reaches a kept issue-planning
+// worktree only after the operator has moved or discarded its preserved plan.
+test('cleanup prunes pass records and trusted text only through the issue-buddy helper', () => {
+  const cleanup = source('src/tools/cleanup.md');
+  const text = prose(cleanup);
+  assert.doesNotMatch(cleanup, /issue-buddy\.mjs pass-close/);
+  includesAll(
+    text,
+    [
+      '`node <skill-root>/scripts/issue-buddy.mjs pass-list <<< \'{"cwd":"<RUNTIME_STATE_ROOT>"}\'`',
+      'A valid pass with `liveness: dead` is a candidate with proof `process-dead`',
+      '`null` means a pass record is unreadable, so none is offered',
+      '"proof":"process-dead"}\'`',
+      'with `"confirmStale":true` in place of `proof` for a confirmed stale record; never `pass-close`',
+      'node <skill-root>/scripts/issue-buddy.mjs trusted-prune',
+      'a pass record only through `pass-prune` (never `pass-close`) and trusted text only through `trusted-prune`',
+      'Cleanup never judges orphanhood itself',
+      '`ledger-absent-in-grace`',
+      'move the plan out of the worktree or discard it, then rerun cleanup, which offers the worktree for removal',
+    ],
+    'the cleanup pass-record contract',
+  );
+});
+
+// Invariant: an autopilot-adopted pass grants no recovery, so only an opened plan pull request
+// continues and a recovered one is the open-pull-request stop; the run-owned delivery worktree is
+// set up by autopilot, and the continuation that adopts it never skips a pending setup silently.
+test('autopilot continues only on an opened plan pull request and sets up its delivery worktree', () => {
+  const text = prose(source('src/shared/autopilot-issue-source.md'));
+  includesAll(
+    text,
+    [
+      'in `pullRequestsOpened`: continue under "Restore the plan"',
+      'a recovered pull request for `#<N>`, should one appear, is the `open-pull-request` stop below, never a continuation',
+      'run setup in it per `worktree.setup` as "Worktree execution" step 3 of `worktree-integration` prescribes',
+      "record the receipt's final setup status (`complete` or `skipped`)",
+    ],
+    'the autopilot issue source',
+  );
+  assert.doesNotMatch(text, /`pullRequestsOpened` or `pullRequestsRecovered`/);
+  assert.match(
+    prose(source('src/shared/plan-pr-continuation.md')),
+    /`pending` runs "Worktree execution" step 3 here first, and any other status stops and names it/,
+  );
+});
+
+// Invariant: plan-issue normalizes its base exactly as Issue Buddy, a failed fetch stops only that
+// issue and releases its claim, and the claim calls spell the forge and external issue forms apart.
+test('plan-issue normalizes its base like Issue Buddy and spells both issue forms', () => {
+  const text = prose(source('src/tools/plan-issue.md'));
+  includesAll(
+    text,
+    [
+      'normalize it exactly as Issue Buddy does (a configured remote ref only on `origin`, `origin/` stripped; `origin/HEAD` resolved to the branch it names; no other default)',
+      '(an invalid base or a failed fetch stops this issue and releases its claim)',
+      'the forge form `"issue":<number>` (a bare JSON number) or the external form `"issue":"<key>"` (a JSON string)',
+    ],
+    'the plan-issue base and claim forms',
+  );
+});

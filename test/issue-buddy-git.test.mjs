@@ -6,6 +6,20 @@ import { tmpdir } from 'node:os';
 import { spawn, spawnSync } from 'node:child_process';
 import { executeOperation } from '../src/scripts/issue-buddy-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
+import {
+  createWorld,
+  checked,
+  acquire as acquireWorld,
+  collect as collectWorld,
+  record as recordWorld,
+  report as reportWorld,
+  release as releaseWorld,
+  publicationInput,
+  prIdentity,
+  planText,
+  PLAN,
+  BRANCH,
+} from './fixtures/issue-buddy/world.mjs';
 
 const NOW = '2026-10-19T12:00:00.000Z';
 async function repository(t) {
@@ -70,7 +84,7 @@ async function repository(t) {
   };
   const run = (operation, input = {}, options = {}) =>
     executeOperation(operation, { cwd: root, ...input }, { runner, clock: () => NOW, ...options });
-  const acquire = () => run('pass-lock-acquire');
+  const acquire = () => run('pass-open');
   const collect = (passId) =>
     run('pass-collect', {
       passId,
@@ -126,7 +140,7 @@ test('a corrupt or foreign cache is reported but never overwritten; missing cach
   assert.equal(c.data.cacheDegradation, null);
   const cache = path.join(f.root, '.effective-flow/issue-buddy/verdicts.json');
   await fs.writeFile(cache, '{broken');
-  await f.run('pass-lock-release', { passId: acquired.data.passId });
+  await f.run('pass-close', { passId: acquired.data.passId });
   acquired = await f.acquire();
   c = await f.collect(acquired.data.passId);
   assert.equal(c.ok, true, JSON.stringify(c));
@@ -141,7 +155,7 @@ test('a corrupt or foreign cache is reported but never overwritten; missing cach
   });
   assert.equal(verdict.error.code, 'CACHE_CORRUPT');
   assert.equal(await fs.readFile(cache, 'utf8'), '{broken');
-  await f.run('pass-lock-release', { passId: acquired.data.passId });
+  await f.run('pass-close', { passId: acquired.data.passId });
   const foreign = {
     schemaVersion: 1,
     repository: 'github.com/elsewhere/flow',
@@ -173,7 +187,7 @@ test('real runtime guard rejects nonignored, tracked or symlinked state and link
     if (kind === 'linked') {
       const linked = path.join(f.directory, 'linked');
       f.git('worktree', 'add', '--detach', linked);
-      result = await f.run('pass-lock-acquire', { cwd: linked });
+      result = await f.run('pass-open', { cwd: linked });
     } else result = await f.acquire();
     assert.equal(result.error.code, 'UNSAFE_RUNTIME_STATE', `${kind}: ${JSON.stringify(result)}`);
   }
@@ -223,7 +237,7 @@ test('creating missing runtime parents checks each actual directory before a non
       return fs.mkdir(target, options);
     },
   };
-  const acquired = await f.run('pass-lock-acquire', {}, { fs: observed });
+  const acquired = await f.run('pass-open', {}, { fs: observed });
   assert.equal(acquired.ok, true, JSON.stringify(acquired));
   assert.equal(
     f.calls.some((call) => call.args.includes('--verbose') || call.args.includes('-v')),
@@ -231,7 +245,11 @@ test('creating missing runtime parents checks each actual directory before a non
   );
   assert.deepEqual(
     events.map((entry) => path.relative(f.root, entry.target)),
-    ['.effective-flow', path.join('.effective-flow', 'issue-buddy')],
+    [
+      '.effective-flow',
+      path.join('.effective-flow', 'issue-buddy'),
+      path.join('.effective-flow', 'issue-buddy', 'passes'),
+    ],
   );
 });
 
@@ -259,8 +277,8 @@ test(
       await new Promise(resolve => process.once('message', resolve));
       return fs.link(...args);
     } };
-    const result = await executeOperation('pass-lock-acquire', { cwd: ${JSON.stringify(f.root)} }, {
-      runner: createProcessRunner(), createServer: factory,
+    const result = await executeOperation('pass-open', { cwd: ${JSON.stringify(f.root)} }, {
+      runner: createProcessRunner(), createServer: factory, mutexWaitMs: 0,
       fs: process.argv[1] === 'pause' ? observed : fs,
     });
     process.stdout.write(JSON.stringify({ endpoint, result }));
@@ -308,11 +326,11 @@ test(
     first.child.send({ continue: true });
     const acquired = (await first.done).result;
     assert.equal(acquired.ok, true, JSON.stringify(acquired));
-    assert.equal((await f.run('pass-lock-release', { passId: acquired.data.passId })).ok, true);
+    assert.equal((await f.run('pass-close', { passId: acquired.data.passId })).ok, true);
   },
 );
 
-test('initial pass publication guards both hard-link endpoints and cannot replace a foreign holder', async (t) => {
+test('initial pass publication guards both hard-link endpoints and cannot replace a foreign record', async (t) => {
   const f = await repository(t);
   let published = false;
   const foreign = {
@@ -321,9 +339,11 @@ test('initial pass publication guards both hard-link endpoints and cannot replac
     pid: process.pid,
     hostname: 'fixture-host',
   };
+  let target;
   const observed = {
     ...fs,
-    link: async (temp, target) => {
+    link: async (temp, destination) => {
+      target = destination;
       const reads = f.calls.filter(
         (call) => call.executable === 'git' && call.args[0] === 'check-ignore',
       );
@@ -331,34 +351,164 @@ test('initial pass publication guards both hard-link endpoints and cannot replac
         reads.slice(-4).map((call) => call.args.at(-1)),
         [
           '.effective-flow/config.json',
-          path.relative(f.root, target),
+          path.relative(f.root, destination),
           '.effective-flow/config.json',
           path.relative(f.root, temp),
         ],
       );
-      assert.deepEqual(JSON.parse(await fs.readFile(temp, 'utf8')), {
-        passId: JSON.parse(await fs.readFile(temp, 'utf8')).passId,
+      const written = JSON.parse(await fs.readFile(temp, 'utf8'));
+      // The session pid and host the claim core records, never the helper's own pid.
+      assert.deepEqual(written, {
+        passId: written.passId,
         acquiredAt: NOW,
-        pid: process.pid,
-        hostname: (await import('node:os')).hostname(),
+        pid: 4242,
+        pidStartTime: null,
+        hostname: 'fixture-host',
       });
-      // A create-only link must preserve even a holder that appears at the last boundary.
-      await fs.writeFile(target, JSON.stringify(foreign), { flag: 'wx' });
+      assert.equal(path.basename(destination), `${written.passId}.json`);
+      // A create-only link must preserve even a record that appears at the last boundary.
+      await fs.writeFile(destination, JSON.stringify(foreign), { flag: 'wx' });
       published = true;
-      return fs.link(temp, target);
+      return fs.link(temp, destination);
     },
   };
-  const refused = await f.run('pass-lock-acquire', {}, { fs: observed });
-  assert.equal(published, true);
-  assert.equal(refused.error.code, 'LOCKED');
-  assert.equal(refused.error.details.passId, foreign.passId);
-  assert.deepEqual(
-    JSON.parse(
-      await fs.readFile(path.join(f.root, '.effective-flow/issue-buddy/pass.lock'), 'utf8'),
-    ),
-    foreign,
+  const refused = await f.run(
+    'pass-open',
+    {},
+    { fs: observed, claimDeps: { ownerPid: 4242, hostname: () => 'fixture-host' } },
   );
-  assert.deepEqual(await fs.readdir(path.join(f.root, '.effective-flow/issue-buddy')), [
-    'pass.lock',
+  assert.equal(published, true);
+  assert.equal(refused.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.deepEqual(JSON.parse(await fs.readFile(target, 'utf8')), foreign);
+  assert.deepEqual(await fs.readdir(path.dirname(target)), [path.basename(target)]);
+});
+
+// Invariant (acceptance "Base start"): planning starts from the fetched remote base in an
+// `issue-planning` worktree, whatever the primary checkout's branch, index or working tree hold;
+// the primary checkout's index and working tree stay byte-identical through the whole pass.
+test('a pass plans from origin/<base> in a planning worktree while a dirty primary checkout on another branch stays untouched', async (t) => {
+  const world = createWorld(t);
+  const root = world.root;
+  const baseTip = world.git(world.bare, 'rev-parse', 'refs/heads/main');
+  world.git(root, 'checkout', '-q', '-b', 'feature');
+  await fs.writeFile(path.join(root, 'feature.txt'), 'feature work\n');
+  world.git(root, 'add', 'feature.txt');
+  world.git(root, 'commit', '-q', '-m', 'feature');
+  await fs.writeFile(path.join(root, 'README.md'), '# Dirty working tree\n');
+  await fs.writeFile(path.join(root, 'staged.txt'), 'staged only\n');
+  world.git(root, 'add', 'staged.txt');
+  await fs.writeFile(path.join(root, 'untracked.txt'), 'untracked\n');
+  const index = await fs.readFile(path.join(root, '.git/index'));
+  const files = {};
+  for (const name of ['README.md', 'staged.txt', 'untracked.txt', 'feature.txt'])
+    files[name] = await fs.readFile(path.join(root, name), 'utf8');
+  const head = world.git(root, 'rev-parse', 'HEAD');
+  assert.notEqual(head, baseTip);
+
+  const passId = await acquireWorld(world);
+  const collected = await collectWorld(world, passId);
+  assert.equal(collected.baseOid, baseTip);
+  assert.deepEqual(
+    collected.eligible.map((entry) => entry.issue),
+    [1],
+  );
+  const tree = path.join(root, '.effective-flow/.worktrees/primary/session-1-issue-planning');
+  world.git(
+    root,
+    'worktree',
+    'add',
+    '-q',
+    '-b',
+    'issue-planning/session-1',
+    tree,
+    collected.baseOid,
+  );
+  // The Phase 2 HEAD check runs on the planning worktree.
+  assert.equal(world.git(tree, 'rev-parse', 'HEAD'), collected.baseOid);
+  await fs.mkdir(path.join(tree, 'docs/plan'), { recursive: true });
+  await fs.writeFile(path.join(tree, PLAN), planText(), { flag: 'wx' });
+  checked(await world.lint('lint', { cwd: tree }));
+  const metadata = checked(await world.lint('publication-metadata', { cwd: tree }));
+  const published = checked(
+    await world.publication(
+      'publish',
+      publicationInput(collected.baseOid, { cwd: tree, expectedBlobOid: metadata.blobOid }),
+    ),
+  );
+  assert.equal(published.state, 'pull-request-opened');
+  assert.equal(world.git(world.bare, 'rev-parse', `${BRANCH}^`), baseTip);
+  const verdict = await recordWorld(world, passId, collected, {
+    pullRequest: published.pullRequest,
+  });
+  await reportWorld(world, passId, collected, {
+    verdicts: [verdict],
+    pullRequestsOpened: [prIdentity(published)],
+  });
+  await releaseWorld(world, passId);
+  // The published plan copy is the worktree's only content; removing it lets the worktree go.
+  await fs.unlink(path.join(tree, PLAN));
+  world.git(root, 'worktree', 'remove', tree);
+  world.git(root, 'branch', '-q', '-D', 'issue-planning/session-1');
+
+  assert.deepEqual(await fs.readFile(path.join(root, '.git/index')), index);
+  for (const [name, bytes] of Object.entries(files))
+    assert.equal(await fs.readFile(path.join(root, name), 'utf8'), bytes);
+  assert.equal(world.git(root, 'rev-parse', 'HEAD'), head);
+  assert.equal(world.git(root, 'branch', '--show-current'), 'feature');
+  await assert.rejects(fs.stat(path.join(root, PLAN)), { code: 'ENOENT' });
+});
+
+// Phase 0 step 9 base selection, mirrored for the fixture: a configured `delivery.baseBranch`
+// wins; otherwise the local `origin/HEAD`; otherwise `origin/main`. Nothing assumes `develop`.
+function selectBase(world, configured) {
+  if (configured !== undefined) return configured;
+  const head = spawnSync('git', ['symbolic-ref', '--quiet', 'refs/remotes/origin/HEAD'], {
+    cwd: world.root,
+    env: { ...process.env, ...world.environment },
+    encoding: 'utf8',
+  });
+  return head.status === 0 ? head.stdout.trim().replace(/^refs\/remotes\//, '') : 'origin/main';
+}
+
+// Invariant (acceptance "Base resolution without configuration"): a repository with only `main`
+// and no `delivery.baseBranch` collects from the fetched `origin/main`, through `origin/HEAD` and
+// through the `origin/main` fallback; a configured base branch wins over both.
+test('without configuration the pass collects from origin/main through origin/HEAD and the fallback; a configured base wins', async (t) => {
+  const world = createWorld(t);
+  const mainTip = world.git(world.bare, 'rev-parse', 'refs/heads/main');
+  const release = path.join(world.container, 'release');
+  world.git(world.container, 'clone', '-q', world.bare, release);
+  world.git(release, 'config', 'user.name', 'Fixture Publisher');
+  world.git(release, 'config', 'user.email', 'fixture@example.invalid');
+  world.git(release, 'checkout', '-q', '-b', 'release');
+  world.git(release, 'commit', '-q', '--allow-empty', '-m', 'release line');
+  world.git(release, 'push', '-q', 'origin', 'release');
+  const releaseTip = world.git(world.bare, 'rev-parse', 'refs/heads/release');
+  const collectFrom = async (selected) => {
+    const passId = await acquireWorld(world);
+    const collected = await collectWorld(world, passId, { baseBranch: selected });
+    await releaseWorld(world, passId);
+    return collected.baseOid;
+  };
+  world.git(world.root, 'remote', 'set-head', 'origin', '--auto');
+  assert.equal(selectBase(world), 'origin/main');
+  assert.equal(await collectFrom(selectBase(world)), mainTip);
+  world.git(world.root, 'remote', 'set-head', 'origin', '--delete');
+  assert.equal(selectBase(world), 'origin/main');
+  assert.equal(await collectFrom(selectBase(world)), mainTip);
+  assert.equal(selectBase(world, 'origin/release'), 'origin/release');
+  assert.equal(await collectFrom(selectBase(world, 'origin/release')), releaseTip);
+  const fetches = world
+    .calls()
+    .filter((call) => call.executable === 'git' && call.args[0] === 'fetch')
+    .map((call) => call.args.at(-1));
+  assert.deepEqual(fetches, [
+    'refs/heads/main:refs/remotes/origin/main',
+    'refs/heads/main:refs/remotes/origin/main',
+    'refs/heads/release:refs/remotes/origin/release',
   ]);
+  assert.equal(
+    world.calls().some((call) => call.args.some((arg) => String(arg).includes('develop'))),
+    false,
+  );
 });

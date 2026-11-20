@@ -13,8 +13,10 @@
 // resume adoption) in `effective-flow-state-recovery-core.mjs`, whose ledger schema and
 // comparisons live in `effective-flow-state-ledger-core.mjs`, and the merge-gate run-presence
 // markers (`presence register`, `presence refresh`, `presence list`, `presence release`, `presence
-// prune`) in `effective-flow-state-presence-core.mjs`; each imports this module and is loaded on
-// first use.
+// prune`) in `effective-flow-state-presence-core.mjs`, and the per-issue planning claims
+// (`planning-claim key`, `planning-claim acquire`, `planning-claim release`, `planning-claim list`,
+// `planning-claim prune`) in `effective-flow-state-planning-claim-core.mjs`; each imports this
+// module and is loaded on first use.
 //
 // A lock is named by a closed enum and mapped to a fixed path; no path comes from the caller:
 //
@@ -113,6 +115,11 @@ export const STATE_OPERATIONS = Object.freeze([
   'presence list',
   'presence release',
   'presence prune',
+  'planning-claim key',
+  'planning-claim acquire',
+  'planning-claim release',
+  'planning-claim list',
+  'planning-claim prune',
 ]);
 
 // Whether `harness allow-rules` writes an allow rule for an operation. Every entry of
@@ -158,6 +165,15 @@ export const STATE_OPERATION_CLASSES = Object.freeze({
   'presence list': 'allowlisted',
   'presence release': 'allowlisted',
   'presence prune': 'not-allowlisted',
+  // The per-issue planning claims: `key` only computes, `acquire` creates one claim record of at
+  // most 4 KiB no-clobber below `.effective-flow/planning-claims/`, `release` removes only the
+  // record whose `claimId` matches, and `list` only reads. `prune` removes other runs' claims under
+  // a verified orphan proof or confirmed staleness and stays a confirmed cleanup step.
+  'planning-claim key': 'allowlisted',
+  'planning-claim acquire': 'allowlisted',
+  'planning-claim release': 'allowlisted',
+  'planning-claim list': 'allowlisted',
+  'planning-claim prune': 'not-allowlisted',
 });
 
 export const LOCK_NAMES = Object.freeze(['memory', 'iterate-commit', 'apply-review-commit']);
@@ -211,6 +227,8 @@ export const OUTCOME_CODES = Object.freeze([
   'MARKER_EXISTS',
   'MARKER_NOT_FOUND',
   'MARKER_INVALID',
+  'CLAIMED',
+  'LEGACY_PASS_LOCK',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([
@@ -388,6 +406,18 @@ export const OPERATION_KEYS = Object.freeze({
   'presence list': Object.freeze(['cwd', 'sessionId']),
   'presence release': Object.freeze(['cwd', 'sessionId', 'token']),
   'presence prune': Object.freeze(['cwd', 'sessionIds']),
+  'planning-claim key': Object.freeze(['target', 'issue']),
+  'planning-claim acquire': Object.freeze([
+    'cwd',
+    'target',
+    'issue',
+    'workflow',
+    'runId',
+    'passId',
+  ]),
+  'planning-claim release': Object.freeze(['cwd', 'target', 'issue', 'claimId']),
+  'planning-claim list': Object.freeze(['cwd', 'target']),
+  'planning-claim prune': Object.freeze(['cwd', 'claims']),
 });
 
 // The caller-supplied owner fields per lock. The helper adds `token`, `acquiredAt`, `host` and
@@ -1202,7 +1232,8 @@ async function decideBreak(context, lock, paths, tombstone, expected) {
   return removeThroughTombstone(context, lock, paths, observed, tombstone);
 }
 
-// The memory, harness, commit, review, worktree, recovery and presence operations live in their own
+// The memory, harness, commit, review, worktree, recovery, presence and planning-claim operations
+// live in their own
 // modules, which import this one. They are loaded on first use through literal specifiers, so the
 // import graph stays acyclic, a lock call never loads them, and the build's dependency scan still
 // sees all of them.
@@ -1213,6 +1244,7 @@ const loadReview = () => import('./effective-flow-state-review-core.mjs');
 const loadWorktree = () => import('./effective-flow-state-worktree-core.mjs');
 const loadRecovery = () => import('./effective-flow-state-recovery-core.mjs');
 const loadPresence = () => import('./effective-flow-state-presence-core.mjs');
+const loadPlanningClaim = () => import('./effective-flow-state-planning-claim-core.mjs');
 
 const HANDLERS = Object.freeze({
   'lock acquire': acquireLock,
@@ -1247,6 +1279,16 @@ const HANDLERS = Object.freeze({
   'presence list': async (input, deps) => (await loadPresence()).presenceList(input, deps),
   'presence release': async (input, deps) => (await loadPresence()).presenceRelease(input, deps),
   'presence prune': async (input, deps) => (await loadPresence()).presencePrune(input, deps),
+  'planning-claim key': async (input, deps) =>
+    (await loadPlanningClaim()).planningClaimKeyOperation(input, deps),
+  'planning-claim acquire': async (input, deps) =>
+    (await loadPlanningClaim()).planningClaimAcquire(input, deps),
+  'planning-claim release': async (input, deps) =>
+    (await loadPlanningClaim()).planningClaimRelease(input, deps),
+  'planning-claim list': async (input, deps) =>
+    (await loadPlanningClaim()).planningClaimList(input, deps),
+  'planning-claim prune': async (input, deps) =>
+    (await loadPlanningClaim()).planningClaimPrune(input, deps),
 });
 
 // Runs one operation and returns its envelope; never throws. `deps.runner` is the injected process
