@@ -82,6 +82,12 @@ test('the allowlist step names the rule families, the rule count and no rule for
     text,
     /one per read-only `remote-tracker\.mjs` operation: the forge reads, the pure local computations and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`/,
   );
+  // `pr-acceptance-sources` writes local runtime state without a prompt, so its bound is disclosed,
+  // including the directory it may create and the guarded temporary files it writes through.
+  assert.match(
+    text,
+    /Given a `snapshotSessionId`, `pr-acceptance-sources` writes only `\.effective-flow\/\.acceptance-lens-<id>\.diff` and `\.effective-flow\/\.acceptance-lens-<id>\.md` through the runtime-state guard, no-clobber, the diff at most 1 MiB, creating `\.effective-flow\/` if absent and writing through \(and pruning stale\) `\.acceptance-lens-\*\.tmp` siblings, and never writes the forge/,
+  );
   assert.match(
     text,
     /`commit create` writes Git history and runs the repository's hooks without a prompt; it commits only the listed paths, refuses paths below `\.effective-flow\/` and an untrusted hook configuration, and never pushes, amends, resets or rebases/,

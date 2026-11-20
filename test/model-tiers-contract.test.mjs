@@ -1484,3 +1484,27 @@ test('all targets ship the lazy committed-range fragment behind its deliver poin
     );
   }
 });
+
+// Invariant: the acceptance lens's one read-only leaf is spawned at its own marked site, resolves
+// to the `deep` role it names and never moves down, and the marker sits beside the spawn it
+// classifies rather than in the router.
+test('the acceptance-lens spawn site resolves to the deep acceptance-reviewer and never moves down', () => {
+  const site = spawnSites().find(
+    (entry) => entry.id === 'review-acceptance-lens/acceptance-review',
+  );
+  assert.ok(site, 'missing spawn site review-acceptance-lens/acceptance-review');
+  assert.deepEqual(
+    site.clauses.map(({ role, tier }) => [role, tier]),
+    [['acceptance-reviewer', 'deep']],
+  );
+  assert.equal(site.downAllowed, false);
+  const fragment = readSource('shared/review-acceptance-lens.md');
+  assert.match(
+    fragment,
+    /\{\{AGENT:acceptance-reviewer\}\}[\s\S]{0,200}<!-- spawn-site:review-acceptance-lens\/acceptance-review -->/,
+  );
+  assert.equal(
+    (fragment.match(/<!-- spawn-site:review-acceptance-lens\/acceptance-review -->/g) ?? []).length,
+    1,
+  );
+});

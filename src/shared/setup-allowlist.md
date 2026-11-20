@@ -1,6 +1,6 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 73
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 74
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
@@ -13,7 +13,8 @@ install's absolute path, so later runs call the helpers without a permission pro
 - one for the `config-resolve` helper's `resolve` operation and one each for its read-only
   `no-ci-policy`, `conflict-validation` and `review-fix-validation` operations;
 - one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
-  and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`;
+  and `thread-ledger-lookup`, never a mutation or the local write `thread-ledger-record`; the
+  forge read `pr-acceptance-sources` also writes its private snapshot, bounded below;
 - one per read-only `conflict-validation.mjs` operation: `ci-detect`, `ci-integrity`,
   `ci-evidence-match` and `quick-marker-scan`.
 
@@ -25,7 +26,11 @@ writes only a new, generated-name file below `.effective-flow/review/` (through 
 overwrites a report, takes at most 64 KiB of input, and consumes IDs only with a successful
 reservation. Separately, and only without the migration marker, it first runs the legacy-directory
 migration under that operation's own bound (no-clobber copy into `.effective-flow/`, memory merge,
-marker, adopting and removing a root `.sf-memory.json` through its own guard class). The
+marker, adopting and removing a root `.sf-memory.json` through its own guard class). Given a
+`snapshotSessionId`, `pr-acceptance-sources` writes only `.effective-flow/.acceptance-lens-<id>.diff`
+and `.effective-flow/.acceptance-lens-<id>.md` through the runtime-state guard, no-clobber, the diff
+at most 1 MiB, creating `.effective-flow/` if absent and writing through (and pruning stale)
+`.acceptance-lens-*.tmp` siblings, and never writes the forge. The
 `worktree` and `cleanup plan` rules write only lifecycle records and their locks and never remove a
 worktree or branch, with two bounded exceptions in `worktree transition`: `release: "partial-diff"`
 restores exactly the residual paths it proved equal to the delivery ledger and still in the source,
@@ -68,7 +73,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 73 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 74 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

@@ -257,14 +257,15 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 73 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 74 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
 `worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
 `ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`),
-four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 44 for the remote tracker's read-only operations:
-its forge reads, its pure local computations and `thread-ledger-lookup`, and four for
+four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 45 for the remote tracker's read-only operations:
+its forge reads, its pure local computations and `thread-ledger-lookup` (`pr-acceptance-sources` also
+writes its private review snapshot, two no-clobber files below `.effective-flow/`, never the forge), and four for
 `conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check` and
 `ledger reconcile` only read. `ledger init` writes the delivery ledger once during an active
 `deliver` run, for that run's own record, and only within a size bound of 256 KiB; `ledger append`

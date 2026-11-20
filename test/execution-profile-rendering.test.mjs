@@ -492,7 +492,8 @@ test('the pilot fragments render their own build target and keep portable runs u
 // code validator, test writer and merge-conflict resolver, and build's targeted scope, the shared
 // environment-signature classes and the failure-attribution pointer in the code validator and the
 // merge-conflict resolver;
-// any other configuration change or body change fails.
+// any other configuration change or body change fails; the one declared added worker has no
+// base sidecar and any other base-worker membership change fails.
 // The pinned stdout names each delta and exactly the workers showing it.
 test('the executable baseline proof preserves every Quality native configuration and source-unchanged artifact', () => {
   const result = spawnSync(
@@ -505,6 +506,7 @@ test('the executable baseline proof preserves every Quality native configuration
   assert.equal(
     result.stdout,
     'Native agents match 6055c94\n' +
+      'Expected added workers: effective-flow-acceptance-reviewer\n' +
       'Expected delta claude-deep-tier-effort: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
       'Expected delta codex-deep-tier-model: effective-flow-frontend-reviewer, effective-flow-generic-implementer, effective-flow-generic-product-implementer, effective-flow-generic-product-reviewer, effective-flow-merge-conflict-resolver, effective-flow-nodejs-implementer, effective-flow-nodejs-reviewer, effective-flow-rust-implementer, effective-flow-rust-reviewer, effective-flow-ui-implementer\n' +
       'Expected delta claude-parent-messaging-1: effective-flow-code-validator\n' +

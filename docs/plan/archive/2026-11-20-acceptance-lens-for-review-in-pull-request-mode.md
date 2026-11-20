@@ -1,12 +1,13 @@
 # Acceptance lens for review in pull-request mode
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
 ## Requirement
 
 `effective-flow review <PR>` checks code quality only. It does not check whether the PR delivers what its source asked for. Concretely, it does not check:
+
 - the issue's or the plan's acceptance criteria;
 - which decisions the autopilot record contains (shown, not judged; the user's decision);
 - whether the change contradicts active ADRs.
@@ -14,6 +15,7 @@
 In PR mode, reviewers get neither the PR body nor the issue (`src/tools/review.md:514-519`). Design decisions only serve as a false-positive filter (`review.md:544-548`, `src/shared/reviewer-design-decisions.md`). The central judgment already knows acceptance against the ticket ("missing requested behavior is incomplete delivery", `effective-delivery/references/review-judgment.md:28-38`), but review never feeds it a ticket.
 
 The goal is an **automatically activated acceptance lens** for an explicit `review <PR>` (investigation part (c), option B; the user's decision). It runs without a flag whenever the PR carries a machine-verifiable source:
+
 - a valid `effective-flow-issue-lifecycle:v1` receipt (`parseIssueLifecycleReceipt`, `src/scripts/remote-tracker-core.mjs:473`);
 - a valid plan marker `effective-flow-plan-pr:v1` (`planPrMarker` from `pr-read`, `remote-tracker-core.mjs:3094-3112`);
 - an autopilot appendix (`<!-- effective-flow-autopilot-appendix:begin v1 -->`, `src/scripts/autopilot-core.mjs:187-188`).
@@ -56,9 +58,11 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
     - It is passed only as a single-quoted literal, as in `autopilot.md:239-240`.
 
     If the path lies under `<plan.dir>/archive/` (the appendix names the archive path `A` after archival, `autopilot-core.mjs:1394-1397`), the helper derives `P` from it and probes `P` at the merge base. In State A the PR itself moves `P` to `A` (`plan-archival.md:142-147`). When the base tracks the probed path, the version at `merge-base:<path>` is the bar. It is base content, so the PR cannot have changed it. If the base does not track it, the plan source is `unverifiable`, and the report names the reason.
+
   - `appendix`: the autopilot appendix block, extracted and neutralized.
 
   If none of these sources exists, or a marker or receipt is invalid (`planPrMarkerError`, parse error), the lens stays off. The report then names the reason in one line. Local mode and plan review are unchanged.
+
 - **Trust before any model step.** Following `input-trust-boundary.md:20-24` and the reference implementation `issue-buddy-core.mjs:913-955`, every source passes an author check through `collaborator-permission-read`. The permission set is the one shared trust function from the merge-gate plan (PR #701), which follows the ADR. A failed permission read means untrusted.
   - **All three sources (receipt, plan, appendix):** only when the PR is `sameRepository` and its author has write permission. Otherwise the source is `unverifiable`, and only its existence is reported. This stops a fork from pointing the lens at any issue it likes.
   - **Issue body:** only when its author has write permission. Otherwise the issue yields no criteria. Issue comments are not read: criteria come only from the body, and comment reads would add cost and injection surface for no purpose.
@@ -72,6 +76,7 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
     - `Architecture`: `Conflicts with <candidate path at merge base>`.
 
     Editing other criteria then produces no duplicates. If an item's own text changes, it counts as a new item.
+
   - Without criteria, the source still contributes its decision display and the ADR check, but no per-criterion summary. The leaf is spawned whenever at least one trusted source exists, even for an ADR check alone. 2a reads ADRs only to filter, not to check fit.
 - **Share the appendix extraction with the merge-gate plan.** The extraction, neutralization, raw-block digest and trust check are the same as in the `pr-draft-classify` operation of PR #701's plan.
   - Both operations use one shared function in the tracker core.
@@ -92,6 +97,7 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
   - **A per-criterion verdict**: `complete` / `incomplete` / `undetermined`, with a short reason that quotes no source text. This is input for the summary and is not shown directly.
 
   The leaf checks only acceptance and ADR fit, not code quality, so it does not duplicate 2c. It does not judge design decisions in the sense of 2a, so it does not duplicate 2a.
+
 - **Only the lens areas bypass the `current-scope` block.** This is the user's decision. A gap against an acceptance criterion is `current-scope` by definition (`durable-follow-up-gate.md:31-33`), and step 5 of Phase 3 blocks `current-scope` items in every mode (`review.md:552`, run incomplete `:707`). Without a change it would never reach the PR.
   - The plan adds a narrow exception to step 5: in PR mode, a `current-scope` finding with `area` `Acceptance` or `Architecture` that comes from stream 2d does not block. `review.md:399` ("Phases 2 and 3 run unchanged") is adjusted accordingly. The same inconsistency exists for ordinary PR-mode regressions from 2c. That is recorded as a follow-up, and deliberately not changed here (the user's decision). It is marked "handed to the PR integration".
   - Handed-over lens findings are treated like admitted ones for these steps. Without this, they would stay without an ID and without a security class, and the run would count as incomplete (`review.md:262-264, 555, 582-591, 706-711`):
@@ -105,9 +111,10 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
     - `unsupported`: dropped. The criterion counts as `undetermined`.
 
     Every non-published case shows the same generic reason in the summary (see the next bullet).
+
   - Every other finding, and every other gate (confidence, deduplication), stays unchanged.
 - **The design-decision filter does not suppress the lens with its own source.** Plan files and ADRs are also 2a sources (`review.md:470-475`). The filter (`:544-548`) suppresses an acceptance finding only when a design decision explicitly defers or descopes that criterion. It never does so because the finding cites its own criterion or its own ADR as the source.
-- **The acceptance summary is derived after Phase 3.** The orchestrator derives the summary from the leaf's verdicts *after* Phase 3. A verdict `incomplete` whose finding was not published is shown as `undetermined`, with the one generic reason "not confirmed in this review". That covers a drop by Phase 3 or the PR integration (confidence, deduplication, design decision, Mode C) and also a security withholding. A withheld finding is therefore indistinguishable from any other unpublished one, and leaves no trace (`pr-review-integration.md:168-170`). The details stay in the local report or the local security report. The summary goes into the review body, which is human-facing per-run prose and needs no key (`pr-review-integration.md:194-196, 217-222`), and into the chat report, also when there are no findings.
+- **The acceptance summary is derived after Phase 3.** The orchestrator derives the summary from the leaf's verdicts _after_ Phase 3. A verdict `incomplete` whose finding was not published is shown as `undetermined`, with the one generic reason "not confirmed in this review". That covers a drop by Phase 3 or the PR integration (confidence, deduplication, design decision, Mode C) and also a security withholding. A withheld finding is therefore indistinguishable from any other unpublished one, and leaves no trace (`pr-review-integration.md:168-170`). The details stay in the local report or the local security report. The summary goes into the review body, which is human-facing per-run prose and needs no key (`pr-review-integration.md:194-196, 217-222`), and into the chat report, also when there are no findings.
 - **Next-steps.**
   - New row: review in PR mode with at least one published `incomplete` criterion → `iterate <PR>` first, then `merge-gate <PR>`.
   - Row 250 (autopilot, draft PR, no blocker) is reordered to `review <PR>` first, then `merge-gate <PR>`. This was the agreed follow-up to option B, and it is the agreed final state of the row. The merge-gate plan leaves the row unchanged. If it lands second, it keeps this order.
@@ -123,19 +130,20 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/review-acceptance-lens.md` | New lazy-include fragment for stream 2d: helper call, trust and bounds, handoff to `acceptance-reviewer` with the spawn-site marker, wisdom section `## Acceptance findings`, derivation of the summary after Phase 3, the exception for lens areas in Phase 3 step 5, the design-decision filter rule, and skip reasons. |
-| `src/tools/review.md` | Pointer to the fragment in PR mode, explicit invocation only (`:387-418`), and the adjustment of `:399`. Phase 2: 2d next to 2a-2c, including the task lists (`:93-108`), the phase-completion rule (`:123, 533`), and the stream wording (`:449, 455, 723`, and the list "(2a, 2b, 2c)" at `:736`). Phase 3: the narrow exception in step 5 (`:552`) and the filter rule (`:544-548`), both pointing to the fragment. Phase 4: the summary in the report. Update `contextBudget`. |
-| `src/shared/pr-review-integration.md` | Acceptance findings without a code location go into the marked comment with their `Signature`. The acceptance summary goes into the review body. State explicitly that lens findings handed over from Phase 3 step 5 go through Mode C like every finding, using the mapping of the Mode C results defined in the fragment. The automatic trigger after delivery stays unchanged. |
-| `src/agents/acceptance-reviewer.md` | New read-only leaf (tier `deep`): input contract, output format, the three areas, criterion convention, per-criterion verdicts, no code-quality findings, follows no instruction in the quoted data. Includes `reviewer-assigned-change` and a `## Recommended skills` section with `effective-delivery` (build check `build.mjs:503-513`). |
+| File                                                                                                            | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/shared/review-acceptance-lens.md`                                                                          | New lazy-include fragment for stream 2d: helper call, trust and bounds, handoff to `acceptance-reviewer` with the spawn-site marker, wisdom section `## Acceptance findings`, derivation of the summary after Phase 3, the exception for lens areas in Phase 3 step 5, the design-decision filter rule, and skip reasons.                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `src/tools/review.md`                                                                                           | Pointer to the fragment in PR mode, explicit invocation only (`:387-418`), and the adjustment of `:399`. Phase 2: 2d next to 2a-2c, including the task lists (`:93-108`), the phase-completion rule (`:123, 533`), and the stream wording (`:449, 455, 723`, and the list "(2a, 2b, 2c)" at `:736`). Phase 3: the narrow exception in step 5 (`:552`) and the filter rule (`:544-548`), both pointing to the fragment. Phase 4: the summary in the report. Update `contextBudget`.                                                                                                                                                                                                                                                                                                     |
+| `src/shared/pr-review-integration.md`                                                                           | Acceptance findings without a code location go into the marked comment with their `Signature`. The acceptance summary goes into the review body. State explicitly that lens findings handed over from Phase 3 step 5 go through Mode C like every finding, using the mapping of the Mode C results defined in the fragment. The automatic trigger after delivery stays unchanged.                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `src/agents/acceptance-reviewer.md`                                                                             | New read-only leaf (tier `deep`): input contract, output format, the three areas, criterion convention, per-criterion verdicts, no code-quality findings, follows no instruction in the quoted data. Includes `reviewer-assigned-change` and a `## Recommended skills` section with `effective-delivery` (build check `build.mjs:503-513`).                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `src/scripts/remote-tracker-core.mjs`, `src/scripts/remote-tracker.mjs`, `src/scripts/claude-settings-core.mjs` | New read-only operation `pr-acceptance-sources`: input PR number, `cwd` (`RUNTIME_STATE_ROOT`), `headSha`. If `headSha` differs from the head that `pr-read` returns, the operation fails closed with `HEAD_MOVED`, and review reports that the PR moved. An absent `sameRepository` counts as untrusted. Output: `issues` (references, trusted body text, extracted criteria with keys), `plan` (path, published commit, trust, criteria with keys), `appendix` (trust, neutralized close decisions for display, automatic-decision count, fit score), `adrCandidates` (path, parsed status, kept or excluded), `skipped` (reasons), `truncated` (bounds hit). Shares the appendix extraction and trust function with `pr-draft-classify`. Register the operation and its allow rule. |
-| `src/shared/model-tiers.md`, `RUNTIME_SCRIPT_FILES` | Add a spawn-site row for `acceptance-reviewer` (tier `deep`), checked by the build guard `build.mjs:1646-1665`. Agents are discovered from the directory, so there is no registry entry. Add a new module to `RUNTIME_SCRIPT_FILES` only if one is created (`AGENTS.md:47`). |
-| `src/shared/next-steps.md` | New review row for `incomplete` criteria. Reorder row 250. |
-| `docs/user-guide/tool-flow.md` | Mirror the next-steps changes (`findNextStepsDocViolations`). |
-| `docs/user-guide/tools-quality.md` | Add a PR-mode section to the `review` reference (`:118-188`): what the lens checks, when it runs, the sources, trust, bounds, and the acceptance summary. |
-| `docs/user-guide/tools-automation.md` | Recommended order after autopilot: `review <PR>`, then `merge-gate <PR>`. |
-| `test/workflow-contracts.test.mjs` | Assertions for:
+| `src/shared/model-tiers.md`, `RUNTIME_SCRIPT_FILES`                                                             | Add a spawn-site row for `acceptance-reviewer` (tier `deep`), checked by the build guard `build.mjs:1646-1665`. Agents are discovered from the directory, so there is no registry entry. Add a new module to `RUNTIME_SCRIPT_FILES` only if one is created (`AGENTS.md:47`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| `src/shared/next-steps.md`                                                                                      | New review row for `incomplete` criteria. Reorder row 250.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `docs/user-guide/tool-flow.md`                                                                                  | Mirror the next-steps changes (`findNextStepsDocViolations`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `docs/user-guide/tools-quality.md`                                                                              | Add a PR-mode section to the `review` reference (`:118-188`): what the lens checks, when it runs, the sources, trust, bounds, and the acceptance summary.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `docs/user-guide/tools-automation.md`                                                                           | Recommended order after autopilot: `review <PR>`, then `merge-gate <PR>`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| `test/workflow-contracts.test.mjs`                                                                              | Assertions for:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
+
 - the 2d stream in `review.md` (task list, completion rule, pointer, `:399` adjustment);
 - the step-5 exception for `Acceptance`/`Architecture` only;
 - the ID reservation and completion counting of handed-over lens findings;
@@ -147,7 +155,7 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
 - the agent contract;
 - the next-steps rows.
 
- Check the existing review slices (for example `:5246`, `:25116`) and update them where needed. |
+Check the existing review slices (for example `:5246`, `:25116`) and update them where needed. |
 | `test/remote-tracker.test.mjs` | Tests for `pr-acceptance-sources`: each source alone and combined; invalid marker or receipt → skip with reason; `externalTool` receipt → not supported; author without permission → no criteria or `unverifiable`; receipt, plan or appendix on a fork PR → `unverifiable`; no comment read; criteria extraction in both languages, the 20 limit and stable keys; the published plan version (first publication; republication; `A`→`P` rename; a merge of the base as neutral; a plan commit after the first implementation commit ignored; plan already moved to `A`; squashed history → `unverifiable`); local-plan autopilot PR with the plan at the merge base, without it, with an archive path (`P` derived), and with an invalid path; ADR candidates at the merge base; the status parser for all three formats and the exclusion of `effective-flow-project-setup.md`; `HEAD_MOVED`; bounds and truncation; fail closed on a forge error. |
 | `test/codex-native-profiles.test.mjs`, `test/compare-native-agent-baseline*.test.mjs`, `test/execution-profile-rendering.test.mjs`, `test/model-tiers-contract*.test.mjs` | Add the new agent to the hard-coded lists (for example `DEEP_ROLES`, `codex-native-profiles.test.mjs:34-45`). Add a contract assertion for read-only, no sub-agent, output fields, areas. |
 
@@ -215,15 +223,15 @@ Classification: Feature. It adds new review behaviour, a new reviewer leaf, and 
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 7 | 2 |
-| Security | 0 | 3 | 3 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 3 | 1 |
-| Testability | 0 | 2 | 1 |
-| Scope | 0 | 2 | 2 |
-| Maintainability | 0 | 1 | 8 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         7 |    2 |
+| Security        |        0 |         3 |    3 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         3 |    1 |
+| Testability     |        0 |         2 |    1 |
+| Scope           |        0 |         2 |    2 |
+| Maintainability |        0 |         1 |    8 |
 
 ### Findings
 
@@ -281,3 +289,60 @@ Deep interactive plan review on 2026-11-20. All findings are incorporated:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-20
+**Workflow:** `effective-flow build` (inline Quality route), continuing draft plan PR #702
+
+### Requirement
+
+Implemented as planned: an explicit `review <PR>` runs stream 2d automatically when the pull request carries a machine-verifiable source (lifecycle receipt, plan marker, autopilot appendix), checks it against the source's acceptance criteria and active ADRs at the merge base, shows recorded autopilot decisions without judging them, and reports gaps as ordinary findings plus a per-criterion acceptance summary. Without a source, review is unchanged apart from one "no acceptance source" line. The automatic review after delivery never runs the lens.
+
+### Architecture decisions
+
+All plan decisions are implemented. Deviations and refinements made during implementation and review:
+
+- **Helper-written snapshot.** The read-only leaf has no shell, so `pr-acceptance-sources` takes an optional `snapshotSessionId` and writes the leaf's two inputs itself: `.effective-flow/.acceptance-lens-<id>.diff` (merge-base diff, cut at 1 MiB, with an 8 MiB pre-read bound and a 256 KiB pathspec budget) and `.acceptance-lens-<id>.md` (quoted sources, display-only appendix decisions, ADR candidates at the merge base, documents cut at 64 KiB and omitted above 1 MiB). Writes go through the runtime-state guard, no-clobber. The forge stays read-only; the allowlist consent text discloses the write. The orchestrator deletes both files once 2d's result is recorded and on every run-level exit before that.
+- **Oversized plan.** A plan larger than 1 MiB is reported `unverifiable` (`plan-size-bound-exceeded`) instead of being read truncated: criteria near its end would otherwise be dropped while the plan still counted as trusted, and the size pre-check avoids buffering it. The edge case "Plan larger than 1 MiB … truncate deterministically" is superseded by this; every other bound still truncates deterministically and names the truncation.
+- **Fetch without `FETCH_HEAD`.** The head is ensured by its exact `headSha` (`cat-file -e`, fetch by SHA with `--no-write-fetch-head`, branch fallback); the base tip comes from `ls-remote` (exact ref, exactly one line), fetched by OID and verified; a moved base fails closed and retryable. Git calls run with the runtime-state guard's masked Git environment.
+- **ADR candidate order.** Candidates are bounded by kind (architecture guide, ADRs, concept documents), so a full ADR set never displaces `docs/developer-guide/architecture.md`.
+- **Lens Phase-3 rules.** Besides the step-5 exception, a 2d finding below confidence 80 is dropped without the step-2 stop and its criterion reads `undetermined`; only design decisions found at the merge base or in the published plan version may suppress a 2d finding (both areas); the public review body carries a fixed reason per verdict.
+- **Hidden mode.** `hiddenMode: true` makes receipt issues "source not supported" without an issue read.
+- **Spawn site.** The build requires a fragment-owned marker prefix, so the site is `review-acceptance-lens/acceptance-review`.
+- **Baseline proof.** `scripts/compare-native-agent-baseline.mjs` gains a frozen `EXPECTED_ADDED_WORKERS` allowlist (`effective-flow-acceptance-reviewer`); any other worker-membership change still fails.
+- **Shared functions for PR #701.** `pullRequestSourceTrust`, `isSourceTrustPermission` and `extractAutopilotAppendix` are exported from `src/scripts/remote-tracker-core.mjs` for reuse by `pr-draft-classify`. Next-steps row 250 is in its agreed final state (`review <PR>`, then `merge-gate <PR>`).
+
+### Affected files
+
+- New: `src/shared/review-acceptance-lens.md`, `src/agents/acceptance-reviewer.md`.
+- Runtime: `src/scripts/remote-tracker-core.mjs` (operation `pr-acceptance-sources`), `src/scripts/claude-settings-core.mjs` (allow rule; 74 rules, 45 remote-tracker read rules).
+- Prompt sources: `src/tools/review.md` (budget 899), `src/shared/pr-review-integration.md`, `src/shared/next-steps.md`, `src/shared/model-tiers.md`, `src/shared/setup-allowlist.md`.
+- Tooling: `scripts/compare-native-agent-baseline.mjs`.
+- Docs: `docs/user-guide/{tool-flow,tools-quality,tools-automation,tools-setup}.md`, `docs/developer-guide/{architecture,build-system,configuration,skill-ownership,subagent-progress-coverage}.md`, `docs/developer-guide/skill-ownership.json`.
+- Tests: `test/remote-tracker.test.mjs`, `test/workflow-contracts.test.mjs`, `test/setup-allowlist-contract.test.mjs`, `test/model-tiers-contract.test.mjs`, `test/compare-native-agent-baseline.test.mjs`, `test/execution-profile-rendering.test.mjs`, `test/execution-profile-contract.test.mjs`, `test/build-lib.test.mjs`, `test/codex-native-profiles.test.mjs`.
+
+### Implementation details
+
+Implemented in the planned order: helper and shared functions, leaf agent and spawn-site row, lens fragment and `review.md` integration, PR-integration hand-over, next-steps rows and docs, tests. One automatic review-incorporation pass followed by three bounded correction rounds, each re-checked; the review-depth floor applied to trust, Git-boundary, permission-consent and cross-module contract paths.
+
+### Test results
+
+- Phase 5 (full run, tree before review corrections): `pnpm test:preflight`, `pnpm agent:check`, `pnpm test` (6049 passed, 0 failed, 61 skipped), `node build.mjs`, `pnpm test:distribution` — all exit 0.
+- Later corrections were verified targeted: Phase 7 ran the 34 affected test files (2466 passed, 0 failed, 37 skipped) plus `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` at repository breadth — all exit 0.
+- All checks ran in the `effective-flow-node24` T3 runner environment. No failure needed attribution; no expected failure was used.
+- Not run: the manual post-release check from the validation plan (a real autopilot draft and a PR without a source).
+
+## Review findings
+
+**Date:** 2026-11-20
+**Reviewer:** `effective-flow-nodejs-reviewer`, `effective-flow-generic-product-reviewer` (reduced depth for Markdown prompt sources)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    44 |
+| Open / Not implemented |     0 |
+
+Three further Notes were closed below the follow-up threshold: duplicated Git-environment masking logic, the pathspec budget against the Windows command-line limit, and one output-cut test that checks for at least one rather than exactly one truncation entry.

@@ -1,5 +1,8 @@
 import { createHash } from 'node:crypto';
 import { statSync } from 'node:fs';
+import { lstat } from 'node:fs/promises';
+import { join as joinPath } from 'node:path';
+import process from 'node:process';
 import { performance } from 'node:perf_hooks';
 import {
   FORGEJO_PAGE_LIMIT,
@@ -69,6 +72,16 @@ import {
 import { buildForgejoCommandPlan } from './remote-tracker-forgejo-core.mjs';
 import { buildGithubCommandPlan, buildReviewPayload } from './remote-tracker-github-core.mjs';
 import { lookupThreadLedgerFile, recordThreadLedgerFile } from './remote-tracker-ledger-core.mjs';
+import { APPENDIX_BEGIN, APPENDIX_END, sanitizeField } from './autopilot-core.mjs';
+import {
+  createNoClobber,
+  ensureGuardedDirectory,
+  gitBaseEnv,
+  guardedUnlink,
+  resolveRuntimeRoot,
+  RUNTIME_STATE_DIR,
+  RuntimeStateError,
+} from './runtime-state-guard.mjs';
 
 // `remote-tracker-core.mjs` stays the single public entry point of the tracker helper: every
 // symbol it exported before the modules below were split out is still exported from here.
@@ -101,6 +114,8 @@ export const ERROR_CODES = Object.freeze([
   'WRITE_FAILED',
   'LEDGER_CORRUPT',
   'LEDGER_LOCKED',
+  'HEAD_MOVED',
+  'COLLISION',
 ]);
 
 const MUTATIONS = new Set([
@@ -149,6 +164,7 @@ const REMOTE_OPERATIONS = new Set([
   'issue-label-remove',
   'sf-label-migrate',
   'pr-read',
+  'pr-acceptance-sources',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',
@@ -233,6 +249,9 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'issue-label-remove': 'issueLabelRemove',
   'sf-label-migrate': 'labelMigration',
   'pr-read': 'pullRequestRead',
+  // The composite acceptance read starts with `pr-read`; its issue and permission reads check
+  // their own capabilities as they run.
+  'pr-acceptance-sources': 'pullRequestRead',
   'pr-comments-read': 'prCommentsRead',
   // A named entry, never an absent one. The operation gate tests `capabilities[key] === false`, so
   // an operation missing from this table is waved through unprobed on every provider — which for a
@@ -5072,6 +5091,1849 @@ async function executeLabelCreate(input, repository, runner, dryRun, probe) {
   });
 }
 
+// ---------------------------------------------------------------------------------------------
+// pr-acceptance-sources: the acceptance lens's read-only source collection
+//
+// One `pr-read` decides whether a pull request carries a machine-verifiable acceptance source — a
+// valid issue lifecycle receipt, a valid plan marker, or an autopilot appendix — and nothing else
+// is read when it carries none. Every source text is gated by the same trust rule before it leaves
+// this helper: receipt, plan and appendix only for a same-repository pull request whose author
+// holds write permission, an issue body only when its own author does. Criteria are extracted
+// mechanically from closed heading sets and never from prose. Every bound is named in `truncated`:
+// a list, body or snapshot bound truncates deterministically, while a plan blob over `planBytes` is
+// never read and its plan is reported `unverifiable` instead of being guessed from a prefix. Any
+// forge or Git failure outside the documented `unverifiable` cases fails the whole operation closed
+// rather than returning a partial guess. The forge is only read; with `snapshotSessionId` the
+// helper's only writes are the two private snapshot files below `<cwd>/.effective-flow/` (see
+// `writeAcceptanceSnapshot`).
+
+export const ACCEPTANCE_SOURCE_BOUNDS = Object.freeze({
+  issues: 3,
+  issueBodyBytes: 64 * 1024,
+  planBytes: 1024 * 1024,
+  appendixBytes: 64 * 1024,
+  // An ADR blob above this size is excluded by its `cat-file --batch-check` size and named in
+  // `truncated`, so no oversized candidate is ever buffered.
+  adrBytes: 64 * 1024,
+  criteriaPerSource: 20,
+  adrCandidates: 20,
+  // Bounds this helper adds to keep its own reads finite; neither is a review-visible limit.
+  firstParentCommits: 1000,
+  adrScan: 200,
+  closeDecisionLines: 100,
+  displayLineChars: 1000,
+});
+export const DEFAULT_ACCEPTANCE_PLAN_DIR = 'docs/plan';
+
+// The permission set a source author needs for their text to count as trusted input, following
+// `docs/adr/input-trust-boundary.md`. It is the one trust function the acceptance lens and the
+// merge gate's draft classification share; an unknown or unread permission never grants trust.
+export const SOURCE_TRUST_PERMISSIONS = Object.freeze(['write', 'admin', 'owner', 'maintain']);
+
+export function isSourceTrustPermission(permission) {
+  return (
+    typeof permission === 'string' && SOURCE_TRUST_PERMISSIONS.includes(permission.toLowerCase())
+  );
+}
+
+// Whether text a pull request carries (its receipt, plan marker or appendix) is trusted. Only a
+// stated `sameRepository: true` passes the repository half: an absent field is "the provider said
+// nothing" and is untrusted, exactly like a fork. `authorPermission` is the permission the forge
+// stated for the pull-request author, or `null` when that read failed or was unavailable.
+export function pullRequestSourceTrust({ sameRepository, authorPermission } = {}) {
+  if (sameRepository === false) return { trusted: false, reason: 'not-same-repository' };
+  if (sameRepository !== true) return { trusted: false, reason: 'same-repository-unstated' };
+  if (authorPermission === null || authorPermission === undefined) {
+    return { trusted: false, reason: 'author-permission-unavailable' };
+  }
+  if (!isSourceTrustPermission(authorPermission)) {
+    return { trusted: false, reason: 'author-without-write-permission' };
+  }
+  return { trusted: true, reason: 'trusted' };
+}
+
+function sha256Hex(text) {
+  return createHash('sha256').update(text, 'utf8').digest('hex');
+}
+
+// Trimmed, every whitespace run collapsed to one space: two spellings of one criterion that differ
+// only in wrapping or indentation get the same key.
+export function normalizeCriterionText(text) {
+  return String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+// The stable criterion key: the SHA-256 of the normalized text, plus its first eight characters,
+// which a location-less finding carries as `<source>#criterion-<key8>`.
+export function criterionKey(text) {
+  const key = sha256Hex(normalizeCriterionText(text));
+  return { key, key8: key.slice(0, 8) };
+}
+
+// The first eight characters of the SHA-256 of a candidate path, which a location-less
+// architecture finding carries as `adr#<key8>`.
+export function adrCandidateKey8(path) {
+  return sha256Hex(String(path)).slice(0, 8);
+}
+
+const ISSUE_CRITERIA_HEADINGS = Object.freeze([
+  'acceptance criteria',
+  'akzeptanzkriterien',
+  'done criteria',
+]);
+const PLAN_CRITERIA_HEADINGS = Object.freeze(['acceptance criteria', 'akzeptanzkriterien']);
+const MARKDOWN_HEADING = /^ {0,3}(#{1,6})(?:[ \t]+(.*?))?[ \t]*$/;
+const MARKDOWN_FENCE = /^ {0,3}(`{3,}|~{3,})/;
+const MARKDOWN_LIST_ITEM = /^([ \t]*)(?:[-*+]|\d{1,9}[.)])[ \t]+(.*)$/;
+const MARKDOWN_CHECKBOX = /^\[([ xX])\][ \t]+(.*)$/;
+
+function headingText(raw) {
+  return (raw ?? '').replace(/[ \t]+#+$/, '').trim();
+}
+
+// The one Markdown walk both extractors share: list items directly under a heading from a closed
+// set, skipping fenced code. A top-level item starts at column 0 or 1, so a nested list (indented
+// by two or more spaces, or by any tab) never contributes; indented non-list lines continue the
+// open item. A heading of the section's level or higher ends the section, a deeper one only ends
+// the open item. An unindented lazy continuation line (Markdown's paragraph continuation without
+// indentation) is not supported: it ends the open item instead of extending it.
+function sectionListItems(text, { headings, level }) {
+  const lines = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
+  const items = [];
+  let headingFound = false;
+  let sectionLevel = null;
+  let fence = null;
+  let open = null;
+  const close = () => {
+    if (open !== null) items.push(open);
+    open = null;
+  };
+  for (const line of lines) {
+    const fenceMatch = line.match(MARKDOWN_FENCE);
+    if (fence !== null) {
+      if (fenceMatch && fenceMatch[1][0] === fence[0] && fenceMatch[1].length >= fence.length) {
+        fence = null;
+      }
+      continue;
+    }
+    if (fenceMatch) {
+      close();
+      fence = fenceMatch[1];
+      continue;
+    }
+    const heading = line.match(MARKDOWN_HEADING);
+    if (heading) {
+      close();
+      const headingLevel = heading[1].length;
+      if (sectionLevel !== null && headingLevel <= sectionLevel) sectionLevel = null;
+      const name = headingText(heading[2]).toLowerCase();
+      if (
+        sectionLevel === null &&
+        (level === undefined || headingLevel === level) &&
+        headings.includes(name)
+      ) {
+        sectionLevel = headingLevel;
+        headingFound = true;
+      }
+      continue;
+    }
+    if (sectionLevel === null) continue;
+    const item = line.match(MARKDOWN_LIST_ITEM);
+    if (item && !item[1].includes('\t') && item[1].length < 2) {
+      close();
+      open = item[2];
+      continue;
+    }
+    if (line.trim() === '') continue;
+    if (open !== null && /^ {2,}|^\t/.test(line) && !item) {
+      open = `${open} ${line.trim()}`;
+      continue;
+    }
+    close();
+  }
+  close();
+  return { items, headingFound };
+}
+
+function boundedCriteria(texts, limit) {
+  const criteria = [];
+  const seen = new Set();
+  let truncated = false;
+  for (const raw of texts) {
+    const text = normalizeCriterionText(raw);
+    if (text === '') continue;
+    const { key, key8 } = criterionKey(text);
+    if (seen.has(key)) continue;
+    if (criteria.length >= limit) {
+      truncated = true;
+      break;
+    }
+    seen.add(key);
+    // `key`/`key8` stay over the raw normalized text, so neutralizing display text never moves a
+    // criterion's identity; `displayText` passes the appendix's shared `sanitizeField` rules.
+    const displayText = sanitizeField(text).text.slice(
+      0,
+      ACCEPTANCE_SOURCE_BOUNDS.displayLineChars,
+    );
+    criteria.push({ key, key8, text, displayText });
+  }
+  return { criteria, truncated };
+}
+
+// An issue's stated criteria (`merge-gate-issue-observation.md`): the top-level list items under a
+// heading `Acceptance criteria`, `Akzeptanzkriterien` or `Done criteria`, case-insensitive, at any
+// heading level. A checkbox prefix is dropped, so ticking a criterion keeps its key.
+export function extractIssueAcceptanceCriteria(
+  body,
+  limit = ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
+) {
+  const { items, headingFound } = sectionListItems(body, { headings: ISSUE_CRITERIA_HEADINGS });
+  const texts = items.map((item) => item.match(MARKDOWN_CHECKBOX)?.[2] ?? item);
+  return { headingFound, ...boundedCriteria(texts, limit) };
+}
+
+// A plan's criteria: the top-level checkbox items under `## Acceptance criteria` or
+// `## Akzeptanzkriterien` (level two exactly, case-insensitive). A plain list item is no criterion.
+export function extractPlanAcceptanceCriteria(
+  text,
+  limit = ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
+) {
+  const { items, headingFound } = sectionListItems(text, {
+    headings: PLAN_CRITERIA_HEADINGS,
+    level: 2,
+  });
+  const texts = items.map((item) => item.match(MARKDOWN_CHECKBOX)?.[2]).filter(Boolean);
+  return { headingFound, ...boundedCriteria(texts, limit) };
+}
+
+function cleanStatusValue(value) {
+  const text = value
+    .replace(/^[*_\s]+|[*_\s]+$/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return text === '' ? null : text.slice(0, 200);
+}
+
+// The first status line of an ADR, in any of the repository's three spellings: a `## Status`
+// heading followed by its first non-blank value line, `Status: <value>`, or `**Status:** <value>`.
+// Only the head of the file is searched, so a status mentioned in a later section never counts.
+export function parseAdrStatus(text) {
+  const lines = String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')
+    .slice(0, 80);
+  for (const [index, rawLine] of lines.entries()) {
+    const line = rawLine.trim();
+    if (/^#{1,6}[ \t]+status[ \t]*#*$/i.test(line)) {
+      for (const valueLine of lines.slice(index + 1)) {
+        const value = valueLine.trim();
+        if (value === '') continue;
+        return /^#{1,6}([ \t]|$)/.test(value) ? null : cleanStatusValue(value);
+      }
+      return null;
+    }
+    const bold = line.match(/^\*\*status:?\*\*:?[ \t]*(.+)$/i);
+    if (bold) return cleanStatusValue(bold[1]);
+    const plain = line.match(/^status:[ \t]*(.+)$/i);
+    if (plain) return cleanStatusValue(plain[1]);
+  }
+  return null;
+}
+
+const PROJECT_SETUP_ADR = 'docs/adr/effective-flow-project-setup.md';
+
+// Whether an ADR counts as an active architecture constraint: a status starting with `Accepted` or
+// `Active` (case-insensitive) is kept; every other status, and a missing one, is excluded with a
+// named reason. The project-setup ADR is configuration and always excluded.
+export function classifyAdrCandidate(path, status) {
+  if (path === PROJECT_SETUP_ADR) return { kept: false, reason: 'project-setup-configuration' };
+  if (status === null || status === undefined) return { kept: false, reason: 'status-missing' };
+  if (/^(?:accepted|active)\b/i.test(status)) return { kept: true, reason: 'active-status' };
+  for (const excluded of ['superseded', 'deprecated', 'proposed']) {
+    if (new RegExp(`^${excluded}\\b`, 'i').test(status)) return { kept: false, reason: excluded };
+  }
+  return { kept: false, reason: 'status-not-accepted' };
+}
+
+const ADR_CANDIDATE_PATHSPECS = Object.freeze([
+  ':(literal)docs/adr/',
+  ':(literal)docs/developer-guide/architecture.md',
+  ':(literal)docs/concept/',
+]);
+
+// Candidates are bounded in this kind order — the architecture guide, then ADRs, then concept
+// documents — and by path within a kind, so the guide is never the one a full ADR set displaces.
+const ADR_CANDIDATE_KIND_ORDER = Object.freeze({ architecture: 0, adr: 1, concept: 2 });
+
+function compareAdrCandidates(left, right) {
+  const kind =
+    ADR_CANDIDATE_KIND_ORDER[adrCandidateKind(left)] -
+    ADR_CANDIDATE_KIND_ORDER[adrCandidateKind(right)];
+  if (kind !== 0) return kind;
+  if (left < right) return -1;
+  return left > right ? 1 : 0;
+}
+
+function adrCandidateKind(path) {
+  if (!isSafePlanPath(path)) return undefined;
+  if (path.startsWith('docs/adr/')) return 'adr';
+  if (path === 'docs/developer-guide/architecture.md') return 'architecture';
+  if (path.startsWith('docs/concept/')) return 'concept';
+  return undefined;
+}
+
+const APPENDIX_SECTION_HEADINGS = Object.freeze({
+  close: Object.freeze(['### Close decisions', '### Knappe Entscheidungen']),
+  automatic: Object.freeze(['### Automatic decisions', '### Automatische Entscheidungen']),
+  fit: Object.freeze(['### Architecture fit', '### Architektur-Passung']),
+});
+const APPENDIX_SOURCE_PREFIXES = Object.freeze(['**Source:**', '**Quelle:**']);
+const APPENDIX_NONE_LINES = Object.freeze(['None.', 'Keine.']);
+
+function truncateUtf8(text, maxBytes) {
+  const bytes = Buffer.from(text, 'utf8');
+  if (bytes.length <= maxBytes) return { text, truncated: false };
+  let cut = bytes.subarray(0, maxBytes).toString('utf8');
+  // A cut through a multi-byte character decodes to a trailing replacement character.
+  if (cut.endsWith('�')) cut = cut.slice(0, -1);
+  const lastLine = cut.lastIndexOf('\n');
+  return { text: lastLine === -1 ? cut : cut.slice(0, lastLine + 1), truncated: true };
+}
+
+function neutralizedDisplayLine(line) {
+  const indent = Math.min(line.length - line.trimStart().length, 4);
+  const { text } = sanitizeField(line);
+  const bounded = text.slice(0, ACCEPTANCE_SOURCE_BOUNDS.displayLineChars);
+  return `${' '.repeat(indent)}${bounded}`;
+}
+
+// The autopilot appendix of a pull-request body, extracted, neutralized and digested — the one
+// extraction the acceptance lens and the merge gate's draft classification share. The marker rule
+// is `mergeAppendix`'s: exactly one begin line and one end line, begin first, and no other line
+// carrying the appendix marker key. The digest is the SHA-256 of the block as `pr-appendix`
+// renders it (its lines joined by `\n` plus a final `\n`), so an unchanged block reproduces the
+// digest the run ledger recorded. Display text passes `sanitizeField` line by line; the block is
+// bounded to 64 KiB before its sections are read, and the bound is reported, never silent.
+export function extractAutopilotAppendix(body, maxBytes = ACCEPTANCE_SOURCE_BOUNDS.appendixBytes) {
+  const lines = (typeof body === 'string' ? body : '').replace(/\r\n/g, '\n').split('\n');
+  const begins = [];
+  const ends = [];
+  for (const [index, line] of lines.entries()) {
+    const trimmed = line.trim();
+    if (trimmed === APPENDIX_BEGIN) begins.push(index);
+    else if (trimmed === APPENDIX_END) ends.push(index);
+    else if (line.includes('effective-flow-autopilot-appendix:')) {
+      return { status: 'invalid', error: 'malformed-marker' };
+    }
+  }
+  if (begins.length === 0 && ends.length === 0) return { status: 'absent' };
+  if (begins.length > 1 || ends.length > 1) return { status: 'invalid', error: 'duplicate' };
+  if (begins.length !== 1 || ends.length !== 1) return { status: 'invalid', error: 'unpaired' };
+  if (ends[0] < begins[0]) return { status: 'invalid', error: 'order' };
+  const block = lines.slice(begins[0], ends[0] + 1);
+  const raw = `${block.join('\n')}\n`;
+  const byteLength = Buffer.byteLength(raw, 'utf8');
+  const bounded = truncateUtf8(block.slice(1, -1).join('\n'), maxBytes);
+  const inner = bounded.text.split('\n');
+
+  const sections = { close: [], automatic: [], fit: [] };
+  let section = null;
+  let sourceLine = null;
+  for (const line of inner) {
+    const trimmed = line.trim();
+    if (/^#{1,6}[ \t]/.test(trimmed)) {
+      section =
+        Object.keys(APPENDIX_SECTION_HEADINGS).find((name) =>
+          APPENDIX_SECTION_HEADINGS[name].includes(trimmed),
+        ) ?? null;
+      continue;
+    }
+    if (sourceLine === null) {
+      const prefix = APPENDIX_SOURCE_PREFIXES.find((candidate) => trimmed.startsWith(candidate));
+      if (prefix !== undefined) {
+        sourceLine = trimmed.slice(prefix.length).trim();
+        continue;
+      }
+    }
+    if (section !== null && trimmed !== '') sections[section].push(line);
+  }
+
+  const closeLines = sections.close.filter((line) => !APPENDIX_NONE_LINES.includes(line.trim()));
+  const closeDecisionsTruncated = closeLines.length > ACCEPTANCE_SOURCE_BOUNDS.closeDecisionLines;
+  const closeDecisions = closeLines
+    .slice(0, ACCEPTANCE_SOURCE_BOUNDS.closeDecisionLines)
+    .map(neutralizedDisplayLine);
+
+  const countMatch = sections.automatic[0]?.trim().match(/^(\d{1,6})(?!\d)/);
+  const automaticDecisionCount = countMatch ? Number(countMatch[1]) : null;
+
+  let architectureFit = { status: 'absent', score: null };
+  const fitLine = sections.fit[0]?.trim();
+  if (fitLine !== undefined) {
+    const score = fitLine.match(/^(\d{1,2})\/10(?!\d)/);
+    const value = score ? Number(score[1]) : NaN;
+    if (Number.isInteger(value) && value >= 1 && value <= 10) {
+      architectureFit = { status: 'assessed', score: value };
+    } else if (/not assessed|nicht bewertet/i.test(fitLine)) {
+      architectureFit = { status: 'not-assessed', score: null };
+    } else {
+      architectureFit = { status: 'unreadable', score: null };
+    }
+  }
+
+  const planMatch = sourceLine?.match(/(?:^|;\s*)[Pp]lan `([^`]+)`/);
+  const issueMatch = sourceLine?.match(/(?:^|;\s*)Refs #([1-9]\d{0,9})(?!\d)/);
+  return {
+    status: 'valid',
+    digest: sha256Hex(raw),
+    byteLength,
+    truncated: bounded.truncated,
+    closeDecisions,
+    closeDecisionsTruncated,
+    automaticDecisionCount,
+    architectureFit,
+    planPath: planMatch ? planMatch[1] : null,
+    sourceIssue: issueMatch ? Number(issueMatch[1]) : null,
+  };
+}
+
+const PATH_UNSAFE_CHARACTERS = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\\]/u;
+
+function safeRelativeDirectory(value) {
+  return (
+    typeof value === 'string' &&
+    value !== '' &&
+    value.isWellFormed() &&
+    !PATH_UNSAFE_CHARACTERS.test(value) &&
+    !value.startsWith('-') &&
+    !value.startsWith('/') &&
+    !PLAN_PATH_DRIVE_OR_MAGIC.test(value) &&
+    value.split('/').every((segment) => segment !== '' && segment !== '.' && segment !== '..')
+  );
+}
+
+// The configured `plan.dir` as a canonical repository-relative directory without a trailing slash.
+export function normalizeAcceptancePlanDir(value = DEFAULT_ACCEPTANCE_PLAN_DIR) {
+  const directory = typeof value === 'string' ? value.replace(/\/+$/, '') : value;
+  if (!safeRelativeDirectory(directory)) {
+    fail('INVALID_PAYLOAD', 'planDir must be a safe repository-relative directory', {
+      field: 'planDir',
+    });
+  }
+  return directory;
+}
+
+// The archive path `A` of a plan path `P` under `<plan.dir>/`, or `null` when `P` lies elsewhere or
+// already is an archive path.
+export function planArchivePath(planPath, planDir) {
+  const prefix = `${planDir}/`;
+  if (typeof planPath !== 'string' || !planPath.startsWith(prefix)) return null;
+  const rest = planPath.slice(prefix.length);
+  if (rest === '' || rest.startsWith('archive/')) return null;
+  return `${prefix}archive/${rest}`;
+}
+
+// The plan path an autopilot appendix names, validated before any Git command can receive it: under
+// `<plan.dir>/`, no `.`/`..`/empty segment, no leading `-` or `/`, no control, format or separator
+// character, and the plan-path rule of `isSafePlanPath`. An archive path under
+// `<plan.dir>/archive/` is mapped back to its plan path `P`, which is what the merge base tracks.
+export function validateAppendixPlanPath(path, planDir) {
+  if (typeof path !== 'string' || path === '') return { valid: false, reason: 'missing-path' };
+  if (!path.isWellFormed() || PATH_UNSAFE_CHARACTERS.test(path)) {
+    return { valid: false, reason: 'control-character' };
+  }
+  if (path.startsWith('-') || path.startsWith('/'))
+    return { valid: false, reason: 'leading-character' };
+  if (path.split('/').some((segment) => segment === '..' || segment === '.' || segment === '')) {
+    return { valid: false, reason: 'unsafe-segment' };
+  }
+  if (!path.startsWith(`${planDir}/`)) return { valid: false, reason: 'outside-plan-dir' };
+  if (!isSafePlanPath(path)) return { valid: false, reason: 'unsafe-path' };
+  const archivePrefix = `${planDir}/archive/`;
+  if (path.startsWith(archivePrefix)) {
+    const rest = path.slice(archivePrefix.length);
+    if (rest === '') return { valid: false, reason: 'unsafe-path' };
+    return { valid: true, path, probePath: `${planDir}/${rest}`, archived: true };
+  }
+  return { valid: true, path, probePath: path, archived: false };
+}
+
+// One first-parent commit of `<merge-base>..<head>`, judged by its own first-parent diff
+// (`--no-renames`):
+// - `plan`: a single-parent commit changing exactly `{P}` (added or modified), or `{P, deletion of
+//   A}` — the `A` → `P` rename of a publication after a revision from the archive;
+// - `neutral`: a merge whose every further parent is reachable from the base ref, which is a merge
+//   of the base into the head; a stale base ref makes that check fail, so the merge fails safe;
+// - `implementation`: everything else, a root commit and an empty commit included.
+export function classifyFirstParentCommit({
+  parents,
+  changes = [],
+  planPath,
+  archivePath = null,
+  mergeParentsReachable = false,
+}) {
+  if (!Array.isArray(parents) || parents.length === 0) return 'implementation';
+  if (parents.length > 1) return mergeParentsReachable === true ? 'neutral' : 'implementation';
+  const planChanges = changes.filter((change) => change.path === planPath);
+  if (planChanges.length !== 1 || !['A', 'M'].includes(planChanges[0].status)) {
+    return 'implementation';
+  }
+  const rest = changes.filter((change) => change.path !== planPath);
+  if (rest.length === 0) return 'plan';
+  if (
+    rest.length === 1 &&
+    archivePath !== null &&
+    rest[0].path === archivePath &&
+    rest[0].status === 'D'
+  ) {
+    return 'plan';
+  }
+  return 'implementation';
+}
+
+// The published plan version: the newest `plan` commit before the first `implementation` commit,
+// with `neutral` commits passed over. A plan commit after the first implementation commit never
+// lowers the bar. `null` means there is no published version to read.
+export function selectPublishedPlanCommit(commits) {
+  let published = null;
+  for (const commit of commits) {
+    if (commit.kind === 'implementation') break;
+    if (commit.kind === 'plan') published = commit.sha;
+  }
+  return published;
+}
+
+const GIT_OBJECT_NAME = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+
+function gitStdoutText(result) {
+  const stdout = result?.stdout;
+  if (Buffer.isBuffer(stdout)) return stdout.toString('utf8');
+  return typeof stdout === 'string' ? stdout : '';
+}
+
+function gitStdoutBuffer(result) {
+  const stdout = result?.stdout;
+  if (Buffer.isBuffer(stdout)) return stdout;
+  return Buffer.from(typeof stdout === 'string' ? stdout : '', 'utf8');
+}
+
+function parseNameStatusZ(text) {
+  const fields = text.split('\0');
+  const changes = [];
+  for (let index = 0; index + 1 < fields.length; index += 2) {
+    if (fields[index] === '') break;
+    changes.push({ status: fields[index].charAt(0), path: fields[index + 1] });
+  }
+  return changes;
+}
+
+function parseCatFileBatch(buffer, count) {
+  const contents = [];
+  let offset = 0;
+  for (let index = 0; index < count; index += 1) {
+    const newline = buffer.indexOf(0x0a, offset);
+    if (newline === -1) fail('INVALID_PAYLOAD', 'git cat-file returned a truncated batch');
+    const header = buffer.subarray(offset, newline).toString('utf8');
+    offset = newline + 1;
+    if (/ missing$/.test(header)) {
+      contents.push(null);
+      continue;
+    }
+    const match = header.match(/^[0-9a-f]{40,64} ([a-z]+) (\d+)$/);
+    if (!match) fail('INVALID_PAYLOAD', 'git cat-file returned a malformed batch header');
+    const size = Number(match[2]);
+    if (offset + size > buffer.length)
+      fail('INVALID_PAYLOAD', 'git cat-file returned a truncated batch');
+    contents.push(
+      match[1] === 'blob' ? buffer.subarray(offset, offset + size).toString('utf8') : null,
+    );
+    offset += size + 1;
+  }
+  return contents;
+}
+
+// `git cat-file --batch-check` output: one `<oid> <type> <size>` or `<name> missing` line per
+// requested object, in request order; a missing object is `null`.
+function parseCatFileBatchCheck(text, count) {
+  const lines = text.split('\n');
+  const entries = [];
+  for (let index = 0; index < count; index += 1) {
+    const line = lines[index];
+    if (line === undefined) fail('INVALID_PAYLOAD', 'git cat-file returned a truncated batch');
+    if (/ missing$/.test(line)) {
+      entries.push(null);
+      continue;
+    }
+    const match = line.match(/^[0-9a-f]{40,64} ([a-z]+) (\d+)$/);
+    if (!match) fail('INVALID_PAYLOAD', 'git cat-file returned a malformed batch header');
+    entries.push({ type: match[1], size: Number(match[2]) });
+  }
+  return entries;
+}
+
+function requireAcceptanceHeadSha(value) {
+  const text = typeof value === 'string' ? value.trim() : '';
+  if (!/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/i.test(text)) {
+    fail('INVALID_PAYLOAD', 'headSha must be a full commit SHA', { field: 'headSha' });
+  }
+  return text.toLowerCase();
+}
+
+// Validated before the first provider call, so a malformed request never costs a probe or a read.
+function validatePrAcceptanceInput(input) {
+  requireString(input.cwd, 'cwd');
+  prNumber(input);
+  requireAcceptanceHeadSha(input.headSha);
+  if (input.planDir !== undefined) normalizeAcceptancePlanDir(input.planDir);
+  if (input.hiddenMode !== undefined && typeof input.hiddenMode !== 'boolean') {
+    fail('INVALID_PAYLOAD', 'hiddenMode must be a boolean', { field: 'hiddenMode' });
+  }
+  validateSnapshotSessionId(input.snapshotSessionId);
+}
+
+// One capability-gated forge read through the normal command plan, so the composite operation
+// honours the same probe, redaction and error mapping as a standalone read. Returns the raw payload
+// and its normalized record.
+async function acceptanceForgeRead(context, operation, readInput) {
+  const capability = CAPABILITY_BY_OPERATION[operation];
+  if (context.probe.capabilities?.[capability] === false) {
+    fail('UNSUPPORTED_CAPABILITY', `${context.repository.provider} does not support ${operation}`, {
+      operation,
+      capability,
+    });
+  }
+  const plan = buildCommandPlan(operation, readInput, context.repository);
+  context.commands.push(redact(plan));
+  const result = await runChecked(context.runner, plan, operation);
+  const parsed = isTeaApiIncludePlan(plan)
+    ? { raw: teaApiSuccess(result, operation).body }
+    : parseCommandOutput(result, plan, operation);
+  return {
+    raw: parsed.raw,
+    record: normalizeRemoteData(operation, parsed.raw, context.repository, readInput, parsed),
+  };
+}
+
+// A failed, refused or unavailable permission read is `null`, which never grants trust. Each login
+// is read at most once per run.
+async function acceptanceAuthorPermission(context, login) {
+  if (typeof login !== 'string' || login.trim() === '') return null;
+  const key = login.toLowerCase();
+  if (context.permissions.has(key)) return context.permissions.get(key);
+  let permission = null;
+  if (context.probe.capabilities?.collaboratorPermissionRead !== false) {
+    try {
+      const { record } = await acceptanceForgeRead(context, 'collaborator-permission-read', {
+        login,
+      });
+      permission = typeof record.permission === 'string' ? record.permission : null;
+    } catch {
+      permission = null;
+    }
+  }
+  context.permissions.set(key, permission);
+  return permission;
+}
+
+// The environment of every acceptance and snapshot Git call: the runtime-state guard's
+// `gitBaseEnv`, so no inherited `GIT_DIR`, `GIT_CONFIG_PARAMETERS` or similar variable redirects or
+// reconfigures a read. The shared runner merges a call's `env` over `process.env`, so each key
+// `gitBaseEnv` strips is masked with `undefined`, which `spawn` skips, exactly as the guard does.
+function acceptanceGitEnv(source = process.env) {
+  const env = gitBaseEnv(source);
+  for (const key of Object.keys(process.env)) {
+    if (!Object.hasOwn(env, key)) env[key] = undefined;
+  }
+  return env;
+}
+
+// Runs one Git command through the injected runner and records it. Any status outside
+// `allowStatuses` (default `[0]`) fails closed with `COMMAND_FAILED`; `anyStatus` hands the result
+// back for callers that judge it themselves.
+async function acceptanceGit(context, step, args, options = {}) {
+  const call = {
+    executable: 'git',
+    args,
+    ...(options.stdin === undefined ? {} : { stdin: options.stdin }),
+    ...(options.buffer === true ? { stdoutBuffer: true } : {}),
+    env: { ...context.gitEnv, ...options.env },
+    ...(options.timeoutMs === undefined ? {} : { timeoutMs: options.timeoutMs }),
+  };
+  context.commands.push(redact({ executable: call.executable, args: call.args }));
+  const result = await context.runner(call);
+  if (result?.error?.code === 'ENOENT') {
+    fail('CLI_MISSING', 'git is not installed', { executable: 'git' });
+  }
+  if (options.anyStatus === true) return result;
+  const allowed = options.allowStatuses ?? [0];
+  if (!result || !allowed.includes(result.status)) {
+    fail('COMMAND_FAILED', `git ${step} failed`, {
+      step,
+      status: result?.status ?? null,
+      stderr: redact(String(result?.stderr ?? '').slice(0, 500)),
+    });
+  }
+  return result;
+}
+
+const ACCEPTANCE_FETCH_OPTIONS = Object.freeze({
+  env: Object.freeze({ GIT_TERMINAL_PROMPT: '0' }),
+  timeoutMs: 120_000,
+});
+
+// The branch is validated as a branch name before any further command sees it.
+async function requireAcceptanceBranch(context, branch, role) {
+  if (typeof branch !== 'string' || branch === '' || branch.startsWith('-')) {
+    fail('UNSAFE_TARGET', `unsafe ${role} branch name`, { role });
+  }
+  const checked = await acceptanceGit(
+    context,
+    `check-ref-format ${role}`,
+    ['check-ref-format', '--branch', branch],
+    { anyStatus: true },
+  );
+  if (checked?.status !== 0 || gitStdoutText(checked).trim() !== branch) {
+    fail('UNSAFE_TARGET', `unsafe ${role} branch name`, { role });
+  }
+}
+
+async function acceptanceHasCommit(context, role, oid) {
+  const result = await acceptanceGit(
+    context,
+    `cat-file ${role}`,
+    ['cat-file', '-e', `${oid}^{commit}`],
+    { anyStatus: true },
+  );
+  return result?.status === 0;
+}
+
+// Makes the commit `oid` present in the local object store and never reads an object name back
+// from `FETCH_HEAD`: that file is shared by every fetch in the repository, can be stale
+// (`fetch.writeFetchHead=false`) or replaced by a concurrent fetch, so no step here trusts it, and
+// neither fetch writes it (`--no-write-fetch-head`). An object already present is not fetched. A
+// server that refuses a fetch by object name (an older Forgejo, for example) gets the branch
+// instead, fetched without a destination (`--refmap=`, as `plan-publication-core.mjs` fetches a
+// plan head): no remote-tracking ref is written, so a force-pushed branch can never fail a
+// non-fast-forward update. Either way the commit must be present afterwards; returns whether it is.
+async function acceptanceEnsureCommit(context, oid, branch, role) {
+  if (await acceptanceHasCommit(context, role, oid)) return true;
+  const byName = await acceptanceGit(
+    context,
+    `fetch ${role} by object name`,
+    ['fetch', '--no-tags', '--no-write-fetch-head', 'origin', oid],
+    { ...ACCEPTANCE_FETCH_OPTIONS, anyStatus: true },
+  );
+  if (byName?.status !== 0) {
+    await acceptanceGit(
+      context,
+      `fetch ${role}`,
+      [
+        'fetch',
+        '--no-tags',
+        '--no-write-fetch-head',
+        '--refmap=',
+        'origin',
+        `refs/heads/${branch}`,
+      ],
+      ACCEPTANCE_FETCH_OPTIONS,
+    );
+  }
+  return acceptanceHasCommit(context, role, oid);
+}
+
+// The head is the reviewed `headSha`, which `pr-read` already confirmed; it is only made present.
+// When it cannot be (the branch no longer contains it), the head moved: `HEAD_MOVED`.
+async function acceptanceFetchHead(context, branch, headSha) {
+  await requireAcceptanceBranch(context, branch, 'head');
+  if (!(await acceptanceEnsureCommit(context, headSha, branch, 'head'))) {
+    headMoved(headSha, null, 'fetch head');
+  }
+  return { oid: headSha };
+}
+
+// The base tip is read from the remote itself (`ls-remote`), never from `pr-read`'s base SHA and
+// never from `FETCH_HEAD`: exactly one `<oid>\trefs/heads/<base>` line, anything else fails closed.
+// `ls-remote` matches its pattern against the ref's tail, so a branch such as `x/refs/heads/<base>`
+// is listed too; only lines whose ref is exactly `refs/heads/<base>` count.
+// That object is then made present; a base force-pushed between the listing and the fetch leaves it
+// missing and fails closed as well, so a merge base is never computed from a guessed base.
+async function acceptanceFetchBase(context, branch) {
+  await requireAcceptanceBranch(context, branch, 'base');
+  const ref = `refs/heads/${branch}`;
+  const listed = await acceptanceGit(
+    context,
+    'ls-remote base',
+    ['ls-remote', '--exit-code', 'origin', ref],
+    ACCEPTANCE_FETCH_OPTIONS,
+  );
+  const lines = gitStdoutText(listed)
+    .split('\n')
+    .filter((line) => line.indexOf('\t') !== -1 && line.slice(line.indexOf('\t') + 1) === ref);
+  if (lines.length !== 1) {
+    fail('INVALID_PAYLOAD', 'git ls-remote must state exactly one base branch tip', {
+      role: 'base',
+      lines: lines.length,
+    });
+  }
+  const tab = lines[0].indexOf('\t');
+  const oid = tab === -1 ? '' : lines[0].slice(0, tab);
+  if (!GIT_OBJECT_NAME.test(oid) || lines[0].slice(tab + 1) !== ref) {
+    fail('INVALID_PAYLOAD', 'git ls-remote returned a malformed base branch tip', { role: 'base' });
+  }
+  if (!(await acceptanceEnsureCommit(context, oid, branch, 'base'))) {
+    fail(
+      'COMMAND_FAILED',
+      'the base branch moved between ls-remote and fetch',
+      { step: 'fetch base', reason: 'base-moved', listedBaseSha: oid },
+      true,
+    );
+  }
+  return { oid };
+}
+
+// A file at a commit, read as UTF-8 only when `git cat-file -s` states it within `maxBytes`, so an
+// oversized blob is never buffered. An oversized blob returns `{ text: null, size }`; a missing
+// object fails closed like any other Git failure.
+async function acceptanceReadBlob(context, step, commit, path, maxBytes) {
+  const sized = await acceptanceGit(context, `${step} size`, [
+    'cat-file',
+    '-s',
+    `${commit}:${path}`,
+  ]);
+  const sizeText = gitStdoutText(sized).trim();
+  if (!/^\d{1,15}$/.test(sizeText)) {
+    fail('INVALID_PAYLOAD', 'git cat-file returned no blob size', { step });
+  }
+  const size = Number(sizeText);
+  if (size > maxBytes) return { text: null, size };
+  const result = await acceptanceGit(context, step, ['show', `${commit}:${path}`], {
+    buffer: true,
+  });
+  // The size check already bounds the read, so the text is never cut afterwards: a decoded
+  // replacement character may lengthen it, but never drops a line.
+  return { text: gitStdoutBuffer(result).toString('utf8'), size };
+}
+
+// The source a plan becomes when its blob exceeds `planBytes`: unverifiable, never guessed from a
+// prefix, and the bound named in `truncated`.
+function oversizedPlanSource(context, origin, path, size) {
+  context.truncated.push({
+    source: 'plan',
+    bound: 'planBytes',
+    limit: ACCEPTANCE_SOURCE_BOUNDS.planBytes,
+    path,
+    size,
+  });
+  return {
+    origin,
+    path,
+    trust: 'unverifiable',
+    reason: 'plan-size-bound-exceeded',
+    publishedCommit: null,
+    criteria: [],
+    headingFound: false,
+  };
+}
+
+// The published version of a plan on the first-parent history of `<merge-base>..<head>`:
+// classifies each commit, stops at the first implementation commit and selects the newest plan
+// commit before it (`selectPublishedPlanCommit`). Returns `{ commit, reason }`; a `null` commit
+// carries the reason the plan is unverifiable.
+async function acceptancePublishedPlan(context, git, planPath, planDir) {
+  const archivePath = planArchivePath(planPath, planDir);
+  const log = await acceptanceGit(context, 'first-parent history', [
+    '-c',
+    'log.showSignature=false',
+    'log',
+    '--first-parent',
+    '--reverse',
+    '--no-color',
+    '--no-decorate',
+    '--format=%H %P',
+    `${git.mergeBase}..${git.head.oid}`,
+  ]);
+  const commits = gitStdoutText(log)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .map((line) => {
+      const [sha, ...parents] = line.split(' ').map((value) => value.toLowerCase());
+      if (!GIT_OBJECT_NAME.test(sha) || parents.some((parent) => !GIT_OBJECT_NAME.test(parent))) {
+        fail('INVALID_PAYLOAD', 'git log returned a malformed first-parent history');
+      }
+      return { sha, parents };
+    });
+  if (commits.length > ACCEPTANCE_SOURCE_BOUNDS.firstParentCommits) {
+    context.truncated.push({
+      source: 'plan',
+      bound: 'firstParentCommits',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.firstParentCommits,
+    });
+    return { commit: null, reason: 'history-bound-exceeded' };
+  }
+  const judged = [];
+  for (const commit of commits) {
+    let kind;
+    if (commit.parents.length === 1) {
+      const diff = await acceptanceGit(context, 'first-parent diff', [
+        'diff-tree',
+        '-r',
+        '-z',
+        '--no-renames',
+        '--name-status',
+        '--no-commit-id',
+        commit.parents[0],
+        commit.sha,
+      ]);
+      kind = classifyFirstParentCommit({
+        parents: commit.parents,
+        changes: parseNameStatusZ(gitStdoutText(diff)),
+        planPath,
+        archivePath,
+      });
+    } else if (commit.parents.length > 1) {
+      let reachable = true;
+      for (const parent of commit.parents.slice(1)) {
+        const ancestor = await acceptanceGit(
+          context,
+          'merge-base --is-ancestor',
+          ['merge-base', '--is-ancestor', parent, git.base.oid],
+          { anyStatus: true },
+        );
+        if (ancestor?.status !== 0) {
+          reachable = false;
+          break;
+        }
+      }
+      kind = classifyFirstParentCommit({
+        parents: commit.parents,
+        mergeParentsReachable: reachable,
+      });
+    } else {
+      kind = 'implementation';
+    }
+    judged.push({ sha: commit.sha, kind });
+    if (kind === 'implementation') break;
+  }
+  const published = selectPublishedPlanCommit(judged);
+  return published === null
+    ? { commit: null, reason: 'no-plan-commit-before-implementation' }
+    : { commit: published, reason: null };
+}
+
+// Extracts plan criteria and records each applied bound in `context.truncated`.
+// A plan blob reaches this point only within `planBytes` (`acceptanceReadBlob` sizes it first and
+// `oversizedPlanSource` handles a larger one), so no content bound applies here.
+function planSourceCriteria(context, text) {
+  const extracted = extractPlanAcceptanceCriteria(text);
+  if (extracted.truncated) {
+    context.truncated.push({
+      source: 'plan',
+      bound: 'criteriaPerSource',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
+    });
+  }
+  return extracted;
+}
+
+// The plan a plan-PR marker names, read at its published version. A plan without a published
+// version is reported `unverifiable`, not guessed.
+async function acceptanceMarkerPlan(context, git, planPath, planDir) {
+  const published = await acceptancePublishedPlan(context, git, planPath, planDir);
+  if (published.commit === null) {
+    return {
+      origin: 'plan-marker',
+      path: planPath,
+      trust: 'unverifiable',
+      reason: published.reason,
+      publishedCommit: null,
+      criteria: [],
+      headingFound: false,
+    };
+  }
+  const blob = await acceptanceReadBlob(
+    context,
+    'show published plan',
+    published.commit,
+    planPath,
+    ACCEPTANCE_SOURCE_BOUNDS.planBytes,
+  );
+  if (blob.text === null) return oversizedPlanSource(context, 'plan-marker', planPath, blob.size);
+  const extracted = planSourceCriteria(context, blob.text);
+  return {
+    origin: 'plan-marker',
+    path: planPath,
+    trust: 'trusted',
+    reason: null,
+    publishedCommit: published.commit,
+    criteria: extracted.criteria,
+    headingFound: extracted.headingFound,
+  };
+}
+
+// The plan an autopilot appendix names. The path is validated before any Git command receives it;
+// an invalid one yields an `unverifiable` source instead of a read.
+async function acceptanceAppendixPlan(context, git, appendixPath, planDir) {
+  const validated = validateAppendixPlanPath(appendixPath, planDir);
+  if (!validated.valid) {
+    return {
+      origin: 'appendix',
+      path: null,
+      trust: 'unverifiable',
+      reason: `invalid-plan-path:${validated.reason}`,
+      publishedCommit: null,
+      criteria: [],
+      headingFound: false,
+    };
+  }
+  const probe = await acceptanceGit(context, 'ls-tree plan', [
+    'ls-tree',
+    '-z',
+    git.mergeBase,
+    '--',
+    `:(literal)${validated.probePath}`,
+  ]);
+  const tracked = gitStdoutText(probe)
+    .split('\0')
+    .some((entry) => {
+      const tab = entry.indexOf('\t');
+      return (
+        tab !== -1 &&
+        entry.slice(tab + 1) === validated.probePath &&
+        entry.slice(0, tab).split(' ')[1] === 'blob'
+      );
+    });
+  if (!tracked) {
+    return {
+      origin: 'appendix',
+      path: validated.probePath,
+      trust: 'unverifiable',
+      reason: 'plan-not-tracked-at-merge-base',
+      publishedCommit: null,
+      criteria: [],
+      headingFound: false,
+    };
+  }
+  const blob = await acceptanceReadBlob(
+    context,
+    'show merge-base plan',
+    git.mergeBase,
+    validated.probePath,
+    ACCEPTANCE_SOURCE_BOUNDS.planBytes,
+  );
+  if (blob.text === null) {
+    return oversizedPlanSource(context, 'appendix', validated.probePath, blob.size);
+  }
+  const extracted = planSourceCriteria(context, blob.text);
+  return {
+    origin: 'appendix',
+    path: validated.probePath,
+    trust: 'trusted',
+    reason: null,
+    publishedCommit: git.mergeBase,
+    criteria: extracted.criteria,
+    headingFound: extracted.headingFound,
+  };
+}
+
+// Architecture candidates (ADRs, the architecture guide, concept documents) at the merge base,
+// bounded by `adrScan` and `adrCandidates`, with ADR status classified by `classifyAdrCandidate`.
+async function acceptanceAdrCandidates(context, git) {
+  const listing = await acceptanceGit(context, 'ls-tree candidates', [
+    'ls-tree',
+    '-r',
+    '-z',
+    '--name-only',
+    git.mergeBase,
+    '--',
+    ...ADR_CANDIDATE_PATHSPECS,
+  ]);
+  const paths = [
+    ...new Set(
+      gitStdoutText(listing)
+        .split('\0')
+        .filter((path) => path !== '' && adrCandidateKind(path) !== undefined),
+    ),
+  ].sort(compareAdrCandidates);
+  if (paths.length > ACCEPTANCE_SOURCE_BOUNDS.adrScan) {
+    context.truncated.push({
+      source: 'adr',
+      bound: 'adrScan',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.adrScan,
+    });
+  }
+  const scanned = paths.slice(0, ACCEPTANCE_SOURCE_BOUNDS.adrScan);
+  const adrPaths = scanned.filter(
+    (path) => adrCandidateKind(path) === 'adr' && path !== PROJECT_SETUP_ADR,
+  );
+  const statuses = new Map();
+  const oversized = new Set();
+  if (adrPaths.length > 0) {
+    const objectNames = (paths) =>
+      `${paths.map((path) => `${git.mergeBase}:${path}`).join('\n')}\n`;
+    const checked = await acceptanceGit(
+      context,
+      'cat-file candidate sizes',
+      ['cat-file', '--batch-check'],
+      { stdin: objectNames(adrPaths) },
+    );
+    const sizes = parseCatFileBatchCheck(gitStdoutText(checked), adrPaths.length);
+    const readable = [];
+    for (const [index, path] of adrPaths.entries()) {
+      const entry = sizes[index];
+      if (entry === null || entry.type !== 'blob') {
+        statuses.set(path, null);
+      } else if (entry.size > ACCEPTANCE_SOURCE_BOUNDS.adrBytes) {
+        oversized.add(path);
+        context.truncated.push({
+          source: 'adr',
+          bound: 'adrBytes',
+          limit: ACCEPTANCE_SOURCE_BOUNDS.adrBytes,
+          path,
+        });
+      } else {
+        readable.push(path);
+      }
+    }
+    if (readable.length > 0) {
+      const batch = await acceptanceGit(context, 'cat-file candidates', ['cat-file', '--batch'], {
+        stdin: objectNames(readable),
+        buffer: true,
+      });
+      const contents = parseCatFileBatch(gitStdoutBuffer(batch), readable.length);
+      for (const [index, path] of readable.entries()) {
+        statuses.set(path, contents[index] === null ? null : parseAdrStatus(contents[index]));
+      }
+    }
+  }
+  const candidates = [];
+  let kept = 0;
+  for (const path of scanned) {
+    const kind = adrCandidateKind(path);
+    const status = kind === 'adr' ? (statuses.get(path) ?? null) : null;
+    let decision;
+    if (oversized.has(path)) decision = { kept: false, reason: 'size-bound-exceeded' };
+    else if (kind === 'adr') decision = classifyAdrCandidate(path, status);
+    else decision = { kept: true, reason: 'no-status-document' };
+    if (decision.kept && kept >= ACCEPTANCE_SOURCE_BOUNDS.adrCandidates) {
+      context.truncated.push({
+        source: 'adr',
+        bound: 'adrCandidates',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.adrCandidates,
+      });
+      break;
+    }
+    if (decision.kept) kept += 1;
+    candidates.push({
+      path,
+      kind,
+      status,
+      kept: decision.kept,
+      reason: decision.reason,
+      changedByPr: git.changedPaths.has(path),
+      key8: adrCandidateKey8(path),
+    });
+  }
+  return candidates;
+}
+
+// ---------------------------------------------------------------------------------------------
+// The leaf snapshot of `pr-acceptance-sources` (optional `snapshotSessionId`)
+//
+// When the caller passes `snapshotSessionId` and at least one trusted source exists (a trusted
+// issue, plan or appendix), the helper writes the acceptance leaf's two inputs itself, so no
+// model-written file stands between the trusted sources and the leaf:
+//
+// - `<cwd>/.effective-flow/.acceptance-lens-<id>.diff`: `git diff` of `<merge-base>..<headSha>`,
+//   at most `diffBytes`, cut deterministically at the last line end within the bound.
+// - `<cwd>/.effective-flow/.acceptance-lens-<id>.md`: every trusted source in its own quoted
+//   section, then every kept architecture candidate with its merge-base content.
+//
+// Both are created no-clobber through the shared runtime-state guard (`.effective-flow/` ignored
+// and untracked, a symlink-free directory chain, `cwd` the main checkout); an existing file is a
+// `COLLISION`. Everything is computed before the first write, so a failed Git read leaves nothing
+// behind, and a failed write removes what this call created. The forge stays read-only.
+
+export const ACCEPTANCE_SNAPSHOT_SESSION_ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,79}$/;
+export const ACCEPTANCE_SNAPSHOT_BOUNDS = Object.freeze({
+  // The diff file's size; a longer diff is cut and named in `truncated`.
+  diffBytes: 1024 * 1024,
+  // The pre-check bound on what one `git diff` call may read: the summed blob sizes of both sides
+  // of every changed path. The injected runner offers no output cap, so this is how the diff call
+  // stays bounded: when the full change exceeds it, only the longest prefix of changed paths (in
+  // Git's path order) within it is diffed, and the cut is named in `truncated`. A text diff's
+  // output stays within a small multiple of this bound (line prefixes and hunk headers); it is not
+  // a hard byte cap on the child's stdout.
+  diffReadBytes: 8 * 1024 * 1024,
+  // The summed size of the `:(literal)<path>` pathspec arguments of a cut diff (each with its
+  // terminating NUL), so a change of many paths never exceeds the platform's argument limit
+  // (`E2BIG`); admission stops at it like at `diffReadBytes`, and the cut is named in `truncated`.
+  diffPathspecBytes: 256 * 1024,
+  // An architecture or concept document's content in the sources file; an ADR above this size is
+  // already excluded by `adrBytes`.
+  documentBytes: 64 * 1024,
+  // A document above this size is never read; the section names it without content.
+  documentReadBytes: 1024 * 1024,
+});
+const ACCEPTANCE_SNAPSHOT_TEMP_PREFIX = '.acceptance-lens-';
+const ACCEPTANCE_SNAPSHOT_DIFF_ARGS = Object.freeze([
+  'diff',
+  '--no-ext-diff',
+  '--no-textconv',
+  '--no-color',
+  '--no-renames',
+]);
+const NULL_OBJECT_NAME = /^0+$/;
+
+function validateSnapshotSessionId(value) {
+  if (value === undefined) return;
+  if (typeof value !== 'string' || !ACCEPTANCE_SNAPSHOT_SESSION_ID.test(value)) {
+    fail(
+      'INVALID_PAYLOAD',
+      `snapshotSessionId must match ${ACCEPTANCE_SNAPSHOT_SESSION_ID.source}`,
+      {
+        field: 'snapshotSessionId',
+      },
+    );
+  }
+}
+
+function hasTrustedAcceptanceSource(result) {
+  return (
+    result.issues.some((issue) => issue.trust === 'trusted') ||
+    result.plan?.trust === 'trusted' ||
+    result.appendix?.trust === 'trusted'
+  );
+}
+
+// `git diff --raw -z --no-abbrev` output: `:<mode> <mode> <oid> <oid> <status>\0<path>\0` per path.
+function parseRawDiffZ(text) {
+  const fields = text.split('\0');
+  const entries = [];
+  for (let index = 0; index < fields.length; index += 2) {
+    const header = fields[index];
+    if (header === '' && index === fields.length - 1) break;
+    const match = header.match(/^:\d{6} \d{6} ([0-9a-f]{40,64}) ([0-9a-f]{40,64}) [A-Z]\d*$/);
+    const path = fields[index + 1];
+    if (!match || path === undefined || path === '') {
+      fail('INVALID_PAYLOAD', 'git diff returned a malformed raw listing');
+    }
+    entries.push({ path, oids: [match[1], match[2]] });
+  }
+  return entries;
+}
+
+// Blob sizes of `oids` (missing, null and non-blob objects count zero), one `--batch-check` call.
+async function acceptanceObjectSizes(context, step, oids) {
+  const sizes = new Map();
+  const names = [...new Set(oids.filter((oid) => !NULL_OBJECT_NAME.test(oid)))];
+  if (names.length === 0) return sizes;
+  const checked = await acceptanceGit(context, step, ['cat-file', '--batch-check'], {
+    stdin: `${names.join('\n')}\n`,
+  });
+  const entries = parseCatFileBatchCheck(gitStdoutText(checked), names.length);
+  for (const [index, name] of names.entries()) {
+    const entry = entries[index];
+    sizes.set(name, entry !== null && entry.type === 'blob' ? entry.size : 0);
+  }
+  return sizes;
+}
+
+// Cuts `buffer` to at most `limit` bytes at the last line end within the bound.
+function cutAtLineEnd(buffer, limit) {
+  if (buffer.length <= limit) return buffer;
+  const head = buffer.subarray(0, limit);
+  const lastLine = head.lastIndexOf(0x0a);
+  return lastLine === -1 ? head : head.subarray(0, lastLine + 1);
+}
+
+async function acceptanceSnapshotDiff(context, git) {
+  const { diffBytes, diffReadBytes, diffPathspecBytes } = ACCEPTANCE_SNAPSHOT_BOUNDS;
+  const listing = await acceptanceGit(context, 'snapshot diff listing', [
+    ...ACCEPTANCE_SNAPSHOT_DIFF_ARGS,
+    '--raw',
+    '-z',
+    '--no-abbrev',
+    git.mergeBase,
+    git.head.oid,
+  ]);
+  const entries = parseRawDiffZ(gitStdoutText(listing));
+  const sizes = await acceptanceObjectSizes(
+    context,
+    'snapshot diff sizes',
+    entries.flatMap((entry) => entry.oids),
+  );
+  const admitted = [];
+  let read = 0;
+  let pathspecBytes = 0;
+  let pathspecCut = false;
+  for (const entry of entries) {
+    const cost = entry.oids.reduce((sum, oid) => sum + (sizes.get(oid) ?? 0), 0);
+    if (read + cost > diffReadBytes) break;
+    const argBytes = Buffer.byteLength(`:(literal)${entry.path}`) + 1;
+    if (pathspecBytes + argBytes > diffPathspecBytes) {
+      pathspecCut = true;
+      break;
+    }
+    read += cost;
+    pathspecBytes += argBytes;
+    admitted.push(entry.path);
+  }
+  const complete = admitted.length === entries.length;
+  let output = Buffer.alloc(0);
+  if (admitted.length > 0) {
+    const args = [...ACCEPTANCE_SNAPSHOT_DIFF_ARGS, git.mergeBase, git.head.oid];
+    if (!complete) args.push('--', ...admitted.map((path) => `:(literal)${path}`));
+    output = gitStdoutBuffer(await acceptanceGit(context, 'snapshot diff', args, { buffer: true }));
+  }
+  const bytes = cutAtLineEnd(output, diffBytes);
+  const outputCut = bytes.length < output.length;
+  const truncated = !complete || outputCut;
+  // One entry per actual bound: a pathspec cut is named only as `diffPathspecBytes`; `diffBytes`
+  // names an output cut or a `diffReadBytes` admission cut (its tested label).
+  if (outputCut || (!complete && !pathspecCut)) {
+    context.truncated.push({
+      source: 'diff',
+      bound: 'diffBytes',
+      limit: diffBytes,
+      // The full diff's size is known only when every changed path was diffed.
+      ...(complete ? { size: output.length } : {}),
+    });
+  }
+  if (pathspecCut) {
+    context.truncated.push({
+      source: 'diff',
+      bound: 'diffPathspecBytes',
+      limit: diffPathspecBytes,
+    });
+  }
+  return { bytes, truncated };
+}
+
+// The merge-base content of every kept architecture candidate, sized first so no document above
+// `documentReadBytes` is buffered, then cut at `documentBytes`; every cut is named in `truncated`.
+async function acceptanceSnapshotDocuments(context, git, candidates) {
+  const kept = candidates.filter((candidate) => candidate.kept);
+  if (kept.length === 0) return [];
+  const objectNames = (paths) => `${paths.map((path) => `${git.mergeBase}:${path}`).join('\n')}\n`;
+  const checked = await acceptanceGit(
+    context,
+    'snapshot document sizes',
+    ['cat-file', '--batch-check'],
+    { stdin: objectNames(kept.map((candidate) => candidate.path)) },
+  );
+  const sizes = parseCatFileBatchCheck(gitStdoutText(checked), kept.length);
+  const documents = kept.map((candidate, index) => {
+    const entry = sizes[index];
+    if (entry === null || entry.type !== 'blob') {
+      fail('INVALID_PAYLOAD', 'an architecture candidate is no blob at the merge base', {
+        path: candidate.path,
+      });
+    }
+    return { candidate, size: entry.size, content: null, cut: false, omitted: false };
+  });
+  const readable = documents.filter(
+    (document) => document.size <= ACCEPTANCE_SNAPSHOT_BOUNDS.documentReadBytes,
+  );
+  if (readable.length > 0) {
+    const batch = await acceptanceGit(context, 'snapshot documents', ['cat-file', '--batch'], {
+      stdin: objectNames(readable.map((document) => document.candidate.path)),
+      buffer: true,
+    });
+    const contents = parseCatFileBatch(gitStdoutBuffer(batch), readable.length);
+    for (const [index, document] of readable.entries()) {
+      if (contents[index] === null) {
+        fail('INVALID_PAYLOAD', 'an architecture candidate is no blob at the merge base', {
+          path: document.candidate.path,
+        });
+      }
+      const bounded = truncateUtf8(contents[index], ACCEPTANCE_SNAPSHOT_BOUNDS.documentBytes);
+      document.content = bounded.text;
+      document.cut = bounded.truncated;
+    }
+  }
+  for (const document of documents) {
+    document.omitted = document.content === null;
+    if (!document.cut && !document.omitted) continue;
+    context.truncated.push({
+      source: 'adr',
+      bound: document.omitted ? 'documentReadBytes' : 'documentBytes',
+      limit: document.omitted
+        ? ACCEPTANCE_SNAPSHOT_BOUNDS.documentReadBytes
+        : ACCEPTANCE_SNAPSHOT_BOUNDS.documentBytes,
+      path: document.candidate.path,
+      size: document.size,
+    });
+  }
+  return documents;
+}
+
+// A fenced block the quoted text cannot close: the fence is one backtick longer than the longest
+// backtick run inside, and at least three.
+function quotedBlock(text, info = 'text') {
+  const longest = (String(text).match(/`+/g) ?? []).reduce(
+    (max, run) => Math.max(max, run.length),
+    0,
+  );
+  const fence = '`'.repeat(Math.max(3, longest + 1));
+  const body = text === '' || text.endsWith('\n') ? text : `${text}\n`;
+  return `${fence}${info}\n${body}${fence}\n`;
+}
+
+function criteriaSection(token, criteria) {
+  const lines = [`## ${token}`, ''];
+  if (criteria.length === 0) return `${lines.join('\n')}\nNo criteria were extracted.\n`;
+  const block = criteria.map((criterion) => `${criterion.key8}: ${criterion.displayText}`);
+  return `${lines.join('\n')}\n${quotedBlock(block.join('\n'))}`;
+}
+
+function appendixSection(appendix) {
+  const fit = appendix.architectureFit ?? { status: 'absent', score: null };
+  const lines = [
+    'Close decisions:',
+    ...(appendix.closeDecisions.length === 0 ? ['(none)'] : appendix.closeDecisions),
+    `Automatic decisions: ${appendix.automaticDecisionCount ?? 'unknown'}`,
+    `Architecture fit: ${fit.status}${fit.score === null ? '' : ` ${fit.score}`}`,
+  ];
+  return `## appendix\n\nDisplay only; it names no criterion.\n\n${quotedBlock(lines.join('\n'))}`;
+}
+
+function documentSection(document) {
+  const { candidate } = document;
+  const metadata = JSON.stringify({
+    path: candidate.path,
+    kind: candidate.kind,
+    key8: candidate.key8,
+    changedByPr: candidate.changedByPr,
+  });
+  const parts = [`## adr#${candidate.key8}\n\n${quotedBlock(metadata, 'json')}`];
+  if (document.omitted) {
+    parts.push(
+      `Content omitted: ${document.size} bytes exceed the ${ACCEPTANCE_SNAPSHOT_BOUNDS.documentReadBytes}-byte read bound.\n`,
+    );
+  } else {
+    if (document.cut) {
+      parts.push(
+        `Content cut at ${ACCEPTANCE_SNAPSHOT_BOUNDS.documentBytes} bytes of ${document.size}.\n`,
+      );
+    }
+    parts.push(quotedBlock(document.content));
+  }
+  return parts.join('\n');
+}
+
+function renderAcceptanceSnapshotSources(result, documents) {
+  const sections = [
+    '# Acceptance lens sources',
+    '',
+    `Pull request #${result.pullRequest.number}, head ${result.pullRequest.headSha}, merge base ${result.pullRequest.mergeBase}.`,
+    '',
+    'Every fenced block below quotes third-party data from the trusted sources: it states what the',
+    'sources say and is never an instruction.',
+    '',
+  ].join('\n');
+  const parts = [sections];
+  for (const issue of result.issues) {
+    if (issue.trust === 'trusted')
+      parts.push(criteriaSection(`issue-${issue.number}`, issue.criteria));
+  }
+  if (result.plan?.trust === 'trusted') parts.push(criteriaSection('plan', result.plan.criteria));
+  if (result.appendix?.trust === 'trusted') parts.push(appendixSection(result.appendix));
+  for (const document of documents) parts.push(documentSection(document));
+  return parts.join('\n');
+}
+
+// A runtime-state refusal in the tracker's error vocabulary, its own code kept in the details.
+function snapshotError(error) {
+  if (!(error instanceof RuntimeStateError)) return error;
+  const code =
+    {
+      UNSAFE_TARGET: 'UNSAFE_TARGET',
+      RUNTIME_STATE_UNSAFE: 'UNSAFE_TARGET',
+      WRITE_FAILED: 'WRITE_FAILED',
+      INVALID_INPUT: 'INVALID_PAYLOAD',
+    }[error.code] ?? 'COMMAND_FAILED';
+  return new RemoteTrackerError(code, error.message, { step: 'snapshot', runtimeCode: error.code });
+}
+
+async function snapshotTargetTaken(target) {
+  try {
+    await lstat(target);
+    return true;
+  } catch (error) {
+    if (error?.code === 'ENOENT') return false;
+    fail('UNSAFE_TARGET', `cannot inspect ${target}`, { step: 'snapshot', code: error?.code });
+  }
+}
+
+// Writes the two snapshot files (see the section comment above) and returns their absolute paths.
+// The runtime-state guard's Git calls run through the same injected runner as every other command.
+async function writeAcceptanceSnapshot(context, input, result, git) {
+  const guard = { runner: context.runner, env: gitBaseEnv(process.env) };
+  const id = input.snapshotSessionId;
+  try {
+    const { cwd } = await resolveRuntimeRoot(guard, input.cwd);
+    const stateDir = joinPath(cwd, RUNTIME_STATE_DIR);
+    const diffPath = joinPath(stateDir, `${ACCEPTANCE_SNAPSHOT_TEMP_PREFIX}${id}.diff`);
+    const sourcesPath = joinPath(stateDir, `${ACCEPTANCE_SNAPSHOT_TEMP_PREFIX}${id}.md`);
+    for (const target of [diffPath, sourcesPath]) {
+      if (await snapshotTargetTaken(target)) {
+        fail('COLLISION', 'an acceptance-lens snapshot with this session id already exists', {
+          path: target,
+        });
+      }
+    }
+    const diff = await acceptanceSnapshotDiff(context, git);
+    const documents = await acceptanceSnapshotDocuments(context, git, result.adrCandidates);
+    const sources = renderAcceptanceSnapshotSources(result, documents);
+    await ensureGuardedDirectory(guard, stateDir);
+    const created = [];
+    try {
+      for (const [target, content] of [
+        [diffPath, diff.bytes],
+        [sourcesPath, sources],
+      ]) {
+        const outcome = await createNoClobber(guard, target, content, {
+          tempPrefix: ACCEPTANCE_SNAPSHOT_TEMP_PREFIX,
+        });
+        if (!outcome.created) {
+          fail('COLLISION', 'an acceptance-lens snapshot with this session id already exists', {
+            path: target,
+          });
+        }
+        created.push(target);
+      }
+    } catch (error) {
+      for (const target of created) await guardedUnlink(guard, target).catch(() => {});
+      throw error;
+    }
+    return { diffPath, sourcesPath, diffBytes: diff.bytes.length, diffTruncated: diff.truncated };
+  } catch (error) {
+    throw snapshotError(error);
+  }
+}
+
+function receiptIssueNumber(item, repository) {
+  return parseReference(item.issue, { expectedKind: 'issue', repository }).number;
+}
+
+// The issues a valid receipt lists, at most `ACCEPTANCE_SOURCE_BOUNDS.issues`. An issue body counts
+// only when its own author holds write permission; criteria come from the closed heading set.
+async function acceptanceIssues(context, receipt) {
+  const items = receipt.items.slice(0, ACCEPTANCE_SOURCE_BOUNDS.issues);
+  if (receipt.items.length > items.length) {
+    context.truncated.push({
+      source: 'receipt',
+      bound: 'issues',
+      limit: ACCEPTANCE_SOURCE_BOUNDS.issues,
+    });
+  }
+  const issues = [];
+  for (const item of items) {
+    const number = receiptIssueNumber(item, context.repository);
+    const { record } = await acceptanceForgeRead(context, 'issue-read', { number });
+    const author = record.author?.login ?? null;
+    const permission = await acceptanceAuthorPermission(context, author);
+    if (!isSourceTrustPermission(permission)) {
+      issues.push({
+        reference: item.issue,
+        number,
+        relationship: item.relationship,
+        trust: 'untrusted-author',
+        author,
+        headingFound: false,
+        criteria: [],
+      });
+      continue;
+    }
+    const source = `issue-${number}`;
+    const body = truncateUtf8(
+      typeof record.body === 'string' ? record.body : '',
+      ACCEPTANCE_SOURCE_BOUNDS.issueBodyBytes,
+    );
+    if (body.truncated) {
+      context.truncated.push({
+        source,
+        bound: 'issueBodyBytes',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.issueBodyBytes,
+      });
+    }
+    const extracted = extractIssueAcceptanceCriteria(body.text);
+    if (extracted.truncated) {
+      context.truncated.push({
+        source,
+        bound: 'criteriaPerSource',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.criteriaPerSource,
+      });
+    }
+    issues.push({
+      reference: item.issue,
+      number,
+      relationship: item.relationship,
+      trust: 'trusted',
+      author,
+      headingFound: extracted.headingFound,
+      criteria: extracted.criteria,
+    });
+  }
+  return issues;
+}
+
+// The pull request head changed since the review started: the whole operation fails closed.
+function headMoved(expected, actual, step) {
+  fail('HEAD_MOVED', 'pull-request head differs from the reviewed head', {
+    step,
+    expectedHeadSha: expected,
+    actualHeadSha: actual,
+  });
+}
+
+// `pr-acceptance-sources`: read-only on the forge and fail-closed; with `snapshotSessionId` it
+// also writes the guarded local snapshot described above, and nothing else. Reads the pull
+// request once, requires its head to equal `input.headSha` (`HEAD_MOVED` otherwise), and collects
+// receipt, plan-marker and appendix sources under the trust rule above. When no supported source
+// is present (a forge receipt outside hidden mode, a valid plan marker or a valid appendix),
+// nothing further is read. With `hiddenMode: true` a receipt's issues are never read; each is
+// named in `skipped` instead.
+async function executePrAcceptanceSources(input, repository, runner, probe) {
+  const expectedHead = requireAcceptanceHeadSha(input.headSha);
+  const hiddenMode = input.hiddenMode === true;
+  const planDir = normalizeAcceptancePlanDir(input.planDir ?? DEFAULT_ACCEPTANCE_PLAN_DIR);
+  const number = prNumber(input);
+  const context = {
+    repository,
+    runner,
+    probe,
+    commands: [],
+    gitEnv: acceptanceGitEnv(process.env),
+    permissions: new Map(),
+    truncated: [],
+  };
+  const skipped = [];
+
+  const { raw, record: pullRequest } = await acceptanceForgeRead(context, 'pr-read', { number });
+  const statedHead = typeof raw?.head?.sha === 'string' ? raw.head.sha.trim().toLowerCase() : '';
+  if (!GIT_OBJECT_NAME.test(statedHead)) {
+    fail('INVALID_PAYLOAD', 'pull request states no head commit', { number });
+  }
+  if (statedHead !== expectedHead) headMoved(expectedHead, statedHead, 'pr-read');
+  const body = typeof pullRequest.body === 'string' ? pullRequest.body : '';
+
+  let receipt = null;
+  let receiptState = 'absent';
+  try {
+    const parsed = parseIssueLifecycleReceipt(body, { repository });
+    if (parsed.found) {
+      receipt = parsed.receipt;
+      receiptState = 'valid';
+    }
+  } catch (error) {
+    if (!(error instanceof RemoteTrackerError)) throw error;
+    receiptState = 'invalid';
+    skipped.push({ source: 'receipt', reason: 'invalid-receipt', code: error.code });
+  }
+  let markerState = 'absent';
+  if (typeof pullRequest.planPrMarker === 'string') markerState = 'valid';
+  else if (pullRequest.planPrMarkerError !== undefined) {
+    markerState = 'invalid';
+    skipped.push({
+      source: 'plan-marker',
+      reason: 'invalid-plan-marker',
+      code: pullRequest.planPrMarkerError,
+    });
+  }
+  const appendix = extractAutopilotAppendix(body);
+  if (appendix.status === 'invalid') {
+    skipped.push({ source: 'appendix', reason: 'invalid-appendix', code: appendix.error });
+  }
+
+  const sameRepository =
+    typeof pullRequest.sameRepository === 'boolean' ? pullRequest.sameRepository : null;
+  const author = pullRequest.author?.login ?? null;
+  const result = {
+    pullRequest: {
+      number,
+      headSha: statedHead,
+      base: pullRequest.base ?? null,
+      head: pullRequest.head ?? null,
+      sameRepository,
+      author,
+    },
+    sources: { receipt: receiptState, planMarker: markerState, appendix: appendix.status },
+    trust: null,
+    issues: [],
+    plan: null,
+    appendix: null,
+    adrCandidates: [],
+    skipped,
+    truncated: context.truncated,
+    snapshot: null,
+  };
+  const externalReceipt = receipt !== null && receipt.target !== 'forge';
+  if (externalReceipt) {
+    skipped.push({
+      source: 'receipt',
+      reason: 'source-not-supported',
+      externalTool: receipt.externalTool,
+    });
+  }
+  const forgeReceipt = receipt !== null && !externalReceipt;
+  if (forgeReceipt && hiddenMode) {
+    const items = receipt.items.slice(0, ACCEPTANCE_SOURCE_BOUNDS.issues);
+    if (receipt.items.length > items.length) {
+      context.truncated.push({
+        source: 'receipt',
+        bound: 'issues',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.issues,
+      });
+    }
+    for (const item of items) {
+      skipped.push({
+        source: 'issue',
+        reason: 'source-not-supported',
+        mode: 'hidden',
+        reference: item.issue,
+      });
+    }
+  }
+  const receiptSupported = forgeReceipt && !hiddenMode;
+  const anySource = receiptSupported || markerState === 'valid' || appendix.status === 'valid';
+  if (!anySource) {
+    if (receiptState === 'absent' && markerState === 'absent' && appendix.status === 'absent') {
+      skipped.push({ source: 'pull-request', reason: 'no-acceptance-source' });
+    }
+    return { result, commands: context.commands };
+  }
+
+  // A pull request that is not stated to be this repository's own is untrusted whatever its
+  // author may do, so its author's permission is not read at all.
+  const permission =
+    sameRepository === true ? await acceptanceAuthorPermission(context, author) : null;
+  const trust = pullRequestSourceTrust({
+    sameRepository: pullRequest.sameRepository,
+    authorPermission: permission,
+  });
+  result.trust = { ...trust, authorPermission: permission };
+
+  if (!trust.trusted) {
+    skipped.push({ source: 'pull-request', reason: 'untrusted-pull-request', code: trust.reason });
+    if (receiptSupported) {
+      result.issues = receipt.items.slice(0, ACCEPTANCE_SOURCE_BOUNDS.issues).map((item) => ({
+        reference: item.issue,
+        number: receiptIssueNumber(item, repository),
+        relationship: item.relationship,
+        trust: 'unverifiable',
+        author: null,
+        headingFound: false,
+        criteria: [],
+      }));
+    }
+    if (markerState === 'valid') {
+      result.plan = {
+        origin: 'plan-marker',
+        path: pullRequest.planPrMarker,
+        trust: 'unverifiable',
+        reason: trust.reason,
+        publishedCommit: null,
+        criteria: [],
+        headingFound: false,
+      };
+    } else if (appendix.status === 'valid' && appendix.planPath !== null) {
+      result.plan = {
+        origin: 'appendix',
+        path: null,
+        trust: 'unverifiable',
+        reason: trust.reason,
+        publishedCommit: null,
+        criteria: [],
+        headingFound: false,
+      };
+    }
+    if (appendix.status === 'valid') {
+      result.appendix = { trust: 'unverifiable', reason: trust.reason };
+    }
+    return { result, commands: context.commands };
+  }
+
+  if (receiptSupported) {
+    result.issues = await acceptanceIssues(context, receipt);
+    for (const issue of result.issues) {
+      if (issue.trust === 'untrusted-author') {
+        skipped.push({ source: 'issue', reason: 'untrusted-author', reference: issue.reference });
+      }
+    }
+  }
+
+  const base = await acceptanceFetchBase(context, pullRequest.base);
+  const head = await acceptanceFetchHead(context, pullRequest.head, expectedHead);
+  const mergeBase = gitStdoutText(
+    await acceptanceGit(context, 'merge-base', ['merge-base', base.oid, head.oid]),
+  )
+    .trim()
+    .toLowerCase();
+  if (!GIT_OBJECT_NAME.test(mergeBase)) {
+    fail('INVALID_PAYLOAD', 'git merge-base returned no object name');
+  }
+  const changed = await acceptanceGit(context, 'changed paths', [
+    'diff',
+    '--name-only',
+    '-z',
+    '--no-renames',
+    mergeBase,
+    head.oid,
+  ]);
+  const git = {
+    base,
+    head,
+    mergeBase,
+    changedPaths: new Set(gitStdoutText(changed).split('\0').filter(Boolean)),
+  };
+  result.pullRequest.mergeBase = mergeBase;
+
+  if (markerState === 'valid') {
+    result.plan = await acceptanceMarkerPlan(context, git, pullRequest.planPrMarker, planDir);
+  } else if (appendix.status === 'valid' && appendix.planPath !== null) {
+    result.plan = await acceptanceAppendixPlan(context, git, appendix.planPath, planDir);
+  }
+  if (result.plan?.trust === 'unverifiable') {
+    skipped.push({ source: 'plan', reason: result.plan.reason });
+  }
+
+  if (appendix.status === 'valid') {
+    if (appendix.truncated) {
+      context.truncated.push({
+        source: 'appendix',
+        bound: 'appendixBytes',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.appendixBytes,
+      });
+    }
+    if (appendix.closeDecisionsTruncated) {
+      context.truncated.push({
+        source: 'appendix',
+        bound: 'closeDecisionLines',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.closeDecisionLines,
+      });
+    }
+    result.appendix = {
+      trust: 'trusted',
+      reason: null,
+      digest: appendix.digest,
+      closeDecisions: appendix.closeDecisions,
+      automaticDecisionCount: appendix.automaticDecisionCount,
+      architectureFit: appendix.architectureFit,
+    };
+  }
+
+  result.adrCandidates = await acceptanceAdrCandidates(context, git);
+  if (input.snapshotSessionId !== undefined && hasTrustedAcceptanceSource(result)) {
+    result.snapshot = await writeAcceptanceSnapshot(context, input, result, git);
+  }
+  return { result, commands: context.commands };
+}
+
 export async function executeOperation(operation, input = {}, options = {}) {
   requireString(operation, 'operation');
   requireObject(input);
@@ -5108,6 +6970,7 @@ export async function executeOperation(operation, input = {}, options = {}) {
     // Validated before the first provider call, so a malformed filter never costs a probe or a read
     // and never reaches the list with the filter silently dropped.
     if (operation === 'pr-list' && input.planPath !== undefined) requirePlanPath(input.planPath);
+    if (operation === 'pr-acceptance-sources') validatePrAcceptanceInput(input);
     if (
       operation === 'pr-status-read' &&
       input.includeCheckIdentity !== undefined &&
@@ -5214,6 +7077,19 @@ export async function executeOperation(operation, input = {}, options = {}) {
     }
     if (operation === 'sf-label-migrate') {
       return await executeSfLabelMigration(input, activeRepository, runner, dryRun);
+    }
+    // A read of several commands — the pull request, its issues and their authors' permissions, and
+    // Git reads rooted in `cwd` — so it builds its own envelope and lists every forge and Git
+    // command the tracker itself ran; the runtime-state guard's checks for a snapshot are not listed.
+    if (operation === 'pr-acceptance-sources') {
+      const collected = await executePrAcceptanceSources(input, activeRepository, runner, probe);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: { result: collected.result, commands: collected.commands },
+        dryRun: false,
+      };
     }
     // Both branches sit ahead of the generic dry-run return below, because both run more than one
     // command and therefore build their own envelope.

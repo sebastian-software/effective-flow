@@ -101,7 +101,11 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    blocker.
 
 Review publication is off for the whole run, even when `delivery.prReview` is `always`: the draft
-pull request is reviewed by a person, and `merge-gate` is the next step.
+pull request is reviewed by a person. The recommended order after autopilot is
+`/effective-flow review <PR>`, then `/effective-flow merge-gate <PR>`: the explicit review checks the
+pull request against the acceptance criteria recorded in its lifecycle receipt, plan marker or
+autopilot record (see [`review`](./tools-quality.md#effective-flow-review)) and shows the autopilot
+decisions without judging them, and `merge-gate` then handles ready, merge and issue close.
 
 ### How questions are decided
 

@@ -21,6 +21,7 @@
         { "consumer": "durable-follow-up-gate", "classification": "delegate" },
         { "consumer": "outcome-continuation", "classification": "delegate" },
         { "consumer": "review", "classification": "delegate" },
+        { "consumer": "acceptance-reviewer", "classification": "delegate" },
         { "consumer": "refactor", "classification": "delegate" },
         { "consumer": "plan", "classification": "route-when-relevant" },
         { "consumer": "plan-issue", "classification": "route-when-relevant" },

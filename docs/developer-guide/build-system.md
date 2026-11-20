@@ -1411,7 +1411,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 73 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 74 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1977,11 +1977,14 @@ native eligibility and measurement owner.
   conditional-checkpoint replacement (`delegation-mandate-conditional-checkpoint`) within the
   worker-start bullet, and the executable model-selection sentence on the mandate's workflow
   boundary. Each selected edit must match exactly once, and its resulting body must equal the
-  working body byte for byte; unrelated drift fails. These
+  working body byte for byte; unrelated drift fails. A base worker added since the pinned base
+  passes only when `EXPECTED_ADDED_WORKERS` names it, it is absent at base and present in both
+  working native inventories; it has no bytes to compare, and any other membership change fails.
+  These
   optional declared deltas prove containment of allowed changes, not that every worker completed
   a total migration. Once this change ships in a release, move the test's pinned `--base` to that
   release commit and empty
-  `EXPECTED_NATIVE_DELTAS`; until then, any further edit to a worker-included fragment needs its
+  `EXPECTED_NATIVE_DELTAS` and `EXPECTED_ADDED_WORKERS`; until then, any further edit to a worker-included fragment needs its
   own exact allowlist entry.
 - **Context budget.** The mandate's tier sentence and lazy pointer add lines to every tool that
   includes it; the spawn-site lines render in place of the marker and count in the built core.
