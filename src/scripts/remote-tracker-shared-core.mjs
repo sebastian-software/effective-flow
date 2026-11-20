@@ -7,6 +7,23 @@
 // consumer is one provider adapter belongs to that adapter instead, which is what keeps this file
 // from growing into a second core.
 
+// The `collaborator-permission-read` levels that count as write access, Forgejo's `owner`
+// included. `backlog-audit-core.mjs` and `autopilot-appendix-core.mjs` both decide with
+// `isWritePermission`. A frozen array rather than an exported Set, whose `add` would let any
+// importer widen what counts as write access for every other one.
+export const COLLABORATOR_WRITE_PERMISSIONS = Object.freeze([
+  'write',
+  'admin',
+  'owner',
+  'maintain',
+]);
+
+// Whether a normalized (lowercase) `collaborator-permission-read` level is write access. Anything
+// that is not one of those exact strings, null and undefined included, is not.
+export function isWritePermission(level) {
+  return typeof level === 'string' && COLLABORATOR_WRITE_PERMISSIONS.includes(level);
+}
+
 export class RemoteTrackerError extends Error {
   constructor(code, message, details = {}, retryable = false) {
     super(message);

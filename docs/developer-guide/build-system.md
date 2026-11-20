@@ -505,7 +505,11 @@ The build aborts with an error message if any of these guards is violated:
   none imports its core back, and the pilot measurement and protected-validation helpers add a
   protocol module beside their core. The shared `process-runner.mjs`, the remote tracker's
   `createProcessRunner`, and `runtime-state-guard.mjs`, the runtime-state guard and write
-  primitives, belong to no subsystem and carry the same guard. That only CLI entries
+  primitives, belong to no subsystem and carry the same guard. So do two leaf modules the remote
+  tracker and `autopilot-core.mjs` share: `pr-delivery-git-core.mjs`, the local Git evidence
+  behind `pr-draft-classify` and `merge-proof-local` (plan-only diff, `merge-tree` proof on a
+  private object directory, archive-path rule), and `autopilot-appendix-core.mjs`, the appendix
+  markers, blocker headings and the reading side of the pull-request appendix. That only CLI entries
   (such as `remote-tracker.mjs`, `plan-publication.mjs` and `effective-flow-mechanics.mjs`) import it and inject the runner into their cores is
   no build guard: the unit test "no core imports the shared process runner" in
   `test/plan-publication.test.mjs` enforces it. The remote-tracker's runtime prompts are
@@ -1411,7 +1415,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 73 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 75 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a

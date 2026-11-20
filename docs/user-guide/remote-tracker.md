@@ -765,7 +765,9 @@ forge-bound: they never evaluate `tracker.mode` and need only a Git repository, 
 and an authenticated CLI.
 
 Two mutations finish a plan's draft pull request. Both default to a dry run and change nothing
-without `--apply`:
+without `--apply`. `pr-mark-ready` has a second caller: `merge-gate` uses it, after your
+confirmation, to take a delivered draft out of draft before it merges (see
+[`merge-gate`](./tools-deliver.md)):
 
 | Operation         | Capability               | What it does                                                                                                                                                                                                                                      |
 | ----------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -791,6 +793,53 @@ their subcommand flags, because all three read the raw pull-request object. GitH
 offers no draft pull requests answers with a 422 "Draft pull requests are not supported", which
 `pr-create` reports as `UNSUPPORTED_CAPABILITY` for `pullRequestDraftCreate` rather than as a
 failed command.
+
+Two read operations support that second caller. Neither writes to the forge or to your branches.
+
+| Operation           | Capability        | What it does                                                                                                                                                      |
+| ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-draft-classify` | `pullRequestRead` | Classifies a draft pull request for the ready offer. Input: `number`, `headSha` and `baseRef`, the bare base branch name. The caller has fetched the refs already |
+| `merge-proof-local` | none beyond Git   | Proves locally whether the head merges cleanly into `origin/<baseRef>`. Input: `headSha` and `baseRef`. It fetches nothing and needs Git 2.38 or newer            |
+
+`pr-draft-classify` reads the pull request once, reads the author's permission when the head is in
+this repository, and compares local refs for a plan marker. It reads the body only for the plan
+marker and the autopilot appendix. The result carries these fields:
+
+- **`number`** and **`class`**: `delivered`, `unmarked`, `plan-only`, `finish-incomplete` or
+  `marker-invalid`. Only `delivered` and `unmarked` can be offered ready. `plan-only` means the
+  plan marker is valid and the branch changes nothing beyond the plan. `finish-incomplete` means
+  the plan-draft finish of `pr` never ran, so the title still has the plan publication form.
+- **`planPath`**, **`archivePath`** and **`markerError`**: the validated plan path, the archive
+  path of a delivered plan, and the marker error code. Each appears only where it applies.
+- **`draft`** and **`readyTitle`**: whether the forge states a draft, and the title that
+  `pr-mark-ready` sends. On Forgejo it is the title without its `WIP:` or `[WIP]` prefixes, however
+  many are stacked; elsewhere it is the title as it is. It is `null` when nothing is left of the
+  title, and then no ready marking is offered.
+- **`blockers`**: the number of bullet lines in the blocker sections of every autopilot appendix
+  found. A count above zero excludes the offer.
+- **`appendixPresent`**, **`appendixDigest`**, **`appendixTrust`**, **`appendixTrustReason`**,
+  **`appendix`** and **`appendixTruncated`**: whether a decision record exists, the SHA-256 of its
+  raw block, and its trust. The trust is `verified` only when the pull request is from this
+  repository and its author has write permission; otherwise it is `unverifiable`, and
+  `appendix` is `null`. `appendixTrustReason` then names why: `fork` (the head is in another
+  repository or in none, such as a deleted fork), `repository-unstated` (the read does not state
+  the head repository), `permission-unreadable` or `permission-insufficient`. A verified record is
+  neutralized (`<!--`, control and invisible format characters, and line or paragraph separators
+  are escaped) and size-bounded, and `appendixTruncated` says whether it was cut. Blockers are
+  counted at every trust level.
+
+The pull request read must state exactly the `headSha` and `baseRef` the caller passed. A missing
+or different head fails the operation with `COMMAND_FAILED` and `details.step` `head-mismatch`, a
+missing or different base with `base-mismatch`; the caller re-reads instead of classifying a
+pull request that has moved. Any other Git or forge failure, apart from the permission read, also
+fails the whole operation.
+
+`merge-proof-local` exists for Forgejo, where a WIP-titled draft reports no mergeable state. It
+runs `git merge-tree --write-tree` in a private temporary object directory that it removes, so the
+repository's objects and refs stay unchanged. The result `status` is `clean`, `conflict` (with a
+`conflictCount`) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,
+a shallow repository, a Git failure or a merge that exceeds its time bound (`timeout`) gives
+`unavailable`; the caller then treats mergeability as unproven and never as clean.
 
 `pr-list` and `pr-read` add four fields to each normalized pull request:
 

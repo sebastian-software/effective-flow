@@ -57,6 +57,29 @@ export const MERGE_ORIGIN_SCENARIOS = Object.freeze([
   NO_CI_MERGE_FAILURE_SCENARIO,
 ]);
 
+// The draft-ready scenarios (`Draft ready for review` of the delegated run). None of them serves a
+// merge, but each one that reaches Phase 4 needs the same `origin`: the ready-for-review question is
+// posed only where every condition other than the draft holds, condition 11 included, and the
+// Forgejo WIP-draft exit runs the ancestry fetches before its `merge-proof-local`. The Keep-draft
+// re-dispatch stops at Entry and needs none, so it is absent.
+export const DRAFT_READY_RELAYED_SCENARIO = 'draft-ready-relayed-returns-question';
+export const DRAFT_READY_MARKS_READY_SCENARIO = 'draft-ready-redispatch-marks-ready';
+export const DRAFT_READY_KEEP_DRAFT_SCENARIO = 'draft-ready-keep-draft-stops';
+export const DRAFT_READY_PLAN_ONLY_SCENARIO = 'draft-ready-plan-only-asks-nothing';
+export const DRAFT_READY_BLOCKERS_SCENARIO = 'draft-ready-blockers-ask-nothing';
+export const DRAFT_READY_NON_INTERACTIVE_SCENARIO = 'draft-ready-non-interactive-never-marks';
+export const FORGEJO_WIP_MARKS_READY_SCENARIO = 'forgejo-wip-draft-marks-ready';
+export const FORGEJO_WIP_CONFLICT_SCENARIO = 'forgejo-wip-draft-conflict-asks-nothing';
+export const DRAFT_READY_ORIGIN_SCENARIOS = Object.freeze([
+  DRAFT_READY_RELAYED_SCENARIO,
+  DRAFT_READY_MARKS_READY_SCENARIO,
+  DRAFT_READY_PLAN_ONLY_SCENARIO,
+  DRAFT_READY_BLOCKERS_SCENARIO,
+  DRAFT_READY_NON_INTERACTIVE_SCENARIO,
+  FORGEJO_WIP_MARKS_READY_SCENARIO,
+  FORGEJO_WIP_CONFLICT_SCENARIO,
+]);
+
 // The change under review, as the pull request's title describes it.
 export const HEAD_CHANGE_PATH = 'docs/merge-gate-eval.md';
 export const HEAD_CHANGE_TEXT = '# Merge-gate eval\n\nThe change under review.\n';
@@ -74,6 +97,11 @@ export function seedMergeHistory(projectRoot) {
 }
 
 export function prepareMergeOrigin(input) {
-  if (!MERGE_ORIGIN_SCENARIOS.includes(input.scenario)) return null;
+  if (
+    !MERGE_ORIGIN_SCENARIOS.includes(input.scenario) &&
+    !DRAFT_READY_ORIGIN_SCENARIOS.includes(input.scenario)
+  ) {
+    return null;
+  }
   return provisionPullRequestOrigin(input, seedMergeHistory);
 }

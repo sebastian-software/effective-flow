@@ -66,9 +66,26 @@ import {
   sanitizeChildText,
   untrustedControlLines,
 } from './remote-tracker-decomposition-core.mjs';
-import { buildForgejoCommandPlan } from './remote-tracker-forgejo-core.mjs';
+import {
+  WORK_IN_PROGRESS_PREFIX,
+  buildForgejoCommandPlan,
+} from './remote-tracker-forgejo-core.mjs';
 import { buildGithubCommandPlan, buildReviewPayload } from './remote-tracker-github-core.mjs';
 import { lookupThreadLedgerFile, recordThreadLedgerFile } from './remote-tracker-ledger-core.mjs';
+import {
+  appendixDigest,
+  assessAppendixTrust,
+  countAppendixBlockers,
+  extractAppendixBlocks,
+  neutralizeAppendix,
+} from './autopilot-appendix-core.mjs';
+import {
+  PrDeliveryGitError,
+  archivePathFor,
+  localMergeProof,
+  parseRangeInput,
+  planOnlyEvidence,
+} from './pr-delivery-git-core.mjs';
 
 // `remote-tracker-core.mjs` stays the single public entry point of the tracker helper: every
 // symbol it exported before the modules below were split out is still exported from here.
@@ -154,6 +171,7 @@ const REMOTE_OPERATIONS = new Set([
   'pr-list',
   'pr-status-read',
   'pr-checks-wait',
+  'pr-draft-classify',
   'pr-create',
   'pr-update-body',
   'pr-update-title',
@@ -198,6 +216,7 @@ const LOCAL_OPERATIONS = Object.freeze([
   'issue-lifecycle-receipt-parse',
   'thread-ledger-lookup',
   'thread-ledger-record',
+  'merge-proof-local',
 ]);
 
 // The classification the CLI's argv check and the allow-rule writer read: the forge mutations,
@@ -242,6 +261,8 @@ const CAPABILITY_BY_OPERATION = Object.freeze({
   'pr-list': 'pullRequestList',
   'pr-status-read': 'pullRequestStatus',
   'pr-checks-wait': 'pullRequestChecksWait',
+  // A named entry like `pr-reviews-read`: the classification is a `pr-read` first.
+  'pr-draft-classify': 'pullRequestRead',
   'pr-create': 'pullRequestCreate',
   'pr-update-body': 'pullRequestUpdate',
   'pr-update-title': 'pullRequestTitleUpdate',
@@ -4377,6 +4398,10 @@ function localOperation(operation, input, options) {
       return () => lookupThreadLedgerFile(input);
     case 'thread-ledger-record':
       return () => recordThreadLedgerFile(input, { clock: options?.clock });
+    // A read of local Git state only: it fetches nothing and contacts no forge, so it runs as a
+    // local operation, with the injected runner as its only process boundary.
+    case 'merge-proof-local':
+      return () => executeMergeProofLocal(input, options);
     default:
       return undefined;
   }
@@ -5215,6 +5240,20 @@ export async function executeOperation(operation, input = {}, options = {}) {
     if (operation === 'sf-label-migrate') {
       return await executeSfLabelMigration(input, activeRepository, runner, dryRun);
     }
+    if (operation === 'pr-draft-classify') {
+      const classified = await executePrDraftClassify(input, activeRepository, runner, probe);
+      return {
+        ok: true,
+        operation,
+        provider: activeRepository.provider,
+        data: {
+          result: classified.result,
+          commands: classified.commands,
+          conditionalWriteAvailable: false,
+        },
+        dryRun: false,
+      };
+    }
     // Both branches sit ahead of the generic dry-run return below, because both run more than one
     // command and therefore build their own envelope.
     if (operation === 'label-create') {
@@ -5675,12 +5714,218 @@ export async function executeOperation(operation, input = {}, options = {}) {
   } catch (error) {
     return errorEnvelope(
       operation,
-      operation === 'pr-list' && input?.planPath !== undefined
+      (operation === 'pr-list' && input?.planPath !== undefined) ||
+        operation === 'pr-draft-classify'
         ? withoutOutputExcerpts(error)
         : error,
       dryRun,
     );
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Draft classification and the local merge proof
+
+// The classes `pr-draft-classify` reports, see `classifyPlanDraft`.
+export const PR_DRAFT_CLASSES = Object.freeze([
+  'unmarked',
+  'marker-invalid',
+  'plan-only',
+  'finish-incomplete',
+  'delivered',
+]);
+
+// The title a plan publication gives its pull request (`shared/plan-publication.md`, "Pull request
+// shape"): `docs: plan <plan title>`, or `docs: Plan <plan title>` in German, optionally behind
+// Forgejo's work-in-progress prefix. A title still in this form after delivery means the `pr` plan
+// draft finish has not run.
+const PLAN_PUBLICATION_TITLE = /^docs: [Pp]lan \S/;
+
+// The title without its leading default work-in-progress prefixes (`WIP:` or `[WIP]`, any case),
+// however many are stacked (`WIP: [WIP] x`), and the whitespace after each; a title without one is
+// returned unchanged. It removes exactly what `pr-mark-ready` refuses on Forgejo — a final title
+// whose trimmed start matches WORK_IN_PROGRESS_PREFIX — so a stripped title is always one that
+// operation accepts, unless nothing is left of it.
+export function stripWorkInProgressPrefix(title) {
+  if (typeof title !== 'string') return title;
+  let rest = title.trimStart();
+  let stripped = false;
+  for (let match; (match = rest.match(WORK_IN_PROGRESS_PREFIX)) !== null; stripped = true) {
+    rest = rest.slice(match[0].length).trimStart();
+  }
+  return stripped ? rest : title;
+}
+
+export function isPlanPublicationTitle(title) {
+  return typeof title === 'string' && PLAN_PUBLICATION_TITLE.test(stripWorkInProgressPrefix(title));
+}
+
+// The title `pr-mark-ready` sends as `payload.title`: on Forgejo, where the draft state is the
+// title's work-in-progress prefix, the title without its prefixes; on every other provider the
+// title as is. Null when no such title exists — a title that is nothing but prefixes and
+// whitespace, which `pr-mark-ready` would refuse as empty — so the caller offers no ready marking.
+export function readyTitleFor(title, provider) {
+  const ready = provider === 'forgejo' ? stripWorkInProgressPrefix(title) : title;
+  return typeof ready === 'string' && ready.trim() !== '' ? ready : null;
+}
+
+// The class of a pull request from its parsed plan marker (`inspectPlanPrMarker`), the plan-only
+// evidence (`planOnlyEvidence`'s `planOnly`, needed only for a valid marker) and its title:
+// - `unmarked`: no plan marker;
+// - `marker-invalid`: a rejected marker;
+// - `plan-only`: a marker, and the merge-base diff touches no path but the plan and its archive;
+// - `finish-incomplete`: a marker and delivery evidence, but the title is still the plan
+//   publication's;
+// - `delivered`: a marker, delivery evidence and a finished title.
+export function classifyPlanDraft({ marker, planOnly, title }) {
+  if (marker?.status === 'invalid') return 'marker-invalid';
+  if (marker?.status !== 'valid') return 'unmarked';
+  if (planOnly !== false) return 'plan-only';
+  return isPlanPublicationTitle(title) ? 'finish-incomplete' : 'delivered';
+}
+
+// A git-module failure as a tracker error: invalid input stays the caller's INVALID_PAYLOAD, and
+// every Git failure is a COMMAND_FAILED that names the step and the module's code.
+function trackerGitError(error, step) {
+  if (!(error instanceof PrDeliveryGitError)) return error;
+  return new RemoteTrackerError(
+    error.code === 'INVALID_INPUT' ? 'INVALID_PAYLOAD' : 'COMMAND_FAILED',
+    error.message,
+    { ...error.details, step, gitCode: error.code },
+    false,
+  );
+}
+
+async function executeMergeProofLocal(input, options) {
+  if (typeof options?.runner !== 'function') {
+    fail('INVALID_PAYLOAD', 'merge-proof-local requires an injected process runner');
+  }
+  try {
+    return await localMergeProof(input, { runner: options.runner });
+  } catch (error) {
+    throw trackerGitError(error, 'merge-proof');
+  }
+}
+
+// The author's collaborator permission as the forge states it (`none` when the forge knows no such
+// collaborator), or null when it cannot be read: no author login, a probe that reports the read
+// unsupported, or any other failure of the read. Neither is ever write access.
+async function readAuthorPermission(input, record, repository, runner, probe, commands) {
+  const login = record.author?.login;
+  if (typeof login !== 'string' || login === '') return null;
+  if (probe.capabilities?.collaboratorPermissionRead === false) return null;
+  try {
+    const permissionInput = { ...input, login };
+    const plan = buildCommandPlan('collaborator-permission-read', permissionInput, repository);
+    commands.push(redact(plan));
+    const result = await runChecked(runner, plan, 'collaborator-permission-read');
+    const parsed = isTeaApiIncludePlan(plan)
+      ? { raw: teaApiSuccess(result, 'collaborator-permission-read').body }
+      : parseCommandOutput(result, plan, 'collaborator-permission-read');
+    return normalizeRemoteData(
+      'collaborator-permission-read',
+      parsed.raw,
+      repository,
+      permissionInput,
+      parsed,
+    ).permission;
+  } catch (error) {
+    // The forge states that the author is no collaborator at all: a read, and no write access.
+    return error?.code === 'TARGET_NOT_FOUND' ? 'none' : null;
+  }
+}
+
+// The classification is evidence about one head against one base branch, so the pull request read
+// must state exactly the head SHA and the base ref the caller fetched and verified locally. Both
+// GitHub's and Forgejo's raw pull-request objects carry them as `head.sha` and `base.ref`. A missing
+// or different value means the pull request moved (a push, a retarget) or the caller verified the
+// wrong refs, and every answer would then describe another state than the forge's: fail closed and
+// name the step, so the caller re-reads instead of acting on the stale range.
+function assertReadMatchesRange(raw, range, number) {
+  const headSha = raw?.head?.sha;
+  if (typeof headSha !== 'string' || headSha.toLowerCase() !== range.headSha.toLowerCase()) {
+    fail('COMMAND_FAILED', 'the pull request head is not the verified headSha', {
+      number,
+      step: 'head-mismatch',
+    });
+  }
+  const baseRef = raw?.base?.ref;
+  if (typeof baseRef !== 'string' || baseRef !== range.baseRef) {
+    fail('COMMAND_FAILED', 'the pull request base is not the verified baseRef', {
+      number,
+      step: 'base-mismatch',
+    });
+  }
+}
+
+// `pr-draft-classify`: one `pr-read`, the author's permission read for a same-repository pull
+// request, and for a valid plan marker the plan-only evidence over the local refs the caller
+// fetched. It reads the body only for the marker and the appendix blocks and returns neither the
+// body nor any of its prose but the neutralized appendix of a `verified` record. Any forge or Git
+// failure other than the permission read fails the whole operation.
+async function executePrDraftClassify(input, repository, runner, probe) {
+  const number = prNumber(input);
+  let range;
+  try {
+    range = parseRangeInput(input);
+  } catch (error) {
+    throw trackerGitError(error, 'input');
+  }
+  const commands = [];
+  const readPlan = buildCommandPlan('pr-read', input, repository);
+  commands.push(redact(readPlan));
+  const label = 'pr-draft-classify read';
+  const result = await runChecked(runner, readPlan, label);
+  const parsed = isTeaApiIncludePlan(readPlan)
+    ? { raw: teaApiSuccess(result, label).body }
+    : parseCommandOutput(result, readPlan, label);
+  const record = normalizeRemoteData('pr-read', parsed.raw, repository, input, parsed);
+  if (record?.output !== undefined || typeof record?.body !== 'string') {
+    fail('INVALID_PAYLOAD', 'pr-read returned no structured pull request', { number });
+  }
+  assertReadMatchesRange(parsed.raw, range, number);
+
+  const marker = inspectPlanPrMarker(record.body);
+  let planOnly;
+  if (marker.status === 'valid') {
+    try {
+      ({ planOnly } = await planOnlyEvidence({ ...range, planPath: marker.plan }, { runner }));
+    } catch (error) {
+      throw trackerGitError(error, 'plan-only-evidence');
+    }
+  }
+  const draftClass = classifyPlanDraft({ marker, planOnly, title: record.title });
+
+  const blocks = extractAppendixBlocks(record.body);
+  const permission =
+    record.sameRepository === true
+      ? await readAuthorPermission(input, record, repository, runner, probe, commands)
+      : null;
+  const { trust, reason } = assessAppendixTrust({
+    sameRepository: record.sameRepository,
+    permission,
+  });
+  const shown = trust === 'verified' ? neutralizeAppendix(blocks) : null;
+  return {
+    result: {
+      number,
+      class: draftClass,
+      ...(marker.status === 'valid'
+        ? { planPath: marker.plan, archivePath: archivePathFor(marker.plan) }
+        : {}),
+      ...(marker.status === 'invalid' ? { markerError: marker.error } : {}),
+      draft: record.draft === true,
+      readyTitle: readyTitleFor(record.title, repository.provider),
+      appendixPresent: blocks.length > 0,
+      appendixDigest: appendixDigest(blocks),
+      appendixTrust: trust,
+      appendixTrustReason: reason,
+      appendix: shown?.text ?? null,
+      appendixTruncated: shown?.truncated ?? false,
+      blockers: countAppendixBlockers(blocks),
+    },
+    commands,
+  };
 }
 
 // A `planPath` discovery hands the caller the parsed marker and never a body (see `pr-list` in

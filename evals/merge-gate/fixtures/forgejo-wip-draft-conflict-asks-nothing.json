@@ -1,0 +1,626 @@
+{
+  "name": "forgejo-wip-draft-conflict-asks-nothing",
+  "description": "A Forgejo WIP-titled draft, mergeability absent, whose local merge proof finds a conflict: the run ends from Phase 2 with a conflict report, classifies nothing, asks nothing and mutates nothing.",
+  "viewerLogin": "flow-gate",
+  "humanLogin": "casey-reviewer",
+  "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+  "pullRequest": 42,
+  "repository": {
+    "host": "code.example.test",
+    "owner": "example",
+    "repository": "flow",
+    "provider": "forgejo"
+  },
+  "probe": {
+    "executable": "tea",
+    "login": "work",
+    "capabilities": {
+      "viewerRead": true,
+      "pullRequestStatus": true,
+      "pullRequestChecksWait": true,
+      "pullRequestMerge": true,
+      "pullRequestMarkReady": true,
+      "pullRequestTitleUpdate": true,
+      "prCommentsRead": true,
+      "prReviewsRead": true,
+      "collaboratorPermissionRead": true,
+      "issueCommentsRead": true,
+      "issueClose": true,
+      "conditionalWrites": false
+    }
+  },
+  "operations": {
+    "repository-resolve": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "repository-resolve",
+        "provider": "forgejo",
+        "data": {
+          "host": "code.example.test",
+          "owner": "example",
+          "repository": "flow",
+          "slug": "example/flow",
+          "provider": "forgejo"
+        },
+        "dryRun": false
+      }
+    },
+    "reference-parse": {
+      "input": {
+        "reference": "42",
+        "expectedKind": "pull-request"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "reference-parse",
+        "provider": null,
+        "data": [
+          {
+            "kind": "pull-request",
+            "number": 42,
+            "repository": {
+              "host": "code.example.test",
+              "owner": "example",
+              "repository": "flow",
+              "provider": "forgejo"
+            }
+          }
+        ],
+        "dryRun": false
+      }
+    },
+    "probe": {
+      "input": {},
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "probe",
+        "provider": "forgejo",
+        "data": {
+          "repository": {
+            "host": "code.example.test",
+            "owner": "example",
+            "repository": "flow",
+            "slug": "example/flow",
+            "provider": "forgejo"
+          },
+          "executable": "tea",
+          "login": "work",
+          "capabilities": {
+            "viewerRead": true,
+            "pullRequestStatus": true,
+            "pullRequestChecksWait": true,
+            "pullRequestMerge": true,
+            "pullRequestMarkReady": true,
+            "pullRequestTitleUpdate": true,
+            "prCommentsRead": true,
+            "prReviewsRead": true,
+            "collaboratorPermissionRead": true,
+            "issueCommentsRead": true,
+            "issueClose": true,
+            "conditionalWrites": false
+          }
+        },
+        "dryRun": false
+      }
+    },
+    "pr-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "exit": 0,
+        "stdout": "{\"number\":42,\"title\":\"WIP: feat: add the merge-gate behavioural eval skeleton\",\"body\":\"Adds the eval skeleton.\\n\\n<!-- effective-flow-autopilot-appendix:begin v1 -->\\n## Autopilot record\\n\\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\\n\\n### Close decisions\\n\\nNone.\\n\\n### Automatic decisions\\n\\n2 decisions were taken automatically with a clear lead.\\n\\n<!-- effective-flow-autopilot-appendix:end -->\\n\",\"state\":\"open\",\"draft\":true,\"mergeable\":false,\"url\":\"https://code.example.test/api/v1/repos/example/flow/pulls/42\",\"html_url\":\"https://code.example.test/example/flow/pulls/42\",\"head\":{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"ref\":\"effective-flow/build/merge-gate-behavioural-evals\",\"repo\":{\"full_name\":\"example/flow\"}},\"base\":{\"ref\":\"develop\",\"repo\":{\"full_name\":\"example/flow\"}},\"user\":{\"login\":\"flow-gate\"},\"labels\":[],\"created_at\":\"2026-09-01T08:00:00Z\",\"updated_at\":\"2026-09-01T09:00:00Z\"}",
+        "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-read",
+        "provider": "forgejo",
+        "data": {
+          "result": {
+            "number": 42,
+            "title": "WIP: feat: add the merge-gate behavioural eval skeleton",
+            "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n",
+            "state": "open",
+            "author": {
+              "login": "flow-gate",
+              "isBot": null,
+              "authorType": "unknown"
+            },
+            "createdAt": "2026-09-01T08:00:00.000Z",
+            "updatedAt": "2026-09-01T09:00:00.000Z",
+            "labels": [],
+            "url": "https://code.example.test/example/flow/pulls/42",
+            "repository": "example/flow",
+            "head": "effective-flow/build/merge-gate-behavioural-evals",
+            "base": "develop",
+            "draft": true,
+            "headRepository": "example/flow",
+            "sameRepository": true
+          },
+          "command": {
+            "executable": "tea",
+            "args": [
+              "api",
+              "repos/example/flow/pulls/42",
+              "--include",
+              "--login",
+              "work",
+              "--repo",
+              "example/flow"
+            ]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "viewer-read": {
+      "input": {},
+      "provider": {
+        "exit": 0,
+        "stdout": "{\"login\":\"flow-gate\",\"id\":4242,\"login_name\":\"\",\"full_name\":\"Effective Flow Gate\"}",
+        "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "viewer-read",
+        "provider": "forgejo",
+        "data": {
+          "result": {
+            "login": "flow-gate"
+          },
+          "command": {
+            "executable": "tea",
+            "args": ["api", "user", "--include", "--login", "work"]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-status-read": {
+      "input": {
+        "number": 42
+      },
+      "providers": [
+        {
+          "exit": 0,
+          "stdout": "{\"number\":42,\"title\":\"WIP: feat: add the merge-gate behavioural eval skeleton\",\"body\":\"Adds the eval skeleton.\\n\\n<!-- effective-flow-autopilot-appendix:begin v1 -->\\n## Autopilot record\\n\\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\\n\\n### Close decisions\\n\\nNone.\\n\\n### Automatic decisions\\n\\n2 decisions were taken automatically with a clear lead.\\n\\n<!-- effective-flow-autopilot-appendix:end -->\\n\",\"state\":\"open\",\"draft\":true,\"mergeable\":false,\"url\":\"https://code.example.test/api/v1/repos/example/flow/pulls/42\",\"html_url\":\"https://code.example.test/example/flow/pulls/42\",\"head\":{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"ref\":\"effective-flow/build/merge-gate-behavioural-evals\",\"repo\":{\"full_name\":\"example/flow\"}},\"base\":{\"ref\":\"develop\",\"repo\":{\"full_name\":\"example/flow\"}},\"user\":{\"login\":\"flow-gate\"},\"labels\":[],\"created_at\":\"2026-09-01T08:00:00Z\",\"updated_at\":\"2026-09-01T09:00:00Z\"}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        },
+        {
+          "exit": 0,
+          "stdout": "{\"state\":\"success\",\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"statuses\":[{\"id\":1,\"context\":\"ci\",\"status\":\"success\",\"target_url\":\"https://code.example.test/example/flow/actions/runs/1\",\"description\":\"ci\",\"created_at\":\"2026-09-01T09:04:32Z\"}]}",
+          "stderr": "HTTP/1.1 200 OK\r\nX-Total-Count: 1\r\n\r\n"
+        },
+        {
+          "exit": 0,
+          "stdout": "{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"commit\":{\"committer\":{\"date\":\"2026-09-01T09:00:00Z\"},\"author\":{\"date\":\"2026-09-01T09:00:00Z\"}}}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-status-read",
+        "provider": "forgejo",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "title": "WIP: feat: add the merge-gate behavioural eval skeleton",
+            "state": "open",
+            "draft": true,
+            "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+            "headCommittedAt": "2026-09-01T09:00:00.000Z",
+            "baseRef": "develop",
+            "url": "https://code.example.test/example/flow/pulls/42",
+            "checksReported": true,
+            "checkCount": 1,
+            "supersededCheckCount": 0,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://code.example.test/example/flow/actions/runs/1",
+                "completedAt": "2026-09-01T09:04:32.000Z",
+                "supersededRuns": 0
+              }
+            ]
+          },
+          "commands": [
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/pulls/42",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            },
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/commits/4b74f096b3ac20c587cc25c89fe4990d1fec349a/status?limit=100",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            },
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/git/commits/4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-checks-wait": {
+      "input": {
+        "number": 42,
+        "payload": {
+          "timeoutMinutes": 20
+        }
+      },
+      "providers": [
+        {
+          "exit": 0,
+          "stdout": "{\"number\":42,\"title\":\"WIP: feat: add the merge-gate behavioural eval skeleton\",\"body\":\"Adds the eval skeleton.\\n\\n<!-- effective-flow-autopilot-appendix:begin v1 -->\\n## Autopilot record\\n\\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\\n\\n### Close decisions\\n\\nNone.\\n\\n### Automatic decisions\\n\\n2 decisions were taken automatically with a clear lead.\\n\\n<!-- effective-flow-autopilot-appendix:end -->\\n\",\"state\":\"open\",\"draft\":true,\"mergeable\":false,\"url\":\"https://code.example.test/api/v1/repos/example/flow/pulls/42\",\"html_url\":\"https://code.example.test/example/flow/pulls/42\",\"head\":{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"ref\":\"effective-flow/build/merge-gate-behavioural-evals\",\"repo\":{\"full_name\":\"example/flow\"}},\"base\":{\"ref\":\"develop\",\"repo\":{\"full_name\":\"example/flow\"}},\"user\":{\"login\":\"flow-gate\"},\"labels\":[],\"created_at\":\"2026-09-01T08:00:00Z\",\"updated_at\":\"2026-09-01T09:00:00Z\"}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        },
+        {
+          "exit": 0,
+          "stdout": "{\"state\":\"success\",\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"statuses\":[{\"id\":1,\"context\":\"ci\",\"status\":\"success\",\"target_url\":\"https://code.example.test/example/flow/actions/runs/1\",\"description\":\"ci\",\"created_at\":\"2026-09-01T09:04:32Z\"}]}",
+          "stderr": "HTTP/1.1 200 OK\r\nX-Total-Count: 1\r\n\r\n"
+        },
+        {
+          "exit": 0,
+          "stdout": "{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"commit\":{\"committer\":{\"date\":\"2026-09-01T09:00:00Z\"},\"author\":{\"date\":\"2026-09-01T09:00:00Z\"}}}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        },
+        {
+          "exit": 0,
+          "stdout": "{\"number\":42,\"title\":\"WIP: feat: add the merge-gate behavioural eval skeleton\",\"body\":\"Adds the eval skeleton.\\n\\n<!-- effective-flow-autopilot-appendix:begin v1 -->\\n## Autopilot record\\n\\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\\n\\n### Close decisions\\n\\nNone.\\n\\n### Automatic decisions\\n\\n2 decisions were taken automatically with a clear lead.\\n\\n<!-- effective-flow-autopilot-appendix:end -->\\n\",\"state\":\"open\",\"draft\":true,\"mergeable\":false,\"url\":\"https://code.example.test/api/v1/repos/example/flow/pulls/42\",\"html_url\":\"https://code.example.test/example/flow/pulls/42\",\"head\":{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"ref\":\"effective-flow/build/merge-gate-behavioural-evals\",\"repo\":{\"full_name\":\"example/flow\"}},\"base\":{\"ref\":\"develop\",\"repo\":{\"full_name\":\"example/flow\"}},\"user\":{\"login\":\"flow-gate\"},\"labels\":[],\"created_at\":\"2026-09-01T08:00:00Z\",\"updated_at\":\"2026-09-01T09:00:00Z\"}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-checks-wait",
+        "provider": "forgejo",
+        "data": {
+          "result": {
+            "number": 42,
+            "repository": "example/flow",
+            "complete": true,
+            "timedOut": false,
+            "checksReported": true,
+            "checkCount": 1,
+            "checks": [
+              {
+                "name": "ci",
+                "status": "COMPLETED",
+                "conclusion": "SUCCESS",
+                "url": "https://code.example.test/example/flow/actions/runs/1"
+              }
+            ]
+          },
+          "commands": [
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/pulls/42",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ],
+              "timeoutMs": 1020000,
+              "processGroup": true
+            },
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/commits/4b74f096b3ac20c587cc25c89fe4990d1fec349a/status?limit=100",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ],
+              "timeoutMs": 960000,
+              "processGroup": true
+            },
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/git/commits/4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ],
+              "timeoutMs": 900000,
+              "processGroup": true
+            },
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/pulls/42",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ],
+              "timeoutMs": 780000,
+              "processGroup": true
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-comments-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": "[]",
+      "envelope": {
+        "ok": true,
+        "operation": "pr-comments-read",
+        "provider": "forgejo",
+        "data": {
+          "result": [],
+          "command": {
+            "executable": "tea",
+            "args": [
+              "pulls",
+              "42",
+              "--login",
+              "work",
+              "--repo",
+              "example/flow",
+              "--output",
+              "json",
+              "--comments",
+              "--fields",
+              "index,comments"
+            ]
+          },
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "pr-reviews-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "exit": 0,
+        "stdout": "[]",
+        "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "pr-reviews-read",
+        "provider": "forgejo",
+        "data": {
+          "result": [],
+          "commands": [
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/pulls/42/reviews?limit=100&page=1",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            }
+          ],
+          "pagesFetched": 1,
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "review-threads-read": {
+      "input": {
+        "number": 42
+      },
+      "provider": {
+        "exit": 0,
+        "stdout": "[]",
+        "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+      },
+      "envelope": {
+        "ok": true,
+        "operation": "review-threads-read",
+        "provider": "forgejo",
+        "data": {
+          "result": [],
+          "commands": [
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/pulls/42/reviews?limit=100&page=1",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "body-hash": {
+      "input": {
+        "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "body-hash",
+        "provider": null,
+        "data": {
+          "hash": "8895701c3fe96acd0ee7c2c14d1fdc71b00ea7a584a5c03ab725810a77fcb108"
+        },
+        "dryRun": false
+      }
+    },
+    "issue-lifecycle-receipt-parse": {
+      "input": {
+        "body": "Adds the eval skeleton.\n\n<!-- effective-flow-autopilot-appendix:begin v1 -->\n## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.\n\n<!-- effective-flow-autopilot-appendix:end -->\n"
+      },
+      "provider": null,
+      "envelope": {
+        "ok": true,
+        "operation": "issue-lifecycle-receipt-parse",
+        "provider": null,
+        "data": {
+          "found": false,
+          "receipt": null
+        },
+        "dryRun": false
+      }
+    },
+    "pr-draft-classify": {
+      "input": {
+        "number": 42,
+        "cwd": "/tmp",
+        "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+        "baseRef": "develop"
+      },
+      "providers": [
+        {
+          "exit": 0,
+          "stdout": "{\"number\":42,\"title\":\"WIP: feat: add the merge-gate behavioural eval skeleton\",\"body\":\"Adds the eval skeleton.\\n\\n<!-- effective-flow-autopilot-appendix:begin v1 -->\\n## Autopilot record\\n\\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\\n\\n### Close decisions\\n\\nNone.\\n\\n### Automatic decisions\\n\\n2 decisions were taken automatically with a clear lead.\\n\\n<!-- effective-flow-autopilot-appendix:end -->\\n\",\"state\":\"open\",\"draft\":true,\"mergeable\":false,\"url\":\"https://code.example.test/api/v1/repos/example/flow/pulls/42\",\"html_url\":\"https://code.example.test/example/flow/pulls/42\",\"head\":{\"sha\":\"4b74f096b3ac20c587cc25c89fe4990d1fec349a\",\"ref\":\"effective-flow/build/merge-gate-behavioural-evals\",\"repo\":{\"full_name\":\"example/flow\"}},\"base\":{\"ref\":\"develop\",\"repo\":{\"full_name\":\"example/flow\"}},\"user\":{\"login\":\"flow-gate\"},\"labels\":[],\"created_at\":\"2026-09-01T08:00:00Z\",\"updated_at\":\"2026-09-01T09:00:00Z\"}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        },
+        {
+          "exit": 0,
+          "stdout": "{\"permission\":\"write\",\"role_name\":\"write\"}",
+          "stderr": "HTTP/1.1 200 OK\r\n\r\n"
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "pr-draft-classify",
+        "provider": "forgejo",
+        "data": {
+          "result": {
+            "number": 42,
+            "class": "unmarked",
+            "draft": true,
+            "readyTitle": "feat: add the merge-gate behavioural eval skeleton",
+            "appendixPresent": true,
+            "appendixDigest": "a69fac79259ab55f0d80b007c0f9e0df3d8d8ae50934a6e15ff8ece780d7c5d6",
+            "appendixTrust": "verified",
+            "appendixTrustReason": null,
+            "appendix": "## Autopilot record\n\n**Source:** plan `docs/plan/2026-09-01-merge-gate-eval.md`\n\n### Close decisions\n\nNone.\n\n### Automatic decisions\n\n2 decisions were taken automatically with a clear lead.",
+            "appendixTruncated": false,
+            "blockers": 0
+          },
+          "commands": [
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/pulls/42",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            },
+            {
+              "executable": "tea",
+              "args": [
+                "api",
+                "repos/example/flow/collaborators/flow-gate/permission",
+                "--include",
+                "--login",
+                "work",
+                "--repo",
+                "example/flow"
+              ]
+            }
+          ],
+          "conditionalWriteAvailable": false
+        },
+        "dryRun": false
+      }
+    },
+    "merge-proof-local": {
+      "input": {
+        "cwd": "/tmp",
+        "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+        "baseRef": "develop"
+      },
+      "providers": [
+        "git version 2.43.0\n",
+        "false\n",
+        "509ed463e7c31953d777a8f76840eba51d2d3eb0\n",
+        "4b74f096b3ac20c587cc25c89fe4990d1fec349a\n",
+        "/tmp\n",
+        {
+          "exit": 1,
+          "stdout": "4b825dc642cb6eb9a060e54bf8d69288fbee4904\u0000docs/merge-gate-eval.md\u0000",
+          "stderr": ""
+        }
+      ],
+      "envelope": {
+        "ok": true,
+        "operation": "merge-proof-local",
+        "provider": null,
+        "data": {
+          "gitVersion": "2.43",
+          "baseCommit": "509ed463e7c31953d777a8f76840eba51d2d3eb0",
+          "headSha": "4b74f096b3ac20c587cc25c89fe4990d1fec349a",
+          "conflictCount": 1,
+          "status": "conflict",
+          "reason": null
+        },
+        "dryRun": false
+      }
+    }
+  }
+}

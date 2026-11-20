@@ -81,7 +81,9 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    no architecture or roadmap sources found". When the reviewer still fails after one retry, it
    says "not assessed — scoring unavailable". Neither is a blocker.
 5. **Deliver.** `pr` opens or finishes the **draft** pull request and appends the autopilot record.
-   Autopilot never marks it ready for review and never merges. For an issue, the pull request also
+   Autopilot never marks it ready for review and never merges. That decision stays with you: run
+   [`merge-gate <PR>`](./tools-deliver.md), which shows the decision record and, when you can answer
+   and no blocker is recorded, offers to mark the draft ready and continue. For an issue, the pull request also
    carries `Refs #<N>` and a lifecycle receipt with the non-closing relationship `refs`, built from
    the run's ledger, so [`merge-gate`](./tools-deliver.md) can observe the issue after the merge.
    The receipt adds no in-progress label and no pull-request link comment, and nothing closes the
@@ -101,7 +103,8 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    blocker.
 
 Review publication is off for the whole run, even when `delivery.prReview` is `always`: the draft
-pull request is reviewed by a person, and `merge-gate` is the next step.
+pull request is reviewed by a person, and `merge-gate` is the next step. It is the only tool that
+can mark the draft ready, and only after you confirm.
 
 ### How questions are decided
 

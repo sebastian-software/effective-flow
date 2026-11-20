@@ -256,6 +256,11 @@ backstop for one that carries open points.
 | pr            | always                                                                          | {{SKILL:merge-gate}} <PR>                     | {{SKILL:review}} <PR>                                      |
 | merge-gate    | blocked by review notes                                                         | {{SKILL:iterate}} <PR>                        | {{SKILL:merge-gate}} <PR>                                  |
 | merge-gate    | blocked by failing checks                                                       | {{SKILL:iterate}} <PR> fix the failing checks | {{SKILL:investigate}} failing checks on #<PR>              |
+| merge-gate    | ended without merge: the user kept the draft                                    | {{SKILL:review}} <PR>                         | {{SKILL:iterate}} <PR>                                     |
+| merge-gate    | ended without merge: plan-only draft or draft with blockers                     | {{SKILL:apply}} <plan-file>                   | {{SKILL:review}} <PR>                                      |
+| merge-gate    | ended without merge: plan-draft finish incomplete                               | {{SKILL:pr}}                                  | —                                                          |
+| merge-gate    | ended without merge: invalid plan marker or missing mark-ready capability       | {{SKILL:review}} <PR>                         | —                                                          |
+| merge-gate    | marked ready, rounds exhausted before the merge                                 | {{SKILL:merge-gate}} <PR>                     | —                                                          |
 | merge-gate    | merged but at least one linked issue is open or unobservable                    | {{SKILL:merge-gate}} <PR>                     | —                                                          |
 | merge-gate    | merged, associated plan's review report has open findings                       | {{SKILL:apply}} <report>                      | {{SKILL:open-plans}}                                       |
 | merge-gate    | merged                                                                          | {{SKILL:open-plans}}                          | —                                                          |

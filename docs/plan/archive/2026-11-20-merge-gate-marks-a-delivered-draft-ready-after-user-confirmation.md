@@ -1,6 +1,6 @@
 # Merge-gate marks a delivered draft ready after user confirmation
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -9,6 +9,7 @@
 After `effective-flow autopilot`, the recommended next step is `effective-flow merge-gate <PR>` (`src/shared/next-steps.md:250`). Autopilot always ends in a draft (`src/tools/autopilot.md:2`), and merge-gate's Phase 4 condition 3 requires "mergeable and **not a draft**" (`src/shared/merge-gate-delegated-run.md:1216`). So the recommended step can never merge the PR it is recommended for. In the PR #697 session that took four invocations, a manual `gh pr ready`, and a manual issue close.
 
 Goal: a merge-gate run in which the user can answer, on a draft holding a **delivered, unblocked implementation**, shows the PR's autopilot decision record (if one is present and verified; otherwise the note that it is missing or unverifiable) once all other merge conditions hold. It then asks whether to mark the PR ready for review. On confirmation it marks the PR ready with the existing `pr-mark-ready` tracker action, re-reads the state, and continues to the merge.
+
 - Non-interactive runs never mark ready.
 - Relayed runs mark ready only after the user's answer comes back through the caller.
 - A plan-only draft, a draft with recorded blockers, or a draft whose plan-draft finish is incomplete is never offered.
@@ -17,6 +18,7 @@ Goal: a merge-gate run in which the user can answer, on a draft holding a **deli
 The investigation `.effective-flow/investigation/investigation-2026-11-20-interactive-acceptance-tool-for-autopilot-prs.md` ruled out a new tool. The user chose to extend the existing tools, allowed merge-gate to mark drafts ready, excluded drafts with blockers from the offer, and asked for Forgejo coverage with its own rule.
 
 Out of scope:
+
 - The issue-close offer for autopilot PRs: parallel plan `docs/plan/2026-11-20-issue-lifecycle-receipt-for-plan-pr-continuations.md`.
 - An acceptance lens in `review`: a separate decision that is still open, see Assumptions and open points.
 - Autopilot itself: it keeps "never marks ready, never merges" (`docs/adr/automation-tool-category.md:40`). merge-gate is not an Automation tool, so that guardrail does not bind it.
@@ -58,6 +60,7 @@ Classification: Feature. This adds a new user-confirmed forge action and a new q
   - `delivered`: a marker, delivery evidence, and a finished title.
 
   The helper reads the parsed marker from `pr-read` and git state, never PR prose (`docs/adr/input-trust-boundary.md`). `pr.md` stays unchanged: its recovery rule answers a different question (whether the finish can still be applied) and already has the matched PR record.
+
 - **Trust decides only whether the decision record is shown.** The helper returns the autopilot appendix between `<!-- effective-flow-autopilot-appendix:begin v1 -->` and `<!-- effective-flow-autopilot-appendix:end -->` (`src/scripts/autopilot-core.mjs:187-188`) as `verified` only when the PR is `sameRepository` and the PR author's write permission is proven through `collaborator-permission-read`, using the existing set of write levels (`backlog-audit-core.mjs:116`, including Forgejo's `owner`) (`remote-tracker-core.mjs:2488, 2651`; `input-trust-boundary.md:20-24`). Otherwise the record is `unverifiable`, and only its existence is reported, not its text. Shown text is neutralized: `<!--` and control characters are escaped, and the size is bounded.
 - **Blockers exclude the offer, whatever the trust level.** This is the user's decision. The count is the number of bullet lines in the `### Blockers` / `### Blocker` section of every appendix found (`autopilot-core.mjs:1355, 1377, 1454-1467`); the helper takes both heading strings from the render constants. A count greater than 0 suppresses the question, because suppressing is always the safe direction. The gate ends with a report naming the blockers as stated in the PR body. A new merge-gate next-steps row routes to `apply <plan-file>`. Without an appendix, the question names the missing decision record explicitly.
 - **Check the capability before asking, and recheck the state before applying.**
@@ -70,24 +73,26 @@ Classification: Feature. This adds a new user-confirmed forge action and a new q
 
   Each return consumes a round under the round accounting (`:1044-1060`), which names this return explicitly. Every other unmet condition ends the run as today. If `maxRounds` runs out after the ready step, the report names the PR as ready but not merged.
   - A second mark-ready in the same run is impossible, because the PR is then no longer a draft.
+
 - **No config key.** The behaviour is bound to a run in which the user answers, and to the user's explicit answer. `completion: merge` does not imply consent to mark ready, so the question is always asked.
 
 ## Affected files
 
-| File | Description |
-|---|---|
-| `src/shared/merge-gate-delegated-run.md` | Phase 2: the exit exception for a WIP-titled Forgejo draft, which needs `merge-proof-local`; amend the ancestry-fetch condition at `:831-833`; name the proof in the Git-read paragraph `:268-275`; a proven conflict ends the run with a report. Entry step 6 (`:52-54`): add `Keep draft` to the stopping answers, so that a re-dispatch with `Keep draft` stops without running every phase again. Phase 4: the per-forge draft trigger; capability check; helper classification; when the class is `delivered` or `unmarked` and the blocker count is 0, the question (gated) or `BLOCKED-USER ready-for-review` (relayed) with the named evidence; on yes, a fresh status read, then a dry run, then apply, then a fresh read, then a full Phase 4 re-evaluation. Add the new return path to the closed list (`:1186-1200`) with both return triggers, and to the round accounting (`:1044-1060`). Phase 4 runs `merge-proof-local` again for Forgejo WIP drafts. Add the Forgejo rule for condition 3 and condition 9 against `readyTitle`. Extend the write-boundary sentence at `:1528` and the `no-branch-writes` clause at `:110`, so that mark-ready is a confirmed forge write of its own. |
-| `src/tools/merge-gate.md` | Add a `ready-for-review` row to the question table (`:91-101`), with options `Mark ready and continue` / `Keep draft`, an ask fence with the same labels, and a relayed branch. Add subject keys (class, record sha256) to the digest rules (`:115-121`). Add a rules bullet: mark ready only after the user's answer in this run; never non-interactively, never for `plan-only`, `marker-invalid`, `finish-incomplete`, or a draft with blockers. |
-| `src/scripts/remote-tracker-core.mjs` plus a new git-only module | Two new read-only operations. (a) `pr-draft-classify`: inputs PR number, `cwd`, `headSha`, `origin/<baseRef>` (the refs are already fetched by the caller); output `class`, `appendix` (neutralized, or `null` if missing or `unverifiable`), `appendixPresent`, `appendixDigest` (sha256 of the raw block), `appendixTrust` (`verified` / `unverifiable`), `blockers`, `readyTitle`. (b) `merge-proof-local`: inputs `cwd`, `headSha`, `origin/<baseRef>`; output `clean` / `conflict` / `unavailable` with a reason (for example the Git version). Both fail closed on any git or forge error. The two git functions (`plan-only` evidence; the merge proof with `git merge-tree --write-tree` against a private object directory, following `diff-baseline-core.mjs`) go into the git-only module, not into `conflict-validation-core.mjs` with its CI detection. The location is chosen in implementation step 1 and recorded in the developer guide. |
-| `src/scripts/remote-tracker.mjs`, `src/scripts/claude-settings-core.mjs`, the build's `RUNTIME_SCRIPT_FILES` | Register both new read operations and their allow rules. Add the git-only module to `RUNTIME_SCRIPT_FILES`; otherwise it is never shipped (`AGENTS.md:47`). Update the `contextBudget` of `merge-gate.md` (`AGENTS.md:70`). `pr-mark-ready` is already allowed (`claude-settings-core.mjs:200`). |
-| `src/shared/next-steps.md` | Row 250 (autopilot, draft PR) stays `merge-gate <PR>` first, which is now correct. Add these merge-gate rows, one condition each:
+| File                                                                                                         | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `src/shared/merge-gate-delegated-run.md`                                                                     | Phase 2: the exit exception for a WIP-titled Forgejo draft, which needs `merge-proof-local`; amend the ancestry-fetch condition at `:831-833`; name the proof in the Git-read paragraph `:268-275`; a proven conflict ends the run with a report. Entry step 6 (`:52-54`): add `Keep draft` to the stopping answers, so that a re-dispatch with `Keep draft` stops without running every phase again. Phase 4: the per-forge draft trigger; capability check; helper classification; when the class is `delivered` or `unmarked` and the blocker count is 0, the question (gated) or `BLOCKED-USER ready-for-review` (relayed) with the named evidence; on yes, a fresh status read, then a dry run, then apply, then a fresh read, then a full Phase 4 re-evaluation. Add the new return path to the closed list (`:1186-1200`) with both return triggers, and to the round accounting (`:1044-1060`). Phase 4 runs `merge-proof-local` again for Forgejo WIP drafts. Add the Forgejo rule for condition 3 and condition 9 against `readyTitle`. Extend the write-boundary sentence at `:1528` and the `no-branch-writes` clause at `:110`, so that mark-ready is a confirmed forge write of its own. |
+| `src/tools/merge-gate.md`                                                                                    | Add a `ready-for-review` row to the question table (`:91-101`), with options `Mark ready and continue` / `Keep draft`, an ask fence with the same labels, and a relayed branch. Add subject keys (class, record sha256) to the digest rules (`:115-121`). Add a rules bullet: mark ready only after the user's answer in this run; never non-interactively, never for `plan-only`, `marker-invalid`, `finish-incomplete`, or a draft with blockers.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `src/scripts/remote-tracker-core.mjs` plus a new git-only module                                             | Two new read-only operations. (a) `pr-draft-classify`: inputs PR number, `cwd`, `headSha`, `origin/<baseRef>` (the refs are already fetched by the caller); output `class`, `appendix` (neutralized, or `null` if missing or `unverifiable`), `appendixPresent`, `appendixDigest` (sha256 of the raw block), `appendixTrust` (`verified` / `unverifiable`), `blockers`, `readyTitle`. (b) `merge-proof-local`: inputs `cwd`, `headSha`, `origin/<baseRef>`; output `clean` / `conflict` / `unavailable` with a reason (for example the Git version). Both fail closed on any git or forge error. The two git functions (`plan-only` evidence; the merge proof with `git merge-tree --write-tree` against a private object directory, following `diff-baseline-core.mjs`) go into the git-only module, not into `conflict-validation-core.mjs` with its CI detection. The location is chosen in implementation step 1 and recorded in the developer guide.                                                                                                                                                                                                                                              |
+| `src/scripts/remote-tracker.mjs`, `src/scripts/claude-settings-core.mjs`, the build's `RUNTIME_SCRIPT_FILES` | Register both new read operations and their allow rules. Add the git-only module to `RUNTIME_SCRIPT_FILES`; otherwise it is never shipped (`AGENTS.md:47`). Update the `contextBudget` of `merge-gate.md` (`AGENTS.md:70`). `pr-mark-ready` is already allowed (`claude-settings-core.mjs:200`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `src/shared/next-steps.md`                                                                                   | Row 250 (autopilot, draft PR) stays `merge-gate <PR>` first, which is now correct. Add these merge-gate rows, one condition each:                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+
 - "ended without merge: the user kept the draft" → `review <PR>`, `iterate <PR>`;
 - "ended without merge: plan-only draft or draft with blockers" → `apply <plan-file>`, where `<plan-file>` comes from the validated `planPrMarker`, or the validated `Associated plan:` input for an `unmarked` draft; without either, `review <PR>`;
 - "ended without merge: plan-draft finish incomplete" → `pr`;
 - "ended without merge: invalid plan marker or missing mark-ready capability" → `review <PR>`, with the reason in the report;
 - "marked ready, rounds exhausted before the merge" → `merge-gate <PR>`.
 
- Keep the group order consistent with the test (`test/workflow-contracts.test.mjs:5205`). |
+Keep the group order consistent with the test (`test/workflow-contracts.test.mjs:5205`). |
 | `docs/user-guide/tool-flow.md` | Mirror the new next-steps rows (`:223-225`), checked by `findNextStepsDocViolations`. |
 | `docs/user-guide/tools-deliver.md` | In the merge-gate section (`:405-440`), describe the draft path: the question after checks, the verified decision record, the excluded classes and blockers, the Forgejo rule, and that non-interactive runs never mark ready. |
 | `docs/user-guide/tools-automation.md` | Near `:20` and `:84`: autopilot still never marks ready, but `merge-gate <PR>` shows the decision record and offers to mark the PR ready when the user can answer and there are no blockers. |
@@ -163,15 +168,15 @@ Classification: Feature. This adds a new user-confirmed forge action and a new q
 
 ### Summary
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 1 | 7 | 7 |
-| Security | 0 | 3 | 2 |
-| Data protection | 0 | 0 | 0 |
-| Error cases | 0 | 3 | 3 |
-| Testability | 0 | 2 | 3 |
-| Scope | 0 | 2 | 1 |
-| Maintainability | 0 | 2 | 3 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        1 |         7 |    7 |
+| Security        |        0 |         3 |    2 |
+| Data protection |        0 |         0 |    0 |
+| Error cases     |        0 |         3 |    3 |
+| Testability     |        0 |         2 |    3 |
+| Scope           |        0 |         2 |    1 |
+| Maintainability |        0 |         2 |    3 |
 
 ### Findings
 
@@ -228,3 +233,57 @@ Deep interactive plan review on 2026-11-20. All findings are incorporated:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-20
+**Workflow:** `effective-flow build` (via `effective-flow apply`), continuing plan PR #701
+
+### Requirement
+
+Implemented as planned: an interactive `merge-gate <PR>` run on a delivered, unblocked draft shows the autopilot decision record (or the note that it is missing or unverifiable), asks `ready-for-review` once all other merge conditions hold, marks the PR ready on confirmation, and continues to the merge. Plan-only, `marker-invalid` and `finish-incomplete` drafts, drafts with blockers, non-interactive runs, `report`/`No merge` completions, hidden mode, external trackers and a missing `pullRequestMarkReady` capability never mark ready.
+
+### Architecture decisions
+
+- Two new runtime modules instead of one: `src/scripts/pr-delivery-git-core.mjs` (plan-only evidence, `merge-tree --write-tree` proof in a private temporary object directory, Git ≥ 2.38 check) and `src/scripts/autopilot-appendix-core.mjs` (appendix extraction, raw-block digest, blocker count, trust, neutralization). The appendix constants moved there to avoid an import cycle (`autopilot-core` → `plan-publication-core` → `remote-tracker-core`). They are exported for reuse by the acceptance lens (PR #702).
+- The write-permission set moved to `remote-tracker-shared-core.mjs` as a frozen `COLLABORATOR_WRITE_PERMISSIONS` array with `isWritePermission`; `backlog-audit-core.mjs` uses it unchanged.
+- Both operations take the bare base branch name as `baseRef` and read `refs/remotes/origin/<baseRef>`.
+- `pr-draft-classify` fails closed when the head SHA or base ref of its `pr-read` differs from the caller's input (`head-mismatch`, `base-mismatch`).
+- The ask fence and the Rules bullet live in `merge-gate-delegated-run.md`, next to the gate, so `merge-gate.md` stays lean.
+- The ready step re-reads all four surfaces, re-classifies and recomputes the digest before any write. The subsection runs at most once per run. After it, pending checks or bots, absent or `UNKNOWN` mergeability, and a `BEHIND` merge state return to Phase 2 under round accounting.
+- The digest subject keys are `class`, `appendix` (raw-block sha256) and `trust`.
+- Next-steps row 250 stays `merge-gate <PR>` first. The acceptance-lens plan (PR #702) switches it to `review <PR>` first when it lands.
+
+### Affected files
+
+- Runtime: `src/scripts/{pr-delivery-git-core,autopilot-appendix-core}.mjs` (new), `src/scripts/{remote-tracker-core,remote-tracker-shared-core,remote-tracker-forgejo-core,autopilot-core,backlog-audit-core,claude-settings-core}.mjs`, `build.mjs`, `scripts/distribution-smoke.mjs`.
+- Contracts: `src/shared/merge-gate-delegated-run.md`, `src/tools/merge-gate.md` (`contextBudget` 945), `src/shared/next-steps.md`, `src/shared/setup-allowlist.md` (75 rules).
+- Docs: `docs/user-guide/{tools-deliver,tools-automation,remote-tracker,tool-flow,tools-setup}.md`, `docs/developer-guide/{build-system,architecture,configuration}.md`.
+- Evals: `evals/merge-gate/{README.md,scenario-registry.mjs,_scaffold/evaluate.mjs,_scaffold/merge-origin.mjs}`, eight scenarios and fixtures (`draft-ready-*`, `forgejo-wip-draft-*`), `evals/_scaffold/evaluate.mjs`, `evals/host-driver/tests/test_first_stage.py`.
+- Tests: `test/{pr-delivery-git-core,autopilot-appendix-core,remote-tracker-draft-classify}.test.mjs` (new), `test/{workflow-contracts,eval-fixture-fidelity,execution-profile-contract,merge-gate-eval-round,iterate-eval}.test.mjs`.
+
+### Implementation details
+
+- Deviation: the diff baseline was not captured with the helper before the first write. The clean branch commit after merging `develop` served as the baseline.
+- Deviation: the eval stub has no read-operation table, so it needed no entry. Scenario (7) covers only the re-dispatch; the first `BLOCKED-USER` is covered by scenario (1). The call log cannot show the returned `BLOCKED-USER` text or the `payload.title` value.
+- `merge-proof-local` is classified as a runtime-state-reading local operation in `RUNTIME_STATE_TRACKER_OPERATIONS`, because it reads refs and the object store.
+
+### Test results
+
+- Phase 5 full run (valid, no environment signature): `pnpm agent:check`, `node build.mjs` and the five `pnpm eval <suite> verify` calls passed. `pnpm test` (6124 tests) and `pnpm test:distribution` failed on four new causes: frozen host-driver scenario counts, the runtime-state operation list, the allowlist rule count, and the distribution smoke list. All were fixed in one correction round.
+- Later corrections were verified targeted: affected test files (up to 1834 tests, 0 failures), `pnpm agent:check`, `node build.mjs`, `pnpm test:distribution`, and eval verification without integrity blockers.
+- Eval evidence debt: the merge-gate, next-steps, iterate, build-context and focus suites have stale or absent evidence, because their loaded sources and the shared `evals/_scaffold/evaluate.mjs` changed. No evidence was recorded in this run.
+
+## Review findings
+
+**Date:** 2026-11-20
+**Reviewer:** `effective-flow-nodejs-reviewer`, `effective-flow-generic-product-reviewer` (reduced depth)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    21 |
+| Open / Not implemented |     3 |
+
+The three not-implemented findings were closed with a reason. `readyTitle` stays raw title text, because the plan requires it as the Forgejo payload and `pr-status-read` already exposes the title. The draft subsection stays eager, because drafts are the main path after autopilot. A table-formatting issue inside this plan's approved text was left unchanged.

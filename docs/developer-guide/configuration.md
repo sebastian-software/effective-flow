@@ -129,7 +129,7 @@ each non-destructive or bounded helper operation: the runtime-state helper opera
 `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
 `presence list`, `presence release`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
 `config-resolve.mjs conflict-validation`, `config-resolve.mjs review-fix-validation`, the four read-only `conflict-validation.mjs` operations,
-and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
+and the 46 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
 reached (a symlinked install path is not resolved). Only `effective-flow-state.mjs harness
 allow-rules` writes the file, after a preview and an explicit confirmation in the conversation,
