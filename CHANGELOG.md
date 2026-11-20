@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.76.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.75.0...effective-flow-v1.76.0) (2026-11-20)
+
+
+### Features
+
+* **issue-buddy:** plan different issues in parallel with per-issue claims ([#699](https://github.com/sebastian-software/effective-flow/issues/699)) ([1379b63](https://github.com/sebastian-software/effective-flow/commit/1379b63523c8347d9f93c9c42e4d41024fd11443))
+* **merge-gate:** mark a delivered draft ready after user confirmation ([#701](https://github.com/sebastian-software/effective-flow/issues/701)) ([361c932](https://github.com/sebastian-software/effective-flow/commit/361c9327f2dd463a062d9b908cd1f360c7a4605a))
+* **merge-gate:** offer the issue completion for autopilot and plan-PR continuations ([#700](https://github.com/sebastian-software/effective-flow/issues/700)) ([f35fb38](https://github.com/sebastian-software/effective-flow/commit/f35fb389de9cbd2a4c586c69b08fb49d4a75be6f))
+* **review:** check pull requests against their acceptance sources ([#702](https://github.com/sebastian-software/effective-flow/issues/702)) ([493d28c](https://github.com/sebastian-software/effective-flow/commit/493d28cfea728643d8e9583ad8b86a753e0e8e3a))
+
+
+### Bug Fixes
+
+* **build-run:** bound memory when verifying committed Git evidence ([#697](https://github.com/sebastian-software/effective-flow/issues/697)) ([80443f2](https://github.com/sebastian-software/effective-flow/commit/80443f29e2e1e46d332814a2381b05e05dec21c5)), closes [#693](https://github.com/sebastian-software/effective-flow/issues/693)
+
 ## [1.75.0](https://github.com/sebastian-software/effective-flow/compare/effective-flow-v1.74.0...effective-flow-v1.75.0) (2026-11-18)
 
 
