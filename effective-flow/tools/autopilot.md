@@ -11,8 +11,9 @@ The reviewed draft replaces the interactive question as the quality gate.
 Autopilot owns orchestration only. Issue Buddy plans an issue, `tools/plan-review.md` reviews a
 plan, the plan's recommended workflow implements, and `effective-flow pr` delivers. Autopilot implements
 nothing, reviews nothing and never edits product files itself. Its own writes are the run ledger
-through `autopilot.mjs`, the restored plan copy of an issue source, the gated `plan-copy-restore`
-of a plan source's reviewed copy, and the plan-only draft path.
+and the issue's planning claim through `autopilot.mjs`, the run-owned worktree of an issue source
+that holds its plan, the gated `plan-copy-restore` of a plan source's reviewed copy, and the
+plan-only draft path.
 
 **Never ask.** Call no user-input tool and emit no prose question at any point. A condition that
 would need the user is a preflight stop before `run-init`, or after it a recorded blocker.
@@ -287,8 +288,9 @@ Any failure stops with its cause and creates no run. In this order:
 6. **Repository visibility.** Make the literal `remote-tracker.mjs repository-visibility-read`
    call with `{cwd}` and retain `public`, `private` or `unknown`. An unsupported capability, a
    failed read or `unknown` counts as `public` for every rule of this run.
-7. **Source checks.** A candidate issue source applies the checkout preconditions of the loaded
-   `autopilot-issue-source`, then its read-only Stage B classification leaf on that one reference:
+7. **Source checks.** A candidate issue source applies the source preconditions of the loaded
+   `autopilot-issue-source` from any checkout of the repository, then its read-only Stage B
+   classification leaf on that one reference:
    only `plain-issue` is an **issue source**; `container-issue`, `review-epic`, `review-finding` and a list of several references
    are a usage error that names `effective-flow apply` for them. A plan source requires the resolved
    path below `<plan.dir>/` and not under its archive, exactly one canonical open status line
@@ -305,7 +307,10 @@ Then make the literal `autopilot.mjs run-init` call with `{cwd, source, visibili
 `source` is `{kind: "issue", issue, repository}` (the lower-case `<host>/<owner>/<name>` that
 `repository-resolve` returns) or `{kind: "plan", planPath: <repository-relative>, planSha256}`,
 `visibility` the retained value, `language` the resolved `language.forge`. Retain `runId` and
-`budget`. From here every decision and blocker goes into this ledger.
+`budget`. From here every decision and blocker goes into this ledger. For an issue source the
+helper first takes the issue's planning claim and only then creates the ledger; `ISSUE_CLAIMED`
+(naming the holder) and `LEGACY_PASS_LOCK` are stops that create no run, as
+`autopilot-issue-source` "Planning claim" defines. The claim token never leaves the helper.
 
 ## Phase 2: Chain contract
 
@@ -331,8 +336,9 @@ apply unchanged. Same-session decisions of the implementing workflow and `pr` ar
 ## Phase 3: Plan stage
 
 - **Issue source:** run the issue path of the loaded `autopilot-issue-source`. It ends with a
-  restored, hash-verified plan file and its plan pull request, with a continue on the plan-source
-  path, or with a stop that produces no pull request.
+  hash-verified plan file in the run-owned delivery worktree and its plan pull request, with a
+  continue on the plan-source path, or with a stop that produces no pull request, an existing open
+  pull request included.
 - **Plan source:** run the autopilot file review of `tools/plan-review.md`
   (`unattended-planning`, "Entry: `plan-review` autopilot file review") with the absolute plan
   path, its SHA-256, the verified roots and these control lines:
@@ -354,14 +360,15 @@ apply unchanged. Same-session decisions of the implementing workflow and `pr` ar
   returns `not-applicable` (`issue-source`).
 
 **Decisions from the plan.** Make the literal `autopilot.mjs decision-extract` call with
-`{"planPath": "<absolute plan path>"}` on the reviewed plan (the restored copy on an issue source)
+`{"planPath": "<absolute plan path>"}` on the reviewed plan (in the run-owned worktree on an issue source)
 and persist every returned record, in order, with `decision-record`. A malformed block or a
 record the helper rejects is a `scoring-failure` blocker; an outcome `blocker` from the helper is
 already recorded. Re-check the remaining budget after extraction.
 
 **Approval.** Read the plan's review metadata only through the literal `plan-lint.mjs
 publication-metadata` call with `{cwd, planDir, files: [<relative plan path>], expectedLanguage:
-<language.workflow>}`. Only `reviewResult: "approved"` with `openPointCount: 0` continues;
+<language.workflow>}`, where `cwd` is the checkout that holds the plan: the run-owned delivery
+worktree on an issue source. Only `reviewResult: "approved"` with `openPointCount: 0` continues;
 anything else records a `plan-not-approved` blocker, as does an unroutable workflow recommendation.
 
 ## Phase 4: Implementation stage
@@ -380,8 +387,9 @@ Draft: requested
 ```
 
 (`effective-flow fix`, `effective-flow refactor` or `effective-flow docs` in place of `effective-flow build` as routed.)
-On an issue source, `plan-pr-continuation` continues on the plan pull request's head; on a plan
-source the workflow creates its own worktree and branch. The workflow's clarity gate, plan
+On an issue source the argument is the plan's absolute path in the run-owned worktree, and
+`plan-pr-continuation` continues in the delivery worktree on the plan pull request's head; on a
+plan source the workflow creates its own worktree and branch. The workflow's clarity gate, plan
 carry-over, pre-commit security classification and handback follow `scored-decisions`,
 "Implementing workflows and `pr`".
 
@@ -423,32 +431,41 @@ make the literal `autopilot.mjs delivery-confirm` call with `{cwd, runId, headOi
 
 ## Phase 5: Close
 
-1. **Restored plan copy.** On an issue source, remove or keep the restored copy as
-   `autopilot-issue-source` defines; a blocker always keeps it.
-2. **Worktrees.** Run the worktree-record exit self-check. Only the plan-only draft path runs
-   `git worktree add` in this run; the implementing workflow runs its own self-check.
+1. **Run-owned worktree.** On an issue source, withdraw or keep the run's delivery worktree, or its
+   plan-on-base worktree, as `autopilot-issue-source` defines; a blocker always keeps the delivery
+   worktree.
+2. **Worktrees.** Run the worktree-record exit self-check. Besides that run-owned worktree, only the
+   plan-only draft path runs `git worktree add` in this run; the implementing workflow runs its own
+   self-check.
 3. **Plan copy.** Make the literal `autopilot.mjs plan-copy-restore` call with
    `{cwd, runId, sourceRoot: <SOURCE_ROOT>}` and retain its result, `restored`, `kept` or
    `not-applicable`, with its reason, `detail`, `retainedCopy` and `putBack`. The helper alone
-   decides and writes.
+   decides and writes; an issue source has nothing run-owned in `SOURCE_ROOT`, so it stays
+   `not-applicable` (`issue-source`).
 4. **Close the ledger.** Make the literal `autopilot.mjs run-close` call with
    `{cwd, runId, outcome}`, plus `pullRequest` for every outcome but `no-pull-request`:
    `pull-request` (the delivered implementation draft, on an issue source the plan pull
    request), `plan-only-pull-request`, `appendix-update`, `plan-pull-request-unchanged` (the plan
    pull request whose appendix a blocker or a failed rerun update left unchanged) or `no-pull-request`. Retain its
    `counts` and `fit`: `{assessed: true, score, reason, sources}`, `{assessed: false}` (no
-   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded.
+   sources), `{assessed: false, unavailable: true}`, or `null` when none was recorded. On an issue
+   source it releases the planning claim for every outcome and returns
+   `planningClaim: {targetKey, issueKey, released}`, with `reason` `missing`, `not-owner` or
+   `release-failed` when `released` is false. A failed release never keeps the run open;
+   `effective-flow cleanup` prunes the claim of a closed ledger.
 
 ## Phase 6: Report
 
 Report in the chat language, with project paths relative to the project root:
 
 - the source (issue `#<N>` or plan path), its routed workflow and the run id;
-- the draft pull request URL, or the reason there is none (preflight, an issue-buddy stop or
-  pass failure, a public security blocker, a blocked appendix or a failed publication step);
+- the draft pull request URL, or the reason there is none (preflight, a held planning claim with
+  its holder, an existing open pull request, an issue-buddy stop or pass failure, a public
+  security blocker, a blocked appendix or a failed publication step);
 - the counts of silent, documented and tie-resolved decisions, and the remaining budget;
 - every blocker with its kind and, for a security blocker, only its report path and finding ID;
-- every retained worktree and branch with its path, and the restored plan copy when it was kept;
+- every retained worktree and branch with its path, the run-owned worktree included when it was
+  kept, and on an issue source the `planningClaim` release with its reason when not released;
 - the `plan-copy-restore` result, its reason and `detail`, naming the plan file when `kept`
   (`retain-failed`, `restore-failed`: the reviewed copy is back at the plan path; with `putBack`
   false it is at `retainedCopy`, or else where `detail` says); and whenever `retainedCopy` is

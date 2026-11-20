@@ -6,7 +6,7 @@ argument-hint: "[concept|investigate|plan|open-plans|plan-issue|issue-buddy|back
 
 # Effective Flow
 
-Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.75.0 (04c2aca7)).
+Effective Flow bundles complete software-engineering lifecycle coverage as tools invoked via `effective-flow <tool>` (version 1.76.0 (00686537)).
 
 This router skill is deliberately **thin**. It carries the tool catalog, the dispatch rule, and
 the minimal universal worker-resolution and leaf-handoff bootstrap under "Rules"; a tool's full,
@@ -83,7 +83,7 @@ _unattended from issue or plan to a draft pull request_
 ### Set up & info
 
 - `effective-flow setup` — Sets up Effective Flow from a workflow profile, Express defaults, or a guided wizard.
-- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers and autopilot ledgers.
+- `effective-flow cleanup` — Cleans migration remnants and safely reports or removes verified Effective Flow worktrees, stopped merge-gate ones and schema-invalid records included, plus finished merge-gate presence markers, autopilot ledgers and orphaned planning claims.
 - `effective-flow version` — Shows the installed Effective Flow version.
 
 ## Language support

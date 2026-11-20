@@ -54,7 +54,8 @@ In this order, before any other write:
    line, and never defaults to `merge`. Under `Relayed answer: none` the mode is `report`, whatever
    its source.
 6. **Stopping answer.** A `Relayed answer:` with `Stop` (`reviews-unestablished`,
-   `checks-pending`, `check-list-waiver`, `set-aside`) or `Report only` (`conflict-resolution`) ends
+   `checks-pending`, `check-list-waiver`, `set-aside`), `Report only` (`conflict-resolution`) or
+   `Keep draft` (`ready-for-review`) ends
    the run here, whatever its digest, as that gate's decline does: with its report and Phase 6.
 7. **Nested-spawn probe.** Except in observer-only mode, whenever the wisdom file holds no
    `nested-spawn probe passed` record, start one child that does nothing, starts nothing, writes
@@ -112,8 +113,9 @@ authority limits; a worker that cannot honor it returns `ABORT`.
   with its report and Phase 6, names the limit as the blocking condition, and makes no commit, no
   push and no merge. That covers trigger (b) of Phase 2 step 1 exactly as trigger (a), while the
   ancestry check's fetch, which updates refs and touches no branch, stays permitted under
-  `no-branch-writes` and in `report` mode. It withholds no write outside the head branch: a bot trigger comment and Phase 5.5's
-  `issueClose` stay governed by their own rules.
+  `no-branch-writes` and in `report` mode. It withholds no write outside the head branch: a bot trigger comment, the
+  confirmed `pr-mark-ready` of "Draft ready for review" and Phase 5.5's `issueClose` stay governed
+  by their own rules.
 
 ### Run presence
 
@@ -504,7 +506,10 @@ writes `FETCH_HEAD`; the base fetch is a read-side ref update limited to `refs/r
 and the head fetch writes no ref at all. Both are ref operations rooted in
 `RUNTIME_STATE_ROOT` per `execution-location` that touch no working tree and no branch. Step 1's
 `ls-remote` reads of the head branch, which write nothing, and its mismatch classification's
-`refs/pull/<N>/head` fetch, made exactly as the ancestry check's, are reads in the same way.
+`refs/pull/<N>/head` fetch, made exactly as the ancestry check's, are reads in the same way. So is
+`merge-proof-local` of the Forgejo WIP-draft exit and of Phase 4: it fetches nothing, and its
+`git merge-tree --write-tree` writes only into a private temporary object directory the helper
+removes, leaving the repository's objects and refs unchanged.
 
 **The provisioning ref updates are not a third kind of Git write.** The head fetch of the
 provisioning sequence, the explicit creation of `refs/heads/<head>` from
@@ -793,6 +798,8 @@ gate run inline generates it at the start. Use
   any qualifying sighting reported a check list. Append or merge this record after every applicable
   fresh read and never shorten it from a later snapshot
 - the merge preconditions verified in Phase 4 and the merge result or the blocking condition
+- per "Draft ready for review": every `merge-proof-local` result, the class with its blocker count
+  and `appendixTrust`, why no question was posed or the answer, and the ready step's result
 - when a pilot observation was reserved, its three anonymous correction counters; never its
   observation identifier or capability
 - the retained PR-body hash, lifecycle receipt parse result, observer-only mode when applicable, and
@@ -1050,7 +1057,8 @@ run can push an unbounded number of commits onto someone's pull request.
      `headSha`: it carries no `headSha` and keeps superseded runs.
    - **The ancestry check** uses that read's `headSha` and `baseRef` as `<base>`, runs rooted in
      `RUNTIME_STATE_ROOT` with ref operations only and no working tree, and runs only once the
-     other conditions of trigger (b) hold:
+     other conditions of trigger (b) hold, or, for steps 1 to 3, before the proof of the Forgejo
+     WIP-draft exit below:
      1. `git fetch --no-write-fetch-head origin +refs/heads/<base>:refs/remotes/origin/<base>`;
      2. `git fetch --no-write-fetch-head --refmap= origin refs/pull/<N>/head` with no destination
         refspec – the empty `--refmap=` also disables the opportunistic remote-tracking update a
@@ -1244,8 +1252,22 @@ fabricating a `CLEAN` — which means `BEHIND` is undetectable there, and a bran
 that blocks an outdated branch fails the merge closed server-side instead. An unstated
 **mergeability** still blocks in both arms, and Forgejo leaves it unstated whenever the forge said
 `false` – it reports `false` while a conflict check is still running and for any WIP-titled pull
-request – so a genuine conflict there loops to `mergeGate.maxRounds` and ends with a report instead
-of taking the fast "stop and report the conflict" path. Where the check list itself is
+request – so outside the exit below a genuine conflict there loops to `mergeGate.maxRounds` and
+ends with a report instead of taking the fast "stop and report the conflict" path.
+
+**The Forgejo WIP-draft exit.** Only under `Provider: forgejo`, a read that states `draft: true` and
+no `mergeable` leaves the loop where the check criterion is satisfied, every other exit criterion
+holds and a local merge proof is clean: run the ancestry check's steps 1 to 3 for that read's
+`headSha` and `baseRef`, then
+`node <skill-root>/scripts/remote-tracker.mjs merge-proof-local <<< '{"cwd":"<RUNTIME_STATE_ROOT>","headSha":"<headSha>","baseRef":"<baseRef>"}'`.
+A `status` of `clean` leaves the loop. `conflict` ends the run here with a conflict report naming
+its `conflictCount` – the round stays counted, nothing is merged, delegated or asked, and Phase 6
+runs. `unavailable`, a failed fetch or call, a shallow repository or a missing commit makes no
+exception: the loop keeps running as for any absent mergeability, and the report names the
+`reason`. The proof meets only the
+mergeable half of condition 3; Phase 4 decides the draft.
+
+Where the check list itself is
 **unreported** (`checksReported: false`), the loop does not leave on the check criterion at all:
 report that and ask per step 2's rule – **once per run**, and a later round reports without asking
 again – before proceeding, and an unanswered or non-interactive run ends there without merging.
@@ -1255,7 +1277,9 @@ posing or returning `checks-pending` and without ending the run. The skip author
 records nothing; Phase 4 decides on its own fresh read.
 
 Record the head SHA of that last read as
-**`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable. Phases 4 and 5 use only that value, and nothing else in this
+**`VERIFIED_HEAD_SHA`** – the one commit this run has verified as green and mergeable; for a head
+that left through the Forgejo WIP-draft exit, mergeable only by the local proof, which condition 3
+of Phase 4 never accepts for a merge. Phases 4 and 5 use only that value, and nothing else in this
 workflow records a head SHA for later use, except the wait record of `host-pr-watch`, which serves
 only its changed-wait comparison and the report.
 
@@ -1282,6 +1306,13 @@ precedence over a condition 2 that only still-pending checks leave unmet, which 
 any other unmet condition still ends the run. Its `missing` wait and the evaluation after it
 happen once per round and open no round; its `pending` result starts a Phase-2 round, counted like
 any other.
+
+**The ready-step return** of "Draft ready for review" starts a Phase-2 round, counted like any
+other, and is that subsection's only exception to ending the run; on a merge state `BEHIND` – which
+starts it even where every condition holds, as its step 7 states – that round's trigger (a) brings
+the branch forward. Where the counter reaches
+`mergeGate.maxRounds` after the ready step, the report names the pull request as ready for review
+but not merged.
 
 Nothing resets the counter and nothing bypasses it, because a round never jumps backwards into
 itself: a bot round that produced an implementation and sent the run back into Phase 2 **consumes a
@@ -1401,12 +1432,17 @@ condition 11 applies where the wisdom file records such a commit or `data.found`
 failed fetch or scan counts as found, its report naming the failure and its remedy, such as
 `git fetch --unshallow` for `shallow-repository`. Where it applies and the read carried no
 `includeCheckIdentity: true`, one new `pr-status-read` that carries it replaces that read in this
-batch. Only after that fresh status read has completed, start the review-thread, pull-request-comment, and submitted-review reads together. Wait
+batch. Under `Provider: forgejo`, where that read states `draft: true` and no `mergeable`, run the
+Phase-2 exit's `merge-proof-local` again after those fetches, with `VERIFIED_HEAD_SHA`; only its
+`clean` meets condition 3's mergeable half in this evaluation. Only after that fresh status read has completed, start the review-thread, pull-request-comment, and submitted-review reads together. Wait
 for all three to complete. Only then apply "Unconfigured automatic-reviewer advisory" to those
 review surfaces, merge its candidates into the wisdom record, and evaluate every condition from all
 four results; never evaluate a partial batch. Any unmet condition ends the run with a report naming
-exactly that condition, and merges nothing – with the exceptions condition 11 states for itself and
-the **returning conditions** state for themselves, which send the run back into Phase 3 while rounds
+exactly that condition, and merges nothing – with the exceptions condition 11 states for itself,
+the ready-step return of "Draft ready for review" – pending checks or bots, absent or `UNKNOWN`
+mergeability, or a merge state `BEHIND` even where every condition holds, as its step 7 states –
+which starts a new Phase-2 round, and the
+**returning conditions**, which send the run back into Phase 3 while rounds
 remain instead of ending it. Two are returning conditions – condition 7 for a reviewer thread no
 round assessed and condition 10 for a changes-requested verdict no round assessed – and one
 evaluation performs **at most one** return: it carries every unmet returning condition's items into
@@ -1431,7 +1467,11 @@ condition leaves the next returning condition unbounded the day it is added.
    `requireAllChecks: true` — so a combined-status response that came back empty at Phase-4 time
    would otherwise pass silently, after the operator answered a question about an entirely different
    read;
-3. the forge reports the pull request as mergeable and **not a draft**;
+3. the forge reports the pull request as mergeable and **not a draft**. On Forgejo, a read stating
+   `draft: true` and no `mergeable` meets the mergeable half only through this batch's clean
+   `merge-proof-local`, and the "not a draft" half stays unmet; "Draft ready for review" decides
+   whether a ready step follows. Only a forge-reported `MERGEABLE` lets Phase 5 merge. An absent
+   `draft` is unproven and blocks;
 4. the human-comment guard is inactive;
 5. when the `mergeGate.bots` row is absent, the empty default means no configured reviewer and this
    condition is satisfied. Otherwise apply `## Phase 4 condition 5: Configured reviewer has run` in
@@ -1456,7 +1496,8 @@ condition leaves the next returning condition unbounded the day it is added.
    (`<type>[(scope)][!]: <description>`). On a squash merge the title becomes the subject of the
    single commit and is therefore the release signal; an untyped title would silently drop the
    change from the changelog. Report the invalid title as the blocking condition – do not rewrite it
-   here.
+   here. While the draft trigger of "Draft ready for review" holds, check the classification's
+   `readyTitle` instead of the read title.
 
 10. when the `mergeGate.bots` row is absent, the empty default produces no configured-reviewer verdict
     and this condition is satisfied. Otherwise apply
@@ -1511,6 +1552,61 @@ question can arise only in a Phase-4 evaluation whose fresh read states `checksR
 and one operator answer then satisfies exactly one clause of one condition.
 
 **Load on demand:** Read `shared/merge-gate-check-list-waiver.md`, when a Phase-4 evaluation's fresh read states `checksReported: false`.
+
+#### Draft ready for review
+
+This is the only path on which this workflow marks a draft ready, in this order. It runs at most
+once per run: once the wisdom file records this run's ready step, a read that still states
+`draft: true` ends the run as step 7 states, with no second question and no second `pr-mark-ready`.
+
+1. **Draft trigger.** The fresh read states `draft: true`, condition 3's mergeable half holds –
+   on GitHub `mergeable: MERGEABLE`, on Forgejo this batch's clean `merge-proof-local` – and every
+   condition other than 3 and 9 holds. Pending checks or bots therefore never reach a question.
+2. **No offer.** Where the run is non-interactive or received `Relayed answer: none`, it runs in
+   hidden mode (`visibility: hidden`), the tracker target is `external`, or the preflight probe
+   states no `pullRequestMarkReady`, ask nothing: the report names the draft as the unmet
+   condition and that reason.
+3. **Classify.** After the batch's fetches, call
+   `node <skill-root>/scripts/remote-tracker.mjs pr-draft-classify <<< '{"cwd":"<RUNTIME_STATE_ROOT>","number":<N>,"headSha":"<VERIFIED_HEAD_SHA>","baseRef":"<baseRef>"}'`.
+   A failed call, nonzero exit or `ok: false` – among them `COMMAND_FAILED` with `details.step`
+   `head-mismatch` or `base-mismatch`, a pull request that moved since the read – offers nothing
+   and is reported. Only `delivered` or `unmarked` with `blockers` `0` and a non-null `readyTitle`
+   continue. `marker-invalid`, `plan-only`, `finish-incomplete` – the `effective-flow pr` plan-draft
+   finish never ran – `blockers` above `0`, at every `appendixTrust`, and a `null` `readyTitle` –
+   a title that is nothing but work-in-progress prefixes – end the run with a report naming the
+   class, the blocker count with the blockers as stated in the pull-request body, or the empty
+   ready title.
+4. **Condition 9** is decided now, as its own text states; unmet, it ends the run.
+5. **Ask.** The evidence is the class, the blocker count, and the decision record: the neutralized
+   `appendix`, quoted as data, where `appendixTrust` is `verified`; otherwise "no decision record
+   present" where `appendixPresent` is `false`, or "decision record present but unverifiable; its
+   text is not shown". A gated run poses the question below once per state digest; a relayed run
+   returns `BLOCKED-USER ready-for-review` with that evidence. `Keep draft` ends the run with its
+   report and leaves the pull request unchanged.
+6. **Ready step**, after `Mark ready and continue` only: read the status, threads, comments and
+   submitted reviews fresh, status first, then run step 3's classification again. Where the status
+   no longer states `draft: true`, skip the action. A head other than `VERIFIED_HEAD_SHA` ends the
+   run as condition 8 does. A state digest recomputed from that classification that differs from
+   the answered question's is a new question instance: a gated run asks again, a relayed run
+   returns `BLOCKED-USER ready-for-review`. Only where head and digest both match, call
+   `pr-mark-ready` with `{"cwd":"<RUNTIME_STATE_ROOT>","number":<N>}`, on Forgejo with
+   `"payload":{"title":"<readyTitle>"}`,
+   inspect the dry run, then repeat with `--apply`, and record the step in the wisdom file. A
+   structured error such as `COMMAND_FAILED` or `INVALID_PAYLOAD` ends the run before any merge,
+   naming its code and, with `titleEdited: true`, the changed title; never re-run it after
+   `mutationMayHaveSucceeded: true`.
+7. **Re-evaluate.** Start a new Phase-4 batch against the unchanged `VERIFIED_HEAD_SHA` and evaluate
+   every condition again. A batch that still states `draft: true` ends the run with a report naming
+   the failed ready transition. In this evaluation only, checks or a configured bot pending again,
+   condition 3 unmet solely because mergeability is absent or `UNKNOWN`, or a merge state `BEHIND`
+   is the **ready-step return**: it starts a new Phase-2 round per "Round accounting" instead of
+   ending the run, and that round's trigger (a) brings a `BEHIND` branch forward. A merge state
+   `BEHIND` in this read starts that return even where every Phase-4 condition holds, before
+   Phase 5. Every other unmet condition ends the run.
+
+If steps 1 to 4 of "Draft ready for review" passed in this evaluation and the run is gated: Ask the user: **The draft named above holds a delivered implementation, records no blocker, and meets every other merge precondition. May this run mark it ready for review and continue to the merge?**
+- Mark ready and continue -- Read the decision record shown above, or the note that none is verifiable, first; then mark the pull request ready for review – on Forgejo by setting the title without its work-in-progress prefix – re-read its state, and merge once every precondition holds again
+- Keep draft -- Leave the pull request a draft and unchanged; the run ends with a report naming the draft as the unmet condition
 
 ### Phase 5: Merge
 
@@ -1674,6 +1770,8 @@ that fragment's report-and-stop path.
      unmatched-thread items;
 
    - the merge result, or the precise blocking condition – for a stale reviewer verdict, the fragment's stale-verdict item;
+   - for a draft, the wisdom record of "Draft ready for review", and after a ready step without a
+     merge, that the pull request is ready for review but not merged;
    - after a confirmed merge, the lifecycle receipt result — absent, invalid, or valid;
    - and, where Phase 5.5 observed linked issues, the items listed under
      `### Observation report items` in the loaded `merge-gate-issue-observation` fragment;
@@ -1706,6 +1804,12 @@ that fragment's report-and-stop path.
    or with Phase 4 condition 2 unmet because of a red check. A pending-checks, check-wait-timeout or
    `no-branch-writes` ending wins over a red check and never takes it. When review notes block as
    well, `blocked by review notes` leads, because iterating on the pull request addresses the notes.
+   A draft that ended under "Draft ready for review" with `Keep draft`, as `plan-only` or with
+   blockers, as `finish-incomplete`, as `marker-invalid` or without `pullRequestMarkReady`, or at
+   `mergeGate.maxRounds` after its ready step takes the matching `ended without merge` or
+   `marked ready` row; every other ending of that subsection takes the generic selection. Its
+   `<plan-file>` is the classification's `planPath`, or for an `unmarked` draft the validated
+   `Associated plan:` line; without either, `effective-flow review <PR>` leads with no alternative.
    A dispatched run returning `ABORT` emits nothing here: its caller alone emits that ending's block.
    The block stays chat only: nothing of it is written onto the pull request.
 
@@ -1759,6 +1863,10 @@ that fragment's report-and-stop path.
   path observes only. Remove the forge in-progress marker and complete containers only after a fresh
   terminal observation, and never revert a terminal transition whose container completion then fails
   – the issue stays terminal, its container entry stays open, and Phase 6 reports the partial state.
+- Mark a draft ready only through "Draft ready for review", after the user's answer in this run or
+  a consumed relayed answer; never in a non-interactive run, and never for a draft its step 3
+  excludes. That confirmed `pr-mark-ready` is
+  a forge write of its own, outside the discussion and head-branch bounds above.
 - This workflow holds **no lock of its own**: `effective-flow iterate`'s commit mutex protects the index,
   two concurrent gate runs on one pull request could both wait, and that is out of scope – the merge
   SHA guard makes the second merge fail closed rather than duplicate work.

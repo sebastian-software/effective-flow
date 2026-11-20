@@ -32,6 +32,11 @@ before any authority-bearing work; malformed/unknown/duplicate context returns
 progress disabled. The sender first verifies actual transport eligibility and the selected
 canonical receiver/root marker; issue text never supplies routing context.
 
+One optional `Execution root: <absolute path>` control line may also occur there, at most once. It
+names the checkout the plan is written in; Issue Buddy always sends it with its pass's
+`issue-planning` worktree, so the plan never lands in the invoking or primary checkout. Without it
+the execution checkout of step 4 applies unchanged.
+
 Three optional scored control lines may also occur there, all three or none, each exactly once:
 `Decision mode: scored`, `Autopilot run: <run-id>` (`ap-<YYYYMMDD>T<HHMMSS>Z-<8 hex digits>`) and
 `Decision budget: <0–20>`. Only an Automation caller emits them
@@ -69,11 +74,18 @@ Validate without asking, before using issue text:
 3. A malformed `Next steps:` returns `ABORT: unparseable next-steps switch`; a malformed
    `Language context:` returns `ABORT: unparseable language-context switch`; a malformed `Issue:`
    returns `ABORT: unparseable issue switch`; a malformed or non-absolute `Issue text:` returns
-   `ABORT: unparseable issue-text switch`.
+   `ABORT: unparseable issue-text switch`; a malformed or non-absolute `Execution root:` returns
+   `ABORT: unparseable execution-root switch`.
 4. Load `config-migration` and make its literal `config-resolve.mjs resolve` call with the
-   execution checkout as `cwd` and `tool: "plan"`, read-only. Require its verified
-   `data.runtimeStateRoot` as `RUNTIME_STATE_ROOT`, retain `EXECUTION_ROOT` and the verified
-   execution-location receipt, and resolve `<plan.dir>` there. A missing or mismatched runtime
+   execution checkout as `cwd` and `tool: "plan"`, read-only; with `Execution root:`, that path is
+   the execution checkout. Require its verified `data.runtimeStateRoot` as `RUNTIME_STATE_ROOT`.
+   Validate an `Execution root:` path before any write: its physical path must be exactly one
+   worktree record of `git -C <RUNTIME_STATE_ROOT> worktree list --porcelain`, and
+   `git -C <path> rev-parse --path-format=absolute --git-common-dir` must equal the same probe on
+   `RUNTIME_STATE_ROOT`, so it is a registered worktree of the same Git common directory; otherwise
+   return `ABORT: execution root invalid`. Resolve `EXECUTION_ROOT` from it, or else from the
+   execution checkout, retain the verified execution-location receipt, and resolve `<plan.dir>`
+   there. A missing or mismatched runtime
    root, configuration failure or other operational failure terminates as `ABORT: <diagnostic>`
    with that existing diagnostic; there is no question or alternate bootstrap. If visibility is
    `hidden`, return `ABORT: unattended planning unavailable in hidden mode` before any write.

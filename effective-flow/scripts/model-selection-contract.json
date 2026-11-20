@@ -42,6 +42,7 @@
     ]
   },
   "roles": {
+    "acceptance-reviewer": "deep",
     "code-documenter": "standard",
     "code-validator": "standard",
     "docs-writer": "standard",
@@ -830,6 +831,17 @@
         },
         {
           "role": "generic-product-reviewer",
+          "tier": "deep"
+        }
+      ]
+    },
+    {
+      "id": "review-acceptance-lens/acceptance-review",
+      "downAllowed": false,
+      "panel": false,
+      "clauses": [
+        {
+          "role": "acceptance-reviewer",
           "tier": "deep"
         }
       ]

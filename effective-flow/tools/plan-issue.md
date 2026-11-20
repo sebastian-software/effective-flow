@@ -100,9 +100,9 @@ Invoking an Effective Flow tool **is** the user's standing request for internal 
 
 **Load on demand:** Read `shared/completion-protocol.md`, when an internal sub-agent's result is returned.
 
-**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker.
+**Load on demand:** Read `shared/runtime-state-safety.md`, when a remote tracker access is about to write its local migration marker, or Phase 2 is about to acquire a planning claim.
 
-**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker).
+**Load on demand:** Read `shared/effective-flow-dir-migration.md`, when a remote tracker access is about to perform its first runtime-state mutation (the forge contract's one-time `labelMigration.sf` memory marker), or Phase 2 is about to acquire the run's first planning claim.
 
 **Load on demand:** Read `shared/next-steps.md`, when the run reaches its completion report, or aborts after spawning its first domain sub-agent.
 
@@ -173,6 +173,29 @@ translate an existing ADR.
 - **`null`** → the literal token `null`; a missing row means the key is not set.
 - **Empty list** → `(empty)`; **filled list** → comma-separated (e.g. `humanizer, distill`).
 - **Nesting** → dotted keys (e.g. `applyReview.worktree.baseDir`); an empty object has no rows.
+
+**Helper call shape.** Write every call of the four JSON helpers as exactly one simple command:
+
+```text
+node <skill-root>/scripts/<helper>.mjs <argv> <<< '<json>'
+```
+
+with exactly this `<argv>` per helper: `effective-flow-state.mjs <group> <operation>`,
+`config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`, `config-resolve.mjs conflict-validation` or `config-resolve.mjs review-fix-validation`,
+`conflict-validation.mjs <operation>`, and `remote-tracker.mjs <operation>`, or `<operation> --apply` for a mutation.
+
+- Resolve `<skill-root>` from the currently loaded Effective Flow skill, in the form it was
+  reached (a symlinked install path included, never resolved through `realpath`), and spell it out
+  literally as an absolute path. Never use a shell variable, `$PWD`, `~`, command substitution,
+  `cd … &&`, an `echo … |` or `printf … |` pipe, a heredoc, a loop or function, a compound
+  command joined by `;`, `&&` or `||`, a trailing `echo "exit=$?"` or any other trailing command,
+  or `| grep` or any other pipe on the output. Read the exit status and the envelope from the tool
+  result itself.
+- Every JSON value is literal too: `cwd`, where sent, is the literal absolute path its owning
+  contract names (`RUNTIME_STATE_ROOT` for `effective-flow-state.mjs`), never `$PWD`. Write a `'`
+  inside the JSON as `'\''`.
+- The Claude Code allow rule matches only this literal shape, so any other shape prompts for
+  permission on every call. The rule binds every harness, since it is also the auditable shape.
 
 **Load on demand:** Read `shared/durable-follow-up-gate.md`, when planning is about to propose a derived child issue.
 
@@ -567,10 +590,43 @@ channel and preserve this analysis's exact terminal output and read-only authori
 
 For each chosen issue in turn:
 
+**Planning claim.** At the start of Phase 2 for each issue, before step 1, claim it, so no Issue
+Buddy pass, autopilot run or second `effective-flow plan-issue` run plans it while this run holds it,
+clarification included. Any checkout of the repository may run this tool: derive
+`RUNTIME_STATE_ROOT` from the first `git worktree list --porcelain` record. The claim key comes
+from the shared derivation (`planning-claim key`), so every workflow derives the same one: on the
+forge target `target` is `{kind: "forge", host, owner, repository}` from the
+`remote-tracker.mjs repository-resolve` result and `issue` the issue number; on an external target
+it is `{kind: "external", id: <tracker.externalTool>}` with the external issue key. Make the literal
+call `node <skill-root>/scripts/effective-flow-state.mjs planning-claim acquire <<< '{"cwd":"<RUNTIME_STATE_ROOT>","target":<target>,"issue":<issue>,"workflow":"plan-issue","runId":"<run-id>"}'`,
+spelling `"issue":<issue>` in this and the release call as the forge form `"issue":<number>` (a bare
+JSON number) or the external form `"issue":"<key>"` (a JSON string), where `<run-id>` is this
+session's id or one id the run mints once, matching
+`[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}`. Retain the returned `claimId` only for the release; it never
+enters a comment, label, report or delegated handoff. `CLAIMED` (exit 4) names the holder
+(`workflow`, `runId` or `passId`, age, `stale`, `liveness`): a single-issue run stops naming it; a
+multi-issue run reports the issue as skipped with its holder and continues with the next one.
+`LEGACY_PASS_LOCK` stops the run and names the old lock's path for operator inspection.
+
+**Release on every exit.** Release the claim with the literal call
+`node <skill-root>/scripts/effective-flow-state.mjs planning-claim release <<< '{"cwd":"<RUNTIME_STATE_ROOT>","target":<target>,"issue":<issue>,"claimId":"<claimId>"}'`
+after the issue's comment and label writes (Phase 4), and on every other exit path for that issue:
+a skip, a stop, failed persistence, an abort or the user ending the run. Report a release that is
+not `ok` or answers `NOT_OWNER`; never prune instead. A killed session leaves only its claim, which
+`effective-flow cleanup` shows as stale after 2 h or orphaned once its process is gone.
+
 1. Read the issue fresh from the tracker – **including comments** (operation
    `issue-comments-read`) – and delegate the read-only examination of the relevant codebase to an
    internal analysis sub-agent; examine it inline only under the delegation mandate's triviality
-   exception. Take maintainer clarifications from comments into account. Find the newest comment
+   exception. The examination reads the code at the fetched resolved base, never a working tree,
+   and creates no worktree: resolve the base (the configured `delivery.baseBranch`, else
+   `origin/HEAD`, else `origin/main`) and normalize it exactly as Issue Buddy does (a configured
+   remote ref only on `origin`, `origin/` stripped; `origin/HEAD` resolved to the branch it names;
+   no other default), fetch it read-only with
+   `git -C <RUNTIME_STATE_ROOT> fetch origin 'refs/heads/<base>:refs/remotes/origin/<base>'`
+   (an invalid base or a failed fetch stops this issue and releases its claim), resolve its commit
+   OID once, and hand the sub-agent only that OID; it reads with
+   `git ls-tree`, `git show '<oid>:<path>'` and `git grep <pattern> <oid>`. Take maintainer clarifications from comments into account. Find the newest comment
    carrying `<!-- effective-flow-plan-issues -->` or the backward-compatible
    `<!-- firmo-plan-issues -->`; retain its normalized positive comment ID, exact body, and body
    hash. Treat it as the canonical update basis. Never create a second planning comment while such
@@ -779,14 +835,15 @@ remove `effective-flow-needs-planning`, plus any present `firmo-needs-planning` 
 forge target. Never set
 `effective-flow-issue-done`.
 
-Set the issue task to `completed`, annotated `[blocked]` when it was not released, and continue
-with the next selected issue. One blocked issue must not prevent the remaining issues from
+Release the issue's planning claim, then set the issue task to `completed`, annotated `[blocked]`
+when it was not released, and continue with the next selected issue. One blocked issue must not prevent the remaining issues from
 receiving their own baseline, question, comment update, and label decision.
 
 ### Phase 5: Summary
 
 Report per issue whether it was released for implementation, retained for planning with its open
-points, or failed closed during comment persistence. This skill itself implements nothing.
+points, skipped because another run holds its planning claim (with the holder), or failed closed
+during comment persistence, plus any planning claim whose release was not confirmed. This skill itself implements nothing.
 
 Emit the next-step block per `next-steps` as the last element of the report. A run that released at
 least one issue takes the released row; a run that released none takes the retained row.
@@ -794,7 +851,9 @@ least one issue takes the released row; a run that released none takes the retai
 ## Rules
 
 - Do not change any implementation files and generate no code.
-- Do not create any `<plan.dir>/` file.
+- Do not create any `<plan.dir>/` file or worktree.
+- Hold each issue's planning claim from the start of its Phase 2 until its comment and label writes
+  are done, and release it on every exit path.
 - If clarification, baseline, or deep review does not enable a reliable plan, leave
   `effective-flow-needs-planning` in place and document the blocking decision in the canonical
   comment's open-points section.

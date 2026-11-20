@@ -176,7 +176,8 @@ translate an existing ADR.
 ## Issue implementation lifecycle
 
 This fragment is the provider-neutral contract for an issue that is the implementation basis of
-`tools/apply-issues.md` or remote `tools/apply-review.md`. It keeps three different facts separate:
+`tools/apply-issues.md` or remote `tools/apply-review.md`; receipt-only producers load only
+`issue-lifecycle-receipt`. It keeps three different facts separate:
 
 - the tracker's native workflow state (unstarted, started, later active, or terminal);
 - Effective Flow classifications such as `effective-flow-issue-done`, which means that delivery is
@@ -209,7 +210,10 @@ never reset the issue to unstarted and never start a replacement implementation 
 
 ### Pull-request lifecycle receipt
 
-Every new or reused pull request that delivers issue-backed work carries exactly one receipt line:
+Every new or reused pull request that delivers issue-backed work carries exactly one receipt line.
+`apply-issues` and remote `apply-review` write it through `issue-lifecycle`; autopilot and the plan
+pull-request continuation are receipt-only producers that pass it to `effective-flow pr` as a machine
+line, with no started transition, no in-progress label, and no PR-link comment:
 
 ```text
 <!-- effective-flow-issue-lifecycle:v1 {"target":"forge|external","repository":"owner/repo|null","externalTool":"tool|null","items":[{"issue":"reference","relationship":"closes|refs","container":"reference|null","containerMechanism":"native|checklist|null"}]} -->
@@ -244,7 +248,12 @@ behavior, with issue observation reported as unavailable.
 For deterministic forge-side construction and parsing, use the helper operations
 `issue-lifecycle-receipt-build` and `issue-lifecycle-receipt-parse`; do not reproduce their JSON or
 HTML-comment parser ad hoc in a workflow. Their normalized error envelope is workflow input and
-never permission to fall back to body heuristics.
+never permission to fall back to body heuristics. A receipt-only producer builds without `body`, with `cwd` `RUNTIME_STATE_ROOT`, `receipt`
+`{"target":"forge","repository":"<owner/repo>","externalTool":null,"items":[{"issue":"#<N>","relationship":"refs","container":null,"containerMechanism":null}]}`
+and `context` `{"expectedTarget":"forge","expectedRepository":"<owner/repo>"}`, where `<owner/repo>`
+is the `slug` of a fresh `repository-resolve`, and uses `data.marker` as the line.
+
+### Receipt write paths
 
 For a new PR, generate the validated receipt together with the PR body. For an existing PR, read its
 body fresh, retain its body hash, merge the normalized items into the one valid receipt, and use only
@@ -698,24 +707,27 @@ A dispatching caller asks only for an `AMBIGUOUS_HOST` provider and the `complet
 delegated run poses every other gate. The caller renders each question's options together with its
 consequence.
 
-| Question id             | Gate                                                                                                                                                                       | Options                                        | Consequence                                                                             |
-| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | --------------------------------------------------------------------------------------- |
-| `completion`            | Phase 0 step 3 entry gate, asked by the caller and never returned                                                                                                          | `Merge`, `No merge`                            | the option descriptions of the Phase 0 fence                                            |
-| `reviews-unestablished` | Phase 0 step 2, `prReviewsRead` unsupported                                                                                                                                | `Continue`, `Stop`                             | `Continue` lets the gate run, and merge, with no changes-requested verdict read         |
-| `checks-pending`        | Phase 2 step 2, a timed-out or unavailable check wait, or an unreported check list; never for that list in a gated or relayed run the active `mergeGate.noCiPolicy` covers | `Continue`, `Stop`                             | `Continue` keeps the gate running; the named checks still block a merge until they pass |
-| `check-list-waiver`     | The no-check-list waiver in `merge-gate-check-list-waiver`; never in a gated or relayed run the active `mergeGate.noCiPolicy` covers                                       | `Waive`, `Stop`                                | `Waive` authorizes a merge with no reported check list                                  |
-| `conflict-resolution`   | `mergeGate.conflictResolution: ask` in `merge-gate-conflict-resolution`                                                                                                    | `Resolve`, `Report only`                       | `Resolve` commits and pushes one merge commit onto the head branch                      |
-| `set-aside`             | "The set-aside confirmation" in `merge-gate-configured-reviewer`                                                                                                           | `Confirm`, `Stop`                              | `Confirm` sets the listed findings aside, so they no longer block the merge             |
-| `issue-done`            | Phase 5.5 step 4 in `merge-gate-issue-observation`                                                                                                                         | `Set to done`, `Leave open`                    | `Set to done` closes each listed issue; read each criterion, the question quotes none   |
-| `iterate-in-flight`     | `effective-flow iterate` Phase 1.5; never reached here, as every delegation carries `Review guard: established`                                                                 | `Wait`, `Proceed`, `Abort`                     | none                                                                                    |
-| `iterate-approval`      | `effective-flow iterate` Phase 2.5 approval                                                                                                                                     | `Yes`, `Adjust` (deselect listed durable keys) | `Yes` implements, pushes and replies for each listed item with its proposed outcome     |
+| Question id             | Gate                                                                                                                                                                       | Options                                        | Consequence                                                                                       |
+| ----------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------- | ------------------------------------------------------------------------------------------------- |
+| `completion`            | Phase 0 step 3 entry gate, asked by the caller and never returned                                                                                                          | `Merge`, `No merge`                            | the option descriptions of the Phase 0 fence                                                      |
+| `reviews-unestablished` | Phase 0 step 2, `prReviewsRead` unsupported                                                                                                                                | `Continue`, `Stop`                             | `Continue` lets the gate run, and merge, with no changes-requested verdict read                   |
+| `checks-pending`        | Phase 2 step 2, a timed-out or unavailable check wait, or an unreported check list; never for that list in a gated or relayed run the active `mergeGate.noCiPolicy` covers | `Continue`, `Stop`                             | `Continue` keeps the gate running; the named checks still block a merge until they pass           |
+| `check-list-waiver`     | The no-check-list waiver in `merge-gate-check-list-waiver`; never in a gated or relayed run the active `mergeGate.noCiPolicy` covers                                       | `Waive`, `Stop`                                | `Waive` authorizes a merge with no reported check list                                            |
+| `conflict-resolution`   | `mergeGate.conflictResolution: ask` in `merge-gate-conflict-resolution`                                                                                                    | `Resolve`, `Report only`                       | `Resolve` commits and pushes one merge commit onto the head branch                                |
+| `set-aside`             | "The set-aside confirmation" in `merge-gate-configured-reviewer`                                                                                                           | `Confirm`, `Stop`                              | `Confirm` sets the listed findings aside, so they no longer block the merge                       |
+| `ready-for-review`      | "Draft ready for review" of Phase 4, a draft with a delivered implementation and no blocker                                                                                | `Mark ready and continue`, `Keep draft`        | `Mark ready and continue` marks the pull request ready for review and continues towards the merge |
+| `issue-done`            | Phase 5.5 step 4 in `merge-gate-issue-observation`                                                                                                                         | `Set to done`, `Leave open`                    | `Set to done` closes each listed issue; read each criterion, the question quotes none             |
+| `iterate-in-flight`     | `effective-flow iterate` Phase 1.5; never reached here, as every delegation carries `Review guard: established`                                                                 | `Wait`, `Proceed`, `Abort`                     | none                                                                                              |
+| `iterate-approval`      | `effective-flow iterate` Phase 2.5 approval                                                                                                                                     | `Yes`, `Adjust` (deselect listed durable keys) | `Yes` implements, pushes and replies for each listed item with its proposed outcome               |
 
 A **question instance** is its id, this gate run's round counter at the gate (`0` before the first
 Phase-2 round) and its **state digest**: the SHA-256 hex of the line
 `<question-id>|<head SHA>|<subject keys>`, the subject keys sorted and comma-joined – the durable
 keys of the listed items for `set-aside`; for `iterate-approval`, each durable key of the item set
 this run delegated as `<key>=<proposed outcome>` (for a CI repair, the failing check names); the base
-SHA and the conflicted paths for `conflict-resolution`; the eligible issue references for
+SHA and the conflicted paths for `conflict-resolution`; `class=<class>`,
+`appendix=<appendixDigest>`, the SHA-256 of the raw appendix block or `none`, and
+`trust=<appendixTrust>` for `ready-for-review`; the eligible issue references for
 `issue-done`; the reviewer logins for `iterate-in-flight`; and none otherwise. A re-ask after the
 state drifted is a new instance.
 
@@ -766,8 +778,9 @@ input object's top-level `cwd`; setting only the process or tool working directo
 
 2. Run the forge preflight: detect the host and CLI, probe availability and authentication, and read
    the capabilities `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`,
-   `prReviewsRead`, `issueCommentsRead`, and `issueClose`. On `CLI_MISSING` or `AUTH_FAILED`,
-   abort without side effects. On `AMBIGUOUS_HOST`, ask for the provider once and retry.
+   `prReviewsRead`, `issueCommentsRead`, `issueClose`, and `pullRequestMarkReady`. On
+   `CLI_MISSING` or `AUTH_FAILED`, abort without side effects. On `AMBIGUOUS_HOST`, ask for the
+   provider once and retry.
    Separately from that list, read `reviewThreadReplies` and `reviewThreadResolution`: only where
    both are unsupported can any thread be provider-settled (see below); on any other forge none is.
    - Without `pullRequestStatus` nothing in this gate can run: report that and end.
@@ -781,10 +794,11 @@ input object's top-level `cwd`; setting only the process or tool working directo
      the reviewer round already read stay available, so the rest of the gate runs unchanged. A
      **relayed** run asks through `BLOCKED-USER reviews-unestablished`, once per gate run. A
      dispatching caller neither asks nor ends here; its delegated run, or its inline run, applies this bullet.
-   - Without `viewerRead` the run **continues** — one of the three capabilities in this list whose
-     absence ends nothing, the others being `issueCommentsRead` and `issueClose` below. The gate
-     then cannot identify its own earlier writes on the manual path, so every remaining non-bot item
-     counts and the human-comment guard activates (Phase 1). That blocks a merge rather than
+   - Without `viewerRead` the run **continues** — one of the four capabilities in this list whose
+     absence ends nothing, the others being `issueCommentsRead`, `issueClose` and
+     `pullRequestMarkReady` below. The gate then cannot identify its own earlier writes on the
+     manual path, so every remaining non-bot item counts and the human-comment guard activates
+     (Phase 1). That blocks a merge rather than
      stopping the run, and the missing identity is reported as the reason.
    - Without `issueCommentsRead` the run **continues**, and loses exactly one observation. The gate
      then cannot read a forge issue's canonical planning comment, so Phase 5.5 records that issue's
@@ -802,8 +816,11 @@ input object's top-level `cwd`; setting only the process or tool working directo
      with the missing capability named. Nothing else degrades — no merge decision, no check round and
      no observation depends on it, and an unavailable offer is not the same result as an issue the
      assessment found incomplete.
+   - Without `pullRequestMarkReady` the run **continues**, and "Draft ready for review" offers
+     nothing: a draft stays the unmet condition the report names.
    - **Forgejo** supports `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`,
-     and `issueCommentsRead`. The helper performs bounded polling inside Phase 2 because `tea`
+     and `issueCommentsRead`; `pullRequestMarkReady` only where the helper reports it, which needs a
+     `tea` that edits titles, creates its drafts as a work-in-progress title, and has `api --include`. The helper performs bounded polling inside Phase 2 because `tea`
      has no native checks watch. What stays unsupported there is `review-create`; the
      two thread writes are served only together, when both are among the routes the instance declares (Forgejo today none, Gitea both). `issueClose` is supported on **Forgejo**
      only where the probed `tea api` transport the operation rides is available: a `tea` built

@@ -667,6 +667,11 @@ or block/escalate; never publish or export it unresolved. A non-credible `needs_
 - `question_or_information` → reported to the user, never posted as a defect.
 - `needs_evidence` → only the triage outcome above applies; do not start a second evidence round.
 
+**Acceptance-lens findings** exist only on the explicit `effective-flow review <PR>` entry point, where
+its Phase 3 hands them over from stream 2d; the automatic trigger never produces them. They go
+through this handoff like every finding, under the Mode C mapping and evidence packing of the loaded
+"Acceptance lens (stream 2d)".
+
 **These five are `effective-delivery`'s judgment vocabulary, and no workflow returns them as an
 outcome.** They sit **behind** the outcome vocabularies of the workflows that consume this handoff
 – `unsupported` is where `effective-flow iterate`'s `skipped` is produced, for one – so a caller that
@@ -716,8 +721,11 @@ not reached through a target-gated include here and is loaded through this point
   republished on every rerun. The ground is that **scope**, not a missing capability — the review
   body is readable, through the plumbing's review read — and the conclusion is unchanged: widening
   the check to a third surface buys nothing that publishing on a surface it already reads does not. Publish those findings as one additional marked pull-request comment instead, built through
-  the loaded `pr-review-comment-build` operation, under a clearly labelled section. The review body
-  stays human-facing prose and carries no idempotency key.
+  the loaded `pr-review-comment-build` operation, under a clearly labelled section. An
+  acceptance-lens finding without a code location goes there too, its `file`
+  (`<source>#criterion-<key8>` or `adr#<key8>`) taking the place of `path:line` in its
+  `Signature`. The review body stays human-facing prose and carries no idempotency key; on the
+  explicit entry point it carries the acceptance summary when stream 2d ran.
 - **Every published finding, inline or outside the diff, carries its key.** Below the stamped
   marker, its body holds the finding's stable ID, its severity, its problem and recommendation
   prose, and — as its last line — the idempotency key in the canonical finding-issue form of

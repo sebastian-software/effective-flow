@@ -3,7 +3,8 @@
 This fragment carries the half of the issue implementation lifecycle that runs only after a merge is
 confirmed. Everything below reads the receipt of the merged pull request: its declared target, and
 per item the optional `container` together with its `containerMechanism`. Those fields are defined
-under "Pull-request lifecycle receipt" in `issue-lifecycle`, which stays loaded eagerly; nothing
+under "Pull-request lifecycle receipt" in `issue-lifecycle-receipt`, which `issue-lifecycle`
+includes eagerly; nothing
 here restates or re-derives that schema. A consumer loads this fragment only once that receipt has
 already been read and validated, so the fields named below are the parsed ones rather than freshly
 parsed prose.

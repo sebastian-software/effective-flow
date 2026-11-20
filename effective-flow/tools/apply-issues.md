@@ -353,7 +353,8 @@ The complete external contract — connection discovery with its fail-closed rul
 ## Issue implementation lifecycle
 
 This fragment is the provider-neutral contract for an issue that is the implementation basis of
-`tools/apply-issues.md` or remote `tools/apply-review.md`. It keeps three different facts separate:
+`tools/apply-issues.md` or remote `tools/apply-review.md`; receipt-only producers load only
+`issue-lifecycle-receipt`. It keeps three different facts separate:
 
 - the tracker's native workflow state (unstarted, started, later active, or terminal);
 - Effective Flow classifications such as `effective-flow-issue-done`, which means that delivery is
@@ -386,7 +387,10 @@ never reset the issue to unstarted and never start a replacement implementation 
 
 ### Pull-request lifecycle receipt
 
-Every new or reused pull request that delivers issue-backed work carries exactly one receipt line:
+Every new or reused pull request that delivers issue-backed work carries exactly one receipt line.
+`apply-issues` and remote `apply-review` write it through `issue-lifecycle`; autopilot and the plan
+pull-request continuation are receipt-only producers that pass it to `effective-flow pr` as a machine
+line, with no started transition, no in-progress label, and no PR-link comment:
 
 ```text
 <!-- effective-flow-issue-lifecycle:v1 {"target":"forge|external","repository":"owner/repo|null","externalTool":"tool|null","items":[{"issue":"reference","relationship":"closes|refs","container":"reference|null","containerMechanism":"native|checklist|null"}]} -->
@@ -421,7 +425,12 @@ behavior, with issue observation reported as unavailable.
 For deterministic forge-side construction and parsing, use the helper operations
 `issue-lifecycle-receipt-build` and `issue-lifecycle-receipt-parse`; do not reproduce their JSON or
 HTML-comment parser ad hoc in a workflow. Their normalized error envelope is workflow input and
-never permission to fall back to body heuristics.
+never permission to fall back to body heuristics. A receipt-only producer builds without `body`, with `cwd` `RUNTIME_STATE_ROOT`, `receipt`
+`{"target":"forge","repository":"<owner/repo>","externalTool":null,"items":[{"issue":"#<N>","relationship":"refs","container":null,"containerMechanism":null}]}`
+and `context` `{"expectedTarget":"forge","expectedRepository":"<owner/repo>"}`, where `<owner/repo>`
+is the `slug` of a fresh `repository-resolve`, and uses `data.marker` as the line.
+
+### Receipt write paths
 
 For a new PR, generate the validated receipt together with the PR body. For an existing PR, read its
 body fresh, retain its body hash, merge the normalized items into the one valid receipt, and use only

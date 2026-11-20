@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "version": "1.75.0",
+  "version": "1.76.0",
   "exposedTools": [
     "concept",
     "investigate",
@@ -1061,6 +1061,21 @@
         {
           "tool": "review",
           "scope": "tools.review"
+        }
+      ]
+    },
+    {
+      "skill": "effective-delivery",
+      "consumer": "acceptance-reviewer",
+      "consumerKind": "agent",
+      "classification": "delegate",
+      "tools": [
+        "review"
+      ],
+      "reach": [
+        {
+          "tool": "review",
+          "scope": "agents.acceptance-reviewer"
         }
       ]
     },
@@ -3035,6 +3050,10 @@
         {
           "tool": "refactor",
           "scope": "tools.refactor"
+        },
+        {
+          "tool": "review",
+          "scope": "agents.acceptance-reviewer"
         },
         {
           "tool": "review",

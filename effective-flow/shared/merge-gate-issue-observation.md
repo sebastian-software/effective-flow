@@ -321,8 +321,11 @@ recorded outcome and reported guidance, never in a stop.
    retried blindly, and no fallback write goes to a different target.
 
 5. For every forge issue freshly observed **terminal (done)**, remove
-   `effective-flow-issue-in-progress` idempotently. That label is newer than the legacy `firmo-`
-   prefix and has no legacy spelling, so there is no second variant to remove here. Keep the marker
+   `effective-flow-issue-in-progress` idempotently, and only when the issue's most recent fresh read
+   lists it: step 4's last re-read when step 4 read the issue again, otherwise step 2's
+   `issue-state-wait` result, which carries `labels`. When that read does not list the label, skip
+   the removal without a failure: a receipt-only producer never added it. That label is newer than
+   the legacy `firmo-` prefix and has no legacy spelling, so there is no second variant to remove here. Keep the marker
    for every other outcome, `terminal (cancelled)` included: the marker states that an Effective Flow
    run is implementing this issue, and a withdrawal this run neither caused nor assessed is exactly
    the state an operator should still be able to see. Never

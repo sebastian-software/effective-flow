@@ -269,7 +269,8 @@ together: `delivery` and `partial-diff` at exactly `BASE_DIR/REPO_NAME/SESSION_I
 `plan-publication` or `merge-gate` at `BASE_DIR/REPO_NAME/SESSION_ID-<purpose>` carry `retain`;
 `apply-review` at a direct child of its session directory, on branch
 `apply-review/<SESSION_ID>/<GROUP_NAME>`, and `base-validation` at that `-<purpose>` leaf, on branch
-`base-validation/<SESSION_ID>`, carry `delete-after-integration`. `reason` is `null` for
+`base-validation/<SESSION_ID>`, carry `delete-after-integration`, as does `issue-planning` on
+`issue-planning/<SESSION_ID>`. `reason` is `null` for
 `active` and `cleanup-ready` and the exact reason otherwise. `creationOid` is the full commit OID at
 which worktree and branch creation succeeded, captured once and never replaced. The `receipt` is the
 immutable creation snapshot; fresh receipts are compared with it, never written into it. During
@@ -311,7 +312,7 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
 
 1. The record is schema-valid, `effective-flow-created`, and `cleanup-ready` or `cleanup-failed`
    (`worktree remove` also accepts this session's `active` record, cleanup a stopped `merge-gate`
-   record).
+   record or an `issue-planning` record `aborted` with reason `plan-preserved`).
 2. Repository identity, `RUNTIME_STATE_ROOT`, path, branch, workflow, purpose and receipt snapshot
    match fresh evidence.
 3. Exactly one linked worktree in `git worktree list --porcelain -z` matches the path.
@@ -326,7 +327,8 @@ failed one by number (`NOT_ELIGIBLE`, `conditions`):
 8. It is neither the main worktree nor the calling run's own execution worktree.
 9. No foreign or ownerless lock or cleanup claim exists.
 
-A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`) whose worktree is fully gone,
+A released `partial-diff` record (`cleanup-ready` or `cleanup-failed`), a released `issue-planning`
+one, or cleanup's `plan-preserved` `issue-planning` record, whose worktree is fully gone,
 unregistered and its path absent, is removable without conditions 3, 4, 5 and 7 and the toplevel
 part of 2; no Git call runs in the vanished path. A half-gone worktree keeps every condition.
 Cleanup's confirmed claim of a `merge-gate` record in any of its four removable statuses waives
@@ -395,8 +397,8 @@ node <skill-root>/scripts/effective-flow-state.mjs worktree remove <<< '{"cwd":"
 `integrationRoot` lets the helper prove every component commit by exact patch-id against the branch
 checked out there and then compare-and-delete the ref; a never-integrated `base-validation` branch
 is compare-and-deleted only while its tip is `creationOid` and another ref reaches it, else kept
-(`advanced`, `unreachable`). Prose never runs `git branch -D`, and a forced deletion outside these
-proofs never happens.
+(`advanced`, `unreachable`), and so is an `issue-planning` branch. Prose never runs
+`git branch -D`, and a forced deletion outside these proofs never happens.
 
 **`base-validation`** is the orchestrator's, at `baselineHead`; setup follows the worktree setup
 policy, the validator installs nothing. Every exit path – completion, failure or abort – restores

@@ -96,17 +96,28 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'presence refresh',
   'presence list',
   'presence release',
+  // The per-issue planning claims: `planning-claim key` only computes the claim key, `acquire`
+  // creates one claim record (at most MAX_CLAIM_BYTES) no-clobber below
+  // `.effective-flow/planning-claims/` and never replaces another run's claim, `release` removes
+  // only the record whose `claimId` matches, and `list` only reads and never returns a `claimId`
+  // (see `effective-flow-state-planning-claim-core.mjs`).
+  'planning-claim key',
+  'planning-claim acquire',
+  'planning-claim release',
+  'planning-claim list',
 ]);
 // The runtime-state helper operations that never get a rule: destructive (`lock break`, the
 // worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`, the
-// removal of other runs' presence markers by `presence prune`) or the writer of the rules itself.
-// A rule that would also admit one of them is widened.
+// removal of other runs' presence markers by `presence prune`, the removal of other runs' planning
+// claims by `planning-claim prune`) or the writer of the rules itself. A rule that would also admit
+// one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock break',
   'harness allow-rules',
   'worktree remove',
   'cleanup apply',
   'presence prune',
+  'planning-claim prune',
 ]);
 
 // Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy`,
@@ -131,8 +142,10 @@ export const CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS = Object.freeze([
 ]);
 
 // The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
-// computations, and `thread-ledger-lookup`, a local read of runtime state. Never a mutation, never
-// a local write.
+// computations, `thread-ledger-lookup`, a local read of runtime state, and `merge-proof-local`, a
+// local Git read whose merged objects land only in a temporary private object directory. Never a
+// forge mutation; the only local write is `pr-acceptance-sources`' private runtime snapshot under
+// `.effective-flow/`.
 export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'repository-resolve',
   'probe',
@@ -145,11 +158,13 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'issue-list',
   'issue-sub-issues-read',
   'pr-read',
+  'pr-acceptance-sources',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',
   'pr-status-read',
   'pr-checks-wait',
+  'pr-draft-classify',
   'review-threads-read',
   'remote-parse',
   'reference-parse',
@@ -178,6 +193,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'issue-lifecycle-receipt-build',
   'issue-lifecycle-receipt-parse',
   'thread-ledger-lookup',
+  'merge-proof-local',
 ]);
 // The `remote-tracker.mjs` operations that never get a rule: every forge mutation, and the local
 // write `thread-ledger-record`. A rule that would also admit one of them, `--apply` included, is

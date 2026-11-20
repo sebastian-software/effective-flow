@@ -14,6 +14,14 @@
 //   `runtime-state-guard.mjs` primitives; `cwd` must be the primary checkout (RUNTIME_STATE_ROOT).
 //   `plan-reviewed` hashes the reviewed plan itself; `delivery-record` stores the archive path (or
 //   an unarchived delivery) and `delivery-confirm` the verified pushed head.
+// - Planning claim: `run-init` on an issue source first takes the issue's shared planning claim
+//   (`effective-flow-state-planning-claim-core.mjs`, workflow `autopilot`, holder the minted run id)
+//   and only then creates the run directory and ledger; a held claim is ISSUE_CLAIMED with the
+//   holder and a legacy Issue Buddy `pass.lock` is LEGACY_PASS_LOCK, both before anything is
+//   written. The claim token is stored only in the internal ledger field `planningClaim`, which no
+//   operation output and no appendix ever carries. `run-close` writes the closed ledger first and
+//   only then releases the claim, for every outcome, reporting the release as `planningClaim`. A
+//   plan source takes no claim.
 // - `consent-check` (reads only): an open ledger whose recorded source is the given issue and whose
 //   recorded visibility is `private`.
 // - `run-check` (reads only): an open ledger for the run id, or RUN_NOT_OPEN.
@@ -57,7 +65,14 @@ import { constants as fsConstants } from 'node:fs';
 import { link, lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  APPENDIX_BEGIN,
+  APPENDIX_BLOCKER_HEADINGS,
+  APPENDIX_END,
+  MAX_APPENDIX_BYTES,
+} from './autopilot-appendix-core.mjs';
 import { hasClosingKeyword, scanEntries } from './plan-publication-core.mjs';
+import { archivePathFor } from './pr-delivery-git-core.mjs';
 import {
   O_NOFOLLOW,
   RUNTIME_STATE_DIR,
@@ -77,6 +92,11 @@ import {
   resolveRuntimeRoot,
   runGit,
 } from './runtime-state-guard.mjs';
+import {
+  planningClaimAcquire,
+  planningClaimRelease,
+} from './effective-flow-state-planning-claim-core.mjs';
+import { StateOutcome } from './effective-flow-state-core.mjs';
 
 export const AUTOPILOT_OPERATIONS = Object.freeze([
   'run-init',
@@ -114,7 +134,6 @@ export const LEDGER_SCHEMA_VERSION = 1;
 export const MAX_STDIN_BYTES = 1024 * 1024;
 const MAX_LEDGER_BYTES = 1024 * 1024;
 const MAX_PLAN_BYTES = 512 * 1024;
-const MAX_APPENDIX_BYTES = 64 * 1024;
 const MAX_BODY_BYTES = 256 * 1024;
 
 export const RUN_ID = /^ap-\d{8}T\d{6}Z-[0-9a-f]{8}$/;
@@ -182,10 +201,9 @@ const ASSUMPTION_HEADINGS = Object.freeze([
   '## Annahmen und offene Punkte',
 ]);
 
-// The appendix markers. `pr`'s body check strips every `<!-- effective-flow-` comment from a drafted
-// body, so only this appended block can carry them.
-export const APPENDIX_BEGIN = '<!-- effective-flow-autopilot-appendix:begin v1 -->';
-export const APPENDIX_END = '<!-- effective-flow-autopilot-appendix:end -->';
+// The appendix markers live in `autopilot-appendix-core.mjs`, which the reading side shares; they
+// stay exported here for existing importers.
+export { APPENDIX_BEGIN, APPENDIX_END };
 
 export class AutopilotError extends Error {
   constructor(code, message, details = {}) {
@@ -728,6 +746,108 @@ function requireSource(value) {
   invalid('source.kind must be issue or plan');
 }
 
+// ---------------------------------------------------------------------------------------------
+// Planning claim of an issue source
+
+// The planning-claim target of an issue source: its `<host>/<owner>/<name>` repository as the
+// forge identity `repository-resolve` returns, so the claim key equals the one Issue Buddy and
+// `plan-issue` derive for the same issue.
+function claimTarget(source) {
+  const [host, owner, repository] = source.repository.split('/');
+  return { kind: 'forge', host, owner, repository };
+}
+
+// The holder a CLAIMED outcome names, never its token: workflow, run or pass id, age, stale flag
+// and liveness, or the invalid record's reason.
+function claimHolder(details) {
+  if (details.state !== 'valid') return { state: 'invalid', reason: details.reason };
+  const holder = { workflow: details.workflow };
+  for (const key of ['runId', 'passId']) {
+    if (details[key] !== undefined) holder[key] = details[key];
+  }
+  return {
+    ...holder,
+    acquiredAt: details.acquiredAt,
+    ageMs: details.ageMs,
+    stale: details.stale,
+    liveness: details.liveness,
+  };
+}
+
+// Takes the claim of an issue source for `runId`. Returns the internal ledger field
+// `{claimId, targetKey, issueKey, acquiredAt}`; a held claim fails ISSUE_CLAIMED, a legacy pass
+// lock LEGACY_PASS_LOCK, both before any write of this run.
+async function acquireRunClaim(ctx, source, runId, deps) {
+  const acquired = await planningClaimAcquire(
+    {
+      cwd: ctx.cwd,
+      target: claimTarget(source),
+      issue: source.issue,
+      workflow: 'autopilot',
+      runId,
+    },
+    deps,
+  );
+  if (acquired instanceof StateOutcome) {
+    if (acquired.code === 'LEGACY_PASS_LOCK') {
+      fail(
+        'LEGACY_PASS_LOCK',
+        `a legacy Issue Buddy pass lock exists at ${acquired.details.path}; inspect and remove it before planning`,
+        { path: acquired.details.path },
+      );
+    }
+    fail('ISSUE_CLAIMED', `issue #${source.issue} is already claimed for planning`, {
+      issue: source.issue,
+      repository: source.repository,
+      holder: claimHolder(acquired.details),
+    });
+  }
+  return {
+    claimId: acquired.claimId,
+    targetKey: acquired.targetKey,
+    issueKey: acquired.issueKey,
+    acquiredAt: acquired.acquiredAt,
+  };
+}
+
+// Releases the claim a ledger holds, token from its internal field. Returns `null` for a ledger
+// without one (a plan source or a ledger written before claims), else the reported release:
+// `{targetKey, issueKey, released: true}`, `{..., released: false, reason: 'missing'}` (already
+// released or pruned), `{..., released: false, reason: 'not-owner', detail}` (the record is no
+// longer this run's) or `{..., released: false, reason: 'release-failed', code, message}`. A
+// failure never keeps the ledger open: `cleanup` prunes the claim of a closed ledger.
+async function releaseRunClaim(ctx, ledger, deps) {
+  const claim = ledger.planningClaim;
+  if (!isObject(claim) || ledger.source?.kind !== 'issue') return null;
+  const names = { targetKey: claim.targetKey, issueKey: claim.issueKey };
+  try {
+    const result = await planningClaimRelease(
+      {
+        cwd: ctx.cwd,
+        target: claimTarget(ledger.source),
+        issue: ledger.source.issue,
+        claimId: claim.claimId,
+      },
+      deps,
+    );
+    if (result instanceof StateOutcome) {
+      return { ...names, released: false, reason: 'not-owner', detail: result.details.reason };
+    }
+    return result.released
+      ? { ...names, released: true }
+      : { ...names, released: false, reason: 'missing' };
+  } catch (error) {
+    if (!(error instanceof RuntimeStateError || error instanceof AutopilotError)) throw error;
+    return {
+      ...names,
+      released: false,
+      reason: 'release-failed',
+      code: error.code,
+      message: error.message,
+    };
+  }
+}
+
 async function runInitOperation(input, deps) {
   closed(input, ['cwd', 'source', 'visibility', 'language'], [], 'input');
   const source = requireSource(input.source);
@@ -735,31 +855,55 @@ async function runInitOperation(input, deps) {
   oneOf(input.language, LANGUAGES, 'language');
   const ctx = await rootContext(input, deps);
   const runId = mintRunId(deps);
-  await ensureGuardedDirectory(ctx, path.join(ctx.cwd, RUNTIME_STATE_DIR));
-  await ensureGuardedDirectory(ctx, path.join(ctx.cwd, AUTOPILOT_DIR));
-  const directory = runDirectory(ctx, runId);
-  if (!(await guardedMkdir(ctx, directory))) fail('RUN_EXISTS', `run ${runId} already exists`);
-  const ledger = {
-    schemaVersion: LEDGER_SCHEMA_VERSION,
-    runId,
-    status: 'open',
-    startedAt: timestamp(deps),
-    source,
-    visibility: input.visibility,
-    language: input.language,
-    budget: DECISION_CAP,
-    decisions: [],
-    blockers: [],
-    fit: null,
-  };
-  const created = await createNoClobber(
-    ctx,
-    path.join(directory, LEDGER_FILE),
-    `${JSON.stringify(ledger, null, 2)}\n`,
-    { tempPrefix: '.autopilot-' },
-  );
-  if (!created.created) fail('RUN_EXISTS', `run ${runId} already exists`);
-  return { runId, ledgerDirectory: directory, budget: DECISION_CAP };
+  // Claim, then ledger: a held claim creates no run directory and no ledger.
+  const planningClaim =
+    source.kind === 'issue' ? await acquireRunClaim(ctx, source, runId, deps) : null;
+  try {
+    await ensureGuardedDirectory(ctx, path.join(ctx.cwd, RUNTIME_STATE_DIR));
+    await ensureGuardedDirectory(ctx, path.join(ctx.cwd, AUTOPILOT_DIR));
+    const directory = runDirectory(ctx, runId);
+    if (!(await guardedMkdir(ctx, directory))) fail('RUN_EXISTS', `run ${runId} already exists`);
+    const ledger = {
+      schemaVersion: LEDGER_SCHEMA_VERSION,
+      runId,
+      status: 'open',
+      startedAt: timestamp(deps),
+      source,
+      visibility: input.visibility,
+      language: input.language,
+      budget: DECISION_CAP,
+      decisions: [],
+      blockers: [],
+      fit: null,
+      ...(planningClaim === null ? {} : { planningClaim }),
+    };
+    const created = await createNoClobber(
+      ctx,
+      path.join(directory, LEDGER_FILE),
+      `${JSON.stringify(ledger, null, 2)}\n`,
+      { tempPrefix: '.autopilot-' },
+    );
+    if (!created.created) fail('RUN_EXISTS', `run ${runId} already exists`);
+    return { runId, ledgerDirectory: directory, budget: DECISION_CAP };
+  } catch (error) {
+    // No ledger holds the claim, so nothing could release it later: give it back now. A release
+    // that fails as well never hides the original error: it is attached as `claimReleaseError`
+    // (non-enumerable, so no envelope changes) and the original is rethrown; `cleanup` can still
+    // prune the left claim once its ledger proves absent.
+    if (planningClaim !== null) {
+      try {
+        await releaseRunClaim(ctx, { source, planningClaim }, deps);
+      } catch (releaseError) {
+        if (error !== null && typeof error === 'object' && Object.isExtensible(error)) {
+          Object.defineProperty(error, 'claimReleaseError', {
+            value: releaseError,
+            configurable: true,
+          });
+        }
+      }
+    }
+    throw error;
+  }
 }
 
 // The fixed summary of a decision-cap blocker hit by a local-only decision: its question stays
@@ -977,10 +1121,9 @@ async function planReviewedOperation(input, deps) {
   return { recorded: true, reviewedPlanSha256: plan.sha256, sourceRoot: root };
 }
 
-// The one archive path plan archival produces for a plan: `<dir>/archive/<file>`.
-export function archivePathFor(planPath) {
-  return path.posix.join(path.posix.dirname(planPath), 'archive', path.posix.basename(planPath));
-}
+// The archive-path rule lives in `pr-delivery-git-core.mjs`, which the plan-only evidence shares;
+// it stays exported here for existing importers.
+export { archivePathFor };
 
 // After the handback commit and before `pr-appendix`: the delivered plan state, either the
 // archive path or an unarchived delivery. A new record replaces an earlier one, including its
@@ -1096,16 +1239,22 @@ async function runCloseOperation(input, deps) {
   if (input.outcome === 'appendix-update' && ledger.source.kind !== 'issue') {
     invalid('appendix-update requires an issue source');
   }
+  // The closed ledger is written first and the claim released only afterwards, whatever the
+  // outcome and whatever blockers stand: a failed ledger write leaves the run open with its claim,
+  // and a repeated `run-close` closes and releases both. A failed release after the write is
+  // reported and leaves a closed ledger whose claim `cleanup` prunes (`run-ledger-closed`).
   ledger.status = 'closed';
   ledger.closedAt = timestamp(deps);
   ledger.outcome = input.outcome;
   if (withPr) ledger.pullRequest = input.pullRequest;
   await writeLedger(ctx, ledger);
+  const planningClaim = await releaseRunClaim(ctx, ledger, deps);
   return {
     runId: ledger.runId,
     outcome: ledger.outcome,
     counts: counts(ledger),
     fit: storedFit(ledger),
+    ...(planningClaim === null ? {} : { planningClaim }),
   };
 }
 
@@ -1352,7 +1501,7 @@ const COPY = Object.freeze({
     automatic: '### Automatic decisions',
     automaticCount: (count) =>
       `${count} decision${count === 1 ? ' was' : 's were'} taken automatically with a clear lead.`,
-    blockers: '### Blockers',
+    blockers: APPENDIX_BLOCKER_HEADINGS.en,
     neutralBlocker:
       'Implementation stopped at a blocker that needs maintainer attention; the details are kept locally.',
     fit: '### Architecture fit',
@@ -1374,7 +1523,7 @@ const COPY = Object.freeze({
     automatic: '### Automatische Entscheidungen',
     automaticCount: (count) =>
       `${count} ${count === 1 ? 'Entscheidung wurde' : 'Entscheidungen wurden'} mit klarem Vorsprung automatisch getroffen.`,
-    blockers: '### Blocker',
+    blockers: APPENDIX_BLOCKER_HEADINGS.de,
     neutralBlocker:
       'Die Umsetzung wurde an einem Blocker angehalten, der die Aufmerksamkeit der Maintainer braucht; die Details liegen lokal vor.',
     fit: '### Architektur-Passung',

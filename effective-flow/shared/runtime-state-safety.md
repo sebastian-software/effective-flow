@@ -184,6 +184,12 @@ that handle to its repository-relative `.effective-flow/...` target only after c
 proved. Run every predicate and mutation from `RUNTIME_STATE_ROOT`; a safety pass from
 `EXECUTION_ROOT` never authorizes a runtime-state mutation in the main checkout.
 
+A run invoked from a linked or harness worktree still derives `RUNTIME_STATE_ROOT` from the first
+`git worktree list --porcelain` record, and every runtime-state helper keeps it as `cwd`. A planning
+or delivery worktree, such as Issue Buddy's `issue-planning` worktree or an autopilot run's own
+delivery worktree, holds only plan and product files: it reaches a helper as a separately validated
+`sourceRoot` or execution root, never as a runtime-state root.
+
 Run the guard separately for every target. A pass for one root or target never authorizes a
 mutation in another root or to another target. Do not create the directory, sentinel, target,
 parent directory, lock, or worktree before the guard passes.

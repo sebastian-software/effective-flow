@@ -758,6 +758,27 @@ belong to the later scheduled-publication work.
 Issue Buddy's publication uses the same GitHub and plan-publication helpers documented below. It
 opens draft plan pull requests and does not close issues or write issue comments or labels.
 
+Issue Buddy, issue-sourced `/effective-flow autopilot` runs and `/effective-flow plan-issue` share
+one local **planning claim** per issue, a small record below
+`.effective-flow/planning-claims/<target>/<issue>.json`. The claim key comes from the repository
+identity that `repository-resolve` returns on the forge, or from the external tracker target and
+the issue key, so all three workflows derive the same key for the same issue. An issue is planned
+by at most one run at a time, while different issues are planned in parallel; no repository-wide
+lock spans a pass. A batch pass skips a claimed issue as `issue-in-progress`, a skip reason that
+differs from the lifecycle label `effective-flow-issue-in-progress` (skipped as
+`lifecycle-label`). Every run starts from the fetched tip of the resolved remote base branch: the
+configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`. It may be started from
+the primary checkout or any linked or harness worktree; runtime state stays in the primary
+checkout.
+
+Claims are machine-local and are never broken automatically. A killed run blocks only its own
+issue until `/effective-flow cleanup` releases its claim after confirmation, with a proof that the
+run is gone (its pass record or open autopilot ledger is gone, or its process is dead on this host)
+or an explicit confirmation that the claim is older than 2 hours. Across machines, the remote
+guards still prevent duplicates: an existing plan branch or pull request, the create-only push and
+the canonical planning comment. A leftover `.effective-flow/issue-buddy/pass.lock` from an earlier
+version stops every claim with `LEGACY_PASS_LOCK` until you inspect and remove it.
+
 [Plan publication](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request) and the
 [continuation on a plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
 use the same remote-tracker helper as every other pull-request step. Like all PR work, they are
@@ -765,7 +786,9 @@ forge-bound: they never evaluate `tracker.mode` and need only a Git repository, 
 and an authenticated CLI.
 
 Two mutations finish a plan's draft pull request. Both default to a dry run and change nothing
-without `--apply`:
+without `--apply`. `pr-mark-ready` has a second caller: `merge-gate` uses it, after your
+confirmation, to take a delivered draft out of draft before it merges (see
+[`merge-gate`](./tools-deliver.md)):
 
 | Operation         | Capability               | What it does                                                                                                                                                                                                                                      |
 | ----------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -791,6 +814,53 @@ their subcommand flags, because all three read the raw pull-request object. GitH
 offers no draft pull requests answers with a 422 "Draft pull requests are not supported", which
 `pr-create` reports as `UNSUPPORTED_CAPABILITY` for `pullRequestDraftCreate` rather than as a
 failed command.
+
+Two read operations support that second caller. Neither writes to the forge or to your branches.
+
+| Operation           | Capability        | What it does                                                                                                                                                      |
+| ------------------- | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `pr-draft-classify` | `pullRequestRead` | Classifies a draft pull request for the ready offer. Input: `number`, `headSha` and `baseRef`, the bare base branch name. The caller has fetched the refs already |
+| `merge-proof-local` | none beyond Git   | Proves locally whether the head merges cleanly into `origin/<baseRef>`. Input: `headSha` and `baseRef`. It fetches nothing and needs Git 2.38 or newer            |
+
+`pr-draft-classify` reads the pull request once, reads the author's permission when the head is in
+this repository, and compares local refs for a plan marker. It reads the body only for the plan
+marker and the autopilot appendix. The result carries these fields:
+
+- **`number`** and **`class`**: `delivered`, `unmarked`, `plan-only`, `finish-incomplete` or
+  `marker-invalid`. Only `delivered` and `unmarked` can be offered ready. `plan-only` means the
+  plan marker is valid and the branch changes nothing beyond the plan. `finish-incomplete` means
+  the plan-draft finish of `pr` never ran, so the title still has the plan publication form.
+- **`planPath`**, **`archivePath`** and **`markerError`**: the validated plan path, the archive
+  path of a delivered plan, and the marker error code. Each appears only where it applies.
+- **`draft`** and **`readyTitle`**: whether the forge states a draft, and the title that
+  `pr-mark-ready` sends. On Forgejo it is the title without its `WIP:` or `[WIP]` prefixes, however
+  many are stacked; elsewhere it is the title as it is. It is `null` when nothing is left of the
+  title, and then no ready marking is offered.
+- **`blockers`**: the number of bullet lines in the blocker sections of every autopilot appendix
+  found. A count above zero excludes the offer.
+- **`appendixPresent`**, **`appendixDigest`**, **`appendixTrust`**, **`appendixTrustReason`**,
+  **`appendix`** and **`appendixTruncated`**: whether a decision record exists, the SHA-256 of its
+  raw block, and its trust. The trust is `verified` only when the pull request is from this
+  repository and its author has write permission; otherwise it is `unverifiable`, and
+  `appendix` is `null`. `appendixTrustReason` then names why: `fork` (the head is in another
+  repository or in none, such as a deleted fork), `repository-unstated` (the read does not state
+  the head repository), `permission-unreadable` or `permission-insufficient`. A verified record is
+  neutralized (`<!--`, control and invisible format characters, and line or paragraph separators
+  are escaped) and size-bounded, and `appendixTruncated` says whether it was cut. Blockers are
+  counted at every trust level.
+
+The pull request read must state exactly the `headSha` and `baseRef` the caller passed. A missing
+or different head fails the operation with `COMMAND_FAILED` and `details.step` `head-mismatch`, a
+missing or different base with `base-mismatch`; the caller re-reads instead of classifying a
+pull request that has moved. Any other Git or forge failure, apart from the permission read, also
+fails the whole operation.
+
+`merge-proof-local` exists for Forgejo, where a WIP-titled draft reports no mergeable state. It
+runs `git merge-tree --write-tree` in a private temporary object directory that it removes, so the
+repository's objects and refs stay unchanged. The result `status` is `clean`, `conflict` (with a
+`conflictCount`) or `unavailable`, and `reason` explains why. A Git older than 2.38, a missing ref,
+a shallow repository, a Git failure or a merge that exceeds its time bound (`timeout`) gives
+`unavailable`; the caller then treats mergeability as unproven and never as clean.
 
 `pr-list` and `pr-read` add four fields to each normalized pull request:
 
@@ -1001,6 +1071,16 @@ non-closing relationship plus any container mechanism. It contains no credential
 details. A malformed, duplicated, cross-repository, or configuration-mismatched receipt authorizes
 no tracker access and is never replaced by guessing identifiers from PR prose.
 
+Two further producers write the receipt without the started transition: `autopilot`, for every
+issue it delivers, and the plan-pull-request continuation of `build`, `fix`, `refactor`, and `docs`,
+which adds one only when the caller supplied none. Their receipt uses the non-closing relationship
+`refs` on the forge, next to the visible `Refs #<N>`. They add no `effective-flow-issue-in-progress`
+label, no external started state, and no pull-request link comment. Pull requests created before
+this was added, and pull requests recovered by a direct `pr` run after a failed finish, carry no
+receipt and stay legacy. `Refs` never closes anything: after the merge, the offer described below
+is the only way Effective Flow closes the issue, unless the receipt is skipped, in which case you
+close it by hand.
+
 Once the pull request is confirmed merged, `merge-gate` gives tracker automation one fixed
 30-second grace period and reads every receipted issue again. It never force-closes an issue. A
 transition you confirmed after a `complete` assessment verdict is not a forced close and is the one
@@ -1023,7 +1103,8 @@ run, asked only in an interactive session, and it lists each eligible issue with
 locator per criterion: which criterion, and whether its covering statement sat in the pull request's
 title or body. No issue or pull-request text is ever quoted into that listing or the question, and
 the summary quotes exactly one thing, described below – everywhere else you read the wording at the
-issue and pull-request URLs. Confirming authorizes three writes per issue: the transition, the in-progress label removal, and the container completion, and
+issue and pull-request URLs. Confirming authorizes three writes per issue: the transition, the in-progress label removal – skipped when the issue does not carry the label, as
+for an autopilot or continuation pull request – and the container completion, and
 the option text says so. Declining transitions nothing. A non-interactive run poses nothing and
 transitions nothing; it carries the recommendation into its summary instead. A missing capability or
 an unset `externalDoneState` makes the offer unavailable for that issue, which is reported with the

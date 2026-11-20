@@ -132,8 +132,9 @@ Tasks are created at **two** points in time, because the directory split in Phas
    - "2a: Search code-comment source"
    - "2a: Search lint suppressions"
    - "2a: Search previous reviews"
-3. **One task for Phase 2b:**
+3. **One task for Phase 2b, and in explicit pull-request mode one for 2d:**
    - "2b: Technical validation"
+   - "2d: Acceptance lens"
 
 **Point B — at the start of Phase 2c, after the directory-split heuristic has determined the sub-reviewer partition but **before** the first sub-reviewer is started:**
 
@@ -149,7 +150,7 @@ Tasks are created at **two** points in time, because the directory split in Phas
   - `in_progress`: when the respective sub-agent in Phase 2 starts.
   - `completed`: when the sub-agent reports `DONE`.
   - **On `ABORT`:** still set to `completed`, and append `[failed]` to the subject.
-- **Phase-2 aggregate lifecycle:** the phase-level task "Phase 2" only counts as `completed` once all three streams (2a, 2b, 2c) have reported `DONE` or `ABORT` — analogous to the Phase-3 start condition.
+- **Phase-2 aggregate lifecycle:** the phase-level task "Phase 2" only counts as `completed` once all streams (2a, 2b, 2c, and 2d when it runs) have reported `DONE` or `ABORT` — analogous to the Phase-3 start condition.
 - **On early overall abort** (e.g. the skill is interrupted, several critical sub-agents abort, and the workflow cannot continue into Phase 3): set all still-open `pending` and `in_progress` tasks to `completed` and append `[aborted]` to their subjects before the skill ends with `DONE` or `ABORT`.
 
 ### Important
@@ -349,7 +350,8 @@ user to `effective-flow setup`, the sole repair owner.
    valid; use only valid, non-stale cache entries. Ignore a same-named cache below
    `EXECUTION_ROOT`.
 6. Finish scope/high-risk triage first. Then reserve the IDs of the ordered list of `admitted`
-   findings, through `review write-report` in local mode and `memory reserve` on every other path,
+   findings, plus any handed-over acceptance-lens finding, through `review write-report` in local
+   mode and `memory reserve` on every other path,
    mapped as `R-0000001`, `R-0000002`, ..., following “Reserve finding IDs before publication”; it
    gates every report, finding issue, and pull-request comment.
 
@@ -377,6 +379,7 @@ The wisdom file carries the outputs of the parallel Phase-2 streams between the 
 - collected design decisions from Phase 2a (one block per source)
 - technical findings from Phase 2b
 - reviewer findings from Phase 2c (one block per sub-reviewer)
+- acceptance findings and verdicts from Phase 2d, when it runs
 
 Delete the file at the end of the workflow, before `DONE`.
 
@@ -470,17 +473,22 @@ On a resolved pull request:
    it. Required is only the forge preflight: detect the host and CLI and probe availability and
    authentication.
 3. Finding IDs come from `memory reserve` as usual.
-4. Phases 2 and 3 run unchanged.
-5. Phase 4 publishes the Phase-3 finding set through the loaded "PR review publication" instead of
-   the local-mode report or the finding issues of a publishing target.
+4. Phases 2 and 3 run unchanged, except that an explicit invocation adds stream 2d and its Phase-3
+   rules from the loaded "Acceptance lens (stream 2d)".
+5. Phase 4 publishes the Phase-3 finding set, and the acceptance summary when 2d ran, through the
+   loaded "PR review publication" instead of the local-mode report or the finding issues of a
+   publishing target.
 6. Emit per the shared selection in `next-steps`, retaining any verified source association and
-   observed PR outcome; only its generic fallback uses the pull-request row.
+   observed PR outcome; a published `incomplete` criterion is part of that outcome and leads to
+   `effective-flow iterate <PR>`. Only its generic fallback uses the pull-request row.
 
 An argument that plausibly matches both a plan file and a pull request is ambiguous: name both
 interpretations and ask, never guess. A merged or closed pull request, or one belonging to another
 repository, is reviewed read-only and reported as such.
 
 **Load on demand:** Read `shared/pr-review-integration.md`, when the review argument may be a pull-request reference that must be resolved, or findings are published onto a resolved pull request.
+
+**Load on demand:** Read `shared/review-acceptance-lens.md`, when an explicit `review <PR>` reaches Phase 2, or Phases 3 and 4 handle a 2d finding or the acceptance summary.
 
 ### Phase 1: Scope
 
@@ -506,7 +514,7 @@ If a scope confirmation is required per the rules above: Ask the user: **Review 
 
 ### Phase 2: Parallel data collection
 
-First review the available skills and include `effective-delivery` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the three streams start.
+First review the available skills and include `effective-delivery` per skill discovery; if the skill is missing, the "Minimal fallback without the skill" at the end applies. Discovery runs once before the streams start.
 
 ## Skill discovery
 
@@ -564,7 +572,7 @@ no skill directory or none fits, this step is a no-op — continue without an er
 7. **Report:** Briefly name which skills were used (or that none fit). If an orchestrator tool
    already handed you relevant skills, apply them and do not run a redundant full discovery.
 
-This phase consists of three independent streams that must all be started simultaneously — no stream waits for another. Write each stream's outputs to the wisdom file.
+This phase consists of up to four independent streams (2a-2c, plus 2d in explicit pull-request mode) that must all be started simultaneously — no stream waits for another. Write each stream's outputs to the wisdom file.
 
 #### Phase 2a: Design-decision collection (parallel per source)
 
@@ -643,14 +651,19 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
 4. All reviewer sub-agents run **in parallel** (both across routing buckets and within a bucket when there is a directory split).
 5. Collect all findings in the wisdom file under `## Reviewer findings` with sub-sections per sub-reviewer.
 
+#### Phase 2d: Acceptance lens
+
+Explicit `review <PR>` only: run the loaded "Acceptance lens (stream 2d)".
+
 ### Phase 3: Aggregation and design-decision filter
 
-**Precondition:** Start Phase 3 only once all three Phase-2 streams (2a, 2b, 2c) have reported `DONE` (or `ABORT`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
+**Precondition:** Start Phase 3 only once all Phase-2 streams (2a, 2b, 2c, and 2d when it runs) have reported `DONE` (or `ABORT`). Opportunistically reading the wisdom file ahead while a stream is still writing would process incomplete data.
 
-1. Aggregate findings from `## Technical findings` and all sub-sections under `## Reviewer findings`.
+1. Aggregate findings from `## Technical findings`, all sub-sections under `## Reviewer findings`, and `## Acceptance findings`.
 2. **Preliminary scope/high-risk triage:** before dropping a low-confidence candidate, identify a
    possible `current-scope` violation or a credible path to material harm/irreversibility. Run its
    single bounded evidence/containment check now. Resolve it or stop; do not silently remove it.
+   A 2d finding below confidence 80 is exempt under the acceptance lens's confidence exception.
 3. Finding-quality check. The **reasoning** behind evidence assessment, validation, candidate rejection, dedup judgment, and prioritization follows `effective-delivery` (see "Delegation contract: generic audit reasoning") where available; if the skill is missing, the minimal fallback applies. The following **deterministic thresholds and keys** remain an Effective Flow output contract in every case and are not handed off to the skill:
    - filter out confidence < 80
    - remove duplicates (same area, same file+line, similar problem)
@@ -661,10 +674,12 @@ Write all results to the wisdom file under `## Design decisions` with sub-sectio
    - Check each remaining finding individually for whether it is covered by a documented design decision.
    - On a match: remove the finding from the main report and move it into the "Skipped findings (design decisions)" table with a source reference.
    - In case of uncertainty (partial overlap): keep the finding in the report but annotate it with a reference to the potentially relevant design decision.
+   - A 2d finding follows the acceptance lens's filter rule instead.
 5. Group same-run candidates by normalized root-cause signature, finish known-reference and exact
    signature deduplication, reconcile severity, then apply the loaded “Durable derived-work gate”
    once to the batch. Only a confidence-at-least-80 candidate may become `admitted`.
-   `current-scope` and unresolved `uncertain` block this run; `closed` is terminal and produces no
+   `current-scope` and unresolved `uncertain` block this run, except a 2d finding under the
+   acceptance lens's step-5 exception; `closed` is terminal and produces no
    actionable finding. When this was an explicitly requested standalone audit, retain only its
    short title and closure reason for the non-executable appendix.
 6. **Central security classification:** classify every `admitted` finding as `local-only` or
@@ -832,7 +847,8 @@ Reuse the Phase-1 `language.forge` value for finding issues and tracker comments
 12. Emit the next-step block per `next-steps` as the last element of the report.
 
 **Completion condition (no correction loop):** The review is complete when every candidate has one
-gate outcome, no `current-scope` or unresolved `uncertain` candidate remains, and every admitted
+gate outcome, no `current-scope` (a handed-over 2d finding counts as handed over) or unresolved
+`uncertain` candidate remains, and every admitted
 finding is available — locally in the report or on a publishing target as a direct finding issue,
 with withheld findings in the local security report. The exact admitted ID range was reserved
 atomically before publication and the wisdom file was deleted. The run is incomplete while an
@@ -845,7 +861,7 @@ when explicitly requested, is complete but non-executable.
 
 - **The directory split in Phase 2c** can obscure cross-cutting issues across module boundaries (e.g. architecture consistency between `src/components/` and `src/lib/`). For repos where such cross-module reviews are important: override the threshold in the user argument or review the entire scope without a split.
 - **Reviewers in Phase 2c have no design-decision context** — a deliberate trade-off in favor of speed. The central filter in Phase 3 catches documented design decisions but, in ambiguous cases (partial overlap), may produce more false positives than a reviewer-informed pass.
-- **Phase 3 may only start once all three Phase-2 streams are complete.** An LLM orchestrator must observe this synchronization explicitly — opportunistic pre-reading while a stream is still writing leads to incomplete data in aggregation and filtering.
+- **Phase 3 may only start once all Phase-2 streams are complete.** An LLM orchestrator must observe this synchronization explicitly — opportunistic pre-reading while a stream is still writing leads to incomplete data in aggregation and filtering.
 
 ## Minimal fallback without the skill
 
@@ -858,7 +874,7 @@ Only relevant if `effective-delivery` is not available. Brief core guidance for 
 
 ## Rules
 
-- **Always start** Phase 2 (2a, 2b, 2c) **in parallel** — no sequential processing.
+- **Always start** Phase 2 (2a, 2b, 2c, and 2d when it runs) **in parallel** — no sequential processing.
 - Within Phase 2a, all design-decision sources in parallel.
 - Within Phase 2c, all reviewer sub-agents in parallel (across routing buckets and across directory splits).
 - Reviewers in Phase 2c check **no** design decisions — the central filter happens in Phase 3.

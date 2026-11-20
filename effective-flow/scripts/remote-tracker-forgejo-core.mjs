@@ -38,8 +38,8 @@ import {
 } from './remote-tracker-shared-core.mjs';
 
 // Forgejo's default work-in-progress prefixes, which make a pull request a draft (see
-// `pr-mark-ready` below).
-const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
+// `pr-mark-ready` below). `pr-draft-classify` strips the same prefixes to derive a ready title.
+export const WORK_IN_PROGRESS_PREFIX = /^(?:WIP:|\[WIP\])/i;
 
 // A thread write is built only on the evidence of a probe that read the forge's API description
 // and found the operation's route declared (see `review-thread-reply` below).

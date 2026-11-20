@@ -18,7 +18,10 @@ import {
   parseDecompositionRecords,
 } from './remote-tracker-core.mjs';
 import { inspectDecompositionKey } from './remote-tracker-decomposition-core.mjs';
-import { normalizeExternalLifecycleReference } from './remote-tracker-shared-core.mjs';
+import {
+  isWritePermission,
+  normalizeExternalLifecycleReference,
+} from './remote-tracker-shared-core.mjs';
 import { slugify } from './dated-name-allocation.mjs';
 import { classifyPlanText, listTopLevel, readPlanFile, resolveRoots } from './plan-lint-core.mjs';
 import {
@@ -113,7 +116,6 @@ const REVIEW_FINDING_LABELS = Object.freeze([
   'firmo-review-finding',
 ]);
 const NEEDS_PLANNING_LABELS = Object.freeze([LABELS.needsPlanning, 'firmo-needs-planning']);
-const WRITE_PERMISSIONS = new Set(['write', 'admin', 'owner', 'maintain']);
 const TARGET_KINDS = Object.freeze(['forge', 'external', 'local', 'unset']);
 const RUN_ID = /^\d{4}-\d{2}-\d{2}-[0-9a-f]{8}$/;
 const SNAPSHOT_SEGMENTS = Object.freeze([RUNTIME_STATE_DIR, 'backlog-audit', 'snapshots']);
@@ -531,7 +533,7 @@ async function permissionProve(input, deps) {
     return plansOnly('permission-unreadable', { ...known, login: login.toLowerCase() });
   }
   const identity = { ...known, login: login.toLowerCase(), permission: permission ?? null };
-  if (!WRITE_PERMISSIONS.has(permission)) return plansOnly('permission-insufficient', identity);
+  if (!isWritePermission(permission)) return plansOnly('permission-insufficient', identity);
   return withHash(
     {
       ...identity,
@@ -646,7 +648,7 @@ function permissionCache(session) {
       try {
         const permission = (await session.call('collaborator-permission-read', { login })).result
           ?.permission;
-        value = WRITE_PERMISSIONS.has(permission);
+        value = isWritePermission(permission);
       } catch (error) {
         if (!(error instanceof BacklogAuditError)) throw error;
         value = error.trackerCode === 'TARGET_NOT_FOUND' ? false : null;

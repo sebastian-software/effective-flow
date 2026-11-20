@@ -41,6 +41,7 @@ Three provider-neutral tiers name the model class a spawn runs on: `mechanical`,
 
 | Role | Tier |
 | ---- | ---- |
+| `acceptance-reviewer` | `deep` |
 | `code-documenter` | `standard` |
 | `code-validator` | `standard` |
 | `docs-writer` | `standard` |
@@ -138,6 +139,7 @@ remain the policy; neither a catalog omission nor an inherited-model preference 
 | `review/design-decision-sources`                    | Read-only design-decision search per active source                                         | `standard`                                                                                                | `yes` | `no`  |
 | `review/technical-validation`                       | Technical validation of the review scope                                                   | `role:code-validator`                                                                                     | `yes` | `no`  |
 | `review/quality-review`                             | Routed reviewers per bucket and directory split                                            | `role:frontend-reviewer,nodejs-reviewer,rust-reviewer,generic-product-reviewer`                           | `no`  | `no`  |
+| `review-acceptance-lens/acceptance-review`          | Read-only acceptance check of a pull request against its trusted sources                   | `role:acceptance-reviewer`                                                                                | `no`  | `no`  |
 | `scored-decisions/score`                            | Read-only scoring leaf per scored question of an Automation run                            | `deep`                                                                                                    | `no`  | `no`  |
 | `scored-decisions/tie-rescore`                      | Read-only re-score of only the tied options of a scored question                           | `deep`                                                                                                    | `no`  | `no`  |
 | `central-reasoning-delegation/judgment`             | Read-only judgment of the written plan, issue plan or concept artifact                     | `deep`                                                                                                    | `no`  | `no`  |
