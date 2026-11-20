@@ -1001,6 +1001,16 @@ non-closing relationship plus any container mechanism. It contains no credential
 details. A malformed, duplicated, cross-repository, or configuration-mismatched receipt authorizes
 no tracker access and is never replaced by guessing identifiers from PR prose.
 
+Two further producers write the receipt without the started transition: `autopilot`, for every
+issue it delivers, and the plan-pull-request continuation of `build`, `fix`, `refactor`, and `docs`,
+which adds one only when the caller supplied none. Their receipt uses the non-closing relationship
+`refs` on the forge, next to the visible `Refs #<N>`. They add no `effective-flow-issue-in-progress`
+label, no external started state, and no pull-request link comment. Pull requests created before
+this was added, and pull requests recovered by a direct `pr` run after a failed finish, carry no
+receipt and stay legacy. `Refs` never closes anything: after the merge, the offer described below
+is the only way Effective Flow closes the issue, unless the receipt is skipped, in which case you
+close it by hand.
+
 Once the pull request is confirmed merged, `merge-gate` gives tracker automation one fixed
 30-second grace period and reads every receipted issue again. It never force-closes an issue. A
 transition you confirmed after a `complete` assessment verdict is not a forced close and is the one
@@ -1023,7 +1033,8 @@ run, asked only in an interactive session, and it lists each eligible issue with
 locator per criterion: which criterion, and whether its covering statement sat in the pull request's
 title or body. No issue or pull-request text is ever quoted into that listing or the question, and
 the summary quotes exactly one thing, described below – everywhere else you read the wording at the
-issue and pull-request URLs. Confirming authorizes three writes per issue: the transition, the in-progress label removal, and the container completion, and
+issue and pull-request URLs. Confirming authorizes three writes per issue: the transition, the in-progress label removal – skipped when the issue does not carry the label, as
+for an autopilot or continuation pull request – and the container completion, and
 the option text says so. Declining transitions nothing. A non-interactive run poses nothing and
 transitions nothing; it carries the recommendation into its summary instead. A missing capability or
 an unset `externalDoneState` makes the offer unavailable for that issue, which is reported with the

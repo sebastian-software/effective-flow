@@ -557,6 +557,15 @@ reconciliation – which makes it the intended recovery path for a run that coul
 An issue that is already terminal on re-entry skips the assessment and the question entirely, so such
 a re-entry retries only the reconciliation a previous run left open.
 
+The observation is not limited to pull requests from `apply`. A pull request from `autopilot`, and a
+continued plan pull request finished by `build`, `fix`, `refactor`, or `docs`, carries a lifecycle
+receipt with the non-closing relationship `refs`, so the merged pull request reaches the same
+observation. In an interactive run the gate offers to close the issue only when every acceptance
+criterion of the issue is covered in the merged pull request's title or body; otherwise it reports
+`incomplete` or `undetermined` and offers nothing. Nothing is closed automatically, and these pull
+requests never added an in-progress label, so none is removed. A pull request created before this
+was added, or recovered by a direct `pr` run after a failed finish, stays legacy.
+
 **What it never does:** It never reviews. It produces no findings of its own, never approves a pull
 request or submits a "request changes" review, never rewrites history (no amend, rebase, squash, or
 force-push of the head branch – a branch behind or in conflict with its base is only ever brought

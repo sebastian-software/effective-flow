@@ -1585,6 +1585,7 @@ and directive syntax").
   `project-routing`, `commit-message-rules`, `doc-categories`, `plan-contract`,
   `initial-state-documentation`, `review-state`, `review-report-format`, `config-migration`,
   `config-migration-edge-cases`, `worktree-integration`, `worktree-lifecycle`, `issue-tracker`, `issue-tracker-forge`,
+  `issue-lifecycle-receipt`,
   `review-report-backlinks`, `unresolved-review-report`, `plan-numbering`,
   `plan-reference-routing`, `plan-lint`, `plan-archival`,
   `effective-flow-dir-migration`, `issue-post-merge-observation`, `pr-merge-completion`,

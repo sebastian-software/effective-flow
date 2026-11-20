@@ -1,6 +1,6 @@
 # Issue-lifecycle receipt for plan-PR continuations
 
-**Plan status:** Not implemented
+**Plan status:** Implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
 
@@ -183,3 +183,49 @@ Deep interactive review (2026-11-20):
 ## Open points
 
 - No open points.
+
+## Build completion
+
+### Requirement
+
+Merge-gate now observes the issue of every issue-sourced autopilot PR and of every other plan-PR continuation after merge, instead of ending as a legacy PR. In a gated run it offers to close the issue when every acceptance criterion is covered. `Refs` stays non-closing, and nothing closes automatically.
+
+### Architecture decisions
+
+- The receipt contract moved into `src/shared/issue-lifecycle-receipt.md`. `issue-lifecycle.md` includes it eagerly under its own `### Pull-request lifecycle receipt` heading and keeps its write paths under `### Receipt write paths`. `plan-pr-continuation.md` and `scored-decisions.md` lazy-include only the new fragment.
+- Autopilot ("Before `pr`" in `scored-decisions.md`) is the sole producer under an Automation caller's scored decision mode, and its skip is final. Other continuations build a receipt only when none is supplied.
+- Deviations from the plan:
+  - Autopilot verifies the ledger's lower-case `source.repository` against `repository-resolve` and uses the resolved case-preserving slug.
+  - Observation step 5 decides from step 4's last re-read, otherwise from step 2's `issue-state-wait` result.
+  - The continuation requires a configured `tracker.mode: remote`, using the same wording as `issue-buddy`.
+  - `contextBudget` was raised to the measured size in `merge-gate` (934), `apply-issues` (1001) and `apply-review-remote` (390), per the `AGENTS.md` budget rule.
+  - The autopilot contract assertions live in `test/workflow-contracts.test.mjs` rather than in `test/scored-decisions-contract.test.mjs`.
+
+### Affected files
+
+- `src/shared/issue-lifecycle-receipt.md` (new), `src/shared/issue-lifecycle.md`, `src/shared/plan-pr-continuation.md`, `src/shared/scored-decisions.md`, `src/shared/merge-gate-issue-observation.md`, `src/shared/issue-post-merge-observation.md`
+- `src/tools/merge-gate.md`, `src/tools/apply-issues.md`, `src/tools/apply-review-remote.md` (`contextBudget` only)
+- `test/workflow-contracts.test.mjs`, `test/remote-tracker.test.mjs`, `test/autopilot-core.test.mjs`
+- `docs/user-guide/tools-automation.md`, `docs/user-guide/remote-tracker.md`, `docs/user-guide/tools-deliver.md`, `docs/user-guide/troubleshooting.md`, `docs/user-guide/worktree-and-delivery.md`, `docs/developer-guide/build-system.md`
+
+### Implementation details
+
+The continuation's receipt step runs at the finish handoff. It reads `**Issue:**` by the `parseIssueHeader` rules, cross-checks it against the `parsePlanBranch` branch shape, builds the receipt with `receipt` and `context` and no `body`, and adds `Refs #<N>` only when absent. Every skip case is reported and never blocks the finish. Merge-gate observation step 5 skips the in-progress-label removal when the label is absent.
+
+### Test results
+
+- **Phase 5 full run:** `pnpm agent:check`, `pnpm test` (6062 tests, 6001 pass, 0 fail, 61 skipped), `node build.mjs`, `pnpm test:distribution`, and the five eval `verify --mode report` runs all passed. Shellcheck and the manager-compatibility job were not run locally.
+- **Phase 7 final targeted run over the Delta:** 51 affected test files (3119 tests, 3060 pass, 0 fail, 59 skipped), `pnpm agent:check`, `node build.mjs` and `pnpm test:distribution` all passed.
+- A failure seen once in `test/merge-gate-eval-round.test.mjs` during a full run under load did not reproduce when the unchanged file ran alone (46/46).
+
+## Review findings
+
+**Date:** 2026-11-20
+**Reviewer:** effective-flow-nodejs-reviewer
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |     7 |
+| Open / Not implemented |     0 |
