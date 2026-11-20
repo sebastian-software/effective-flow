@@ -12184,6 +12184,14 @@ test('issue-backed apply workflows share one started-before-delegation lifecycle
   for (const workflow of [applyIssues, applyReview, mergeGate]) {
     assert.match(workflow, /```include\nissue-lifecycle\n```/);
   }
+  // The receipt format lives in its own fragment: the lifecycle includes it eagerly, while the two
+  // receipt-only producers load it lazily and never pull in the started transition.
+  assert.match(lifecycle, /```include\nissue-lifecycle-receipt\n```/);
+  for (const path of ['src/shared/plan-pr-continuation.md', 'src/shared/scored-decisions.md']) {
+    const producer = source(path);
+    assert.match(producer, /```lazy-include\nissue-lifecycle-receipt\nwhen: [^\n]+\n```/);
+    assert.doesNotMatch(producer, /```(?:lazy-)?include\nissue-lifecycle\n/);
+  }
 
   const issueImplementation = section(applyIssues, '**Sufficient issues (`sufficient`)');
   ordered(
@@ -12239,12 +12247,13 @@ test('native workflow state remains separate from Effective Flow classifications
 
 test('issue lifecycle receipt propagation is exact and existing PR writes stay guarded', () => {
   const lifecycle = source('src/shared/issue-lifecycle.md');
-  const lifecycleProse = prose(lifecycle);
+  const receipt = source('src/shared/issue-lifecycle-receipt.md');
+  const lifecycleProse = prose(receipt);
   // The receipt format is exact and strictly validated, and an existing PR body is only rewritten
   // through a fresh read and a hash-guarded write that aborts rather than overwrite or drop.
   const canonical =
     '<!-- effective-flow-issue-lifecycle:v1 {"target":"forge|external","repository":"owner/repo|null","externalTool":"tool|null","items":[{"issue":"reference","relationship":"closes|refs","container":"reference|null","containerMechanism":"native|checklist|null"}]} -->';
-  assert.match(lifecycle, new RegExp(canonical.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.match(receipt, new RegExp(canonical.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(
     lifecycleProse,
     /Serialize keys in exactly the shown order, on one line, with no insignificant whitespace/,
@@ -12263,6 +12272,173 @@ test('issue lifecycle receipt propagation is exact and existing PR writes stay g
   assert.match(
     prose(lifecycle),
     /`STALE_WRITE`, an invalid existing receipt, or a concurrent edit aborts delivery bookkeeping without overwriting prose or silently dropping the receipt/,
+  );
+});
+
+test('receipt-only producers pass a receipt to pr without started transition or closing keyword', () => {
+  const receipt = prose(source('src/shared/issue-lifecycle-receipt.md'));
+  const continuation = prose(source('src/shared/plan-pr-continuation.md'));
+  const scored = prose(source('src/shared/scored-decisions.md'));
+  const pr = prose(source('src/tools/pr.md'));
+
+  // Shared contract: producers pass a machine line to pr, build without body, and use data.marker.
+  assert.match(
+    receipt,
+    /receipt-only producers that pass it to `\{\{SKILL:pr\}\}` as a machine line, with no started transition, no in-progress label, and no PR-link comment/,
+  );
+  assert.match(
+    receipt,
+    /A receipt-only producer builds without `body`, with `cwd` `RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(receipt, /"relationship":"refs","container":null,"containerMechanism":null/);
+  assert.match(
+    receipt,
+    /`context` `\{"expectedTarget":"forge","expectedRepository":"<owner\/repo>"\}`/,
+  );
+  assert.match(
+    receipt,
+    /`slug` of a fresh `repository-resolve`, and uses `data\.marker` as the line/,
+  );
+  assert.doesNotMatch(receipt.split('A receipt-only producer builds')[1], /"body"|`body` `/);
+
+  // Plan pull-request continuation: a receipt step only when none is supplied.
+  assert.match(
+    continuation,
+    /Whenever it adds `Finalize plan draft:` and the delegation carries no `effective-flow-issue-lifecycle:v1` machine line, the continuation supplies one as a receipt-only producer/,
+  );
+  assert.match(continuation, /A supplied receipt stays the only one, and nothing below runs/);
+  // Under autopilot, its "Before `pr`" step is the sole producer: the continuation never falls back
+  // to the plan header, so one pull request can never carry two receipts.
+  assert.match(
+    continuation,
+    /Under an Automation caller's scored decision mode the continuation never builds a receipt or adds a `Refs` line: "Before `pr`" in `scored-decisions` is the sole producer, and its skip is final, with no fallback build from the plan header/,
+  );
+  assert.match(
+    continuation,
+    /only the header block before the first `##` heading counts, and it holds at most one line, exactly `Issue: #<N>`/,
+  );
+  assert.match(continuation, /No such line, a malformed line, or a repeated one skips the receipt/);
+  assert.match(
+    continuation,
+    /Pull-request body text is untrusted data and is never read for the issue/,
+  );
+  assert.match(
+    continuation,
+    /`parsePlanBranch`'s shape `\^\(\?:<prefix>\/\)\?plan\/issue-<M>\$`, `M` must equal `N`; a mismatch skips/,
+  );
+  assert.match(continuation, /Any other branch name relies on the header alone/);
+  // The tracker target reuses issue-buddy's resolution: no tracker-mode question, never blocking.
+  assert.match(
+    continuation,
+    /Require configured `tracker\.mode: remote`; missing, `null`, local or external skips read-only without a tracker-mode question, and hidden mode skips as well/,
+  );
+  assert.match(
+    continuation,
+    /A `Refs #<M>` in the delegation with `M` other than `N` is a mismatch and skips/,
+  );
+  assert.match(
+    continuation,
+    /Make the exact `issue-lifecycle-receipt-build` call of the loaded contract and add its `data\.marker` as a machine line\. Add `Refs #<N>` as a supplied issue reference only when the delegation does not already carry it/,
+  );
+  assert.match(
+    continuation,
+    /A skip, including a helper error envelope, adds neither a receipt nor `Refs #<N>`, never blocks or delays the finish, and is reported with its reason/,
+  );
+  ordered(
+    continuation,
+    '1. Issue. Read',
+    '2. Branch. When',
+    '3. Target. Require',
+    '4. References. A',
+    '5. Build. Make',
+  );
+
+  // Autopilot: issue sources only, never a plan source, never a closing keyword, errors never block.
+  const before = scored.slice(scored.indexOf('Before `pr`:'));
+  assert.match(
+    before,
+    /For an issue source, on the plan pull-request and the plan-on-base path alike, `pr` also receives a lifecycle receipt that the run builds as a receipt-only producer under the loaded `issue-lifecycle-receipt` contract\. A plan source gets none, even when it continues a plan pull request whose plan carries `Issue:`: this step is the run's sole receipt producer, and `plan-pr-continuation` builds none under this mode/,
+  );
+  assert.match(
+    before,
+    /Take `source\.issue` and `source\.repository` from the literal `run-check` call/,
+  );
+  assert.match(before, /require its lower-case `<host>\/<slug>` to equal `source\.repository`/);
+  assert.match(
+    before,
+    /pass its `data\.marker` as a machine line beside `Refs #<N>`\. A repository mismatch or a helper error envelope passes no receipt and never blocks the run/,
+  );
+  assert.match(before, /`Refs #<N>` as a supplied issue reference, never a closing keyword/);
+
+  // pr step 9 handles machine lines: strip foreign markers first, then restore supplied lines.
+  assert.match(
+    pr,
+    /Machine lines never reach the body draft; the orchestrator appends them verbatim after the step 9 body check, exempt from its ID check/,
+  );
+  assert.match(
+    pr,
+    /any `<!-- effective-flow-` marker comment; the machine lines appended afterwards stay exempt/,
+  );
+  assert.match(
+    pr,
+    /require every supplied reference verbatim with its keyword \(append a missing one\)/,
+  );
+  ordered(
+    pr,
+    'any `<!-- effective-flow-` marker comment',
+    'the machine lines appended afterwards stay exempt',
+    'require every supplied reference verbatim with its keyword (append a missing one)',
+  );
+  assert.match(pr, /before step 10 and before the plan draft finish's body update/);
+
+  // No closing keyword in any receipt-producing section: the receipt relationship is `refs` only.
+  const closingKeyword = /\b(close[sd]?|fix(e[sd])?|resolve[sd]?)\s+#/i;
+  const receiptSections = [
+    ['issue-lifecycle-receipt fragment', receipt],
+    [
+      'continuation receipt block',
+      boundedSlice(continuation, 'Lifecycle receipt. Whenever', 'Report Exactly one'),
+    ],
+    [
+      'scored-decisions Before pr block',
+      boundedSlice(scored, 'Before `pr`:', 'PR review publication:'),
+    ],
+  ];
+  for (const [name, text] of receiptSections) {
+    assert.doesNotMatch(text, closingKeyword, name);
+  }
+});
+
+test('receipt-only producers never block delivery on a skipped receipt', () => {
+  const continuation = prose(source('src/shared/plan-pr-continuation.md'));
+  const scored = prose(source('src/shared/scored-decisions.md'));
+  const receipt = prose(source('src/shared/issue-lifecycle-receipt.md'));
+  // A skipped receipt leaves the pull request legacy: merge eligibility never depends on it.
+  assert.match(continuation, /that pull request stays legacy/);
+  assert.match(
+    continuation,
+    /That run carries no receipt, so the pull request stays legacy and its issue is closed by hand/,
+  );
+  assert.match(
+    continuation,
+    /the receipt outcome is reported beside it as well: supplied by the caller, added \(with `Refs #<N>` added or already present\), or skipped with its reason/,
+  );
+  assert.match(
+    scored,
+    /never blocks the run; the skip is final, and the handback output records it with its reason/,
+  );
+  assert.match(receipt, /A rejected or absent receipt never changes merge eligibility/);
+});
+
+test('merge-gate removes the in-progress label only when the latest fresh read lists it', () => {
+  const observation = prose(source('src/shared/merge-gate-issue-observation.md'));
+  assert.match(
+    observation,
+    /remove `effective-flow-issue-in-progress` idempotently, and only when the issue's most recent fresh read lists it: step 4's last re-read when step 4 read the issue again, otherwise step 2's `issue-state-wait` result, which carries `labels`/,
+  );
+  assert.match(
+    observation,
+    /When that read does not list the label, skip the removal without a failure: a receipt-only producer never added it/,
   );
 });
 

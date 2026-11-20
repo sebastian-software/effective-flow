@@ -11837,6 +11837,45 @@ const githubLifecycleContext = {
   },
 };
 
+test('a receipt-only refs build without body yields one marker that parses only for its repository', async () => {
+  const receipt = {
+    target: 'forge',
+    repository: 'example/flow',
+    externalTool: null,
+    items: [{ issue: '#17', relationship: 'refs', container: null, containerMechanism: null }],
+  };
+  const envelope = await executeOperation('issue-lifecycle-receipt-build', {
+    cwd: process.cwd(),
+    receipt,
+    context: { expectedTarget: 'forge', expectedRepository: 'example/flow' },
+  });
+  assert.equal(envelope.ok, true);
+  // Without `body` the helper returns only the receipt and its marker, never a rewritten body.
+  assert.deepEqual(Object.keys(envelope.data), ['receipt', 'marker']);
+  const marker = envelope.data.marker;
+  assert.equal(
+    marker,
+    '<!-- effective-flow-issue-lifecycle:v1 ' +
+      '{"target":"forge","repository":"example/flow","externalTool":null,"items":[' +
+      '{"issue":"#17","relationship":"refs","container":null,"containerMechanism":null}' +
+      ']} -->',
+  );
+  assert.equal(marker.includes('\n'), false);
+  assert.equal(marker.split('effective-flow-issue-lifecycle:v1').length - 1, 1);
+
+  const accepted = await executeOperation('issue-lifecycle-receipt-parse', {
+    body: marker,
+    context: { expectedTarget: 'forge', expectedRepository: 'example/flow' },
+  });
+  assert.equal(accepted.ok, true);
+  const rejected = await executeOperation('issue-lifecycle-receipt-parse', {
+    body: marker,
+    context: { expectedTarget: 'forge', expectedRepository: 'example/other' },
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, 'REFERENCE_REPOSITORY_MISMATCH');
+});
+
 test('external lifecycle tool identifiers round-trip only stable identifier forms', () => {
   for (const externalTool of ['linear', 'linear-cloud', 'linear_cloud', 'linear.cloud_v2-beta']) {
     const built = buildIssueLifecycleReceipt(externalLifecycleReceiptForTool(externalTool), {

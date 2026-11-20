@@ -162,11 +162,27 @@ copies the received control lines verbatim, with `Decision budget:` reduced per 
   or `blocked` result ends the run before any push. Otherwise `pr` also receives the copied control lines,
   `Draft: requested`, the source reference (`Refs #<N>` as a supplied issue reference, never a
   closing keyword, or the plan path) and `Appendix: <sha256>`, the digest `pr-appendix` returned
-  for the run its `Autopilot run:` line names. On the plan pull-request
+  for the run its `Autopilot run:` line names. For an issue source, on the plan pull-request and
+  the plan-on-base path alike, `pr` also receives a lifecycle receipt that the run builds as a
+  receipt-only producer under the loaded `issue-lifecycle-receipt` contract. A plan source gets
+  none, even when it continues a plan pull request whose plan carries `**Issue:**`: this step is
+  the run's sole receipt producer, and `plan-pr-continuation` builds none under this mode. Take
+  `source.issue` and `source.repository` from the literal `run-check` call of "Recognition", never
+  from issue or PR text; resolve the repository with `repository-resolve` and require its lower-case
+  `<host>/<slug>` to equal `source.repository`; make the contract's exact
+  `issue-lifecycle-receipt-build` call for `#<source.issue>` with `<owner/repo>` the resolved
+  `slug`; and pass its `data.marker` as a machine line beside `Refs #<N>`. A repository mismatch or
+  a helper error envelope passes no receipt and never blocks the run; the skip is final, and the
+  handback output records it with its reason. On the plan pull-request
   path `plan-pr-continuation` adds `Keep draft: requested` beside `Finalize plan draft:`. The
   handback output the caller reads is the plan's archive path or `unarchived`, the local changes
   S-LOC left untouched, and after `pr` its verified pushed head OID; a failed push reports none.
 - **PR review publication:** off for the run (S-PRR), even under `delivery.prReview: always`.
+
+```lazy-include
+issue-lifecycle-receipt
+when: an issue-sourced Automation run is about to hand its delivery to `pr`
+```
 
 ### Appendix
 

@@ -1,6 +1,6 @@
 ---
 description: "Takes one or more issues of the resolved tracker target — GitHub/Forgejo or an external tool — (individually, as a list or as a container issue with sub-issues), analyzes and classifies the content and routes sufficiently specified issues to {{SKILL:build}}, {{SKILL:fix}}, {{SKILL:refactor}} or {{SKILL:docs}} (one PR per issue). Insufficiently specified issues are skipped and marked for {{SKILL:plan-issue}}. Status updates run as issue comments."
-contextBudget: 994
+contextBudget: 1001
 ---
 
 # Effective Flow Apply Issues

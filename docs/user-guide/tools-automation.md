@@ -88,7 +88,13 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
    no architecture or roadmap sources found". When the reviewer still fails after one retry, it
    says "not assessed — scoring unavailable". Neither is a blocker.
 5. **Deliver.** `pr` opens or finishes the **draft** pull request and appends the autopilot record.
-   Autopilot never marks it ready for review and never merges.
+   Autopilot never marks it ready for review and never merges. For an issue, the pull request also
+   carries `Refs #<N>` and a lifecycle receipt with the non-closing relationship `refs`, built from
+   the run's ledger, so [`merge-gate`](./tools-deliver.md) can observe the issue after the merge.
+   The receipt adds no in-progress label and no pull-request link comment, and nothing closes the
+   issue automatically. A receipt that cannot be built is skipped and recorded, and the run goes
+   on, with no second attempt later in the delivery. A plan file gets no receipt, even when it
+   continues a plan pull request whose plan names an issue.
 6. **Tidy up.** For a plan file, the reviewed plan travels on the delivery branch, archived with
    the review edits and the completion notes. Once the pull request's head is confirmed to carry
    it, autopilot replaces your checkout's copy of a committed plan with its committed state. The
@@ -159,7 +165,9 @@ does not mention security.
 every later update:
 
 - **Source:** `Refs #<N>` (never a closing keyword) or the plan path – its archived path once the
-  plan was archived on the delivery branch – plus the plan pull request it continued;
+  plan was archived on the delivery branch – plus the plan pull request it continued. For an issue,
+  the description also holds one lifecycle receipt line outside this block, which `pr` keeps when it
+  replaces the block;
 - **Close decisions:** each question with the chosen option, its score and reason, every
   alternative within 3 points, and both rounds of a tie;
 - **Automatic decisions:** the number of clear-winner decisions;
