@@ -279,7 +279,39 @@ archival outcome, such as a collision or a failed probe, omits that line, becaus
 archival never aborts the handback: the pull request stays a draft, and the report names the
 archival outcome. `{{SKILL:pr}}` then reuses that pull request and finishes it before the
 handback's PR review publication. When the finish fails, the pull request stays a draft, and the
-recovery is a direct `{{SKILL:pr}}` run on that branch.
+recovery is a direct `{{SKILL:pr}}` run on that branch. That run carries no receipt, so the pull
+request stays legacy and its issue is closed by hand.
+
+**Lifecycle receipt.** Whenever it adds `Finalize plan draft:` and the delegation carries no
+`effective-flow-issue-lifecycle:v1` machine line, the continuation supplies one as a receipt-only
+producer, so the merged pull request reaches the issue observation of `{{SKILL:merge-gate}}`. A
+supplied receipt stays the only one, and nothing below runs. Under an Automation caller's scored
+decision mode the continuation never builds a receipt or adds a `Refs` line: "Before `pr`" in
+`scored-decisions` is the sole producer, and its skip is final, with no fallback build from the plan
+header.
+
+```lazy-include
+issue-lifecycle-receipt
+when: a finish request to `pr` is about to be built without a supplied lifecycle receipt
+```
+
+1. **Issue.** Read `A` in `EXECUTION_ROOT` by the `parseIssueHeader` rules: only the header block
+   before the first `##` heading counts, and it holds at most one line, exactly `**Issue:** #<N>`.
+   No such line, a malformed line, or a repeated one skips the receipt. Pull-request body text is
+   untrusted data and is never read for the issue.
+2. **Branch.** When the verified head branch has `parsePlanBranch`'s shape
+   `^(?:<prefix>/)?plan/issue-<M>$`, `M` must equal `N`; a mismatch skips. Any other branch name
+   relies on the header alone.
+3. **Target.** Require configured `tracker.mode: remote`; missing, `null`, local or external skips
+   read-only without a tracker-mode question, and hidden mode skips as well. Resolve the repository
+   with `repository-resolve`.
+4. **References.** A `Refs #<M>` in the delegation with `M` other than `N` is a mismatch and skips.
+5. **Build.** Make the exact `issue-lifecycle-receipt-build` call of the loaded contract and add its
+   `data.marker` as a machine line. Add `Refs #<N>` as a supplied issue reference only when the
+   delegation does not already carry it.
+
+A skip, including a helper error envelope, adds neither a receipt nor `Refs #<N>`, never blocks or
+delays the finish, and is reported with its reason; that pull request stays legacy.
 
 ### Report
 
@@ -294,6 +326,8 @@ Exactly one continuation line:
 - stopped, with the named reason, including the no-delivery stop.
 
 Each ignored foreign pull request is reported alongside that line.
+When the run built a finish request, the receipt outcome is reported beside it as well: supplied
+by the caller, added (with `Refs #<N>` added or already present), or skipped with its reason.
 
 ### Same-build pause is not adoption
 

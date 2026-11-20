@@ -431,6 +431,18 @@ request, because the run never merges locally around an open draft. An explicit 
 continues and is reported as an override of a configured or missing `merge` or `branch` row. A
 `null` or invalid row is overridden, and both values are reported.
 
+When the run finishes the plan pull request, it also supplies the lifecycle receipt that `apply`
+would otherwise not write, unless the caller – autopilot, for instance – already passed one. The
+issue comes from the archived plan's `**Issue:** #<N>` header, never from pull-request prose, and a
+head branch of the form `plan/issue-<M>` must agree with it. The pull request then carries one
+receipt with the non-closing relationship `refs`, plus `Refs #<N>` when the plan pull request's
+reference was dropped, so [`merge-gate`](./tools-deliver.md) can observe the issue after the merge.
+No in-progress label and no pull-request link comment are added. Without a valid header, with a
+different `Refs` already supplied, on a local or external tracker, without a configured tracker, or
+in hidden mode, the run adds neither and reports why, without asking for a tracker mode; the pull
+request stays legacy. Under autopilot the continuation adds nothing itself: autopilot is the only
+producer, and a plan file it delivers gets no receipt.
+
 If your local plan differs from the one on the pull request's branch, the run first scans the local
 plan with the same content check as `plan`'s publication. A high-confidence finding, or a scan that
 fails, stops the run before any question and names the findings by class, field and line, so

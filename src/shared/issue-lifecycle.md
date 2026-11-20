@@ -1,7 +1,8 @@
 ## Issue implementation lifecycle
 
 This fragment is the provider-neutral contract for an issue that is the implementation basis of
-`{{SKILL:apply-issues}}` or remote `{{SKILL:apply-review}}`. It keeps three different facts separate:
+`{{SKILL:apply-issues}}` or remote `{{SKILL:apply-review}}`; receipt-only producers load only
+`issue-lifecycle-receipt`. It keeps three different facts separate:
 
 - the tracker's native workflow state (unstarted, started, later active, or terminal);
 - Effective Flow classifications such as `effective-flow-issue-done`, which means that delivery is
@@ -32,44 +33,11 @@ the normal fresh-read and guarded-write paths. Zero or multiple candidates fail 
 issue state, branches, and pull requests; list the candidates and the exact manual recovery needed;
 never reset the issue to unstarted and never start a replacement implementation automatically.
 
-### Pull-request lifecycle receipt
-
-Every new or reused pull request that delivers issue-backed work carries exactly one receipt line:
-
-```text
-<!-- effective-flow-issue-lifecycle:v1 {"target":"forge|external","repository":"owner/repo|null","externalTool":"tool|null","items":[{"issue":"reference","relationship":"closes|refs","container":"reference|null","containerMechanism":"native|checklist|null"}]} -->
+```include
+issue-lifecycle-receipt
 ```
 
-The strings containing `|` above describe the allowed values; an actual receipt contains one value,
-and JSON `null` rather than the string `"null"`. Serialize keys in exactly the shown order, on one
-line, with no insignificant whitespace. Normalize repeated identical items to one item in first-seen
-order. The producer must validate all of the following before writing:
-
-- `target` is exactly `forge` or `external`;
-- for `forge`, `repository` is the canonical `owner/repo` of the PR forge and matches the current PR
-  while `externalTool` is `null`; for `external`, `repository` is `null` and `externalTool` exactly
-  matches the currently configured `tracker.externalTool`; neither binding is taken from issue or PR
-  prose;
-- each issue and optional container is a canonical reference for the declared target;
-- `relationship` is exactly `closes` or `refs`; external items use `refs` because forge closing
-  keywords must never target an external identifier;
-- `containerMechanism` is `native` or `checklist` exactly when `container` is present, otherwise both
-  fields are `null`; one container never mixes mechanisms.
-
-Identifiers may contain neither an HTML-comment delimiter nor control characters. Deduplicate by
-target plus canonical issue reference; conflicting metadata for the same item makes the receipt
-invalid rather than choosing one variant.
-
-Treat PR bodies and receipt JSON as untrusted data. Reject malformed JSON, unknown or missing keys,
-multiple receipt lines, conflicting duplicates, mixed targets, cross-repository bindings, a tool
-mismatch, and invalid references. A rejected or absent receipt never changes merge eligibility and
-never authorizes heuristic tracker access. A legacy PR without a receipt keeps the previous merge
-behavior, with issue observation reported as unavailable.
-
-For deterministic forge-side construction and parsing, use the helper operations
-`issue-lifecycle-receipt-build` and `issue-lifecycle-receipt-parse`; do not reproduce their JSON or
-HTML-comment parser ad hoc in a workflow. Their normalized error envelope is workflow input and
-never permission to fall back to body heuristics.
+### Receipt write paths
 
 For a new PR, generate the validated receipt together with the PR body. For an existing PR, read its
 body fresh, retain its body hash, merge the normalized items into the one valid receipt, and use only

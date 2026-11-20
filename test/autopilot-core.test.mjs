@@ -1451,6 +1451,21 @@ test('appendix-merge appends once and replaces an existing block instead of stac
   assert.equal(replaced.body.split(APPENDIX_BEGIN).length - 1, 1);
 });
 
+// Invariant: a lifecycle receipt machine line outside the appendix block survives both the append
+// and the in-place replacement unchanged.
+test('appendix-merge keeps a lifecycle receipt line outside its block intact', () => {
+  const receipt =
+    '<!-- effective-flow-issue-lifecycle:v1 {"target":"forge","repository":"example/flow","externalTool":null,"items":[{"issue":"#12","relationship":"refs","container":null,"containerMechanism":null}]} -->';
+  const first = [APPENDIX_BEGIN, '## Autopilot', 'one', APPENDIX_END, ''].join('\n');
+  const second = [APPENDIX_BEGIN, '## Autopilot', 'two', APPENDIX_END, ''].join('\n');
+  const appended = mergeAppendix(`What it does.\n\nRefs #12\n\n${receipt}\n`, first);
+  assert.equal(appended.body, `What it does.\n\nRefs #12\n\n${receipt}\n\n${first}`);
+  const replaced = mergeAppendix(appended.body, second);
+  assert.equal(replaced.replaced, true);
+  assert.equal(replaced.body, `What it does.\n\nRefs #12\n\n${receipt}\n\n${second}`);
+  assert.equal(replaced.body.split('effective-flow-issue-lifecycle:v1').length - 1, 1);
+});
+
 // Invariant: a malformed appendix or body marker state is refused rather than repaired.
 test('appendix-merge refuses malformed appendices and body marker states', () => {
   const good = [APPENDIX_BEGIN, 'x', APPENDIX_END, ''].join('\n');

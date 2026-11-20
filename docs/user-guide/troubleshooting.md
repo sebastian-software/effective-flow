@@ -154,6 +154,13 @@ issue identities from its prose. Restore the single valid receipt through the is
 or verify and close the issue manually. A native sub-item or checklist entry remains open until its
 linked issue is freshly observed terminal.
 
+A report of a missing receipt is also expected for two kinds of pull request. One is a pull request
+created before `autopilot` and the plan-pull-request continuation began to write a receipt. The other
+is one recovered by a direct `/effective-flow pr` run after a failed finish of a continued plan pull
+request, because that run rebuilds the description without a receipt. Both stay legacy and re-entering
+`merge-gate` does not change that: close the issue by hand once the pull request is merged and its
+acceptance criteria are met.
+
 ## Worktree conflicts and uncommitted changes
 
 By default, Effective Flow works in a separate [worktree](./worktree-and-delivery.md) and does not
