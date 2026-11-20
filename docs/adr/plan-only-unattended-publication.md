@@ -11,11 +11,15 @@ publication contract and report readers.
 
 ## Decision
 
-Stage 1 publishes only draft, plan-only pull requests. The pass runs in the primary checkout and
-does not create a worktree, switch branches, stage files, merge, close issues, or write issue
-comments or labels. It keeps the existing runtime-state guard, loopback TCP mutation mutex, and
-whole-pass lock. A held lock is an operator stop and is never broken automatically; an operator
-removes prior leftovers, including leftovers after a push, before retrying.
+Stage 1 publishes only draft, plan-only pull requests. The pass does not switch branches, stage
+files, merge, close issues, or write issue comments or labels, and it keeps the runtime-state guard
+and the loopback TCP mutation mutex. An operator removes prior leftovers, including leftovers after
+a push, before retrying.
+
+**Superseded in part:** this decision originally required the primary checkout, forbade a
+worktree and serialized passes with a whole-pass lock. [Parallel issue planning](parallel-issue-planning.md)
+replaces those three points with per-issue planning claims, a per-pass `issue-planning` worktree
+and invocation from any checkout of the repository.
 
 The default mode is a local dry run. `--publish` is allowed only when the repository visibility
 read reports `public`; private repositories are dry-run-only, and unknown visibility stops

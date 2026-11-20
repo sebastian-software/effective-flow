@@ -1,15 +1,18 @@
 ---
-description: "Runs one bounded, unattended Issue Buddy pass in the primary checkout: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
+description: "Runs one bounded, unattended Issue Buddy pass from any checkout of the repository: judges trusted GitHub issues, defaults to a local dry run, and with --publish creates only draft plan pull requests, on public repositories or, under an autopilot run's per-run consent, on a private one."
 catalogHint: "Checks trusted issues and optionally publishes draft plans."
-contextBudget: 516
+contextBudget: 567
 ---
 
 # Effective Flow Issue Buddy
 
 Orchestrate one pass; delegate model judgment and keep publication authority here. Default mode is
 `dry-run`; only `--publish` selects `publish`. Read `AGENTS.md` early. This tool never implements
-code, creates a worktree, switches branches, stages, merges, closes issues, writes comments or
-labels, or changes configuration. Only the existing runtime and publication helpers own trust,
+code, switches a checkout's branch, stages, merges, closes issues, writes comments or labels, or
+changes configuration, and its only worktree is the pass's own `issue-planning` worktree (Phase 2).
+It may be invoked from the primary checkout or any linked or harness worktree of the repository;
+the invoking checkout's branch, cleanliness and position do not matter, and the primary checkout is
+touched neither for Git nor for plan files. Passes for different issues run in parallel. Only the existing runtime and publication helpers own trust,
 cache transitions, fingerprints, bounded Git fetches, scanning and forge mutation.
 
 This entire run is unattended. Never call user-input tools or emit prose questions; unresolved
@@ -46,7 +49,12 @@ when: Phase 0 verifies the primary root and before every runtime-state mutation
 
 ```lazy-include
 effective-flow-dir-migration
-when: Phase 0 is about to acquire the pass lock and the runtime migration prerequisite must run first
+when: Phase 0 is about to open the pass record and the runtime migration prerequisite must run first
+```
+
+```lazy-include
+worktree-lifecycle
+when: Phase 1 reads `issue-planning` worktree records, or Phase 2 creates, or a later phase withdraws or keeps, the pass's planning worktree
 ```
 
 ```lazy-include
@@ -80,20 +88,28 @@ when: the invocation carries a trusted caller line other than `Next steps: suppr
 ```
 
 Run each helper as the literal call `node <skill-root>/scripts/<helper>.mjs <operation> <<< '<json>'`,
-`--apply` before `<<<` only where stated below, rooted at the verified primary checkout. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Parse exactly one successful envelope; a nonzero exit, missing
+`--apply` before `<<<` only where stated below, rooted at the `cwd` stated below. Each call is exactly one such command, with `<skill-root>` and every JSON value spelled out literally: no shell variable, no pipe, no trailing command, no compound command, and every `'` inside the JSON, untrusted text included, spelled as `'\''`. Parse exactly one successful envelope; a nonzero exit, missing
 helper, malformed envelope or unknown result stops the pass. Never assemble JSON, paths or refs
 through shell code, and never interpolate untrusted text (issue titles, bodies, comments, refs)
 unescaped: JSON-encode it as a string value, then apply the `'\''` rule above.
 No helper retry may create a second PR. Only publication operations below receive `--apply`.
 
-Every `issue-buddy.mjs` call has `cwd: EXECUTION_ROOT`; the root must equal `RUNTIME_STATE_ROOT`.
-Use its six operations only: `pass-lock-acquire`, `pass-lock-release`, `pass-collect`,
-`verdict-record`, `pass-report`, `fingerprint`. Retain the opaque returned `passId`; derive no
-encoding, directory or repository identity input for it. Never read/write cache, `pass.lock`,
-journal or trusted JSON directly. Do not invent a `branch-read` operation, environment-code
-export or second cache. Leave the existing TCP mutation mutex and whole-pass lock unchanged:
-shared host/network namespace, permitted loopback bind and same-directory hardlinks are required;
-no alternate port, file-lock fallback, stale-lock break or legacy-lock deletion is allowed.
+Every `issue-buddy.mjs` and `remote-tracker.mjs` call has `cwd: RUNTIME_STATE_ROOT`, the primary
+checkout, wherever the pass was invoked. Every `plan-lint.mjs` and `plan-publication.mjs` call has
+`cwd: PLANNING_ROOT`, the pass's planning worktree.
+Use its six pass operations only: `pass-open`, `pass-close`, `pass-collect`,
+`verdict-record`, `pass-report`, `fingerprint`; `pass-list`, `pass-prune` and `trusted-prune` are
+`{{SKILL:cleanup}}`'s and never run in a pass. Retain the opaque returned `passId`; derive no
+encoding or repository identity input from it; it is only the planning worktree's `SESSION_ID`.
+Never read/write cache, pass records, `pass.lock`, planning claims, journal or trusted JSON
+directly; no claim token ever reaches this run. Do not invent a `branch-read` operation,
+environment-code export or second cache. There is no whole-pass lock: each pass keeps its own
+record and plans only issues it holds a per-issue planning claim for, taken and released inside
+the helper. The helper's TCP mutation mutex covers only short local state reads and writes, never
+a fetch or forge call, and retries a contended bind for at most 10 s before `LOCKED`, which points
+to a stuck helper. It needs a shared host/network namespace, a permitted loopback bind and
+same-directory hardlinks; no alternate port, file-lock fallback, claim break or legacy-lock
+deletion is allowed.
 
 ## Phase 0: Preflight
 
@@ -101,10 +117,12 @@ Perform these checks in this exact order:
 
 1. **Configuration and root.** Make the literal `config-resolve.mjs resolve` call with
    `{cwd: <invocation checkout>, tool: "issue-buddy"}` once. Stop on locator failure or retired
-   `stop`; retain decoded values and diagnostics. Resolve the physical primary root from Git's
-   first `git worktree list --porcelain` record and prove its common-directory identity per
-   `runtime-state-safety` / execution-location. Require invocation root = primary root = returned
-   `data.runtimeStateRoot`; a linked checkout is refused. Retain/revalidate the execution receipt.
+   `stop`; retain decoded values and diagnostics. The invocation checkout may be the primary
+   checkout or any linked or harness worktree of the repository. Derive the physical primary root
+   from Git's first `git worktree list --porcelain` record and prove its common-directory identity
+   per `runtime-state-safety` / execution-location. Require primary root = returned
+   `data.runtimeStateRoot` as `RUNTIME_STATE_ROOT`; every helper below keeps that root as `cwd`.
+   Retain/revalidate the execution receipt.
 2. **Hidden mode.** Stop on `data.visibility: hidden` before tracker access or runtime writes.
 3. **Tracker.** Require configured `tracker.mode: remote`; missing, `null`, local or external
    stops without a tracker-mode question.
@@ -112,10 +130,12 @@ Perform these checks in this exact order:
    `provider: github`. This operation resolves the origin locally and returns before any provider
    probe or forge read. A missing, invalid or unsupported origin stops.
 5. **Runtime safety.** Load and apply the runtime guard for each imminent private-state target.
-6. **Migration.** Run the guarded runtime-directory migration prerequisite before acquisition.
-   This authorized pre-lock migration is the only possible write before the lock.
-7. **Whole-pass lock.** Call `pass-lock-acquire` with `{cwd}`; retain its `passId`. A held lock
-   stops and requires explicit operator release; never break it, including after SIGKILL.
+6. **Migration.** Run the guarded runtime-directory migration prerequisite before the pass record.
+   This authorized migration is the only possible write before the pass record.
+7. **Pass record.** Call `pass-open` with `{cwd}`; retain its `passId`. It creates the pass record
+   `passes/<passId>.json` and takes no lock, so other passes keep running. A legacy `pass.lock`
+   is never removed: the first claim attempt then stops with `LEGACY_PASS_LOCK` for operator
+   inspection.
 8. **Repository visibility.** Make the literal `remote-tracker.mjs repository-visibility-read` call with `{cwd}`.
    This GET-only operation is the only forge read before collection; require the capability
    `repositoryVisibilityRead`. Read `data.result.visibility` and retain
@@ -125,57 +145,86 @@ Perform these checks in this exact order:
    Dry runs retain private/unknown visibility. A failed read stops the pass.
 9. **Publishing rows and tree.** Freeze `plan.dir` (default `docs/plan`),
    `delivery.branchPrefix` (default `effective-flow`, explicit empty is valid), the configured
-   `delivery.baseBranch` and six concrete artifact languages. Use a configured remote ref only
-   on `origin`, normalize it to the branch name; if unset, select local `origin/HEAD`, else
-   `origin/main`, without fetching. Normalize that selected origin ref to `baseBranch`; bounded
-   fetch/resolution belongs to `pass-collect`. An invalid base stops rather than guessing. Do not evaluate `delivery.completion`.
+   `delivery.baseBranch` and six concrete artifact languages. Resolve the base in this order:
+   the configured `delivery.baseBranch` (a remote ref only on `origin`, normalized to the branch
+   name), else local `origin/HEAD`, else `origin/main`, without fetching; no branch name is a
+   default. Normalize that selected origin ref to `baseBranch`; bounded fetch/resolution belongs to
+   `pass-collect`, and planning starts from its fetched tip. An invalid base stops rather than guessing. Do not evaluate `delivery.completion`.
    Resolve languages once through `language-rules`; never ask or re-resolve downstream.
-   Publishing requires a clean tracked tree/index, no in-progress Git operation and a valid HEAD;
-   preserve unrelated untracked files. D4: operator-run public publication uses the operator's
+   The invoking checkout's tree, index, branch and HEAD are not checked: publication runs only in
+   the planning worktree. D4: operator-run public publication uses the operator's
    credential, reachable by unsandboxed model steps; checks are advisory. This is no credential
    isolation or branch-rule guarantee; scheduled publication waits for WP6b/WP7.
 10. **Subagent capability.** Require a built-in subagent mechanism. No mechanism or a later
     declined spawn is a pass-level environment stop, never inline judgment/planning or an issue
     retry. This deliberately overrides the delegation mandate's inline fallback.
 
-Before acquisition a stop writes nothing except the authorized migration. After acquisition every
-controlled stop reaches Phase 6 with one pass failure, then attempts release. Initialize visibility
+Before `pass-open` a stop writes nothing except the authorized migration. After it every
+controlled stop reaches Phase 6 with one pass failure, then attempts `pass-close`. Initialize visibility
 as `unknown`, leftovers/outcome lists empty and `cutOff: none` before these checks.
 
 ## Phase 1: Earlier leftovers
 
-Inventory every existing path directly under canonical `plan.dir`, including ignored files,
-symlinks and nonregular entries, without following links or reading prose. Keep path/type/index
-and file identity/blob diagnostics outside model content. A symlink escape, unsafe path or colliding
-nonregular entry stops safely; ignored or ambiguous entries never become planner-owned paths.
-Preserve every pre-existing entry.
+Earlier plans live only in kept planning worktrees, never in the invoking or primary checkout. Read
+every record with `worktree inspect` without `sessionId` and keep those with purpose
+`issue-planning`, status `aborted` and reason `plan-preserved` only; an `active` one belongs to a
+running pass and is never inventoried. In each such registered worktree, inventory every existing path directly under
+canonical `plan.dir`, including ignored files, symlinks and nonregular entries, without following
+links or reading prose. Keep path/type/index and file identity/blob diagnostics outside model
+content. A symlink escape, unsafe path or colliding nonregular entry stops safely; ignored or
+ambiguous entries never become planner-owned paths. Preserve every pre-existing entry and worktree.
 
 For each regular untracked canonical `YYYY-MM-DD-issue-<N>-<slug>.md` (including canonical collision
 suffixes), supply `{issue: N, path: <repository-relative plan path>, action: "remove"}` as initial
-`leftoverPlanFiles`. Sort by path; retain multiple files for one issue and reject duplicate paths
-or conflicting identities. `remove` names the operator's next action, never this pass's action.
-Report bounded path/issue/blob identity and preserve earlier files even when a hash is known.
+`leftoverPlanFiles`, once per path, and report every worktree path holding it. Sort by path; retain
+multiple files for one issue and reject conflicting identities. `remove` names the operator's next
+action, never this pass's: move the plan out of the kept worktree or discard it, then
+`{{SKILL:cleanup}}` removes the worktree and its `plan-preserved` record. Report bounded path/issue/blob identity and preserve earlier files even when a hash is known.
 Ignored/colliding paths must either be safely represented for exclusion or stop before planning.
 
 ## Phase 2: Collect and recovery
 
 Call `issue-buddy.mjs pass-collect` with exactly
 `{cwd, passId, mode, baseBranch, planDir, branchPrefix, visibility: "standard", limits,
-repositoryVisibility, leftoverPlanFiles}`, plus `issue: <N>` only under `--issue <N>`. No
+repositoryVisibility, leftoverPlanFiles}`, plus `issue: <N>` only under `--issue <N>` and, with it,
+`autopilotRunId: <run-id>` only when the caller contract received an `Autopilot run:` line. No
 stale-attempt evidence is inferred from a file. The selector restricts candidates, trust reads and
-`authorizedRecovery` to that issue under the same lock, trust filter and skip reasons. A selected
+`authorizedRecovery` to that issue under the same trust filter and skip reasons. A selected
 issue absent from the open listing (closed or missing) fails collection with `ISSUE_NOT_OPEN`,
 its own stop result, distinct from every skip reason.
+
+The helper claims every selected and recovery candidate for this pass; recovery, stale-attempt
+accounting and trusted text cover only issues this pass holds. In a batch pass an issue another run
+(Issue Buddy pass, autopilot run or `plan-issue`) is planning skips as `issue-in-progress` and the
+next eligible issue takes its place. A single-issue pass on such an issue fails collection with
+`ISSUE_CLAIMED`, naming the holder (`details.holder`); with `autopilotRunId` it adopts that run's
+claim exclusively per the caller contract: a claim another run holds stays `ISSUE_CLAIMED`, and
+every adoption refusal is `CLAIM_ADOPTION_REFUSED` with `details.reason` (`already-adopted` and
+`adoption-invalid` included). `LEGACY_PASS_LOCK` stops until the operator removes the old lock. Each
+is its own stop result, distinct from every skip reason.
 Retain the exact result as `collect`, including `baseOid`, `eligible`, `eligibleCount`, `skipped`,
 `recovery` and `authorizedRecovery`. The helper persists authorization and excludes leftover issues
-before judgment counting/slicing and recovery authorization; preserve its eleven skip reasons.
+before judgment counting/slicing and recovery authorization; preserve its twelve skip reasons.
 Goal epics and obsolete marks (`effective-flow-goal-epic`, `effective-flow-goal-obsolete`) skip as
 `lifecycle-label`, an issue with a backlog-audit split-marker comment as `plan-issue-comment`.
+`issue-in-progress` is a local planning claim, not the lifecycle label
+`effective-flow-issue-in-progress`, which skips as `lifecycle-label`.
 Leftovers create no verdict, retry or recovery authority. Changed collection metadata cannot be
 replayed. Never fabricate a candidate, fingerprint or recovery record.
 
-In publishing mode require `git rev-parse HEAD == collect.baseOid` immediately after collection,
-before recovery or judgment; then run the caller contract's `consent-check` when it applies.
+**Planning worktree.** In publishing mode, immediately after collection and before recovery or
+judgment, create the pass's `issue-planning` worktree at `collect.baseOid`, so no second fetch
+runs: guard every parent below `.effective-flow/` and the exact path per `runtime-state-safety`,
+then run `git -C <RUNTIME_STATE_ROOT> worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT>
+<collect.baseOid>` with `PLANNING_ROOT` = `BASE_DIR/REPO_NAME/<passId>-issue-planning`
+(`worktree.baseDir`, default `.effective-flow/.worktrees`, against `RUNTIME_STATE_ROOT`). Issue its `effective-flow-created` receipt and write its record with
+`worktree record-init` (workflow `issue-buddy`, purpose `issue-planning`, `sessionId` the
+`passId`, `creationOid` = `collect.baseOid`); a failed step stops the pass. Then require
+`git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`; then run the caller contract's
+`consent-check` when it applies. Every plan file, lint and publication of this pass uses
+`PLANNING_ROOT`. On every exit withdraw it with one `worktree remove` call, unless Phase 5
+preserves a plan in it: then transition its record `active` → `aborted` with reason
+`plan-preserved`, keep it and report its path and issue. The claim is released either way.
 Run no raw fetch or plan-branch read; WP3/WP4 own bounded Git reads.
 Dry-run reports recovery without completing it. Publishing processes only `authorizedRecovery`,
 in its returned order and up to remaining `limits.plans`:
@@ -229,10 +278,11 @@ If plan capacity remains after the selected slice, use `judgment-limit` only whe
 
 ## Phase 4: Planning and review
 
-Publishing only. Snapshot HEAD, index, tracked state and all relevant path identities/types,
-including ignored/nonregular entries, without bringing contents into the parent. Start a
-foreground built-in general-purpose workflow orchestrator, not a named leaf. Supply the verified
-receipt/roots, concrete languages, authority restricted to one new untracked top-level plan,
+Publishing only. Snapshot `PLANNING_ROOT`'s HEAD, index, tracked state and all relevant path
+identities/types, including ignored/nonregular entries, without bringing contents into the parent.
+Start a foreground built-in general-purpose workflow orchestrator, not a named leaf. Supply the
+verified receipt/roots with `PLANNING_ROOT` as its execution root, concrete languages, authority
+restricted to one new untracked top-level plan in `PLANNING_ROOT`,
 no staging/Git/forge publication/runtime writes and no user questions as its separate brief.
 It owns planning/review craft through `{{SKILL:plan}}` and its discovered domain skills.
 <!-- spawn-site:issue-buddy/plan-run -->
@@ -243,8 +293,9 @@ returns `ABORT: NESTED_SPAWN_UNAVAILABLE` to the parent and stops the whole pass
 verdict/retry. Never plan inline after that refusal. Every child must finish before its parent ends.
 <!-- spawn-site:issue-buddy/nested-spawn-probe -->
 
-After the probe, invoke `plan` with WP2's five required argument control lines and delimiter,
-substituting concrete values; the separate brief is not appended inside or after the envelope:
+After the probe, invoke `plan` with WP2's five required argument control lines, its
+`Execution root:` line naming `PLANNING_ROOT`, and the delimiter, substituting concrete values; the
+separate brief is not appended inside or after the envelope:
 
 ```text
 Run state: non-interactive
@@ -252,6 +303,7 @@ Next steps: suppressed
 Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>
 Issue: #<N>
 Issue text: <absolute trustedTextPath>
+Execution root: <absolute PLANNING_ROOT>
 --- end of control lines ---
 ```
 
@@ -261,7 +313,7 @@ envelope above the delimiter; otherwise it stays exactly as shown.
 Only if the actual target/execution shape has observed useful pre-terminal delivery plus joined
 terminals, read the selected canonical plan receiver/root marker before dispatch and add one
 trusted `Progress context:` above the delimiter per `shared/subagent-progress.md`. Otherwise
-retain the exact five-line header-free legacy envelope. The no-op probe proves no reporting
+retain the exact envelope above. The no-op probe proves no reporting
 support. The unattended plan and returning review relay through their own immediate-parent
 contexts; the existing issue-buddy overview remains sole owner.
 
@@ -269,8 +321,9 @@ No issue prose is in the handoff. WP2 owns the new-file name/header, internal re
 questions as blocking points and no-publication boundary. Require terminal `DONE` or `ABORT`;
 the returned summary grants no publication authority and proves no artifact metadata.
 
-Verify no HEAD/index/tracked/unrelated-path mutation or overwrite and exactly one new regular
-untracked canonical plan directly under `plan.dir`, associated with this issue. Call only
+Verify no HEAD/index/tracked/unrelated-path mutation or overwrite in `PLANNING_ROOT` and exactly one
+new regular untracked canonical plan directly under its `plan.dir`, associated with this issue.
+Call only
 `plan-lint.mjs publication-metadata` with `{cwd, planDir, files: [<relative plan path>],
 expectedLanguage: <resolved language.workflow de|en>}`. Require a constant-safe successful envelope
 whose projection is exactly `{planFile, blobOid, reviewResult: "approved"|"revision-required",
@@ -311,8 +364,9 @@ creation ownership, unchanged current blob equal to WP4's `blobOid`, and protect
 replacement through the check/removal interval. A hash check followed by ordinary pathname unlink
 is insufficient. If the filesystem/harness cannot prove ownership and protected removal, preserve
 and report it. Changed, ambiguous, earlier, failed or push/create-uncertain artifacts are always
-preserved. Append preserved new plans as validated leftover report diagnostics, deduplicate by
-path without changing initial metadata or selection, and report the bounded blob diagnostic.
+preserved, and so is the planning worktree that holds them (Phase 2). Append preserved new plans as
+validated leftover report diagnostics, deduplicate by path without changing initial metadata or
+selection, and report the bounded blob diagnostic with the worktree path.
 Never force-push, force-clean or delete an earlier survivor.
 
 ## Ordered outcome mapping
@@ -343,7 +397,7 @@ Apply this order with operation, phase and safe details, not a code-only allowli
 
 ## Phase 6: Report and release
 
-Always reach this phase on a controlled ending after acquisition. Request `issue-buddy.mjs
+Always reach this phase on a controlled ending after `pass-open`. Request `issue-buddy.mjs
 pass-report` with `{cwd, passId, reportVersion: 2, outcome, cutOff, verdicts,
 pullRequestsOpened, pullRequestsRecovered, failures, repositoryVisibility, leftoverPlanFiles}`.
 After successful collection also pass `collect: <exact persisted returned result>`; before it,
@@ -359,13 +413,17 @@ numerical issue failures matching persisted `failed` verdicts. Keep all earlier 
 the null failure consumes no retry, failure count or plan budget. Let the runtime reconcile the
 journal and validate the report; do not synthesize retained outcomes after persistence failure.
 
-Attempt `pass-lock-release` with `{cwd, passId}` after report handling, including after a failed
-report. A killed process leaves the lock for explicit operator release. If runtime safety/bind or
-journal failure prevents report/release, name the primary error and retained state; never claim
-success for either operation without its successful envelope.
+Withdraw or keep the planning worktree as Phase 2 says, then attempt `pass-close` with
+`{cwd, passId}` after report handling, including after a failed report. It releases every claim the
+pass still holds (never an adopted autopilot claim), deletes the pass record and returns
+`{passId, closed, releasedClaims}`; `PASS_NOT_FOUND` means no open record for this `passId`. A
+killed process leaves its pass record, claims and possibly its worktree, which block only its own
+issues until `{{SKILL:cleanup}}` prunes them. If runtime safety/bind or journal failure prevents
+report/close, name the primary error and retained state; never claim success for either operation
+without its successful envelope.
 
 Report mode, visibility, limits, counts/skips, bounded verdict reasons, recovery, initial/final
-leftovers with operator action, confirmed PR URLs and report path. Print
+leftovers with operator action, a kept planning worktree, confirmed PR URLs and report path. Print
 `Pass result: completed|failed` from the stored report's `outcome`. An unavailable report is stated
 as unavailable. No session title or rename is emitted. On a completed dry run with
 `would-publish`, recommend `{{SKILL:issue-buddy}} --publish` only for a public repository.

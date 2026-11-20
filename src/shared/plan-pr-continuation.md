@@ -156,7 +156,8 @@ reports both values as it does for any override.
 
 Compare the local plan with the head's plan:
 `git -C <RUNTIME_STATE_ROOT> hash-object -- <absolute plan path>`, where the absolute path is the
-plan's source file in its source checkout, `plan-archival`'s `SOURCE_ROOT`, against
+plan's source file in its source checkout, `plan-archival`'s `SOURCE_ROOT` (for an autopilot
+issue source, the run-owned delivery worktree its absolute plan path names), against
 `git -C <RUNTIME_STATE_ROOT> rev-parse <fetched head OID>:<P>`. Any failure of either command stops
 the run before provisioning. Equal hashes continue. On a difference, load `plan-publication` before
 asking: its read-only resolution supplies the audience, and its content check supplies the findings
@@ -196,6 +197,13 @@ Read which checkout holds the head branch in `git -C <RUNTIME_STATE_ROOT> worktr
 - **the invocation checkout, clean and at the fetched head OID:** work in place, with no worktree
   and no record; "In-place delivery without worktree" step 3 is skipped because the branch is
   already checked out;
+- **an Automation caller's run-owned delivery worktree:** under an autopilot issue source, the
+  worktree `autopilot-issue-source` created on the head branch, named by the absolute plan path
+  this run received, verified as `SOURCE_ROOT` and clean at the fetched head OID. Adopt it as
+  `SOURCE_ROOT` and execution root and work there: this run creates no worktree, writes, adopts and
+  transitions no record for it, and leaves its withdrawal to the caller, also on a stop. Its
+  receipt must carry setup status `complete` or `skipped` from the caller's setup; `pending` runs
+  "Worktree execution" step 3 here first, and any other status stops and names it;
 - **another linked worktree:** take "Resumption by adoption";
 - **any other holder or state:** stop and name it.
 

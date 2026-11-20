@@ -758,6 +758,27 @@ belong to the later scheduled-publication work.
 Issue Buddy's publication uses the same GitHub and plan-publication helpers documented below. It
 opens draft plan pull requests and does not close issues or write issue comments or labels.
 
+Issue Buddy, issue-sourced `/effective-flow autopilot` runs and `/effective-flow plan-issue` share
+one local **planning claim** per issue, a small record below
+`.effective-flow/planning-claims/<target>/<issue>.json`. The claim key comes from the repository
+identity that `repository-resolve` returns on the forge, or from the external tracker target and
+the issue key, so all three workflows derive the same key for the same issue. An issue is planned
+by at most one run at a time, while different issues are planned in parallel; no repository-wide
+lock spans a pass. A batch pass skips a claimed issue as `issue-in-progress`, a skip reason that
+differs from the lifecycle label `effective-flow-issue-in-progress` (skipped as
+`lifecycle-label`). Every run starts from the fetched tip of the resolved remote base branch: the
+configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`. It may be started from
+the primary checkout or any linked or harness worktree; runtime state stays in the primary
+checkout.
+
+Claims are machine-local and are never broken automatically. A killed run blocks only its own
+issue until `/effective-flow cleanup` releases its claim after confirmation, with a proof that the
+run is gone (its pass record or open autopilot ledger is gone, or its process is dead on this host)
+or an explicit confirmation that the claim is older than 2 hours. Across machines, the remote
+guards still prevent duplicates: an existing plan branch or pull request, the create-only push and
+the canonical planning comment. A leftover `.effective-flow/issue-buddy/pass.lock` from an earlier
+version stops every claim with `LEGACY_PASS_LOCK` until you inspect and remove it.
+
 [Plan publication](./tools-understand.md#publishing-the-plan-as-a-draft-pull-request) and the
 [continuation on a plan's pull request](./worktree-and-delivery.md#continuing-on-a-published-plans-pull-request)
 use the same remote-tracker helper as every other pull-request step. Like all PR work, they are

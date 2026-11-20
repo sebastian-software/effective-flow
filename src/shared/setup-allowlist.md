@@ -1,6 +1,6 @@
 ## Claude Code allow rules
 
-This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 75
+This fragment is loaded only when the allowlist step of `{{SKILL:setup}}` is offered. It writes 79
 Claude Code allow rules into `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to this
 install's absolute path, so later runs call the helpers without a permission prompt:
 
@@ -9,7 +9,8 @@ install's absolute path, so later runs call the helpers without a permission pro
   `commit create`, `review open-report`, `review write-report`, `worktree record-init`,
   `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
   `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
-  `presence list` and `presence release`;
+  `presence list`, `presence release`, `planning-claim key`, `planning-claim acquire`,
+  `planning-claim release` and `planning-claim list`;
 - one for the `config-resolve` helper's `resolve` operation and one each for its read-only
   `no-ci-policy`, `conflict-validation` and `review-fix-validation` operations;
 - one per read-only `remote-tracker.mjs` operation: the forge reads, the pure local computations
@@ -40,8 +41,12 @@ touches a worktree, branch or record. `worktree resume-check` and `ledger reconc
 read: they take no lock and write nothing. `presence register` creates only the calling run's own
 marker below `.effective-flow/merge-gate-presence/`, no-clobber and at most 2 KiB; `presence refresh`
 and `presence release` rewrite or remove only that marker and only with its token; `presence list`
-only reads. `lock break`, `harness allow-rules` and the destructive `worktree remove` and
-`cleanup apply` never get a rule, nor does `presence prune`, which removes other runs' markers.
+only reads. `planning-claim key` only computes a claim key; `planning-claim acquire` creates one
+claim record below `.effective-flow/planning-claims/`, no-clobber, at most 4 KiB and never over
+another run's claim; `planning-claim release` removes only the record whose `claimId` matches;
+`planning-claim list` only reads and never returns a `claimId`. `lock break`, `harness allow-rules`
+and the destructive `worktree remove` and `cleanup apply` never get a rule, nor do `presence prune`
+and `planning-claim prune`, which remove other runs' markers and claims.
 Only the helper writes the settings file; never edit it in prose.
 
 ### `setup allowlist`
@@ -68,7 +73,7 @@ Code asks once for each call.
    node <skill-root>/scripts/effective-flow-state.mjs harness allow-rules <<< '{"cwd":"<RUNTIME_STATE_ROOT>","skillRoot":"<skill-root>","mode":"preview"}'
    ```
 
-   Show `result.target` and the 75 `result.rules`, then `result.added`, `result.removed` (rules of
+   Show `result.target` and the 79 `result.rules`, then `result.added`, `result.removed` (rules of
    an install whose helper no longer exists), `result.keptOtherInstalls` as "other install, kept",
    and every `result.warnings[]` entry with its rule and message (a `helper-wildcard` warning also
    covers a path-prefix rule such as `node ~/.claude/skills/*`, and a rule that admits an excluded

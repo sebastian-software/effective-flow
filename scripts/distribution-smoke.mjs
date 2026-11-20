@@ -54,6 +54,7 @@ const RUNTIME_SCRIPT_FILES = [
   'effective-flow-state-ledger-core.mjs',
   'effective-flow-state-recovery-core.mjs',
   'effective-flow-state-presence-core.mjs',
+  'effective-flow-state-planning-claim-core.mjs',
   'dated-name-allocation.mjs',
   'claude-settings-core.mjs',
   'runtime-file-primitives.mjs',

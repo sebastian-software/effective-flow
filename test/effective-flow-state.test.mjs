@@ -216,6 +216,11 @@ test('operations, locks and codes are frozen closed sets', () => {
       'presence list',
       'presence release',
       'presence prune',
+      'planning-claim key',
+      'planning-claim acquire',
+      'planning-claim release',
+      'planning-claim list',
+      'planning-claim prune',
     ],
   );
   assert.deepEqual([...LOCK_NAMES], ['memory', 'iterate-commit', 'apply-review-commit']);
@@ -261,6 +266,8 @@ test('operations, locks and codes are frozen closed sets', () => {
       'MARKER_EXISTS',
       'MARKER_NOT_FOUND',
       'MARKER_INVALID',
+      'CLAIMED',
+      'LEGACY_PASS_LOCK',
     ],
   );
   assert.deepEqual(

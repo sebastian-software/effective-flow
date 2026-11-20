@@ -4,6 +4,9 @@ import * as fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
+import { planningClaimKey } from '../src/scripts/effective-flow-state-planning-claim-core.mjs';
+import { executeOperation as buddyOperation } from '../src/scripts/issue-buddy-core.mjs';
+import { executeOperation as publicationOperation } from '../src/scripts/plan-publication-core.mjs';
 import {
   createWorld,
   checked,
@@ -19,6 +22,7 @@ import {
   release,
   prIdentity,
   issue,
+  planText,
   PLAN,
   BRANCH,
 } from './fixtures/issue-buddy/world.mjs';
@@ -29,7 +33,20 @@ const scenarios = JSON.parse(
 const exists = (world, relative) => fs.existsSync(path.join(world.root, relative));
 const cache = (world) =>
   JSON.parse(fs.readFileSync(path.join(world.runtime, 'verdicts.json'), 'utf8'));
-const lock = (world) => JSON.parse(fs.readFileSync(path.join(world.runtime, 'pass.lock'), 'utf8'));
+const passRecord = (world, passId) =>
+  JSON.parse(fs.readFileSync(path.join(world.runtime, 'passes', `${passId}.json`), 'utf8'));
+// The holder of an issue's planning claim, read from its record (the key derivation is the
+// shared one); undefined when the issue is unclaimed.
+const claimHolder = (world, issueNumber) => {
+  const key = planningClaimKey({
+    target: { kind: 'forge', host: 'github.com', owner: 'acme', repository: 'fixture' },
+    issue: issueNumber,
+  });
+  const file = path.join(world.root, key.path);
+  if (!fs.existsSync(file)) return undefined;
+  const { claimId: _token, ...holder } = JSON.parse(fs.readFileSync(file, 'utf8'));
+  return holder;
+};
 const mutations = (world) =>
   world
     .calls()
@@ -146,7 +163,7 @@ test('visibility GET supports a precollection private/unknown publication stop w
       });
       assert.equal(stored.outcome, 'failed');
       assert.equal(stored.repositoryVisibility, visibility);
-      assert.equal(lock(world).collection, undefined);
+      assert.equal(passRecord(world, passId).collection, undefined);
       assert.equal(
         world
           .calls()
@@ -381,7 +398,7 @@ test('unsafe leftover paths and symlink plan artifacts are refused without delet
     }),
   );
   assert.equal(unsafe.error.code, 'INVALID_PAYLOAD');
-  assert.equal(lock(world).collection, undefined);
+  assert.equal(passRecord(world, passId).collection, undefined);
   const collected = await collect(world, passId);
   const outside = path.join(world.container, 'outside.md');
   fs.writeFileSync(outside, 'Keep this target\n');
@@ -470,10 +487,9 @@ test(
         assert.ok(actor.passId);
         actor.child.kill('SIGKILL');
         assert.equal((await actor.done).signal, 'SIGKILL');
-        const held = await world.buddy('pass-lock-acquire');
-        assert.equal(held.error.code, 'LOCKED');
-        assert.equal(held.error.details.passId, actor.passId);
-        const retained = lock(world);
+        // The killed pass keeps its record and, until its verdict settled it, its claim.
+        const retained = passRecord(world, actor.passId);
+        assert.equal(claimHolder(world, 1)?.passId, index >= 7 ? undefined : actor.passId);
         assert.equal(retained.collection.status, 'collected');
         assert.equal(exists(world, PLAN), index >= 1);
         assert.equal(branches(world).includes(`refs/heads/${BRANCH}`), index >= 3);
@@ -495,13 +511,19 @@ test(
           assert.equal(stored.pullRequestsOpened.length, 1);
         }
         assert.equal(
-          (await world.buddy('pass-lock-release', { passId: 'wrong' })).error.code,
-          'LOCK_MISMATCH',
+          (await world.buddy('pass-close', { passId: 'wrong' })).error.code,
+          'PASS_NOT_FOUND',
         );
-        assert.deepEqual(lock(world), retained);
-        await release(world, actor.passId);
+        assert.deepEqual(passRecord(world, actor.passId), retained);
+        // A parallel pass opens beside the killed one; the killed pass's issue stays claimed.
         const nextId = await acquire(world);
         assert.notEqual(nextId, actor.passId);
+        if (index < 7) {
+          const blocked = await collect(world, nextId, { issue: 1 }).catch((error) => error);
+          assert.match(String(blocked.message), /ISSUE_CLAIMED/);
+        }
+        await release(world, actor.passId);
+        assert.equal(claimHolder(world, 1), undefined);
         await release(world, nextId);
       });
   },
@@ -513,7 +535,7 @@ test('SIGKILL after real publication and cache commit lets a stopped v2 report r
   await actor.reached;
   actor.child.kill('SIGKILL');
   assert.equal((await actor.done).signal, 'SIGKILL');
-  const retained = lock(world);
+  const retained = passRecord(world, actor.passId);
   assert.deepEqual(retained.collection.outcomes, {});
   assert.equal(retained.collection.pendingVerdict.outcome.verdict, 'published');
   assert.equal(cache(world).records['1'].verdict, 'published');
@@ -531,10 +553,11 @@ test('SIGKILL after real publication and cache commit lets a stopped v2 report r
   assert.equal(stored.outcome, 'failed');
   assert.deepEqual(stored.counts, { published: 1 });
   assert.deepEqual(stored.pullRequestsOpened, [identity]);
-  assert.equal(lock(world).collection.pendingVerdict, undefined);
-  assert.equal(Object.keys(lock(world).collection.outcomes).length, 1);
+  assert.equal(passRecord(world, actor.passId).collection.pendingVerdict, undefined);
+  assert.equal(Object.keys(passRecord(world, actor.passId).collection.outcomes).length, 1);
   assert.equal(world.state().creates.length, 1);
-  assert.equal((await world.buddy('pass-lock-acquire')).error.code, 'LOCKED');
+  // Reconciling the pending verdict settled the issue: its claim is released.
+  assert.equal(claimHolder(world, 1), undefined);
   await release(world, actor.passId);
 });
 
@@ -555,7 +578,7 @@ test('metadata blob drift preserves the new plan and refuses publication before 
   assert.equal(fs.readFileSync(target, 'utf8'), changed);
   assert.equal(branches(world), 'refs/heads/main');
   assert.equal(mutations(world).length, 0);
-  assert.deepEqual(lock(world).collection.outcomes, {});
+  assert.deepEqual(passRecord(world, passId).collection.outcomes, {});
   const stored = await report(world, passId, collected, {
     outcome: 'failed',
     failures: [{ issue: null, stage: 'publish', code: 'BLOB_CHANGED' }],
@@ -564,6 +587,148 @@ test('metadata blob drift preserves the new plan and refuses publication before 
   assert.deepEqual(stored.counts, {});
   assert.equal(fs.existsSync(path.join(world.runtime, 'verdicts.json')), false);
   await release(world, passId);
+});
+
+// Invariant (acceptance "Different issues"): two single-issue passes for different issues run
+// with overlapping lifetimes, overlapping collection read phases and overlapping readiness reads,
+// each in its own planning worktree at its collected base, and both publish.
+test('two overlapping single-issue passes for different issues both publish from their planning worktrees', async (t) => {
+  const world = createWorld(t, { issues: [issue(1), issue(2)] });
+  const head = world.git(world.root, 'rev-parse', 'HEAD');
+  const meeting = (parties) => {
+    let arrived = 0;
+    let open;
+    const all = new Promise((resolve) => {
+      open = resolve;
+    });
+    return async () => {
+      if (++arrived === parties) open();
+      await all;
+    };
+  };
+  // Both read phases must reach the issue listing before either may continue.
+  const listing = meeting(2);
+  const readiness = meeting(2);
+  // The fake forge is a read-modify-write JSON file; only its PR creation is serialized.
+  let creations = Promise.resolve();
+  const runner = async (call) => {
+    if (
+      call.executable === 'gh' &&
+      call.args.some((arg) => /^repos\/acme\/fixture\/issues(?:\?|$)/.test(arg))
+    )
+      await listing();
+    if (call.executable === 'gh' && call.args.includes('POST')) {
+      const created = creations.then(() => world.runner(call));
+      creations = created.catch(() => {});
+      return created;
+    }
+    return world.runner(call);
+  };
+  const options = { ...world.options, runner };
+  const buddy = (operation, input = {}) =>
+    buddyOperation(operation, { cwd: world.root, ...input }, options);
+  const plan = async (number) => {
+    const passId = checked(await buddy('pass-open')).passId;
+    const collected = checked(await buddy('pass-collect', collectInput(passId, { issue: number })));
+    assert.deepEqual(
+      collected.eligible.map((entry) => entry.issue),
+      [number],
+    );
+    // Readiness reads of both passes overlap while both hold their claims.
+    await readiness();
+    const candidate = collected.eligible[0];
+    assert.equal(
+      checked(
+        await buddy('fingerprint', {
+          trustedTextPath: candidate.trustedTextPath,
+          issueAuthor: candidate.issueAuthor,
+        }),
+      ).fingerprint,
+      candidate.fingerprint,
+    );
+    assert.equal(claimHolder(world, number).passId, passId);
+    const tree = path.join(world.container, `planning-${number}`);
+    world.git(
+      world.root,
+      'worktree',
+      'add',
+      '-q',
+      '-b',
+      `issue-planning/s${number}`,
+      tree,
+      collected.baseOid,
+    );
+    const file = `docs/plan/2026-10-19-issue-${number}-fixture.md`;
+    fs.mkdirSync(path.join(tree, 'docs/plan'), { recursive: true });
+    fs.writeFileSync(path.join(tree, file), planText(number), { flag: 'wx' });
+    checked(await world.lint('lint', { cwd: tree, files: [file] }));
+    const metadata = checked(
+      await world.lint('publication-metadata', { cwd: tree, files: [file] }),
+    );
+    const published = checked(
+      await publicationOperation(
+        'publish',
+        publicationInput(collected.baseOid, {
+          cwd: tree,
+          issue: number,
+          planFile: file,
+          title: `docs: plan issue #${number}`,
+          body: `Plan for issue #${number}; review result: approved; open points: 0.`,
+          commitMessage: `docs: plan issue #${number}`,
+          expectedBlobOid: metadata.blobOid,
+        }),
+        { apply: true, runner, environment: {} },
+      ),
+    );
+    const verdict = {
+      issue: number,
+      verdict: 'published',
+      reason: 'Fixture outcome',
+    };
+    checked(
+      await buddy('verdict-record', {
+        passId,
+        issue: number,
+        fingerprint: candidate.fingerprint,
+        verdict: 'published',
+        mode: 'publish',
+        reason: 'Fixture outcome',
+        pullRequest: { number: published.pullRequest.number, url: published.pullRequest.url },
+      }),
+    );
+    const stored = checked(
+      await buddy('pass-report', {
+        passId,
+        reportVersion: 2,
+        collect: collected,
+        outcome: 'completed',
+        cutOff: 'none',
+        verdicts: [verdict],
+        pullRequestsOpened: [prIdentity(published, number)],
+        pullRequestsRecovered: [],
+        failures: [],
+        repositoryVisibility: 'public',
+        leftoverPlanFiles: [],
+      }),
+    );
+    checked(await buddy('pass-close', { passId }));
+    return { published, stored };
+  };
+  const [first, second] = await Promise.all([plan(1), plan(2)]);
+  for (const [number, result] of [
+    [1, first],
+    [2, second],
+  ]) {
+    assert.equal(result.published.state, 'pull-request-opened');
+    assert.equal(result.stored.outcome, 'completed');
+    assert.equal(result.stored.counts.published, 1);
+    assert.equal(cache(world).records[String(number)].verdict, 'published');
+    assert.equal(claimHolder(world, number), undefined);
+    assert.ok(branches(world).includes(`refs/heads/effective-flow/plan/issue-${number}`));
+  }
+  assert.equal(world.state().pulls.length, 2);
+  assert.equal(world.git(world.root, 'rev-parse', 'HEAD'), head);
+  assert.deepEqual(fs.readdirSync(path.join(world.runtime, 'passes')), []);
 });
 
 test('fixture scenario definitions keep the required phase inputs explicit', () => {

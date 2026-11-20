@@ -1,18 +1,54 @@
 // Deterministic Issue Buddy pass protocol. Forge reads use the tracker; the injected runner
 // executes Git only here. All persisted authorization is scoped to the primary runtime root.
+//
+// Passes run in parallel. Each pass keeps its own record at
+// `.effective-flow/issue-buddy/passes/<passId>.json` (`pass-open` creates it with the session pid
+// the claim core records, `pass-close` deletes it) and plans only issues it holds a per-issue
+// planning claim for (`effective-flow-state-planning-claim-core.mjs`, workflow `issue-buddy`,
+// holder the pass id); each claim enters the pass record as soon as it is taken. A single-issue
+// pass of an autopilot run (`autopilotRunId`) adopts that run's claim instead, after verifying the
+// claim's holder and the run's open ledger, exclusively (`adoptions/<runId>.json` names the one
+// adopting pass); it never releases an adopted claim and never authorizes recovery. A claim token
+// never leaves the claim record: releases re-read it helper-internally.
+//
+// Cleanup works from `pass-list` (read-only: pass records with liveness, and trusted text no pass
+// record lists) and removes leftovers only through `pass-prune` (a pass record under a re-verified
+// `process-dead` proof or confirmed staleness) and `trusted-prune` (unlisted trusted text).
+//
+// The loopback TCP mutation mutex serializes only local reads and writes of the shared runtime
+// state; no fetch, `ls-remote` or tracker call ever runs while it is held. A contended mutex is
+// retried with a bounded jitter for at most `mutexWaitMs` (10 s) before LOCKED. `pass-collect`
+// therefore runs in four steps: an unlocked read phase, a locked claim step, an unlocked re-check of
+// the claimed issues and a locked finalization. Every cache writer re-reads `verdicts.json` under
+// the mutex and patches only records of issues its pass holds a claim for (closed-PR observations
+// are exempt), and the pending-verdict journal binds one issue's record and attempt, so parallel
+// passes never invalidate each other's journal.
 import { createHash, randomUUID } from 'node:crypto';
 import * as filesystem from 'node:fs/promises';
-import { hostname } from 'node:os';
 import { createServer } from 'node:net';
 import { isDeepStrictEqual } from 'node:util';
 import path from 'node:path';
 import { executeOperation as trackerOperation } from './remote-tracker-core.mjs';
 import { ledgerRepository } from './remote-tracker-ledger-core.mjs';
 import { planBranchName, parsePlanBranch, parseIssueHeader } from './plan-publication-core.mjs';
+import { StateOutcome } from './effective-flow-state-core.mjs';
+import {
+  AUTOPILOT_RUN_ID_PATTERN,
+  claimLiveness,
+  localHost,
+  planningClaimAcquire,
+  planningClaimRelease,
+  readPlanningClaim,
+  sessionOwner,
+  STALE_AFTER_MS,
+} from './effective-flow-state-planning-claim-core.mjs';
 
 export const ISSUE_BUDDY_OPERATIONS = Object.freeze([
-  'pass-lock-acquire',
-  'pass-lock-release',
+  'pass-open',
+  'pass-close',
+  'pass-prune',
+  'pass-list',
+  'trusted-prune',
   'pass-collect',
   'verdict-record',
   'pass-report',
@@ -30,7 +66,33 @@ export const SKIP_REASONS = Object.freeze([
   'unchanged-not-ready',
   'already-published',
   'unchanged-would-publish',
+  // Another run (Issue Buddy pass, autopilot run or `plan-issue`) holds the issue's planning claim.
+  // Distinct from the lifecycle label `effective-flow-issue-in-progress` (`lifecycle-label`).
+  'issue-in-progress',
 ]);
+// The orphan proof `pass-prune` accepts besides `confirmStale` (re-verified by the helper).
+export const PASS_PRUNE_PROOFS = Object.freeze(['process-dead']);
+export const PASS_PRUNE_RESULTS = Object.freeze([
+  'removed',
+  'missing',
+  'invalid',
+  'changed',
+  'not-stale',
+  'proof-refused',
+]);
+export const TRUSTED_PRUNE_RESULTS = Object.freeze([
+  'removed',
+  'missing',
+  'claimed',
+  'not-regular',
+  'unverifiable',
+]);
+// The bound of `pass-list` entries per list and of `trusted-prune` issues per call.
+export const MAX_INVENTORY_ENTRIES = 200;
+// The bound of one mutex acquisition, and the jittered pause between two bind attempts.
+export const MUTEX_WAIT_MS = 10000;
+const MUTEX_RETRY_MIN_MS = 20;
+const MUTEX_RETRY_JITTER_MS = 80;
 const VERDICTS = ['not-ready', 'would-publish', 'published', 'failed'];
 const FINGERPRINT = /^ibfp1:sha256:[a-f0-9]{64}$/;
 const PASS_ID = /^[a-zA-Z0-9][a-zA-Z0-9._-]{0,127}$/;
@@ -276,11 +338,24 @@ function attemptIdentity(id, issue, fp, currentPass) {
 }
 function validateInput(operation, input) {
   const fields = {
-    'pass-lock-acquire': [[], []],
-    'pass-lock-release': [['passId'], []],
+    'pass-open': [[], []],
+    'pass-close': [['passId'], []],
+    'pass-prune': [
+      ['passId', 'acquiredAt'],
+      ['proof', 'confirmStale'],
+    ],
+    'pass-list': [[], []],
+    'trusted-prune': [['issues'], []],
     'pass-collect': [
       ['passId', 'mode', 'baseBranch', 'planDir', 'branchPrefix', 'visibility'],
-      ['limits', 'staleAttempts', 'repositoryVisibility', 'leftoverPlanFiles', 'issue'],
+      [
+        'limits',
+        'staleAttempts',
+        'repositoryVisibility',
+        'leftoverPlanFiles',
+        'issue',
+        'autopilotRunId',
+      ],
     ],
     'verdict-record': [
       ['passId', 'issue', 'fingerprint', 'verdict', 'mode', 'reason'],
@@ -314,6 +389,24 @@ function validateInput(operation, input) {
   if (input.passId !== undefined) match(input.passId, PASS_ID);
   if (input.mode !== undefined) mode(input.mode);
   if (input.limits !== undefined) limits(input.limits);
+  if (operation === 'pass-prune') {
+    timestamp(input.acquiredAt);
+    if (input.confirmStale !== undefined && input.confirmStale !== true)
+      invalid('confirmStale may only be true');
+    if ((input.proof !== undefined) === (input.confirmStale === true))
+      invalid('pass-prune needs exactly one of proof and confirmStale');
+    if (input.proof !== undefined) enumeration(input.proof, PASS_PRUNE_PROOFS);
+  }
+  if (operation === 'trusted-prune') {
+    if (
+      !Array.isArray(input.issues) ||
+      input.issues.length === 0 ||
+      input.issues.length > MAX_INVENTORY_ENTRIES
+    )
+      invalid(`issues must hold 1 to ${MAX_INVENTORY_ENTRIES} issue numbers`);
+    input.issues.forEach(positive);
+    if (new Set(input.issues).size !== input.issues.length) invalid('issues must be unique');
+  }
   if (operation === 'pass-collect') {
     baseBranch(input.baseBranch);
     safePath(input.planDir);
@@ -327,6 +420,11 @@ function validateInput(operation, input) {
     leftoverPlanFiles(input.leftoverPlanFiles, input.planDir);
     if (input.visibility !== 'standard') invalid('Issue Buddy requires standard visibility');
     if (input.issue !== undefined) positive(input.issue);
+    // The `Autopilot run:` caller line of a single-issue pass: the pass adopts that run's claim.
+    if (input.autopilotRunId !== undefined) {
+      match(input.autopilotRunId, AUTOPILOT_RUN_ID_PATTERN);
+      if (input.issue === undefined) invalid('autopilotRunId requires the issue selector');
+    }
     if (input.staleAttempts !== undefined && !Array.isArray(input.staleAttempts))
       invalid('staleAttempts must be an array');
     for (const attempt of input.staleAttempts ?? []) {
@@ -397,7 +495,12 @@ function validateInput(operation, input) {
   }
 }
 
+// Network and forge reads are refused while the mutation mutex is held.
+function assertUnlocked(context) {
+  if (context.mutexHeld) fail('UNSAFE_RUNTIME_STATE', 'network read under the mutation mutex');
+}
 async function git(context, args, code = 'UNSAFE_RUNTIME_STATE') {
+  if (args[0] === 'fetch' || args[0] === 'ls-remote') assertUnlocked(context);
   const result = await context.runner({
     executable: 'git',
     args,
@@ -417,8 +520,21 @@ async function contextFor(input, options) {
     runner: options.runner,
     createServer: options.createServer ?? createServer,
     now: () => new Date((options.clock ?? (() => new Date()))()).toISOString(),
+    // Mutex retry timing; injectable so tests can bound or observe contention.
+    mutexWaitMs: options.mutexWaitMs ?? MUTEX_WAIT_MS,
+    sleep: options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms))),
+    random: options.random ?? Math.random,
+    monotonic: options.monotonicNow ?? (() => performance.now()),
   };
   if (typeof context.runner !== 'function') invalid('an injected runner is required');
+  if (!Number.isFinite(context.mutexWaitMs) || context.mutexWaitMs < 0)
+    invalid('mutexWaitMs must be a non-negative number');
+  // The planning-claim core runs its own guarded Git reads through the same runner and clock.
+  context.claimDeps = {
+    runner: context.runner,
+    now: () => Date.parse(context.now()),
+    ...(options.claimDeps ?? {}),
+  };
   try {
     const top = await fs.realpath(await git(context, ['rev-parse', '--show-toplevel']));
     const common = await fs.realpath(
@@ -523,135 +639,618 @@ async function atomic(context, target, value, { createOnly = false } = {}) {
     });
   }
 }
-async function rejectLegacyLocks(context, directory = context.directory) {
-  await guard(context, directory, { directory: true });
-  let entries;
-  try {
-    entries = await context.fs.readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (error.code === 'ENOENT') return;
-    throw error;
+// The whole-pass lock of earlier releases. Its presence means a pass of an older protocol may
+// still be running, so every operation refuses until an operator inspected and removed it.
+function legacyPassLockPath(context) {
+  return path.join(context.directory, 'pass.lock');
+}
+// The subdirectories the legacy-lock scan also lists: the bounded pass records and reports. The
+// unbounded `trusted/` and `adoptions/` never held a lock, so their entries are never walked.
+const LEGACY_LOCK_SUBDIRECTORIES = Object.freeze(['passes', 'reports']);
+// Refuses while a `*.lock` entry lies at the top level of the Issue Buddy directory or directly in
+// LEGACY_LOCK_SUBDIRECTORIES. The directory passes the runtime guard once; entries are only listed
+// (a symlink is never followed), so the scan costs no Git call per entry.
+async function rejectLegacyLocks(context) {
+  await guard(context, context.directory, { directory: true });
+  const list = async (directory) => {
+    try {
+      return await context.fs.readdir(directory, { withFileTypes: true });
+    } catch (error) {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    }
+  };
+  const entries = (await list(context.directory)).map((entry) => ({ directory: '', entry }));
+  for (const name of LEGACY_LOCK_SUBDIRECTORIES) {
+    const top = entries.find(({ entry }) => entry.name === name);
+    if (top?.entry.isDirectory())
+      for (const entry of await list(path.join(context.directory, name)))
+        entries.push({ directory: name, entry });
   }
-  for (const entry of entries) {
-    const target = path.join(directory, entry.name);
-    await guard(context, target, { directory: entry.isDirectory() });
-    if (entry.name.endsWith('.lock') && target !== lockPath(context))
+  for (const { directory, entry } of entries) {
+    const target = path.join(context.directory, directory, entry.name);
+    if (target === legacyPassLockPath(context))
+      fail(
+        'LEGACY_PASS_LOCK',
+        'a legacy Issue Buddy pass lock requires operator inspection; it was not removed',
+        { path: path.relative(context.root, target) },
+      );
+  }
+  for (const { directory, entry } of entries)
+    if (entry.name.endsWith('.lock'))
       fail('LOCKED', 'legacy runtime lock requires operator inspection; it was not removed', {
-        path: path.relative(context.root, target),
+        path: path.relative(context.root, path.join(context.directory, directory, entry.name)),
       });
-    if (entry.isDirectory()) await rejectLegacyLocks(context, target);
+}
+function listen(server, port) {
+  return new Promise((resolve, reject) => {
+    const failed = (error) => {
+      server.removeListener('listening', listening);
+      reject(error);
+    };
+    const listening = () => {
+      server.removeListener('error', failed);
+      resolve();
+    };
+    server.once('error', failed);
+    server.once('listening', listening);
+    server.listen({ host: '127.0.0.1', port, exclusive: true });
+  });
+}
+// Binds the operation endpoint. An occupied endpoint is retried after a jittered pause until
+// `mutexWaitMs` has elapsed, then refused as LOCKED; the mutex never names a holder.
+async function bindMutex(context, port) {
+  const started = context.monotonic();
+  for (;;) {
+    let server;
+    try {
+      server = context.createServer((socket) => socket.destroy());
+      await listen(server, port);
+      return server;
+    } catch (error) {
+      if (error?.code !== 'EADDRINUSE')
+        fail(
+          'UNSAFE_RUNTIME_STATE',
+          'cannot bind the loopback TCP operation mutex; allow local-listen permission in the sandbox and use a shared host/network namespace',
+        );
+      const remaining = context.mutexWaitMs - (context.monotonic() - started);
+      if (remaining <= 0)
+        fail(
+          'LOCKED',
+          'operation endpoint stayed occupied; retry after the active operation or local listener exits',
+          {},
+        );
+      await context.sleep(
+        Math.min(remaining, MUTEX_RETRY_MIN_MS + context.random() * MUTEX_RETRY_JITTER_MS),
+      );
+    }
   }
 }
-async function holderDetails(context) {
-  try {
-    const lock = await readJson(context, lockPath(context));
-    match(lock?.passId, PASS_ID);
-    timestamp(lock.acquiredAt);
-    positive(lock.pid);
-    if (!text(lock.hostname).trim()) invalid('invalid holder hostname');
-    const ageMs = Math.max(0, Date.parse(context.now()) - Date.parse(lock.acquiredAt));
-    return { passId: lock.passId, ageMs, stale: ageMs > 7200000 };
-  } catch {
-    // An occupied port identifies no holder. Only a valid durable pass record does.
-    return {};
-  }
-}
-// Kernel ownership spans the complete read/check/write/cleanup operation. All state-sharing
+// Kernel ownership spans one short local read/check/write/cleanup step. All state-sharing
 // callers must use the same host/network namespace. Hash collisions deny access, never grant it.
 // The physical common Git directory is immutable across cwd, worktree and origin URL changes.
+// Only local Git reads of the runtime guard run inside; network and forge calls never do.
 async function withMutationLock(context, action) {
   const port =
     49152 + (createHash('sha256').update(context.identity).digest().readUInt32BE(0) % 16384);
-  let server;
-  try {
-    server = context.createServer((socket) => socket.destroy());
-    await new Promise((resolve, reject) => {
-      const failed = (error) => {
-        server.removeListener('listening', listening);
-        reject(error);
-      };
-      const listening = () => {
-        server.removeListener('error', failed);
-        resolve();
-      };
-      server.once('error', failed);
-      server.once('listening', listening);
-      server.listen({ host: '127.0.0.1', port, exclusive: true });
-    });
-  } catch (error) {
-    if (error.code === 'EADDRINUSE')
-      fail(
-        'LOCKED',
-        'operation endpoint is occupied; retry after the active operation or local listener exits',
-        await holderDetails(context),
-      );
-    fail(
-      'UNSAFE_RUNTIME_STATE',
-      'cannot bind the loopback TCP operation mutex; allow local-listen permission in the sandbox and use a shared host/network namespace',
-    );
-  }
+  const server = await bindMutex(context, port);
+  context.mutexHeld = true;
   try {
     await rejectLegacyLocks(context);
     return await action();
   } finally {
+    context.mutexHeld = false;
     await new Promise((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve())),
     );
   }
 }
-function lockPath(context) {
-  return path.join(context.directory, 'pass.lock');
+
+// ---------------------------------------------------------------------------------------------
+// Pass records
+
+function passPath(context, passId) {
+  return path.join(context.directory, 'passes', `${match(passId, PASS_ID)}.json`);
 }
-async function readLock(context, passId) {
-  let lock;
+// Reads the record of `passId`: PASS_NOT_FOUND when it is absent, UNSAFE_RUNTIME_STATE when it is
+// unreadable, belongs to another pass or (unless `lenient`, as for `pass-close`) carries an invalid
+// acquisition time. A record is never removed except by `pass-close`.
+async function readPass(context, passId, { lenient = false } = {}) {
+  let pass;
   try {
-    lock = await readJson(context, lockPath(context));
-  } catch {
-    fail('LOCKED', 'pass lock is unreadable');
+    pass = await readJson(context, passPath(context, passId));
+  } catch (error) {
+    if (error instanceof IssueBuddyError) throw error;
+    fail('UNSAFE_RUNTIME_STATE', 'pass record is unreadable');
   }
-  if (!lock || lock.passId !== passId) fail('LOCKED', 'pass lock does not hold this passId');
-  return lock;
+  if (pass === undefined) fail('PASS_NOT_FOUND', 'no open pass record for this passId');
+  if (!object(pass) || pass.passId !== passId)
+    fail('UNSAFE_RUNTIME_STATE', 'pass record identity mismatch');
+  if (lenient) return pass;
+  try {
+    timestamp(pass.acquiredAt);
+  } catch {
+    fail('UNSAFE_RUNTIME_STATE', 'pass record has an invalid acquiredAt timestamp', { passId });
+  }
+  if (pass.claims !== undefined) {
+    if (!Array.isArray(pass.claims) || !object(pass.claimTarget))
+      fail('UNSAFE_RUNTIME_STATE', 'pass record has invalid claims');
+    for (const entry of pass.claims)
+      try {
+        exact(entry, ['issue'], ['adoptedRunId']);
+        positive(entry.issue);
+        if (entry.adoptedRunId !== undefined) match(entry.adoptedRunId, AUTOPILOT_RUN_ID_PATTERN);
+      } catch {
+        fail('UNSAFE_RUNTIME_STATE', 'pass record has invalid claims');
+      }
+  }
+  return pass;
 }
-async function acquire(context) {
-  const target = lockPath(context);
-  await mkdir(context, context.directory);
-  await guard(context, target);
-  const lock = {
+async function writePass(context, pass) {
+  await atomic(context, passPath(context, pass.passId), pass);
+}
+// The pass record names the session process exactly as a planning claim does (`sessionOwner` of
+// the claim core: the session that invoked the helper, never the short-lived helper, with its
+// start time `pidStartTime`), so both liveness probes agree and a live pass is never `dead`.
+async function openPass(context) {
+  await mkdir(context, path.join(context.directory, 'passes'));
+  const owner = await sessionOwner({ runner: context.runner }, context.claimDeps);
+  const pass = {
     passId: randomUUID(),
     acquiredAt: context.now(),
-    pid: process.pid,
-    hostname: hostname(),
+    pid: owner.pid,
+    pidStartTime: owner.pidStartTime,
+    hostname: localHost(context.claimDeps),
   };
   try {
-    await atomic(context, target, lock, { createOnly: true });
+    // Create-only publication exposes fully written holder metadata and never replaces a record.
+    await atomic(context, passPath(context, pass.passId), pass, { createOnly: true });
   } catch (error) {
-    if (error.code !== 'EEXIST') throw error;
-    let existing;
+    if (error.code === 'EEXIST')
+      fail('UNSAFE_RUNTIME_STATE', 'a pass record with the new passId already exists');
+    throw error;
+  }
+  return { passId: pass.passId };
+}
+// Releases every claim the pass still owns (an adopted claim only loses its trusted text) and
+// deletes the record. A claim that is gone or now held by another run is left untouched.
+async function closePass(context, passId) {
+  const pass = await readPass(context, passId, { lenient: true });
+  const released = await releasePassClaims(context, pass);
+  const target = passPath(context, passId);
+  await guard(context, target);
+  await context.fs.unlink(target);
+  return { passId, closed: true, releasedClaims: released };
+}
+// Ends a pass's hold on its issues: releases the claims it still owns (an adopted claim only loses
+// its trusted text) and removes its adoption markers. Returns the released issues, ascending.
+async function releasePassClaims(context, pass) {
+  const released = [];
+  if (Array.isArray(pass.claims) && object(pass.claimTarget))
+    for (const entry of pass.claims)
+      if (await releaseIssueClaim(context, pass, entry)) released.push(entry.issue);
+  await removeAdoptions(context, pass.passId);
+  return released.sort((a, b) => a - b);
+}
+// The liveness of a pass record's session process (`claimLiveness` of the claim core): `alive`,
+// `dead` or `unknown`; a record without a usable pid or from another host is `unknown`. A record
+// without a usable `pidStartTime` (an older record, or none could be read) is probed by pid alone.
+function passLiveness(context, pass) {
+  const pid = Number.isSafeInteger(pass.pid) && pass.pid > 1 ? pass.pid : null;
+  const pidStartTime =
+    pid !== null && Number.isSafeInteger(pass.pidStartTime) && pass.pidStartTime >= 0
+      ? pass.pidStartTime
+      : null;
+  const host = typeof pass.hostname === 'string' ? pass.hostname : '';
+  return claimLiveness(
+    { pid, pidStartTime, hostname: host },
+    localHost(context.claimDeps),
+    context.claimDeps,
+  );
+}
+// `pass-prune`: the confirmed cleanup path for the record of a pass that no longer runs, never for
+// the owning run (which uses `pass-close`). Under the mutex it re-reads the record and requires its
+// identity (`passId`, the `acquiredAt` the caller observed) and either a re-verified orphan proof
+// (`process-dead`: the recorded session process, identified by pid and start time, is provably
+// gone on this host) or `confirmStale: true` for a record older than STALE_AFTER_MS. Only then it
+// releases the pass's own claims (an adopted claim is never released), removes its adoption
+// markers and deletes the record, while it is still byte-identical to the one checked.
+async function prunePass(context, input) {
+  const target = passPath(context, input.passId);
+  const result = (value, extra = {}) => ({ passId: input.passId, result: value, ...extra });
+  await guard(context, target);
+  let bytes;
+  try {
+    bytes = await context.fs.readFile(target);
+  } catch (error) {
+    if (error.code === 'ENOENT') return result('missing');
+    return result('invalid', { reason: 'unreadable' });
+  }
+  let pass;
+  try {
+    pass = await readPass(context, input.passId);
+  } catch (error) {
+    if (error.code === 'PASS_NOT_FOUND') return result('missing');
+    if (!(error instanceof IssueBuddyError)) throw error;
+    return result('invalid', { reason: 'record' });
+  }
+  if (pass.acquiredAt !== input.acquiredAt) return result('changed');
+  if (input.confirmStale === true) {
+    if (Date.parse(context.now()) - Date.parse(pass.acquiredAt) <= STALE_AFTER_MS)
+      return result('not-stale');
+  } else {
+    const liveness = passLiveness(context, pass);
+    if (liveness !== 'dead') return result('proof-refused', { reason: `process-${liveness}` });
+  }
+  const released = await releasePassClaims(context, pass);
+  await guard(context, target);
+  let again;
+  try {
+    again = await context.fs.readFile(target);
+  } catch {
+    return result('changed', { releasedClaims: released });
+  }
+  if (!again.equals(bytes)) return result('changed', { releasedClaims: released });
+  await context.fs.unlink(target);
+  return result('removed', {
+    ...(input.proof === undefined ? { confirmStale: true } : { proof: input.proof }),
+    releasedClaims: released,
+  });
+}
+// Lists the regular files of one runtime directory below the guarded Issue Buddy directory,
+// sorted; a missing directory is empty. Names only: nothing is followed or read.
+async function listFiles(context, directory) {
+  await guard(context, directory, { directory: true });
+  try {
+    return (await context.fs.readdir(directory, { withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    if (error.code === 'ENOENT') return [];
+    throw error;
+  }
+}
+// Every pass record: `{valid: [{pass}], invalid: [passId]}`. A file that is no `<passId>.json`
+// (a write temporary) is no record.
+async function passRecords(context) {
+  const valid = [];
+  const invalidIds = [];
+  for (const name of await listFiles(context, path.join(context.directory, 'passes'))) {
+    const passId = name.endsWith('.json') ? name.slice(0, -5) : '';
+    if (!PASS_ID.test(passId)) continue;
     try {
-      existing = await readJson(context, target);
-    } catch {
-      fail('LOCKED', 'pass lock is unreadable');
+      valid.push(await readPass(context, passId));
+    } catch (error) {
+      if (!(error instanceof IssueBuddyError)) throw error;
+      // A record closed since the listing is simply gone; any other refusal makes it invalid.
+      if (error.code !== 'PASS_NOT_FOUND') invalidIds.push(passId);
     }
+  }
+  return { valid, invalid: invalidIds };
+}
+// The trusted-text files `trusted/issue-<N>.json`: their issue numbers, ascending.
+async function trustedIssues(context) {
+  const issues = [];
+  for (const name of await listFiles(context, path.join(context.directory, 'trusted'))) {
+    const found = /^issue-([1-9][0-9]{0,15})\.json$/.exec(name);
+    if (found && Number.isSafeInteger(Number(found[1]))) issues.push(Number(found[1]));
+  }
+  return issues.sort((a, b) => a - b);
+}
+// The issues any pass record still lists in its claims; null when a record is unreadable, so no
+// trusted text can be proven unclaimed.
+function listedIssues(records) {
+  if (records.invalid.length) return null;
+  return new Set(records.valid.flatMap((pass) => (pass.claims ?? []).map((entry) => entry.issue)));
+}
+// `pass-list` (read-only): the inventory a cleanup step works from. `passes` holds each pass record
+// with its age, stale flag (older than STALE_AFTER_MS), session pid, host, liveness, claims and
+// collection status, or `{passId, state: 'invalid'}`; `unclaimedTrusted` the trusted-text files of
+// issues no pass record lists (null while a pass record is unreadable). Never a claim token.
+async function listPasses(context) {
+  const now = Date.parse(context.now());
+  const records = await passRecords(context);
+  const passes = [
+    ...records.valid.map((pass) => {
+      const ageMs = Math.max(0, now - Date.parse(pass.acquiredAt));
+      return {
+        passId: pass.passId,
+        state: 'valid',
+        acquiredAt: pass.acquiredAt,
+        ageMs,
+        stale: ageMs > STALE_AFTER_MS,
+        pid: Number.isSafeInteger(pass.pid) ? pass.pid : null,
+        hostname: typeof pass.hostname === 'string' ? pass.hostname : null,
+        liveness: passLiveness(context, pass),
+        claims: (pass.claims ?? []).map((entry) => ({ ...entry })),
+        collection: pass.collection?.status ?? null,
+      };
+    }),
+    ...records.invalid.map((passId) => ({ passId, state: 'invalid' })),
+  ].sort((a, b) => (a.passId < b.passId ? -1 : a.passId > b.passId ? 1 : 0));
+  const listed = listedIssues(records);
+  const unclaimed =
+    listed === null
+      ? null
+      : (await trustedIssues(context))
+          .filter((issue) => !listed.has(issue))
+          .map((issue) => ({
+            issue,
+            path: path.relative(context.root, trustedPath(context, issue)),
+          }));
+  return {
+    staleAfterHours: STALE_AFTER_MS / 3_600_000,
+    passes: passes.slice(0, MAX_INVENTORY_ENTRIES),
+    unclaimedTrusted: unclaimed === null ? null : unclaimed.slice(0, MAX_INVENTORY_ENTRIES),
+    truncated:
+      passes.length > MAX_INVENTORY_ENTRIES ||
+      (unclaimed !== null && unclaimed.length > MAX_INVENTORY_ENTRIES),
+  };
+}
+// `trusted-prune`: removes the trusted text of each given issue only while, re-verified under the
+// mutex, no pass record lists the issue in its claims. Per issue `removed`, `missing`, `claimed`,
+// `not-regular` or, while a pass record is unreadable, `unverifiable`.
+async function pruneTrusted(context, input) {
+  const listed = listedIssues(await passRecords(context));
+  const items = [];
+  for (const issue of input.issues) {
+    if (listed === null) {
+      items.push({ issue, result: 'unverifiable' });
+      continue;
+    }
+    if (listed.has(issue)) {
+      items.push({ issue, result: 'claimed' });
+      continue;
+    }
+    const target = trustedPath(context, issue);
+    await guard(context, target);
+    let info;
     try {
-      timestamp(existing?.acquiredAt);
-    } catch {
-      fail('LOCKED', 'pass lock has an invalid acquiredAt timestamp', { passId: existing?.passId });
+      info = await context.fs.lstat(target);
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error;
+      items.push({ issue, result: 'missing' });
+      continue;
     }
-    try {
-      match(existing.passId, PASS_ID);
-      positive(existing.pid);
-      if (!text(existing.hostname).trim()) invalid('invalid holder hostname');
-    } catch {
-      fail('LOCKED', 'pass lock has invalid holder metadata');
+    if (!info.isFile()) {
+      items.push({ issue, result: 'not-regular' });
+      continue;
     }
-    const ageMs = Math.max(0, Date.parse(context.now()) - Date.parse(existing.acquiredAt));
-    fail('LOCKED', 'pass lock is held', {
-      passId: existing.passId,
-      ageMs,
-      stale: Number.isFinite(ageMs) && ageMs > 7200000,
+    await context.fs.unlink(target);
+    items.push({ issue, result: 'removed' });
+  }
+  return { items };
+}
+
+// ---------------------------------------------------------------------------------------------
+// Planning claims
+
+// The planning-claim target of a repository key `<host>/<owner>/<name>`; autopilot derives the
+// same target from its ledger source, so both derive one claim key for one issue.
+function claimTargetOf(repositoryKey) {
+  const [host, owner, repository] = repositoryKey.split('/');
+  return { kind: 'forge', host, owner, repository };
+}
+async function claimCall(action) {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof IssueBuddyError) throw error;
+    fail('UNSAFE_RUNTIME_STATE', 'planning claim operation failed', {
+      claimCode: typeof error?.code === 'string' ? error.code : 'UNKNOWN',
     });
   }
-  return { passId: lock.passId };
+}
+// The holder a refusal names, never its token.
+function claimHolder(details) {
+  if (details.state !== 'valid') return { state: 'invalid', reason: details.reason };
+  const holder = { workflow: details.workflow };
+  for (const key of ['runId', 'passId']) if (details[key] !== undefined) holder[key] = details[key];
+  return {
+    ...holder,
+    acquiredAt: details.acquiredAt,
+    ageMs: details.ageMs,
+    stale: details.stale,
+    liveness: details.liveness,
+  };
+}
+function holderOf(context, claim) {
+  const ageMs = Math.max(0, Date.parse(context.now()) - Date.parse(claim.acquiredAt));
+  return claimHolder({
+    state: 'valid',
+    workflow: claim.workflow,
+    runId: claim.runId,
+    passId: claim.passId,
+    acquiredAt: claim.acquiredAt,
+    ageMs,
+    stale: ageMs > STALE_AFTER_MS,
+    liveness: claimLiveness(claim, localHost(context.claimDeps), context.claimDeps),
+  });
+}
+function readIssueClaim(context, target, issue) {
+  return claimCall(() =>
+    readPlanningClaim({ cwd: context.root, target, issue }, context.claimDeps),
+  );
+}
+// `{acquired: true}` or `{holder}` for a claim another run holds.
+async function acquireIssueClaim(context, target, issue, passId) {
+  const result = await claimCall(() =>
+    planningClaimAcquire(
+      { cwd: context.root, target, issue, workflow: 'issue-buddy', passId },
+      context.claimDeps,
+    ),
+  );
+  if (result instanceof StateOutcome) {
+    if (result.code === 'LEGACY_PASS_LOCK')
+      fail(
+        'LEGACY_PASS_LOCK',
+        'a legacy Issue Buddy pass lock requires operator inspection; it was not removed',
+        { path: result.details.path },
+      );
+    return { holder: claimHolder(result.details) };
+  }
+  return { acquired: true };
+}
+function ownsClaim(read, pass, entry) {
+  if (read.state !== 'valid') return false;
+  return entry.adoptedRunId !== undefined
+    ? read.claim.workflow === 'autopilot' && read.claim.runId === entry.adoptedRunId
+    : read.claim.workflow === 'issue-buddy' && read.claim.passId === pass.passId;
+}
+// The live claim check of every authority-bearing write for one issue.
+async function requireClaim(context, pass, issue) {
+  const entry = (pass.claims ?? []).find((item) => item.issue === issue);
+  if (!entry || !ownsClaim(await readIssueClaim(context, pass.claimTarget, issue), pass, entry))
+    fail('ISSUE_NOT_CLAIMED', 'this pass holds no planning claim for the issue', { issue });
+}
+function trustedPath(context, issue) {
+  return path.join(context.directory, 'trusted', `issue-${positive(issue)}.json`);
+}
+async function removeTrusted(context, issue) {
+  const target = trustedPath(context, issue);
+  await guard(context, target);
+  let info;
+  try {
+    info = await context.fs.lstat(target);
+  } catch (error) {
+    if (error.code === 'ENOENT') return;
+    throw error;
+  }
+  if (!info.isFile()) fail('UNSAFE_RUNTIME_STATE', 'trusted text is not a regular file');
+  await context.fs.unlink(target);
+}
+// While the pass still owns the claim: removes the issue's trusted text, then releases the claim
+// by the token read back from the claim record. An adopted claim is never released. Returns
+// whether a claim was released.
+async function releaseIssueClaim(context, pass, entry) {
+  const read = await readIssueClaim(context, pass.claimTarget, entry.issue);
+  if (!ownsClaim(read, pass, entry)) return false;
+  await removeTrusted(context, entry.issue);
+  if (entry.adoptedRunId !== undefined) return false;
+  const result = await claimCall(() =>
+    planningClaimRelease(
+      {
+        cwd: context.root,
+        target: pass.claimTarget,
+        issue: entry.issue,
+        claimId: read.claim.claimId,
+      },
+      context.claimDeps,
+    ),
+  );
+  return !(result instanceof StateOutcome) && result.released === true;
+}
+// A final verdict ends the pass's interest in the issue. A failed release leaves the claim to
+// `pass-close`, so the durable verdict is never reported as failed.
+async function settleClaim(context, pass, issue) {
+  const entry = (pass.claims ?? []).find((item) => item.issue === issue);
+  if (!entry) return;
+  try {
+    await releaseIssueClaim(context, pass, entry);
+  } catch (error) {
+    if (!(error instanceof IssueBuddyError)) throw error;
+  }
+}
+// The adoption marker of an autopilot run: `adoptions/<runId>.json`, `{runId, issue, passId,
+// adoptedAt}`, naming the one pass that adopted the run's claim.
+function adoptionPath(context, runId) {
+  return path.join(
+    context.directory,
+    'adoptions',
+    `${match(runId, AUTOPILOT_RUN_ID_PATTERN)}.json`,
+  );
+}
+async function passRecordPresent(context, passId) {
+  const target = passPath(context, passId);
+  await guard(context, target);
+  try {
+    await context.fs.lstat(target);
+    return true;
+  } catch (error) {
+    if (error.code === 'ENOENT') return false;
+    throw error;
+  }
+}
+// Removes every adoption marker that names `passId` (one per open autopilot run at most).
+async function removeAdoptions(context, passId) {
+  const directory = path.join(context.directory, 'adoptions');
+  for (const name of await listFiles(context, directory)) {
+    const runId = name.endsWith('.json') ? name.slice(0, -5) : '';
+    if (!AUTOPILOT_RUN_ID_PATTERN.test(runId)) continue;
+    const target = adoptionPath(context, runId);
+    let marker;
+    try {
+      marker = await readJson(context, target);
+    } catch (error) {
+      if (error instanceof IssueBuddyError) throw error;
+      continue;
+    }
+    if (object(marker) && marker.passId === passId) await context.fs.unlink(target);
+  }
+}
+// Adopts the claim of an issue-sourced autopilot run: the claim must be that run's, its ledger must
+// be open with this issue of this repository as its source (as `consent-check`), and no other
+// pass may hold the adoption. Adoption is exclusive per run: the adopting pass is recorded in the
+// run's adoption marker, and a second pass is refused `already-adopted` while the earlier
+// adopter's pass record exists. A marker whose pass record is gone is taken over.
+async function adoptClaim(context, target, repositoryKey, issue, runId, passId) {
+  const refuse = (reason, extra = {}) =>
+    fail('CLAIM_ADOPTION_REFUSED', 'the autopilot run claim cannot be adopted', {
+      issue,
+      runId,
+      reason,
+      ...extra,
+    });
+  const read = await readIssueClaim(context, target, issue);
+  if (read.state === 'missing') refuse('claim-missing');
+  if (read.state !== 'valid') refuse('claim-invalid');
+  if (read.claim.workflow !== 'autopilot' || read.claim.runId !== runId)
+    fail('ISSUE_CLAIMED', `issue #${issue} is already claimed for planning`, {
+      issue,
+      repository: repositoryKey,
+      holder: holderOf(context, read.claim),
+    });
+  let ledger;
+  try {
+    ledger = await readJson(
+      context,
+      path.join(context.root, '.effective-flow', 'autopilot', runId, 'run.json'),
+    );
+  } catch (error) {
+    if (error instanceof IssueBuddyError) throw error;
+    refuse('ledger-invalid');
+  }
+  if (ledger === undefined) refuse('no-ledger');
+  if (!object(ledger) || ledger.runId !== runId) refuse('ledger-invalid');
+  if (ledger.status !== 'open') refuse('run-closed');
+  if (
+    ledger.source?.kind !== 'issue' ||
+    ledger.source.issue !== issue ||
+    ledger.source.repository !== repositoryKey
+  )
+    refuse('wrong-source');
+  const marker = adoptionPath(context, runId);
+  let existing;
+  try {
+    existing = await readJson(context, marker);
+  } catch (error) {
+    if (error instanceof IssueBuddyError) throw error;
+    refuse('adoption-invalid');
+  }
+  if (existing !== undefined) {
+    if (!object(existing) || existing.runId !== runId || !PASS_ID.test(existing.passId ?? ''))
+      refuse('adoption-invalid');
+    if (existing.passId === passId) return;
+    if (await passRecordPresent(context, existing.passId))
+      refuse('already-adopted', { adopterPassId: existing.passId });
+  }
+  await atomic(
+    context,
+    marker,
+    { runId, issue, passId, adoptedAt: context.now() },
+    { createOnly: existing === undefined },
+  );
 }
 function emptyCache(repository) {
   return { schemaVersion: 1, repository, records: {}, attempts: {}, closedPlanPrObservations: {} };
@@ -718,9 +1317,47 @@ async function loadCache(context, repository) {
     return { value: emptyCache(repository), degradation: { code: 'CACHE_CORRUPT' } };
   }
 }
-async function saveCache(context, cache, degradation) {
-  if (degradation) fail(degradation.code, 'degraded cache is preserved');
-  await atomic(context, path.join(context.directory, 'verdicts.json'), cache);
+function emptyPatch() {
+  return { records: {}, attempts: {}, observations: {} };
+}
+function patchEmpty(patch) {
+  return (
+    !Object.keys(patch.records).length &&
+    !Object.keys(patch.attempts).length &&
+    !Object.keys(patch.observations).length
+  );
+}
+// The one cache writer. Under the mutex it re-reads `verdicts.json` and applies `patch`: verdict
+// records and attempt identities only of `claimed` issues, closed-PR observations of any issue
+// (an observation only ever adds a first-seen baseline). Everything else in the file is kept.
+async function commitCache(context, repository, patch, claimed) {
+  if (patchEmpty(patch)) return;
+  for (const issue of [
+    ...Object.keys(patch.records).map(Number),
+    ...Object.values(patch.attempts).map((identity) => identity.issue),
+  ])
+    if (!claimed.has(issue))
+      fail('UNSAFE_RUNTIME_STATE', 'cache write for an issue this pass holds no claim for');
+  const cache = await loadCache(context, repository);
+  if (cache.degradation) fail(cache.degradation.code, 'degraded cache is preserved');
+  Object.assign(cache.value.records, patch.records);
+  Object.assign(cache.value.attempts, patch.attempts);
+  for (const [issue, observations] of Object.entries(patch.observations)) {
+    const current = cache.value.closedPlanPrObservations[issue] ?? {};
+    for (const [number, fp] of Object.entries(observations)) current[number] ??= fp;
+    cache.value.closedPlanPrObservations[issue] = current;
+  }
+  validateCache(cache.value);
+  await atomic(context, path.join(context.directory, 'verdicts.json'), cache.value);
+}
+// The pending-verdict journal binds the state of one issue's record and attempt, so writes of
+// other passes for other issues never invalidate it.
+function issueDigest(cache, issue, stableAttemptId) {
+  return hash({
+    issue,
+    record: cache.records[issue] ?? null,
+    attempt: stableAttemptId === undefined ? null : (cache.attempts[stableAttemptId] ?? null),
+  });
 }
 function transition(
   cache,
@@ -746,6 +1383,7 @@ function transition(
   };
 }
 async function remote(context, operation, input = {}, repository) {
+  assertUnlocked(context);
   // Resolve the explicit origin through the tracker without its optional Forgejo-login probe.
   // An unknown/non-GitHub provider is refused before any provider executable is consulted.
   const resolvedInput =
@@ -857,6 +1495,41 @@ async function scanBase(context, oid, planDir) {
   }
   return issues;
 }
+// Network reads; never called while the mutation mutex is held.
+async function planBranches(context, input) {
+  const listing = await git(
+    context,
+    [
+      'ls-remote',
+      '--heads',
+      'origin',
+      `refs/heads/${planBranchName({ branchPrefix: input.branchPrefix, issue: 1 }).replace(/1$/, '')}*`,
+    ],
+    'FETCH_FAILED',
+  );
+  const branches = new Set();
+  for (const line of listing.split('\n').filter(Boolean)) {
+    const found = line.match(/^[a-f0-9]{40,64}\s+refs\/heads\/(.+)$/);
+    const parsed = found && parsePlanBranch(found[1]);
+    if (parsed && parsed.branchPrefix === input.branchPrefix) branches.add(found[1]);
+  }
+  return branches;
+}
+async function openPulls(context, repository) {
+  const pulls = array(await remote(context, 'pr-list', { state: 'open' }, repository));
+  for (const pr of pulls) {
+    try {
+      positive(pr.number);
+      text(pr.title);
+      text(pr.body);
+      safeRef(pr.head);
+      enumeration(pr.state, ['open']);
+    } catch {
+      fail('FORGE_READ_FAILED', 'incomplete pull request listing');
+    }
+  }
+  return pulls;
+}
 async function currentReads(context, input, repository) {
   const branch = baseBranch(input.baseBranch);
   await git(
@@ -881,35 +1554,9 @@ async function currentReads(context, input, repository) {
   if (!/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(oid))
     fail('FETCH_FAILED', 'missing fetched base commit');
   const plans = await scanBase(context, oid, input.planDir);
-  const listing = await git(
-    context,
-    [
-      'ls-remote',
-      '--heads',
-      'origin',
-      `refs/heads/${planBranchName({ branchPrefix: input.branchPrefix, issue: 1 }).replace(/1$/, '')}*`,
-    ],
-    'FETCH_FAILED',
-  );
-  const branches = new Set();
-  for (const line of listing.split('\n').filter(Boolean)) {
-    const found = line.match(/^[a-f0-9]{40,64}\s+refs\/heads\/(.+)$/);
-    const parsed = found && parsePlanBranch(found[1]);
-    if (parsed && parsed.branchPrefix === input.branchPrefix) branches.add(found[1]);
-  }
+  const branches = await planBranches(context, input);
   const issues = array(await remote(context, 'issue-list', { state: 'open' }, repository));
-  const pulls = array(await remote(context, 'pr-list', { state: 'open' }, repository));
-  for (const pr of pulls) {
-    try {
-      positive(pr.number);
-      text(pr.title);
-      text(pr.body);
-      safeRef(pr.head);
-      enumeration(pr.state, ['open']);
-    } catch {
-      fail('FORGE_READ_FAILED', 'incomplete pull request listing');
-    }
-  }
+  const pulls = await openPulls(context, repository);
   const permissions = new Map();
   async function trusted(author) {
     const name = login(author?.login);
@@ -1055,26 +1702,8 @@ async function currentReads(context, input, repository) {
   }
   return { oid, candidates, closedIssuePulls };
 }
-async function clearTrusted(context) {
-  const directory = path.join(context.directory, 'trusted');
-  await guard(context, path.join(directory, '.guard'));
-  let entries;
-  try {
-    entries = await context.fs.readdir(directory, { withFileTypes: true });
-  } catch (error) {
-    if (error.code === 'ENOENT') return;
-    throw error;
-  }
-  for (const entry of entries) {
-    if (!/^issue-[1-9]\d*\.json$/.test(entry.name)) continue;
-    const target = path.join(directory, entry.name);
-    await guard(context, target);
-    if (!entry.isFile()) fail('UNSAFE_RUNTIME_STATE', 'trusted text is not a regular file');
-    await context.fs.unlink(target);
-  }
-}
-async function collect(context, input, lock) {
-  const request = {
+function collectRequest(input) {
+  return {
     mode: input.mode,
     baseBranch: input.baseBranch,
     planDir: input.planDir,
@@ -1085,202 +1714,450 @@ async function collect(context, input, lock) {
     repositoryVisibility: repositoryVisibility(input.repositoryVisibility),
     leftoverPlanFiles: leftoverPlanFiles(input.leftoverPlanFiles, input.planDir),
     ...(input.issue !== undefined ? { issue: input.issue } : {}),
+    ...(input.autopilotRunId !== undefined ? { autopilotRunId: input.autopilotRunId } : {}),
   };
-  const requestDigest = hash(request);
-  if (lock.collection) {
-    if (lock.collection.requestDigest !== requestDigest) invalid('conflicting collection replay');
-    if (lock.collection.status === 'collecting') {
-      lock.collection.status = 'failed';
-      lock.collection.failure = { code: 'UNSAFE_RUNTIME_STATE' };
-      await atomic(context, lockPath(context), lock);
+}
+// Step 0 (locked): replay a finished collection, or persist the intent of a new attempt before
+// any read or accounting. A killed or failed attempt can never replay into current authority.
+async function beginCollection(context, input, state) {
+  const pass = await readPass(context, input.passId);
+  await reconcileVerdict(context, pass, 'pass-collect', input);
+  if (pass.collection) {
+    if (pass.collection.requestDigest !== state.requestDigest)
+      invalid('conflicting collection replay');
+    if (pass.collection.status === 'collecting') {
+      // An attempt still in flight loses its authority; its later steps fail closed.
+      const { attempt: _attempt, ...collection } = pass.collection;
+      pass.collection = {
+        ...collection,
+        status: 'failed',
+        failure: { code: 'UNSAFE_RUNTIME_STATE' },
+      };
+      await writePass(context, pass);
     }
-    if (lock.collection.status === 'failed')
-      fail(lock.collection.failure.code, 'previous collection failed');
-    return lock.collection.result;
+    if (pass.collection.status === 'failed')
+      fail(pass.collection.failure.code, 'previous collection failed');
+    return { replay: pass.collection.result };
   }
-  // Persist an intent before reads/accounting. A killed or failed final handoff can never
-  // replay into current authority merely because its final pass-record replacement failed.
-  lock.collection = {
+  pass.collection = {
     status: 'collecting',
-    requestDigest,
-    planDir: request.planDir,
-    repositoryVisibility: request.repositoryVisibility,
-    leftoverPlanFiles: request.leftoverPlanFiles,
+    attempt: state.attempt,
+    requestDigest: state.requestDigest,
+    planDir: state.request.planDir,
+    repositoryVisibility: state.request.repositoryVisibility,
+    leftoverPlanFiles: state.request.leftoverPlanFiles,
     mode: input.mode,
-    limits: request.limits,
+    limits: state.request.limits,
     repository: null,
   };
-  await atomic(context, lockPath(context), lock);
-  let repository;
-  try {
-    repository = await remote(context, 'repository-resolve');
-    if (repository.provider !== 'github')
-      fail('UNSUPPORTED_PROVIDER', 'Issue Buddy supports GitHub only');
-    const repositoryKey = ledgerRepository(repository);
-    const cache = await loadCache(context, repositoryKey);
-    const before = JSON.stringify(cache.value);
-    const excluded = new Set(request.leftoverPlanFiles.map((entry) => entry.issue));
-    const reads = await currentReads(context, input, repository);
-    // Independent closed-PR observations survive every later verdict and input reset.
-    for (const candidate of reads.candidates) {
-      if (candidate.skip) continue;
-      const observations = cache.value.closedPlanPrObservations[candidate.issue] ?? {};
-      for (const pr of candidate.history.filter((pr) => pr.state === 'closed' && !pr.mergedAt)) {
-        const key = String(positive(pr.number));
-        if (!observations[key]) observations[key] = candidate.fingerprint;
-        if (observations[key] === candidate.fingerprint) candidate.skip = 'closed-without-merge';
+  await writePass(context, pass);
+  return {};
+}
+async function readCollecting(context, input, state) {
+  const pass = await readPass(context, input.passId);
+  if (pass.collection?.status !== 'collecting' || pass.collection.attempt !== state.attempt)
+    fail('UNSAFE_RUNTIME_STATE', 'the collection attempt was superseded; release this pass');
+  return pass;
+}
+// Validates historical attempt evidence against the cache and itself before any accounting.
+function validateStaleAttempts(input, cache) {
+  if (input.mode !== 'publish') return;
+  const seen = new Map();
+  for (const attempt of input.staleAttempts ?? []) {
+    const identity = attemptIdentity(
+      attempt.stableAttemptId,
+      attempt.issue,
+      attempt.originalFingerprint,
+    );
+    if (identity.passId === input.passId)
+      invalid('historical attempt must come from an earlier pass');
+    const known = cache.attempts[attempt.stableAttemptId] ?? seen.get(attempt.stableAttemptId);
+    if (known && !same(known, identity)) invalid('attempt identity reused with different evidence');
+    seen.set(attempt.stableAttemptId, identity);
+  }
+}
+// Historical accounting of one claimed candidate, after every current read succeeded and before
+// its eligibility is decided. Only a claim holder ever writes an issue's failed record.
+function applyStaleAttempts(context, input, candidate, cache, patch, excluded) {
+  if (input.mode !== 'publish') return;
+  for (const attempt of input.staleAttempts ?? []) {
+    if (attempt.issue !== candidate.issue) continue;
+    const identity = attemptIdentity(
+      attempt.stableAttemptId,
+      attempt.issue,
+      attempt.originalFingerprint,
+    );
+    if (cache.attempts[attempt.stableAttemptId]) continue;
+    if (
+      excluded.has(candidate.issue) ||
+      candidate.skip ||
+      candidate.fingerprint !== attempt.originalFingerprint ||
+      cacheSkip(cache, candidate.issue, candidate.fingerprint, input.mode)
+    )
+      continue;
+    const failed = transition(
+      cache,
+      {
+        issue: attempt.issue,
+        fingerprint: attempt.originalFingerprint,
+        verdict: 'failed',
+        mode: 'publish',
+        reason: 'Stale worktree attempt',
+        passId: identity.passId,
+      },
+      context.now(),
+    );
+    cache.records[attempt.issue] = failed;
+    cache.attempts[attempt.stableAttemptId] = identity;
+    patch.records[attempt.issue] = failed;
+    patch.attempts[attempt.stableAttemptId] = identity;
+  }
+}
+// Step 2 (locked): claim the selected and recovery candidates, re-read the cache, apply cache
+// skips and accounting, and persist the claims. A batch pass replaces a candidate another run
+// holds (`issue-in-progress`) by the next eligible one; a single-issue pass stops ISSUE_CLAIMED.
+async function claimCandidates(context, input, state, reads) {
+  const pass = await readCollecting(context, input, state);
+  const { request, repository, repositoryKey } = state;
+  const target = claimTargetOf(repositoryKey);
+  const self = { passId: input.passId, claimTarget: target };
+  const cache = await loadCache(context, repositoryKey);
+  const patch = emptyPatch();
+  const excluded = new Set(request.leftoverPlanFiles.map((entry) => entry.issue));
+  validateStaleAttempts(input, cache.value);
+  // Independent closed-PR observations survive every later verdict and input reset.
+  for (const candidate of reads.candidates) {
+    if (candidate.skip) continue;
+    const observations = cache.value.closedPlanPrObservations[candidate.issue] ?? {};
+    for (const pr of candidate.history.filter((pr) => pr.state === 'closed' && !pr.mergedAt)) {
+      const key = String(positive(pr.number));
+      if (!observations[key]) {
+        observations[key] = candidate.fingerprint;
+        (patch.observations[candidate.issue] ??= {})[key] = candidate.fingerprint;
       }
-      if (Object.keys(observations).length)
-        cache.value.closedPlanPrObservations[candidate.issue] = observations;
+      if (observations[key] === candidate.fingerprint) candidate.skip = 'closed-without-merge';
     }
-    // Historical accounting happens only after every current read succeeds and before slicing.
-    if (input.mode === 'publish')
-      for (const attempt of input.staleAttempts ?? []) {
-        const identity = attemptIdentity(
-          attempt.stableAttemptId,
-          attempt.issue,
-          attempt.originalFingerprint,
-        );
-        if (identity.passId === input.passId)
-          invalid('historical attempt must come from an earlier pass');
-        const known = cache.value.attempts[attempt.stableAttemptId];
-        if (known && !same(known, identity))
-          invalid('attempt identity reused with different evidence');
-        if (known) continue;
-        const candidate = reads.candidates.find((item) => item.issue === attempt.issue);
-        if (
-          !candidate ||
-          excluded.has(candidate.issue) ||
-          candidate.skip ||
-          candidate.fingerprint !== attempt.originalFingerprint ||
-          cacheSkip(cache.value, candidate.issue, candidate.fingerprint, input.mode)
-        )
-          continue;
-        cache.value.records[attempt.issue] = transition(
-          cache.value,
-          {
-            issue: attempt.issue,
-            fingerprint: attempt.originalFingerprint,
-            verdict: 'failed',
-            mode: 'publish',
-            reason: 'Stale worktree attempt',
-            passId: identity.passId,
-          },
-          context.now(),
-        );
-        cache.value.attempts[attempt.stableAttemptId] = identity;
+    if (Object.keys(observations).length)
+      cache.value.closedPlanPrObservations[candidate.issue] = observations;
+  }
+  const claims = state.claims;
+  // Every claim is persisted in the pass record as soon as it is taken, so a pass killed in the
+  // middle of this step still names every claim it holds for `pass-close` and `pass-prune`.
+  let persisted = false;
+  const persistClaims = async () => {
+    persisted = true;
+    pass.claimTarget = target;
+    pass.claims = [...claims.values()].sort((a, b) => a.issue - b.issue);
+    pass.collection.repository = repositoryKey;
+    await writePass(context, pass);
+  };
+  if (input.autopilotRunId !== undefined) {
+    await adoptClaim(
+      context,
+      target,
+      repositoryKey,
+      input.issue,
+      input.autopilotRunId,
+      input.passId,
+    );
+    claims.set(input.issue, { issue: input.issue, adoptedRunId: input.autopilotRunId });
+    await persistClaims();
+  }
+  // Whether this pass holds (or now takes) the issue's claim. `acquire: false` only probes.
+  const contend = async (issue, acquire) => {
+    if (claims.has(issue)) return true;
+    let holder;
+    if (acquire) {
+      const result = await acquireIssueClaim(context, target, issue, input.passId);
+      if (result.acquired) {
+        claims.set(issue, { issue });
+        await persistClaims();
+        return true;
       }
-    const recovery = { orphanBranches: [], unrecordedPullRequests: [] };
-    const authorizedRecovery = [];
-    const skipped = [];
-    const eligible = [];
-    for (const candidate of reads.candidates) {
-      const cachedSkip =
-        candidate.fingerprint &&
-        cacheSkip(cache.value, candidate.issue, candidate.fingerprint, input.mode);
-      if (candidate.orphan) {
-        const entry = { issue: candidate.issue, headRef: candidate.headRef };
-        recovery.orphanBranches.push(entry);
-        if (!excluded.has(candidate.issue) && !cachedSkip && input.mode === 'publish')
-          authorizedRecovery.push({
-            ...entry,
-            fingerprint: candidate.fingerprint,
-            issueAuthor: candidate.issueAuthor,
-            kind: 'orphan-branch',
-          });
-      }
+      holder = result.holder;
+    } else {
+      const read = await readIssueClaim(context, target, issue);
+      if (read.state === 'missing') return true;
+      holder =
+        read.state === 'valid'
+          ? holderOf(context, read.claim)
+          : { state: 'invalid', reason: read.reason };
+    }
+    if (input.issue !== undefined)
+      fail('ISSUE_CLAIMED', `issue #${issue} is already claimed for planning`, {
+        issue,
+        repository: repositoryKey,
+        holder,
+      });
+    return false;
+  };
+  const reasons = new Map();
+  const recovery = { orphanBranches: [], unrecordedPullRequests: [] };
+  const authorizedRecovery = [];
+  const pool = [];
+  for (const candidate of reads.candidates) {
+    const cachedSkip =
+      candidate.fingerprint &&
+      cacheSkip(cache.value, candidate.issue, candidate.fingerprint, input.mode);
+    if (candidate.skip) {
+      const found = [];
+      if (candidate.orphan)
+        found.push({
+          kind: 'orphan-branch',
+          list: recovery.orphanBranches,
+          entry: { issue: candidate.issue, headRef: candidate.headRef },
+        });
       for (const pr of candidate.ownedPulls ?? []) {
         const record = cache.value.records[candidate.issue];
         if (record?.verdict === 'published' && record.pullRequest === pr.number) continue;
-        const entry = prIdentity(pr, candidate.issue, candidate.headRef, repository);
-        recovery.unrecordedPullRequests.push(entry);
-        if (!excluded.has(candidate.issue) && !cachedSkip && input.mode === 'publish')
-          authorizedRecovery.push({
-            ...entry,
-            fingerprint: candidate.fingerprint,
-            issueAuthor: candidate.issueAuthor,
-            kind: 'unrecorded-pull-request',
-          });
+        found.push({
+          kind: 'unrecorded-pull-request',
+          list: recovery.unrecordedPullRequests,
+          entry: prIdentity(pr, candidate.issue, candidate.headRef, repository),
+        });
       }
-      const reason = candidate.skip ?? cachedSkip;
-      if (reason) skipped.push({ issue: candidate.issue, reason });
-      else if (!excluded.has(candidate.issue)) eligible.push(candidate);
+      let reason = candidate.skip;
+      if (found.length) {
+        // Recovery is authorized only under a claim this pass holds, so another live run's
+        // in-flight branch or pull request is never treated as orphaned. A pass of an autopilot
+        // run never recovers: autopilot stops on an issue that already has a pull request or plan
+        // branch (its skip reason) instead of continuing on it.
+        const authorizable =
+          !excluded.has(candidate.issue) &&
+          !cachedSkip &&
+          input.mode === 'publish' &&
+          input.autopilotRunId === undefined;
+        if (await contend(candidate.issue, authorizable))
+          for (const { kind, list, entry } of found) {
+            list.push(entry);
+            if (authorizable)
+              authorizedRecovery.push({
+                ...entry,
+                fingerprint: candidate.fingerprint,
+                issueAuthor: candidate.issueAuthor,
+                kind,
+              });
+          }
+        else reason = 'issue-in-progress';
+      }
+      reasons.set(candidate.issue, reason);
+    } else if (cachedSkip) reasons.set(candidate.issue, cachedSkip);
+    else if (!excluded.has(candidate.issue)) pool.push(candidate);
+  }
+  pool.sort(
+    (a, b) =>
+      Number(b.priority) - Number(a.priority) ||
+      a.updatedAt.localeCompare(b.updatedAt) ||
+      a.issue - b.issue,
+  );
+  const selected = [];
+  const settled = [];
+  let unclaimed = 0;
+  for (const candidate of pool) {
+    if (selected.length >= request.limits.judgments) {
+      unclaimed++;
+      continue;
     }
-    eligible.sort(
-      (a, b) =>
-        Number(b.priority) - Number(a.priority) ||
-        a.updatedAt.localeCompare(b.updatedAt) ||
-        a.issue - b.issue,
-    );
-    const selected = eligible.slice(0, request.limits.judgments);
-    // Atomic accounting is durable even if the subsequent handoff persistence fails.
-    if (JSON.stringify(cache.value) !== before)
-      await saveCache(context, cache.value, cache.degradation);
-    await clearTrusted(context);
-    const slice = [];
-    for (const candidate of selected) {
-      const trustedTextPath = path.join(
-        context.directory,
-        'trusted',
-        `issue-${candidate.issue}.json`,
-      );
-      await atomic(context, trustedTextPath, candidate.text);
-      slice.push({
-        issue: candidate.issue,
-        fingerprint: candidate.fingerprint,
-        issueAuthor: candidate.issueAuthor,
-        headRef: candidate.headRef,
-        trustedTextPath,
-      });
+    if (!(await contend(candidate.issue, true))) {
+      reasons.set(candidate.issue, 'issue-in-progress');
+      continue;
     }
-    const result = {
-      passId: input.passId,
-      mode: input.mode,
-      repositoryVisibility: request.repositoryVisibility,
-      leftoverPlanFiles: request.leftoverPlanFiles,
-      repository: repositoryKey,
-      limits: request.limits,
-      ...(request.issue !== undefined ? { issue: request.issue } : {}),
-      baseOid: reads.oid,
-      eligible: slice,
-      eligibleCount: eligible.length,
-      skipped,
-      recovery,
-      authorizedRecovery,
-      issueClosedPlanPrOpen: reads.closedIssuePulls,
-      cacheDegradation: cache.degradation,
-    };
-    lock.collection = {
-      status: 'collected',
-      requestDigest,
-      planDir: request.planDir,
-      result,
-      outcomes: {},
-    };
-    await atomic(context, lockPath(context), lock);
-    return result;
+    applyStaleAttempts(context, input, candidate, cache.value, patch, excluded);
+    const skip = cacheSkip(cache.value, candidate.issue, candidate.fingerprint, input.mode);
+    if (skip) {
+      reasons.set(candidate.issue, skip);
+      settled.push(candidate.issue);
+    } else selected.push(candidate);
+  }
+  // Without any claim taken, the claim target and repository still enter the record once.
+  if (!persisted) await persistClaims();
+  // Atomic accounting is durable even if the subsequent handoff persistence fails.
+  if (!patchEmpty(patch)) {
+    if (cache.degradation) fail(cache.degradation.code, 'degraded cache is preserved');
+    await commitCache(context, repositoryKey, patch, new Set(claims.keys()));
+  }
+  for (const issue of settled) {
+    await releaseIssueClaim(context, self, claims.get(issue));
+    if (!claims.get(issue).adoptedRunId) claims.delete(issue);
+  }
+  return {
+    selected,
+    reasons,
+    recovery,
+    authorizedRecovery,
+    unclaimed,
+    cacheDegradation: cache.degradation,
+  };
+}
+// Step 3 (unlocked): another run may have published between the read phase and the claim. A
+// claimed candidate whose plan branch or open pull request now exists is dropped, as is a
+// recovery whose orphan gained a pull request or whose unrecorded pull request is gone.
+async function recheckClaimed(context, input, state, claimed) {
+  const dropped = { candidates: new Map(), recoveries: new Set() };
+  if (!claimed.selected.length && !claimed.authorizedRecovery.length) return dropped;
+  const branches = await planBranches(context, input);
+  const pulls = await openPulls(context, state.repository);
+  const referenced = (issue, headRef) =>
+    pulls.some((pr) => prReference(pr, issue, state.repository, headRef));
+  for (const candidate of claimed.selected) {
+    if (branches.has(candidate.headRef))
+      dropped.candidates.set(candidate.issue, 'plan-branch-exists');
+    else if (referenced(candidate.issue, candidate.headRef))
+      dropped.candidates.set(candidate.issue, 'open-pull-request');
+  }
+  for (const entry of claimed.authorizedRecovery) {
+    const current =
+      entry.kind === 'orphan-branch'
+        ? branches.has(entry.headRef) && !referenced(entry.issue, entry.headRef)
+        : pulls.some((pr) => pr.number === entry.number && pr.head === entry.headRef);
+    if (!current) dropped.recoveries.add(entry.issue);
+  }
+  return dropped;
+}
+// Step 4 (locked): release the claims of dropped candidates, replace the trusted text of the
+// claimed issues and persist the collection result as the pass's authority.
+async function finalizeCollection(context, input, state, reads, claimed, dropped) {
+  const pass = await readCollecting(context, input, state);
+  const { request, repositoryKey } = state;
+  const claims = state.claims;
+  const self = { passId: input.passId, claimTarget: claimTargetOf(repositoryKey) };
+  const drop = async (issue) => {
+    const entry = claims.get(issue);
+    if (!entry || entry.adoptedRunId) return;
+    await releaseIssueClaim(context, self, entry);
+    claims.delete(issue);
+  };
+  for (const [issue, reason] of dropped.candidates) {
+    claimed.reasons.set(issue, reason);
+    await drop(issue);
+  }
+  for (const issue of dropped.recoveries) await drop(issue);
+  const authorizedRecovery = claimed.authorizedRecovery.filter(
+    (entry) => !dropped.recoveries.has(entry.issue),
+  );
+  const selected = claimed.selected.filter((candidate) => !dropped.candidates.has(candidate.issue));
+  // Trusted text is replaced only for issues this pass holds a claim for; another pass's
+  // readiness or plan run keeps reading its own file at the fixed path.
+  for (const issue of claims.keys()) await removeTrusted(context, issue);
+  const slice = [];
+  for (const candidate of selected) {
+    const trustedTextPath = trustedPath(context, candidate.issue);
+    await atomic(context, trustedTextPath, candidate.text);
+    slice.push({
+      issue: candidate.issue,
+      fingerprint: candidate.fingerprint,
+      issueAuthor: candidate.issueAuthor,
+      headRef: candidate.headRef,
+      trustedTextPath,
+    });
+  }
+  const skipped = reads.candidates
+    .filter((candidate) => claimed.reasons.has(candidate.issue))
+    .map((candidate) => ({ issue: candidate.issue, reason: claimed.reasons.get(candidate.issue) }));
+  const result = {
+    passId: input.passId,
+    mode: input.mode,
+    repositoryVisibility: request.repositoryVisibility,
+    leftoverPlanFiles: request.leftoverPlanFiles,
+    repository: repositoryKey,
+    limits: request.limits,
+    ...(request.issue !== undefined ? { issue: request.issue } : {}),
+    baseOid: reads.oid,
+    eligible: slice,
+    eligibleCount: slice.length + claimed.unclaimed,
+    skipped,
+    recovery: claimed.recovery,
+    authorizedRecovery,
+    issueClosedPlanPrOpen: reads.closedIssuePulls,
+    cacheDegradation: claimed.cacheDegradation,
+  };
+  pass.claimTarget = self.claimTarget;
+  pass.claims = [...claims.values()].sort((a, b) => a.issue - b.issue);
+  pass.collection = {
+    status: 'collected',
+    requestDigest: state.requestDigest,
+    planDir: request.planDir,
+    result,
+    outcomes: {},
+  };
+  await writePass(context, pass);
+  return result;
+}
+// Records a failed attempt (locked) and releases the claims it took; adopted claims stay. A
+// superseded attempt leaves the record to whoever superseded it.
+async function failCollection(context, input, state, error) {
+  const pass = await readPass(context, input.passId);
+  if (pass.collection?.status !== 'collecting' || pass.collection.attempt !== state.attempt) return;
+  if (state.repositoryKey) {
+    const self = { passId: input.passId, claimTarget: claimTargetOf(state.repositoryKey) };
+    const entries = new Map(state.claims);
+    for (const entry of pass.claims ?? []) entries.set(entry.issue, entry);
+    for (const entry of entries.values())
+      if (!entry.adoptedRunId) await releaseIssueClaim(context, self, entry);
+    pass.claimTarget = self.claimTarget;
+    pass.claims = [...entries.values()]
+      .filter((entry) => entry.adoptedRunId)
+      .sort((a, b) => a.issue - b.issue);
+  }
+  pass.collection = {
+    status: 'failed',
+    requestDigest: state.requestDigest,
+    planDir: state.request.planDir,
+    repositoryVisibility: state.request.repositoryVisibility,
+    leftoverPlanFiles: state.request.leftoverPlanFiles,
+    mode: input.mode,
+    limits: state.request.limits,
+    repository: state.repositoryKey,
+    failure: { code: error instanceof IssueBuddyError ? error.code : 'UNSAFE_RUNTIME_STATE' },
+  };
+  await writePass(context, pass);
+}
+async function collect(context, input) {
+  const request = collectRequest(input);
+  const state = {
+    attempt: randomUUID(),
+    request,
+    requestDigest: hash(request),
+    repository: null,
+    repositoryKey: null,
+    claims: new Map(),
+    recorded: false,
+  };
+  const begun = await withMutationLock(context, () => beginCollection(context, input, state));
+  if (begun.replay) return begun.replay;
+  // A failure inside a locked step is recorded within that same step.
+  const locked = (step) =>
+    withMutationLock(context, async () => {
+      try {
+        return await step();
+      } catch (error) {
+        state.recorded = true;
+        await failCollection(context, input, state, error).catch(() => {});
+        throw error;
+      }
+    });
+  try {
+    // Step 1 (unlocked): fetch, forge and trust reads, selection inputs, recovery candidates.
+    const repository = await remote(context, 'repository-resolve');
+    if (repository.provider !== 'github')
+      fail('UNSUPPORTED_PROVIDER', 'Issue Buddy supports GitHub only');
+    state.repository = repository;
+    state.repositoryKey = ledgerRepository(repository);
+    const reads = await currentReads(context, input, repository);
+    const claimed = await locked(() => claimCandidates(context, input, state, reads));
+    const dropped = await recheckClaimed(context, input, state, claimed);
+    return await locked(() => finalizeCollection(context, input, state, reads, claimed, dropped));
   } catch (error) {
-    const failure = {
-      code: error instanceof IssueBuddyError ? error.code : 'UNSAFE_RUNTIME_STATE',
-    };
-    lock.collection = {
-      status: 'failed',
-      requestDigest,
-      planDir: request.planDir,
-      repositoryVisibility: request.repositoryVisibility,
-      leftoverPlanFiles: request.leftoverPlanFiles,
-      mode: input.mode,
-      limits: request.limits,
-      repository: repository ? ledgerRepository(repository) : null,
-      failure,
-    };
-    await atomic(context, lockPath(context), lock);
+    if (!state.recorded && error?.code !== 'LOCKED')
+      await withMutationLock(context, () => failCollection(context, input, state, error)).catch(
+        () => {},
+      );
     if (error instanceof IssueBuddyError) throw error;
-    fail(failure.code, 'collection persistence failed');
+    fail('UNSAFE_RUNTIME_STATE', 'collection persistence failed');
   }
 }
-function authorizedOutcome(input, lock) {
-  const collection = lock.collection;
+function authorizedOutcome(input, pass) {
+  const collection = pass.collection;
   if (collection?.status !== 'collected' || collection.result.mode !== input.mode)
     invalid('pass has no matching collection authority');
   const result = collection.result;
@@ -1308,24 +2185,24 @@ function authorizedOutcome(input, lock) {
     ...(input.stableAttemptId ? { stableAttemptId: input.stableAttemptId } : {}),
   };
 }
-function outcomeInput(context, lock, outcome) {
+function outcomeInput(context, pass, outcome) {
   exact(outcome, ['issue', 'verdict', 'reason', 'fingerprint'], ['pullRequest', 'stableAttemptId']);
   const input = {
     cwd: context.root,
-    passId: lock.passId,
-    mode: lock.collection.result.mode,
+    passId: pass.passId,
+    mode: pass.collection.result.mode,
     ...outcome,
   };
   validateInput('verdict-record', input);
-  if (!same(authorizedOutcome(input, lock), outcome)) invalid('invalid persisted verdict outcome');
+  if (!same(authorizedOutcome(input, pass), outcome)) invalid('invalid persisted verdict outcome');
   return input;
 }
-function cachedOutcomeMatches(record, outcome, lock) {
+function cachedOutcomeMatches(record, outcome, pass) {
   return (
     record &&
     record.issue === outcome.issue &&
-    record.recordedPassId === lock.passId &&
-    record.mode === lock.collection.result.mode &&
+    record.recordedPassId === pass.passId &&
+    record.mode === pass.collection.result.mode &&
     record.fingerprint === outcome.fingerprint &&
     record.verdict === outcome.verdict &&
     record.reason === outcome.reason &&
@@ -1342,36 +2219,47 @@ function assertPublicationLimit(collection, outcome) {
   )
     invalid('publication limit exceeded');
 }
-function applyIntendedCache(context, cache, lock, pending) {
-  const input = outcomeInput(context, lock, pending.outcome);
+function applyIntendedCache(context, cache, pass, pending) {
+  const input = outcomeInput(context, pass, pending.outcome);
   const expected = transition(cache, input, pending.record.recordedAt);
   if (!same(expected, pending.record)) invalid('pending verdict transition differs from cache');
+  const patch = emptyPatch();
   cache.records[input.issue] = pending.record;
-  if (input.stableAttemptId)
-    cache.attempts[input.stableAttemptId] = attemptIdentity(
+  patch.records[input.issue] = pending.record;
+  if (input.stableAttemptId) {
+    const identity = attemptIdentity(
       input.stableAttemptId,
       input.issue,
       input.fingerprint,
-      lock.passId,
+      pass.passId,
     );
-  if (hash(cache) !== pending.afterDigest) invalid('pending verdict cache digest mismatch');
+    cache.attempts[input.stableAttemptId] = identity;
+    patch.attempts[input.stableAttemptId] = identity;
+  }
+  if (issueDigest(cache, input.issue, input.stableAttemptId) !== pending.afterDigest)
+    invalid('pending verdict cache digest mismatch');
+  return patch;
 }
-async function finalizeVerdict(context, lock, pending) {
-  lock.collection.outcomes[pending.outcome.issue] = pending.outcome;
-  delete lock.collection.pendingVerdict;
-  await atomic(context, lockPath(context), lock);
+async function finalizeVerdict(context, pass, pending) {
+  pass.collection.outcomes[pending.outcome.issue] = pending.outcome;
+  delete pass.collection.pendingVerdict;
+  await writePass(context, pass);
 }
-// A durable intent binds the complete outcome and both cache states before the cache changes.
-// Only a proven committed cache may complete it automatically. A failed cache write requires
-// the identical verdict retry; other work cannot turn an uncommitted intent into authority.
-async function reconcileVerdict(context, lock, operation, input) {
-  const collection = lock.collection;
+function claimedIssues(pass) {
+  return new Set((pass.claims ?? []).map((entry) => entry.issue));
+}
+// A durable intent binds the complete outcome and the issue's record and attempt before and after
+// the cache change. Only a proven committed cache may complete it automatically. A failed cache
+// write requires the identical verdict retry; other work cannot turn an uncommitted intent into
+// authority. Writes of other passes to other issues leave the issue digest unchanged.
+async function reconcileVerdict(context, pass, operation, input) {
+  const collection = pass.collection;
   if (collection?.status !== 'collected') return;
   const cache = await loadCache(context, collection.result.repository);
   const pending = collection.pendingVerdict;
   if (pending !== undefined) {
     exact(pending, ['outcome', 'record', 'beforeDigest', 'afterDigest']);
-    const intendedInput = outcomeInput(context, lock, pending.outcome);
+    const intendedInput = outcomeInput(context, pass, pending.outcome);
     match(pending.beforeDigest, /^[a-f0-9]{64}$/);
     match(pending.afterDigest, /^[a-f0-9]{64}$/);
     if (pending.beforeDigest === pending.afterDigest)
@@ -1381,7 +2269,7 @@ async function reconcileVerdict(context, lock, operation, input) {
       records: { [pending.outcome.issue]: pending.record },
     });
     if (
-      !cachedOutcomeMatches(pending.record, pending.outcome, lock) ||
+      !cachedOutcomeMatches(pending.record, pending.outcome, pass) ||
       collection.outcomes[pending.outcome.issue]
     )
       invalid('pending verdict conflicts with pass authority');
@@ -1391,17 +2279,17 @@ async function reconcileVerdict(context, lock, operation, input) {
         cache.degradation.code,
         'pending verdict cache is unavailable; release this pass or repair its cache',
       );
-    const digest = hash(cache.value);
+    const digest = issueDigest(cache.value, pending.outcome.issue, intendedInput.stableAttemptId);
     if (digest === pending.beforeDigest) {
       if (operation !== 'verdict-record' || input.issue !== pending.outcome.issue)
         fail(
           'UNSAFE_RUNTIME_STATE',
           'verdict cache commit is incomplete; retry the identical verdict-record or explicitly release this pass',
         );
-      if (!same(authorizedOutcome(input, lock), pending.outcome))
+      if (!same(authorizedOutcome(input, pass), pending.outcome))
         invalid('conflicting pending verdict replay');
-      applyIntendedCache(context, cache.value, lock, pending);
-      await saveCache(context, cache.value, null);
+      const patch = applyIntendedCache(context, cache.value, pass, pending);
+      await commitCache(context, collection.result.repository, patch, claimedIssues(pass));
     } else if (digest !== pending.afterDigest)
       fail(
         'UNSAFE_RUNTIME_STATE',
@@ -1417,12 +2305,13 @@ async function reconcileVerdict(context, lock, operation, input) {
           intendedInput.stableAttemptId,
           intendedInput.issue,
           intendedInput.fingerprint,
-          lock.passId,
+          pass.passId,
         ),
       )
     )
       invalid('pending cache attempt differs');
-    await finalizeVerdict(context, lock, pending);
+    await finalizeVerdict(context, pass, pending);
+    await settleClaim(context, pass, pending.outcome.issue);
   }
   if (cache.degradation) {
     // A cache already reported degraded by collection may still produce its empty report.
@@ -1435,8 +2324,8 @@ async function reconcileVerdict(context, lock, operation, input) {
   }
   for (const record of Object.values(cache.value.records)) {
     if (
-      record.recordedPassId === lock.passId &&
-      !cachedOutcomeMatches(record, collection.outcomes[record.issue] ?? {}, lock)
+      record.recordedPassId === pass.passId &&
+      !cachedOutcomeMatches(record, collection.outcomes[record.issue] ?? {}, pass)
     )
       fail(
         'UNSAFE_RUNTIME_STATE',
@@ -1444,13 +2333,17 @@ async function reconcileVerdict(context, lock, operation, input) {
       );
   }
   for (const outcome of Object.values(collection.outcomes)) {
-    const known = outcomeInput(context, lock, outcome);
+    const known = outcomeInput(context, pass, outcome);
+    const record = cache.value.records[outcome.issue];
+    // A later run that claimed the issue after this pass settled it may supersede the record;
+    // only the record itself proves that, never its absence.
+    const superseded = record !== undefined && record.recordedPassId !== pass.passId;
     if (
-      !cachedOutcomeMatches(cache.value.records[outcome.issue], outcome, lock) ||
+      (!superseded && !cachedOutcomeMatches(record, outcome, pass)) ||
       (known.stableAttemptId &&
         !same(
           cache.value.attempts[known.stableAttemptId],
-          attemptIdentity(known.stableAttemptId, known.issue, known.fingerprint, lock.passId),
+          attemptIdentity(known.stableAttemptId, known.issue, known.fingerprint, pass.passId),
         ))
     )
       fail(
@@ -1459,9 +2352,9 @@ async function reconcileVerdict(context, lock, operation, input) {
       );
   }
 }
-async function record(context, input, lock) {
-  const collection = lock.collection;
-  const outcome = authorizedOutcome(input, lock);
+async function record(context, input, pass) {
+  const collection = pass.collection;
+  const outcome = authorizedOutcome(input, pass);
   const result = collection.result;
   const previousOutcome = collection.outcomes[input.issue];
   if (previousOutcome) {
@@ -1469,6 +2362,8 @@ async function record(context, input, lock) {
     return previousOutcome;
   }
   assertPublicationLimit(collection, outcome);
+  // A verdict is written only under the live claim this pass holds for the issue.
+  await requireClaim(context, pass, input.issue);
   const cache = await loadCache(context, result.repository);
   const identity =
     input.stableAttemptId &&
@@ -1480,7 +2375,7 @@ async function record(context, input, lock) {
   )
     invalid('attempt identity conflict');
   if (cache.degradation) fail(cache.degradation.code, 'degraded cache is preserved');
-  const beforeDigest = hash(cache.value);
+  const beforeDigest = issueDigest(cache.value, input.issue, input.stableAttemptId);
   const previous = cache.value.records[input.issue];
   if (previous?.recordedPassId === input.passId) {
     if (
@@ -1491,17 +2386,23 @@ async function record(context, input, lock) {
     )
       invalid('conflicting cached verdict replay');
   } else cache.value.records[input.issue] = transition(cache.value, input, context.now());
-  if (identity) cache.value.attempts[input.stableAttemptId] = identity;
+  const patch = emptyPatch();
+  patch.records[input.issue] = cache.value.records[input.issue];
+  if (identity) {
+    cache.value.attempts[input.stableAttemptId] = identity;
+    patch.attempts[input.stableAttemptId] = identity;
+  }
   const pending = {
     outcome,
     record: cache.value.records[input.issue],
     beforeDigest,
-    afterDigest: hash(cache.value),
+    afterDigest: issueDigest(cache.value, input.issue, input.stableAttemptId),
   };
   collection.pendingVerdict = pending;
-  await atomic(context, lockPath(context), lock);
-  await saveCache(context, cache.value, null);
-  await finalizeVerdict(context, lock, pending);
+  await writePass(context, pass);
+  await commitCache(context, result.repository, patch, claimedIssues(pass));
+  await finalizeVerdict(context, pass, pending);
+  await settleClaim(context, pass, input.issue);
   return outcome;
 }
 
@@ -1650,8 +2551,8 @@ export function validatePassReport(report) {
     invalid('completed report has pass-level failure');
   return report;
 }
-async function report(context, input, lock) {
-  const collection = lock.collection;
+async function report(context, input, pass, resolved) {
+  const collection = pass.collection;
   const version = reportVersion(input.reportVersion);
   let repository;
   let currentMode;
@@ -1746,7 +2647,12 @@ async function report(context, input, lock) {
       if (input.failures.length !== 1 || input.failures[0].stage !== 'preflight')
         invalid('missing preflight failure');
     }
-    if (!repository) repository = ledgerRepository(await remote(context, 'repository-resolve'));
+    // The repository was resolved before the mutex was taken; no forge call runs under it.
+    if (!repository) {
+      if (resolved === undefined)
+        fail('UNSAFE_RUNTIME_STATE', 'the pass changed during its report; retry the report');
+      repository = ledgerRepository(resolved);
+    }
   }
   if (
     (input.mode !== undefined && input.mode !== currentMode) ||
@@ -1790,7 +2696,7 @@ async function report(context, input, lock) {
     mode: currentMode,
     outcome: input.outcome,
     repository,
-    startedAt: lock.acquiredAt,
+    startedAt: pass.acquiredAt,
     finishedAt: context.now(),
     limits: currentLimits,
     cutOff: input.cutOff,
@@ -1827,6 +2733,13 @@ async function report(context, input, lock) {
   }
   return value;
 }
+// Whether a report of this pass has to resolve its repository through the tracker.
+function reportNeedsRepository(pass) {
+  return !(
+    pass.collection?.status === 'collected' ||
+    (pass.collection?.status === 'failed' && pass.collection.repository)
+  );
+}
 export async function executeOperation(operation, input = {}, options = {}) {
   try {
     validateInput(operation, input);
@@ -1837,27 +2750,28 @@ export async function executeOperation(operation, input = {}, options = {}) {
       if (!target.startsWith(path.join(context.directory, 'trusted') + path.sep))
         invalid('fingerprint path must be trusted runtime text');
       data = { fingerprint: fingerprint(await readJson(context, target), input.issueAuthor) };
+    } else if (operation === 'pass-collect') data = await collect(context, input);
+    else if (operation === 'pass-list') data = await listPasses(context);
+    else if (operation === 'pass-report') {
+      // Read-only peek outside the mutex: a forge read, if needed, happens before it is taken.
+      const peek = await readPass(context, input.passId);
+      const resolved = reportNeedsRepository(peek)
+        ? await remote(context, 'repository-resolve')
+        : undefined;
+      data = await withMutationLock(context, async () => {
+        const pass = await readPass(context, input.passId);
+        await reconcileVerdict(context, pass, operation, input);
+        return report(context, input, pass, resolved);
+      });
     } else
       data = await withMutationLock(context, async () => {
-        if (operation === 'pass-lock-acquire') return acquire(context);
-        if (operation === 'pass-lock-release') {
-          let lock;
-          try {
-            lock = await readJson(context, lockPath(context));
-          } catch {
-            fail('LOCK_MISMATCH', 'lock is unreadable');
-          }
-          if (!lock || lock.passId !== input.passId)
-            fail('LOCK_MISMATCH', 'pass lock identity mismatch');
-          await guard(context, lockPath(context));
-          await context.fs.unlink(lockPath(context));
-          return { passId: input.passId, released: true };
-        }
-        const lock = await readLock(context, input.passId);
-        await reconcileVerdict(context, lock, operation, input);
-        if (operation === 'pass-collect') return collect(context, input, lock);
-        if (operation === 'verdict-record') return record(context, input, lock);
-        return report(context, input, lock);
+        if (operation === 'pass-open') return openPass(context);
+        if (operation === 'pass-close') return closePass(context, input.passId);
+        if (operation === 'pass-prune') return prunePass(context, input);
+        if (operation === 'trusted-prune') return pruneTrusted(context, input);
+        const pass = await readPass(context, input.passId);
+        await reconcileVerdict(context, pass, operation, input);
+        return record(context, input, pass);
       });
     return { ok: true, operation, data };
   } catch (error) {

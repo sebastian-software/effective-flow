@@ -307,12 +307,14 @@ function regionAfter(text, lead) {
   return text.slice(start, close + '\n```\n'.length);
 }
 
-// Pinned verbatim from origin/develop 61985a05: the envelopes emitted without autopilot inputs.
+// Pinned verbatim from origin/develop 61985a05: the envelopes emitted without autopilot inputs;
+// Issue Buddy's adds only the trusted `Execution root:` line naming its planning worktree.
 const LANGUAGE_LINE =
   'Language context: source=<de|en>; documentation.user=<de|en>; documentation.technical=<de|en>; workflow=<de|en>; forge=<de|en>; git=<de|en>';
 const ISSUE_BUDDY_ENVELOPE = [
-  "After the probe, invoke `plan` with WP2's five required argument control lines and delimiter,",
-  'substituting concrete values; the separate brief is not appended inside or after the envelope:',
+  "After the probe, invoke `plan` with WP2's five required argument control lines, its",
+  '`Execution root:` line naming `PLANNING_ROOT`, and the delimiter, substituting concrete values; the',
+  'separate brief is not appended inside or after the envelope:',
   '',
   '```text',
   'Run state: non-interactive',
@@ -320,6 +322,7 @@ const ISSUE_BUDDY_ENVELOPE = [
   LANGUAGE_LINE,
   'Issue: #<N>',
   'Issue text: <absolute trustedTextPath>',
+  'Execution root: <absolute PLANNING_ROOT>',
   '--- end of control lines ---',
   '```',
   '',
