@@ -27803,7 +27803,7 @@ test('the acceptance-lens fragment names the helper call, the sources, the trust
   // Optional fields of the skip and truncation receipts the orchestrator may read.
   assert.match(
     lens,
-    /`skipped\[\]` \(`source`, `reason`, optional `reference`, `mode`, `externalTool`, `code`\) and `truncated\[\]` \(`source`, `bound`, `limit`, optional `path`, `size`\)/,
+    /`skipped\[\]` \(`source`, `reason`, optional `reference`, `mode`, `externalTool`, `code`\) and `truncated\[\]` \(`source`, `bound`, `limit`, optional `path`, `size`, `criteria`\)/,
   );
   // An oversized ADR is excluded, never cut; a kept document is cut, or omitted above its read bound.
   assert.match(
@@ -27980,6 +27980,11 @@ test('the acceptance summary is derived after Phase 3 with one generic reason an
     'one generic reason only',
   );
   assert.match(summary, /`complete` and `undetermined` stay as the leaf returned them/);
+  // Invariant: a criterion cut at the display bound never reaches the review body as `complete`.
+  assert.match(
+    summary,
+    /a `complete` for a criterion with `displayTruncated: true` reads `undetermined`/,
+  );
   assert.match(summary, /"ADR changed by this PR" for a candidate with `changedByPr`/);
   // Decisions: displayed as returned, the count and the fit score, and never judged.
   assert.match(
@@ -28098,6 +28103,11 @@ test('the acceptance-reviewer agent is a read-only leaf with the lens areas, ver
   );
   // The leaf reads criteria in the helper's neutralized form only.
   assert.match(agent, /its criteria as `<key8>: <displayText>`/);
+  // A criterion cut at the display bound is never ruled complete: the leaf and the summary both enforce it.
+  assert.match(
+    agent,
+    /ending with `\[truncated: criterion text continues\]` shows only a prefix: never give\s+it `complete`/,
+  );
   assert.match(agent, /Report no code-quality, style, security or test finding/);
   assert.match(agent, /Judge no design decision and no recorded autopilot decision/);
   assert.match(

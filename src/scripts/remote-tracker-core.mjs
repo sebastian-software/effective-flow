@@ -5123,6 +5123,9 @@ export const ACCEPTANCE_SOURCE_BOUNDS = Object.freeze({
   closeDecisionLines: 100,
   displayLineChars: 1000,
 });
+// Appended to a snapshot criterion line whose display text was cut at `displayLineChars`; the
+// reviewer never rules such a criterion `complete`.
+export const ACCEPTANCE_CRITERION_TRUNCATION_MARKER = '[truncated: criterion text continues]';
 export const DEFAULT_ACCEPTANCE_PLAN_DIR = 'docs/plan';
 
 // The permission set a source author needs for their text to count as trusted input, following
@@ -5273,12 +5276,13 @@ function boundedCriteria(texts, limit) {
     }
     seen.add(key);
     // `key`/`key8` stay over the raw normalized text, so neutralizing display text never moves a
-    // criterion's identity; `displayText` passes the appendix's shared `sanitizeField` rules.
-    const displayText = sanitizeField(text).text.slice(
-      0,
-      ACCEPTANCE_SOURCE_BOUNDS.displayLineChars,
-    );
-    criteria.push({ key, key8, text, displayText });
+    // criterion's identity; `displayText` passes the appendix's shared `sanitizeField` rules. A
+    // criterion cut at the display bound is flagged, never silently shortened: the reviewer sees
+    // only a prefix of it and must not rule it `complete`.
+    const sanitized = sanitizeField(text).text;
+    const displayTruncated = sanitized.length > ACCEPTANCE_SOURCE_BOUNDS.displayLineChars;
+    const displayText = sanitized.slice(0, ACCEPTANCE_SOURCE_BOUNDS.displayLineChars);
+    criteria.push({ key, key8, text, displayText, displayTruncated });
   }
   return { criteria, truncated };
 }
@@ -6024,11 +6028,24 @@ async function acceptancePublishedPlan(context, git, planPath, planDir) {
     : { commit: published, reason: null };
 }
 
+// Names a source whose criteria were cut at the display bound, once per source.
+function noteCriterionDisplayTruncation(context, source, criteria) {
+  const count = criteria.filter((criterion) => criterion.displayTruncated).length;
+  if (count === 0) return;
+  context.truncated.push({
+    source,
+    bound: 'displayLineChars',
+    limit: ACCEPTANCE_SOURCE_BOUNDS.displayLineChars,
+    criteria: count,
+  });
+}
+
 // Extracts plan criteria and records each applied bound in `context.truncated`.
 // A plan blob reaches this point only within `planBytes` (`acceptanceReadBlob` sizes it first and
 // `oversizedPlanSource` handles a larger one), so no content bound applies here.
 function planSourceCriteria(context, text) {
   const extracted = extractPlanAcceptanceCriteria(text);
+  noteCriterionDisplayTruncation(context, 'plan', extracted.criteria);
   if (extracted.truncated) {
     context.truncated.push({
       source: 'plan',
@@ -6486,7 +6503,12 @@ function quotedBlock(text, info = 'text') {
 function criteriaSection(token, criteria) {
   const lines = [`## ${token}`, ''];
   if (criteria.length === 0) return `${lines.join('\n')}\nNo criteria were extracted.\n`;
-  const block = criteria.map((criterion) => `${criterion.key8}: ${criterion.displayText}`);
+  const block = criteria.map(
+    (criterion) =>
+      `${criterion.key8}: ${criterion.displayText}${
+        criterion.displayTruncated ? ` ${ACCEPTANCE_CRITERION_TRUNCATION_MARKER}` : ''
+      }`,
+  );
   return `${lines.join('\n')}\n${quotedBlock(block.join('\n'))}`;
 }
 
@@ -6662,6 +6684,7 @@ async function acceptanceIssues(context, receipt) {
       });
     }
     const extracted = extractIssueAcceptanceCriteria(body.text);
+    noteCriterionDisplayTruncation(context, source, extracted.criteria);
     if (extracted.truncated) {
       context.truncated.push({
         source,

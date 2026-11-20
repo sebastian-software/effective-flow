@@ -43,11 +43,14 @@ Read `data` only through its fields:
   `architectureFit` (`status`, `score`).
 - `adrCandidates[]`: `path`, `kind`, `status`, `kept`, `reason`, `changedByPr`, `key8`.
 - `pullRequest.mergeBase`, `skipped[]` (`source`, `reason`, optional `reference`, `mode`,
-  `externalTool`, `code`) and `truncated[]` (`source`, `bound`, `limit`, optional `path`, `size`).
+  `externalTool`, `code`) and `truncated[]` (`source`, `bound`, `limit`, optional `path`, `size`, `criteria`).
 - `snapshot`: `null`, or `diffPath`, `sourcesPath`, `diffBytes`, `diffTruncated`.
 
-Each criterion is `{key, key8, text, displayText}`; `key` stays derived from the raw `text`, and the
-snapshot and every published line use only the neutralized `displayText`. A plan's criteria include
+Each criterion is `{key, key8, text, displayText, displayTruncated}`; `key` stays derived from the raw
+`text`, and the snapshot and every published line use only the neutralized `displayText`. A criterion
+cut at 1000 characters has `displayTruncated: true`, its snapshot line ends with
+`[truncated: criterion text continues]`, and its source appears in `truncated[]` with bound
+`displayLineChars`; the reviewer never rules such a criterion `complete`. A plan's criteria include
 the checkbox items in `###` subsections of `## Acceptance criteria`. A trusted source is an issue,
 plan or appendix whose `trust` is `trusted`. On a trusted pull request, every non-trusted
 `issues[]`/`plan` entry also appears in `skipped[]` (`issue` with `untrusted-author` and its
@@ -72,7 +75,7 @@ Without one, spawn nothing.
 
 The helper wrote the leaf's two inputs, `snapshot.diffPath` (the diff from the merge base to the
 head, cut at 1 MiB) and `snapshot.sourcesPath` (each trusted issue or plan in its own quoted section
-with its criteria as `<key8>: <displayText>`; a trusted appendix's display-only decisions as
+with its criteria as `<key8>: <displayText>`, a truncated one ending with the marker; a trusted appendix's display-only decisions as
 context, from which the leaf judges no decision and derives no criterion; then each kept ADR
 candidate with its metadata and merge-base content); never write, edit or read either yourself. The
 appendix contributes no criterion.
@@ -127,7 +130,8 @@ passage at the merge base, its `key8` and the reason.
 Derive the summary once, after Phase 3 and the PR integration's handoff and gates, immediately
 before the review submission, from the leaf's verdicts:
 
-- `complete` and `undetermined` stay as the leaf returned them.
+- `complete` and `undetermined` stay as the leaf returned them, except that a `complete` for a
+  criterion with `displayTruncated: true` reads `undetermined`: the leaf saw only its prefix.
 - `incomplete` stays only when its finding was published. Otherwise, whatever removed it,
   confidence, deduplication, a design decision, Mode C or the security gate, it reads
   `undetermined`. Name no further detail; the local report or the local security report holds it.

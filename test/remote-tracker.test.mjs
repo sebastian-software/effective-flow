@@ -17,6 +17,7 @@ import { join } from 'node:path';
 import { test } from 'node:test';
 import {
   ACCEPTANCE_SNAPSHOT_BOUNDS,
+  ACCEPTANCE_CRITERION_TRUNCATION_MARKER,
   ACCEPTANCE_SOURCE_BOUNDS,
   DEFAULT_ACCEPTANCE_PLAN_DIR,
   adrCandidateKey8,
@@ -16361,6 +16362,50 @@ test('acceptance criteria extraction: criteria carry neutralized displayText whi
   const plan = extractPlanAcceptanceCriteria(`## Acceptance criteria\n- [ ] ${raw}\n`);
   assert.equal(plan.criteria[0].key, criteria[0].key);
   assert.equal(plan.criteria[0].displayText, criteria[0].displayText);
+});
+
+test('acceptance criteria extraction: a criterion cut at the display bound is flagged, never silently shortened', () => {
+  const long = `${'a'.repeat(ACCEPTANCE_SOURCE_BOUNDS.displayLineChars)} final requirement`;
+  const exact = 'b'.repeat(ACCEPTANCE_SOURCE_BOUNDS.displayLineChars);
+  const issue = extractIssueAcceptanceCriteria(
+    `## Acceptance criteria\n- ${long}\n- ${exact}\n- short\n`,
+  );
+  assert.deepEqual(
+    issue.criteria.map((criterion) => criterion.displayTruncated),
+    [true, false, false],
+  );
+  assert.equal(issue.criteria[0].displayText.length, ACCEPTANCE_SOURCE_BOUNDS.displayLineChars);
+  assert.equal(issue.criteria[0].text, long);
+  const plan = extractPlanAcceptanceCriteria(`## Acceptance criteria\n- [ ] ${long}\n`);
+  assert.equal(plan.criteria[0].displayTruncated, true);
+});
+
+test('pr-acceptance-sources: a truncated criterion is marked in the snapshot and its source is named in truncated', async () => {
+  const long = `${'a'.repeat(ACCEPTANCE_SOURCE_BOUNDS.displayLineChars)} final requirement`;
+  const { envelope, result } = await accSnapshotRun({
+    body: accReceiptBody(accForgeReceipt([17])),
+    issues: {
+      17: { author: 'alice', body: `## Acceptance criteria\n- ${long}\n- short one\n` },
+    },
+  });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope.error));
+  assert.deepEqual(
+    result.truncated.filter((entry) => entry.bound === 'displayLineChars'),
+    [
+      {
+        source: 'issue-17',
+        bound: 'displayLineChars',
+        limit: ACCEPTANCE_SOURCE_BOUNDS.displayLineChars,
+        criteria: 1,
+      },
+    ],
+  );
+  const [cut, whole] = result.issues[0].criteria;
+  const sources = readFileSync(result.snapshot.sourcesPath, 'utf8');
+  assert.ok(
+    sources.includes(`${cut.key8}: ${cut.displayText} ${ACCEPTANCE_CRITERION_TRUNCATION_MARKER}\n`),
+  );
+  assert.ok(sources.includes(`${whole.key8}: ${whole.displayText}\n`));
 });
 
 test('acceptance criteria extraction: a tab-indented list item is nested and never merged into its parent', () => {
