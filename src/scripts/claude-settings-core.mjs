@@ -144,7 +144,8 @@ export const CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS = Object.freeze([
 // The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
 // computations, `thread-ledger-lookup`, a local read of runtime state, and `merge-proof-local`, a
 // local Git read whose merged objects land only in a temporary private object directory. Never a
-// mutation, never a local write.
+// forge mutation; the only local write is `pr-acceptance-sources`' private runtime snapshot under
+// `.effective-flow/`.
 export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'repository-resolve',
   'probe',
@@ -157,6 +158,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'issue-list',
   'issue-sub-issues-read',
   'pr-read',
+  'pr-acceptance-sources',
   'pr-comments-read',
   'pr-reviews-read',
   'pr-list',

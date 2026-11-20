@@ -3,9 +3,11 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { test } from 'node:test';
 import { FAST_PROFILE_AGENTS } from './support/native-profile-config.mjs';
 import {
+  EXPECTED_ADDED_WORKERS,
   EXPECTED_NATIVE_DELTAS,
   compareNativeSidecar,
   formatBaselineReport,
+  reconcileAddedBaseWorkers,
   splitNativeSidecar,
 } from '../scripts/compare-native-agent-baseline.mjs';
 
@@ -465,8 +467,9 @@ test('a delta outside the allowlist fails', () => {
   }
 });
 
-// Invariant: both configuration allowlists name exactly the agents whose source declares
-// `tier: deep`, and each changes only its one deep-tier key.
+// Invariant: both configuration allowlists name exactly the agents existing at base whose source
+// declares `tier: deep` (workers added since base have no base sidecar to edit), and each changes
+// only its one deep-tier key.
 test('the deep-tier configuration deltas cover exactly the deep-tier workers', () => {
   const deep = readdirSync(new URL('../src/agents/', import.meta.url))
     .filter((name) => name.endsWith('.md'))
@@ -474,6 +477,7 @@ test('the deep-tier configuration deltas cover exactly the deep-tier workers', (
       /^tier: deep$/m.test(readFileSync(new URL(`../src/agents/${name}`, import.meta.url), 'utf8')),
     )
     .map((name) => `effective-flow-${name.slice(0, -3)}`)
+    .filter((worker) => !EXPECTED_ADDED_WORKERS.includes(worker))
     .sort();
   assert.equal(deep.length, 10);
   const [effort, model] = EXPECTED_NATIVE_DELTAS.configuration;
@@ -503,8 +507,13 @@ test('a sidecar splits into native configuration and prompt body', () => {
   assert.throws(() => splitNativeSidecar('claude', 'body only\n', 'x'), /missing frontmatter/);
 });
 
+// Invariant: the report lists declared added workers sorted, before the used deltas.
 test('the report names each used delta with its workers', () => {
   assert.equal(formatBaselineReport('abc1234', new Map()), 'Native agents match abc1234\n');
+  assert.equal(
+    formatBaselineReport('abc1234', new Map(), ['effective-flow-z', 'effective-flow-y']),
+    'Native agents match abc1234\nExpected added workers: effective-flow-y, effective-flow-z\n',
+  );
   assert.equal(
     formatBaselineReport(
       'abc1234',
@@ -519,7 +528,7 @@ test('the report names each used delta with its workers', () => {
   );
 });
 
-// Invariant: messaging approvals cover exactly current Claude base/Fast roles and change only
+// Invariant: messaging approvals cover exactly the Claude base/Fast roles existing at base and change only
 // the leading SendMessage capability; unrelated tool, model, sandbox and prompt drift still fail.
 test('four reviewed messaging deltas grant only SendMessage to the exact source-derived roster', () => {
   const groups = EXPECTED_NATIVE_DELTAS.configuration.slice(2);
@@ -568,7 +577,9 @@ test('four reviewed messaging deltas grant only SendMessage to the exact source-
     }
   }
   assert.equal(new Set(covered).size, covered.length, 'no duplicate role can hide a missing role');
-  const bases = sourceRoles.map((file) => `effective-flow-${file.slice(0, -3)}`);
+  const bases = sourceRoles
+    .map((file) => `effective-flow-${file.slice(0, -3)}`)
+    .filter((worker) => !EXPECTED_ADDED_WORKERS.includes(worker));
   const fast = [...FAST_PROFILE_AGENTS].map((role) => `effective-flow-${role}-fast`);
   assert.deepEqual(covered.sort(), [...bases, ...fast].sort());
 });
@@ -630,4 +641,33 @@ test('the triviality-scope delta composes before the lean sentence and rejects r
       ),
     /body drift outside the expected deltas/,
   );
+});
+
+// Invariant: a base worker added since the pinned base passes only when declared in
+// EXPECTED_ADDED_WORKERS, absent at base and present in the working inventory; any other base
+// membership change still fails.
+test('only declared added workers may extend the base worker membership', () => {
+  assert.deepEqual(EXPECTED_ADDED_WORKERS, ['effective-flow-acceptance-reviewer']);
+  assert.ok(Object.isFrozen(EXPECTED_ADDED_WORKERS));
+  const base = ['effective-flow-code-validator', 'effective-flow-rust-reviewer'];
+  const added = 'effective-flow-acceptance-reviewer';
+  for (const harness of ['claude', 'codex']) {
+    assert.deepEqual(reconcileAddedBaseWorkers(harness, base, [added, ...base]), [added]);
+    assert.throws(
+      () => reconcileAddedBaseWorkers(harness, base, [added, ...base, 'effective-flow-undeclared']),
+      new RegExp(`^Error: ${harness} base worker membership changed$`),
+    );
+    assert.throws(
+      () => reconcileAddedBaseWorkers(harness, base, [added, base[0]]),
+      /base worker membership changed/,
+    );
+    assert.throws(
+      () => reconcileAddedBaseWorkers(harness, [added, ...base], [added, ...base]),
+      new RegExp(`${harness} declared added worker ${added} already exists at base`),
+    );
+    assert.throws(
+      () => reconcileAddedBaseWorkers(harness, base, base),
+      new RegExp(`${harness} declared added worker ${added} is missing from the working build`),
+    );
+  }
 });

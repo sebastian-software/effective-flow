@@ -26,6 +26,7 @@ const STANDARD_ROLES = [
   'effective-flow-test-writer',
 ];
 const DEEP_ROLES = [
+  'effective-flow-acceptance-reviewer',
   'effective-flow-frontend-reviewer',
   'effective-flow-generic-implementer',
   'effective-flow-generic-product-implementer',
