@@ -142,8 +142,10 @@ export const CONFLICT_VALIDATION_ALLOWLISTED_OPERATIONS = Object.freeze([
 ]);
 
 // The `remote-tracker.mjs` operations that get one allow rule each: the forge reads, the pure local
-// computations, and `thread-ledger-lookup`, a local read of runtime state. Never a forge mutation;
-// the only local write is `pr-acceptance-sources`' private runtime snapshot under `.effective-flow/`.
+// computations, `thread-ledger-lookup`, a local read of runtime state, and `merge-proof-local`, a
+// local Git read whose merged objects land only in a temporary private object directory. Never a
+// forge mutation; the only local write is `pr-acceptance-sources`' private runtime snapshot under
+// `.effective-flow/`.
 export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'repository-resolve',
   'probe',
@@ -162,6 +164,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'pr-list',
   'pr-status-read',
   'pr-checks-wait',
+  'pr-draft-classify',
   'review-threads-read',
   'remote-parse',
   'reference-parse',
@@ -190,6 +193,7 @@ export const REMOTE_TRACKER_READ_OPERATIONS = Object.freeze([
   'issue-lifecycle-receipt-build',
   'issue-lifecycle-receipt-parse',
   'thread-ledger-lookup',
+  'merge-proof-local',
 ]);
 // The `remote-tracker.mjs` operations that never get a rule: every forge mutation, and the local
 // write `thread-ledger-record`. A rule that would also admit one of them, `--apply` included, is

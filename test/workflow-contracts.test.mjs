@@ -5133,6 +5133,11 @@ test('the failing-checks recommendation uses fixed arguments and the table forbi
     [
       'blocked by review notes',
       'blocked by failing checks',
+      'ended without merge: the user kept the draft',
+      'ended without merge: plan-only draft or draft with blockers',
+      'ended without merge: plan-draft finish incomplete',
+      'ended without merge: invalid plan marker or missing mark-ready capability',
+      'marked ready, rounds exhausted before the merge',
       'merged but at least one linked issue is open or unobservable',
       "merged, associated plan's review report has open findings",
       'merged',
@@ -13267,7 +13272,12 @@ test('the forge preflight probes issueClose, degrades without it, and never call
 
   assert.match(
     phase0,
-    /`pullRequestMerge`, `viewerRead`, `prReviewsRead`, `issueCommentsRead`, and `issueClose`/,
+    /`pullRequestMerge`, `viewerRead`, `prReviewsRead`, `issueCommentsRead`, `issueClose`, and `pullRequestMarkReady`/,
+  );
+  // Invariant: a missing mark-ready capability ends nothing; it only withholds the draft offer.
+  assert.match(
+    phase0,
+    /Without `pullRequestMarkReady` the run continues, and "Draft ready for review" offers nothing/,
   );
   // `viewerRead` is the model: the one capability whose absence ends nothing.
   assert.match(phase0, /Without `issueClose` the run continues/);
@@ -13309,6 +13319,12 @@ test('the forge preflight probes issueClose, degrades without it, and never call
   assert.match(
     phase0,
     /Forgejo supports `pullRequestStatus`, `pullRequestChecksWait`, `pullRequestMerge`, `viewerRead`, `prReviewsRead`, and `issueCommentsRead`/,
+  );
+  // The mark-ready capability is conditional on the installed `tea`, like `issueClose`, so the
+  // list names it only together with the helper's report.
+  assert.match(
+    phase0,
+    /`pullRequestMarkReady` only where the helper reports it, which needs a `tea` that edits titles, creates its drafts as a work-in-progress title, and has `api --include`/,
   );
   // And it is supported on a different footing from `issueClose`: the close rides the probed
   // `tea api` transport, the comment read rides `tea`'s issue support, so a `tea` built without
@@ -25345,6 +25361,7 @@ const RELAYED_QUESTION_IDS = [
   'check-list-waiver',
   'conflict-resolution',
   'set-aside',
+  'ready-for-review',
   'issue-done',
   'iterate-in-flight',
   'iterate-approval',
@@ -25500,6 +25517,7 @@ test('the relayed question table carries the option labels of each owning ask fe
     ['check-list-waiver', source('src/shared/merge-gate-check-list-waiver.md'), 'Checks'],
     ['conflict-resolution', source('src/shared/merge-gate-conflict-resolution.md'), 'Conflict'],
     ['set-aside', configuredReviewerRoute(), 'Findings'],
+    ['ready-for-review', mergeGateDelegatedRun(repositoryRoot), 'Ready'],
     ['issue-done', source('src/shared/merge-gate-issue-observation.md'), 'Issue done'],
     ['iterate-in-flight', source('src/tools/iterate.md'), 'In flight'],
     ['iterate-approval', source('src/tools/iterate.md'), 'Approval'],
@@ -25527,6 +25545,7 @@ test('every relayed gate returns its own question id, and no source names an id 
     [source('src/shared/merge-gate-check-list-waiver.md'), 'check-list-waiver'],
     [source('src/shared/merge-gate-conflict-resolution.md'), 'conflict-resolution'],
     [configuredReviewerRoute(), 'set-aside'],
+    [mergeGateDelegatedRun(repositoryRoot), 'ready-for-review'],
     [source('src/shared/merge-gate-issue-observation.md'), 'issue-done'],
     [source('src/tools/iterate.md'), 'iterate-in-flight'],
     [source('src/tools/iterate.md'), 'iterate-approval'],
@@ -25550,6 +25569,244 @@ test('every relayed gate returns its own question id, and no source names an id 
       }
     }
   }
+});
+
+// Invariant: "Draft ready for review" is the only path that marks a draft ready. It never offers
+// the question for an excluded class, a blocker, an unanswerable run or a missing capability, so
+// the exclusion rule is in the contract even where no eval can reach it.
+test('Draft ready for review excludes every unsafe draft before it asks', () => {
+  const phase4 = prose(
+    boundedSlice(
+      mergeGateDelegatedRun(repositoryRoot),
+      '#### Draft ready for review',
+      '### Phase 5: Merge',
+    ),
+  );
+  assert.match(
+    phase4,
+    /1\. Draft trigger\. The fresh read states `draft: true`, condition 3's mergeable half holds .{0,140}and every condition other than 3 and 9 holds\. Pending checks or bots therefore never reach a question\./,
+  );
+  // No offer: run state, hidden mode, external tracker and missing capability. The completion mode
+  // is no reason of its own: the trigger already requires condition 1, so naming it is unreachable.
+  const noOffer = boundedSlice(phase4, '2. No offer.', '3. Classify.');
+  assert.doesNotMatch(noOffer, /completion mode/);
+  assert.match(noOffer, /non-interactive or received `Relayed answer: none`/);
+  assert.match(noOffer, /hidden mode \(`visibility: hidden`\)/);
+  assert.match(noOffer, /tracker target is `external`/);
+  assert.match(noOffer, /states no `pullRequestMarkReady`, ask nothing/);
+  assert.match(noOffer, /names the draft as the unmet condition and that reason/);
+  // Classes and the blocker rule.
+  const classify = boundedSlice(phase4, '3. Classify.', '4. Condition 9');
+  assert.match(classify, /remote-tracker\.mjs pr-draft-classify <<</);
+  assert.match(
+    classify,
+    /Only `delivered` or `unmarked` with `blockers` `0` and a non-null `readyTitle` continue/,
+  );
+  // A pull request that moved since the read is a failed classification, never stale evidence.
+  assert.match(
+    classify,
+    /`COMMAND_FAILED` with `details\.step` `head-mismatch` or `base-mismatch`, a pull request that moved since the read – offers nothing/,
+  );
+  for (const excluded of ['marker-invalid', 'plan-only', 'finish-incomplete']) {
+    assert.ok(classify.includes(`\`${excluded}\``), `${excluded} must be an excluded class`);
+  }
+  assert.match(
+    classify,
+    /`blockers` above `0`, at every `appendixTrust`, and a `null` `readyTitle` – a title that is nothing but work-in-progress prefixes – end the run with a report/,
+  );
+  assert.match(
+    classify,
+    /A failed call, nonzero exit or `ok: false` – .{0,160}? – offers nothing and is reported/,
+  );
+  // The Rules bullet points to step 3's exclusions where a reader checks the write boundary, and
+  // keeps no second copy of the list.
+  const rule = prose(
+    boundedSlice(
+      mergeGateDelegatedRun(repositoryRoot),
+      '- Mark a draft ready only',
+      '- This workflow holds',
+    ),
+  );
+  assert.match(
+    rule,
+    /Mark a draft ready only through "Draft ready for review", after the user's answer in this run or a consumed relayed answer; never in a non-interactive run, and never for a draft its step 3 excludes\./,
+  );
+  assert.doesNotMatch(rule, /`plan-only`/);
+  assert.match(
+    rule,
+    /a forge write of its own, outside the discussion and head-branch bounds above/,
+  );
+});
+
+// Invariant: the ready step runs in one fixed order, so a mark-ready never rests on a stale read or a
+// drifted answer and a merge never follows it without a full re-evaluation: capability, question,
+// fresh read of all four surfaces, reclassification and digest check, dry run, apply, re-evaluation.
+test('Draft ready for review runs capability, question, read, dry run, apply and re-evaluation in order', () => {
+  const run = mergeGateDelegatedRun(repositoryRoot);
+  const phase4 = prose(boundedSlice(run, '#### Draft ready for review', '### Phase 5: Merge'));
+  ordered(
+    phase4,
+    '2. No offer.',
+    'states no `pullRequestMarkReady`',
+    '3. Classify.',
+    '5. Ask.',
+    '6. Ready step',
+    'read the status, threads, comments and submitted reviews fresh, status first',
+    "run step 3's classification again",
+    'Only where head and digest both match, call `pr-mark-ready`',
+    'inspect the dry run, then repeat with `--apply`',
+    '7. Re-evaluate.',
+    'Start a new Phase-4 batch against the unchanged `VERIFIED_HEAD_SHA` and evaluate every condition again',
+  );
+  const step6 = boundedSlice(phase4, '6. Ready step', '7. Re-evaluate.');
+  assert.match(step6, /after `Mark ready and continue` only/);
+  assert.match(step6, /Where the status no longer states `draft: true`, skip the action/);
+  assert.match(step6, /A head other than `VERIFIED_HEAD_SHA` ends the run as condition 8 does/);
+  assert.match(
+    step6,
+    /A state digest recomputed from that classification that differs from the answered question's is a new question instance: a gated run asks again, a relayed run returns `BLOCKED-USER ready-for-review`/,
+  );
+  assert.match(step6, /on Forgejo with `"payload":\{"title":"<readyTitle>"\}`/);
+  assert.match(step6, /never re-run it after `mutationMayHaveSucceeded: true`/);
+  assert.match(step6, /with `titleEdited: true`, the changed title/);
+  // The question is posed once per digest, and a relayed run returns the id instead.
+  const ask = boundedSlice(phase4, '5. Ask.', '6. Ready step');
+  assert.match(ask, /poses the question below once per state digest/);
+  assert.match(ask, /a relayed run returns `BLOCKED-USER ready-for-review` with that evidence/);
+  assert.match(
+    ask,
+    /`Keep draft` ends the run with its report and leaves the pull request unchanged/,
+  );
+  // `Keep draft` stops a re-dispatch before any phase runs, whatever its digest.
+  assert.match(
+    prose(boundedSlice(run, '6. **Stopping answer.**', '7. **Nested-spawn probe.**')),
+    /`Keep draft` \(`ready-for-review`\) ends the run here, whatever its digest/,
+  );
+});
+
+// Invariant: the ready-step return is the one way a mark-ready goes back to Phase 2, with exactly
+// three triggers, counted as a round, and it is named in the closed list of Phase-4 returns and in
+// the round accounting, so no other unmet condition can loop. The subsection runs once per run: a
+// read still stating a draft after the ready step ends the run instead of asking or marking again.
+test('the ready-step return is a closed Phase-2 return with three triggers and a counted round', () => {
+  const run = mergeGateDelegatedRun(repositoryRoot);
+  const phase4 = prose(boundedSlice(run, '#### Draft ready for review', '### Phase 5: Merge'));
+  assert.match(
+    phase4,
+    /In this evaluation only, checks or a configured bot pending again, condition 3 unmet solely because mergeability is absent or `UNKNOWN`, or a merge state `BEHIND` is the ready-step return: it starts a new Phase-2 round per "Round accounting" instead of ending the run, and that round's trigger \(a\) brings a `BEHIND` branch forward\. A merge state `BEHIND` in this read starts that return even where every Phase-4 condition holds, before Phase 5\. Every other unmet condition ends the run\./,
+  );
+  assert.match(
+    phase4,
+    /A batch that still states `draft: true` ends the run with a report naming the failed ready transition\./,
+  );
+  assert.match(
+    phase4,
+    /It runs at most once per run: once the wisdom file records this run's ready step, a read that still states `draft: true` ends the run as step 7 states, with no second question and no second `pr-mark-ready`\./,
+  );
+  const evaluation = prose(
+    boundedSlice(
+      run,
+      'Any unmet condition ends the run with a report naming',
+      'remain instead of ending it',
+    ),
+  );
+  assert.match(
+    evaluation,
+    /the ready-step return of "Draft ready for review" – pending checks or bots, absent or `UNKNOWN` mergeability, or a merge state `BEHIND` even where every condition holds, as its step 7 states – which starts a new Phase-2 round, and the returning conditions/,
+  );
+  const accounting = prose(
+    boundedSlice(run, '**The ready-step return**', 'Nothing resets the counter'),
+  );
+  assert.match(accounting, /starts a Phase-2 round, counted like any other/);
+  assert.match(accounting, /is that subsection's only exception to ending the run/);
+  assert.match(
+    accounting,
+    /on a merge state `BEHIND` – which starts it even where every condition holds, as its step 7 states – that round's trigger \(a\) brings the branch forward/,
+  );
+  assert.match(
+    accounting,
+    /Where the counter reaches `mergeGate\.maxRounds` after the ready step, the report names the pull request as ready for review but not merged\./,
+  );
+});
+
+// Invariant: a Forgejo WIP draft leaves the Phase-2 wait only through a clean local merge proof,
+// the proof proves the mergeable half only, and Phase 4 repeats it, so a forge that never reports
+// mergeability for a WIP title cannot loop forever or merge an unproven head.
+test('the Forgejo WIP-draft exit needs a clean local merge proof and Phase 4 repeats it', () => {
+  const run = mergeGateDelegatedRun(repositoryRoot);
+  const exit = prose(
+    boundedSlice(run, '**The Forgejo WIP-draft exit.**', 'Where the check list itself is'),
+  );
+  assert.match(
+    exit,
+    /Only under `Provider: forgejo`, a read that states `draft: true` and no `mergeable`/,
+  );
+  assert.match(
+    exit,
+    /run the ancestry check's steps 1 to 3 for that read's `headSha` and `baseRef`, then/,
+  );
+  assert.match(exit, /remote-tracker\.mjs merge-proof-local <<</);
+  assert.match(exit, /A `status` of `clean` leaves the loop\./);
+  assert.match(
+    exit,
+    /`conflict` ends the run here with a conflict report naming its `conflictCount` – the round stays counted, nothing is merged, delegated or asked, and Phase 6 runs\./,
+  );
+  assert.match(
+    exit,
+    /`unavailable`, a failed fetch or call, a shallow repository or a missing commit makes no exception/,
+  );
+  assert.match(
+    exit,
+    /The proof meets only the mergeable half of condition 3; Phase 4 decides the draft\./,
+  );
+  const phase4 = prose(
+    boundedSlice(run, '### Phase 4: Merge preconditions', '#### Draft ready for review'),
+  );
+  assert.match(
+    phase4,
+    /Under `Provider: forgejo`, where that read states `draft: true` and no `mergeable`, run the Phase-2 exit's `merge-proof-local` again after those fetches, with `VERIFIED_HEAD_SHA`; only its `clean` meets condition 3's mergeable half/,
+  );
+  assert.match(
+    phase4,
+    /the "not a draft" half stays unmet; "Draft ready for review" decides whether a ready step follows\. Only a forge-reported `MERGEABLE` lets Phase 5 merge\. An absent `draft` is unproven and blocks/,
+  );
+  // Condition 3 owns the MERGEABLE rule; the draft subsection keeps no second copy of it.
+  assert.doesNotMatch(
+    prose(boundedSlice(run, '#### Draft ready for review', '### Phase 5: Merge')),
+    /forge-reported `MERGEABLE`/,
+  );
+  assert.match(
+    phase4,
+    /While the draft trigger of "Draft ready for review" holds, check the classification's `readyTitle` instead of the read title\./,
+  );
+  // The helper reads and writes no ref, so the Git-read paragraph names it with the other reads.
+  assert.match(
+    prose(run),
+    /`merge-proof-local` of the Forgejo WIP-draft exit and of Phase 4: it fetches nothing, and its `git merge-tree --write-tree` writes only into a private temporary object directory the helper removes/,
+  );
+});
+
+// Invariant: the question's digest binds the decision record. Its subject keys are the class, the
+// sha256 of the raw appendix block and its trust level, so an edited record, a changed class or a
+// record whose shown text changed with its trust is a new instance.
+test('the ready-for-review digest binds the class, the raw appendix block and its trust', () => {
+  const core = prose(mergeGateCore(repositoryRoot));
+  assert.match(
+    core,
+    /`class=<class>`, `appendix=<appendixDigest>`, the SHA-256 of the raw appendix block or `none`, and `trust=<appendixTrust>` for `ready-for-review`/,
+  );
+  const row = relayedQuestionTable(mergeGateCore(repositoryRoot)).find(
+    ({ id }) => id === 'ready-for-review',
+  );
+  assert.deepEqual(row.options, ['Mark ready and continue', 'Keep draft']);
+  const fences = askContracts(mergeGateDelegatedRun(repositoryRoot), 'ready-for-review').filter(
+    (ask) => ask.header === 'Ready',
+  );
+  assert.equal(fences.length, 1);
+  assert.deepEqual(
+    fences[0].options.map(({ label }) => label),
+    ['Mark ready and continue', 'Keep draft'],
+  );
 });
 
 // Invariant: `relayed` is additive. Each gate's non-interactive branch keeps its exact wording, so
@@ -26176,7 +26433,7 @@ test('a no-branch-writes caller limit withholds every head-branch write and ends
   );
   assert.match(
     binding,
-    /It withholds no write outside the head branch: a bot trigger comment and Phase 5\.5's `issueClose` stay governed by their own rules\./,
+    /It withholds no write outside the head branch: a bot trigger comment, the confirmed `pr-mark-ready` of "Draft ready for review" and Phase 5\.5's `issueClose` stay governed by their own rules\./,
   );
   // The binding sits before every rule it overrides, and the sections it names exist.
   const fragment = mergeGateDelegatedRun(repositoryRoot);

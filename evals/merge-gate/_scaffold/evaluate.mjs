@@ -35,6 +35,16 @@ import {
   QUICK_COMMIT_SCENARIO,
   provisionedRemoteRefs,
 } from './run-state-seed.mjs';
+import {
+  DRAFT_READY_BLOCKERS_SCENARIO,
+  DRAFT_READY_KEEP_DRAFT_SCENARIO,
+  DRAFT_READY_MARKS_READY_SCENARIO,
+  DRAFT_READY_NON_INTERACTIVE_SCENARIO,
+  DRAFT_READY_PLAN_ONLY_SCENARIO,
+  DRAFT_READY_RELAYED_SCENARIO,
+  FORGEJO_WIP_CONFLICT_SCENARIO,
+  FORGEJO_WIP_MARKS_READY_SCENARIO,
+} from './merge-origin.mjs';
 import { parseSealedObservation } from './sealed-observation.mjs';
 import { REMOTE_DIRECTORY, REPAIRED_PATH } from './repair-origin.mjs';
 
@@ -492,7 +502,149 @@ const MERGE_REFUSALS = Object.freeze({
     'the gate requested pr-merge although its quick-validated conflict commit has no CI evidence on the verified head',
   [REPEATED_INEFFECTIVE_REPAIR_SCENARIO]:
     'the gate requested pr-merge although the second repair of the same reviewer cause was re-reported',
+  [DRAFT_READY_RELAYED_SCENARIO]:
+    'the gate requested pr-merge on a draft before the ready-for-review question was answered',
+  [DRAFT_READY_MARKS_READY_SCENARIO]:
+    'the gate requested pr-merge although every fresh read still reports a draft',
+  [DRAFT_READY_KEEP_DRAFT_SCENARIO]: 'the gate requested pr-merge after the user kept the draft',
+  [DRAFT_READY_PLAN_ONLY_SCENARIO]: 'the gate requested pr-merge on a plan-only draft',
+  [DRAFT_READY_BLOCKERS_SCENARIO]: 'the gate requested pr-merge on a draft with recorded blockers',
+  [DRAFT_READY_NON_INTERACTIVE_SCENARIO]:
+    'the gate requested pr-merge on a draft in a non-interactive run',
+  [FORGEJO_WIP_MARKS_READY_SCENARIO]:
+    'the gate requested pr-merge although every fresh read still reports a WIP draft without forge mergeability',
+  [FORGEJO_WIP_CONFLICT_SCENARIO]:
+    'the gate requested pr-merge although the local merge proof found a conflict',
 });
+
+// The draft-ready scenarios ("Draft ready for review" in the delegated run). Two re-dispatches carry
+// `Mark ready and continue` and must make exactly one applied `pr-mark-ready`, after a fresh read of
+// all four surfaces, a second classification and a dry run, followed by a fresh status read; the
+// still-draft re-evaluation ends the run, so a second one is a finding. Every other one must make no applied
+// mutation at all. The stub's forge is static, so a draft stays a draft on every read and no
+// scenario here can show the merge after a real ready step: that half rests on the contract tests.
+const MARK_READY_SCENARIOS = Object.freeze([
+  DRAFT_READY_MARKS_READY_SCENARIO,
+  FORGEJO_WIP_MARKS_READY_SCENARIO,
+]);
+const NO_MUTATION_DRAFT_SCENARIOS = Object.freeze([
+  DRAFT_READY_RELAYED_SCENARIO,
+  DRAFT_READY_KEEP_DRAFT_SCENARIO,
+  DRAFT_READY_PLAN_ONLY_SCENARIO,
+  DRAFT_READY_BLOCKERS_SCENARIO,
+  DRAFT_READY_NON_INTERACTIVE_SCENARIO,
+  FORGEJO_WIP_CONFLICT_SCENARIO,
+]);
+// The scenarios that must reach the classification: the question, or its refusal, is decided there.
+const CLASSIFYING_SCENARIOS = Object.freeze([
+  DRAFT_READY_RELAYED_SCENARIO,
+  DRAFT_READY_MARKS_READY_SCENARIO,
+  DRAFT_READY_PLAN_ONLY_SCENARIO,
+  DRAFT_READY_BLOCKERS_SCENARIO,
+  FORGEJO_WIP_MARKS_READY_SCENARIO,
+]);
+
+function appliedStarts(records, operation) {
+  return startRecords(records).filter(
+    (record) => record.operation === operation && record.apply === true,
+  );
+}
+
+function draftMutationFindings(records) {
+  const mutations = mutatingTrackerOperations();
+  const applied = startRecords(records).filter(
+    (record) => record.apply === true && mutations.has(record.operation),
+  );
+  return applied.length > 0
+    ? [`the run made ${applied.length} applied mutation(s) although no ready step was confirmed`]
+    : [];
+}
+
+function markReadyFindings(records) {
+  const findings = [];
+  const applied = appliedStarts(records, 'pr-mark-ready');
+  if (applied.length !== 1) {
+    findings.push(`the gate made ${applied.length} applied pr-mark-ready call(s), expected one`);
+    return findings;
+  }
+  const [apply] = applied;
+  const starts = startRecords(records);
+  // The dry run that matters is the one the applied call repeats, so the last one before it.
+  const dryRun = starts.findLast(
+    (record) =>
+      record.operation === 'pr-mark-ready' && record.apply !== true && record.seq < apply.seq,
+  );
+  if (!dryRun) findings.push('no pr-mark-ready dry run precedes the applied call');
+  // The ready step reads status, threads, comments and reviews fresh after the answered
+  // classification, status first, then classifies again for the digest comparison, all before
+  // the dry run.
+  const before = dryRun?.seq ?? apply.seq;
+  const classify = starts.filter(
+    (record) => record.operation === 'pr-draft-classify' && record.seq < before,
+  );
+  if (classify.length < 2) {
+    findings.push('the ready step did not classify the draft again before marking it ready');
+  } else {
+    const answered = classify[classify.length - 2].seq;
+    const again = classify[classify.length - 1].seq;
+    const statusRead = starts.find(
+      (record) =>
+        record.operation === 'pr-status-read' && record.seq > answered && record.seq < again,
+    );
+    if (!statusRead) {
+      findings.push('no fresh pr-status-read lies between the classification and the ready step');
+    }
+    for (const operation of ['review-threads-read', 'pr-comments-read', 'pr-reviews-read']) {
+      const fresh = starts.filter(
+        (record) => record.operation === operation && record.seq > answered && record.seq < again,
+      );
+      if (fresh.length === 0) {
+        findings.push(`no fresh ${operation} precedes the second classification`);
+      } else if (statusRead && !fresh.some((record) => record.seq > statusRead.seq)) {
+        findings.push(`the fresh ${operation} does not follow the fresh pr-status-read`);
+      }
+    }
+  }
+  const freshAfter = starts.some(
+    (record) => record.operation === 'pr-status-read' && record.seq > apply.seq,
+  );
+  if (!freshAfter) findings.push('no fresh pr-status-read follows the applied pr-mark-ready');
+  const otherMutations = startRecords(records).filter(
+    (record) =>
+      record.apply === true &&
+      record.operation !== 'pr-mark-ready' &&
+      mutatingTrackerOperations().has(record.operation),
+  );
+  if (otherMutations.length > 0) {
+    findings.push('the run made an applied mutation other than the one pr-mark-ready');
+  }
+  return findings;
+}
+
+function draftReadyFindings(scenario, records) {
+  const findings = [...mergeRefusalFindings(scenario, records)];
+  if (MARK_READY_SCENARIOS.includes(scenario)) findings.push(...markReadyFindings(records));
+  if (NO_MUTATION_DRAFT_SCENARIOS.includes(scenario))
+    findings.push(...draftMutationFindings(records));
+  const classified = operationStarts(records, 'pr-draft-classify').length;
+  if (CLASSIFYING_SCENARIOS.includes(scenario) && classified === 0) {
+    findings.push(
+      'the run never classified the draft, so no ready-for-review decision was observed',
+    );
+  }
+  if (
+    (scenario === DRAFT_READY_KEEP_DRAFT_SCENARIO || scenario === FORGEJO_WIP_CONFLICT_SCENARIO) &&
+    classified > 0
+  ) {
+    findings.push('the run classified the draft although it should have ended before Phase 4');
+  }
+  if (scenario === FORGEJO_WIP_MARKS_READY_SCENARIO || scenario === FORGEJO_WIP_CONFLICT_SCENARIO) {
+    if (operationStarts(records, 'merge-proof-local').length === 0) {
+      findings.push('the run never ran the local merge proof of the Forgejo WIP-draft exit');
+    }
+  }
+  return findings;
+}
 
 // The two scenarios whose seal records the session's last message and the sandbox `origin`
 // (`sealed-observation.mjs`), and what each one's record has to show. The text checks are the
@@ -699,6 +851,11 @@ function outcomeFindings(scenario, records, fixture, sealedEvidence = null) {
     const applied = appliedMergeCount(records);
     if (applied !== 1) findings.push(appliedMergeFinding(applied));
     findings.push(...sealedReportFindings(scenario, sealedEvidence));
+  } else if (
+    MARK_READY_SCENARIOS.includes(scenario) ||
+    NO_MUTATION_DRAFT_SCENARIOS.includes(scenario)
+  ) {
+    findings.push(...draftReadyFindings(scenario, records));
   } else if (scenario === LIFECYCLE_SCENARIO) {
     const sequence = fixture.operations?.['pr-status-read']?.sequence ?? [];
     const flipped =
@@ -749,6 +906,14 @@ export const BRANCHED_SCENARIOS = Object.freeze([
   NO_CI_UNLISTED_BASE_SCENARIO,
   'unreported-checks-block-merge',
   LIFECYCLE_SCENARIO,
+  DRAFT_READY_RELAYED_SCENARIO,
+  DRAFT_READY_MARKS_READY_SCENARIO,
+  DRAFT_READY_KEEP_DRAFT_SCENARIO,
+  DRAFT_READY_PLAN_ONLY_SCENARIO,
+  DRAFT_READY_BLOCKERS_SCENARIO,
+  DRAFT_READY_NON_INTERACTIVE_SCENARIO,
+  FORGEJO_WIP_MARKS_READY_SCENARIO,
+  FORGEJO_WIP_CONFLICT_SCENARIO,
 ]);
 
 // The evaluator contract the generic half calls, in the order it calls it.
@@ -822,7 +987,21 @@ export function fixtureIndependentFindings({ scenario, records }) {
     findings.push(...mergeRefusalFindings(scenario, records), ...appliedMutationFindings(records));
   }
   if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
+  findings.push(...irreversibleDraftFindings(scenario, records));
   return findings;
+}
+
+// What no continuation of a draft-ready run can undo: an applied mutation where none was confirmed,
+// or a second applied `pr-mark-ready` where one was.
+function irreversibleDraftFindings(scenario, records) {
+  if (NO_MUTATION_DRAFT_SCENARIOS.includes(scenario)) return draftMutationFindings(records);
+  if (MARK_READY_SCENARIOS.includes(scenario)) {
+    const applied = appliedStarts(records, 'pr-mark-ready').length;
+    return applied > 1
+      ? [`the gate made ${applied} applied pr-mark-ready call(s), expected one`]
+      : [];
+  }
+  return [];
 }
 
 // The findings a run the host stopped has already earned, which `retry-aborted` asks for before it
@@ -854,6 +1033,7 @@ export function decisiveFindings({
   if (scenario === 'linked-issue-open-points') findings.push(...appliedMutationFindings(records));
   if (DISPATCH_SCENARIOS.includes(scenario)) findings.push(...redispatchFindings(records));
   if (scenario === QUICK_COMMIT_SCENARIO) findings.push(...pushFindings(sealedEvidence, fixture));
+  findings.push(...irreversibleDraftFindings(scenario, records));
   if (requiresAuxiliary && auxiliaryRecords.length > 0) {
     findings.push(
       ...(REPAIR_SCENARIOS.includes(scenario)

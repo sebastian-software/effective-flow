@@ -134,6 +134,7 @@ const EXPECTED_TOOLS = [
 ];
 
 const EXPECTED_RUNTIME_SCRIPTS = [
+  'autopilot-appendix-core.mjs',
   'autopilot-core.mjs',
   'autopilot.mjs',
   'backlog-audit-core.mjs',
@@ -176,6 +177,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'plan-lint.mjs',
   'plan-publication-core.mjs',
   'plan-publication.mjs',
+  'pr-delivery-git-core.mjs',
   'process-runner.mjs',
   'protected-validation-core.mjs',
   'protected-validation-protocol.mjs',

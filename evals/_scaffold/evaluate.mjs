@@ -135,6 +135,9 @@ export function localTrackerOperations() {
 // `localOperation` switch describes as "local runtime-state operations" that touch
 // `<cwd>/.effective-flow/merge-gate/`. They reach no provider, but they are not side-effect free, so
 // a verdict that means "nothing read or written yet" must not exempt them with the pure ones.
+// `merge-proof-local` belongs here for the same reason: it reaches no forge and fetches nothing,
+// but it reads the checkout's Git refs and object store and has `git merge-tree` write objects into
+// a temporary object directory, so it is a read of local state, not a computation over its input.
 //
 // Named rather than derived, because the helper exports no classification and nothing in its
 // switch distinguishes a file-touching case from a pure one syntactically. The names are guarded
@@ -142,6 +145,7 @@ export function localTrackerOperations() {
 // fails the moment an operation is added to or removed from it, so a new runtime-state operation
 // cannot be exempted by default.
 export const RUNTIME_STATE_TRACKER_OPERATIONS = Object.freeze([
+  'merge-proof-local',
   'thread-ledger-lookup',
   'thread-ledger-record',
 ]);

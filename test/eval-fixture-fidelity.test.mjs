@@ -501,18 +501,18 @@ function steppingClock() {
   return () => (elapsed += 60_000);
 }
 
-// Invariant: a provider command that exits non-zero is stated explicitly and nowhere else. A response
-// is a failed command only when it is an object whose keys are a subset of `exit`, `stdout` and
-// `stderr` and whose `exit` is a non-zero integer, so no provider payload a read could return is
-// mistaken for one; every other response is still delivered as a status-0 stdout. The shape exists
-// for the one scenario whose subject is a forge's refusal of the merge, which exits non-zero.
-function isFailedCommand(payload) {
+// Invariant: a provider command's own result is stated explicitly and nowhere else. A response is a
+// stated command result only when it is an object whose keys are a subset of `exit`, `stdout` and
+// `stderr` and whose `exit` is an integer, so no provider payload a read could return is mistaken for
+// one; every other response is still delivered as a status-0 stdout with an empty stderr. The shape
+// serves a forge's refusal of the merge, which exits non-zero, and the Forgejo reads: `tea api
+// --include` exits 0 and prints the HTTP status line on stderr, which a status-0 `exit` states.
+function isStatedCommand(payload) {
   return (
     payload !== null &&
     typeof payload === 'object' &&
     !Array.isArray(payload) &&
     Number.isInteger(payload.exit) &&
-    payload.exit !== 0 &&
     Object.keys(payload).every((key) => ['exit', 'stdout', 'stderr'].includes(key))
   );
 }
@@ -524,7 +524,7 @@ function runnerFor(entry) {
   const runner = async () => {
     const payload = repeat ? responses[0] : responses[index];
     index += 1;
-    if (isFailedCommand(payload)) {
+    if (isStatedCommand(payload)) {
       return { status: payload.exit, stdout: payload.stdout ?? '', stderr: payload.stderr ?? '' };
     }
     return {

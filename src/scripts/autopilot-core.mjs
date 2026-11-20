@@ -65,7 +65,14 @@ import { constants as fsConstants } from 'node:fs';
 import { link, lstat, open, readdir, realpath, rename, unlink } from 'node:fs/promises';
 import path from 'node:path';
 import process from 'node:process';
+import {
+  APPENDIX_BEGIN,
+  APPENDIX_BLOCKER_HEADINGS,
+  APPENDIX_END,
+  MAX_APPENDIX_BYTES,
+} from './autopilot-appendix-core.mjs';
 import { hasClosingKeyword, scanEntries } from './plan-publication-core.mjs';
+import { archivePathFor } from './pr-delivery-git-core.mjs';
 import {
   O_NOFOLLOW,
   RUNTIME_STATE_DIR,
@@ -127,7 +134,6 @@ export const LEDGER_SCHEMA_VERSION = 1;
 export const MAX_STDIN_BYTES = 1024 * 1024;
 const MAX_LEDGER_BYTES = 1024 * 1024;
 const MAX_PLAN_BYTES = 512 * 1024;
-const MAX_APPENDIX_BYTES = 64 * 1024;
 const MAX_BODY_BYTES = 256 * 1024;
 
 export const RUN_ID = /^ap-\d{8}T\d{6}Z-[0-9a-f]{8}$/;
@@ -195,10 +201,9 @@ const ASSUMPTION_HEADINGS = Object.freeze([
   '## Annahmen und offene Punkte',
 ]);
 
-// The appendix markers. `pr`'s body check strips every `<!-- effective-flow-` comment from a drafted
-// body, so only this appended block can carry them.
-export const APPENDIX_BEGIN = '<!-- effective-flow-autopilot-appendix:begin v1 -->';
-export const APPENDIX_END = '<!-- effective-flow-autopilot-appendix:end -->';
+// The appendix markers live in `autopilot-appendix-core.mjs`, which the reading side shares; they
+// stay exported here for existing importers.
+export { APPENDIX_BEGIN, APPENDIX_END };
 
 export class AutopilotError extends Error {
   constructor(code, message, details = {}) {
@@ -1116,10 +1121,9 @@ async function planReviewedOperation(input, deps) {
   return { recorded: true, reviewedPlanSha256: plan.sha256, sourceRoot: root };
 }
 
-// The one archive path plan archival produces for a plan: `<dir>/archive/<file>`.
-export function archivePathFor(planPath) {
-  return path.posix.join(path.posix.dirname(planPath), 'archive', path.posix.basename(planPath));
-}
+// The archive-path rule lives in `pr-delivery-git-core.mjs`, which the plan-only evidence shares;
+// it stays exported here for existing importers.
+export { archivePathFor };
 
 // After the handback commit and before `pr-appendix`: the delivered plan state, either the
 // archive path or an unarchived delivery. A new record replaces an earlier one, including its
@@ -1497,7 +1501,7 @@ const COPY = Object.freeze({
     automatic: '### Automatic decisions',
     automaticCount: (count) =>
       `${count} decision${count === 1 ? ' was' : 's were'} taken automatically with a clear lead.`,
-    blockers: '### Blockers',
+    blockers: APPENDIX_BLOCKER_HEADINGS.en,
     neutralBlocker:
       'Implementation stopped at a blocker that needs maintainer attention; the details are kept locally.',
     fit: '### Architecture fit',
@@ -1519,7 +1523,7 @@ const COPY = Object.freeze({
     automatic: '### Automatische Entscheidungen',
     automaticCount: (count) =>
       `${count} ${count === 1 ? 'Entscheidung wurde' : 'Entscheidungen wurden'} mit klarem Vorsprung automatisch getroffen.`,
-    blockers: '### Blocker',
+    blockers: APPENDIX_BLOCKER_HEADINGS.de,
     neutralBlocker:
       'Die Umsetzung wurde an einem Blocker angehalten, der die Aufmerksamkeit der Maintainer braucht; die Details liegen lokal vor.',
     fit: '### Architektur-Passung',

@@ -701,6 +701,7 @@ test('the runtime-state exception list is complete for the helper local operatio
       'issue-lifecycle-receipt-parse',
       'label-query-variants',
       'marker-patch',
+      'merge-proof-local',
       'planning-comment-build',
       'pr-comment-build',
       'pr-review-comment-build',

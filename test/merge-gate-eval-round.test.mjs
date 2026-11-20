@@ -375,6 +375,40 @@ const UNRECORDED_SCENARIO_LOGS = Object.freeze({
     'pr-reviews-read',
     'pr-status-read',
   ],
+  // The draft-ready scenarios. The questioning and refusing ones pass on the classification alone, the
+  // two that end before it on one status read; the two re-dispatches that confirm the ready step
+  // pass on the one ordered sequence the evaluator requires: classification, a fresh read of all
+  // four surfaces, a second classification, a dry run, the applied call and a read after it. The
+  // Forgejo ones add their local merge proof.
+  'draft-ready-relayed-returns-question': ['pr-draft-classify'],
+  'draft-ready-plan-only-asks-nothing': ['pr-draft-classify'],
+  'draft-ready-blockers-ask-nothing': ['pr-draft-classify'],
+  'draft-ready-keep-draft-stops': ['pr-status-read'],
+  'draft-ready-non-interactive-never-marks': ['pr-status-read'],
+  'draft-ready-redispatch-marks-ready': [
+    'pr-draft-classify',
+    'pr-status-read',
+    'review-threads-read',
+    'pr-comments-read',
+    'pr-reviews-read',
+    'pr-draft-classify',
+    'pr-mark-ready',
+    { operation: 'pr-mark-ready', apply: true },
+    'pr-status-read',
+  ],
+  'forgejo-wip-draft-conflict-asks-nothing': ['merge-proof-local'],
+  'forgejo-wip-draft-marks-ready': [
+    'merge-proof-local',
+    'pr-draft-classify',
+    'pr-status-read',
+    'review-threads-read',
+    'pr-comments-read',
+    'pr-reviews-read',
+    'pr-draft-classify',
+    'pr-mark-ready',
+    { operation: 'pr-mark-ready', apply: true },
+    'pr-status-read',
+  ],
   // The two repair scenarios run head-indexed, sequenced fixtures, so their logs are lifecycle logs,
   // and each run pairs a repair trace: two delegations, plus the one gate push between them where the
   // composition holds one. The merging one applies its merge after the second delegation; the
@@ -3803,3 +3837,47 @@ test(
     }
   },
 );
+
+// Invariant: the mark-ready evaluator reads the ready step's order from the call log as the
+// contract states it. The fresh status read comes first, the three review-surface reads follow it,
+// and all four lie before the second classification. The dry run it inspects is the last one
+// before the applied call. Each case breaks exactly one of those rules on the passing log.
+test('the mark-ready evaluator holds the fresh reads to the second classification and the last dry run', () => {
+  const scenario = 'draft-ready-redispatch-marks-ready';
+  const fixture = fixtureOf(scenario);
+  const passing = UNRECORDED_SCENARIO_LOGS[scenario];
+  const evaluate = (operations) => {
+    const records = operations.map((entry, index) => ({
+      seq: index + 1,
+      operation: typeof entry === 'string' ? entry : entry.operation,
+      apply: typeof entry === 'string' ? false : entry.apply,
+      at: '2026-10-16T00:00:00.000Z',
+      cwd: '/tmp/project',
+    }));
+    return evaluatorFindings({ scenario, records, fixture, requiresAuxiliary: false });
+  };
+  assert.deepEqual(evaluate(passing), []);
+
+  // A review-surface read after the second classification is no fresh read for the digest.
+  const lateRead = [...passing];
+  lateRead.splice(lateRead.indexOf('pr-reviews-read'), 1);
+  lateRead.splice(lateRead.indexOf('pr-mark-ready'), 0, 'pr-reviews-read');
+  assert.ok(
+    evaluate(lateRead).includes('no fresh pr-reviews-read precedes the second classification'),
+  );
+
+  // A review-surface read before the fresh status read breaks "status first".
+  const statusLast = [...passing];
+  statusLast.splice(statusLast.indexOf('pr-status-read'), 1);
+  statusLast.splice(statusLast.lastIndexOf('pr-draft-classify'), 0, 'pr-status-read');
+  assert.ok(
+    evaluate(statusLast).includes(
+      'the fresh review-threads-read does not follow the fresh pr-status-read',
+    ),
+  );
+
+  // An early dry run before the reads does not shift the window: the last dry run is inspected.
+  const earlyDryRun = [...passing];
+  earlyDryRun.splice(1, 0, 'pr-mark-ready');
+  assert.deepEqual(evaluate(earlyDryRun), []);
+});

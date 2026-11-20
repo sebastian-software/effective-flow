@@ -821,6 +821,35 @@ scenario's receipt and seal are unchanged.
   checks are patterns over prose: they show that the report names the fact, never that the run
   decided on it.
 
+## The draft-ready scenarios
+
+Eight scenarios cover "Draft ready for review" of the delegated run: on GitHub,
+`draft-ready-relayed-returns-question`, `draft-ready-redispatch-marks-ready`,
+`draft-ready-keep-draft-stops`, `draft-ready-plan-only-asks-nothing`,
+`draft-ready-blockers-ask-nothing` and `draft-ready-non-interactive-never-marks`; on Forgejo, the
+suite's first two Forgejo scenarios, `forgejo-wip-draft-marks-ready` and
+`forgejo-wip-draft-conflict-asks-nothing`. A gated answer cannot be injected into a run, so the
+answered cases are relayed re-dispatches whose `Relayed answer:` carries the precomputed state
+digest of the fresh state; no wisdom file is seeded, because Entry accepts an absent one on such a
+dispatch. Every scenario that reaches Phase 4 gets the pull-request `origin` of `merge-origin.mjs`
+(`DRAFT_READY_ORIGIN_SCENARIOS`), since the question is posed only where condition 11 holds too;
+none serves a merge. Each fixture was derived from `merge-proceeds` and replayed through the real
+helper, `pr-draft-classify` and `merge-proof-local` included, with canned provider and Git
+responses.
+
+- **What is asserted:** for the two `Mark ready and continue` re-dispatches, exactly one applied
+  `pr-mark-ready` after its dry run, a fresh read of status, threads, comments and reviews and a
+  second classification after that status read, followed by a fresh status read, and no other
+  applied mutation; for every other one, no applied mutation at all; for the scenarios that
+  must reach the classification, a `pr-draft-classify` call, and for `Keep draft` and the Forgejo
+  conflict, none; for both Forgejo scenarios, a `merge-proof-local` call; and no `pr-merge` anywhere.
+- **What is not:** the stub's forge is static, so no scenario shows the merge after a real ready
+  step, and the returned `BLOCKED-USER ready-for-review` and the report reach no evidence file. The
+  Forgejo canned proof proves only the branching; the git module's unit tests prove the detection.
+  Forgejo `tea api` reads state their HTTP status line on stderr, so those provider responses are
+  recorded as status-0 `{exit, stdout, stderr}` records, which the fidelity replay has to deliver
+  with their stderr.
+
 ## What this deliberately does not cover
 
 - **The six `no-ci-policy-*` scenarios carry two recorded deviations.** First,
@@ -842,9 +871,10 @@ scenario's receipt and seal are unchanged.
   `merge-gate-review-fix-validation` makes the existing scenarios' evidence visible debt, and a
   review-fix counterpart of the quick-commit scenario stays unwritten, manual evidence debt. The
   prompt contract is pinned by `test/iterate-quick-validation-contract.test.mjs` instead.
-- **Nineteen scenarios exist: one pair, one observer, two unreported-check-list refusals, one
+- **Twenty-seven scenarios exist: one pair, one observer, two unreported-check-list refusals, one
   configured-reviewer refusal, two delegation scenarios, one bot-account exclusion, six no-CI
-  policy scenarios, the repair-accounting pair, and the two run-state scenarios.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
+  policy scenarios, the repair-accounting pair, the two run-state scenarios, and the eight
+  draft-ready scenarios.** `guard-blocks-merge` and `merge-proceeds` are the pair, and a green
   result from them proves that one refusal path holds and that the harness can reach a merge, and
   nothing about the breadth of the gate. `linked-issue-open-points` stands beside them rather than inside them: it makes no merge
   decision at all, and what it observes is the post-merge phase. `unreported-checks-block-merge`

@@ -36,7 +36,8 @@ SUITES = ('merge-gate', 'iterate', 'next-steps')
 # names and never from the live registries. A scenario registered after the freeze does not enter the
 # frozen corpus: its absence here is the pinned protocol, not an omission. Only the names registered
 # later (merge-gate `no-ci-policy-*`, `presence-notice-names-other-run`,
-# `quick-conflict-commit-without-ci-evidence-blocks` and the two repair scenarios; iterate
+# `quick-conflict-commit-without-ci-evidence-blocks`, the two repair scenarios and the eight
+# `draft-ready-*`/`forgejo-wip-draft-*` scenarios; iterate
 # `unparseable-authorized-scope-aborts`, `duplicated-review-fix-validation-aborts` and
 # `unparseable-review-fix-validation-aborts`; next-steps `turbulent-merge-offers-retro`,
 # `routine-merge-no-retro`, `post-dispatch-abort-offers-retro`, `both-slots-full-drops-retro`,
@@ -47,7 +48,11 @@ FROZEN_EXCLUDED = {'merge-gate': {name for name in (
     'no-ci-policy-reported-check-blocks', 'no-ci-policy-status-read-failure-blocks',
     'no-ci-policy-unattended-merges', 'no-ci-policy-unlisted-base-blocks',
     'presence-notice-names-other-run', 'quick-conflict-commit-without-ci-evidence-blocks',
-    'repair-after-base-merge-merges', 'repeated-ineffective-repair-stops')},
+    'repair-after-base-merge-merges', 'repeated-ineffective-repair-stops',
+    'draft-ready-blockers-ask-nothing', 'draft-ready-keep-draft-stops',
+    'draft-ready-non-interactive-never-marks', 'draft-ready-plan-only-asks-nothing',
+    'draft-ready-redispatch-marks-ready', 'draft-ready-relayed-returns-question',
+    'forgejo-wip-draft-conflict-asks-nothing', 'forgejo-wip-draft-marks-ready')},
     'iterate': {'duplicated-review-fix-validation-aborts', 'unparseable-authorized-scope-aborts',
                 'unparseable-review-fix-validation-aborts'},
     'next-steps': {'both-slots-full-drops-retro', 'merged-delivery-findings-report',
@@ -58,7 +63,8 @@ FROZEN_COUNTS = {'merge-gate': 9, 'iterate': 7, 'next-steps': 15}
 # entry (None derives it from the excluded names, keyed as the table's string keys).
 FROZEN_BRANCH_TABLES = {
     'merge-gate': ('export const BRANCHED_SCENARIOS = Object.freeze([', ']);',
-                   r'\s*(NO_CI_[A-Z_]+|PRESENCE_NOTICE|QUICK_COMMIT|REPAIR_AFTER_BASE_MERGE|REPEATED_INEFFECTIVE_REPAIR)'
+                   r'\s*(NO_CI_[A-Z_]+|PRESENCE_NOTICE|QUICK_COMMIT|REPAIR_AFTER_BASE_MERGE|REPEATED_INEFFECTIVE_REPAIR'
+                   r'|DRAFT_READY_[A-Z_]+|FORGEJO_WIP_[A-Z_]+)'
                    r'_SCENARIO,\s*$'),
     'iterate': ('export const PHASE_ZERO_REFUSALS = Object.freeze({', '});', None),
     'next-steps': ('export const EXPECTATIONS = Object.freeze({', '});', None)}

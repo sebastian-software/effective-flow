@@ -33,6 +33,7 @@ const AGENT_PREFIX = 'effective-flow-';
 const RUNTIME_SCRIPT_FILES = [
   'autopilot.mjs',
   'autopilot-core.mjs',
+  'autopilot-appendix-core.mjs',
   'backlog-audit.mjs',
   'backlog-audit-core.mjs',
   'delegation-envelope.mjs',
@@ -83,6 +84,7 @@ const RUNTIME_SCRIPT_FILES = [
   'plan-lint-core.mjs',
   'plan-publication.mjs',
   'plan-publication-core.mjs',
+  'pr-delivery-git-core.mjs',
   'process-runner.mjs',
   'config-resolve.mjs',
   'config-resolve-core.mjs',

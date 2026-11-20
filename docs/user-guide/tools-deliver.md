@@ -498,6 +498,44 @@ the run may merge at the end or only report merge-readiness, then drives an orde
    after the read, or CI the pull request itself introduces, looks like no CI; where the policy
    was configured but did not apply, it says why.
 
+   **A draft pull request.** The gate never merges a draft, and `autopilot` always ends in one.
+   When every other merge precondition holds and the pull request is still a draft, an
+   interactive run can offer to mark it ready for review and continue. It asks only then: pending
+   checks or reviewers never reach the question, and it is asked once per state. The offer needs a
+   run whose resolved completion is merge, configured or answered `Merge` at the start, a session
+   that can answer, and a forge that can mark a draft ready. A non-interactive run, a `report` run, a hidden-mode run and an external
+   tracker target never mark anything ready; the report names the draft as the unmet condition.
+
+   The gate reads the pull request's own record first, never its prose. Only a draft with a
+   **delivered** implementation, or one with no plan marker at all, with no recorded blocker, is
+   offered. A plan-only draft, a draft with an invalid plan marker, a plan draft whose `pr` finish
+   never ran, a draft with a recorded blocker, and a Forgejo title that is nothing but a
+   work-in-progress prefix end the run with a report naming the reason. So does a pull request
+   that moved while the gate read it. The question shows the class, the blocker count and the autopilot decision
+   record. The record is shown, quoted as data, only when the pull request is from this repository
+   and its author has write permission. Otherwise the question says that no decision record is
+   present, or that one is present but cannot be verified and its text is not shown. Blockers
+   exclude the offer whatever the trust level.
+
+   `Mark ready and continue` reads the pull request again and marks it ready only if it is still a
+   draft on the same head and in the state you answered for; a changed state asks again. Then it
+   checks every merge precondition once more. A check or reviewer that is pending again, or a branch
+   that fell behind its base, sends the run back for another round, which counts against
+   `mergeGate.maxRounds`. A pull request that still reads as a draft ends the run with a report
+   naming the failed transition: the gate marks a draft ready at most once per run. Only a
+   forge-reported mergeable state lets the merge go on. `Keep draft` leaves the pull request
+   unchanged and ends the run with its report. Marking ready is a forge write of its own: it
+   happens only after your answer in this run.
+
+   **Forgejo drafts.** Forgejo has no draft flag. A pull request is a draft while its title starts
+   with `WIP:` or `[WIP]`, and the forge reports no mergeable state for it. The gate therefore
+   proves mergeability locally: it fetches the head and the base, then merges them in a private
+   temporary object directory with `git merge-tree` (Git 2.38 or newer), which leaves your
+   repository unchanged. A clean proof lets the run reach the question. A proven conflict ends the
+   run with a conflict report. Where the proof is unavailable, for example with an older Git, the
+   run keeps waiting and the report names the reason. Marking ready edits the title to drop the
+   prefix, and the merge happens only after the forge itself reports the pull request mergeable.
+
 5. **Linked-issue observation, completion assessment, and the offered transition** – after a
    confirmed merge, validates the pull request's lifecycle
    receipt and gives tracker automation one fixed 30-second grace period. It reports each linked
