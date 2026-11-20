@@ -2,7 +2,8 @@
 // documented, tie, tie re-score, floor, stop option, budget), the plan machine block, the run
 // ledger in temporary Git repositories (consent, local-only storage, close), the pull-request
 // appendix with its sanitization and content scan, `cleanup`'s ledger inventory and removal, the
-// reviewed-plan and delivery records, and the gated restore of the run's own plan edit.
+// reviewed-plan and delivery records, the gated restore of the run's own plan edit, and the
+// planning claim an issue-source run holds from `run-init` to `run-close`.
 
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
@@ -49,6 +50,11 @@ import {
   validateAppendixMarkers,
 } from '../src/scripts/autopilot-core.mjs';
 import { main } from '../src/scripts/autopilot.mjs';
+import {
+  planningClaimAcquire,
+  planningClaimKey,
+  planningClaimRelease,
+} from '../src/scripts/effective-flow-state-planning-claim-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 
 const GIT_ENV = {
@@ -605,12 +611,19 @@ test('consent-check grants only an open ledger with the same run id and source',
 // recorded the repository as private; public and unknown visibility are refused.
 test('consent-check refuses a run whose recorded visibility is not private', async (t) => {
   const root = repository(t);
-  for (const visibility of ['public', 'unknown']) {
-    const runId = await init(root, { visibility });
+  // One issue per run: each issue-source run holds its issue's planning claim until run-close.
+  for (const [issue, visibility] of [
+    [42, 'public'],
+    [43, 'unknown'],
+  ]) {
+    const runId = await init(root, {
+      visibility,
+      source: { kind: 'issue', issue, repository: REPOSITORY },
+    });
     const refused = await op('consent-check', {
       cwd: root,
       runId,
-      issue: 42,
+      issue,
       repository: REPOSITORY,
     });
     assert.deepEqual(refused.data, { consent: 'refused', reason: 'wrong-visibility' }, visibility);
@@ -956,8 +969,12 @@ test('ledgerRemoval retains inconsistent closed ledgers as ledger-invalid', () =
   }
 });
 
+// Each closed run plans its own issue, so an open run of the same test keeps its planning claim.
+let closedIssues = 1000;
 async function closedRun(root, outcome, pullRequest) {
-  const runId = await init(root);
+  const runId = await init(root, {
+    source: { kind: 'issue', issue: (closedIssues += 1), repository: REPOSITORY },
+  });
   const envelope = await op('run-close', {
     cwd: root,
     runId,
@@ -2763,4 +2780,427 @@ test('plan-reviewed and plan-copy-restore refuse a sourceRoot without a working 
     const restored = await restore(root, runId, { sourceRoot });
     assert.equal(restored.error.code, 'UNSAFE_TARGET', `plan-copy-restore ${sourceRoot}`);
   }
+});
+
+// ---------------------------------------------------------------------------------------------
+// Planning claim of an issue source
+
+const CLAIM_TARGET = { kind: 'forge', host: 'github.com', owner: 'example', repository: 'project' };
+const CLAIM_TOKEN = 'c'.repeat(32);
+const AT_INSTANT = new Date(INSTANT).toISOString();
+
+function issueSource(issue) {
+  return { source: { kind: 'issue', issue, repository: REPOSITORY } };
+}
+
+function claimPath(root, issue) {
+  const { targetKey, issueKey } = planningClaimKey({ target: CLAIM_TARGET, issue });
+  return join(root, '.effective-flow/planning-claims', targetKey, `${issueKey}.json`);
+}
+
+function closeRun(root, runId, outcome = 'no-pull-request', extra = {}, options = {}) {
+  return executeOperation('run-close', { cwd: root, runId, outcome, ...extra }, deps(options));
+}
+
+// Invariant: `run-init` on an issue source takes the issue's planning claim before it creates the
+// run directory, stores the token only in the internal ledger field `planningClaim`, and returns
+// the same output as before. The claim key is the one any workflow derives from the
+// `repository-resolve` identity of the same repository.
+test('run-init takes the issue claim before it creates the run directory and ledger', async (t) => {
+  const root = repository(t);
+  let runDirectoryAtClaim = null;
+  const envelope = await executeOperation(
+    'run-init',
+    { cwd: root, visibility: 'private', language: 'en', ...issueSource(42) },
+    deps({
+      randomToken: () => {
+        runDirectoryAtClaim = existsSync(join(root, AUTOPILOT_DIR));
+        return CLAIM_TOKEN;
+      },
+    }),
+  );
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(runDirectoryAtClaim, false);
+  const { runId } = envelope.data;
+  assert.deepEqual(Object.keys(envelope.data).sort(), ['budget', 'ledgerDirectory', 'runId']);
+  const key = planningClaimKey({
+    target: { ...CLAIM_TARGET, owner: 'Example', repository: 'Project.git' },
+    issue: 42,
+  });
+  assert.deepEqual(ledger(root, runId).planningClaim, {
+    claimId: CLAIM_TOKEN,
+    targetKey: key.targetKey,
+    issueKey: key.issueKey,
+    acquiredAt: AT_INSTANT,
+  });
+  const record = JSON.parse(readFileSync(claimPath(root, 42), 'utf8'));
+  assert.equal(record.workflow, 'autopilot');
+  assert.equal(record.runId, runId);
+  assert.equal(record.claimId, CLAIM_TOKEN);
+  assert.ok(!JSON.stringify(envelope).includes(CLAIM_TOKEN));
+});
+
+// Invariant: a held claim stops `run-init` with ISSUE_CLAIMED naming the holder (workflow, run or
+// pass id, age, stale flag), never its token, and leaves no run directory or ledger behind; a
+// different issue starts in parallel.
+test('a held claim stops run-init with ISSUE_CLAIMED and creates no run', async (t) => {
+  const root = repository(t);
+  const first = await init(root);
+  const token = ledger(root, first).planningClaim.claimId;
+  const runs = readdirSync(join(root, AUTOPILOT_DIR)).sort();
+  const second = await op('run-init', {
+    cwd: root,
+    visibility: 'private',
+    language: 'en',
+    ...issueSource(42),
+  });
+  assert.equal(second.ok, false);
+  assert.equal(second.error.code, 'ISSUE_CLAIMED');
+  assert.equal(exitCodeFor(second), 1);
+  const { holder, ...rest } = second.error.details;
+  assert.deepEqual(rest, { issue: 42, repository: REPOSITORY });
+  const { liveness, ...stable } = holder;
+  assert.ok(['alive', 'dead', 'unknown'].includes(liveness));
+  assert.deepEqual(stable, {
+    workflow: 'autopilot',
+    runId: first,
+    acquiredAt: AT_INSTANT,
+    ageMs: 0,
+    stale: false,
+  });
+  assert.ok(!JSON.stringify(second).includes(token));
+  assert.deepEqual(readdirSync(join(root, AUTOPILOT_DIR)).sort(), runs);
+  const parallel = await init(root, issueSource(43));
+  assert.notEqual(parallel, first);
+
+  // An Issue Buddy pass holding a stale claim: the stop names the pass, and no run state exists.
+  const fresh = repository(t);
+  const held = await planningClaimAcquire(
+    { cwd: fresh, target: CLAIM_TARGET, issue: 7, workflow: 'issue-buddy', passId: 'pass-1' },
+    deps({ now: () => INSTANT - 3 * 3_600_000 }),
+  );
+  const blocked = await op('run-init', {
+    cwd: fresh,
+    visibility: 'public',
+    language: 'en',
+    ...issueSource(7),
+  });
+  assert.equal(blocked.error.code, 'ISSUE_CLAIMED');
+  assert.equal(blocked.error.details.holder.workflow, 'issue-buddy');
+  assert.equal(blocked.error.details.holder.passId, 'pass-1');
+  assert.equal(blocked.error.details.holder.ageMs, 3 * 3_600_000);
+  assert.equal(blocked.error.details.holder.stale, true);
+  assert.ok(!JSON.stringify(blocked).includes(held.claimId));
+  assert.equal(existsSync(join(fresh, AUTOPILOT_DIR)), false);
+});
+
+// Invariant: a legacy Issue Buddy `pass.lock` stops an issue-source `run-init` before any write;
+// a plan source takes no claim and starts.
+test('a legacy pass lock stops an issue-source run-init and a plan source takes no claim', async (t) => {
+  const root = repository(t);
+  mkdirSync(join(root, '.effective-flow/issue-buddy'), { recursive: true });
+  writeFileSync(join(root, '.effective-flow/issue-buddy/pass.lock'), '{}\n');
+  const refused = await op('run-init', {
+    cwd: root,
+    visibility: 'private',
+    language: 'en',
+    ...issueSource(42),
+  });
+  assert.equal(refused.error.code, 'LEGACY_PASS_LOCK');
+  assert.deepEqual(refused.error.details, { path: '.effective-flow/issue-buddy/pass.lock' });
+  assert.equal(existsSync(join(root, AUTOPILOT_DIR)), false);
+  assert.equal(existsSync(claimPath(root, 42)), false);
+
+  const planRunId = await init(root, {
+    source: { kind: 'plan', planPath: 'docs/plan/x.md', planSha256: SHA },
+  });
+  assert.equal(Object.hasOwn(ledger(root, planRunId), 'planningClaim'), false);
+  assert.equal(existsSync(join(root, '.effective-flow/planning-claims')), false);
+  const closedPlan = await closeRun(root, planRunId);
+  assert.equal(closedPlan.ok, true, JSON.stringify(closedPlan));
+  assert.deepEqual(Object.keys(closedPlan.data).sort(), ['counts', 'fit', 'outcome', 'runId']);
+});
+
+// Invariant: when the ledger cannot be created after the claim was taken, `run-init` gives the
+// claim back, so a failed start never blocks the issue.
+test('run-init releases the claim when the ledger cannot be created', async (t) => {
+  const root = repository(t);
+  mkdirSync(join(root, '.effective-flow'));
+  writeFileSync(join(root, AUTOPILOT_DIR), 'not a directory\n');
+  const failed = await op('run-init', {
+    cwd: root,
+    visibility: 'private',
+    language: 'en',
+    ...issueSource(42),
+  });
+  assert.equal(failed.ok, false);
+  assert.notEqual(failed.error.code, 'ISSUE_CLAIMED');
+  assert.equal(existsSync(claimPath(root, 42)), false);
+  rmSync(join(root, AUTOPILOT_DIR));
+  await init(root);
+});
+
+// Invariant: a claim release that fails while `run-init` gives the claim back never hides the
+// original ledger failure: the caller sees exactly the error it would see without the release
+// failure, and the left claim stays for `cleanup`.
+test('run-init reports the ledger failure even when the claim release throws', async (t) => {
+  const start = { visibility: 'private', language: 'en', ...issueSource(42) };
+  const baseline = repository(t);
+  mkdirSync(join(baseline, '.effective-flow'));
+  writeFileSync(join(baseline, AUTOPILOT_DIR), 'not a directory\n');
+  const expected = await op('run-init', { cwd: baseline, ...start });
+  assert.equal(expected.ok, false);
+
+  const root = repository(t);
+  mkdirSync(join(root, '.effective-flow'));
+  writeFileSync(join(root, AUTOPILOT_DIR), 'not a directory\n');
+  const real = createProcessRunner();
+  let releaseFailures = 0;
+  // Once the claim exists, the release's root resolution (`git rev-parse`) throws.
+  const runner = async (call) => {
+    if (existsSync(claimPath(root, 42)) && call.args?.includes('rev-parse')) {
+      releaseFailures += 1;
+      throw new Error('release exploded');
+    }
+    return real(call);
+  };
+  const failed = await executeOperation('run-init', { cwd: root, ...start }, deps({ runner }));
+  assert.ok(releaseFailures > 0, 'the release was attempted and failed');
+  const neutral = (envelope, at) => JSON.parse(JSON.stringify(envelope).replaceAll(at, '<root>'));
+  assert.deepEqual(neutral(failed, root), neutral(expected, baseline));
+  assert.doesNotMatch(JSON.stringify(failed), /release exploded/);
+  assert.equal(existsSync(claimPath(root, 42)), true, 'the unreleased claim is left for cleanup');
+});
+
+// Invariant: `run-close` releases the claim for every outcome, a recorded blocker included, and
+// reports the release without the token; the issue is plannable again afterwards.
+test('run-close releases the claim with and without a pull request and after a blocker', async (t) => {
+  const root = repository(t);
+  const cases = [
+    [51, 'pull-request', 5, false],
+    [52, 'no-pull-request', undefined, false],
+    [53, 'no-pull-request', undefined, true],
+    [54, 'appendix-update', 6, true],
+    [55, 'plan-pull-request-unchanged', 7, true],
+  ];
+  for (const [issue, outcome, pullRequest, withBlocker] of cases) {
+    const runId = await init(root, issueSource(issue));
+    const held = ledger(root, runId).planningClaim;
+    if (withBlocker) {
+      const recorded = await op('blocker-record', {
+        cwd: root,
+        runId,
+        kind: 'plan-not-approved',
+        summary: 'The plan review did not approve the plan.',
+      });
+      assert.equal(recorded.ok, true, JSON.stringify(recorded));
+    }
+    const closed = await closeRun(
+      root,
+      runId,
+      outcome,
+      pullRequest === undefined ? {} : { pullRequest },
+    );
+    assert.equal(closed.ok, true, JSON.stringify(closed));
+    assert.deepEqual(
+      closed.data.planningClaim,
+      { targetKey: held.targetKey, issueKey: held.issueKey, released: true },
+      outcome,
+    );
+    assert.ok(!JSON.stringify(closed).includes(held.claimId));
+    assert.equal(existsSync(claimPath(root, issue)), false, outcome);
+    assert.equal(ledger(root, runId).status, 'closed');
+    const again = await init(root, issueSource(issue));
+    assert.equal((await closeRun(root, again)).data.planningClaim.released, true);
+  }
+});
+
+// Invariant: a claim that is already gone is reported as `missing` (idempotent), one taken over by
+// another holder as `not-owner` and kept, and a failed release as `release-failed` with its code;
+// none of them keeps the run open. A ledger written before claims existed closes unchanged.
+test('run-close reports a missing, foreign or failed release and still closes', async (t) => {
+  const root = repository(t);
+  const missing = await init(root, issueSource(61));
+  rmSync(claimPath(root, 61));
+  const gone = await closeRun(root, missing);
+  assert.equal(gone.ok, true, JSON.stringify(gone));
+  assert.equal(gone.data.planningClaim.released, false);
+  assert.equal(gone.data.planningClaim.reason, 'missing');
+  assert.equal(ledger(root, missing).status, 'closed');
+
+  const foreign = await init(root, issueSource(62));
+  const held = ledger(root, foreign).planningClaim;
+  const input = { cwd: root, target: CLAIM_TARGET, issue: 62 };
+  assert.equal(
+    (await planningClaimRelease({ ...input, claimId: held.claimId }, deps())).released,
+    true,
+  );
+  await planningClaimAcquire({ ...input, workflow: 'issue-buddy', passId: 'pass-2' }, deps());
+  const taken = await closeRun(root, foreign);
+  assert.equal(taken.ok, true, JSON.stringify(taken));
+  assert.deepEqual(taken.data.planningClaim, {
+    targetKey: held.targetKey,
+    issueKey: held.issueKey,
+    released: false,
+    reason: 'not-owner',
+    detail: 'token-mismatch',
+  });
+  assert.equal(JSON.parse(readFileSync(claimPath(root, 62), 'utf8')).passId, 'pass-2');
+
+  const failing = await init(root, issueSource(63));
+  const token = ledger(root, failing).planningClaim.claimId;
+  const denied = Object.assign(new Error('denied'), { code: 'EACCES' });
+  const failed = await closeRun(
+    root,
+    failing,
+    'no-pull-request',
+    {},
+    {
+      fs: {
+        unlink: async () => {
+          throw denied;
+        },
+      },
+    },
+  );
+  assert.equal(failed.ok, true, JSON.stringify(failed));
+  assert.equal(failed.data.planningClaim.released, false);
+  assert.equal(failed.data.planningClaim.reason, 'release-failed');
+  assert.equal(failed.data.planningClaim.code, 'WRITE_FAILED');
+  assert.ok(!JSON.stringify(failed).includes(token));
+  assert.equal(ledger(root, failing).status, 'closed');
+  assert.ok(existsSync(claimPath(root, 63)));
+  assert.equal(
+    (await op('run-close', { cwd: root, runId: failing, outcome: 'no-pull-request' })).error.code,
+    'RUN_CLOSED',
+  );
+
+  const legacy = await init(root, issueSource(64));
+  const target = join(root, AUTOPILOT_DIR, legacy, 'run.json');
+  const { planningClaim: _claim, ...withoutClaim } = ledger(root, legacy);
+  writeFileSync(target, `${JSON.stringify(withoutClaim, null, 2)}\n`);
+  rmSync(claimPath(root, 64));
+  const closedLegacy = await closeRun(root, legacy, 'pull-request', { pullRequest: 8 });
+  assert.equal(closedLegacy.ok, true, JSON.stringify(closedLegacy));
+  assert.deepEqual(Object.keys(closedLegacy.data).sort(), ['counts', 'fit', 'outcome', 'runId']);
+});
+
+// Invariant: `run-close` writes the closed ledger before it releases the claim, so a failed ledger
+// write leaves the run open with its claim (never an open run without one), and a repeated
+// `run-close` then closes the run and releases the claim.
+test('run-close keeps the claim when the closed ledger cannot be written', async (t) => {
+  const root = repository(t);
+  const runId = await init(root, issueSource(71));
+  const real = createProcessRunner();
+  const ledgerTemporary = /\.run\.json\.[0-9a-f]{16}\.tmp$/;
+  // The guard of the ledger's write temporary reports it not ignored: the write is refused.
+  const runner = async (call) =>
+    call.args.some((arg) => ledgerTemporary.test(arg))
+      ? { status: 1, stdout: '', stderr: '' }
+      : real(call);
+  const refused = await closeRun(root, runId, 'no-pull-request', {}, { runner });
+  assert.equal(refused.ok, false, JSON.stringify(refused));
+  assert.equal(ledger(root, runId).status, 'open');
+  assert.equal(JSON.parse(readFileSync(claimPath(root, 71), 'utf8')).runId, runId);
+  const closed = await closeRun(root, runId);
+  assert.equal(closed.ok, true, JSON.stringify(closed));
+  assert.equal(closed.data.planningClaim.released, true);
+  assert.equal(ledger(root, runId).status, 'closed');
+  assert.equal(existsSync(claimPath(root, 71)), false);
+});
+
+// Invariant: the claim token never leaves the helper: no operation output, the CLI envelope and
+// the rendered and merged appendix carry it, and the appendix names no claim at all.
+test('the claim token appears in no operation output and not in the appendix', async (t) => {
+  const root = repository(t);
+  const outputs = [];
+  const call = async (operation, input) => {
+    const envelope = await op(operation, { cwd: root, ...input });
+    assert.equal(envelope.ok, true, `${operation}: ${JSON.stringify(envelope)}`);
+    outputs.push(envelope);
+    return envelope;
+  };
+  const started = await call('run-init', {
+    visibility: 'private',
+    language: 'en',
+    ...issueSource(42),
+  });
+  const { runId } = started.data;
+  const token = ledger(root, runId).planningClaim.claimId;
+  await call('decision-record', {
+    runId,
+    record: decision([
+      ['A', 8],
+      ['B', 6],
+    ]),
+  });
+  await call('blocker-record', { runId, kind: 'plan-not-approved', summary: 'Not approved yet.' });
+  await call('fit-record', { runId, notAssessed: true });
+  await call('run-check', { runId });
+  await call('consent-check', { runId, issue: 42, repository: REPOSITORY });
+  const rendered = await call('pr-appendix', { runId, planPullRequest: 99 });
+  const merged = await call('appendix-merge', {
+    runId,
+    appendixSha256: rendered.data.sha256,
+    body: 'Prose.\n',
+  });
+  await call('plan-copy-restore', { runId, sourceRoot: root });
+  await call('ledger-list', {});
+  const appendix = readFileSync(join(root, AUTOPILOT_DIR, runId, 'appendix.md'), 'utf8');
+  const direct = renderAppendix(ledger(root, runId), { planPullRequest: 99 }).appendix;
+  let written = '';
+  await main(['run-close'], {
+    input: { cwd: root, runId, outcome: 'pull-request', pullRequest: 99 },
+    stdout: { write: (chunk) => (written += chunk) },
+    stderr: { write: () => {} },
+    setExitCode: () => {},
+    runner: createProcessRunner(),
+    options: { env: GIT_ENV, now: () => INSTANT },
+  });
+  assert.equal(JSON.parse(written).data.planningClaim.released, true);
+  await call('ledger-list', {});
+  for (const envelope of outputs) {
+    assert.ok(!JSON.stringify(envelope).includes(token), envelope.operation);
+  }
+  assert.ok(!written.includes(token));
+  for (const text of [appendix, merged.data.body, direct]) {
+    assert.ok(!text.includes(token));
+    assert.ok(!/planningClaim|claimId/.test(text));
+  }
+});
+
+// Invariant: autopilot keeps the restored plan of an issue source in a run-owned delivery
+// worktree, never at `<RUNTIME_STATE_ROOT>/<P>`: that worktree is a valid `sourceRoot` and
+// `decision-extract` reads the plan there, `plan-copy-restore` touches nothing in it for an issue
+// source, and a linked worktree as `cwd` is still refused, so the ledger and the claim stay in
+// the primary checkout.
+test('the restored plan lives in a delivery worktree while cwd stays primary', async (t) => {
+  const root = repository(t);
+  const runId = await init(root);
+  const delivery = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-autopilot-delivery-')));
+  t.after(() => rmSync(delivery, { recursive: true, force: true }));
+  git(root, 'worktree', 'add', '-q', '-b', 'effective-flow/plan/issue-42', delivery);
+  mkdirSync(join(delivery, 'docs/plan'), { recursive: true });
+  writeFileSync(join(delivery, PLAN_PATH), REVIEWED);
+
+  const extracted = await op('decision-extract', { planPath: join(delivery, PLAN_PATH) });
+  assert.equal(extracted.ok, true, JSON.stringify(extracted));
+  assert.equal(extracted.data.sha256, digest(REVIEWED));
+  const restored = await restore(root, runId, { sourceRoot: delivery });
+  assert.deepEqual(restored.data, { result: 'not-applicable', reason: 'issue-source' });
+  assert.equal(readFileSync(join(delivery, PLAN_PATH), 'utf8'), REVIEWED);
+  assert.equal(existsSync(join(root, PLAN_PATH)), false);
+
+  for (const [operation, input] of [
+    ['plan-copy-restore', { runId, sourceRoot: delivery }],
+    ['run-check', { runId }],
+    ['run-close', { runId, outcome: 'no-pull-request' }],
+  ]) {
+    const refused = await op(operation, { cwd: delivery, ...input });
+    assert.equal(refused.error.code, 'UNSAFE_TARGET', operation);
+  }
+  assert.ok(existsSync(claimPath(root, 42)));
+  assert.equal(existsSync(join(delivery, '.effective-flow')), false);
+  const closed = await closeRun(root, runId);
+  assert.equal(closed.data.planningClaim.released, true);
 });

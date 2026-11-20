@@ -1271,19 +1271,26 @@ permitted`, when Git exits successfully; a true unreadable file or directory sti
   argument. The operations are `lock acquire|release|inspect|break`, `memory
 reserve|set-marker|migrate-directory`, `commit create`, `review open-report`, `review write-report`, `harness
 allow-rules`, `worktree record-init|transition|inspect|resume-check|remove`, `ledger
-init|append|reconcile`, `cleanup plan|apply` and `presence register|refresh|list|release|prune`. The
-  twenty-one allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
+init|append|reconcile`, `cleanup plan|apply`, `presence register|refresh|list|release|prune` and
+  `planning-claim key|acquire|release|list|prune`. The
+  twenty-five allowlisted ones, `lock acquire`, `lock release`, `lock inspect`, `memory
 reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`, `review
 open-report`, `review write-report`, `worktree record-init`, `worktree transition`, `worktree
 inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`, `ledger reconcile`,
-  `presence register`, `presence refresh`, `presence list` and `presence release`, are non-destructive,
+  `presence register`, `presence refresh`, `presence list`, `presence release`, `planning-claim
+key`, `planning-claim acquire`, `planning-claim release` and `planning-claim list`, are non-destructive,
   bounded or read-only (`commit create` writes Git history; see below). The `presence` group
   (`effective-flow-state-presence-core.mjs`) keeps one run-presence marker per merge-gate run below
   `.effective-flow/merge-gate-presence/`: `register` creates the caller's own marker no-clobber and
   returns its `token`, `refresh` and `release` act only on that marker with that token, `list`
   only reads, and `prune`, the cleanup path, removes another run's marker only while that run's
-  wisdom file is absent.
-  `lock break`, `worktree remove`, `cleanup apply` and `presence prune` are destructive and
+  wisdom file is absent. The `planning-claim` group
+  (`effective-flow-state-planning-claim-core.mjs`) keeps one claim per issue being planned below
+  `.effective-flow/planning-claims/`: `acquire` creates it no-clobber and returns its `claimId`,
+  `release` removes it only with that `claimId`, `list` only reads, and `prune`, the cleanup path,
+  removes another run's claim only under a verified orphan proof or confirmed staleness.
+  `lock break`, `worktree remove`, `cleanup apply`, `presence prune` and `planning-claim prune` are
+  destructive and
   `harness allow-rules` writes the settings file that holds the rules; none is ever
   allowlisted, and the orchestrator calls `lock break` only after the user confirmed the break in
   the conversation. The lock is named by a closed enum, `memory`,
@@ -1411,7 +1418,7 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `harness allow-rules` (`effective-flow-state-harness-core.mjs` over `claude-settings-core.mjs`)
   is the only writer of `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`. A `preview` returns
-  the 74 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
+  the 78 rules for the absolute `<skill-root>` path, what would be added, removed and kept for
   another install, warnings for widened rules, and a digest; an `apply` must present that digest
   and fails with `PREVIEW_MISMATCH` when the file changed. It runs only under Claude Code
   (`UNSUPPORTED_HARNESS` otherwise), rejects with `UNSUPPORTED_PATH` a path it cannot write as a
@@ -1436,10 +1443,12 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
   write comes from a hash-bound write set with a closed action vocabulary. The `backlog-audit` source tool owns orchestration and the user gates.
 
 - **Issue Buddy.** Invoke it as `node <skill-root>/scripts/issue-buddy.mjs <operation>` with one
-  closed-schema JSON object on standard input. The entry point exposes the pass lock, collection,
-  verdict, report, and fingerprint operations; it emits one stable JSON envelope and fails closed
-  on invalid input, unsafe runtime state, lock conflicts, visibility mismatches, or inconsistent
-  publication records. The core keeps report v1 compatible and accepts opt-in report v2 metadata
+  closed-schema JSON object on standard input. The entry point exposes the pass record
+  (`pass-open`, `pass-close`), cleanup's inventory and pruning (`pass-list`, `pass-prune`,
+  `trusted-prune`), collection, verdict, report, and fingerprint operations; it emits one
+  stable JSON envelope and fails closed on invalid input, unsafe runtime state, a held planning
+  claim (`ISSUE_CLAIMED`, `CLAIM_ADOPTION_REFUSED`, `LEGACY_PASS_LOCK`), visibility mismatches, or
+  inconsistent publication records. The core keeps report v1 compatible and accepts opt-in report v2 metadata
   for repository visibility and preserved plan leftovers. Leftover metadata is filtered before
   judgment limits and recovery. An optional `issue` selector restricts collection and recovery
   authority to one issue and fails with `ISSUE_NOT_OPEN` when that issue is not in the open

@@ -44,11 +44,18 @@ residual risk of this consent. A repository whose visibility cannot be read is t
 
 ### Where it runs
 
-- **Issue sources** need the **primary checkout** of the repository – not a linked or harness
-  worktree – with `tracker.mode: remote`, a GitHub `origin`, a clean tracked tree and index, no Git
-  operation in progress, and `HEAD` at the tip of the base branch. Autopilot stops before writing
-  anything and names the cause when one of these does not hold. Forgejo and external trackers are
-  not supported for issue sources yet.
+- **Issue sources** need `tracker.mode: remote` and a GitHub `origin`. Autopilot stops before
+  writing anything and names the cause when one of these does not hold. They start from **any
+  checkout** of the repository: the primary checkout or a linked or harness worktree, on any
+  branch, clean or not. Planning always starts from the fetched tip of the resolved remote base
+  branch – the configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main` – and the
+  plan lives in a worktree of the run's own, so your checkout is never touched. Forgejo and
+  external trackers are not supported for issue sources yet.
+- **One run per issue, many issues in parallel.** An issue-sourced run claims its issue when it
+  starts and holds the claim until it ends, with or without a pull request. A second autopilot run,
+  an Issue Buddy pass or `plan-issue` on the same issue stops (or, in an Issue Buddy batch, skips
+  it as `issue-in-progress`) and names the run that holds it. Runs for different issues do not wait
+  for each other.
 - **Plan sources** run from any checkout the implementing workflow accepts and work on every forge
   `pr` supports. The plan must lie under `<plan.dir>/` (not its archive), carry an open plan status
   and name a recognized recommended workflow.
@@ -60,16 +67,16 @@ Every run gets a run id (`ap-<UTC time>-<8 hex digits>`) and a private ledger un
 ### What it does
 
 1. **Plan.** For an issue, Issue Buddy plans it, runs the deep plan review and publishes a
-   plan-only draft pull request. Autopilot then restores the plan file locally, byte for byte from
-   the plan branch. For a plan file, the deep plan review always runs on the file itself. When
+   plan-only draft pull request. Autopilot then checks out the plan branch in a worktree of its own,
+   runs the configured `worktree.setup` there, and works with the plan exactly as published. For a plan file, the deep plan review always runs on the file itself. When
    the issue's plan is already on the base branch, autopilot continues with that one open plan as
    a plan source; no matching plan, several matches, or a match only in the plan archive stop the
    run without a pull request.
-2. **Approve.** Only a plan whose review ended `Approved` with no open points continues. When the
-   issue already has a plan pull request – exactly one draft from this repository whose branch
-   changes only the plan – autopilot continues on it instead of planning again, and its recorded
-   review result is binding: the plan is not reviewed a second time. Any other open pull request
-   for the issue stops the run.
+2. **Approve.** Only a plan whose review ended `Approved` with no open points continues. An issue
+   that already has an open pull request – a plan pull request from an earlier Issue Buddy pass or
+   autopilot run included – stops the run with that reason and no pull request; implement such a
+   plan by hand from its plan, for example with `apply`. Autopilot never recovers an earlier
+   unfinished plan publication either.
 3. **Implement.** The plan's recommended workflow implements it: Feature → `build`, Bugfix →
    `fix`, Refactoring → `refactor`, Documentation → `docs`. Autopilot always asks for a draft pull
    request, so a configured `delivery.completion` of `merge` or `branch` never applies. On an issue,
@@ -132,8 +139,8 @@ security finding and the like – that is a **blocker**: implementation stops, n
 is pushed, and the retained worktree is named in the report.
 
 - **Issue source with a blocker:** the plan pull request stays a draft and its description gains
-  the blockers; no implementation is pushed. The restored plan file stays in your checkout for the
-  repair step.
+  the blockers; no implementation is pushed. The run's worktree with the plan is kept for the
+  repair step and named in the report.
 - **Plan source with a blocker:** autopilot opens a plan-only draft pull request with the
   reviewed plan. The committed plan carries the blockers in an "Autopilot blockers" section under
   its assumptions and open points, so the draft exists even when the plan itself was already on
@@ -143,8 +150,10 @@ These cases produce **no** pull request:
 
 - a security finding on a public repository – nothing is pushed and no pull request is opened or
   updated; the report names the local review report and finding;
+- an issue that already has an open pull request;
+- an issue another run is planning (`ISSUE_CLAIMED`, with the run that holds it);
 - an issue that Issue Buddy skips (for example an untrusted author or an existing plan branch),
-  judges not ready, or cannot finish (a held lock, a branch or forge failure);
+  judges not ready, or cannot finish (a branch or forge failure);
 - a preflight failure;
 - a record whose content check blocks it (for example a secret in a reason): the record is never
   published, and the blocker is reported locally;
@@ -178,7 +187,11 @@ and tie-resolved decisions, every blocker and retained worktree, whether your pl
 restored and where the retained copy is, every local change left untouched, and the
 architecture-fit score, followed by the [next-step recommendation](tool-flow.md).
 
-**Cleaning up:** `/effective-flow cleanup` lists autopilot ledgers and, after confirmation, removes
+**Cleaning up:** a run releases its issue's claim when it closes. A killed run leaves the claim
+behind and blocks only that issue: `/effective-flow cleanup` lists planning claims with their age,
+a stale flag after 2 hours and whether the holder's process is still alive, and releases one only
+after you confirm it, with a proof that its run is gone or your explicit stale confirmation.
+`cleanup` also lists autopilot ledgers and, after confirmation, removes
 one when its run is closed and its pull request is merged or closed, or when it produced none. A
 ledger whose pull request cannot be read on the forge is kept, and so is a run that still holds a
 retained plan copy (shown as `retained-plan-copy`); cleanup never deletes that copy, so remove it yourself

@@ -515,9 +515,22 @@ publication authority; it never reads issue, comment, plan, or commit prose itse
 content is confined to the delegated planning context and publication text is generated from fixed
 templates.
 
-The pass runs in the primary checkout and does not create or use a worktree. It keeps the existing
-runtime-state guard, loopback TCP mutation mutex, and whole-pass lock. A held lock is an operator
-stop; the pass never breaks it or releases it after an unrelated process. Before collection it
+The pass may be invoked from any checkout of the repository; every runtime helper keeps the primary
+checkout as `cwd`, derived from the first `git worktree list --porcelain` record. There is no
+whole-pass lock: each pass keeps a record (`passes/<passId>.json`, `pass-open`/`pass-close`) and
+plans only issues it holds a per-issue planning claim for. `cleanup` alone removes leftovers of a
+killed pass, from the read-only `pass-list` inventory, through `pass-prune` (a helper-verified
+`process-dead` proof or confirmed staleness) and `trusted-prune` (trusted text no pass record
+lists); a kept `issue-planning` worktree (`aborted`, reason `plan-preserved`) becomes removable
+once its plan is moved or discarded. The claims are the state helper's
+`planning-claim` group (`effective-flow-state-planning-claim-core.mjs`), shared with issue-sourced
+`autopilot`, which claims in `run-init` and releases in `run-close`, and with `plan-issue`. The
+loopback TCP mutation mutex covers only short local state work, never a fetch or forge call, and
+waits at most 10 s. A batch pass skips a claimed issue as `issue-in-progress`; a single-issue pass
+stops with `ISSUE_CLAIMED`. Each publishing pass plans from the fetched resolved base (the
+configured `delivery.baseBranch`, else `origin/HEAD`, else `origin/main`) in its own
+`issue-planning` worktree at the collected base OID, named to the plan writer by a validated
+`Execution root:` line ([`parallel-issue-planning.md`](../adr/parallel-issue-planning.md)). Before collection it
 reads repository visibility once through the remote tracker. Dry runs accept public, private, or
 unknown visibility; publication is public-only in stage 1. Public operator runs use the operator's
 forge credential, so scheduled publication waits for the later credential-isolation and bot-rule
@@ -703,6 +716,16 @@ step map lists what a resume skips and reruns; the proofs and call shapes are in
 narrow base run. A never-integrated branch is compare-and-deleted only while its tip is
 `creationOid`, else kept, and `cleanup` applies the same proof
 ([`src/shared/worktree-lifecycle.md`](../../src/shared/worktree-lifecycle.md)).
+
+Issue planning adds the `issue-planning` purpose on the same pattern: path
+`BASE_DIR/REPO_NAME/SESSION_ID-issue-planning`, branch `issue-planning/<SESSION_ID>`, policy
+`delete-after-integration`, with the same unadvanced compare-and-delete exception. Its planning runs
+also share the per-issue claims of the state helper's `planning-claim` group
+(`effective-flow-state-planning-claim-core.mjs`), one record per issue below
+`.effective-flow/planning-claims/<TARGET_KEY>/<ISSUE_KEY>.json`. `acquire`, `release` and each
+`prune` item run under a per-issue guard directory (`.<ISSUE_KEY>.guard` beside the record, the
+pattern of the `lock` guard), so a removal can never unlink the claim a new run acquired between its
+verification and its unlink; a guard held for more than 10 s is reported and never broken by age.
 
 `merge-gate`'s own checkout carries the `merge-gate` purpose: path
 `BASE_DIR/REPO_NAME/SESSION_ID-merge-gate`, `retain`, on the pull request's existing head branch.
@@ -1068,9 +1091,9 @@ Prose no longer replays the protocol, and a build guard rejects a direct write
 ([guard #176](build-system.md#guards)). The same helper owns the worktree lifecycle: `worktree`
 operations write the records and locks below `worktree-runs/`, and `cleanup plan|apply` removes
 worktrees and legacy runtime state, each selected item bound to a per-item digest. A guard rejects
-a prose removal of that state too. `setup` can write 74 non-destructive or bounded rules, in four
-families (twenty-one runtime-state helper operations including `commit create`, `review
-open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile` and `presence register|refresh|list|release`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 45 read-only `remote-tracker` operations (`pr-acceptance-sources` also writes its private no-clobber review snapshot), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
+a prose removal of that state too. `setup` can write 78 non-destructive or bounded rules, in four
+families (twenty-five runtime-state helper operations including `commit create`, `review
+open-report`, `review write-report`, `worktree record-init|transition|inspect|resume-check`, `cleanup plan`, `ledger init|append|reconcile`, `presence register|refresh|list|release` and `planning-claim key|acquire|release|list`, `config-resolve resolve|no-ci-policy|conflict-validation|review-fix-validation`, the 45 read-only `remote-tracker` operations (`pr-acceptance-sources` also writes its private no-clobber review snapshot), and `conflict-validation ci-detect|ci-integrity|ci-evidence-match|quick-marker-scan`), into the untracked `.claude/settings.local.json` through `harness allow-rules`
 ([Configuration](configuration.md#claude-code-allow-rules)). Stage 1 relies on the rule alone, with
 no PreToolUse hook: the helper rejects any argv beyond its two operation tokens, which closes the
 extra-argument gap that the

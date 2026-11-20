@@ -162,6 +162,10 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
     'presence refresh',
     'presence list',
     'presence release',
+    'planning-claim key',
+    'planning-claim acquire',
+    'planning-claim release',
+    'planning-claim list',
   ]);
   assert.equal(STATE_OPERATION_CLASSES['lock break'], 'not-allowlisted');
   assert.equal(STATE_OPERATION_CLASSES['harness allow-rules'], 'not-allowlisted');
@@ -176,9 +180,20 @@ test('every STATE_OPERATIONS entry is classified and only non-destructive ones a
   // The presence markers: the own-marker writes and the read are allowlisted under their bound;
   // `presence prune` removes other runs' markers and stays a confirmed cleanup step.
   assert.equal(STATE_OPERATION_CLASSES['presence prune'], 'not-allowlisted');
+  // The planning claims mirror the presence markers: the own-claim writes and the read are
+  // allowlisted under their bound; `planning-claim prune` removes other runs' claims and stays a
+  // confirmed cleanup step.
+  assert.equal(STATE_OPERATION_CLASSES['planning-claim prune'], 'not-allowlisted');
   assert.deepEqual(
     [...NEVER_ALLOWLISTED_OPERATIONS],
-    ['lock break', 'harness allow-rules', 'worktree remove', 'cleanup apply', 'presence prune'],
+    [
+      'lock break',
+      'harness allow-rules',
+      'worktree remove',
+      'cleanup apply',
+      'presence prune',
+      'planning-claim prune',
+    ],
   );
   assert.deepEqual(
     STATE_OPERATIONS.filter((operation) => STATE_OPERATION_CLASSES[operation] !== 'allowlisted'),

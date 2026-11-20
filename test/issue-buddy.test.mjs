@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import * as fs from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -13,7 +14,12 @@ import {
   stableAttemptId,
   validatePassReport,
   SKIP_REASONS,
+  MUTEX_WAIT_MS,
 } from '../src/scripts/issue-buddy-core.mjs';
+import {
+  planningClaimAcquire,
+  planningClaimKey,
+} from '../src/scripts/effective-flow-state-planning-claim-core.mjs';
 import { main } from '../src/scripts/issue-buddy.mjs';
 import { executeOperation as autopilotOperation } from '../src/scripts/autopilot-core.mjs';
 import { createProcessRunner } from '../src/scripts/process-runner.mjs';
@@ -90,9 +96,11 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
   };
   const calls = [];
   const runner = async (call) => {
-    calls.push(call);
+    // The planning-claim core addresses Git as `git -C <root> ...`; both forms are one call.
+    const args = call.args[0] === '-C' ? call.args.slice(2) : call.args;
+    calls.push({ ...call, args });
+    fixtureOptions.onCall?.({ ...call, args });
     assert.equal(call.cwd, root);
-    const args = call.args;
     const key = args.join(' ');
     const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
     if (call.executable === 'git') {
@@ -102,6 +110,11 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
       if (args.includes('--is-inside-work-tree')) return ok('true');
       if (key === 'remote get-url origin')
         return ok(state.origin ?? 'https://github.com/example/flow.git');
+      // The batched guard form reports every ignored path back on stdout.
+      if (args[0] === 'check-ignore' && args.includes('--stdin'))
+        return state.ignored === false
+          ? { status: 1, stdout: '', stderr: '' }
+          : ok(String(call.stdin ?? ''));
       if (args[0] === 'check-ignore')
         return { status: state.ignored === false ? 1 : 0, stdout: '', stderr: '' };
       if (args[0] === 'ls-files') return ok(state.tracked ?? '');
@@ -147,15 +160,17 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
     } else throw new Error(`unexpected forge ${endpoint}`);
     return ok(JSON.stringify(value));
   };
+  // Contention fails fast here; the bounded mutex retry has its own tests.
   const options = {
     runner,
     clock: () => NOW,
     createServer: fixtureOptions.createServer ?? controlledFixtureServer(),
+    mutexWaitMs: 0,
   };
   const run = (operation, input = {}, overrides = {}) =>
     executeOperation(operation, { cwd: root, ...input }, { ...options, ...overrides });
   await fixtureOptions.beforeAcquire?.(root);
-  const acquired = await run('pass-lock-acquire');
+  const acquired = await run('pass-open');
   assert.equal(acquired.ok, true, JSON.stringify(acquired));
   let passId = acquired.data.passId;
   const collectInput = (extra = {}) => ({
@@ -169,23 +184,27 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
   });
   const collect = (extra = {}, overrides) => run('pass-collect', collectInput(extra), overrides);
   const next = async () => {
-    assert.equal((await run('pass-lock-release', { passId })).ok, true);
-    const lock = await run('pass-lock-acquire');
-    passId = lock.data.passId;
+    assert.equal((await run('pass-close', { passId })).ok, true);
+    const opened = await run('pass-open');
+    passId = opened.data.passId;
     return passId;
   };
-  const record = (collected, verdict = 'failed', extra = {}) =>
-    run('verdict-record', {
-      passId,
-      mode: collected.mode,
-      issue: 1,
-      fingerprint:
-        collected.eligible.find((entry) => (entry.issue ?? 1) === 1)?.fingerprint ??
-        collected.authorizedRecovery?.find((entry) => entry.issue === 1)?.fingerprint,
-      verdict,
-      reason: 'Bounded reason',
-      ...extra,
-    });
+  const record = (collected, verdict = 'failed', extra = {}, overrides) =>
+    run(
+      'verdict-record',
+      {
+        passId,
+        mode: collected.mode,
+        issue: 1,
+        fingerprint:
+          collected.eligible.find((entry) => (entry.issue ?? 1) === 1)?.fingerprint ??
+          collected.authorizedRecovery?.find((entry) => entry.issue === 1)?.fingerprint,
+        verdict,
+        reason: 'Bounded reason',
+        ...extra,
+      },
+      overrides,
+    );
   const report = (collected, extra = {}, overrides) =>
     run(
       'pass-report',
@@ -206,6 +225,7 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
     root,
     state,
     calls,
+    options,
     run,
     collect,
     collectInput,
@@ -215,6 +235,7 @@ async function fixture(t, values = {}, fixtureOptions = {}) {
     get passId() {
       return passId;
     },
+    passPath: (id = passId) => path.join(root, '.effective-flow/issue-buddy/passes', `${id}.json`),
     cache: async () =>
       JSON.parse(
         await fs.readFile(path.join(root, '.effective-flow/issue-buddy/verdicts.json'), 'utf8'),
@@ -362,16 +383,14 @@ for (const [reason, verdict, currentMode] of [
     assert.equal(c.skipped[0].reason, reason);
   });
 
-test('lock ownership, stale lock diagnostics and explicit release never break another pass', async (t) => {
+// Invariant: passes no longer exclude each other. Each pass owns only its own record; a foreign
+// passId names no record, and closing one pass never touches another pass's record.
+test('pass records are independent; a foreign passId is PASS_NOT_FOUND and close removes only its own record', async (t) => {
   const f = await nativeFixture(t);
-  const old = await f.run('pass-lock-acquire', {}, { clock: () => '2026-10-19T15:00:01.000Z' });
-  assert.equal(old.error.code, 'LOCKED');
-  assert.equal(old.error.details.stale, true);
-  assert.equal(old.error.details.passId, f.passId);
-  assert.equal(
-    (await f.run('pass-lock-release', { passId: 'foreign' })).error.code,
-    'LOCK_MISMATCH',
-  );
+  const other = await f.run('pass-open');
+  assert.equal(other.ok, true, JSON.stringify(other));
+  assert.notEqual(other.data.passId, f.passId);
+  assert.equal((await f.run('pass-close', { passId: 'foreign' })).error.code, 'PASS_NOT_FOUND');
   for (const [operation, input] of [
     ['pass-collect', f.collectInput({ passId: 'foreign' })],
     [
@@ -398,8 +417,20 @@ test('lock ownership, stale lock diagnostics and explicit release never break an
       },
     ],
   ])
-    assert.equal((await f.run(operation, input)).error.code, 'LOCKED');
-  assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
+    assert.equal((await f.run(operation, input)).error.code, 'PASS_NOT_FOUND');
+  assert.equal(
+    f.calls.some((call) => call.executable === 'gh'),
+    false,
+  );
+  const bytes = await fs.readFile(f.passPath(other.data.passId), 'utf8');
+  assert.deepEqual((await f.run('pass-close', { passId: f.passId })).data, {
+    passId: f.passId,
+    closed: true,
+    releasedClaims: [],
+  });
+  await assert.rejects(fs.stat(f.passPath()), { code: 'ENOENT' });
+  assert.equal(await fs.readFile(f.passPath(other.data.passId), 'utf8'), bytes);
+  assert.equal((await f.run('pass-close', { passId: other.data.passId })).ok, true);
 });
 
 test('trust filtering removes untrusted text and markers before files, fingerprints and reports', async (t) => {
@@ -1160,8 +1191,11 @@ test('failed current-report write keeps matching history and never reports succe
   const output = path.join(fresh.root, '.effective-flow/issue-buddy/last-pass.json');
   assert.equal(historical.outcome, 'completed');
   await assert.rejects(fs.stat(output), { code: 'ENOENT' });
-  await fresh.run('pass-lock-release', { passId: fresh.passId });
-  assert.equal((await fresh.run('pass-collect', fresh.collectInput())).error.code, 'LOCKED');
+  await fresh.run('pass-close', { passId: fresh.passId });
+  assert.equal(
+    (await fresh.run('pass-collect', fresh.collectInput())).error.code,
+    'PASS_NOT_FOUND',
+  );
   await assert.rejects(fs.stat(output), { code: 'ENOENT' });
 });
 
@@ -1205,10 +1239,11 @@ test('interrupted final pass-record persistence retains accounting and fails clo
   const f = await fixture(t);
   const evidence = await evidenceFor(f);
   let passWrites = 0;
+  // Writes of the pass record: the intent, the claims, then the final collection result.
   const interrupted = {
     ...fs,
     rename: async (from, to) => {
-      if (to.endsWith('/pass.lock') && ++passWrites >= 2)
+      if (to === f.passPath() && ++passWrites >= 3)
         throw new Error('pass-record persistence unavailable');
       return fs.rename(from, to);
     },
@@ -1308,7 +1343,7 @@ test('impossible current ordering dates fail before historical accounting and pr
       });
       assert.equal(prior.ok, true, JSON.stringify(prior));
       await f.next();
-      const lockPath = path.join(f.root, '.effective-flow/issue-buddy/pass.lock');
+      const lockPath = f.passPath();
       const identity = JSON.parse(await fs.readFile(lockPath, 'utf8'));
       const before = await runtimeSnapshot(f);
       f.state.issues[1][field] = value;
@@ -1357,7 +1392,9 @@ test('valid leap and offset ordering timestamps still authorize collection', asy
   assert.equal((await collected(f)).eligible.length, 1);
 });
 
-test('malformed stored lock acquisition time is reported clearly and never removed or assigned an invented age', async (t) => {
+// Invariant: a pass record with a malformed acquisition time grants no authority, is never
+// rewritten or removed by another operation and still closes by its own passId.
+test('malformed stored pass acquisition time is reported clearly and never removed or rewritten', async (t) => {
   for (const acquiredAt of [
     '2026-02-30T12:00:00Z',
     '2025-02-29T12:00:00Z',
@@ -1367,20 +1404,22 @@ test('malformed stored lock acquisition time is reported clearly and never remov
   ])
     await t.test(String(acquiredAt), async (t) => {
       const f = await nativeFixture(t);
-      const target = path.join(f.root, '.effective-flow/issue-buddy/pass.lock');
-      const lock = JSON.parse(await fs.readFile(target, 'utf8'));
-      lock.acquiredAt = acquiredAt;
-      const original = JSON.stringify(lock);
+      const target = f.passPath();
+      const record = JSON.parse(await fs.readFile(target, 'utf8'));
+      record.acquiredAt = acquiredAt;
+      const original = JSON.stringify(record);
       await fs.writeFile(target, original);
-      const refused = await f.run('pass-lock-acquire');
+      const refused = await f.collect();
       assert.equal(refused.ok, false);
-      assert.equal(refused.error.code, 'LOCKED');
+      assert.equal(refused.error.code, 'UNSAFE_RUNTIME_STATE');
       assert.match(refused.error.message, /invalid.*acquiredAt/i);
       assert.equal(refused.error.details.passId, f.passId);
-      assert.equal(refused.error.details.ageMs, undefined);
-      assert.equal(refused.error.details.stale, undefined);
       assert.equal(await fs.readFile(target, 'utf8'), original);
-      assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
+      assert.equal(
+        f.calls.some((call) => call.executable === 'gh'),
+        false,
+      );
+      assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
     });
 });
 
@@ -1919,9 +1958,7 @@ test('serializes same-pass verdict transitions before publication limits or cach
           .sort(),
         expectedIssues.map(Number),
       );
-      const lock = JSON.parse(
-        await fs.readFile(path.join(f.root, '.effective-flow/issue-buddy/pass.lock'), 'utf8'),
-      );
+      const lock = JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
       assert.deepEqual(Object.keys(lock.collection.outcomes), expectedIssues);
       assert.deepEqual(await f.run('verdict-record', verdictInput(f, c, 1)), firstResult);
       await noOperationLock(f);
@@ -2006,8 +2043,8 @@ test('report publication serializes competing reports, verdicts, collection repl
       f.report(c, outcomes),
       f.run('verdict-record', verdictInput(f, c, 2)),
       f.collect(),
-      f.run('pass-lock-release', { passId: f.passId }),
-      f.run('pass-lock-acquire'),
+      f.run('pass-close', { passId: f.passId }),
+      f.run('pass-open'),
     ]);
   } finally {
     proceed.release();
@@ -2073,9 +2110,7 @@ test('historical PR reads reject absent or unknown classification states before 
       const result = await f.collect({ staleAttempts: evidence });
       assert.equal(result.error.code, 'FORGE_READ_FAILED');
       assert.deepEqual(await runtimeSnapshot(f), before);
-      const lock = JSON.parse(
-        await fs.readFile(path.join(f.root, '.effective-flow/issue-buddy/pass.lock'), 'utf8'),
-      );
+      const lock = JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
       assert.equal(lock.collection.status, 'failed');
       assert.equal(lock.collection.result, undefined);
       assert.equal((await f.cache()).records[1].retryCount, 0);
@@ -2090,12 +2125,14 @@ const mutationChildSource = `
 import * as fs from 'node:fs/promises';
 import path from 'node:path';
 import { executeOperation } from ${JSON.stringify(new URL('../src/scripts/issue-buddy-core.mjs', import.meta.url).href)};
-process.once('message', async ({ root, operation, input, boundary, crashExit }) => {
+process.once('message', async ({ root, operation, input, boundary, crashExit, mutexWaitMs = 0 }) => {
   const ok = (stdout = '') => ({ status: 0, stdout, stderr: '' });
-  const runner = async ({ executable, args }) => {
+  const runner = async ({ executable, args: raw, stdin }) => {
+    const args = raw[0] === '-C' ? raw.slice(2) : raw;
     if (executable !== 'git') throw Error('unexpected non-Git call');
     if (args.includes('--show-toplevel')) return ok(root);
     if (args.includes('--git-common-dir') || args.includes('--git-dir')) return ok(path.join(root, '.git'));
+    if (args[0] === 'check-ignore' && args.includes('--stdin')) return ok(String(stdin ?? ''));
     if (args[0] === 'check-ignore' || args[0] === 'ls-files') return ok();
     throw Error('unexpected Git call ' + args.join(' '));
   };
@@ -2113,7 +2150,7 @@ process.once('message', async ({ root, operation, input, boundary, crashExit }) 
       return boundary.after ? result : fs[boundary.method](...args);
     };
   }
-  const result = await executeOperation(operation, { cwd: root, ...input }, { runner, fs: observed, clock: () => ${JSON.stringify(NOW)} });
+  const result = await executeOperation(operation, { cwd: root, ...input }, { runner, fs: observed, clock: () => ${JSON.stringify(NOW)}, mutexWaitMs });
   process.stdout.write(JSON.stringify(result));
   process.disconnect();
 });
@@ -2194,7 +2231,7 @@ test(
           mutationChild(t, f, 'verdict-record', verdictInput(f, c, 2)),
         );
         assert.equal(denied.error.code, 'LOCKED');
-        assert.equal(denied.error.details.passId, f.passId);
+        assert.deepEqual(denied.error.details, {});
         first.proceed();
         const committed = await childResult(first);
         assert.equal(committed.ok, true, JSON.stringify(committed));
@@ -2205,9 +2242,7 @@ test(
         else assert.equal(retry.ok, true, JSON.stringify(retry));
         const expected = plans === 1 ? ['1'] : ['1', '2'];
         assert.deepEqual(Object.keys((await f.cache()).records), expected);
-        const lock = JSON.parse(
-          await fs.readFile(path.join(f.root, '.effective-flow/issue-buddy/pass.lock'), 'utf8'),
-        );
+        const lock = JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
         assert.deepEqual(Object.keys(lock.collection.outcomes), expected);
         assert.deepEqual(
           await childResult(mutationChild(t, f, 'verdict-record', verdictInput(f, c, 1))),
@@ -2218,48 +2253,44 @@ test(
 );
 
 test(
-  'SIGKILL before and after create-only pass publication leaves an acquirable or explicitly releasable pass',
+  'SIGKILL before and after create-only pass publication leaves no record or an explicitly closable one',
   { timeout: 30000 },
   async (t) => {
     for (const after of [false, true])
       await t.test(`after publication=${after}`, async (t) => {
         const f = await nativeFixture(t);
-        await f.run('pass-lock-release', { passId: f.passId });
+        await f.run('pass-close', { passId: f.passId });
         await fs.rm(path.join(f.root, '.effective-flow'), { recursive: true });
         const actor = mutationChild(
           t,
           f,
-          'pass-lock-acquire',
+          'pass-open',
           {},
           {
-            boundary: { method: 'link', targetIndex: 1, suffix: '/pass.lock', after },
+            boundary: { method: 'link', targetIndex: 1, suffix: '.json', after },
           },
         );
         await actor.boundary;
         actor.child.kill('SIGKILL');
         assert.equal((await actor.done).signal, 'SIGKILL');
+        const passes = path.join(f.root, '.effective-flow/issue-buddy/passes');
+        const records = (await fs.readdir(passes)).filter((name) => name.endsWith('.json'));
+        // A killed pass never blocks another one: a new pass opens beside its record.
+        const opened = await f.run('pass-open');
+        assert.equal(opened.ok, true, JSON.stringify(opened));
         if (after) {
-          const held = await f.run('pass-lock-acquire');
-          assert.equal(held.error.code, 'LOCKED');
-          assert.match(held.error.details.passId, /^[a-f0-9-]{36}$/);
-          assert.equal(held.error.details.ageMs, 0);
+          assert.equal(records.length, 1);
+          const orphan = records[0].replace(/\.json$/, '');
+          assert.match(orphan, /^[a-f0-9-]{36}$/);
           const bytes = await runtimeSnapshot(f);
           assert.equal(
-            (await f.run('pass-lock-release', { passId: 'wrong' })).error.code,
-            'LOCK_MISMATCH',
+            (await f.run('pass-close', { passId: 'wrong' })).error.code,
+            'PASS_NOT_FOUND',
           );
           assert.deepEqual(await runtimeSnapshot(f), bytes);
-          assert.equal(
-            (await f.run('pass-lock-release', { passId: held.error.details.passId })).ok,
-            true,
-          );
-        } else
-          await assert.rejects(
-            fs.stat(path.join(f.root, '.effective-flow/issue-buddy/pass.lock')),
-            { code: 'ENOENT' },
-          );
-        const acquired = await f.run('pass-lock-acquire');
-        assert.equal(acquired.ok, true, JSON.stringify(acquired));
+          assert.equal((await f.run('pass-close', { passId: orphan })).ok, true);
+        } else assert.deepEqual(records, []);
+        assert.equal((await f.run('pass-close', { passId: opened.data.passId })).ok, true);
         await noOperationLock(f);
       });
   },
@@ -2278,14 +2309,11 @@ test(
     actor.child.kill('SIGKILL');
     assert.equal((await actor.done).signal, 'SIGKILL');
     assert.equal((await f.cache()).records[1].verdict, 'published');
-    const held = await f.run('pass-lock-acquire');
-    assert.equal(held.error.details.passId, f.passId);
-    assert.equal(
-      (await f.run('pass-lock-release', { passId: 'wrong' })).error.code,
-      'LOCK_MISMATCH',
-    );
-    assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
-    assert.equal((await f.run('pass-lock-acquire')).ok, true);
+    // The killed operation freed the TCP endpoint; its pass record stays until explicit close.
+    assert.equal((await fs.stat(f.passPath())).isFile(), true);
+    assert.equal((await f.run('pass-close', { passId: 'wrong' })).error.code, 'PASS_NOT_FOUND');
+    assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
+    assert.equal((await f.run('pass-open')).ok, true);
     await noOperationLock(f);
   },
 );
@@ -2311,19 +2339,15 @@ test(
     });
     await actor.boundary;
     assert.equal((await actor.done).code, 17);
-    assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
-    assert.equal((await f.run('pass-lock-acquire')).ok, true);
+    assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
+    assert.equal((await f.run('pass-open')).ok, true);
   },
 );
 
 test('denied loopback bind and an unrelated occupied endpoint fail closed before first runtime mkdir', async (t) => {
   const f = await nativeFixture(t);
   const captured = [];
-  await f.run(
-    'pass-lock-release',
-    { passId: f.passId },
-    { createServer: observeEndpoint(captured) },
-  );
+  await f.run('pass-close', { passId: f.passId }, { createServer: observeEndpoint(captured) });
   await fs.rm(path.join(f.root, '.effective-flow'), { recursive: true });
   let mutations = 0;
   const observed = { ...fs };
@@ -2341,14 +2365,14 @@ test('denied loopback bind and an unrelated occupied endpoint fail closed before
     };
     return server;
   };
-  const denied = await f.run('pass-lock-acquire', {}, { fs: observed, createServer: deniedServer });
+  const denied = await f.run('pass-open', {}, { fs: observed, createServer: deniedServer });
   assert.equal(denied.error.code, 'UNSAFE_RUNTIME_STATE');
   assert.match(denied.error.message, /loopback TCP.*local-listen permission.*sandbox/);
   const blocker = createServer((socket) => socket.destroy());
   blocker.listen(captured[0]);
   await once(blocker, 'listening');
   try {
-    const occupied = await f.run('pass-lock-acquire', {}, { fs: observed });
+    const occupied = await f.run('pass-open', {}, { fs: observed });
     assert.equal(occupied.error.code, 'LOCKED');
     assert.deepEqual(occupied.error.details, {});
     assert.equal(mutations, 0);
@@ -2356,7 +2380,7 @@ test('denied loopback bind and an unrelated occupied endpoint fail closed before
   } finally {
     await new Promise((resolve) => blocker.close(resolve));
   }
-  assert.equal((await f.run('pass-lock-acquire')).ok, true);
+  assert.equal((await f.run('pass-open')).ok, true);
 });
 
 test('legacy operation and per-write locks retain all bytes and unrelated temporary evidence', async (t) => {
@@ -2375,17 +2399,49 @@ test('legacy operation and per-write locks retain all bytes and unrelated tempor
       await fs.writeFile(target, 'unknown holder');
       await fs.writeFile(path.join(directory, 'unrelated.tmp'), 'operator evidence');
       const snapshot = await runtimeSnapshot(f);
-      const refused = await f.run('pass-lock-release', { passId: f.passId });
+      const refused = await f.run('pass-close', { passId: f.passId });
       assert.equal(refused.error.code, 'LOCKED');
       assert.match(refused.error.message, /operator inspection/);
       assert.deepEqual(await runtimeSnapshot(f), snapshot);
       await fs.unlink(target);
-      assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
+      assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
       assert.equal(
         await fs.readFile(path.join(directory, 'unrelated.tmp'), 'utf8'),
         'operator evidence',
       );
     });
+});
+
+// Invariant: the whole-pass lock of earlier releases is never deleted or ignored. While it
+// exists every operation refuses with LEGACY_PASS_LOCK and leaves all runtime bytes unchanged.
+test('a legacy pass.lock refuses every operation for operator inspection and is never removed', async (t) => {
+  const f = await nativeFixture(t);
+  const target = path.join(f.root, '.effective-flow/issue-buddy/pass.lock');
+  await fs.writeFile(target, JSON.stringify({ passId: 'older-protocol', acquiredAt: NOW }));
+  const snapshot = await runtimeSnapshot(f);
+  const record = await fs.readFile(f.passPath(), 'utf8');
+  for (const [operation, input] of [
+    ['pass-open', {}],
+    ['pass-collect', f.collectInput()],
+    ['pass-close', { passId: f.passId }],
+  ]) {
+    const refused = await f.run(operation, input);
+    assert.equal(refused.error.code, 'LEGACY_PASS_LOCK', operation);
+    assert.match(refused.error.message, /operator inspection/);
+    assert.deepEqual(refused.error.details, { path: '.effective-flow/issue-buddy/pass.lock' });
+  }
+  assert.equal(
+    f.calls.some((call) => call.executable === 'gh'),
+    false,
+  );
+  assert.deepEqual(await runtimeSnapshot(f), snapshot);
+  assert.equal(await fs.readFile(f.passPath(), 'utf8'), record);
+  assert.equal(
+    await fs.readFile(target, 'utf8'),
+    JSON.stringify({ passId: 'older-protocol', acquiredAt: NOW }),
+  );
+  await fs.unlink(target);
+  assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
 });
 
 test(
@@ -2426,13 +2482,13 @@ test(
       connection.on('error', () => {});
       await closed;
       assert.equal(connection.destroyed, true);
-      assert.equal((await f.run('pass-lock-release', { passId: f.passId })).error.code, 'LOCKED');
+      assert.equal((await f.run('pass-close', { passId: f.passId })).error.code, 'LOCKED');
     } finally {
       proceed.release();
     }
     assert.equal((await pending).ok, true);
     assert.equal((await fs.readdir(reports)).length, 20);
-    assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
+    assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
   },
 );
 
@@ -2456,9 +2512,7 @@ function reportOutcomes(c, inputs) {
   };
 }
 async function persistedPass(f) {
-  return JSON.parse(
-    await fs.readFile(path.join(f.root, '.effective-flow/issue-buddy/pass.lock'), 'utf8'),
-  );
+  return JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
 }
 
 test(
@@ -2569,7 +2623,7 @@ test('a cache outcome from an older incomplete protocol grants no same-pass auth
   const f = await fixture(t, { issues: [issue(1), issue(2)] });
   const c = await collected(f);
   assert.equal((await f.run('verdict-record', verdictInput(f, c, 1))).ok, true);
-  const target = path.join(f.root, '.effective-flow/issue-buddy/pass.lock');
+  const target = f.passPath();
   const lock = await persistedPass(f);
   lock.collection.outcomes = {};
   delete lock.collection.pendingVerdict;
@@ -2582,9 +2636,9 @@ test('a cache outcome from an older incomplete protocol grants no same-pass auth
     'UNSAFE_RUNTIME_STATE',
   );
   assert.deepEqual(await runtimeSnapshot(f), before);
-  assert.equal((await f.run('pass-lock-release', { passId: 'wrong' })).error.code, 'LOCK_MISMATCH');
-  assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
-  assert.equal((await f.run('pass-lock-acquire')).ok, true);
+  assert.equal((await f.run('pass-close', { passId: 'wrong' })).error.code, 'PASS_NOT_FOUND');
+  assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
+  assert.equal((await f.run('pass-open')).ok, true);
 });
 
 test(
@@ -2598,7 +2652,13 @@ test(
           const c = await collected(f);
           const one = verdictInput(f, c, 1, 'failed');
           const actor = mutationChild(t, f, 'verdict-record', one, {
-            boundary: { method: 'rename', targetIndex: 1, suffix: '/pass.lock', occurrence, after },
+            boundary: {
+              method: 'rename',
+              targetIndex: 1,
+              suffix: `/passes/${f.passId}.json`,
+              occurrence,
+              after,
+            },
           });
           await actor.boundary;
           actor.child.kill('SIGKILL');
@@ -2650,7 +2710,7 @@ test('intent persistence failure before publication leaves cache and pass unchan
     fs: {
       ...fs,
       rename: async (from, to) => {
-        if (to.endsWith('/pass.lock')) throw new Error('intent publication refused');
+        if (to === f.passPath()) throw new Error('intent publication refused');
         return fs.rename(from, to);
       },
     },
@@ -2695,10 +2755,22 @@ test('unproven or malformed pending verdict evidence preserves bytes and retains
       if (variant === 'wrong-before') intent.beforeDigest = '0'.repeat(64);
       if (variant === 'wrong-after') intent.afterDigest = '0'.repeat(64);
       if (variant === 'cache-changed') {
+        // The journal binds this issue's record: a foreign record for it is unproven evidence.
         const other = {
           schemaVersion: 1,
           repository: c.repository,
-          records: {},
+          records: {
+            1: {
+              issue: 1,
+              fingerprint: one.fingerprint,
+              verdict: 'not-ready',
+              mode: 'publish',
+              reason: 'Foreign',
+              retryCount: 0,
+              recordedPassId: 'foreign-pass',
+              recordedAt: NOW,
+            },
+          },
           attempts: {},
           closedPlanPrObservations: { 3: { 9: one.fingerprint } },
         };
@@ -2707,21 +2779,15 @@ test('unproven or malformed pending verdict evidence preserves bytes and retains
           JSON.stringify(other),
         );
       }
-      await fs.writeFile(
-        path.join(f.root, '.effective-flow/issue-buddy/pass.lock'),
-        JSON.stringify(lock),
-      );
+      await fs.writeFile(f.passPath(), JSON.stringify(lock));
       const before = await runtimeSnapshot(f);
       const refused = await f.run('verdict-record', one);
       assert.equal(refused.ok, false, JSON.stringify(refused));
       assert.ok(['INVALID_PAYLOAD', 'UNSAFE_RUNTIME_STATE'].includes(refused.error.code));
       assert.deepEqual(await runtimeSnapshot(f), before);
-      assert.equal(
-        (await f.run('pass-lock-release', { passId: 'wrong' })).error.code,
-        'LOCK_MISMATCH',
-      );
-      assert.equal((await f.run('pass-lock-release', { passId: f.passId })).ok, true);
-      assert.equal((await f.run('pass-lock-acquire')).ok, true);
+      assert.equal((await f.run('pass-close', { passId: 'wrong' })).error.code, 'PASS_NOT_FOUND');
+      assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
+      assert.equal((await f.run('pass-open')).ok, true);
     });
 });
 
@@ -2873,4 +2939,789 @@ test('the collected repository and selected issue bind the autopilot consent-che
   assert.equal((await check({ issue: 6 })).data.reason, 'wrong-source');
   await autopilotOperation('run-close', { cwd: root, runId, outcome: 'no-pull-request' }, deps);
   assert.equal((await check({})).data.reason, 'run-closed');
+});
+
+// ---------------------------------------------------------------------------------------------
+// Parallel passes: per-issue planning claims, claim-scoped authority, merge-only cache, bounded
+// mutex, and the adoption of an issue-sourced autopilot run's claim.
+
+const FIXTURE_TARGET = { kind: 'forge', host: 'github.com', owner: 'example', repository: 'flow' };
+function claimFile(f, issueNumber) {
+  return path.join(f.root, planningClaimKey({ target: FIXTURE_TARGET, issue: issueNumber }).path);
+}
+async function readClaim(f, issueNumber) {
+  try {
+    return JSON.parse(await fs.readFile(claimFile(f, issueNumber), 'utf8'));
+  } catch (error) {
+    if (error.code === 'ENOENT') return undefined;
+    throw error;
+  }
+}
+// A second pass in the same fixture: its own passId, collect, record and report.
+async function otherPass(f) {
+  const opened = await f.run('pass-open');
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  const passId = opened.data.passId;
+  return {
+    passId,
+    collect: (extra = {}, overrides) =>
+      f.run('pass-collect', f.collectInput({ passId, ...extra }), overrides),
+    record: (c, number, verdict = 'failed', overrides) =>
+      f.run(
+        'verdict-record',
+        {
+          passId,
+          mode: c.mode,
+          issue: number,
+          fingerprint: [...c.eligible, ...c.authorizedRecovery].find(
+            (entry) => entry.issue === number,
+          ).fingerprint,
+          verdict,
+          reason: `Issue ${number} outcome`,
+        },
+        overrides,
+      ),
+    close: () => f.run('pass-close', { passId }),
+  };
+}
+
+// Invariant (acceptance "Same issue, single mode"): a second pass for an issue another pass
+// holds fails ISSUE_CLAIMED with the holder, never its token, and changes nothing outside its own
+// pass record.
+test('a second single-issue pass for a claimed issue fails ISSUE_CLAIMED with the holder and no side effects', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const first = await collected(f, { issue: 1 });
+  assert.deepEqual(
+    first.eligible.map((entry) => entry.issue),
+    [1],
+  );
+  const held = await readClaim(f, 1);
+  assert.equal(held.workflow, 'issue-buddy');
+  assert.equal(held.passId, f.passId);
+  const second = await otherPass(f);
+  const before = await runtimeSnapshot(f);
+  const refused = await second.collect({ issue: 1 });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'ISSUE_CLAIMED');
+  assert.deepEqual(refused.error.details, {
+    issue: 1,
+    repository: 'github.com/example/flow',
+    holder: {
+      workflow: 'issue-buddy',
+      passId: f.passId,
+      acquiredAt: NOW,
+      ageMs: 0,
+      stale: false,
+      liveness: refused.error.details.holder.liveness,
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(refused), new RegExp(held.claimId));
+  assert.deepEqual(await runtimeSnapshot(f), before);
+  assert.deepEqual(await readClaim(f, 1), held);
+  const record = JSON.parse(await fs.readFile(f.passPath(second.passId), 'utf8'));
+  assert.equal(record.collection.status, 'failed');
+  assert.deepEqual(record.collection.failure, { code: 'ISSUE_CLAIMED' });
+  assert.deepEqual(record.claims, []);
+  const report = await f.run('pass-report', {
+    passId: second.passId,
+    outcome: 'failed',
+    cutOff: 'none',
+    verdicts: [],
+    pullRequestsOpened: [],
+    pullRequestsRecovered: [],
+    failures: [{ issue: null, stage: 'collect', code: 'ISSUE_CLAIMED' }],
+  });
+  assert.equal(report.ok, true, JSON.stringify(report));
+  assert.deepEqual((await second.close()).data.releasedClaims, []);
+  assert.deepEqual(await readClaim(f, 1), held);
+  assert.equal((await f.record(first, 'not-ready')).ok, true);
+  // The final verdict settles the issue: its claim and trusted text are released.
+  assert.equal(await readClaim(f, 1), undefined);
+  await assert.rejects(fs.stat(first.eligible[0].trustedTextPath), { code: 'ENOENT' });
+});
+
+// Invariant (acceptance "Same issue, batch mode"): a batch pass skips an issue another run holds
+// as `issue-in-progress` and fills the judgment slot with the next eligible issue.
+test('a batch pass skips a claimed issue as issue-in-progress and judges the next eligible one', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2), issue(3)] });
+  await collected(f, { issue: 1 });
+  const batch = await otherPass(f);
+  const c = (await batch.collect({ limits: { judgments: 1 } })).data;
+  assert.deepEqual(c.skipped, [{ issue: 1, reason: 'issue-in-progress' }]);
+  assert.deepEqual(
+    c.eligible.map((entry) => entry.issue),
+    [2],
+  );
+  assert.equal(c.eligibleCount, 2);
+  assert.equal((await readClaim(f, 2)).passId, batch.passId);
+  assert.equal(await readClaim(f, 3), undefined, 'an issue beyond the slice is not claimed');
+  assert.equal((await readClaim(f, 1)).passId, f.passId);
+  assert.ok(SKIP_REASONS.includes('issue-in-progress'));
+  const report = await f.run('pass-report', {
+    passId: batch.passId,
+    collect: c,
+    outcome: 'completed',
+    cutOff: 'judgment-limit',
+    verdicts: [],
+    pullRequestsOpened: [],
+    pullRequestsRecovered: [],
+    failures: [],
+  });
+  assert.equal(report.ok, true, JSON.stringify(report));
+  assert.deepEqual(report.data.counts, { 'issue-in-progress': 1 });
+  assert.deepEqual((await batch.close()).data.releasedClaims, [2]);
+  assert.equal(await readClaim(f, 2), undefined);
+});
+
+// Invariant (acceptance "Claim scope"): a pass never authorizes recovery for, writes a
+// stale-attempt record for, or deletes the trusted text of an issue another pass holds.
+test('recovery authorization, stale-attempt accounting and trusted text stay within the claims a pass holds', async (t) => {
+  for (const variant of ['orphan-branch', 'unrecorded-pull-request', 'stale-attempt', 'dry-run'])
+    await t.test(variant, async (t) => {
+      const f = await fixture(t, { issues: [issue(1), issue(2)] });
+      const first = await collected(f, { issue: 1 });
+      const trusted = await fs.readFile(first.eligible[0].trustedTextPath, 'utf8');
+      // The first pass is in flight: its branch is pushed or its PR is open, not yet recorded.
+      if (variant === 'orphan-branch' || variant === 'dry-run') f.state.branches = [branch(1)];
+      if (variant === 'unrecorded-pull-request') f.state.pulls = [pull(30, 1)];
+      const staleAttempts =
+        variant === 'stale-attempt'
+          ? [
+              {
+                issue: 1,
+                originalFingerprint: first.eligible[0].fingerprint,
+                stableAttemptId: stableAttemptId('older-pass', 1),
+              },
+            ]
+          : [];
+      const other = await otherPass(f);
+      const c = (
+        await other.collect({ staleAttempts, mode: variant === 'dry-run' ? 'dry-run' : 'publish' })
+      ).data;
+      assert.deepEqual(
+        c.skipped.filter((entry) => entry.issue === 1),
+        [{ issue: 1, reason: 'issue-in-progress' }],
+      );
+      assert.deepEqual(c.authorizedRecovery, []);
+      assert.deepEqual(c.recovery, { orphanBranches: [], unrecordedPullRequests: [] });
+      assert.deepEqual(
+        c.eligible.map((entry) => entry.issue),
+        [2],
+      );
+      await assert.rejects(
+        fs.stat(path.join(f.root, '.effective-flow/issue-buddy/verdicts.json')),
+        {
+          code: 'ENOENT',
+        },
+      );
+      assert.equal(await fs.readFile(first.eligible[0].trustedTextPath, 'utf8'), trusted);
+      assert.equal((await readClaim(f, 1)).passId, f.passId);
+      await other.close();
+      assert.equal(await fs.readFile(first.eligible[0].trustedTextPath, 'utf8'), trusted);
+    });
+});
+
+// Invariant (acceptance "Cache and journal"): concurrent verdicts of two passes for different
+// issues keep both records, and one pass's pending journal survives another pass's cache write.
+test('concurrent verdicts of parallel passes keep both records and a pending journal survives the other write', async (t) => {
+  const f = await nativeFixture(t, { issues: [issue(1), issue(2)] });
+  const one = await collected(f, { issue: 1 });
+  const other = await otherPass(f);
+  const two = (await other.collect({ issue: 2 })).data;
+  const wait = { mutexWaitMs: MUTEX_WAIT_MS };
+  const results = await Promise.all([
+    f.record(one, 'not-ready', {}, wait),
+    other.record(two, 2, 'not-ready', wait),
+  ]);
+  for (const result of results) assert.equal(result.ok, true, JSON.stringify(result));
+  const cache = await f.cache();
+  assert.deepEqual(Object.keys(cache.records).sort(), ['1', '2']);
+  assert.equal(cache.records[1].recordedPassId, f.passId);
+  assert.equal(cache.records[2].recordedPassId, other.passId);
+});
+
+test('a pending verdict journal survives a parallel pass writing another issue and completes on the identical retry', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const one = await collected(f, { issue: 1 });
+  const other = await otherPass(f);
+  const two = (await other.collect({ issue: 2 })).data;
+  const input = {
+    passId: f.passId,
+    mode: 'publish',
+    issue: 1,
+    fingerprint: one.eligible[0].fingerprint,
+    verdict: 'failed',
+    reason: 'Bounded reason',
+    stableAttemptId: stableAttemptId(f.passId, 1),
+  };
+  const refused = await f.run('verdict-record', input, {
+    fs: {
+      ...fs,
+      rename: async (from, to) => {
+        if (to.endsWith('/verdicts.json')) throw new Error('cache commit refused');
+        return fs.rename(from, to);
+      },
+    },
+  });
+  assert.equal(refused.error.code, 'UNSAFE_RUNTIME_STATE');
+  assert.ok(JSON.parse(await fs.readFile(f.passPath(), 'utf8')).collection.pendingVerdict);
+  assert.equal((await other.record(two, 2, 'not-ready')).ok, true);
+  const retried = await f.run('verdict-record', input);
+  assert.equal(retried.ok, true, JSON.stringify(retried));
+  const cache = await f.cache();
+  assert.deepEqual(Object.keys(cache.records).sort(), ['1', '2']);
+  assert.equal(cache.records[1].verdict, 'failed');
+  assert.equal(cache.records[2].verdict, 'not-ready');
+  const record = JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
+  assert.equal(record.collection.pendingVerdict, undefined);
+  assert.deepEqual(Object.keys(record.collection.outcomes), ['1']);
+  const report = await f.report(one, {
+    verdicts: [{ issue: 1, verdict: 'failed', reason: 'Bounded reason' }],
+    failures: [{ issue: 1, stage: 'judgment', code: 'ATTEMPT_FAILED' }],
+  });
+  assert.equal(report.ok, true, JSON.stringify(report));
+});
+
+// A synthetic mutex whose holder state the runner can observe.
+function observedFixtureServer() {
+  const factory = controlledFixtureServer();
+  let held = false;
+  return {
+    held: () => held,
+    factory: (listener) => {
+      const server = factory(listener);
+      const listen = server.listen;
+      server.listen = (...args) => {
+        server.once('listening', () => {
+          held = true;
+        });
+        return listen(...args);
+      };
+      const close = server.close;
+      server.close = (callback) => {
+        held = false;
+        return close(callback);
+      };
+      return server;
+    },
+  };
+}
+const networkCall = (call) =>
+  call.executable === 'gh' ||
+  (call.executable === 'git' && ['fetch', 'ls-remote'].includes(call.args[0]));
+
+// Invariant (acceptance "Mutex scope"): no fetch, ls-remote or tracker call runs while the mutation
+// mutex is held, across a whole pass: collection with recovery, verdicts, reports and close.
+test('no network or tracker call runs while the mutation mutex is held', async (t) => {
+  const mutex = observedFixtureServer();
+  const underMutex = [];
+  let localUnderMutex = 0;
+  const f = await fixture(
+    t,
+    { issues: [issue(1), issue(2), issue(3)], branches: [branch(3)] },
+    {
+      createServer: mutex.factory,
+      onCall: (call) => {
+        if (!mutex.held()) return;
+        if (networkCall(call)) underMutex.push(call.args.join(' '));
+        else localUnderMutex++;
+      },
+    },
+  );
+  const c = await collected(f);
+  assert.deepEqual(
+    c.authorizedRecovery.map((entry) => entry.issue),
+    [3],
+  );
+  assert.equal((await f.record(c)).ok, true);
+  assert.equal(
+    (
+      await f.report(c, {
+        verdicts: [{ issue: 1, verdict: 'failed', reason: 'Bounded reason' }],
+        failures: [{ issue: 1, stage: 'judgment', code: 'ATTEMPT_FAILED' }],
+      })
+    ).ok,
+    true,
+  );
+  // A precollection report resolves its repository through the tracker before the mutex.
+  const preflight = await otherPass(f);
+  const stopped = await f.run('pass-report', {
+    passId: preflight.passId,
+    mode: 'publish',
+    outcome: 'failed',
+    cutOff: 'none',
+    verdicts: [],
+    pullRequestsOpened: [],
+    pullRequestsRecovered: [],
+    failures: [{ issue: null, stage: 'preflight', code: 'PREFLIGHT_FAILED' }],
+  });
+  assert.equal(stopped.ok, true, JSON.stringify(stopped));
+  await preflight.close();
+  await f.run('pass-close', { passId: f.passId });
+  assert.deepEqual(underMutex, []);
+  assert.ok(f.calls.filter(networkCall).length > 0);
+  assert.ok(localUnderMutex > 0, 'local guard reads still run under the mutex');
+});
+
+// Invariant (acceptance "Mutex scope"): contention shorter than the 10 s bound waits through
+// jittered retries instead of LOCKED; only a mutex still occupied at the bound is LOCKED.
+test('mutex contention below the bound is retried with jitter; an endpoint still occupied at 10 s is LOCKED', async (t) => {
+  const f = await fixture(t);
+  const blocker = f.options.createServer();
+  blocker.listen();
+  await once(blocker, 'listening');
+  const sleeps = [];
+  const sleep = (ms) => {
+    sleeps.push(ms);
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  };
+  setTimeout(() => blocker.close(() => {}), 250);
+  const started = performance.now();
+  const opened = await f.run('pass-open', {}, { mutexWaitMs: MUTEX_WAIT_MS, sleep });
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  assert.ok(performance.now() - started < MUTEX_WAIT_MS);
+  assert.ok(sleeps.length > 0);
+  for (const ms of sleeps) assert.ok(ms >= 20 && ms <= 100, String(ms));
+
+  const held = f.options.createServer();
+  held.listen();
+  await once(held, 'listening');
+  let now = 0;
+  const waited = [];
+  const refused = await f.run(
+    'pass-open',
+    {},
+    {
+      mutexWaitMs: MUTEX_WAIT_MS,
+      monotonicNow: () => now,
+      random: () => 0.5,
+      sleep: async (ms) => {
+        waited.push(ms);
+        now += ms;
+      },
+    },
+  );
+  held.close(() => {});
+  assert.equal(refused.error.code, 'LOCKED');
+  assert.deepEqual(refused.error.details, {});
+  assert.equal(
+    waited.reduce((sum, ms) => sum + ms, 0),
+    MUTEX_WAIT_MS,
+  );
+  assert.ok(waited.slice(0, -1).every((ms) => ms === 60));
+});
+
+// Invariant: with `--issue <N>` and the caller's `Autopilot run:` value, the pass adopts that
+// run's claim only after verifying helper-internally that the claim is the run's and the run's
+// ledger is open with this issue as its source; it never releases the adopted claim, and no
+// output carries the claim token.
+const RUN_ID = 'ap-20261019T120000Z-0123abcd';
+const OTHER_RUN_ID = 'ap-20261019T120000Z-89abcdef';
+async function autopilotRun(f, { runId = RUN_ID, claim = true, ledger = {} } = {}) {
+  let claimed;
+  if (claim) {
+    claimed = await planningClaimAcquire(
+      { cwd: f.root, target: FIXTURE_TARGET, issue: 1, workflow: 'autopilot', runId },
+      { runner: f.options.runner, now: () => Date.parse(NOW) },
+    );
+    assert.equal(typeof claimed.claimId, 'string', JSON.stringify(claimed));
+  }
+  if (ledger !== null) {
+    const directory = path.join(f.root, '.effective-flow/autopilot', ledger.runId ?? runId);
+    await fs.mkdir(directory, { recursive: true });
+    await fs.writeFile(
+      path.join(directory, 'run.json'),
+      JSON.stringify({
+        runId: ledger.runId ?? runId,
+        status: ledger.status ?? 'open',
+        source: {
+          kind: 'issue',
+          issue: ledger.issue ?? 1,
+          repository: 'github.com/example/flow',
+        },
+      }),
+    );
+  }
+  return claimed;
+}
+
+test('a single-issue pass adopts the verified claim of its autopilot run and never releases it', async (t) => {
+  const f = await fixture(t);
+  const claimed = await autopilotRun(f);
+  const outputs = [];
+  const c = await collected(f, { issue: 1, autopilotRunId: RUN_ID });
+  outputs.push(c);
+  assert.deepEqual(
+    c.eligible.map((entry) => entry.issue),
+    [1],
+  );
+  const record = JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
+  assert.deepEqual(record.claims, [{ issue: 1, adoptedRunId: RUN_ID }]);
+  const verdict = await f.record(c, 'not-ready');
+  assert.equal(verdict.ok, true, JSON.stringify(verdict));
+  outputs.push(verdict);
+  const stored = await readClaim(f, 1);
+  assert.equal(stored.workflow, 'autopilot');
+  assert.equal(stored.claimId, claimed.claimId);
+  const report = await f.report(c, {
+    verdicts: [{ issue: 1, verdict: 'not-ready', reason: 'Bounded reason' }],
+  });
+  assert.equal(report.ok, true, JSON.stringify(report));
+  outputs.push(report);
+  const closed = await f.run('pass-close', { passId: f.passId });
+  outputs.push(closed);
+  assert.deepEqual(closed.data.releasedClaims, []);
+  assert.deepEqual(await readClaim(f, 1), stored);
+  for (const output of outputs)
+    assert.doesNotMatch(JSON.stringify(output), new RegExp(claimed.claimId));
+});
+
+test('claim adoption is refused for a missing, foreign or unverifiable autopilot claim', async (t) => {
+  for (const [variant, setup, code, reason] of [
+    ['no claim', { claim: false }, 'CLAIM_ADOPTION_REFUSED', 'claim-missing'],
+    ['another run', { runId: OTHER_RUN_ID }, 'ISSUE_CLAIMED'],
+    ['no ledger', { ledger: null }, 'CLAIM_ADOPTION_REFUSED', 'no-ledger'],
+    ['closed run', { ledger: { status: 'closed' } }, 'CLAIM_ADOPTION_REFUSED', 'run-closed'],
+    ['other source', { ledger: { issue: 2 } }, 'CLAIM_ADOPTION_REFUSED', 'wrong-source'],
+  ])
+    await t.test(variant, async (t) => {
+      const f = await fixture(t, { issues: [issue(1), issue(2)] });
+      const claimed = await autopilotRun(f, setup);
+      const before = await runtimeSnapshot(f);
+      const refused = await f.collect({ issue: 1, autopilotRunId: RUN_ID });
+      assert.equal(refused.ok, false);
+      assert.equal(refused.error.code, code, JSON.stringify(refused));
+      if (reason) assert.equal(refused.error.details.reason, reason);
+      else {
+        assert.equal(refused.error.details.holder.workflow, 'autopilot');
+        assert.equal(refused.error.details.holder.runId, OTHER_RUN_ID);
+      }
+      if (claimed) assert.doesNotMatch(JSON.stringify(refused), new RegExp(claimed.claimId));
+      assert.deepEqual(await runtimeSnapshot(f), before);
+      const stored = await readClaim(f, 1);
+      assert.equal(stored?.claimId, claimed?.claimId);
+      assert.deepEqual(JSON.parse(await fs.readFile(f.passPath(), 'utf8')).claims ?? [], []);
+      assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
+      assert.equal((await readClaim(f, 1))?.claimId, claimed?.claimId);
+    });
+  const f = await fixture(t);
+  assert.equal((await f.collect({ autopilotRunId: RUN_ID })).error.code, 'INVALID_PAYLOAD');
+  assert.equal(
+    (await f.collect({ issue: 1, autopilotRunId: 'run-1' })).error.code,
+    'INVALID_PAYLOAD',
+  );
+});
+
+// ---------------------------------------------------------------------------------------------
+// Orphan pass records, exclusive adoption, per-claim persistence and the cleanup inventory.
+
+const OWNER_PID = 4242;
+const BUDDY_HOST = 'buddy-host';
+// Claim-core dependencies with a controlled session pid, host and process table.
+function sessionDeps(alive) {
+  return {
+    claimDeps: {
+      ownerPid: OWNER_PID,
+      hostname: () => BUDDY_HOST,
+      kill: (pid) => {
+        if (alive.has(pid)) return true;
+        throw Object.assign(new Error('no such process'), { code: 'ESRCH' });
+      },
+    },
+  };
+}
+const trustedFile = (f, number) =>
+  path.join(f.root, '.effective-flow/issue-buddy/trusted', `issue-${number}.json`);
+const exists = async (target) =>
+  fs.lstat(target).then(
+    () => true,
+    (error) => {
+      if (error.code === 'ENOENT') return false;
+      throw error;
+    },
+  );
+
+// Invariant: `pass-open` records the session pid the claim core records (never the short-lived
+// helper's own pid), so a live pass is `alive` and `pass-prune` refuses its `process-dead` proof;
+// only a re-verified dead session, or confirmed staleness, prunes the record together with the
+// claims the pass still owns and its trusted text. The record identity (`acquiredAt`) must match.
+test('pass-prune never prunes a live pass as process-dead and prunes a dead one with its claims', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  const alive = new Set([OWNER_PID]);
+  const session = sessionDeps(alive);
+  const opened = await f.run('pass-open', {}, session);
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  const passId = opened.data.passId;
+  const stored = JSON.parse(await fs.readFile(f.passPath(passId), 'utf8'));
+  assert.deepEqual([stored.pid, stored.hostname], [OWNER_PID, BUDDY_HOST]);
+  const c = await f.run('pass-collect', f.collectInput({ passId, issue: 2 }), session);
+  assert.equal(c.ok, true, JSON.stringify(c));
+  assert.equal((await readClaim(f, 2)).passId, passId);
+  assert.equal(await exists(trustedFile(f, 2)), true);
+
+  const listed = await f.run('pass-list', {}, session);
+  assert.equal(listed.ok, true, JSON.stringify(listed));
+  const entry = listed.data.passes.find((item) => item.passId === passId);
+  assert.deepEqual(
+    [entry.state, entry.liveness, entry.pid, entry.claims, entry.collection],
+    ['valid', 'alive', OWNER_PID, [{ issue: 2 }], 'collected'],
+  );
+  assert.doesNotMatch(JSON.stringify(listed), /claimId/);
+
+  const prune = (extra, overrides = session) =>
+    f.run('pass-prune', { passId, acquiredAt: stored.acquiredAt, ...extra }, overrides);
+  assert.deepEqual((await prune({ proof: 'process-dead' })).data, {
+    passId,
+    result: 'proof-refused',
+    reason: 'process-alive',
+  });
+  assert.deepEqual((await prune({ confirmStale: true })).data, { passId, result: 'not-stale' });
+  assert.deepEqual(
+    (
+      await f.run(
+        'pass-prune',
+        { passId, acquiredAt: '2026-10-19T11:00:00.000Z', proof: 'process-dead' },
+        session,
+      )
+    ).data,
+    { passId, result: 'changed' },
+  );
+  assert.equal(await exists(f.passPath(passId)), true);
+  assert.equal((await readClaim(f, 2)).passId, passId);
+  for (const shape of [{}, { proof: 'process-dead', confirmStale: true }, { proof: 'gone' }])
+    assert.equal((await prune(shape)).error.code, 'INVALID_PAYLOAD', JSON.stringify(shape));
+
+  alive.delete(OWNER_PID);
+  assert.deepEqual((await prune({ proof: 'process-dead' })).data, {
+    passId,
+    result: 'removed',
+    proof: 'process-dead',
+    releasedClaims: [2],
+  });
+  assert.equal(await exists(f.passPath(passId)), false);
+  assert.equal(await readClaim(f, 2), undefined);
+  assert.equal(await exists(trustedFile(f, 2)), false);
+  assert.deepEqual((await prune({ proof: 'process-dead' })).data, { passId, result: 'missing' });
+
+  // Confirmed staleness prunes a pass older than 2 h whatever its liveness.
+  const own = JSON.parse(await fs.readFile(f.passPath(), 'utf8'));
+  const later = { clock: () => '2026-10-19T14:00:01.000Z' };
+  assert.deepEqual(
+    (
+      await f.run(
+        'pass-prune',
+        { passId: f.passId, acquiredAt: own.acquiredAt, confirmStale: true },
+        later,
+      )
+    ).data,
+    { passId: f.passId, result: 'removed', confirmStale: true, releasedClaims: [] },
+  );
+});
+
+// Invariant: the pass record carries the session's start time (`pidStartTime`) beside its pid, and
+// `pass-list` and `pass-prune` identify the process by both: a live session with the recorded start
+// time is `alive` and refused, a reused pid (another start time) is `dead` and pruned, an
+// unreadable start time is `unknown` and refused. A record without the field keeps the pid-only
+// probe.
+test('pass liveness checks the session identity by pid and start time', async (t) => {
+  const f = await fixture(t, { issues: [issue(1)] });
+  const startedAt = (ticks) => (pid) => {
+    if (pid !== OWNER_PID || ticks === null)
+      throw Object.assign(new Error('no such file'), { code: 'ENOENT' });
+    return `${pid} (sh) S 1 ${Array.from({ length: 17 }, () => '0').join(' ')} ${ticks} 0 0\n`;
+  };
+  const session = (ticks) => {
+    const base = sessionDeps(new Set([OWNER_PID]));
+    return {
+      claimDeps: { ...base.claimDeps, ownerPidStartTime: 100, readProcStat: startedAt(ticks) },
+    };
+  };
+  const opened = await f.run('pass-open', {}, session(100));
+  assert.equal(opened.ok, true, JSON.stringify(opened));
+  const passId = opened.data.passId;
+  const stored = JSON.parse(await fs.readFile(f.passPath(passId), 'utf8'));
+  assert.deepEqual([stored.pid, stored.pidStartTime], [OWNER_PID, 100]);
+  const liveness = async (ticks) =>
+    (await f.run('pass-list', {}, session(ticks))).data.passes.find(
+      (item) => item.passId === passId,
+    ).liveness;
+  const prune = (ticks) =>
+    f.run(
+      'pass-prune',
+      { passId, acquiredAt: stored.acquiredAt, proof: 'process-dead' },
+      session(ticks),
+    );
+  assert.equal(await liveness(100), 'alive');
+  assert.equal(await liveness(null), 'unknown');
+  assert.equal(await liveness(200), 'dead');
+  assert.deepEqual((await prune(100)).data, {
+    passId,
+    result: 'proof-refused',
+    reason: 'process-alive',
+  });
+  assert.deepEqual((await prune(null)).data, {
+    passId,
+    result: 'proof-refused',
+    reason: 'process-unknown',
+  });
+  assert.equal(await exists(f.passPath(passId)), true);
+
+  // A record written before the field existed: a present pid stays `alive`, never `dead`.
+  const { pidStartTime, ...legacy } = stored;
+  assert.equal(pidStartTime, 100);
+  await fs.writeFile(f.passPath(passId), `${JSON.stringify(legacy)}\n`);
+  assert.equal(await liveness(200), 'alive');
+  assert.equal((await prune(200)).data.reason, 'process-alive');
+
+  await fs.writeFile(f.passPath(passId), `${JSON.stringify(stored)}\n`);
+  assert.deepEqual((await prune(200)).data, {
+    passId,
+    result: 'removed',
+    proof: 'process-dead',
+    releasedClaims: [],
+  });
+});
+
+// Invariant: adoption of an autopilot run's claim is exclusive: the first adopter is recorded in
+// the run's adoption marker, a second pass is refused `already-adopted` (naming the adopter) and
+// changes nothing, `pass-close` of the adopter ends its adoption, and a marker whose pass record
+// is gone is taken over.
+test('claim adoption is exclusive per autopilot run while the first adopter pass exists', async (t) => {
+  const f = await fixture(t);
+  const claimed = await autopilotRun(f);
+  const marker = path.join(f.root, '.effective-flow/issue-buddy/adoptions', `${RUN_ID}.json`);
+  const first = await collected(f, { issue: 1, autopilotRunId: RUN_ID });
+  assert.deepEqual(
+    first.eligible.map((entry) => entry.issue),
+    [1],
+  );
+  const adopted = JSON.parse(await fs.readFile(marker, 'utf8'));
+  assert.deepEqual([adopted.runId, adopted.issue, adopted.passId], [RUN_ID, 1, f.passId]);
+
+  const second = await otherPass(f);
+  const before = await runtimeSnapshot(f);
+  const refused = await second.collect({ issue: 1, autopilotRunId: RUN_ID });
+  assert.equal(refused.ok, false);
+  assert.equal(refused.error.code, 'CLAIM_ADOPTION_REFUSED');
+  assert.deepEqual(refused.error.details, {
+    issue: 1,
+    runId: RUN_ID,
+    reason: 'already-adopted',
+    adopterPassId: f.passId,
+  });
+  assert.doesNotMatch(JSON.stringify(refused), new RegExp(claimed.claimId));
+  assert.deepEqual(await runtimeSnapshot(f), before);
+  assert.deepEqual(JSON.parse(await fs.readFile(f.passPath(second.passId), 'utf8')).claims, []);
+  assert.deepEqual((await second.close()).data.releasedClaims, []);
+  assert.equal(await exists(first.eligible[0].trustedTextPath), true);
+  assert.equal(JSON.parse(await fs.readFile(marker, 'utf8')).passId, f.passId);
+
+  assert.equal((await f.run('pass-close', { passId: f.passId })).ok, true);
+  assert.equal(await exists(marker), false);
+  const third = await otherPass(f);
+  assert.equal((await third.collect({ issue: 1, autopilotRunId: RUN_ID })).ok, true);
+  assert.equal(JSON.parse(await fs.readFile(marker, 'utf8')).passId, third.passId);
+  // A killed adopter whose pass record is gone leaves a marker the next pass takes over.
+  await fs.unlink(f.passPath(third.passId));
+  const fourth = await otherPass(f);
+  const taken = await fourth.collect({ issue: 1, autopilotRunId: RUN_ID });
+  assert.equal(taken.ok, true, JSON.stringify(taken));
+  assert.equal(JSON.parse(await fs.readFile(marker, 'utf8')).passId, fourth.passId);
+  assert.equal((await readClaim(f, 1)).claimId, claimed.claimId);
+});
+
+// Invariant (requirement 6): a pass of an autopilot run never recovers. An unrecorded open plan
+// pull request of the adopted issue is skipped `open-pull-request` with no recovery authority, so
+// autopilot stops instead of continuing on it; without the run the same pull request is
+// recoverable.
+test('a pass of an autopilot run authorizes no recovery of an open plan pull request', async (t) => {
+  const f = await fixture(t, { pulls: [pull()] });
+  await autopilotRun(f);
+  const c = await collected(f, { issue: 1, autopilotRunId: RUN_ID });
+  assert.deepEqual(c.skipped, [{ issue: 1, reason: 'open-pull-request' }]);
+  assert.deepEqual(c.eligible, []);
+  assert.deepEqual(c.authorizedRecovery, []);
+  const recorded = await f.record(c, 'published', {
+    fingerprint: 'ibfp1:sha256:' + 'b'.repeat(64),
+    pullRequest: { number: 30, url: 'https://github.com/example/flow/pull/30' },
+  });
+  assert.equal(recorded.error.code, 'INVALID_PAYLOAD');
+  const r = await f.report(c, {
+    pullRequestsRecovered: [{ issue: 1, number: 30, headRef: branch(1), url: pull().html_url }],
+  });
+  assert.equal(r.ok, false);
+
+  const plain = await fixture(t, { pulls: [pull()] });
+  const recoverable = await collected(plain, { issue: 1 });
+  assert.deepEqual(
+    recoverable.authorizedRecovery.map((entry) => [entry.issue, entry.kind]),
+    [[1, 'unrecorded-pull-request']],
+  );
+});
+
+// Invariant: each claim enters the pass record right after it is taken, so a pass killed while it
+// claims further candidates still names every claim it holds.
+test('every acquired claim is persisted in the pass record before the next acquisition', async (t) => {
+  let passFile;
+  let seen;
+  const f = await fixture(
+    t,
+    { issues: [issue(1), issue(2)] },
+    {
+      onCall: (call) => {
+        if (seen === undefined && passFile && String(call.stdin ?? '').includes('/issue-2.json'))
+          seen = JSON.parse(readFileSync(passFile, 'utf8')).claims;
+      },
+    },
+  );
+  passFile = f.passPath();
+  const c = await collected(f, { limits: { judgments: 2 } });
+  assert.deepEqual(
+    c.eligible.map((entry) => entry.issue),
+    [1, 2],
+  );
+  assert.deepEqual(seen, [{ issue: 1 }]);
+});
+
+// Invariant: `pass-list` reports trusted text no pass record lists (null while a pass record is
+// unreadable), `trusted-prune` removes only such text, re-verified under the mutex, and the
+// legacy-lock scan lists only the top level, `passes/` and `reports/`: trusted text adds no Git
+// call to a locked operation and a `.lock` name inside `trusted/` blocks nothing.
+test('the cleanup inventory lists unclaimed trusted text and trusted-prune removes only that', async (t) => {
+  const f = await fixture(t, { issues: [issue(1), issue(2)] });
+  await collected(f, { issue: 1 });
+  const trusted = path.dirname(trustedFile(f, 1));
+  const probe = () => f.run('trusted-prune', { issues: [10] });
+  const baseline = f.calls.length;
+  assert.deepEqual((await probe()).data.items, [{ issue: 10, result: 'missing' }]);
+  const cost = f.calls.length - baseline;
+  for (let n = 100; n < 130; n++) await fs.writeFile(path.join(trusted, `issue-${n}.json`), '{}');
+  await fs.writeFile(path.join(trusted, 'stray.lock'), 'not a lock');
+  await fs.writeFile(trustedFile(f, 9), '{}');
+  const again = f.calls.length;
+  assert.deepEqual((await probe()).data.items, [{ issue: 10, result: 'missing' }]);
+  assert.equal(f.calls.length - again, cost);
+
+  const listed = (await f.run('pass-list')).data;
+  assert.deepEqual(
+    listed.unclaimedTrusted.map((entry) => entry.issue),
+    [9, ...Array.from({ length: 30 }, (_, i) => 100 + i)],
+  );
+  assert.equal(listed.unclaimedTrusted[0].path, '.effective-flow/issue-buddy/trusted/issue-9.json');
+  assert.equal(listed.truncated, false);
+  assert.deepEqual((await f.run('trusted-prune', { issues: [1, 9] })).data.items, [
+    { issue: 1, result: 'claimed' },
+    { issue: 9, result: 'removed' },
+  ]);
+  assert.equal(await exists(trustedFile(f, 1)), true);
+  assert.equal(await exists(trustedFile(f, 9)), false);
+
+  await fs.writeFile(path.join(f.root, '.effective-flow/issue-buddy/passes/broken.json'), '{}');
+  assert.equal((await f.run('pass-list')).data.unclaimedTrusted, null);
+  assert.deepEqual((await f.run('trusted-prune', { issues: [100] })).data.items, [
+    { issue: 100, result: 'unverifiable' },
+  ]);
+  assert.equal(await exists(trustedFile(f, 100)), true);
+  for (const issues of [[], [0], [1, 1]])
+    assert.equal((await f.run('trusted-prune', { issues })).error.code, 'INVALID_PAYLOAD');
 });

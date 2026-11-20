@@ -285,6 +285,17 @@ criteria, affected areas, assumptions, baseline review result, and open points. 
 are processed separately and completely, so one blocked issue does not prevent the others from
 being planned.
 
+**One run per issue:** `plan-issue` claims each issue when its planning starts, clarification
+included, and releases the claim once that issue's comment and label writes are done, or when the
+run stops. While another `plan-issue` run, an Issue Buddy pass or an autopilot run holds the
+claim, a run for that single issue stops and names the holder; a run over several issues skips it
+and continues with the rest. Different issues can be planned in parallel. The codebase is read at
+the fetched tip of the resolved remote base branch (the configured `delivery.baseBranch`, else
+`origin/HEAD`, else `origin/main`, normalized the same way as for Issue Buddy) without a
+worktree, so it does not matter which checkout or branch you run it from. If that base cannot be
+fetched, the run stops planning that issue and releases its claim. An abandoned session leaves only its claim, which
+`/effective-flow cleanup` shows as stale after 2 hours and releases after you confirm it.
+
 **Splitting a broad issue:** routine technical decomposition stays inside the parent planning
 comment. `plan-issue` proposes a child only for an independently admitted material-harm or
 irreversible-commitment root cause; being broad or independently implementable is insufficient.
@@ -380,23 +391,42 @@ publish draft, plan-only pull requests for ready issues.
 /effective-flow issue-buddy --publish --max-plans 1
 ```
 
-The pass runs in the primary checkout and requires the configured remote tracker to be GitHub.
+The pass runs from any checkout of the repository – the primary checkout or a linked or harness
+worktree, on any branch, clean or not – and requires the configured remote tracker to be GitHub.
+It plans from the fetched tip of the resolved remote base branch (the configured
+`delivery.baseBranch`, else `origin/HEAD`, else `origin/main`) in a planning worktree of its own,
+so your checkout is never touched.
 Publication is allowed only for a public repository. Private and unknown repositories remain
 dry-run-only; the one exception is a run that you start with
 [`autopilot`](tools-automation.md#trust-model) on a single issue, which is your consent to publish
-that plan pull request. The pass stops when configuration, the repository root, the whole-pass lock, the
+that plan pull request. The pass stops when configuration, the repository root, the
 visibility read, the Git state, or the required built-in subagent mechanism cannot be verified.
 It never asks a question during the pass and never implements code, changes configuration, closes
-issues, writes issue comments or labels, or creates a worktree.
+issues or writes issue comments or labels.
+
+**Parallel passes:** there is no repository-wide lock. Each pass claims the issues it plans, so
+passes for different issues run side by side while one issue is planned by at most one run, an
+autopilot run or `plan-issue` included. A batch pass skips an issue another run is planning as
+`issue-in-progress` and takes the next eligible one; `--issue <N>` on such an issue stops and names
+the holder. `issue-in-progress` is this local claim, not the lifecycle label
+`effective-flow-issue-in-progress`, which skips an issue as `lifecycle-label`. A pass that is
+killed leaves its claims and its pass record behind; they block only their own issues until
+`/effective-flow cleanup` releases them after confirmation. With `--issue <N>` from an
+[`autopilot`](tools-automation.md) run, the pass adopts that run's claim; only one pass can adopt
+it.
 
 Issue-derived text stays inside the delegated planning context. The publication title, commit
 message, and body use fixed templates; the body reports only the issue number, review result, and
 open-point count. A published plan pull request is a draft and must be continued through
 `/effective-flow build <plan-file>` after restoring the plan file from its pull-request branch.
-The report names preserved plan leftovers and the operator action required before a retry. A
+When a plan cannot be published, the pass keeps its planning worktree with the plan and names it;
+the issue stays plannable. Move the plan out of that worktree or delete it, then run
+[`/effective-flow cleanup`](tools-setup.md#effective-flow-cleanup), which removes the worktree.
+Later passes list only these kept worktrees as leftovers, never one a running pass is still using. The report names preserved plan leftovers and the operator action
+required before a retry. A
 completed dry run recommends `--publish` only when the repository is public.
 
-**Arguments:** `--publish`, `--max-judgments <n>`, and `--max-plans <n>`. Each flag is accepted once;
+**Arguments:** `--publish`, `--issue <N>`, `--max-judgments <n>`, and `--max-plans <n>`. Each flag is accepted once;
 numeric limits are positive decimal integers without leading zeroes.
 
 ## `/effective-flow backlog-audit`

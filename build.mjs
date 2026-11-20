@@ -154,6 +154,7 @@ const RUNTIME_SCRIPT_FILES = [
   'effective-flow-state-ledger-core.mjs',
   'effective-flow-state-recovery-core.mjs',
   'effective-flow-state-presence-core.mjs',
+  'effective-flow-state-planning-claim-core.mjs',
   'review-report-render.mjs',
   'dated-name-allocation.mjs',
   'claude-settings-core.mjs',

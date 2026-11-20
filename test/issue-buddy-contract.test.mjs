@@ -42,7 +42,10 @@ test('Issue Buddy is registered with a bounded, quoted catalog contract', () => 
   assert.match(prose, /before any write/);
 });
 
-test('Issue Buddy keeps the primary-root preflight order and no-worktree publication path', () => {
+// Invariant: the preflight keeps its order with a pass record in place of the whole-pass lock, the
+// invocation may be any checkout of the repository while every runtime helper stays rooted at the
+// primary checkout, and publication runs only in the pass's own `issue-planning` worktree.
+test('Issue Buddy keeps the preflight order, a primary runtime root and its planning worktree', () => {
   ordered(
     'Configuration and root.',
     'Hidden mode.',
@@ -50,15 +53,31 @@ test('Issue Buddy keeps the primary-root preflight order and no-worktree publica
     'GitHub origin.',
     'Runtime safety.',
     'Migration.',
-    'Whole-pass lock.',
+    'Pass record.',
     'Repository visibility.',
     'Publishing rows and tree.',
     'Subagent capability.',
     'Phase 1: Earlier leftovers',
   );
   assert.match(source, /first `git worktree list --porcelain` record/);
-  assert.doesNotMatch(source, /git worktree add|worktree-integration/);
-  assert.match(prose, /invocation root = primary root = returned `data\.runtimeStateRoot`/);
+  assert.doesNotMatch(source, /worktree-integration/);
+  assert.doesNotMatch(prose, /whole-pass lock unchanged|a linked checkout is refused/);
+  assert.match(
+    prose,
+    /The invocation checkout may be the primary checkout or any linked or harness worktree of the repository/,
+  );
+  assert.match(
+    prose,
+    /Require primary root = returned `data\.runtimeStateRoot` as `RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(
+    prose,
+    /Every `issue-buddy\.mjs` and `remote-tracker\.mjs` call has `cwd: RUNTIME_STATE_ROOT`/,
+  );
+  assert.match(
+    prose,
+    /Every `plan-lint\.mjs` and `plan-publication\.mjs` call has `cwd: PLANNING_ROOT`, the pass's planning worktree/,
+  );
   assert.match(prose, /Do not evaluate `delivery\.completion`/);
 });
 
@@ -66,8 +85,8 @@ test('Issue Buddy uses the actual helper operation set and exact phase payload s
   for (const operation of ISSUE_BUDDY_OPERATIONS) {
     assert.match(source, new RegExp(`\\b${operation}\\b`), `missing helper operation ${operation}`);
   }
-  assert.equal(SKIP_REASONS.length, 11);
-  assert.match(prose, /preserve its eleven skip reasons/);
+  assert.equal(SKIP_REASONS.length, 12);
+  assert.match(prose, /preserve its twelve skip reasons/);
   assert.match(
     prose,
     /pass-collect` with exactly `\{cwd, passId, mode, baseBranch, planDir, branchPrefix, visibility: "standard", limits, repositoryVisibility, leftoverPlanFiles\}`/,
@@ -87,19 +106,22 @@ test('Issue Buddy uses the actual helper operation set and exact phase payload s
     assert.match(prose, new RegExp(field), `pass-report is missing ${field}`);
   }
   assert.match(prose, /No stale-attempt evidence is inferred from a file/);
-  assert.match(prose, /Never read\/write cache, `pass\.lock`, journal or trusted JSON directly/);
+  assert.match(
+    prose,
+    /Never read\/write cache, pass records, `pass\.lock`, planning claims, journal or trusted JSON directly/,
+  );
 });
 
 test('Issue Buddy binds leftovers, readiness, nested planning and report state', () => {
   ordered(
-    'Inventory every existing path directly under canonical `plan.dir`',
+    'Earlier plans live only in kept planning worktrees',
     'For each regular untracked canonical',
     'Call `issue-buddy.mjs pass-collect`',
     'Before each eligible candidate',
     '<!-- spawn-site:issue-buddy/readiness -->',
     '<!-- spawn-site:issue-buddy/plan-run -->',
     '<!-- spawn-site:issue-buddy/nested-spawn-probe -->',
-    'Always reach this phase on a controlled ending after acquisition.',
+    'Always reach this phase on a controlled ending after `pass-open`.',
   );
   assert.match(source, /Require exactly the three lines defined by `planning-readiness`/);
   assert.match(source, /Verdict: ready\|not-ready/);
@@ -217,8 +239,8 @@ test('private publication requires the autopilot input and a granted consent-che
   );
   assert.match(callerProse, /\{issue: null, stage: "consent", code: "CONSENT_REFUSED"\}/);
   ordered(
-    'require `git rev-parse HEAD == collect.baseOid` immediately after collection',
-    "then run the caller contract's `consent-check` when it applies",
+    '`git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`',
+    '`consent-check` when it applies',
     'A proven unrecorded PR is reconciled',
   );
   assert.match(
@@ -244,7 +266,106 @@ test('Issue Buddy forwards the scored control lines only when supplied', () => {
   assert.match(callerProse, /The consent line is never forwarded/);
   assert.match(
     callerProse,
-    /Without the scored lines the envelope stays exactly the five-line form/,
+    /Without the scored lines the envelope stays exactly the five-line form plus its `Execution root:` line/,
   );
   assert.match(callerProse, /never reads the plan's "Decided by score" machine block/);
+});
+
+// Invariant: no whole-pass lock serializes passes any more: `pass-open` creates a pass record and
+// takes no lock, `pass-close` releases the pass's remaining claims, and the mutex is bounded to
+// short local state work with a 10 s retry before `LOCKED`.
+test('Issue Buddy opens and closes a pass record instead of a whole-pass lock', () => {
+  assert.doesNotMatch(source, /pass-lock-acquire|pass-lock-release|Whole-pass lock/);
+  assert.match(
+    prose,
+    /\*\*Pass record\.\*\* Call `pass-open` with `\{cwd\}`; retain its `passId`\. It creates the pass record `passes\/<passId>\.json` and takes no lock/,
+  );
+  assert.match(prose, /There is no whole-pass lock/);
+  assert.match(
+    prose,
+    /never a fetch or forge call, and retries a contended bind for at most 10 s before `LOCKED`/,
+  );
+  assert.match(
+    prose,
+    /attempt `pass-close` with `\{cwd, passId\}` after report handling, including after a failed report/,
+  );
+  assert.match(
+    prose,
+    /`\{passId, closed, releasedClaims\}`; `PASS_NOT_FOUND` means no open record/,
+  );
+  assert.doesNotMatch(source, /LOCK_MISMATCH/);
+});
+
+// Invariant: a batch pass skips an issue another run plans as `issue-in-progress` and moves on, a
+// single-issue pass stops `ISSUE_CLAIMED` with the holder, an autopilot caller's run id is passed
+// as `autopilotRunId` to adopt its claim, and the skip reason is told apart from the lifecycle label.
+test('Issue Buddy documents per-issue claims, their stops and the issue-in-progress skip', () => {
+  assert.ok(SKIP_REASONS.includes('issue-in-progress'));
+  assert.match(
+    prose,
+    /plus `issue: <N>` only under `--issue <N>` and, with it, `autopilotRunId: <run-id>` only when the caller contract received an `Autopilot run:` line/,
+  );
+  assert.match(prose, /skips as `issue-in-progress` and the next eligible issue takes its place/);
+  assert.match(
+    prose,
+    /A single-issue pass on such an issue fails collection with `ISSUE_CLAIMED`, naming the holder/,
+  );
+  for (const code of ['CLAIM_ADOPTION_REFUSED', 'LEGACY_PASS_LOCK']) {
+    assert.match(source, new RegExp(`\`${code}\``), code);
+  }
+  // Adoption is exclusive and its refusal reasons match the caller contract.
+  for (const reason of ['already-adopted', 'adoption-invalid']) {
+    assert.match(source, new RegExp(`\`${reason}\``), reason);
+    assert.match(callerProse, new RegExp(`\`${reason}\``), reason);
+  }
+  assert.match(prose, /a claim another run holds stays `ISSUE_CLAIMED`/);
+  // The cleanup-owned operations are named but never run in a pass.
+  assert.match(
+    prose,
+    /`pass-list`, `pass-prune` and `trusted-prune` are `\{\{SKILL:cleanup\}\}`'s and never run in a pass/,
+  );
+  assert.match(
+    prose,
+    /`issue-in-progress` is a local planning claim, not the lifecycle label `effective-flow-issue-in-progress`, which skips as `lifecycle-label`/,
+  );
+  assert.match(
+    callerProse,
+    /pass the received run-id as `autopilotRunId` in Phase 2's `pass-collect` payload/,
+  );
+  assert.match(callerProse, /No claim token enters a caller line, envelope or this run's context/);
+  assert.doesNotMatch(callerProse, /before the lock/);
+});
+
+// Invariant: each publishing pass plans in its own `issue-planning` worktree created at
+// `collect.baseOid` (no second fetch), names it to the plan writer as `Execution root:`, withdraws
+// it on exit unless a preserved plan keeps it, and reads earlier leftovers from those records.
+test('Issue Buddy plans in a per-pass issue-planning worktree at collect.baseOid', () => {
+  ordered(
+    'Call `issue-buddy.mjs pass-collect`',
+    '**Planning worktree.**',
+    "worktree add -b 'issue-planning/<passId>' <PLANNING_ROOT>",
+    '`git -C <PLANNING_ROOT> rev-parse HEAD == collect.baseOid`',
+    'Execution root: <absolute PLANNING_ROOT>',
+  );
+  assert.match(
+    prose,
+    /create the pass's `issue-planning` worktree at `collect\.baseOid`, so no second fetch runs/,
+  );
+  assert.match(
+    prose,
+    /unless Phase 5 preserves a plan in it: then transition its record `active` → `aborted` with reason `plan-preserved`, keep it and report its path and issue\. The claim is released either way/,
+  );
+  assert.match(
+    prose,
+    /Read every record with `worktree inspect` without `sessionId` and keep those with purpose `issue-planning`, status `aborted` and reason `plan-preserved` only; an `active` one belongs to a running pass and is never inventoried/,
+  );
+  // The kept worktree's removal path: the operator moves or discards the plan, then cleanup removes it.
+  assert.match(
+    prose,
+    /move the plan out of the kept worktree or discard it, then `\{\{SKILL:cleanup\}\}` removes the worktree and its `plan-preserved` record/,
+  );
+  assert.match(
+    prose,
+    /the configured `delivery\.baseBranch` \(a remote ref only on `origin`, normalized to the branch name\), else local `origin\/HEAD`, else `origin\/main`/,
+  );
 });
