@@ -158,6 +158,7 @@ const EXPECTED_RUNTIME_SCRIPTS = [
   'effective-flow-state-harness-core.mjs',
   'effective-flow-state-ledger-core.mjs',
   'effective-flow-state-memory-core.mjs',
+  'effective-flow-state-planning-claim-core.mjs',
   'effective-flow-state-presence-core.mjs',
   'effective-flow-state-recovery-core.mjs',
   'effective-flow-state-review-core.mjs',

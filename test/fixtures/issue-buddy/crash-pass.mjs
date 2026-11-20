@@ -43,7 +43,7 @@ process.once('message', async ({ container, boundary }) => {
       pullRequestsOpened: [prIdentity(published)],
     });
     await checkpoint('after-report');
-    checked(await world.buddy('pass-lock-release', { passId }));
+    checked(await world.buddy('pass-close', { passId }));
     process.disconnect();
   } catch (error) {
     process.send({ kind: 'failure', message: error.stack });

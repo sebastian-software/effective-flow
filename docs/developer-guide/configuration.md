@@ -127,7 +127,8 @@ each non-destructive or bounded helper operation: the runtime-state helper opera
 `memory migrate-directory`, `commit create`, `review open-report`, `review write-report`,
 `worktree record-init`, `worktree transition`, `worktree inspect`, `worktree resume-check`, `cleanup plan`,
 `ledger init`, `ledger append`, `ledger reconcile`, `presence register`, `presence refresh`,
-`presence list`, `presence release`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
+`presence list`, `presence release`, `planning-claim key`, `planning-claim acquire`,
+`planning-claim release`, `planning-claim list`), `config-resolve.mjs resolve`, `config-resolve.mjs no-ci-policy`,
 `config-resolve.mjs conflict-validation`, `config-resolve.mjs review-fix-validation`, the four read-only `conflict-validation.mjs` operations,
 and the 44 read-only `remote-tracker.mjs` operations (never a mutation or `thread-ledger-record`), into
 `<RUNTIME_STATE_ROOT>/.claude/settings.local.json`, bound to the absolute `<skill-root>` path as
@@ -143,7 +144,7 @@ naming the literal `skillRoot` count as `current`, and a rule for a realpath ali
 install is listed separately. Wider rules, path-prefix wildcards included, are reported as
 warnings.
 
-Destructive helper operations (`lock break`, `presence prune`) and `harness allow-rules` itself are never
+Destructive helper operations (`lock break`, `presence prune`, `planning-claim prune`) and `harness allow-rules` itself are never
 allowlisted. `commit create` writes Git history and runs the repository's hooks without a prompt;
 it commits only the listed paths and answers `HOOKS_UNTRUSTED` for a fork head or a changed hook
 configuration, which falls back to a prompting commit. Users must not accept Claude Code's "don't ask again" suggestion for a helper call,

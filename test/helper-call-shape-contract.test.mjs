@@ -46,10 +46,11 @@ const fragment = readFileSync(join(SOURCE_DIR, 'shared', `${FRAGMENT}.md`), 'utf
 // The literal shape per helper, with exactly the argv the helper accepts: `config-resolve.mjs`
 // takes `resolve`, `no-ci-policy`, `conflict-validation` or `review-fix-validation`
 // (CONFIG_RESOLVE_OPERATIONS), and
-// `conflict-validation.mjs` one of CONFLICT_VALIDATION_OPERATIONS.
+// `conflict-validation.mjs` one of CONFLICT_VALIDATION_OPERATIONS. A state-helper group may be
+// hyphenated (`planning-claim`).
 const SHAPES = {
   'effective-flow-state':
-    /^node <skill-root>\/scripts\/effective-flow-state\.mjs (?:<group> <operation>|[a-z]+ [a-z-]+) <<< '.*'$/,
+    /^node <skill-root>\/scripts\/effective-flow-state\.mjs (?:<group> <operation>|[a-z]+(?:-[a-z]+)* [a-z-]+) <<< '.*'$/,
   'config-resolve':
     /^node <skill-root>\/scripts\/config-resolve\.mjs (?:resolve|no-ci-policy|conflict-validation|review-fix-validation) <<< '.*'$/,
   'remote-tracker':
@@ -123,6 +124,7 @@ test('every source showing a state-helper call has the call-shape fragment loade
     'src/tools/apply-review-commit-mechanics.md',
     'src/tools/cleanup.md',
     'src/tools/iterate.md',
+    'src/tools/plan-issue.md',
     'src/tools/review.md',
   ]);
   for (const { name, text } of sources) {

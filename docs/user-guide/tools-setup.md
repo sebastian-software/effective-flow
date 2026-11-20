@@ -257,12 +257,13 @@ recommendation; without a setup-fixable problem the report suggests no next step
 
 ### Allow rules (Claude Code)
 
-In Claude Code, setup can write 73 allow rules, so the helpers run without a permission prompt: one
+In Claude Code, setup can write 77 allow rules, so the helpers run without a permission prompt: one
 for each non-destructive operation of the runtime-state helper (`lock acquire`, `lock release`,
 `lock inspect`, `memory reserve`, `memory set-marker`, `memory migrate-directory`, `commit create`,
 `review open-report`, `review write-report`, `worktree record-init`, `worktree transition`,
 `worktree inspect`, `worktree resume-check`, `cleanup plan`, `ledger init`, `ledger append`,
-`ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`),
+`ledger reconcile`, `presence register`, `presence refresh`, `presence list`, `presence release`,
+`planning-claim key`, `planning-claim acquire`, `planning-claim release`, `planning-claim list`),
 four for `config-resolve` (`resolve`, `no-ci-policy`, `conflict-validation` and `review-fix-validation`), 44 for the remote tracker's read-only operations:
 its forge reads, its pure local computations and `thread-ledger-lookup`, and four for
 `conflict-validation` (`ci-detect`, `ci-integrity`, `ci-evidence-match` and `quick-marker-scan`), which only read. `worktree resume-check` and
@@ -613,10 +614,10 @@ that `git branch -d` refuses is kept, the worktree and its record are removed, a
 the branch as `BRANCH_RETAINED` with the unproven commits. Only an `apply-review` run deletes such a
 branch, after it has proven every component commit on the integrated branch by patch-id. A
 `base-validation` worktree whose removal a `build` run could not finish stays released for cleanup,
-which removes it like any other recorded worktree. Its never-integrated branch is the one exception:
-cleanup deletes it even when `git branch -d` refuses, but only while its tip is still the creation
-commit and another branch, tag or remote-tracking ref still contains that commit; otherwise it is
-kept.
+which removes it like any other recorded worktree. Its never-integrated branch, like the
+`issue-planning/<pass>` branch of an Issue Buddy planning worktree, is the one exception: cleanup
+deletes it even when `git branch -d` refuses, but only while its tip is still the creation commit
+and another branch, tag or remote-tracking ref still contains that commit; otherwise it is kept.
 
 **Input/output:** No input beyond the confirmations. The skill first shows an inventory, then a
 dry-run preview of each deletion class. It removes tracked legacy files via `git rm` (recoverable
@@ -625,8 +626,8 @@ irreversibly after explicit confirmation, and removes an eligible worktree with 
 `git worktree remove <path>` only after confirmation. It never uses `--force`, broad
 `git worktree prune`, or `git branch -D`. Delivery, partial-diff and merge-gate branches remain in
 the repository; a temporary `apply-review` branch may be removed only with `git branch -d` when its
-lifecycle proves that the component was integrated safely, and a `base-validation` branch only under
-the exception above.
+lifecycle proves that the component was integrated safely, and a `base-validation` or
+`issue-planning` branch only under the exception above.
 
 The final report is always produced, even when no migration remnant or removable worktree exists.
 It separates removed worktrees from failed removal attempts and lists every remaining linked
@@ -634,8 +635,8 @@ worktree except the main worktree. Each entry includes its path, checkout identi
 inspection status, a specific reason for keeping it, and a safe next step. When cleanup runs in a
 linked worktree, that current execution worktree is reported as in use by the cleanup run. Active,
 aborted, failed, dirty, locked, prunable, harness-managed, mismatched, and lifecycle-less worktrees
-stay intact; the only `aborted` or `failed` worktree cleanup may release is a `merge-gate` one that
-passes its proof. A blocked `invalid-record` item is reported like any other retained worktree, with
+stay intact; the only `aborted` or `failed` worktrees cleanup may release are a `merge-gate` one that
+passes its proof and a kept `issue-planning` worktree whose preserved plan is gone (see below). A blocked `invalid-record` item is reported like any other retained worktree, with
 its `blockers` and a next step (see
 [Cleanup keeps a linked worktree](troubleshooting.md#cleanup-keeps-a-linked-worktree)).
 An `active` record may represent either work still in progress or a run interrupted by a crash;
@@ -648,8 +649,9 @@ removes it. The same holds for the hidden local configuration `.effective-flow/p
 and the `iterate` thread ledger `.effective-flow/merge-gate/thread-ledger.json`; both are current
 state, not leftovers. It may copy confirmed runtime files into
 `.effective-flow/`, remove a confirmed legacy config from that directory, or remove a confirmed
-stale diff baseline, remove a merge-gate presence marker whose run is provably over, or remove a
-finished autopilot ledger; otherwise
+stale diff baseline, remove a merge-gate presence marker whose run is provably over, remove a
+finished autopilot ledger, or release a confirmed planning claim, Issue Buddy pass record or
+unlisted trusted issue text; otherwise
 it preserves active runtime state. A true no-op means there are no
 migration actions, no stale diff baselines, and no eligible worktrees, but the remaining-worktree
 report still appears.
@@ -666,6 +668,26 @@ Each [`autopilot`](tools-automation.md) run keeps a private ledger below
 and it produced no pull request or its pull request is merged or closed, which it reads from the
 forge. An open run, an open pull request, or a pull request the forge cannot report keeps the
 ledger. This is a fourth deletion class with its own confirmation.
+
+Issue planning leaves a fifth class behind when a run is killed. Each issue an Issue Buddy pass,
+issue-sourced `autopilot` run or `plan-issue` run is planning carries a **planning claim** below
+`.effective-flow/planning-claims/`, and each Issue Buddy pass keeps a **pass record** below
+`.effective-flow/issue-buddy/passes/` (see [Remote tracker](remote-tracker.md)). A leftover claim
+blocks only its own issue. Cleanup lists every claim and pass record with its issue, holder, age,
+a stale flag after 2 hours and whether its process is still alive on this host, but it never
+decides on its own that a run is gone: the helper re-verifies a proof – the pass record or open
+autopilot ledger is gone, or the process is dead – or you confirm that an old entry is stale. A
+long-running pass that is still alive keeps its entries unless you confirm otherwise. Cleanup asks
+once per claim or pass record. Pruning a pass record also releases the claims that pass still
+holds. Trusted issue text that no pass record lists any more is offered in one more confirmation;
+while any pass record is unreadable, none is offered. A leftover
+`.effective-flow/issue-buddy/pass.lock` from an earlier version is reported, never removed.
+
+When Issue Buddy cannot publish a plan, it keeps its `issue-planning` worktree with the plan and
+the report names both. Cleanup lists that worktree as kept while the plan is still in it, because
+cleanup never discards a plan. Move the plan somewhere you want to keep it, or delete it, then run
+cleanup again: it offers the worktree like any other finished one and removes it after
+confirmation, together with its unadvanced `issue-planning/<pass>` branch.
 
 **Interplay:** `cleanup` does not adopt config values from a legacy `config.json` itself – it
 points to [`/effective-flow setup`](#effective-flow-setup) for that, the owner of the

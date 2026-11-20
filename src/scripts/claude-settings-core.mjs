@@ -96,17 +96,28 @@ export const ALLOWLISTED_OPERATIONS = Object.freeze([
   'presence refresh',
   'presence list',
   'presence release',
+  // The per-issue planning claims: `planning-claim key` only computes the claim key, `acquire`
+  // creates one claim record (at most MAX_CLAIM_BYTES) no-clobber below
+  // `.effective-flow/planning-claims/` and never replaces another run's claim, `release` removes
+  // only the record whose `claimId` matches, and `list` only reads and never returns a `claimId`
+  // (see `effective-flow-state-planning-claim-core.mjs`).
+  'planning-claim key',
+  'planning-claim acquire',
+  'planning-claim release',
+  'planning-claim list',
 ]);
 // The runtime-state helper operations that never get a rule: destructive (`lock break`, the
 // worktree and branch removal of `worktree remove`, the confirmed removals of `cleanup apply`, the
-// removal of other runs' presence markers by `presence prune`) or the writer of the rules itself.
-// A rule that would also admit one of them is widened.
+// removal of other runs' presence markers by `presence prune`, the removal of other runs' planning
+// claims by `planning-claim prune`) or the writer of the rules itself. A rule that would also admit
+// one of them is widened.
 export const NEVER_ALLOWLISTED_OPERATIONS = Object.freeze([
   'lock break',
   'harness allow-rules',
   'worktree remove',
   'cleanup apply',
   'presence prune',
+  'planning-claim prune',
 ]);
 
 // Every `config-resolve.mjs` operation reads only: `resolve`, and `no-ci-policy`,
