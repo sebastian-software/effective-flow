@@ -15,7 +15,12 @@ On 2026-11-19 a second autopilot run for #693 stopped with `LOCKED` 35 s after t
 
 The new behavior:
 
-1. **Start from the remote base.** Every planning run starts from the fetched tip of `origin/<delivery.baseBranch>` (here `origin/develop`, elsewhere for example `origin/main`). The local branch, cleanliness or position of the invoking checkout no longer matters. Runs may be started from the primary checkout or from any linked or harness worktree of the same repository.
+1. **Start from the remote base.** Every planning run starts from the fetched tip of the repository's resolved remote base branch. The base is never hard-coded, and is resolved in this order:
+   - `delivery.baseBranch` when it is configured (in this repository `origin/develop`);
+   - otherwise the remote default branch `origin/HEAD`;
+   - otherwise `origin/main`.
+
+   This is the base resolution Issue Buddy uses today (`src/tools/issue-buddy.md` Phase 0 step 9). Most repositories have only `main` and no configuration, and resolve to `origin/main`. The local branch, cleanliness or position of the invoking checkout no longer matters. Runs may be started from the primary checkout or from any linked or harness worktree of the same repository.
 2. **One run per issue.** An issue may be planned by at most one run at a time, across Issue Buddy (batch and `--issue`), issue-sourced autopilot and `effective-flow plan-issue`.
 3. **Different issues in parallel.** Different issues may always be planned in parallel. No repository-wide lock spans a planning run any more.
 4. **Batch skips.** An Issue Buddy batch pass skips an issue that another run is planning, records it as skipped (`issue-in-progress`) and keeps going with the remaining issues.
@@ -195,7 +200,7 @@ The new behavior:
 - **Parallel batch collections:** the read phases run concurrently and only the short locked steps serialize. `LOCKED` after 10 s points to a stuck helper.
 - **Another pass's in-flight plan branch, PR or trusted text:** it is never recovered as an orphan or deleted, because recovery and `clearTrusted` require a held claim.
 - **Run on another machine on the same issue:** the remote guards prevent duplicates. A run that loses the race stops as it does today.
-- **Invoking checkout dirty, on another branch, or a T3 worktree:** irrelevant. Planning starts from the fetched `origin/<base>`.
+- **Invoking checkout dirty, on another branch, or a T3 worktree:** irrelevant. Planning starts from the fetched resolved base (`origin/main` in a repository without configuration).
 - **`origin/<base>` moves while a run is in progress:** each run keeps its own `collect.baseOid`. Publication compares `expectedBaseOid` as it does today.
 - **Legacy `pass.lock` after upgrade:** every `planning-claim acquire` refuses with the operator-inspection message until the file is removed.
 - **Hidden mode, missing remote tracker, non-GitHub origin for Issue Buddy:** unchanged stops.
@@ -211,6 +216,7 @@ The new behavior:
 - [ ] **Claim primitive:** create-only behavior, token-matched release, `list` without token, stale flag and liveness, `prune` only with an orphan proof or confirmed staleness, and refusal while a legacy `pass.lock` exists. Verified by `test/planning-claim.test.mjs`.
 - [ ] **Key derivation:** `planning-claim key` yields the same key for the same GitHub issue on the Issue Buddy, autopilot and `plan-issue` paths, and distinct keys for different repositories and external targets. Verified by a behavioral test in `test/planning-claim.test.mjs`.
 - [ ] **Base start:** with a dirty primary checkout on a non-base branch, an Issue Buddy pass plans from `origin/<base>` in an `issue-planning` worktree, and the primary checkout's working tree and index stay byte-identical. Verified by a git-level test in `test/issue-buddy-git.test.mjs`.
+- [ ] **Base resolution without configuration:** in a fixture repository with only a `main` branch and no `delivery.baseBranch`, an Issue Buddy pass and the `plan-issue` examination start from the fetched `origin/main`, through `origin/HEAD` and through the `origin/main` fallback. With `delivery.baseBranch` configured, the configured branch wins. No source, contract or doc names `develop` as a default. Verified by a git-level test in `test/issue-buddy-git.test.mjs` and a contract test.
 - [ ] **Autopilot claim lifetime:** `run-init` claims before creating the ledger and creates none on `ISSUE_CLAIMED`. `run-close` releases in both outcomes, and the token appears neither in the rendered appendix nor in any helper output. Verified by tests in `test/autopilot-core.test.mjs`.
 - [ ] **Autopilot existing-PR stop:** no continuation path remains in `autopilot-issue-source.md`, and `open-pull-request` maps to a `no-pull-request` close. Verified by `test/workflow-contracts.test.mjs`.
 - [ ] **Execution root line:** `unattended-planning.md` defines and validates `Execution root:`. Verified by `test/unattended-planning-contract.test.mjs`.
