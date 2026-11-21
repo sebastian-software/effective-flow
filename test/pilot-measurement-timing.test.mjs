@@ -94,6 +94,7 @@ async function workflowFixture(t, packetCount = 1) {
       configState: 'enabled',
       workflow: 'build',
       harnessFamily: 'codex',
+      installKind: 'native',
       packets: Array.from({ length: packetCount }, () => ({
         selectedProfile: 'quality',
         wouldBeFastEligible: true,
@@ -254,7 +255,7 @@ test('a timing receipt remains continuous across separate processes', async (t) 
 
   const finished = processOperation(
     'finish-packet',
-    timingInput(fixture, packet),
+    timingInput(fixture, packet, { modelCompliance: 'not-applicable' }),
     clock(2_001_250, 1_001.25, 51_250_000_000n),
   );
   assert.equal(finished.ok, true);
@@ -271,7 +272,7 @@ test('reboot and epoch drift close packet duration as unavailable', async (t) =>
   );
   const afterReboot = await executeOperation(
     'finish-packet',
-    timingInput(reboot, rebootPacket),
+    timingInput(reboot, rebootPacket, { modelCompliance: 'not-applicable' }),
     controlledDeps(clock(3_000_500, 100, 60_500_000_000n)),
   );
   assert.deepEqual(afterReboot.result.duration, { status: 'unavailable' });
@@ -285,7 +286,7 @@ test('reboot and epoch drift close packet duration as unavailable', async (t) =>
   );
   const afterDrift = await executeOperation(
     'finish-packet',
-    timingInput(drift, driftPacket),
+    timingInput(drift, driftPacket, { modelCompliance: 'not-applicable' }),
     controlledDeps(clock(4_010_000, 2_010, 71_000_000_000n)),
   );
   assert.deepEqual(afterDrift.result.duration, { status: 'unavailable' });
@@ -327,7 +328,7 @@ test('a crash leaves incomplete evidence, then unavailable timing can be reconci
 
   const closed = await executeOperation(
     'finish-packet',
-    timingInput(fixture, packet),
+    timingInput(fixture, packet, { modelCompliance: 'not-applicable' }),
     controlledDeps(clock(5_000_500, 100, 80_500_000_000n)),
   );
   assert.deepEqual(closed.result.duration, { status: 'unavailable' });
@@ -368,7 +369,7 @@ test('an aborted or failed run records each packet attempt from its receipt', as
       );
       await executeOperation(
         'finish-packet',
-        timingInput(fixture, finished),
+        timingInput(fixture, finished, { modelCompliance: 'not-applicable' }),
         controlledDeps(clock(7_000_250, 3_500.25, 100_250_000_001n)),
       );
       const input = {

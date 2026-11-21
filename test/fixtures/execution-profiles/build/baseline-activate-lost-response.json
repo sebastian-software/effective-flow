@@ -3,7 +3,7 @@
   "harness": "claude",
   "config": "true",
   "inventory": "baseline",
-  "baselineEvidence": "ready",
+  "baselineEvidence": "sample-met",
   "activation": "lost-response",
   "packets": [
     {

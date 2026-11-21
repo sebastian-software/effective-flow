@@ -65,8 +65,9 @@ delegations start only once no bot is pending. Each bot's has-run decision stays
 
 **Suspend.** After finishing any push of the round, append a **wait record** to the wisdom file:
 kind `checks` or `bot`; the pending check names or bot logins; the observed head SHA; the round; the
-consecutive-unchanged count; for a stale-verdict re-trigger, its `createdAt`; and `unconsumed`.
-Then return `SUSPENDED host-pr-watch` followed by `Kind: <checks|bot>`, `Round: <n>`, the pending
+consecutive-unchanged count; for a stale-verdict re-trigger, its `createdAt`; and `unconsumed`. A
+reserved pilot observation also writes its handle per "Suspended observation" of
+`pilot-measurement`. Then return `SUSPENDED host-pr-watch` followed by `Kind: <checks|bot>`, `Round: <n>`, the pending
 check names or bot logins quoted as data, and what this dispatch did.
 
 **Resume.** A `Resumed wait:` dispatch marks its wait record consumed and decides only from its

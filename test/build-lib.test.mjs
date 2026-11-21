@@ -31,6 +31,8 @@ import {
   renderSpawnSiteLine,
   findRenderedSpawnSiteLines,
   renderSpawnSiteMarkers,
+  renderFastTierLine,
+  findRenderedFastTierLines,
   renderModelTierRoleDefaults,
   renderModelTierTable,
   renderModelTierDirectives,
@@ -1956,7 +1958,7 @@ test('parseExecutionProfileContract rejects malformed table structure and values
     () =>
       parseExecutionProfileContract(
         executionProfileSource.replace(
-          '| quality | strongest-available-configured-implementation-capability |',
+          '| quality | strongest-available-configured-implementation-capability                   |',
           '| quality |',
         ),
       ),
@@ -1966,7 +1968,7 @@ test('parseExecutionProfileContract rejects malformed table structure and values
     () =>
       parseExecutionProfileContract(
         executionProfileSource.replace(
-          '| quality | strongest-available-configured-implementation-capability |',
+          '| quality | strongest-available-configured-implementation-capability                   |',
           '| quality |  |',
         ),
       ),
@@ -2736,7 +2738,7 @@ test('profile refs render the exact Claude, Codex, and portable contracts', () =
   );
   assert.equal(
     transformRefs(token, 'portable', profileRefConfig),
-    '`effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only)',
+    '`effective-flow-nodejs-implementer` at the Fast tier',
   );
 });
 
@@ -2842,11 +2844,11 @@ test('transformRefs places the portable AGENT_PROFILE notice after the code span
   }
   assert.equal(
     transformRefs(exact, 'portable', profileRefConfig),
-    '`effective-flow-nodejs-implementer` (portable build: Fast unavailable, Quality only).',
+    '`effective-flow-nodejs-implementer` at the Fast tier.',
   );
   assert.equal(
     transformRefs(longer, 'portable', profileRefConfig),
-    '`spawn effective-flow-nodejs-implementer now` (portable build: Fast unavailable, Quality only).',
+    '`spawn effective-flow-nodejs-implementer now` at the Fast tier.',
   );
 });
 
@@ -4203,10 +4205,7 @@ test('renderBody adds the portable bootstrap for a profile-only worker reference
     context: 'profile-only.md',
   });
   assert.ok(rendered.startsWith(PORTABLE_WORKER_DELEGATION));
-  assert.match(
-    rendered,
-    /`effective-flow-nodejs-implementer` \(portable build: Fast unavailable, Quality only\)/,
-  );
+  assert.match(rendered, /`effective-flow-nodejs-implementer` at the Fast tier/);
   assert.doesNotMatch(rendered, /AGENT_PROFILE/);
   assert.equal(rendered.match(/## Portable worker delegation/g)?.length, 1);
 });
@@ -7843,5 +7842,77 @@ test('findProviderModelNames rejects an unbalanced generated-table marker', () =
   assert.throws(
     () => findProviderModelNames(MODEL_TIER_TABLE_END, GENERATED),
     /end marker without start/,
+  );
+});
+
+// Invariant: only the portable target renders the Fast tier line, only at a site named in
+// `fastSites`, directly between the Quality tier line and the Model selection line; native
+// targets keep their Fast sidecars.
+const FAST_PROFILE_MAPPINGS = Object.freeze({
+  fast: Object.freeze({
+    claude: Object.freeze({ model: 'sonnet', effort: 'medium' }),
+    codex: Object.freeze({ model: 'gpt-5.6-luna', reasoning_effort: 'medium' }),
+  }),
+});
+
+test('renderSpawnSiteMarkers adds the Fast tier line only at portable Fast sites', () => {
+  const sites = new Map(
+    parseSites([
+      '| `build/impl` | Implement | `deep` | `no` | `no` |',
+      '| `build/review` | Review | `deep` | `no` | `no` |',
+    ]).map((site) => [site.id, site]),
+  );
+  const body = '   <!-- spawn-site:build/impl -->\n   <!-- spawn-site:build/review -->\n';
+  const options = {
+    sites,
+    mappings: MODEL_TIER_MAPPINGS,
+    fastSites: new Set(['build/impl']),
+    profileMappings: FAST_PROFILE_MAPPINGS,
+  };
+  const portable = renderSpawnSiteMarkers(body, 'portable', options).split('\n');
+  assert.match(portable[0], /^ {3}Tier `deep`:/);
+  assert.equal(portable[1], `   ${renderFastTierLine(FAST_PROFILE_MAPPINGS)}`);
+  assert.equal(
+    portable[1],
+    '   Fast tier: Claude Code Agent tool `model: sonnet`, `effort: medium`; Codex spawn `model: gpt-5.6-luna`, `reasoning_effort: medium` (rules: `execution-profiles`).',
+  );
+  assert.match(portable[2], /Model selection site: `build\/impl`/);
+  assert.deepEqual(findRenderedFastTierLines(portable.join('\n')), [2]);
+  for (const harness of ['claude', 'codex']) {
+    assert.deepEqual(
+      findRenderedFastTierLines(renderSpawnSiteMarkers(body, harness, options)),
+      [],
+      `${harness} renders no Fast tier line`,
+    );
+  }
+});
+
+// Invariant: the provider-name guard exempts the Fast values only inside a line named as the Fast
+// tier line and only when they equal AGENT_PROFILE_MAPPINGS.fast, independent of the standard tier.
+test('findProviderModelNames exempts the Fast tier line by name, not by tier equality', () => {
+  const fastLine = renderFastTierLine(FAST_PROFILE_MAPPINGS);
+  const withFast = { ...GENERATED, profileMappings: FAST_PROFILE_MAPPINGS };
+  assert.deepEqual(findProviderModelNames(fastLine, withFast), []);
+  assert.ok(findProviderModelNames(fastLine, GENERATED).length > 0);
+  // A Fast mapping that differs from every tier is still exempt on its named line.
+  const distinct = {
+    fast: {
+      claude: { model: 'haiku', effort: 'high' },
+      codex: { model: 'gpt-5.6-luna', reasoning_effort: 'high' },
+    },
+  };
+  assert.deepEqual(
+    findProviderModelNames(renderFastTierLine(distinct), {
+      ...GENERATED,
+      profileMappings: distinct,
+    }),
+    [],
+  );
+  // The standard phrase under the Fast name, or the Fast phrase under another name, is caught.
+  assert.ok(
+    findProviderModelNames(fastLine, { ...GENERATED, profileMappings: distinct }).length > 0,
+  );
+  assert.ok(
+    findProviderModelNames(fastLine.replace('Fast tier: ', 'Quick tier: '), withFast).length > 0,
   );
 });

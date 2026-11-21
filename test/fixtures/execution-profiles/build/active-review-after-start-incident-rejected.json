@@ -1,5 +1,5 @@
 {
-  "name": "A begin-review after start makes record-incident reject the incident with only an alert, and the record still finalizes",
+  "name": "A begin-review after start closes Fast admission, makes record-incident reject the incident with only an alert, and the record still finalizes",
   "harness": "claude",
   "config": "true",
   "inventory": "active",
@@ -27,6 +27,7 @@
       "inventory",
       "start",
       "start-packet",
+      "start-packet",
       "record-incident",
       "finish-packet",
       "finalize"
@@ -44,9 +45,9 @@
             "firstReason": null
           }
         },
-        "attempts": ["fast"],
-        "fallback": "none",
-        "fastAttemptConsumed": true,
+        "attempts": ["quality"],
+        "fallback": "admission-changed",
+        "fastAttemptConsumed": false,
         "attempt": "started"
       }
     ],
@@ -56,7 +57,7 @@
       "qualityCorrectionRounds": 0,
       "packets": [
         {
-          "fallback": "none",
+          "fallback": "admission-changed",
           "escalated": false
         }
       ]

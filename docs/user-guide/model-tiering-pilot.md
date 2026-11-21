@@ -6,7 +6,9 @@ pilot evidence, evaluate the protocol gates, and remove one reviewed generation 
 starts by itself: you opt in and start the baseline through a confirmed action in
 `/effective-flow setup guided`, and a later `build` or `refactor` run activates the generation
 automatically once the preregistered baseline conditions pass. These two are the only workflows
-that record runs and may select Fast.
+that record runs and may select Fast; `fix` is admitted by the protocol but not yet measured. The
+pilot works in native installations and in the portable build that DALO installs, where Fast needs a
+qualified harness (see "Portable Fast and harness qualification").
 
 ## Where evidence lives
 
@@ -21,7 +23,8 @@ exactly one, or an ambiguous error. It never picks one of several generation dir
 a baseline is serialized separately, so two current generations cannot be created concurrently.
 
 A minimal workflow record contains bounded, structured measurements such as the baseline or pilot
-cohort, selected profile, eligibility and first gate reason, duration availability, fallback,
+cohort, install kind (native or portable), harness family, selected profile, eligibility and first gate reason, duration availability, fallback,
+an `overlapped` flag, a per-packet model-compliance outcome,
 validation and review summaries, completion status, and correction counts. It excludes prompts,
 diffs, source, paths, command text or output, environment values, model aliases, URLs, and personal,
 repository, branch, task, PR, or session identifiers. Opaque internal record identifiers carry no
@@ -29,15 +32,16 @@ such meaning.
 
 While a baseline or active generation exists, non-observer `merge-gate` runs may add a separate
 anonymous period observation. It records only the mode and terminal outcome, harness family,
-required-check summary, and counts of actual CI repair, configured-reviewer implementation, and
+required-check summary, install kind, and counts of actual CI repair, configured-reviewer implementation, and
 conflict-resolution work. It contains no PR, repository, branch, workflow-record, check-name,
 comment, finding, or path identifier and cannot be linked to a `build` or `refactor` run. An
 observer-only re-entry records nothing. An observation is also skipped, without affecting the
 pilot, when admission closes as it starts (for example because the baseline is activating at that
-moment) or while another measured run is still in flight.
+moment). An observation under T3 Code is kept across the gate's wait suspensions and recorded once
+at the end of the gate run. Records and observations may be open at the same time.
 
 Observation setup sends the verified runtime root and repository identity together with the
-generation, configuration and generation states, `merge|report` mode, and native harness family.
+generation, configuration and generation states, `merge|report` mode, harness family, and install kind.
 The returned observation identifier and raw capability remain transient. Finalization authenticates
 that capability and records one closed outcome, the three counters, and either final required-check
 evidence or explicit unavailable values. Every normal or early exit after reservation finalizes
@@ -51,23 +55,64 @@ activation, does not start measurement, and does not authorize a detailed trace.
 state the stored generation proves:
 
 1. **Start the baseline.** Setup displays the exact shipped protocol digest and version, discloses
-   the local minimal-data collection, names the preregistered minimum baseline window and eligible
-   packet count, and starts a Quality-only baseline only after your confirmation. From then on,
-   native `build` and `refactor` runs record minimal measurements while every packet still runs Quality.
+   the local minimal-data collection, names the preregistered minimum (at least 10 eligible packets
+   in at least 5 completed baseline records, no calendar window), snapshots the harness
+   qualification, and starts a Quality-only baseline only after your confirmation. From then on,
+   `build` and `refactor` runs record minimal measurements while every packet still runs Quality.
 2. **Resume.** A suspended generation with healthy evidence can be resumed after setup shows the
    inventory and suspension digests the resume is bound to. The helper restores the state stored
    at suspension. A generation in `review` never resumes.
 
 The baseline confirmation is the only one for activation: activation follows automatically. Every
-measured native `build` or `refactor` run in a baseline generation asks the helper to activate it before
-reserving its record. The helper activates once the preregistered baseline window and sample
-conditions pass; until then the generation stays in its baseline and the run continues as a
-baseline run. While another measured run is still in flight, the generation also stays in its
-baseline, but this run's own reservation then fails, so it normally proceeds as an unmeasured
-Quality run. In an active generation, an eligible native packet uses Fast for its first
-implementation attempt only. In `refactor`, that attempt comes only after the before-change
-baseline checks, and a packet whose baseline shows a pre-existing failure or lacks optional
-evidence stays Quality; missing required evidence stops the run before any change.
+measured `build` or `refactor` run in a baseline generation asks the helper to activate it before
+reserving its record. The helper activates once the preregistered baseline sample conditions pass:
+at least 10 eligible packets in at least 5 completed baseline records. Records of runs that
+`iterate` delegated (correction passes, always Quality) are measured but count toward neither
+minimum. Until then the generation stays in its baseline and the run continues as a baseline run.
+Activation also needs an idle generation: while another record or observation is open, the
+generation stays in its baseline, but runs keep recording. A `merge-gate` run that waits for a PR
+under T3 Code keeps its observation open until the gate run ends; Guided setup reports that as open
+observations. An orphaned reservation (a crashed or aborted run that never finalized) keeps the
+generation from activating, and Guided setup reports it as open reservations. Only the run that
+made a reservation can reconcile it, so an orphan clears only by reviewing and then discarding the
+generation with the pilot disabled, which loses the generation's evidence. A cleanup action for
+orphaned reservations is planned but not shipped. In an active generation, an eligible packet uses
+Fast for its first implementation attempt only. In `refactor`, that attempt comes only after the
+before-change baseline checks, and a packet whose baseline shows a pre-existing failure or lacks
+optional evidence stays Quality; missing required evidence stops the run before any change.
+
+Runs may overlap. Overlapping records are flagged `overlapped`, without recording which run
+overlapped which, and the later evaluation discloses overlap as a confounder. If another run's
+unfinished record closes admission before a Fast packet spawns, that packet runs Quality and records
+`admission-changed`; it uses no Fast attempt.
+
+## Portable Fast and harness qualification
+
+The portable build selects Fast through a per-spawn model setting for the first implementation
+attempt of an eligible packet, only on a harness that the shipped qualification record marks
+`qualified`. The record states, per install kind and harness family, the probe outcome, the host
+version (major.minor) and the identity of the Fast mapping it was probed against. Today Claude Code
+is `qualified` and Codex is `unproven`, so Codex runs stay Quality and are still measured. Setup
+snapshots the record when you start the baseline; a harness that qualifies later needs a new
+generation.
+
+- The harness family is read only from the spawn tool the run holds (Claude Code's Agent tool or a
+  Codex spawn). The client surface, T3 Code included, is not recorded and not a signal. Without the
+  signal the run is unmeasured Quality.
+- One host's probe qualifies the harness for every install of this release. A provider gateway may
+  map model aliases differently from the probe, so each Fast packet is checked afterwards.
+- For a Fast packet on Claude Code, the helper reads the child's own transcript and extracts only the
+  model name, the effort and the Claude Code version from assistant entries. It reads no
+  prompts, replies, transcript `cwd` field, branch or task text, and keeps none of it: it stores one of
+  `verified`, `mismatch` or `unverified` per packet (`not-applicable` without a Fast spawn). Codex
+  uses the child's rollout file the same way, plus the session's CLI version. To find the Claude
+  Code transcript, the helper reads two environment values, the session identifier
+  (`CLAUDE_CODE_SESSION_ID`) and the configuration directory (`CLAUDE_CONFIG_DIR`, defaulting to
+  `~/.claude`). When the working directory's project folder does not hold that session, it lists up
+  to 4096 project folder names below `projects/` to find the one that does, without opening any of
+  them; it reads no other file.
+- A `mismatch` packet keeps its work, which still passes validation and review, and leaves the Fast
+  metrics; it is counted separately. `unverified` packets stay in the metrics and are disclosed.
 
 Disabling the key or keeping an invalid value needs no migration, deletes nothing, and starts no
 action. A project that never opts in stays Quality-only and records nothing.
@@ -82,8 +127,9 @@ source excerpts, absolute paths, URLs, and unknown fields.
 ## Review, retention, and deletion
 
 Configuration and generation state remain independent. Disabling the project key stops new
-measurement and Fast selection without deleting evidence or clearing a suspension. Suspension and
-incomplete records block later Fast until the owned evidence is reconciled. A critical safety,
+measurement and Fast selection without deleting evidence or clearing a suspension. A suspension
+blocks later Fast until it is resumed, and another run's incomplete record blocks Fast admission
+until that run finalizes or reconciles it. A critical safety,
 data-integrity, authorization, or scope incident that the helper stores suspends the generation, so
 Fast stops until an explicit resume; an incident it cannot store suspends nothing, as described
 below. Only a still-suspended generation can resume; a generation in `review` is terminal
@@ -99,8 +145,9 @@ record, a genuine storage fault makes the helper suspend the generation itself, 
 contention, a rejected request, or a location fault leaves the pilot state unchanged. Either way
 the run asks once, in the same run, whether to mark that record abandoned; an abandoned record
 counts none of its packets as a success. Only that run can do so. If you decline, or the run cannot
-ask, the incomplete record stays and keeps later runs unmeasured until `discard-generation` or
-purge removes the generation.
+ask, the incomplete record stays: it blocks activation, aggregation, and later Fast spawns until
+the generation is reviewed and discarded with the pilot disabled. Purge is no way out, because it
+needs a completed aggregation, which an open record prevents.
 
 A packet that a run never started, because the run stopped earlier, is recorded as not
 started and left out of every packet metric, so it cannot count as a Fast attempt.
@@ -121,8 +168,11 @@ A packet subset count is visible only when both that subset and the remainder of
 the suppression minimum. Duplicate child counts and ratios are suppressed with the distribution;
 only enclosing totals may remain visible when the distribution has no visible child counts. Neither
 aggregate view carries a generation identifier; the local review wrapper owns that binding.
-Evaluation enforces the required cohort, metric-stratum, ordinal-half, and period-observation sizes.
-Gate observations compare like `merge|report` and native harness groups, while cost compares the
+Evaluation enforces the required cohort (5 records), metric-stratum, and period-observation sizes;
+the chronological halves are reported for information and never make Keep unavailable alone. The
+comparison is pooled and observational, so task mix, overlap, harness, install kind and whether a
+review ran confound it, and no `build` or `refactor` split is required. Gate observations compare
+like `merge|report` and harness groups, while cost compares the
 baseline's would-be-Fast Quality work with the pilot's attempted-Fast work only when kind and unit
 are identical. Insufficient or incompatible evidence is unavailable.
 
@@ -151,6 +201,11 @@ its stale initialization lock could be released, the retry returns that same bas
 creating another one. A live or unproved lock still blocks the retry. A final pilot directory that
 lacks the exact ownership record is treated as foreign and is never adopted automatically.
 
+While a record is open, its reservation also holds three transient fields: a reservation-salted hash of
+the host name, process id and process start time that identifies the owning session, the reservation
+time, and the overlap flag. They exist only until the record is finalized or reconciled; every
+terminal record drops them, so nothing in a finished record identifies a session.
+
 Packet timing is capability-bound and may cross processes. The helper accepts a duration only when
 monotonic time, wall time, system uptime, and a packet-salted host proof remain continuous. A reboot,
 clock discontinuity, or host mismatch makes duration unavailable. Authenticated finalization or
@@ -173,8 +228,9 @@ cross-run control could not be proven without echoing the rejected value.
 
 After an update that changes the model that Quality runs use (protocol `1.2.0`, which lowers the
 Claude effort of the strongest tier from `xhigh` to `high` and moves its Codex model to
-`gpt-6.1-sol`), a pilot generation recorded before it
-is not continued. It is suspended once with the reason `quality-mapping-changed`, stays out of
+`gpt-6.1-sol`), or the pilot parameters (protocol `1.3.0`: shorter baseline, new record fields), a
+pilot generation recorded before it is not continued. It is suspended once with the reason
+`quality-mapping-changed` (`1.1.0`) or `protocol-parameters-changed` (`1.2.0`), stays out of
 every later run, and cannot be resumed; Guided setup reports it and offers no action. Its only exit
 is the helper's `begin-review`, then `discard-generation` with the pilot disabled, which no
 workflow offers yet: run both through `scripts/pilot-measurement.mjs` directly, then start a new

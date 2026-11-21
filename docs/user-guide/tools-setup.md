@@ -518,17 +518,27 @@ Once the configuration step has finished (a declined confirmation or a stopped r
 action), the block reads the stored pilot generation and, only while the key is enabled, offers at
 most one confirmed action:
 
-| Stored generation                                   | Offered action                                                                                                                                                                                    |
-| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| none                                                | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum baseline window and packet count required for activation |
-| `suspended`, evidence healthy                       | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                               |
-| `baseline`, `active`, `review`, unhealthy suspended | none; a baseline activates automatically, `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                   |
+| Stored generation                                   | Offered action                                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| none                                                | **Start** a Quality-only baseline, after setup shows the protocol digest and version, the local minimal-data disclosure, and the minimum packet and record count required for activation (10 eligible packets in at least 5 completed baseline records, no calendar window) |
+| `suspended`, evidence healthy                       | **Resume**, bound to the shown inventory and suspension digests; the stored prior state is restored                                                                                                                                                                         |
+| `baseline`, `active`, `review`, unhealthy suspended | none; a baseline activates automatically, `review` can never resume, and an unhealthy suspension first needs its incomplete evidence reconciled                                                                                                                             |
+
+The block also reports each harness family's qualification (the probe outcome and host version the
+release shipped) and, when something unfinished blocks activation, that cause: open reservations
+of workflow runs, or open observations of a `merge-gate` run, which may be waiting for a PR across
+re-dispatches. One host's probe qualifies the harness for every install of the release, and a
+provider gateway may map model aliases differently. Only the run that holds an open record can
+finalize or reconcile it. An orphaned one blocks activation until the generation is reviewed and
+discarded with the pilot disabled, which loses its evidence; a cleanup action for orphaned
+reservations is planned but not shipped. Portable (DALO) installations offer the same actions as
+native ones.
 
 Declining, skipping, or a non-interactive run sends nothing. No action changes the configuration
 row, and the final report names the opt-in value, the stored generation state, and each offered
 action's outcome. Setup never activates a generation: the confirmed baseline is the only consent,
-and the next measured native `build` or `refactor` run activates it automatically once the preregistered window
-and sample are met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
+and the next measured `build` or `refactor` run activates it automatically once the preregistered sample
+is met. See [Model-tiering pilot data and privacy](model-tiering-pilot.md) for what a
 baseline records.
 
 ## `/effective-flow cleanup`

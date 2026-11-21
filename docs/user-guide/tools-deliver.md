@@ -627,21 +627,24 @@ successful merge.
 While a local pilot generation exists in `baseline` or `active`, a non-observer `merge-gate` run
 may create one anonymous period observation. It counts actual CI-repair delegations, configured-
 reviewer implementation delegations, and conflict-resolution attempts, then records the closed
-`merge|report` mode, terminal outcome, native harness family, and required-check summary. Pending
+`merge|report` mode, terminal outcome, harness family, install kind (native or portable), and
+required-check summary. This includes a gate run under T3 Code, whose observation is kept across the
+wait suspensions and recorded once when the gate run ends. Pending
 waits, ordinary rounds, keyword-less resumes, and Phase-4 returns without implementation are not
 corrections.
 
 The gate discovers the current generation with a read-only helper call carrying the verified
 runtime root and repository identity. Zero generations is a no-op, exactly one supplies the state,
 and multiple generations fail closed without choosing one. Reservation then passes that generation
-with the separately resolved configuration state, `merge|report` mode, and `claude|codex` harness.
+with the separately resolved configuration state, `merge|report` mode, `claude|codex` harness, and install kind.
 
 The observation has no PR, repository, branch, workflow-record, check-name, comment, finding, or
 path identifier and no per-run link to `build` or `refactor`. It is grouped only at the generation
 period level. Disabled or invalid configuration and `none`, `suspended`, or `review` generation
 states make observation a read-only no-op; observer-only post-merge re-entry records nothing. The
 observation is also skipped, with nothing persisted and no effect on the pilot, when admission
-closes as it starts or while another measured run is still in flight.
+closes as it starts. Another open record or observation does not skip it; the records it overlaps
+are flagged instead.
 
 Reservation or finalization failure never changes whether the current run merges or reports ready.
 After a reservation, every normal, controlled, or early exit finalizes exactly once. A report-mode

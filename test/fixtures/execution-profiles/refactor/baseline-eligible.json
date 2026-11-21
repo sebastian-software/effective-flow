@@ -26,7 +26,7 @@
     "configState": "enabled",
     "generationState": "baseline",
     "persistedGenerationState": "baseline",
-    "activation": "not-ready:window,sample",
+    "activation": "not-ready:sample",
     "operations": [
       "inventory",
       "protocol",

@@ -27,7 +27,8 @@ const executionProfileContract = parseExecutionProfileContract(executionProfileS
 });
 
 const EXPECTED_GATE_EVIDENCE = [
-  'Native target, complete profile mapping, available spawn mechanism, and no host override that erases the distinction',
+  'The trusted caller region carries no `Caller: iterate` line',
+  'Complete profile mapping, a spawn mechanism that takes the Fast values, no host override that erases the distinction, and on a portable build a harness qualified in the generation snapshot with the installed Fast-mapping identity',
   'Approved affected-domain evidence shows no authentication, authorization, or trust-boundary change',
   'Approved scope contains no destructive data operation',
   'Approved scope contains no data, schema, or compatibility migration',
@@ -44,6 +45,7 @@ const EXPECTED_GATE_EVIDENCE = [
 const EXPECTED_DECISION_MAPPINGS = [
   ['gate-selected-quality', 'first-exclusion', 'quality', 'none', 'false'],
   ['profile-unavailable-before-spawn', 'profile-unavailable', 'quality', 'none', 'false'],
+  ['fast-admission-changed-before-spawn', 'eligible', 'quality', 'admission-changed', 'false'],
   ['fast-spawn-rejected-after-attempt', 'eligible', 'quality', 'spawn-rejected', 'true'],
   ['fast-worker-abort-after-attempt', 'eligible', 'quality', 'worker-abort', 'true'],
   ['fast-missing-context-escalation', 'eligible', 'quality', 'missing-context', 'true'],
@@ -234,15 +236,21 @@ const ADOPTED_PHASES = {
     end: '### Phase 3.5: Documentation sync',
   },
 };
+// The model-selection pair owns the portable Fast lookup and its verification; it authorizes no
+// Fast spawn but has to name the Fast profile.
 const PROFILE_POLICY_SOURCES = [
   'src/shared/execution-profiles.md',
   'src/shared/pilot-measurement-workflow.md',
   'src/scripts/pilot-measurement-protocol.mjs',
+  'src/shared/model-selection.md',
+  'src/scripts/model-selection-core.mjs',
 ];
 const PROFILE_POLICY_OUTPUTS = [
   'shared/execution-profiles.md',
   'shared/pilot-measurement-workflow.md',
   'scripts/pilot-measurement-protocol.mjs',
+  'shared/model-selection.md',
+  'scripts/model-selection-core.mjs',
 ];
 
 function adoptedPhaseBounds(tool, source) {
@@ -309,7 +317,7 @@ test('profiles are provider-neutral and keep Quality as the safe default', () =>
     },
     {
       profile: 'fast',
-      intent: 'distinct-native-lower-cost-lower-latency-capability',
+      intent: 'distinct-lower-cost-lower-latency-native-role-or-per-spawn-tier-capability',
     },
   ]);
   assert.doesNotMatch(
@@ -323,6 +331,7 @@ test('profiles are provider-neutral and keep Quality as the safe default', () =>
 
 test('the eligibility gate pins exact positive evidence in priority order through its terminal', () => {
   assert.deepEqual(EXECUTION_PROFILE_GATE_REASONS, [
+    'correction-pass',
     'profile-unavailable',
     'trust-boundary',
     'destructive-data',
@@ -338,7 +347,7 @@ test('the eligibility gate pins exact positive evidence in priority order throug
   assert.ok(Object.isFrozen(EXECUTION_PROFILE_GATE_REASONS));
   assert.deepEqual(executionProfileContract.gate, [
     ...EXECUTION_PROFILE_GATE_REASONS.map((decision, index) => ({
-      priority: String(index + 1),
+      priority: String(index),
       decision,
       evidence: EXPECTED_GATE_EVIDENCE[index],
     })),
@@ -354,31 +363,31 @@ test('gate mutations reject missing, reordered, duplicate, mis-prioritized, and 
   const cases = [
     {
       mutate: (contract) => contract.gate.splice(3, 1),
-      expected: /must contain 11 exclusions and one terminal decision/,
+      expected: /must contain 12 exclusions and one terminal decision/,
     },
     {
       mutate: (contract) => {
         [contract.gate[2], contract.gate[3]] = [contract.gate[3], contract.gate[2]];
       },
-      expected: /gate row 3 must be priority 3, decision "destructive-data"/,
+      expected: /gate row 3 must be priority 2, decision "trust-boundary"/,
     },
     {
       mutate: (contract) => {
         contract.gate[1].priority = contract.gate[0].priority;
       },
-      expected: /Duplicate execution-profile gate priority "1"/,
+      expected: /Duplicate execution-profile gate priority "0"/,
     },
     {
       mutate: (contract) => {
         contract.gate[1].decision = contract.gate[0].decision;
       },
-      expected: /Duplicate execution-profile gate decision "profile-unavailable"/,
+      expected: /Duplicate execution-profile gate decision "correction-pass"/,
     },
     {
       mutate: (contract) => {
         contract.gate[4].priority = '12';
       },
-      expected: /gate row 5 must be priority 5, decision "concurrency"/,
+      expected: /gate row 5 must be priority 4, decision "migration"/,
     },
     {
       mutate: (contract) => {
@@ -392,6 +401,7 @@ test('gate mutations reject missing, reordered, duplicate, mis-prioritized, and 
 
 test('every reversed gate safety statement is rejected, including the terminal prerequisite', () => {
   const reversedEvidence = [
+    'A `Caller: iterate` line may be present',
     'Native profile mapping or the spawn mechanism may be unavailable',
     'Authentication, authorization, or trust-boundary changes are allowed',
     'Approved scope contains a destructive data operation',
@@ -646,12 +656,14 @@ test('attempt and capability rules make Fast first-attempt-only and every contin
     'review-incorporation',
     'conflict-resolution',
     'scope-growth-continuation',
-    'portable',
   ]) {
     assert.equal(rules[rule], 'quality-only', `${rule} must remain Quality-only`);
   }
+  assert.equal(rules.portable, 'qualified-harness-per-spawn-tier');
+  assert.equal(rules['caller-iterate'], 'correction-pass');
+  assert.equal(rules['closed-admission-before-spawn'], 'admission-changed');
   assert.equal(rules['force-override-detection'], 'presence-only');
-  assert.equal(rules['missing-native-capability'], 'profile-unavailable');
+  assert.equal(rules['missing-profile-capability'], 'profile-unavailable');
   assert.equal(rules['rejected-fast-spawn'], 'spawn-rejected');
   assert.equal(rules['escalation-checkout'], 'same-verified-checkout');
   assert.equal(rules['second-fast-attempt'], 'forbidden');
@@ -670,6 +682,7 @@ test('decision events map every fallback exactly once and consume Fast only afte
   );
   assert.deepEqual(counts, {
     none: 2,
+    'admission-changed': 1,
     'spawn-rejected': 1,
     'worker-abort': 1,
     'missing-context': 1,
@@ -679,10 +692,11 @@ test('decision events map every fallback exactly once and consume Fast only afte
     'keywordless-exhausted': 1,
     'scope-incident': 1,
   });
+  // Only the pre-spawn admission change keeps the Fast attempt; every post-attempt event consumes it.
   for (const row of executionProfileContract.decisionMappings.slice(2)) {
     assert.equal(row.gateDecision, 'eligible');
     assert.equal(row.selectedProfile, 'quality');
-    assert.equal(row.fastAttemptConsumed, 'true');
+    assert.equal(row.fastAttemptConsumed, row.fallback === 'admission-changed' ? 'false' : 'true');
   }
   assert.deepEqual(
     executionProfileContract.decisionMappings
@@ -698,9 +712,9 @@ test('decision events map every fallback exactly once and consume Fast only afte
   );
   assertContractMutation((contract) => {
     contract.decisionMappings.at(-1).fastAttemptConsumed = 'false';
-  }, /decision mapping row 10 must use fastAttemptConsumed "true"/);
+  }, /decision mapping row 11 must use fastAttemptConsumed "true"/);
   assertContractMutation((contract) => {
-    contract.decisionMappings[3].event = contract.decisionMappings[2].event;
+    contract.decisionMappings[4].event = contract.decisionMappings[3].event;
   }, /Duplicate execution-profile decision event "fast-spawn-rejected-after-attempt"/);
   for (const [index, expected] of EXPECTED_DECISION_MAPPINGS.entries()) {
     if (expected.fallback === 'none') continue;
@@ -716,6 +730,7 @@ test('decision events map every fallback exactly once and consume Fast only afte
 test('fallbacks are an exact closed vocabulary and gate-selected Quality is not a fallback', () => {
   assert.deepEqual(EXECUTION_PROFILE_FALLBACKS, [
     'none',
+    'admission-changed',
     'spawn-rejected',
     'worker-abort',
     'missing-context',
@@ -733,9 +748,9 @@ test('fallbacks are an exact closed vocabulary and gate-selected Quality is not 
   assert.equal(executionProfileContract.decisionMappings[0].fallback, 'none');
   assertContractMutation((contract) => {
     contract.fallbacks.push({ value: 'quality-selected' });
-  }, /fallback vocabulary must contain exactly 9 rows/);
+  }, /fallback vocabulary must contain exactly 10 rows/);
   assertContractMutation((contract) => {
-    contract.fallbacks[2].value = contract.fallbacks[1].value;
+    contract.fallbacks[3].value = contract.fallbacks[2].value;
   }, /Duplicate execution-profile fallback "spawn-rejected"/);
 });
 
@@ -1076,6 +1091,7 @@ test('an isolated build ships Fast only through the adopted build and refactor p
         ...EXPECTED_RUNTIME_SCRIPTS,
         'setup-status-owners.json',
         'model-selection-contract.json',
+        'fast-harness-qualification.json',
       ].sort(),
       `${target} runtime-script inventory changed`,
     );

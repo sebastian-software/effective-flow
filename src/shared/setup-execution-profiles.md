@@ -16,9 +16,9 @@ active generation exists, it also lets `{{SKILL:merge-gate}}` add anonymous peri
 Missing or `false` is disabled; a malformed, ambiguous, or unreadable value is invalid; both run
 every workflow as Quality. The key is a strict Boolean. Quality and Fast are provider-neutral
 intents whose native mapping ships with the build, so no model or provider name is ever configured.
-This installation is the `{{BUILD_TARGET}}` build. A `portable` build never records or uses Fast,
-whatever the key says; there the key only prepares native Claude Code or Codex installations of the
-same project, and the explanation says so.
+This installation is the `{{BUILD_TARGET}}` build. A native build selects Fast through its Fast
+sidecars; a `portable` build through its rendered Fast tier line, and only on a harness family its
+generation snapshot records as qualified.
 
 Show the recorded value as the configuration contract classifies it: `enabled`, `disabled`, or
 `invalid`. Preview an invalid value as `invalid – runs as Quality` and never repair it silently.
@@ -27,7 +27,7 @@ Pre-select `Keep`.
 ```ask
 when: the user chose the advanced settings and block 10 is being asked
 header: Fast pilot
-question: Should this project take part in the Quality/Fast field pilot of build?
+question: Should this project take part in the Quality/Fast field pilot of build and refactor?
 options:
   - label: Keep
     description: Leave executionProfiles.fast.enabled exactly as recorded, including a missing row or an invalid value
@@ -53,9 +53,7 @@ options:
 
 Offer these actions only in this Guided run, after Step 6 has finished without stopping and before
 Step 7. A declined Step 6 confirmation or a stopped run offers none. No action writes, rewrites, or
-removes `executionProfiles.fast.enabled`, and none changes the configuration. A `portable` build
-offers none and calls no pilot operation: report that generation actions need a native Claude Code
-or Codex installation.
+removes `executionProfiles.fast.enabled`, and none changes the configuration.
 
 Invoke `node <skill-root>/scripts/pilot-measurement.mjs <operation>` with the operation as the sole
 positional argument and exactly one JSON object with exactly the listed keys on standard input.
@@ -71,7 +69,15 @@ longer holds; nothing is claimed that the helper did not return.
    the generation with `inventory` and exactly `runtimeStateRoot` and `repositoryIdentity`.
    `generationStatus=absent` is `none`; a present generation yields `generationId`,
    `generationState`, `protocolCurrent`, `inventoryDigest`, `suspensionDigest`, `incompleteCounts`,
-   and `orphanTemporaries`. An ambiguous or failed inventory offers no action.
+   and `orphanTemporaries`; every inventory also returns `qualification` (the `installed` record
+   and the generation's `snapshot`) and a `busyCause`. Report each harness family's installed
+   outcome and host version. When `busyCause` names open reservations, report that they block
+   activation until finalized: only the run that holds a record's capability can still finalize or
+   reconcile it (`reconcile-record`). When it names open observations, report that a `merge-gate`
+   run, also one waiting across `SUSPENDED host-pr-watch` re-dispatches, holds a gate observation
+   that blocks activation until that run finalizes it. An orphan of either kind clears only by
+   `begin-review` then `discard-generation` with the pilot disabled, which loses the generation. An
+   ambiguous or failed inventory offers no action.
 2. Offer at most the one action the proven state allows, and only with `configState=enabled`:
 
    | Proven generation state                                                   | Offered action   |
@@ -82,7 +88,7 @@ longer holds; nothing is claimed that the helper did not return.
 
    Evidence is healthy only when every `incompleteCounts` value is zero and no orphan temporary is
    listed. Setup never activates: a `baseline` generation is activated automatically by the next
-   measured native `{{SKILL:build}}` or `{{SKILL:refactor}}` run once the preregistered window and sample are met, so
+   measured `{{SKILL:build}}` or `{{SKILL:refactor}}` run once the preregistered sample is met, so
    report it as collecting its baseline. `review` is terminal under every configuration state,
    including disabled or invalid: report that the generation is under review and can never resume.
    An unhealthy `suspended` generation is reported as not resumable until its incomplete evidence
@@ -99,15 +105,24 @@ longer holds; nothing is claimed that the helper did not return.
 **`begin-baseline`.** Call `protocol` with `{}` and take `protocolVersion` from `result.version`
 and `protocolDigest` from the envelope, which must equal `result.digest`; on a mismatch send
 nothing. Before asking, display the exact digest and version and disclose: a Quality-only baseline
-starts; later native `build` and `refactor` runs store minimal local records below
+starts; later `build` and `refactor` runs store minimal local records below
 `<RUNTIME_STATE_ROOT>/.effective-flow/model-tiering-pilot/`, holding bounded structured
 measurements and no prompts, diffs, source, paths, commands or output, environment values, model
-aliases, URLs, or personal, repository, branch, task, PR, or session identifiers; nothing leaves
-this machine; a detailed trace needs separate current-run consent; no second confirmation follows,
-because a later native `{{SKILL:build}}` or `{{SKILL:refactor}}` run activates the generation
-automatically once the
-protocol's `aggregation.baselineWindowMinimumDays` and `aggregation.baselineEligiblePacketMinimum`,
-shown with their values, are met.
+aliases, URLs, or personal, repository, branch, task, PR, or session identifiers; while a run is
+open, its reservation also holds a reservation-salted digest of the owning session process (host
+name, process id, and start time) and the reservation time, both removed when the record ends;
+after activation, a Fast packet on a portable build has its own child transcript (Claude Code) or
+rollout file (Codex) read locally for model, effort and host version only; on Claude Code the
+helper finds it through `CLAUDE_CODE_SESSION_ID` and `CLAUDE_CONFIG_DIR` and may list project folder
+names, never their contents, below the projects root;
+nothing leaves this machine; a detailed trace needs separate current-run consent; no second confirmation follows,
+because a later `{{SKILL:build}}` or `{{SKILL:refactor}}` run activates the generation
+automatically once the protocol's `aggregation.baselineEligiblePacketMinimum` eligible packets from
+`aggregation.baselineRecordMinimum` completed baseline records, shown with their values, are met,
+with no calendar window. Also disclose that the baseline snapshots the installed harness
+qualification shown, so a harness qualified later needs a new generation; that one host's probe
+qualifies a harness for every installation of this release; and that a provider gateway may map
+the model aliases differently.
 
 ```ask
 when: block 10 proved configState=enabled and generationState=none and showed the digest and disclosure

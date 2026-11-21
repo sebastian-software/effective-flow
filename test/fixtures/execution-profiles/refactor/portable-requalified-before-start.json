@@ -1,15 +1,16 @@
 {
-  "name": "A concurrent in-flight reservation makes the pre-spawn start fail, and the refactor runs unmeasured Quality",
+  "name": "A portable requalification before start makes start refuse the Fast packet, which is reclassified profile-unavailable and reserved again",
   "harness": "claude",
   "config": "true",
+  "installKind": "portable",
+  "qualification": "qualified",
   "inventory": "active",
   "external": [
     {
       "at": "before-start",
-      "operation": "start"
+      "operation": "requalify"
     }
   ],
-  "startResult": "INCOMPLETE_EVIDENCE",
   "packets": [
     {
       "bucket": "node-backend-cli",
@@ -31,24 +32,40 @@
   },
   "expected": {
     "configState": "enabled",
-    "generationState": "none",
+    "generationState": "active",
     "persistedGenerationState": "active",
     "activation": null,
-    "operations": ["inventory", "start"],
+    "operations": ["inventory", "start", "start", "start-packet", "finish-packet", "finalize"],
     "packets": [
       {
-        "eligibility": "not-evaluated",
+        "eligibility": "excluded(profile-unavailable)",
         "selectedProfile": "quality",
-        "recorded": false,
-        "wire": null,
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "quality",
+          "wouldBeFastEligible": false,
+          "gate": {
+            "eligibility": "excluded",
+            "firstReason": "profile-unavailable"
+          }
+        },
         "attempts": ["quality"],
         "fallback": "none",
         "fastAttemptConsumed": false,
-        "attempt": null
+        "attempt": "started"
       }
     ],
     "incidents": [],
-    "finalize": null,
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "none",
+          "escalated": false
+        }
+      ]
+    },
     "events": [],
     "refactor": {
       "comparator": "available",

@@ -3,6 +3,10 @@
 **Plan status:** Not implemented
 **Source:** effective-flow plan
 **Recommended workflow:** Feature (`effective-flow build`)
+**Implementation progress:** Package A is implemented on this branch (protocol `1.3.0`, portable
+Fast, harness qualification, overlap and admission, `correction-pass`, skill-Markdown routing).
+Still open: package B (`fix` integration, the `fix` reviewer site, the `cleanup` orphan action);
+the plan stays open until it lands.
 
 ## Requirement
 
@@ -243,28 +247,28 @@ parameter below lands in package A; helper operations, workflow prose and docs m
 
 ## Affected files
 
-| File | Package | Description |
-|---|---|---|
-| `src/scripts/pilot-measurement-protocol.mjs` | A | `1.3.0` parameters, fields, enums, reasons, policy intent |
-| `src/scripts/pilot-measurement-core.mjs` | A, B | activate counts; overlap; fail-closed `start-packet`; snapshot; harness check; prior-protocol map; transient reservation fields; `modelCompliance`; abandon operation (B) |
-| `src/scripts/model-selection-core.mjs`, `src/shared/model-selection.md` | A | Fast lookup; `claude-subagent-transcript` adapter; narrow env exception |
-| `src/shared/execution-profiles.md` | A | Portable Fast; row 1; `correction-pass`; `admission-changed`; workflows |
-| `src/shared/pilot-measurement-workflow.md`, `src/shared/pilot-measurement.md` | A | Portable measured; `installKind`; overlap; observation under T3; `modelCompliance` |
-| `src/tools/merge-gate.md`, `src/shared/merge-gate-delegated-run.md`, `src/shared/host-pr-watch.md` | A | Observation across T3 suspensions |
-| `src/shared/setup-execution-profiles.md`, `src/tools/setup.md`, `src/shared/setup-advanced-settings.md` | A | Portable `begin-baseline`; minima; qualification; busy cause; disclosure |
-| `src/tools/iterate.md` | A | `Caller: iterate` line |
-| `src/tools/refactor.md`, `src/shared/build-delegated-run.md` | A | Portable Fast tier line; verification call; wording |
-| `src/shared/project-routing.md` | A | Skill Markdown routing |
-| new qualification record (path fixed in build) | A | Probe results and Fast-mapping identity |
-| `build.mjs`, `build-lib.mjs` | A, B | Portable Fast rendering and alias-guard exemption; `portableProfileNotice`; closed `portable: quality-only` rule; row-1 text; record validation; `profilePhaseAuthorizations` for `fix` (B) |
-| `src/tools/fix.md`, `src/shared/model-tiers.md` | B | `fix` integration and site tiers |
-| `src/tools/cleanup.md` and its helper | B | Orphaned reservation action |
-| `docs/adr/native-execution-profile-representation.md`, `docs/adr/per-spawn-model-tiers.md`, `docs/adr/risk-aware-model-tiering-pilot-policy.md`, `docs/adr/pragmatic-test-release-policy.md` | A | Revision and amendments |
-| `docs/developer-guide/model-tiering-pilot-protocol.md`, `docs/developer-guide/configuration.md`, `docs/developer-guide/build-system.md`, `docs/developer-guide/release-and-installation.md` | A | Mirror, prose, portable rendering |
-| `docs/user-guide/model-tiering-pilot.md`, `docs/user-guide/configuration.md`, `docs/user-guide/getting-started.md`, `docs/user-guide/tools-implement.md`, `docs/user-guide/tools-deliver.md`, `docs/user-guide/tools-setup.md` | A, B | Portable Fast, minima, overlap, privacy, `fix` and cleanup (B) |
-| `docs/plan/2026-09-21-field-pilot-review-and-adoption-decision.md` | A | Align minima, pooled evaluation, no mandatory stratum |
-| `AGENTS.md` (source branch) | A | Adopting workflows; portable Fast; skill Markdown routing |
-| `test/pilot-measurement*.test.mjs`, `test/execution-profile-*.test.mjs`, `test/workflow-contracts.test.mjs`, `test/codex-native-profiles.test.mjs`, `test/model-tiers-contract.test.mjs`, `test/build-lib.test.mjs`, `test/model-selection*.test.mjs`, `test/fixtures/execution-profiles/` | A, B | All changed contracts |
+| File                                                                                                                                                                                                                                                                                       | Package | Description                                                                                                                                                                                 |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `src/scripts/pilot-measurement-protocol.mjs`                                                                                                                                                                                                                                               | A       | `1.3.0` parameters, fields, enums, reasons, policy intent                                                                                                                                   |
+| `src/scripts/pilot-measurement-core.mjs`                                                                                                                                                                                                                                                   | A, B    | activate counts; overlap; fail-closed `start-packet`; snapshot; harness check; prior-protocol map; transient reservation fields; `modelCompliance`; abandon operation (B)                   |
+| `src/scripts/model-selection-core.mjs`, `src/shared/model-selection.md`                                                                                                                                                                                                                    | A       | Fast lookup; `claude-subagent-transcript` adapter; narrow env exception                                                                                                                     |
+| `src/shared/execution-profiles.md`                                                                                                                                                                                                                                                         | A       | Portable Fast; row 1; `correction-pass`; `admission-changed`; workflows                                                                                                                     |
+| `src/shared/pilot-measurement-workflow.md`, `src/shared/pilot-measurement.md`                                                                                                                                                                                                              | A       | Portable measured; `installKind`; overlap; observation under T3; `modelCompliance`                                                                                                          |
+| `src/tools/merge-gate.md`, `src/shared/merge-gate-delegated-run.md`, `src/shared/host-pr-watch.md`                                                                                                                                                                                         | A       | Observation across T3 suspensions                                                                                                                                                           |
+| `src/shared/setup-execution-profiles.md`, `src/tools/setup.md`, `src/shared/setup-advanced-settings.md`                                                                                                                                                                                    | A       | Portable `begin-baseline`; minima; qualification; busy cause; disclosure                                                                                                                    |
+| `src/tools/iterate.md`                                                                                                                                                                                                                                                                     | A       | `Caller: iterate` line                                                                                                                                                                      |
+| `src/tools/refactor.md`, `src/shared/build-delegated-run.md`                                                                                                                                                                                                                               | A       | Portable Fast tier line; verification call; wording                                                                                                                                         |
+| `src/shared/project-routing.md`                                                                                                                                                                                                                                                            | A       | Skill Markdown routing                                                                                                                                                                      |
+| new qualification record (path fixed in build)                                                                                                                                                                                                                                             | A       | Probe results and Fast-mapping identity                                                                                                                                                     |
+| `build.mjs`, `build-lib.mjs`                                                                                                                                                                                                                                                               | A, B    | Portable Fast rendering and alias-guard exemption; `portableProfileNotice`; closed `portable: quality-only` rule; row-1 text; record validation; `profilePhaseAuthorizations` for `fix` (B) |
+| `src/tools/fix.md`, `src/shared/model-tiers.md`                                                                                                                                                                                                                                            | B       | `fix` integration and site tiers                                                                                                                                                            |
+| `src/tools/cleanup.md` and its helper                                                                                                                                                                                                                                                      | B       | Orphaned reservation action                                                                                                                                                                 |
+| `docs/adr/native-execution-profile-representation.md`, `docs/adr/per-spawn-model-tiers.md`, `docs/adr/risk-aware-model-tiering-pilot-policy.md`, `docs/adr/pragmatic-test-release-policy.md`                                                                                               | A       | Revision and amendments                                                                                                                                                                     |
+| `docs/developer-guide/model-tiering-pilot-protocol.md`, `docs/developer-guide/configuration.md`, `docs/developer-guide/build-system.md`, `docs/developer-guide/release-and-installation.md`                                                                                                | A       | Mirror, prose, portable rendering                                                                                                                                                           |
+| `docs/user-guide/model-tiering-pilot.md`, `docs/user-guide/configuration.md`, `docs/user-guide/getting-started.md`, `docs/user-guide/tools-implement.md`, `docs/user-guide/tools-deliver.md`, `docs/user-guide/tools-setup.md`                                                             | A, B    | Portable Fast, minima, overlap, privacy, `fix` and cleanup (B)                                                                                                                              |
+| `docs/plan/2026-09-21-field-pilot-review-and-adoption-decision.md`                                                                                                                                                                                                                         | A       | Align minima, pooled evaluation, no mandatory stratum                                                                                                                                       |
+| `AGENTS.md` (source branch)                                                                                                                                                                                                                                                                | A       | Adopting workflows; portable Fast; skill Markdown routing                                                                                                                                   |
+| `test/pilot-measurement*.test.mjs`, `test/execution-profile-*.test.mjs`, `test/workflow-contracts.test.mjs`, `test/codex-native-profiles.test.mjs`, `test/model-tiers-contract.test.mjs`, `test/build-lib.test.mjs`, `test/model-selection*.test.mjs`, `test/fixtures/execution-profiles/` | A, B    | All changed contracts                                                                                                                                                                       |
 
 ## Implementation details
 
@@ -387,15 +391,15 @@ Fast. The Codex probe outcome does not affect completion.
 
 Latest pass: deep interactive review, 2026-11-21.
 
-| Area | Critical | Important | Note |
-|---|---:|---:|---:|
-| Architecture | 0 | 5 | 0 |
-| Security | 0 | 0 | 1 |
-| Data protection | 0 | 0 | 1 |
-| Error cases | 0 | 2 | 1 |
-| Testability | 0 | 1 | 2 |
-| Scope | 0 | 1 | 0 |
-| Maintainability | 0 | 0 | 1 |
+| Area            | Critical | Important | Note |
+| --------------- | -------: | --------: | ---: |
+| Architecture    |        0 |         5 |    0 |
+| Security        |        0 |         0 |    1 |
+| Data protection |        0 |         0 |    1 |
+| Error cases     |        0 |         2 |    1 |
+| Testability     |        0 |         1 |    2 |
+| Scope           |        0 |         1 |    0 |
+| Maintainability |        0 |         0 |    1 |
 
 ### Findings
 
@@ -443,3 +447,34 @@ All findings resolved:
 ## Open points
 
 - No open points.
+
+## Build completion
+
+**Date:** 2026-11-21
+**Scope:** Package A only, by the owner's decision at run start; package B follows in a later run.
+
+- **Harness qualification:** Claude Code `qualified` at host `2.1` from an observed probe; Codex
+  stays `unproven` because its probe could not observe a child (no repeat against the unchanged
+  limit).
+- **Deviations:** an orphaned reservation or gate observation clears only by `begin-review` and
+  `discard-generation` with the pilot disabled until package B's cleanup action ships; `busyCause`
+  distinguishes `open-observations`; `finalize` gets five extra lock re-sends; the Claude transcript
+  adapter honours `CLAUDE_CONFIG_DIR`.
+- **Tests:** the full suite ran once before the review corrections (6221 passed, 2 stale
+  expectations fixed afterwards); all later changes were verified targeted (1508 affected tests,
+  `agent:check`, build and the distribution smoke test passed).
+
+## Review findings
+
+**Date:** 2026-11-21
+**Reviewer:** effective-flow-nodejs-reviewer (two disjoint halves)
+
+### Summary
+
+| Status                 | Count |
+| ---------------------- | ----: |
+| Fixed                  |    22 |
+| Open / Not implemented |     0 |
+
+One Note (splitting `pilot-measurement-core.mjs` into smaller modules) was closed as outside this
+plan's scope.

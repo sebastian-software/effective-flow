@@ -940,8 +940,9 @@ unpersisted incident is retried only on confirmation, otherwise pointing to Guid
 `Disable`. The workflow never suspends for a failed finalization: the helper persists
 `finalization-failed` itself on a mid-write fault, and lock contention or a rejected request leaves
 the pilot unchanged. Either way the run offers a confirmed `reconcile-record` in the same run,
-because no later run holds the workflow capability; otherwise only `discard-generation` or `purge`
-clears the incomplete record. `refactor` records nothing yet.
+because no later run holds the workflow capability; otherwise the incomplete record is cleared only
+by `begin-review` and `discard-generation` with the pilot disabled, which discards the generation.
+`refactor` follows the same recording contract.
 
 Minimal workflow records and optional detailed traces are separate channels. A trace requires an
 explicit request in the current run; project configuration cannot confer that consent and no

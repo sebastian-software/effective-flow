@@ -1,14 +1,15 @@
 # Model-tiering pilot protocol
 
 This guide documents the shipped, local measurement protocol for the Quality/Fast field pilot of
-`build` and `refactor`. It explains the executable contract owned by
+`build` and `refactor` (protocol `1.3.0`). It explains the executable contract owned by
 [`src/scripts/pilot-measurement-protocol.mjs`](../../src/scripts/pilot-measurement-protocol.mjs)
 and the guarded operations implemented by
 [`src/scripts/pilot-measurement-core.mjs`](../../src/scripts/pilot-measurement-core.mjs). The
 protocol itself activates nothing: Guided setup starts a baseline only through a confirmed action,
 a measured `build` or `refactor` run lets the helper activate that baseline automatically once its
-preregistered conditions pass, these two are the only workflows that record runs and request Fast,
-and portable execution remains Quality-only and unmeasured.
+preregistered conditions pass, and these two are the only workflows that record runs and request
+Fast. `fix` is admitted by the protocol's `workflow` enum but not yet measured or wired. Portable
+builds are measured like native ones and may request Fast only on a qualified harness.
 
 ## Authority and drift control
 
@@ -25,7 +26,7 @@ contract, and changing the protocol export without refreshing this mirror aborts
 <!-- pilot-measurement-protocol:start -->
 
 ```json
-{"adoptionGates":[{"comparison":"gte","gate":"baseline-sample","metric":"eligibleBaselinePackets","threshold":{"denominator":1,"numerator":20}},{"comparison":"gte","gate":"fast-without-escalation","metric":"fastWithoutEscalation","threshold":{"denominator":5,"numerator":4}},{"comparison":"lt","gate":"fallback-frequency","metric":"fallbackOccurrences","threshold":{"denominator":1,"numerator":3}},{"comparison":"gte","gate":"workflow-completion-non-regression","metric":"workflowCompletionDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"gte","gate":"validation-non-regression","metric":"validationSuccessDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"lte","gate":"critical-review-non-regression","metric":"criticalReviewFindingDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"quality-correction-non-regression","metric":"qualityCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"merge-gate-non-regression","metric":"mergeGateCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"cost-benefit","metric":"compatibleCostMedianRatio","threshold":{"denominator":5,"numerator":4}}],"aggregation":{"algorithmVersion":2,"baselineEligiblePacketMinimum":20,"baselineWindowMinimumDays":7,"caveat":"observational-unpaired","cohortMinimum":20,"exactRationalVersion":1,"groupingVersion":1,"metricStratumMinimum":5,"ordinalHalfMinimum":5,"periodObservationMinimum":5,"suppressionMinimum":5},"enums":{"checkOutcomes":["passed","failed","skipped","unavailable"],"cohorts":["baseline","pilot"],"completionStatuses":["completed","aborted","failed","abandoned"],"discardDecisions":["change","stop"],"evaluationResults":["pass","fail","unavailable"],"findingSeverities":["critical","important","note"],"findingStatuses":["open","resolved","accepted"],"harnessFamilies":["claude","codex"],"observationModes":["merge","report"],"observationOutcomes":["merged","reported-ready","reported-blocked","failed"],"packetAttempts":["started","not-started","unknown"],"requirementStatuses":["completed","incomplete","not-applicable"],"reviewStatuses":["completed","not-run","unavailable"],"validationStatuses":["passed","failed","not-required","unavailable"],"workflows":["build","refactor"]},"limits":{"bootEstimateToleranceMs":5000,"maxChecksPerTrace":256,"maxCliInputBytes":4194304,"maxCostValueDigits":39,"maxDetailedTraceBytes":4194304,"maxDurationMs":86400000,"maxFindingsPerTrace":256,"maxGateObservationsPerGeneration":10000,"maxPacketsPerWorkflow":128,"maxRawGenerationBytes":268435456,"maxRelativePathBytes":512,"maxRequirementsPerTrace":256,"maxTokenBytes":128,"maxWorkflowRecordBytes":1048576,"maxWorkflowRecordsPerGeneration":10000,"wallMonotonicToleranceMs":2000},"metricRegistry":{"attemptOutcomes":{"value":"closed packet counts by attempt: started, not-started, unknown"},"attemptedFastPackets":{"denominator":"all packets with a consumed Fast attempt and attempt other than not-started","numerator":"packets with selectedProfile fast and fallback none"},"cost":{"unavailable":"missing, incompatible, or unsupported attempt proxy, or attempt unknown","value":"canonical unsigned decimal totals grouped by compatible kind and unit"},"duration":{"unavailable":"closed started-packet intervals without continuity proof","value":"bounded integer milliseconds for continuity-valid intervals of started packets"},"fallbackRate":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with fallback other than none"},"fastWithoutEscalation":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with attempt started and without escalation"},"mergeGateCorrections":{"denominator":"completed observations grouped by mode and harness","numerator":"actual correction attempts by closed counter"},"packetInclusion":{"notStarted":"excluded from every packet metric and counted only in attemptOutcomes","started":"counted in every packet metric","unknown":"counted in packet, eligibility, attempted-Fast, fallback-outcome, and cost-unavailable counts; never a success; excluded from cost groups and duration"},"qualityCorrections":{"denominator":"completed workflows","numerator":"quality correction rounds"},"reviewFindings":{"denominator":"completed workflows","numerator":"findings by severity"},"validationSuccess":{"denominator":"all terminal records for which required validation applied","numerator":"required-validation records passed"},"workflowCompletion":{"denominator":"all terminal workflow records","numerator":"terminal workflow records completed"}},"schema":1,"timing":{"algorithmVersion":1,"bootContinuity":"wall-minus-uptime","bootEstimateToleranceMs":5000,"durationUnit":"integer-milliseconds","hostContinuity":"packet-salted-sha256-hostname","maxDurationMs":86400000,"wallMonotonicToleranceMs":2000},"version":"1.2.0"}
+{"adoptionGates":[{"comparison":"gte","gate":"baseline-sample","metric":"eligibleBaselinePackets","threshold":{"denominator":1,"numerator":10}},{"comparison":"gte","gate":"fast-without-escalation","metric":"fastWithoutEscalation","threshold":{"denominator":5,"numerator":4}},{"comparison":"lt","gate":"fallback-frequency","metric":"fallbackOccurrences","threshold":{"denominator":1,"numerator":3}},{"comparison":"gte","gate":"workflow-completion-non-regression","metric":"workflowCompletionDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"gte","gate":"validation-non-regression","metric":"validationSuccessDelta","threshold":{"denominator":20,"numerator":-1}},{"comparison":"lte","gate":"critical-review-non-regression","metric":"criticalReviewFindingDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"quality-correction-non-regression","metric":"qualityCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"merge-gate-non-regression","metric":"mergeGateCorrectionMedianDelta","threshold":{"denominator":1,"numerator":0}},{"comparison":"lte","gate":"cost-benefit","metric":"compatibleCostMedianRatio","threshold":{"denominator":5,"numerator":4}}],"aggregation":{"algorithmVersion":3,"baselineEligiblePacketMinimum":10,"baselineRecordMinimum":5,"caveat":"observational-unpaired","cohortMinimum":5,"exactRationalVersion":1,"groupingVersion":1,"metricStratumMinimum":5,"ordinalHalfMinimum":5,"periodObservationMinimum":5,"suppressionMinimum":5},"enums":{"checkOutcomes":["passed","failed","skipped","unavailable"],"cohorts":["baseline","pilot"],"completionStatuses":["completed","aborted","failed","abandoned"],"discardDecisions":["change","stop"],"evaluationResults":["pass","fail","unavailable"],"findingSeverities":["critical","important","note"],"findingStatuses":["open","resolved","accepted"],"harnessFamilies":["claude","codex"],"installKinds":["native","portable"],"modelCompliance":["verified","mismatch","unverified","not-applicable"],"observationModes":["merge","report"],"observationOutcomes":["merged","reported-ready","reported-blocked","failed"],"packetAttempts":["started","not-started","unknown"],"qualificationOutcomes":["qualified","unqualified","unproven"],"requirementStatuses":["completed","incomplete","not-applicable"],"reviewStatuses":["completed","not-run","unavailable"],"validationStatuses":["passed","failed","not-required","unavailable"],"workflows":["build","refactor","fix"]},"harnessQualification":{"fastMappingIdentity":"sha256-hex-of-canonical-fast-mapping-per-harness","file":"fast-harness-qualification.json","location":"installed-skill-scripts-directory","portableFastRequires":"qualified-in-generation-snapshot-and-snapshot-identity-equals-installed","recordKey":["installKind","harnessFamily"],"schemaVersion":1,"unavailable":"absent, malformed, or unreadable means profile-unavailable"},"limits":{"bootEstimateToleranceMs":5000,"maxChecksPerTrace":256,"maxCliInputBytes":4194304,"maxCostValueDigits":39,"maxDetailedTraceBytes":4194304,"maxDurationMs":86400000,"maxFindingsPerTrace":256,"maxGateObservationsPerGeneration":10000,"maxPacketsPerWorkflow":128,"maxRawGenerationBytes":268435456,"maxRelativePathBytes":512,"maxRequirementsPerTrace":256,"maxTokenBytes":128,"maxWorkflowRecordBytes":1048576,"maxWorkflowRecordsPerGeneration":10000,"wallMonotonicToleranceMs":2000},"metricRegistry":{"admissionChanged":{"value":"a Fast packet that fell back to Quality before its spawn consumed no Fast attempt, is no escalation, and stays out of every attempted-Fast metric"},"attemptOutcomes":{"value":"closed packet counts by attempt: started, not-started, unknown"},"attemptedFastPackets":{"denominator":"all packets with a consumed Fast attempt, attempt other than not-started, and modelCompliance other than mismatch","numerator":"packets with selectedProfile fast and fallback none"},"cost":{"unavailable":"missing, incompatible, or unsupported attempt proxy, or attempt unknown","value":"canonical unsigned decimal totals grouped by compatible kind and unit"},"duration":{"unavailable":"closed started-packet intervals without continuity proof","value":"bounded integer milliseconds for continuity-valid intervals of started packets"},"fallbackRate":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with fallback other than none"},"fastWithoutEscalation":{"denominator":"all attempted-Fast packets with attempt started or unknown","numerator":"attempted-Fast packets with attempt started and without escalation"},"mergeGateCorrections":{"denominator":"completed observations grouped by mode and harness","numerator":"actual correction attempts by closed counter"},"minimumCounting":{"baselineEligiblePackets":"eligible packets of completed baseline records","baselineRecords":"completed baseline records, except records whose only first gate reason is correction-pass","cohortRecords":"terminal records of the cohort, except records whose only first gate reason is correction-pass"},"modelCompliance":{"disclosed":"Fast packets with modelCompliance unverified stay in the metrics and are counted","excluded":"Fast packets with modelCompliance mismatch leave every Fast metric, duration, and cost and are counted only in modelComplianceOutcomes"},"ordinalHalves":{"gating":"an unavailable split never makes an adoption gate unavailable","value":"chronological halves by record ordinal, reported for information only"},"packetInclusion":{"notStarted":"excluded from every packet metric and counted only in attemptOutcomes","started":"counted in every packet metric","unknown":"counted in packet, eligibility, attempted-Fast, fallback-outcome, and cost-unavailable counts; never a success; excluded from cost groups and duration"},"qualityCorrections":{"denominator":"completed workflows","numerator":"quality correction rounds"},"reviewFindings":{"denominator":"terminal records whose review ran (review status completed)","numerator":"critical and important findings by severity"},"validationSuccess":{"denominator":"all terminal records for which required validation applied","numerator":"required-validation records passed"},"workflowCompletion":{"denominator":"all terminal workflow records","numerator":"terminal workflow records completed"}},"schema":1,"timing":{"algorithmVersion":1,"bootContinuity":"wall-minus-uptime","bootEstimateToleranceMs":5000,"durationUnit":"integer-milliseconds","hostContinuity":"packet-salted-sha256-hostname","maxDurationMs":86400000,"wallMonotonicToleranceMs":2000},"version":"1.3.0"}
 ```
 
 <!-- pilot-measurement-protocol:end -->
@@ -43,6 +44,31 @@ digest from the mapping and fails when it differs. Changing the `deep` values th
 protocol version and a migration. The JSON mirror above projects only measurement-specific fields
 and carries the version, not the identity; the policy side states the rule in
 [`src/shared/execution-profiles.md`](../../src/shared/execution-profiles.md).
+
+### Harness qualification
+
+A portable Fast request rests on a build-validated record per install kind and harness family,
+shipped as
+[`src/scripts/fast-harness-qualification.json`](../../src/scripts/fast-harness-qualification.json)
+to the installed `scripts/` directory (`harnessQualification` in the mirror above). Each record
+states the probe outcome (`qualified`, `unqualified` or `unproven`), the host version as
+major.minor, the probe date and the **Fast-mapping identity**: the SHA-256 of the canonical
+sorted-key JSON of that harness's `AGENT_PROFILE_MAPPINGS.fast` values. The build fails when a
+record's identity differs from the current mapping. The helper reads the file only from the
+installed skill root; an absent, malformed, oversized or unreadable file means
+`profile-unavailable`.
+
+`begin-baseline` snapshots the records and the identity into the generation state, and `inventory`
+returns both the installed records and the snapshot under `qualification`, so a workflow never
+parses the file. `start` and `start-packet` reject `selectedProfile: fast` with `PROFILE_UNAVAILABLE`
+for a portable harness that is not `qualified` in the snapshot or whose snapshot identity differs
+from the installed record's. A harness that qualifies later needs a new generation. The host
+version is not checked before a spawn; `modelCompliance` checks it per packet, so a host update
+never forces a new generation. State persisted under `1.2.0` has no snapshot.
+
+The records of 2026-11-21: Claude Code portable `qualified` (host 2.1, child ran
+`claude-sonnet-5-5` at `medium` under T3 Code); Codex portable `unproven`, because the probe could
+not run. Native records keep the sidecar rendering and need no probe.
 
 ## Local lifecycle and operation boundary
 
@@ -113,27 +139,43 @@ retryable `LOCKED` before these checks, and the generation stays in `baseline`):
    `INVALID_STATE`.
 2. Busy: returns `not-ready` with `unmet: ["busy"]`. `busy` is never combined with another member.
 3. Evidence health: a genuine fault still fails `INCOMPLETE_EVIDENCE` or `UNSAFE_STORAGE`.
-4. Readiness: returns `not-ready` with `unmet` listing `window`, `sample`, or both, in that order.
+4. Readiness: returns `not-ready` with `unmet: ["sample"]` unless the generation holds at least
+   `baselineEligiblePacketMinimum` (10) eligible packets in at least `baselineRecordMinimum` (5)
+   completed baseline records. There is no calendar window. Records whose only first gate reason is
+   `correction-pass` count toward neither.
 5. Transition: returns `activated` with `generationState: "active"`.
 
 Both successful results carry `generationId`; `not-ready` keeps `generationState: "baseline"`. The
 helper is **busy** when the evidence inventory shows at least one incomplete workflow record, open
-packet timing, or open gate observation, and no invalid member or orphan temporary. Reservations
-carry no liveness data, so a crashed run's open reservation also reads as busy. For a workflow
-record, `inventory`'s incomplete counts expose it and `reconcile-record` resolves it.
+packet timing, or open gate observation, and no invalid member or orphan temporary. Activation
+therefore needs an idle generation, while recording does not (see "Overlap and admission").
+`inventory` names the cause in `busyCause`: `open-reservations` while a workflow reservation or
+packet timing is open, otherwise `open-observations` while a gate observation is open, and `null`
+when nothing is open or the evidence holds an invalid member or orphan temporary. Its incomplete
+counts expose the open members.
 
-An orphaned open gate observation has no such path, because `reconcile-record` handles only
-workflow records. It arises when `merge-gate` crashes between `start-gate-observation` and
+A crashed run's open reservation reads as busy like a live one. Only the owning run can finalize it
+or reconcile it, because `reconcile-record` needs that run's transient `workflowCapability`; no
+later run or setup holds it. An orphaned reservation therefore clears only by `begin-review`
+followed by `discard-generation` with the pilot disabled (`configState: "disabled"`), which loses
+the generation. `purge` is no exit: it needs a reviewed aggregate, and `aggregate` fails
+`INCOMPLETE_EVIDENCE` while anything is open. The `effective-flow cleanup` action for orphaned
+reservations is planned for a later package and not shipped.
+
+An open gate observation is `open-observations`. `merge-gate` under T3 Code keeps its observation
+open across `SUSPENDED host-pr-watch` re-dispatches, so a waiting gate run blocks activation until
+it finalizes the observation at its end; `reconcile-record` handles only workflow records. An
+orphan arises when `merge-gate` crashes between `start-gate-observation` and
 `finalize-gate-observation`, or when releasing the lock fails after the reservation was written.
-It keeps `activate` at `not-ready` with `unmet: ["busy"]` and later observations at `not-recorded`
-with reason `busy`, and it makes `start` and `aggregate` fail `INCOMPLETE_EVIDENCE`. It is visible
-only through `inventory`'s `incompleteCounts.gateObservations`. The only way out is `begin-review`
+It keeps `activate` at `not-ready` with `unmet: ["busy"]` and makes `aggregate` fail
+`INCOMPLETE_EVIDENCE`; it no longer blocks `start` or later observations. It is visible through
+`busyCause` and `incompleteCounts.gateObservations`. Its only way out is the same `begin-review`
 followed by `discard-generation`.
 
-The readiness sample counts `wouldBeFastEligible` packets of **completed** baseline records only.
-Aggregation's `eligibleBaselinePackets` counts eligible packets of **all terminal** baseline
-records, apart from `not-started` packets. Completed records hold only `started` packets, so the
-readiness count never includes a packet that aggregation excludes, but aggregation can count more.
+The readiness sample and aggregation's `eligibleBaselinePackets` count alike: the
+`wouldBeFastEligible` packets of **completed** baseline records. Aggregation reports the metric
+only once at least `baselineRecordMinimum` (5) completed baseline records count, records whose only
+first gate reason is `correction-pass` excluded; below that it is unavailable.
 
 A critical incident is recorded with `record-incident`, never by naming an outcome. It takes the
 common keys, a `category` from `safety`, `data-integrity`, `authorization`, or `scope`, and
@@ -154,6 +196,26 @@ the owner PID stale, and rechecks the same inode and digest before removal. Atom
 names contain the owning lock nonce; recovery authenticates that mapping and supports both lock
 classes.
 
+### Overlap and admission
+
+`start` and `start-gate-observation` do not fail because another record or observation is open.
+Under the lifecycle lock, each new start sets a transient `overlapFlag` on every open workflow
+reservation, and a new reservation flags itself when any other reservation or observation is open;
+`finalize` ORs the flag into the terminal record's `overlapped`. Observations are never flagged.
+Nothing stores a reference, ordinal or counter of another record or observation, so overlap is an
+unlinked confounder. `start-gate-observation` returns `not-recorded` with reason `busy` only when
+the lifecycle lock is held.
+
+An overlapping record keeps its `eligible` and `fast` classification. `start-packet` of a `fast`
+packet fails closed when admission is closed: a suspension, a transition marker, an incident, a
+generation state that differs from the reservation's, or a **foreign** incomplete record (the run's
+own reservation and an open gate observation do not count). It writes nothing and consumes no Fast
+attempt, and the workflow runs that packet Quality with the pre-spawn fallback `admission-changed`.
+
+Open reservations carry transient fields that exist for the overlap and the planned orphan check:
+a reservation-salted hash of the host name, process id and process start time, the reservation time
+and the overlap flag. Every terminal write (`finalize`, `reconcile-record`) strips them.
+
 ### Callers
 
 Guided setup, the two adopting workflows, and `merge-gate` call the helper, each through a lazy
@@ -166,17 +228,23 @@ fragment that owns its exact payloads:
   count zero, no orphan temporary). `begin-baseline` binds the `protocol` version and digest;
   `resume` binds the current inventory and suspension digests and restores only the stored prior
   state. Setup never calls `activate`. `review` is terminal and never resumes. A portable build
-  offers no action.
+  offers the same actions; it reports each harness family's installed qualification and the
+  `busyCause`.
 - **`build` and `refactor`**
   ([`src/shared/pilot-measurement-workflow.md`](../../src/shared/pilot-measurement-workflow.md))
   name themselves in `start`'s `workflow` field and follow the same order; `refactor` classifies
-  its packets only after its Phase 2 baseline. Each reads `inventory` only with an enabled configuration on a native Claude Code or Codex build, and
-  records only for a `baseline` or `active` generation. A portable build never calls the helper,
-  whatever host runs it. In a `baseline` generation every measured run first reads `protocol` and
+  its packets only after its Phase 2 baseline. Each reads `inventory` only with an enabled configuration and a harness family, and records
+  only for a `baseline` or `active` generation. The harness family comes only from the parameter shape
+  of the spawn tool the run holds (Claude Code's Agent tool is `claude`, a Codex spawn is `codex`); a
+  client surface such as T3 Code is no signal, and without the signal the run is unmeasured Quality.
+  `start` carries `installKind` (from the build target) and `harnessFamily`. A run whose trusted
+  caller region carries `Caller: iterate` is measured, runs Quality and records `correction-pass` at
+  gate priority 0. Before `finish-packet`, a Fast packet's `modelCompliance` comes from
+  `model-selection verify`; a native Fast attempt reports `unverified`, the only value the helper accepts for it, a packet without a Fast spawn
+  `not-applicable`. In a `baseline` generation every measured run first reads `protocol` and
   calls `activate` without a confirmation: `activated` makes the reservation an `active` one, a
-  `not-ready` result with an unmet `window` or `sample` keeps the run a baseline run, `not-ready`
-  with `busy` keeps the baseline while the following `start` fails with `INCOMPLETE_EVIDENCE`, so
-  the run normally proceeds as unmeasured Quality, a `LOCKED` retry that stays locked keeps the
+  `not-ready` result with an unmet `sample` keeps the run a baseline run, `not-ready` with `busy`
+  keeps the baseline and the run recording, a `LOCKED` retry that stays locked keeps the
   baseline, a genuine evidence fault makes the run unmeasured, and an ambiguous result is settled
   by a fresh `inventory`. The order is then `start` once, after every initial packet is classified
   and before the first implementation spawn; `start-packet` immediately before each packet's first
@@ -184,22 +252,27 @@ fragment that owns its exact payloads:
   `finish-packet` when its initial phase ends, including a failed Fast attempt and its single
   Quality continuation; and `finalize` exactly once at every exit. A packet that never spawned gets
   no timing operation and is recorded `not-started`; one still open when the run aborts is
-  recorded `started` with an unavailable duration. Any in-flight reservation makes `start` fail
-  with `INCOMPLETE_EVIDENCE`, so the run proceeds as unmeasured Quality. A critical incident is
+  recorded `started` with an unavailable duration. An in-flight reservation of another run no longer blocks `start`; it marks both
+  records `overlapped`. A critical incident is
   recorded through `record-incident` by its category. After any critical incident, persisted or
   not, no packet that has not yet spawned attempts Fast; a reserved Fast packet that runs Quality
   for that reason finalizes as `scope-incident` with `escalated: true`, so it is charged to Fast
-  rather than counted as a Fast success. An incident the helper cannot persist yields only a
+  rather than counted as a Fast success. Once the helper persisted the suspension, that packet's
+  `start-packet` meets `ADMISSION_CHANGED` instead and it finalizes `admission-changed`: the
+  receipt binds the fallback, and the persisted suspension already charges the incident durably. An incident the helper cannot persist yields only a
   value-free alert and one same-run ask to retry it; otherwise the run reports that nothing durable
   keeps later runs off Fast and that Guided setup's `Disable` is the confirmed recovery path.
   `LOCKED` is retried with the identical payload at most twice more, after about two and then
-  about five seconds. A failed or impossible
+  about five seconds; `finalize`, which overlapping runs contend for at their ends, is retried at
+  most five times more, after about two, five, ten, twenty, and thirty seconds. A failed or impossible
   finalization keeps the product diff and suspends nothing on the workflow side: the helper
   persists `finalization-failed` itself on a mid-write fault. The run then offers a confirmed
   `reconcile-record` once in the same run. For a still-open reservation it writes the record
   `abandoned` with every packet `unknown`; for a record `finalize` already persisted before its
   fault, it only drains the timing receipts and returns the stored `completionStatus`, which the
-  run reports. A declined or failed reconciliation leaves the record for `discard-generation` or `purge`.
+  run reports. For a Fast packet whose receipt proves the pre-spawn `admission-changed` fallback,
+  the abandoned record keeps that fallback with `modelCompliance: "not-applicable"`. A declined or
+  failed reconciliation leaves the record until the generation is discarded.
   `refactor` takes the record's `validation` from its last Phase 5 run alone, so an unchanged
   pre-existing failure stays `failed`, and sets `completionStatus` to `completed` only after its
   Phase 6 comparison proves no regression, to `aborted` after a replanning stop or a user abort,
@@ -207,7 +280,10 @@ fragment that owns its exact payloads:
   loop, or a required check Phase 5 could not repeat; an incident the run survives leaves the
   status to the comparison. Neither workflow calls `begin-baseline`, `resume`, or `suspend`.
 - **`merge-gate`** records the anonymous period observation described under "Evidence and
-  consent".
+  consent", also under T3 Code. Its `harnessFamily` follows the same rule as above, and the
+  observation carries `installKind`. Under T3 Code the observation survives
+  `SUSPENDED host-pr-watch` re-dispatches through the gate run's wisdom file and is finalized once at
+  the end of the gate run.
 
 ## Evidence and consent
 
@@ -223,19 +299,19 @@ is not stored as prose or identity, and never carries into a later run. Detailed
 private inventory and do not feed metrics.
 
 `merge-gate` observations form a third channel. Only a non-observer run during `baseline` or
-`active` may reserve one; it records closed mode/outcome, harness, required-check summary, and the
+`active` may reserve one; it records closed mode/outcome, harness, install kind, required-check summary, and the
 three correction counters. It has no workflow-record, PR, repository, branch, check-name, comment,
 finding, or path identifier and therefore supports anonymous period-level comparison only.
 
 The reservation payload has exactly `runtimeStateRoot`, `repositoryIdentity`, `generationId`,
-`configState`, `generationState`, `mode`, and `harnessFamily`. Disabled or invalid configuration,
+`configState`, `generationState`, `mode`, `harnessFamily`, and `installKind`. Disabled or invalid configuration,
 or a `none`, `suspended`, or `review` generation, returns a successful read-only no-op:
 `{status: "not-recorded", reason, pilotControlOutcome: "none"}`. Inside the lifecycle lock the
 reservation checks admission first, so admission closed by a concurrent transition such as an
 activation, or a state that differs from the caller's `generationState`, returns reason
-`admission-closed`. It then applies the busy predicate from `activate`; a busy generation, or a
-lock already held when the reservation tries to acquire it, returns reason `busy`. Neither result
-persists anything or suspends the pilot. Only then does the evidence-health check run, where an
+`admission-closed`. A lock already held when the reservation tries to acquire it returns reason
+`busy`; an open record or observation of another run no longer does. Neither result persists
+anything or suspends the pilot. Only then does the evidence-health check run, where an
 invalid member or orphan temporary still takes the `evidence-gap` path. A reservation
 returns an opaque `observationId`, raw capability, cohort, and start ordinal; only the capability
 hash—not the raw capability—is persisted alongside the opaque observation ID, cohort, and ordinal.
@@ -252,7 +328,8 @@ with unavailable check evidence; a reserved merge-mode run without a verified me
 A delegated `merge-gate` run that returns `BLOCKED-USER` before a verified merge finalizes its
 reservation as `reported-blocked` in either mode, and the caller's re-dispatch reserves afresh.
 One logical gate run can therefore leave several observations, each counted on its own in the
-per-mode medians of the correction counters.
+per-mode medians of the correction counters. A `SUSPENDED host-pr-watch` return under T3 Code is
+not such an ending: the observation continues across it.
 
 If reservation or finalization fails, the helper classifies the failure as described under
 [Failure semantics](#failure-semantics); a fault in either gate-observation operation persists an
@@ -285,6 +362,15 @@ A `not-started` or `unknown` packet has unavailable duration and cost, `fallback
 evidence of "not started" only when the adopting workflow calls `start-packet` immediately before
 every implementation spawn.
 
+Each Fast packet also records `modelCompliance`: `verified` when every observed turn ran on the
+Fast alias and not on the `deep` model, with the Fast effort, on a host whose major.minor equals
+the installed record's; `mismatch` when a check fails; `unverified` when no observation exists
+(always the case for a native Fast attempt); `not-applicable` for a Quality packet, an
+`admission-changed` fallback or a packet that never started. `mismatch` packets keep their work but
+leave every Fast metric, duration and cost and are counted only in `modelComplianceOutcomes`;
+`unverified` packets stay in the metrics and are counted. `admission-changed` packets consume no
+Fast attempt, are no escalation and stay out of the attempted-Fast metrics.
+
 Metrics include packets by attempt:
 
 - `not-started` packets are excluded from every packet field of a cohort.
@@ -308,10 +394,14 @@ and aggregation rejects a terminal record while any residual timing receipt rema
 Metrics use exact rational arithmetic. The baseline cost stratum is the would-be-Fast set that ran
 on Quality; the pilot cost stratum is the attempted-Fast set. Cost is comparable only when both
 strata have the required sample and one identical kind-and-unit group, with no unavailable proxy.
-Observations are grouped by `mode` plus `harnessFamily`. Evaluation also enforces cohort, metric-
-stratum, ordinal-half, and period-observation minima; insufficient or incompatible evidence yields
-`unavailable`, never a favorable default. The protocol identifies the analysis as observational and
-unpaired.
+Observations are grouped by `mode` plus `harnessFamily`. Evaluation also enforces cohort (5 records), metric-
+stratum and period-observation minima; insufficient or incompatible evidence yields
+`unavailable`, never a favorable default. Records whose only first gate reason is `correction-pass`
+count toward no minimum. The chronological halves are reported for information only: an unavailable
+split never makes an adoption gate or Keep unavailable. Critical and important finding rates use
+the records whose review ran as the denominator. The protocol identifies the analysis as
+observational and unpaired, pooled across task mix, overlap, harness and install kind; it requires
+no per-workflow stratum.
 
 Review binds an inventory digest before aggregation. The private pre-suppression decision view is
 used for evaluation. In the publication candidate, a fixed or dynamic distribution is visible only
@@ -379,16 +469,22 @@ control fields in the error envelope. Input that is not a JSON object fails `INV
 an unknown operation fails `INVALID_OPERATION`, before dispatch and without control fields.
 
 The persisted protocol digest binds every generation, and an unrecognized digest fails the
-stored-state check with `UNSAFE_STORAGE`. The one exception is the single earlier protocol a
-release persisted generations under: version `1.1.0` with its exact digest, shipped by releases
-1.66.0 through 1.67.1. Protocol `1.2.0` changed the Quality-mapping identity, so a generation
-recorded under `1.1.0` must never continue; it migrates in one step instead of failing.
+stored-state check with `UNSAFE_STORAGE`. The exceptions are the prior protocols a release
+persisted generations under, a digest-to-reason map: version `1.1.0`, shipped by releases 1.66.0
+through 1.67.1, maps to `quality-mapping-changed`, because protocol `1.2.0` changed the
+Quality-mapping identity; version `1.2.0` (digest
+`sha256:a39232140a24ffcfb95f1165cea2343e4593c32dc3594ef81a6d9295505b099c`), shipped from v1.68.0 to
+v1.76.0, maps to `protocol-parameters-changed`, because `1.3.0` changed minima, enums, record fields
+and the state shape. A generation recorded under either must never continue; it migrates in one
+step instead of failing. State validation depends on the stored protocol version, so a `1.2.0`
+state without the `1.3.0` fields stays valid for `inventory`, `begin-review` and
+`discard-generation`.
 
 - **Locked paths migrate.** Before every locked operation except `begin-review` and
-  `discard-generation`, the lifecycle lock first moves a pending `1.1.0` generation to `suspended`
-  with the reason `quality-mapping-changed`. It writes the suspension through the ordinary
+  `discard-generation`, the lifecycle lock first moves a pending prior-protocol generation to `suspended`
+  with its mapped reason (`quality-mapping-changed` or `protocol-parameters-changed`). It writes the suspension through the ordinary
   marker-guarded path, records `resumeTo` as the stored `baseline` or `active` state, keeps the
-  stored `1.1.0` binding of all its evidence, and is a no-op once persisted. An interrupted
+  stored protocol binding of all its evidence, and is a no-op once persisted. An interrupted
   migration (marker or suspension present, state not yet suspended) completes under the same lock.
   A suspension-reason marker left by release 1.67.1 is completed first; a leftover `suspend` or
   `resume` marker cannot be adopted, so the migration leaves it in place without failing. A
@@ -400,15 +496,15 @@ recorded under `1.1.0` must never continue; it migrates in one step instead of f
   observation admission check and the suspension and incident writers read it as suspended as well.
 - **Everything else is `PROTOCOL_DRIFT`.** After the migration no operation extends, activates,
   records into, finalizes or resumes the generation, and `begin-baseline` refuses to adopt it
-  (`INVALID_STATE`). Its evidence keeps its `1.1.0` protocol binding and is never mixed into a
+  (`INVALID_STATE`). Its evidence keeps its prior protocol binding and is never mixed into a
   later generation.
 - **Exits.** The generation can only be reviewed and removed: `begin-review`, then
   `discard-generation` with its usual disabled-configuration and confirmation preconditions, after
-  which a new baseline starts under `1.2.0`. Neither migrates, so `begin-review` accepts the
+  which a new baseline starts under `1.3.0`. Neither migrates, so `begin-review` accepts the
   `inventoryDigest` read before it. No workflow offers either operation yet; an operator calls the
   shipped helper directly.
-- **Nothing else migrates.** A different version, the `1.1.0` digest under another version, the
-  current digest under `1.1.0`, or any other unknown digest still fails `UNSAFE_STORAGE` on read and
+- **Nothing else migrates.** A different version, a prior digest under another version, the
+  current digest under a prior version, or any other unknown digest still fails `UNSAFE_STORAGE` on read and
   locked paths alike.
 
 ## Further reading

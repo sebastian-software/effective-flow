@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-export const PILOT_MEASUREMENT_PROTOCOL_VERSION = '1.2.0';
+export const PILOT_MEASUREMENT_PROTOCOL_VERSION = '1.3.0';
 
 function deepFreeze(value) {
   if (value && typeof value === 'object' && !Object.isFrozen(value)) {
@@ -49,6 +49,7 @@ const statePrecedence = [
 const fallbackMappings = [
   ['gate-selected-quality', 'first-exclusion', 'quality', 'none', false],
   ['profile-unavailable-before-spawn', 'profile-unavailable', 'quality', 'none', false],
+  ['fast-admission-changed-before-spawn', 'eligible', 'quality', 'admission-changed', false],
   ['fast-spawn-rejected-after-attempt', 'eligible', 'quality', 'spawn-rejected', true],
   ['fast-worker-abort-after-attempt', 'eligible', 'quality', 'worker-abort', true],
   ['fast-missing-context-escalation', 'eligible', 'quality', 'missing-context', true],
@@ -94,7 +95,7 @@ export const PILOT_MEASUREMENT_POLICY_PROJECTION = deepFreeze({
     },
     {
       profile: 'fast',
-      intent: 'distinct-native-lower-cost-lower-latency-capability',
+      intent: 'distinct-lower-cost-lower-latency-native-role-or-per-spawn-tier-capability',
     },
   ],
   configStates: ['disabled', 'invalid', 'enabled'],
@@ -102,6 +103,7 @@ export const PILOT_MEASUREMENT_POLICY_PROJECTION = deepFreeze({
   eligibilityStates: ['not-evaluated', 'eligible', 'excluded(reason)'],
   selectedProfiles: ['quality', 'fast'],
   gateReasons: [
+    'correction-pass',
     'profile-unavailable',
     'trust-boundary',
     'destructive-data',
@@ -118,6 +120,7 @@ export const PILOT_MEASUREMENT_POLICY_PROJECTION = deepFreeze({
   fallbackMappings,
   fallbacks: [
     'none',
+    'admission-changed',
     'spawn-rejected',
     'worker-abort',
     'missing-context',
@@ -151,16 +154,16 @@ const limits = {
 };
 
 const aggregation = {
-  algorithmVersion: 2,
+  algorithmVersion: 3,
   groupingVersion: 1,
   exactRationalVersion: 1,
   suppressionMinimum: 5,
-  cohortMinimum: 20,
+  cohortMinimum: 5,
   metricStratumMinimum: 5,
   ordinalHalfMinimum: 5,
   periodObservationMinimum: 5,
-  baselineWindowMinimumDays: 7,
-  baselineEligiblePacketMinimum: 20,
+  baselineEligiblePacketMinimum: 10,
+  baselineRecordMinimum: 5,
   caveat: 'observational-unpaired',
 };
 
@@ -174,9 +177,30 @@ const metricRegistry = {
   attemptOutcomes: {
     value: 'closed packet counts by attempt: started, not-started, unknown',
   },
+  minimumCounting: {
+    baselineRecords:
+      'completed baseline records, except records whose only first gate reason is correction-pass',
+    baselineEligiblePackets: 'eligible packets of completed baseline records',
+    cohortRecords:
+      'terminal records of the cohort, except records whose only first gate reason is correction-pass',
+  },
+  ordinalHalves: {
+    value: 'chronological halves by record ordinal, reported for information only',
+    gating: 'an unavailable split never makes an adoption gate unavailable',
+  },
   attemptedFastPackets: {
     numerator: 'packets with selectedProfile fast and fallback none',
-    denominator: 'all packets with a consumed Fast attempt and attempt other than not-started',
+    denominator:
+      'all packets with a consumed Fast attempt, attempt other than not-started, and modelCompliance other than mismatch',
+  },
+  admissionChanged: {
+    value:
+      'a Fast packet that fell back to Quality before its spawn consumed no Fast attempt, is no escalation, and stays out of every attempted-Fast metric',
+  },
+  modelCompliance: {
+    excluded:
+      'Fast packets with modelCompliance mismatch leave every Fast metric, duration, and cost and are counted only in modelComplianceOutcomes',
+    disclosed: 'Fast packets with modelCompliance unverified stay in the metrics and are counted',
   },
   fastWithoutEscalation: {
     numerator: 'attempted-Fast packets with attempt started and without escalation',
@@ -195,8 +219,8 @@ const metricRegistry = {
     denominator: 'all terminal records for which required validation applied',
   },
   reviewFindings: {
-    numerator: 'findings by severity',
-    denominator: 'completed workflows',
+    numerator: 'critical and important findings by severity',
+    denominator: 'terminal records whose review ran (review status completed)',
   },
   qualityCorrections: {
     numerator: 'quality correction rounds',
@@ -291,10 +315,22 @@ const protocolSource = deepFreeze({
   aggregation,
   metricRegistry,
   adoptionGates,
+  harnessQualification: {
+    schemaVersion: 1,
+    file: 'fast-harness-qualification.json',
+    location: 'installed-skill-scripts-directory',
+    recordKey: ['installKind', 'harnessFamily'],
+    fastMappingIdentity: 'sha256-hex-of-canonical-fast-mapping-per-harness',
+    unavailable: 'absent, malformed, or unreadable means profile-unavailable',
+    portableFastRequires: 'qualified-in-generation-snapshot-and-snapshot-identity-equals-installed',
+  },
   enums: {
     cohorts: ['baseline', 'pilot'],
-    workflows: ['build', 'refactor'],
+    workflows: ['build', 'refactor', 'fix'],
     harnessFamilies: ['claude', 'codex'],
+    installKinds: ['native', 'portable'],
+    modelCompliance: ['verified', 'mismatch', 'unverified', 'not-applicable'],
+    qualificationOutcomes: ['qualified', 'unqualified', 'unproven'],
     observationModes: ['merge', 'report'],
     observationOutcomes: ['merged', 'reported-ready', 'reported-blocked', 'failed'],
     completionStatuses: ['completed', 'aborted', 'failed', 'abandoned'],
@@ -320,6 +356,7 @@ export const PILOT_MEASUREMENT_DOCUMENTATION_PROJECTION = deepFreeze(
       'aggregation',
       'metricRegistry',
       'adoptionGates',
+      'harnessQualification',
       'enums',
     ].map((field) => [field, protocolSource[field]]),
   ),

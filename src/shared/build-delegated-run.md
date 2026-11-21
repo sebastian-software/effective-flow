@@ -186,7 +186,7 @@ check, and Fast→Quality transition, with `build` as the record's `workflow`.
 
 1. Start the appropriate implementer skill with the agreed plan. The Quality selector is the default; the Fast
    reference serves only the first attempted spawn of a packet whose envelope selects `fast`, and `fastAttemptConsumed`
-   is set immediately before that call. The tier line below binds each Quality selector, never a Fast reference:
+   is set immediately before that call. The `Tier` line below binds each Quality selector; a Fast reference takes only its own values (portable: the `Fast tier` line):
    <!-- spawn-site:build-delegated-run/initial-implementation -->
    - Frontend: `Use the {{AGENT:ui-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:ui-implementer:fast}}.
    - Backend/CLI: `Use the {{AGENT:nodejs-implementer}} skill for this phase.` Fast: {{AGENT_PROFILE:nodejs-implementer:fast}}.

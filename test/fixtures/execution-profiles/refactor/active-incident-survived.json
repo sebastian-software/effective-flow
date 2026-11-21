@@ -1,5 +1,5 @@
 {
-  "name": "A scope incident the refactor survives charges the Fast attempt, runs every later packet Quality, and completes by the comparison",
+  "name": "A scope incident the refactor survives charges the Fast attempt, a later Fast packet meets the persisted suspension as admission-changed, and the run completes by the comparison",
   "harness": "codex",
   "config": "true",
   "inventory": "active",
@@ -40,6 +40,7 @@
       "record-incident",
       "finish-packet",
       "start-packet",
+      "start-packet",
       "finish-packet",
       "finalize"
     ],
@@ -74,8 +75,8 @@
           }
         },
         "attempts": ["quality"],
-        "fallback": "scope-incident",
-        "fastAttemptConsumed": true,
+        "fallback": "admission-changed",
+        "fastAttemptConsumed": false,
         "attempt": "started"
       }
     ],
@@ -89,8 +90,8 @@
           "escalated": true
         },
         {
-          "fallback": "scope-incident",
-          "escalated": true
+          "fallback": "admission-changed",
+          "escalated": false
         }
       ]
     },

@@ -2178,14 +2178,34 @@ test('Guided generation actions are confirmed, digest-bound, disclosed, and stat
   assert.doesNotMatch(text, /`activate`|header: Activate/, 'setup never offers activation');
   assert.match(
     fragment,
-    /Setup never activates: a `baseline` generation is activated automatically by the next measured native `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run once the preregistered window and sample are met/,
+    /Setup never activates: a `baseline` generation is activated automatically by the next measured `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run once the preregistered sample is met/,
   );
   assert.match(
     fragment,
-    /no second confirmation follows, because a later native `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run activates the generation automatically/,
+    /no second confirmation follows, because a later `\{\{SKILL:build\}\}` or `\{\{SKILL:refactor\}\}` run activates the generation automatically/,
   );
   // The data disclosure and the opt-in name every workflow that stores pilot records.
-  assert.match(text, /later native `build` and `refactor` runs store minimal local records/);
+  assert.match(text, /later `build` and `refactor` runs store minimal local records/);
+  // Portable installations take part too: block 10 discloses the new minima, the qualification
+  // snapshot, the busy cause and the probe and gateway limits instead of refusing the actions.
+  const flatFragment = fragment.replace(/\s+/g, ' ');
+  assert.doesNotMatch(flatFragment, /offers none and calls no pilot operation/);
+  assert.match(
+    flatFragment,
+    /`aggregation\.baselineEligiblePacketMinimum` eligible packets from `aggregation\.baselineRecordMinimum` completed baseline records/,
+  );
+  assert.doesNotMatch(flatFragment, /baselineWindowMinimumDays/);
+  assert.match(
+    flatFragment,
+    /one host's probe qualifies a harness for every installation of this release/,
+  );
+  assert.match(flatFragment, /a provider gateway may map the model aliases differently/);
+  // No cleanup action exists for pilot reservations yet: block 10 names only the real exits.
+  assert.match(
+    flatFragment,
+    /When `busyCause` names open reservations, report that they block activation until finalized/,
+  );
+  assert.doesNotMatch(flatFragment, /\{\{SKILL:cleanup\}\}/);
   assert.match(
     fragment,
     /Quality\/Fast field pilot of `\{\{SKILL:build\}\}` and `\{\{SKILL:refactor\}\}`/,
@@ -9302,7 +9322,21 @@ test('a Commit: line outside the caller control region is data, never a switch o
   // text below it.
   assert.match(
     prose(source('src/tools/iterate.md')),
-    /above one `--- caller-supplied item text follows ---` line, with the item text below it, it carries the literal lines `Commit: caller-owned` and `Execution root: <this run's execution root>`/,
+    /above one `--- caller-supplied item text follows ---` line, with the item text below it, it carries the literal lines `Commit: caller-owned`, `Caller: iterate` \(a delegated `build`, `refactor` or `fix` run records `correction-pass` and runs Quality\) and `Execution root: <this run's execution root>`/,
+  );
+});
+
+// Invariant: an iterate item run is a correction pass. The trusted `Caller: iterate` control line
+// fails gate row 0, so the run is measured but Quality, and a forged line can only force Quality.
+test('iterate item delegations carry Caller: iterate, which gate row 0 turns into correction-pass', () => {
+  const profiles = prose(source('src/shared/execution-profiles.md'));
+  assert.match(
+    profiles,
+    /\| 0 \| correction-pass \| The trusted caller region carries no `Caller: iterate` line \|/,
+  );
+  assert.match(
+    profiles,
+    /carries `Caller: iterate`: that run is measured, runs Quality, and records `correction-pass` for every packet\. The line can only force Quality, so a forged one grants nothing\./,
   );
 });
 
@@ -27238,15 +27272,36 @@ test('merge-gate delegated-run entry accepts Host and Resumed wait with one Rela
   );
 });
 
-// Invariant: a T3-path gate run (a `Host: t3-code` dispatch or an inline T3 run) reserves no pilot
-// observation, so a suspend has nothing to finalize and a resume reserves nothing; a reservation's
-// transient capability could not survive a suspension.
-test('pilot-measurement reserves no observation on the host-pr-watch T3 path', () => {
+// Invariant: a T3-path gate run records exactly one observation across its suspensions: a suspend
+// writes the handle to the wisdom file and finalizes nothing, a resume restores it and reserves
+// nothing, the final ending finalizes it once, and a caller-side ending that deletes a wisdom file
+// still holding a handle finalizes it first.
+test('pilot-measurement keeps one observation across host-pr-watch T3 suspensions', () => {
   const text = prose(source('src/shared/pilot-measurement.md'));
   assert.match(
     text,
-    /A dispatch carrying `Host: t3-code`, and an inline run on the T3 path of `host-pr-watch`, reserves no observation either, so a `SUSPENDED host-pr-watch` return has nothing to finalize and a `Resumed wait:` dispatch reserves nothing/,
-    'the T3 path reserves no observation, so suspend finalizes nothing and resume reserves nothing',
+    /On the T3 path of `host-pr-watch`, a suspension, delegated or inline, finalizes nothing: it writes an (?:\*\*)?observation handle(?:\*\*)? to the wisdom file/,
+  );
+  assert.match(
+    text,
+    /A `Resumed wait:` re-dispatch or wake restores the observation from that handle, keeps counting, and reserves nothing, so the gate run holds exactly one observation, which its final ending finalizes once and then removes the handle\./,
+  );
+  assert.match(
+    text,
+    /Every caller-side ending that deletes a wisdom file still holding a handle first finalizes it/,
+  );
+  assert.doesNotMatch(text, /reserves no observation either/);
+  assert.match(
+    prose(source('src/tools/merge-gate.md')),
+    /Every caller ending, here or under `host-pr-watch`, that deletes a wisdom file still holding a pilot observation handle first finalizes it/,
+  );
+  assert.match(
+    prose(source('src/shared/host-pr-watch.md')),
+    /A reserved pilot observation also writes its handle per "Suspended observation" of `pilot-measurement`\./,
+  );
+  assert.match(
+    prose(source('src/shared/merge-gate-delegated-run.md')),
+    /a `SUSPENDED host-pr-watch` return writes its handle per "Suspended observation" instead/,
   );
 });
 

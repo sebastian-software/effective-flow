@@ -530,6 +530,20 @@ export const EXPECTED_NATIVE_DELTAS = Object.freeze({
         }),
       ]),
     }),
+    // Skill Markdown routes as product source (Fast pilot): the embedded project-routing contract
+    // gains one paragraph before its precedence rule.
+    Object.freeze({
+      id: 'project-routing-skill-sources',
+      edits: Object.freeze([
+        Object.freeze({
+          from: 'Explicit task scope and the closest repository instructions take precedence over filename heuristics.',
+          to:
+            "Skill and prompt sources that a build ships as product behaviour (such as an agent skill's `src/**/*.md`) are product source, not documentation: route them through the product route of their build, `node-backend-cli` for a Node.js-built skill. User and developer guides stay `documentation`.\n" +
+            '\n' +
+            'Explicit task scope and the closest repository instructions take precedence over filename heuristics.',
+        }),
+      ]),
+    }),
     // Code-span-aware reference rendering (plan decision 7): an internal-tool or worker placeholder
     // that is exactly a code span renders as one backtick pair instead of a doubled one. A pattern
     // edit, last in order, because a worker may show it any number of times.

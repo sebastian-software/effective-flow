@@ -81,6 +81,10 @@ function fixture(t) {
     monotonicNs: () => clock.monotonicNs,
     uptimeSeconds: () => clock.uptime,
     hostname: () => 'fixture-host',
+    ownerPid: 4242,
+    ownerPidStartTime: 77,
+    // No installed qualification unless a test provides one: portable Fast is unavailable.
+    harnessQualificationPath: join(root, 'absent-fast-harness-qualification.json'),
   };
   t.after(() => rmSync(root, { recursive: true, force: true }));
   return {
@@ -137,6 +141,7 @@ async function startWorkflow(fx, generationId, packets = [packetReservation()]) 
         configState: 'enabled',
         workflow: 'build',
         harnessFamily: 'codex',
+        installKind: 'native',
         packets,
       },
       fx.deps,
@@ -189,6 +194,7 @@ async function reserveAndFinish(fx, generationId, selectedProfile = 'quality') {
         configState: 'enabled',
         workflow: 'build',
         harnessFamily: 'codex',
+        installKind: 'native',
         packets: [packetReservation(selectedProfile)],
       },
       fx.deps,
@@ -207,7 +213,12 @@ async function reserveAndFinish(fx, generationId, selectedProfile = 'quality') {
   fx.clock.wallMs += 125;
   fx.clock.monotonicNs += 125_000_000n;
   fx.clock.uptime += 0.125;
-  const finish = await executeOperation('finish-packet', identity, fx.deps);
+  // A native Fast spawn's sidecar model is never observed, so it can only report unverified.
+  const finish = await executeOperation(
+    'finish-packet',
+    { ...identity, modelCompliance: selectedProfile === 'fast' ? 'unverified' : 'not-applicable' },
+    fx.deps,
+  );
   assert.deepEqual(finish.result.duration, { status: 'available', milliseconds: 125 });
   return reservation;
 }
@@ -279,6 +290,7 @@ test('inventory discovers zero or one current generation and rejects ambiguity',
     generationStatus: 'absent',
     normalTombstones: 0,
     discardTombstones: 0,
+    qualification: { installed: { status: 'unavailable' }, snapshot: null },
   });
 
   const baseline = await beginBaseline(fx);
@@ -469,6 +481,7 @@ test('gate observations retain only anonymous grouping axes and finalize exactly
         generationState: 'baseline',
         mode: 'report',
         harnessFamily: 'codex',
+        installKind: 'native',
       },
       fx.deps,
     )
@@ -533,6 +546,7 @@ test('gate observation check evidence rejects unavailable fields without consumi
             generationState: 'baseline',
             mode: 'report',
             harnessFamily: 'codex',
+            installKind: 'native',
           },
           fx.deps,
         )
@@ -599,6 +613,7 @@ for (const mode of ['merge', 'report'])
             generationState: 'baseline',
             mode,
             harnessFamily: 'claude',
+            installKind: 'native',
           },
           fx.deps,
         )
@@ -753,7 +768,9 @@ test('semantic summary combinations and duplicate packet outcomes fail closed', 
   );
 });
 
-test('every incomplete or invalid evidence class blocks new admission without relying on suspension', async (t) => {
+// Invariant: open records and observations of other runs overlap instead of blocking a new
+// reservation, which flags itself; residual, unknown, and malformed evidence still blocks it.
+test('every invalid evidence class blocks new admission while open runs overlap', async (t) => {
   async function assertAdmissionBlocked(fx, generationId, code) {
     const root = generationRoot(fx, generationId);
     const records = join(root, 'records');
@@ -763,11 +780,27 @@ test('every incomplete or invalid evidence class blocks new admission without re
     assert.equal(existsSync(join(root, 'suspension.json')), false);
   }
 
+  function storedRecord(fx, generationId, runId) {
+    return JSON.parse(
+      readFileSync(join(generationRoot(fx, generationId), 'records', `${runId}.json`), 'utf8'),
+    );
+  }
+
   await t.test('workflow reservation', async (t) => {
     const fx = fixture(t);
     const { generationId } = await beginBaseline(fx);
-    await startWorkflow(fx, generationId);
-    await assertAdmissionBlocked(fx, generationId, 'INCOMPLETE_EVIDENCE');
+    const first = await startWorkflow(fx, generationId);
+    assert.equal(storedRecord(fx, generationId, first.runId).overlapFlag, false);
+    const second = await startWorkflow(fx, generationId);
+    assert.equal(second.status, 'reserved');
+    // Both reservations carry the flag; neither stores a reference to the other.
+    const stored = [first, second].map(({ runId }) => storedRecord(fx, generationId, runId));
+    assert.deepEqual(
+      stored.map(({ overlapFlag }) => overlapFlag),
+      [true, true],
+    );
+    assert.doesNotMatch(JSON.stringify(stored[0]), new RegExp(second.runId));
+    assert.doesNotMatch(JSON.stringify(stored[1]), new RegExp(first.runId));
   });
 
   await t.test('packet timing receipt', async (t) => {
@@ -802,10 +835,12 @@ test('every incomplete or invalid evidence class blocks new admission without re
         generationState: 'baseline',
         mode: 'merge',
         harnessFamily: 'codex',
+        installKind: 'native',
       },
       fx.deps,
     );
-    await assertAdmissionBlocked(fx, generationId, 'INCOMPLETE_EVIDENCE');
+    const reservation = await startWorkflow(fx, generationId);
+    assert.equal(storedRecord(fx, generationId, reservation.runId).overlapFlag, true);
   });
 
   for (const [label, name, contents, code] of [
@@ -828,7 +863,11 @@ test('authenticated reservations drain after suspension and after review while n
     fx.clock.wallMs += 25;
     fx.clock.monotonicNs += 25_000_000n;
     fx.clock.uptime += 0.025;
-    await executeOperation('finish-packet', identity, fx.deps);
+    await executeOperation(
+      'finish-packet',
+      { ...identity, modelCompliance: 'not-applicable' },
+      fx.deps,
+    );
     await executeOperation(
       'finalize',
       { ...fx.common, generationId, ...terminalPayload(reservation) },
@@ -1102,7 +1141,7 @@ test('persisted evidence validation binds filenames, schemas, identities, ordina
 test('persisted cardinality and ordinal bounds use next counters without requiring contiguous ordinals', async (t) => {
   function workflowRecord(generationId, ordinal) {
     return {
-      schema: 2,
+      schema: 3,
       kind: 'workflow-record',
       runId: opaqueId(1, ordinal),
       workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
@@ -1113,6 +1152,7 @@ test('persisted cardinality and ordinal bounds use next counters without requiri
       generationState: 'baseline',
       workflow: 'build',
       harnessFamily: 'codex',
+      installKind: 'native',
       ordinal,
       packets: [
         {
@@ -1125,6 +1165,7 @@ test('persisted cardinality and ordinal bounds use next counters without requiri
           escalated: false,
           costProxy: { status: 'unavailable' },
           attempt: 'started',
+          modelCompliance: 'not-applicable',
         },
       ],
       validation: { status: 'not-required', requiredCount: 0, totalCount: 0, satisfiedCount: 0 },
@@ -1135,12 +1176,13 @@ test('persisted cardinality and ordinal bounds use next counters without requiri
       completionStatus: 'completed',
       qualityCorrectionRounds: 0,
       detailTrace: false,
+      overlapped: false,
     };
   }
 
   function gateObservation(generationId, ordinal) {
     return {
-      schema: 1,
+      schema: 2,
       kind: 'gate-observation',
       observationId: opaqueId(3, ordinal),
       capabilityHash: canonicalDigest({ capability: `observation-${ordinal}` }),
@@ -1149,6 +1191,7 @@ test('persisted cardinality and ordinal bounds use next counters without requiri
       cohort: 'baseline',
       mode: 'merge',
       harnessFamily: 'codex',
+      installKind: 'native',
       ordinal,
       terminalOutcome: 'merged',
       corrections: { ciRepair: 0, configuredReviewer: 0, conflictResolution: 0 },
@@ -1267,6 +1310,7 @@ test('deterministic identifier collisions reject without overwriting accepted ev
           configState: 'enabled',
           workflow: 'build',
           harnessFamily: 'codex',
+          installKind: 'native',
           packets: [packetReservation()],
         },
         deps,
@@ -1293,6 +1337,7 @@ test('deterministic identifier collisions reject without overwriting accepted ev
           configState: 'enabled',
           workflow: 'build',
           harnessFamily: 'codex',
+          installKind: 'native',
           packets: [packetReservation(), packetReservation()],
         },
         deps,
@@ -1311,6 +1356,7 @@ test('deterministic identifier collisions reject without overwriting accepted ev
       generationState: 'baseline',
       mode: 'merge',
       harnessFamily: 'codex',
+      installKind: 'native',
     };
     const accepted = (await executeOperation('start-gate-observation', input, fx.deps)).result;
     // An open observation makes the next start report busy, so close it before colliding.
@@ -1798,6 +1844,7 @@ test('review freezes admission, preserves suspension causes, and cannot resume',
           configState: 'enabled',
           workflow: 'build',
           harnessFamily: 'codex',
+          installKind: 'native',
           packets: [packetReservation()],
         },
         fx.deps,
@@ -1817,7 +1864,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
     `${canonicalizeJson({ ...state, generationState: 'review', nextWorkflowOrdinal: 4 })}\n`,
   );
   const record = (cohort, ordinal, duration, corrections) => ({
-    schema: 2,
+    schema: 3,
     kind: 'workflow-record',
     runId: Buffer.alloc(24, ordinal).toString('base64url'),
     workflowCapabilityHash: canonicalDigest({ capability: `cap-${ordinal}` }),
@@ -1828,6 +1875,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
     generationState: cohort === 'baseline' ? 'baseline' : 'active',
     workflow: 'build',
     harnessFamily: 'codex',
+    installKind: 'native',
     ordinal,
     packets: [
       {
@@ -1840,6 +1888,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
         escalated: false,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
         attempt: 'started',
+        modelCompliance: cohort === 'baseline' ? 'not-applicable' : 'unverified',
       },
     ],
     validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -1847,6 +1896,7 @@ test('aggregate keeps private rational evidence while suppressing small public c
     completionStatus: 'completed',
     qualityCorrectionRounds: corrections,
     detailTrace: false,
+    overlapped: false,
   });
   for (const value of [
     record('baseline', 1, 100, 1),
@@ -1936,7 +1986,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   const { generationId } = await beginBaseline(fx);
   const generation = generationRoot(fx, generationId);
   const record = (ordinal) => ({
-    schema: 2,
+    schema: 3,
     kind: 'workflow-record',
     runId: Buffer.alloc(24, ordinal).toString('base64url'),
     workflowCapabilityHash: canonicalDigest({ capability: `workflow-${ordinal}` }),
@@ -1947,6 +1997,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
     generationState: 'active',
     workflow: 'build',
     harnessFamily: 'codex',
+    installKind: 'native',
     ordinal,
     packets: [
       {
@@ -1962,6 +2013,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
         escalated: ordinal === 6,
         costProxy: { status: 'available', kind: 'executor-unit', unit: 'microcredit', value: '10' },
         attempt: 'started',
+        modelCompliance: ordinal === 1 ? 'not-applicable' : 'unverified',
       },
     ],
     validation:
@@ -1978,6 +2030,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
     completionStatus: ordinal === 6 ? 'failed' : 'completed',
     qualityCorrectionRounds: ordinal % 2,
     detailTrace: false,
+    overlapped: false,
   });
   for (let ordinal = 1; ordinal <= 6; ordinal += 1) {
     const value = record(ordinal);
@@ -2013,6 +2066,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
           generationState: 'baseline',
           mode: 'merge',
           harnessFamily: 'codex',
+          installKind: 'native',
         },
         fx.deps,
       )
@@ -2085,7 +2139,7 @@ test('aggregation preserves private counts and atomically suppresses public 5+1 
   assert.deepEqual(publicCohort.workflowCompletion, { suppressed: true });
   assert.deepEqual(publicCohort.validationSuccess, { suppressed: true });
   assert.deepEqual(publicCohort.durationMedianMs, { numerator: '300', denominator: '1' });
-  assert.deepEqual(publicCohort.criticalFindingsPerCompleted, { suppressed: true });
+  assert.deepEqual(publicCohort.criticalFindingsPerReviewed, { suppressed: true });
 
   const group = privateView.observations.baseline.groups['merge:codex'];
   assert.deepEqual(group.terminalOutcomes, {
@@ -2123,7 +2177,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
       for (let index = 0; index < 5; index += 1) {
         const subsetMember = completionStatus === 'completed' || completionStatus === 'failed';
         const value = {
-          schema: 2,
+          schema: 3,
           kind: 'workflow-record',
           runId: opaqueId(cohort === 'baseline' ? 70 : 71, ordinal),
           workflowCapabilityHash: canonicalDigest({ capability: `ratio-${ordinal}` }),
@@ -2134,6 +2188,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
           generationState: cohort === 'baseline' ? 'baseline' : 'active',
           workflow: 'build',
           harnessFamily: 'codex',
+          installKind: 'native',
           ordinal,
           packets: [
             {
@@ -2148,6 +2203,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
                     implementationDuration: { status: 'unavailable' },
                     costProxy: { status: 'unavailable' },
                     attempt: 'unknown',
+                    modelCompliance: 'not-applicable',
                   }
                 : {
                     implementationDuration: { status: 'available', milliseconds: 100 },
@@ -2158,12 +2214,21 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
                       value: '10',
                     },
                     attempt: 'started',
+                    modelCompliance:
+                      cohort === 'baseline' || !subsetMember ? 'not-applicable' : 'unverified',
                   }),
             },
           ],
           validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
+          // Finding rates use the records whose review ran; every review class keeps five members
+          // so the review distribution itself stays publishable.
           review: {
-            status: 'completed',
+            status:
+              completionStatus === 'aborted'
+                ? 'not-run'
+                : completionStatus === 'abandoned'
+                  ? 'unavailable'
+                  : 'completed',
             severityCounts: {
               critical:
                 completionStatus === 'completed' &&
@@ -2177,6 +2242,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
           completionStatus,
           qualityCorrectionRounds: 0,
           detailTrace: false,
+          overlapped: false,
         };
         writeFileSync(
           join(generation, 'records', `${value.runId}.json`),
@@ -2210,6 +2276,7 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
             generationState: 'baseline',
             mode,
             harnessFamily: 'codex',
+            installKind: 'native',
           },
           fx.deps,
         )
@@ -2245,16 +2312,16 @@ test('publication suppresses sub-threshold ratio cells and publishes protected r
 
   const privateView = JSON.parse(readFileSync(join(generation, 'summaries/private.json')));
   const publication = JSON.parse(readFileSync(join(generation, 'summaries/publication.json')));
-  assert.deepEqual(privateView.cohorts.baseline.criticalFindingsPerCompleted, {
+  assert.deepEqual(privateView.cohorts.baseline.criticalFindingsPerReviewed, {
     numerator: '1',
-    denominator: '5',
+    denominator: '10',
   });
-  assert.deepEqual(publication.cohorts.baseline.criticalFindingsPerCompleted, {
+  assert.deepEqual(publication.cohorts.baseline.criticalFindingsPerReviewed, {
     suppressed: true,
   });
-  assert.deepEqual(publication.cohorts.pilot.criticalFindingsPerCompleted, {
+  assert.deepEqual(publication.cohorts.pilot.criticalFindingsPerReviewed, {
     numerator: '1',
-    denominator: '1',
+    denominator: '2',
   });
   assert.equal(publication.cohorts.baseline.eligiblePacketCount, 10);
   assert.equal(publication.cohorts.pilot.eligiblePacketCount, 10);
@@ -2285,6 +2352,7 @@ test('publication suppresses complementary 5+1 observation groups while retainin
           generationState: 'baseline',
           mode,
           harnessFamily: 'codex',
+          installKind: 'native',
         },
         fx.deps,
       )
@@ -2339,7 +2407,7 @@ test('evaluation applies metric minima to actual validation contributors', async
     for (let index = 0; index < 20; index += 1) {
       const runId = Buffer.alloc(24, ordinal).toString('base64url');
       const record = {
-        schema: 2,
+        schema: 3,
         kind: 'workflow-record',
         runId,
         workflowCapabilityHash: canonicalDigest({ capability: `minimum-${ordinal}` }),
@@ -2350,6 +2418,7 @@ test('evaluation applies metric minima to actual validation contributors', async
         generationState: cohort === 'baseline' ? 'baseline' : 'active',
         workflow: 'build',
         harnessFamily: 'codex',
+        installKind: 'native',
         ordinal,
         packets: [
           {
@@ -2367,6 +2436,7 @@ test('evaluation applies metric minima to actual validation contributors', async
               value: '10',
             },
             attempt: 'started',
+            modelCompliance: cohort === 'baseline' ? 'not-applicable' : 'unverified',
           },
         ],
         validation:
@@ -2380,6 +2450,7 @@ test('evaluation applies metric minima to actual validation contributors', async
         completionStatus: 'completed',
         qualityCorrectionRounds: 0,
         detailTrace: false,
+        overlapped: false,
       };
       writeFileSync(join(generation, 'records', `${runId}.json`), `${canonicalizeJson(record)}\n`);
       ordinal += 1;
@@ -2409,10 +2480,10 @@ test('evaluation applies metric minima to actual validation contributors', async
     denominator: '1',
   });
   assert.equal(privateView.evaluationInputs.validationSuccessDelta, null);
-  assert.deepEqual(privateView.evaluationInputs.criticalReviewFindingDelta, {
-    numerator: '0',
-    denominator: '1',
-  });
+  // Finding rates count only records whose review ran: one reviewed record per cohort stays below
+  // the metric minimum, so the critical-finding delta is unavailable.
+  assert.equal(privateView.cohorts.baseline.reviewContributorCount, 1);
+  assert.equal(privateView.evaluationInputs.criticalReviewFindingDelta, null);
 });
 
 test('evaluation rejects a shared cost group when either cohort has incompatible extras', async (t) => {
@@ -2426,7 +2497,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
       const unit =
         index < 10 ? 'microcredit' : cohort === 'baseline' ? 'baseline-credit' : 'pilot-credit';
       const record = {
-        schema: 2,
+        schema: 3,
         kind: 'workflow-record',
         runId,
         workflowCapabilityHash: canonicalDigest({ capability: `cost-group-${ordinal}` }),
@@ -2437,6 +2508,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
         generationState: cohort === 'baseline' ? 'baseline' : 'active',
         workflow: 'build',
         harnessFamily: 'codex',
+        installKind: 'native',
         ordinal,
         packets: [
           {
@@ -2454,6 +2526,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
               value: '10',
             },
             attempt: 'started',
+            modelCompliance: cohort === 'baseline' ? 'not-applicable' : 'unverified',
           },
         ],
         validation: { status: 'passed', requiredCount: 1, totalCount: 1, satisfiedCount: 1 },
@@ -2464,6 +2537,7 @@ test('evaluation rejects a shared cost group when either cohort has incompatible
         completionStatus: 'completed',
         qualityCorrectionRounds: 0,
         detailTrace: false,
+        overlapped: false,
       };
       writeFileSync(join(generation, 'records', `${runId}.json`), `${canonicalizeJson(record)}\n`);
       ordinal += 1;

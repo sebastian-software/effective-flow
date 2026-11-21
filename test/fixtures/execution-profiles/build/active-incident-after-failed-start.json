@@ -3,12 +3,8 @@
   "harness": "claude",
   "config": "true",
   "inventory": "active",
-  "external": [
-    {
-      "at": "before-start",
-      "operation": "start"
-    }
-  ],
+  "replay": false,
+  "replayReason": "Protocol 1.3.0 lets records overlap, so start meets INCOMPLETE_EVIDENCE only on a genuine evidence fault, which the pilot-measurement suite covers; this fixture pins the incident recorded after that failed start.",
   "startResult": "INCOMPLETE_EVIDENCE",
   "packets": [
     {

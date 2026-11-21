@@ -35,6 +35,7 @@ import {
   renderModelTierDirectives,
   findProviderModelNames,
   findRenderedSpawnSiteLines,
+  findRenderedFastTierLines,
   SPAWN_SITE_MARKER_PREFIX,
   MODEL_TIER_GENERATED_PLACEHOLDERS,
   MODEL_TIER_TABLE_START,
@@ -120,6 +121,10 @@ import {
   toolAliasDivergence,
 } from './src/scripts/config-resolve-core.mjs';
 import { exposedToolsReaching } from './src/scripts/setup-status-core.mjs';
+import {
+  FAST_HARNESS_QUALIFICATION_FILE,
+  validateFastHarnessQualification,
+} from './src/scripts/model-selection-core.mjs';
 
 const ROOT_DIR = dirname(fileURLToPath(import.meta.url));
 const SOURCE_DIR = join(ROOT_DIR, 'src');
@@ -199,6 +204,9 @@ const RUNTIME_SCRIPT_FILES = [
 // Generated beside the runtime scripts in every target: the setup-status ownership projection.
 const SETUP_STATUS_PROJECTION_FILE = 'setup-status-owners.json';
 const MODEL_SELECTION_CONTRACT_FILE = 'model-selection-contract.json';
+// The per-harness Fast probe outcome, copied byte for byte beside the runtime scripts of every
+// target and validated below against AGENT_PROFILE_MAPPINGS.fast.
+const FAST_HARNESS_QUALIFICATION_SRC = join(RUNTIME_SCRIPTS_DIR, FAST_HARNESS_QUALIFICATION_FILE);
 
 // Hand-maintained user guide (not generated from src/). A content guard below
 // protects the canonical Plan->Build handoff examples against regression (#107).
@@ -883,6 +891,9 @@ const tools = []; // { name, description, body }
 const agents = []; // { name, fm, body }
 let budgetReport = []; // [{ name, lines, limit }] — always-loaded size of every tool (#99)
 let fastProfileAgents = new Set();
+// The spawn sites that render the portable Fast tier line: the one site each authorized initial
+// implementation phase binds its Fast references to.
+const fastSpawnSites = new Set();
 let setupStatusProjectionJson = null; // generated scripts/setup-status-owners.json (#485)
 
 try {
@@ -1202,6 +1213,21 @@ try {
   }
   refConfig.profileMappings = AGENT_PROFILE_MAPPINGS;
   refConfig.fastProfileAgents = fastProfileAgents;
+  // The harness-qualification record must describe the Fast mapping this build ships: a changed
+  // mapping invalidates every probe until a new one is recorded.
+  if (!existsSync(FAST_HARNESS_QUALIFICATION_SRC)) {
+    throw new Error(`Fast harness qualification not found: ${FAST_HARNESS_QUALIFICATION_SRC}`);
+  }
+  try {
+    validateFastHarnessQualification(
+      JSON.parse(readFileSync(FAST_HARNESS_QUALIFICATION_SRC, 'utf8')),
+      { fastMappings: AGENT_PROFILE_MAPPINGS.fast },
+    );
+  } catch (error) {
+    throw new Error(`${error.message} (in src/scripts/${FAST_HARNESS_QUALIFICATION_FILE})`, {
+      cause: error,
+    });
+  }
 
   // Fast-profile tokens are legal only inside each workflow's initial implementation phase.
   // `build` Phase 2 and `refactor` Phase 3 adopt them on their five Fast-capable implementer
@@ -1280,6 +1306,24 @@ try {
         );
       }
     }
+    // Every Fast reference binds to the last spawn-site marker before it inside the phase, and all
+    // of them to the same one: that site alone renders the portable Fast tier line.
+    const lineAt = (offset) => profileSourceText.slice(0, offset).split('\n').length;
+    const phaseMarkers = collectSpawnSiteMarkers(profileSourceText, {
+      context: source.context,
+    }).filter(({ line }) => line > lineAt(phaseStart.start) && line < lineAt(phaseEnd.start));
+    const boundSites = new Set(
+      profileRefs.map((profileRef) => {
+        const refLine = lineAt(profileRef.index);
+        return phaseMarkers.filter(({ line }) => line < refLine).at(-1)?.id ?? null;
+      }),
+    );
+    if (boundSites.size !== 1 || boundSites.has(null)) {
+      throw new Error(
+        `Fast-profile references in ${source.context} must all follow one spawn-site marker inside ${authorization.phase}`,
+      );
+    }
+    fastSpawnSites.add([...boundSites][0]);
     validateRefs(profileSourceText, { knownTools, knownAgents, context: source.context });
   }
 
@@ -1710,6 +1754,15 @@ try {
     }
   }
   reconcileSpawnSites(spawnSites, spawnSiteMarkers, { context: 'shared/model-tiers.md' });
+  // A Fast tier line stands beside a Quality line: every Fast site must resolve to `deep` alone.
+  for (const id of fastSpawnSites) {
+    const site = spawnSites.find((entry) => entry.id === id);
+    if (!site || site.clauses.some(({ tier }) => tier !== 'deep')) {
+      throw new Error(
+        `Fast spawn site "${id}" must resolve to the Quality tier \`deep\` in shared/model-tiers.md`,
+      );
+    }
+  }
   // Workers spawn nothing, so no fragment an agent includes eagerly, directly or nested, may carry a
   // spawn-site marker.
   const markedFragments = new Set(
@@ -1739,6 +1792,8 @@ try {
     sites: new Map(spawnSites.map((site) => [site.id, site])),
     mappings: MODEL_TIER_MAPPINGS,
     agentTiers,
+    fastSites: fastSpawnSites,
+    profileMappings: AGENT_PROFILE_MAPPINGS,
   };
 
   // Project ownership only after the execution sites and their named roles are validated.
@@ -1997,6 +2052,10 @@ try {
     for (const file of RUNTIME_SCRIPT_FILES) {
       copyFileSync(join(RUNTIME_SCRIPTS_DIR, file), join(skillDir, 'scripts', file));
     }
+    copyFileSync(
+      FAST_HARNESS_QUALIFICATION_SRC,
+      join(skillDir, 'scripts', FAST_HARNESS_QUALIFICATION_FILE),
+    );
     // Generated, not copied: the ownership projection the setup-status script reads beside itself.
     writeFileSync(
       join(skillDir, 'scripts', SETUP_STATUS_PROJECTION_FILE),
@@ -2018,6 +2077,15 @@ try {
             panel,
             clauses: clauses.map(({ role, tier }) => ({ role: role ?? null, tier })),
           })),
+          // Only the portable build renders the per-spawn Fast tier; native builds use sidecars.
+          ...(harness === 'portable'
+            ? {
+                fast: {
+                  mappings: AGENT_PROFILE_MAPPINGS.fast,
+                  sites: [...fastSpawnSites].sort(),
+                },
+              }
+            : {}),
         },
         null,
         2,
@@ -2425,6 +2493,17 @@ try {
           `spawn-site marker guard: rendered ${target.name} file ${relative(target.root, file)} still carries a spawn-site marker`,
         );
       }
+      // The Fast tier line is portable-only and stands directly before the Model selection line
+      // of an authorized Fast site.
+      const contentLines = content.split('\n');
+      for (const line of findRenderedFastTierLines(content)) {
+        const site = contentLines[line]?.match(/^[ \t]*Model selection site: `([^`]+)`/)?.[1];
+        if (target.name !== 'portable' || !fastSpawnSites.has(site)) {
+          throw new Error(
+            `Fast tier line guard: ${target.name} file ${relative(target.root, file)} line ${line} renders a Fast tier line outside an authorized portable Fast spawn site`,
+          );
+        }
+      }
       // A native target names only its own provider's models; portable is checked below, where
       // build-generated tier text is the one place both providers' names may appear.
       if (target.name !== 'portable') {
@@ -2492,6 +2571,7 @@ try {
       modelNames: [...claudeModelNames, ...codexModelNames],
       allowGenerated: true,
       mappings: MODEL_TIER_MAPPINGS,
+      profileMappings: AGENT_PROFILE_MAPPINGS,
       context: relative(PORTABLE_SKILL_DIR, file),
     });
     if (providerNames.length > 0) {

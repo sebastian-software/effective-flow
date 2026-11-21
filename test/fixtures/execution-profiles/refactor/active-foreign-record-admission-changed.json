@@ -1,8 +1,14 @@
 {
-  "name": "A portable build refactors Quality-only and unmeasured on any host",
-  "harness": "portable",
+  "name": "A foreign reservation opened before the first start-packet closes Fast admission for the Phase 3 spawn, which runs Quality as admission-changed",
+  "harness": "claude",
   "config": "true",
   "inventory": "active",
+  "external": [
+    {
+      "at": "before-start-packet",
+      "operation": "start"
+    }
+  ],
   "packets": [
     {
       "bucket": "node-backend-cli",
@@ -24,24 +30,47 @@
   },
   "expected": {
     "configState": "enabled",
-    "generationState": "none",
-    "persistedGenerationState": null,
+    "generationState": "active",
+    "persistedGenerationState": "active",
     "activation": null,
-    "operations": [],
+    "operations": [
+      "inventory",
+      "start",
+      "start-packet",
+      "start-packet",
+      "finish-packet",
+      "finalize"
+    ],
     "packets": [
       {
-        "eligibility": "not-evaluated",
-        "selectedProfile": "quality",
-        "recorded": false,
-        "wire": null,
+        "eligibility": "eligible",
+        "selectedProfile": "fast",
+        "recorded": true,
+        "wire": {
+          "selectedProfile": "fast",
+          "wouldBeFastEligible": true,
+          "gate": {
+            "eligibility": "eligible",
+            "firstReason": null
+          }
+        },
         "attempts": ["quality"],
-        "fallback": "none",
+        "fallback": "admission-changed",
         "fastAttemptConsumed": false,
-        "attempt": null
+        "attempt": "started"
       }
     ],
     "incidents": [],
-    "finalize": null,
+    "finalize": {
+      "completionStatus": "completed",
+      "qualityCorrectionRounds": 0,
+      "packets": [
+        {
+          "fallback": "admission-changed",
+          "escalated": false
+        }
+      ]
+    },
     "events": [],
     "refactor": {
       "comparator": "available",
