@@ -320,10 +320,13 @@ native Claude Code the `-fast` sidecar without a per-invocation `model` or `effo
 the `-fast` sidecar without per-spawn `model` or `reasoning_effort`, on a portable build the routed
 worker contract with exactly the `model-selection` `fast` values of the rendered Fast tier line.
 The Quality spawn and every correction pass the site's tier. Before `finish-packet`, a packet whose
-Fast attempt spawned on a portable build takes its `modelCompliance` from `model-selection`
+Fast attempt started a child on a portable build takes its `modelCompliance` from `model-selection`
 `verify`, which returns it for every well-formed request (an `INVALID_*` error records
-`unverified`); a native Fast attempt reports `unverified`, and a packet without a Fast spawn reports
-`not-applicable`.
+`unverified`); a native Fast attempt reports `unverified`. A packet reserved as `fast` whose Fast
+attempt left no child to verify, because its spawn was rejected before any child started or it ran
+Quality from its first spawn after an unpersisted incident, also reports `unverified` on every
+build. Only a packet not reserved as `fast`, or one whose `start-packet` carried
+`admission-changed`, reports `not-applicable`.
 
 **Requirements check.** For a packet whose Fast attempt returned without a fallback, repairing a
 mismatch is its single `requirements-mismatch` transition below, before `finish-packet`. Every

@@ -104,7 +104,10 @@ generation.
 - For a Fast packet on Claude Code, the helper reads the child's own transcript and extracts only the
   model name, the effort and the Claude Code version from assistant entries. It reads no
   prompts, replies, transcript `cwd` field, branch or task text, and keeps none of it: it stores one of
-  `verified`, `mismatch` or `unverified` per packet (`not-applicable` without a Fast spawn). Codex
+  `verified`, `mismatch` or `unverified` per packet. A Fast packet with no child to check, because
+  its spawn was rejected or it ran Quality after an incident that could not be saved, is stored as
+  `unverified`; only a Quality packet, or a Fast packet that fell back to Quality because admission
+  changed before its spawn, is stored as `not-applicable`. Codex
   uses the child's rollout file the same way, plus the session's CLI version. To find the Claude
   Code transcript, the helper reads two environment values, the session identifier
   (`CLAUDE_CODE_SESSION_ID`) and the configuration directory (`CLAUDE_CONFIG_DIR`, defaulting to
