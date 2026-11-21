@@ -1466,6 +1466,52 @@ async function otherReservationOpen(root, generationId, runId, { observations = 
   return false;
 }
 
+// Whether generation evidence other than `runId`'s own holds a leftover that closes Fast admission:
+// a packet timing receipt of another run (also one left behind by a terminal record whose finalize
+// or reconcile-record faulted before removing it), a records member of no known shape, or a
+// temporary file without a held owner lock. It reads under the caller's packet lock: concurrent
+// packet writers stage temporaries under their held lock, and lock staging files are skipped.
+async function foreignEvidenceLeftover(root, generationId, runId) {
+  const temporaries = [];
+  for (const directory of ['', 'records', 'traces', 'gate-observations', 'summaries']) {
+    for (const entry of await safeEntries(path.join(root, directory))) {
+      if (entry.name.startsWith('.tmp-')) {
+        temporaries.push(path.join(root, directory, entry.name));
+        continue;
+      }
+      if (directory !== 'records') continue;
+      const timing = /^([A-Za-z0-9_-]{32,128})\.[A-Za-z0-9_-]{32,128}\.timing\.json$/.exec(
+        entry.name,
+      );
+      const workflowName = /^[A-Za-z0-9_-]{32,128}\.json$/.test(entry.name);
+      if (
+        !entry.isFile() ||
+        (timing === null && !workflowName) ||
+        (timing !== null && timing[1] !== runId)
+      ) {
+        return true;
+      }
+    }
+  }
+  if (temporaries.length === 0) return false;
+  const heldNonces = new Set();
+  for (const entry of await safeEntries(path.join(root, 'locks'))) {
+    if (!entry.isFile() || entry.name.startsWith('.tmp-')) continue;
+    const lock = await readJson(path.join(root, 'locks', entry.name), { missing: true });
+    if (lock !== null) heldNonces.add(lock.nonce);
+  }
+  for (const target of temporaries) {
+    let ownerNonce = null;
+    try {
+      ({ ownerNonce } = temporaryIdentity(path.basename(target), generationId));
+    } catch {}
+    // A writer removes its temporary before releasing its lock, so a temporary still present after
+    // the lock scan found no held owner lock is a leftover.
+    if (!heldNonces.has(ownerNonce) && (await pathExists(target))) return true;
+  }
+  return false;
+}
+
 // The owning session process of a new reservation, as a reservation-salted digest of host name,
 // pid, and pid start time (resolved like the planning claims), plus the reservation time.
 async function reservationOwner(deps) {
@@ -3179,16 +3225,20 @@ async function startPacket(input, deps) {
         };
       }
       // A Fast spawn needs open admission at this moment: no suspension, incident, or transition,
-      // the reservation's own generation state, and no foreign incomplete record. The run's own
-      // reservation and an open gate observation do not close it. A closed admission writes
-      // nothing and consumes no Fast attempt; the packet then starts as its `admission-changed`
-      // Quality fallback. Admission and the qualification are not re-checked for that fallback.
+      // the reservation's own generation state, no foreign incomplete record, and no foreign
+      // leftover evidence: another run's timing receipt, such as one a terminal record kept after
+      // its finalize or reconcile-record faulted, an orphan temporary, or an invalid member. The
+      // run's own reservation and timing receipts and an open gate observation do not close it.
+      // A closed admission writes nothing and consumes no Fast attempt; the packet then starts as
+      // its `admission-changed` Quality fallback. Admission and the qualification are not
+      // re-checked for that fallback.
       if (packet.selectedProfile === 'fast' && fallback === 'none') {
         if (
           state.generationState !== record.generationState ||
           (await suspensionValue(root)) !== null ||
           (await transitionMarker(root)) !== null ||
-          (await otherReservationOpen(root, input.generationId, input.runId))
+          (await otherReservationOpen(root, input.generationId, input.runId)) ||
+          (await foreignEvidenceLeftover(root, input.generationId, input.runId))
         ) {
           fail('ADMISSION_CHANGED');
         }

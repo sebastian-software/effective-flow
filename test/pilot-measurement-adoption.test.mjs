@@ -2771,6 +2771,83 @@ test('a suspension after the reservation turns a Fast start into ADMISSION_CHANG
   );
 });
 
+// Invariant: foreign leftover evidence closes Fast admission at the spawn without consuming a Fast
+// attempt: a timing receipt a terminal record kept because its finalize faulted before removing
+// it, or an orphan temporary. The run's own timing receipts, a temporary of a held lock, and an
+// open gate observation do not close it.
+test('a foreign leftover receipt or orphan temporary turns a Fast start into ADMISSION_CHANGED', async (t) => {
+  const fx = fixture(t);
+  const { generationId } = await beginBaseline(fx);
+  activeGeneration(fx, generationId);
+  const peer = await reserveAndFinish(fx, generationId, 'fast');
+  const leftover = timingPath(fx, generationId, peer);
+  const leftoverBytes = readFileSync(leftover);
+  await executeOperation('finalize', finalizeInput(fx, generationId, peer), fx.deps);
+  assert.equal(readJsonFile(recordPath(fx, generationId, peer.runId)).kind, 'workflow-record');
+
+  const reservation = await startWorkflow(fx, generationId, [
+    packetReservation('fast'),
+    packetReservation('fast'),
+  ]);
+  const own = packetIdentity(fx, generationId, reservation, reservation.packets[0]);
+  assert.equal((await executeOperation('start-packet', own, fx.deps)).result.fallback, 'none');
+  const identity = packetIdentity(fx, generationId, reservation, reservation.packets[1]);
+  const target = timingPath(fx, generationId, reservation, reservation.packets[1]);
+  const closedBy = async (label, plant) => {
+    const remove = plant();
+    const before = snapshot(fx, generationId);
+    const envelope = await rejection('start-packet', identity, fx.deps);
+    assert.equal(envelope.error.code, 'ADMISSION_CHANGED', label);
+    assert.equal(existsSync(target), false, label);
+    assert.deepEqual(snapshot(fx, generationId), before, label);
+    remove();
+  };
+  // The peer's finalize persisted its record but faulted before removing its timing receipt.
+  await closedBy('leftover receipt', () => {
+    writeFileSync(leftover, leftoverBytes);
+    return () => rmSync(leftover);
+  });
+  await closedBy('orphan temporary', () => {
+    const temporary = orphanTemporary(fx, generationId);
+    writeFileSync(temporary, 'x');
+    return () => rmSync(temporary);
+  });
+
+  // A temporary whose owner lock is held is a concurrent packet write, not a leftover; with it, the
+  // run's own receipt, and an open gate observation present, the Fast spawn is admitted.
+  const observation = (
+    await executeOperation('start-gate-observation', gateInput(fx, generationId, 'active'), fx.deps)
+  ).result;
+  assert.equal(observation.status, 'reserved');
+  const lockNonce = 'L'.repeat(32);
+  const lock = join(generationRoot(fx, generationId), 'locks', `packet-${'P'.repeat(32)}.lock`);
+  writeFileSync(
+    lock,
+    canonicalizeJson({
+      schema: 1,
+      operation: 'finish-packet',
+      generationId,
+      ownerPid: process.pid,
+      nonce: lockNonce,
+    }),
+  );
+  const live = join(
+    generationRoot(fx, generationId),
+    'records',
+    `.tmp-finish-packet-${generationId}-${lockNonce}-${'0'.repeat(16)}`,
+  );
+  writeFileSync(live, 'x');
+  assert.deepEqual((await executeOperation('start-packet', identity, fx.deps)).result, {
+    status: 'started',
+    runId: reservation.runId,
+    packetId: identity.packetId,
+    fallback: 'none',
+  });
+  assert.equal(readJsonFile(target).fallback, 'none');
+  rmSync(live);
+  rmSync(lock);
+});
+
 function writeQualification(t, records) {
   const directory = mkdtempSync(join(tmpdir(), 'effective-flow-pilot-qualification-'));
   t.after(() => rmSync(directory, { recursive: true, force: true }));

@@ -208,9 +208,12 @@ the lifecycle lock is held.
 
 An overlapping record keeps its `eligible` and `fast` classification. `start-packet` of a `fast`
 packet fails closed when admission is closed: a suspension, a transition marker, an incident, a
-generation state that differs from the reservation's, or a **foreign** incomplete record (the run's
-own reservation and an open gate observation do not count). It writes nothing and consumes no Fast
-attempt, and the workflow runs that packet Quality with the pre-spawn fallback `admission-changed`.
+generation state that differs from the reservation's, a **foreign** incomplete record, or foreign
+leftover evidence: another run's timing receipt (also one a terminal record kept because its
+`finalize` or `reconcile-record` faulted before removing it), an orphan temporary file, or an
+invalid records member. The run's own reservation and timing receipts and an open gate observation
+do not count. It writes nothing and consumes no Fast attempt, and the workflow runs that packet
+Quality with the pre-spawn fallback `admission-changed`.
 
 Open reservations carry transient fields that exist for the overlap and the planned orphan check:
 a reservation-salted hash of the host name, process id and process start time, the reservation time
