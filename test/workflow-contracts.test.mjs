@@ -9280,7 +9280,7 @@ test('iterate reviews each item between its DONE and its commit, and a blocked i
   assert.match(phase4, /its scope excluding every rejected item's paths/);
   assert.match(
     phase4,
-    /Fix errors found only as a correction item through (?:the scope check of Phase 3 "Authorized scope" on its planned paths, then )?Phase 3 steps 2–4 – delegation, pre-commit review, its own commit – never inline/,
+    /Fix errors found only as a correction item through (?:the scope check (?:by `runId` )?of Phase 3 "Authorized scope" on its planned paths, then )?Phase 3 steps 2–4 – delegation, pre-commit review, its own commit – never inline/,
   );
   // The serial-commit rule lives once, in iterate's own outcome map, not in the shared lock contract.
   assert.match(
@@ -18115,6 +18115,18 @@ test('both gate delegation sites go through build, then validate, then an unchan
     building,
     /No return-protocol text goes with it/i,
     'no return-protocol text may ride along with the envelope',
+  );
+  // The principle admits exactly one exception, the receiver rule's bounded line request, and
+  // names no other instruction to the delegated run.
+  assert.match(
+    building,
+    /never an instruction to the delegated run, with the one bounded exception of that section's line request/i,
+    'the principle must admit exactly the bounded line request as its exception',
+  );
+  assert.equal(
+    (prose(mergeGateDelegationContract()).match(/bounded exception/gi) ?? []).length,
+    2,
+    'the principle and the line request must be the only places that state the exception',
   );
   assert.match(
     building,

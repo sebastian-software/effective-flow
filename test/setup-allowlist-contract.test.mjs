@@ -90,7 +90,7 @@ test('the allowlist step names the rule families, the rule count and no rule for
   );
   assert.match(
     text,
-    /`commit create` writes Git history and runs the repository's hooks without a prompt; it commits only the listed paths, refuses paths below `\.effective-flow\/` and an untrusted hook configuration, and never pushes, amends, resets or rebases/,
+    /`commit create` writes Git history and runs the repository's hooks without a prompt; it commits only the listed paths, refuses paths below `\.effective-flow\/`, paths outside a scoped `iterate` run's bound scope and an untrusted hook configuration, and never pushes, amends, resets or rebases/,
   );
   assert.match(
     text,

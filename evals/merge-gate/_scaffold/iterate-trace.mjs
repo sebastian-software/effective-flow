@@ -12,7 +12,9 @@
 //     `effective-flow/merge-gate-iterate-echo/v1`, with the empty `Returned commits: []` and
 //     `Scope expansion: []` lines of `shared/delegated-scope-return.md` above the outcome record.
 //     The configured-reviewer scenario runs this mode against the local `origin` of
-//     `configured-reviewer-origin.mjs`.
+//     `configured-reviewer-origin.mjs`. A fixture that states `iterateEchoReturn:
+//     "lines-on-request"` (the line-request scenario) omits both lines from that first return, so
+//     the gate has to ask for them once.
 //   * **Repair mode** — the fixture states `originHeads` (see "Origin-head mode" in the shared
 //     stub), and the slot has the real-commit `origin` of `repair-origin.mjs` beside it. The n-th
 //     delegation lands the n-th seeded repair: it moves `refs/heads/<head>` and `refs/pull/<N>/head`
@@ -23,6 +25,11 @@
 //     `implemented`, in the return format of `shared/delegated-scope-return.md`. A delegation the
 //     plan does not hold lands nothing and returns `deferred`. Records use schema
 //     `effective-flow/merge-gate-repair-trace/v1` with `kind: dispatch`.
+//
+// `--line-request <pull-request-number>` answers the gate's continuation of the same delegation: it
+// records the continuation message it received as a `kind: 'line-request'` record of the
+// configured-reviewer schema, by byte length and digest only, and prints the two scoped-return lines
+// and the keyword again, as `shared/delegated-scope-return.md` has a line-request answer do.
 //
 // In repair mode the same file is also the bare `origin`'s `post-receive` hook (`--receive`): every
 // push the gate makes is recorded with `kind: push`, `refs/pull/<N>/head` follows the head branch as
@@ -67,6 +74,8 @@ const expectedProjectRoot = resolve(sandboxRoot, 'project');
 const tracePath = resolve(sandboxRoot, 'trace', 'iterate-calls.jsonl');
 const lockPath = `${tracePath}.lock`;
 const fixturePath = resolve(sandboxRoot, 'fixture.json');
+// The fixture value that has the first configured-reviewer return omit both scoped-return lines.
+const LINES_ON_REQUEST = 'lines-on-request';
 const remotePath = resolve(sandboxRoot, 'remote.git');
 
 function fail(message) {
@@ -624,7 +633,7 @@ async function receive(fixture) {
 // ---------------------------------------------------------------------------------------------
 // Entry
 
-function configuredReviewerDispatch(pullRequest, message) {
+function configuredReviewerDispatch(fixture, pullRequest, message) {
   const handoff = parseHandoff(message);
   const outcomes = handoff.items.map(({ identifier }) => ({ identifier, outcome: 'deferred' }));
   try {
@@ -645,12 +654,15 @@ function configuredReviewerDispatch(pullRequest, message) {
   // The two scoped-return lines of `shared/delegated-scope-return.md`, in the form the repair mode
   // writes them: the gate delegates with `Authorized scope:` and ends the run with
   // `scope-line-missing` on a return without a `Scope expansion:` line. The echo commits nothing, so
-  // both lists are empty.
+  // both lists are empty. The line-request fixture leaves them out of this return, and only the
+  // `--line-request` answer states them.
+  const scopeLines =
+    fixture?.iterateEchoReturn === LINES_ON_REQUEST
+      ? []
+      : ['Returned commits: []', 'Scope expansion: []', ''];
   process.stdout.write(
     [
-      'Returned commits: []',
-      'Scope expansion: []',
-      '',
+      ...scopeLines,
       'Returned outcome record:',
       ...outcomes.map(({ identifier, outcome }) => `- ${identifier}: ${outcome}`),
       '',
@@ -665,9 +677,38 @@ function configuredReviewerDispatch(pullRequest, message) {
   );
 }
 
+// The answer to the gate's line request: the continuation message is recorded by size and digest
+// only, never copied, and the answer is only the two lines and the keyword again.
+async function lineRequest(pullRequest) {
+  const message = await readInput();
+  try {
+    appendTrace({
+      schema: SCHEMA,
+      kind: 'line-request',
+      cwd: canonical(process.cwd()),
+      pullRequest: Number(pullRequest),
+      bytes: Buffer.byteLength(message),
+      digest: digest(message),
+    });
+  } catch (error) {
+    fail(error?.message ?? 'iterate trace write failed');
+  }
+  process.stdout.write(['Returned commits: []', 'Scope expansion: []', '', 'DONE', ''].join('\n'));
+}
+
 const fixture = readFixture();
 if (process.argv[2] === '--receive' && process.argv.length === 3) {
   await receive(fixture);
+} else if (process.argv[2] === '--line-request') {
+  const pullRequest = process.argv[3];
+  if (process.argv.length !== 4 || !/^\d+$/.test(pullRequest ?? '')) {
+    fail('usage: iterate-trace.mjs --line-request <pull-request-number>');
+  }
+  if (canonical(process.cwd()) !== canonical(expectedProjectRoot)) {
+    fail(`iterate echo must run from ${expectedProjectRoot}; received ${process.cwd()}`);
+  }
+  if (fixture?.originHeads) fail('the line request is answered only in configured-reviewer mode');
+  await lineRequest(pullRequest);
 } else {
   const pullRequest = process.argv[2];
   if (!/^\d+$/.test(pullRequest ?? '')) fail('usage: iterate-trace.mjs <pull-request-number>');
@@ -676,5 +717,5 @@ if (process.argv[2] === '--receive' && process.argv.length === 3) {
   }
   const message = await readInput();
   if (fixture?.originHeads) repairDispatch(fixture, pullRequest, message);
-  else configuredReviewerDispatch(pullRequest, message);
+  else configuredReviewerDispatch(fixture, pullRequest, message);
 }

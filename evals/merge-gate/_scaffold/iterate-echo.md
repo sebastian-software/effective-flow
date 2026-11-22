@@ -25,3 +25,14 @@ If the command exits successfully, return its standard output verbatim to `merge
 nothing else; that output already ends with the completion keyword `DONE`. If it exits
 unsuccessfully, return `ABORT: iterate echo rejected the handoff` followed by its standard error.
 Never invent or repair an outcome yourself.
+
+If `merge-gate` continues this same delegation with a further message after that return, handle it
+the same way: from the same working directory run exactly one command,
+
+```sh
+node <skill-root>/scripts/iterate-trace.mjs --line-request 42
+```
+
+with that message as its standard input, byte for byte. If it exits successfully, return its
+standard output verbatim and say nothing else. If it exits unsuccessfully, return
+`ABORT: iterate echo rejected the continuation` followed by its standard error.

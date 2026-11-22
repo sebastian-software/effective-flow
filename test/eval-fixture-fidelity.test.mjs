@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawn, spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import {
   appendFileSync,
   chmodSync,
@@ -22,6 +23,7 @@ import {
   BOT_ACCOUNT_ROWS,
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
   NO_CI_POLICY_SCENARIOS,
   NON_INTERACTIVE_DISPATCH_SCENARIO,
   REPAIR_SCENARIOS,
@@ -118,14 +120,15 @@ function echoHandoff(overrides = {}) {
   ].join('\n');
 }
 
-function runIterateEcho(message, sandbox = null) {
+function runIterateEcho(message, sandbox = null, { fixture = null, args = ['42'] } = {}) {
   const root = sandbox ?? mkdtempSync(join(tmpdir(), 'effective-flow-iterate-echo-'));
   const scripts = join(root, 'skill', 'scripts');
   const project = join(root, 'project');
   mkdirSync(scripts, { recursive: true });
   mkdirSync(project, { recursive: true });
   copyFileSync(ITERATE_TRACE_PATH, join(scripts, 'iterate-trace.mjs'));
-  const result = spawnSync(process.execPath, [join(scripts, 'iterate-trace.mjs'), '42'], {
+  if (fixture !== null) writeFileSync(join(root, 'fixture.json'), JSON.stringify(fixture));
+  const result = spawnSync(process.execPath, [join(scripts, 'iterate-trace.mjs'), ...args], {
     cwd: project,
     input: message,
     encoding: 'utf8',
@@ -137,7 +140,7 @@ function runIterateEcho(message, sandbox = null) {
 // scenario alone adds reviewer rows and the echo, the non-interactive dispatch scenario alone changes
 // one base row, and every other scenario keeps the shared setup, so a difference in outcome stays
 // attributable to the one fact each scenario changes.
-test('only the configured-reviewer and repair scenarios opt into resolved reviewer rows and the iterate echo', () => {
+test('only the configured-reviewer, line-request and repair scenarios opt into resolved reviewer rows and the iterate echo', () => {
   assert.deepEqual(scenarioSetup(CONFIGURED_REVIEWER_SCENARIO), {
     projectSetupRows: [
       ['mergeGate.bots', 'recensor'],
@@ -146,6 +149,11 @@ test('only the configured-reviewer and repair scenarios opt into resolved review
     ],
     iterateEcho: true,
   });
+  // The line-request twin sees exactly the configured-reviewer setup; only its fixture differs.
+  assert.deepEqual(
+    scenarioSetup(ITERATE_SCOPE_LINE_REQUEST_SCENARIO),
+    scenarioSetup(CONFIGURED_REVIEWER_SCENARIO),
+  );
   assert.deepEqual(scenarioSetup(NON_INTERACTIVE_DISPATCH_SCENARIO), {
     projectSetupRows: [['mergeGate.completion', 'ask']],
     iterateEcho: false,
@@ -175,6 +183,7 @@ test('only the configured-reviewer and repair scenarios opt into resolved review
     if (
       [
         CONFIGURED_REVIEWER_SCENARIO,
+        ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
         NON_INTERACTIVE_DISPATCH_SCENARIO,
         BOT_LOGIN_SCENARIO,
         ...NO_CI_POLICY_SCENARIOS,
@@ -371,7 +380,30 @@ test('the iterate echo records one bounded attributed handoff and returns deferr
 // head, the gate verifies the reviewer's review against it, and one stale copy would set the two
 // apart. The provisioning test checks that the seeded commit is this SHA.
 test('the configured-reviewer fixture names one head commit everywhere it states one', () => {
-  const fixture = loadFixture(`${CONFIGURED_REVIEWER_SCENARIO}.json`);
+  for (const scenario of [CONFIGURED_REVIEWER_SCENARIO, ITERATE_SCOPE_LINE_REQUEST_SCENARIO]) {
+    assertOneHeadCommit(loadFixture(`${scenario}.json`));
+  }
+});
+
+// The line-request scenario is the configured-reviewer scenario with one fact changed: its fixture
+// has the echo omit both scoped-return lines from the first return. Everything else it states is the
+// configured-reviewer fixture's, except its name, its description and its head, which the seeded
+// setup document (it names the scenario) moves; so a difference in outcome is that fact's alone.
+test('the line-request fixture differs from the configured-reviewer fixture only in its one fact', () => {
+  const configured = loadFixture(`${CONFIGURED_REVIEWER_SCENARIO}.json`);
+  const twin = loadFixture(`${ITERATE_SCOPE_LINE_REQUEST_SCENARIO}.json`);
+  assert.equal(twin.iterateEchoReturn, 'lines-on-request');
+  assert.equal(Object.hasOwn(configured, 'iterateEchoReturn'), false);
+  assert.notEqual(twin.headSha, configured.headSha);
+  const { name: _n, description: _d, iterateEchoReturn: _r, ...rest } = twin;
+  const { name: _cn, description: _cd, ...configuredRest } = configured;
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(rest).replaceAll(twin.headSha, configured.headSha)),
+    configuredRest,
+  );
+});
+
+function assertOneHeadCommit(fixture) {
   const { operations } = fixture;
   const statusProvider = operations['pr-status-read'].provider.data.repository.pullRequest;
   const stated = [
@@ -394,6 +426,82 @@ test('the configured-reviewer fixture names one head commit everywhere it states
   assert.match(fixture.headSha, /^[0-9a-f]{40}$/);
   for (const [where, sha] of stated) assert.equal(sha, fixture.headSha, where);
   assert.equal(Object.hasOwn(fixture, 'originHeads'), false, 'the fixture would route to repair');
+}
+
+// Invariant: under the line-request fixture the echo's first return carries the outcome record and
+// the keyword but neither scoped-return line, and its `--line-request` answer records the
+// continuation by size and digest only and states exactly the two lines and the keyword again.
+test('the line-request echo omits both lines until the continuation and records that continuation', () => {
+  const fixture = loadFixture(`${ITERATE_SCOPE_LINE_REQUEST_SCENARIO}.json`);
+  const { root, result, trace } = runIterateEcho(echoHandoff(), null, { fixture });
+  try {
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(
+      result.stdout,
+      [
+        'Returned outcome record:',
+        `- ${THREAD_IDENTIFIER}: deferred`,
+        `- ${REVIEW_IDENTIFIER}: deferred`,
+        '',
+        'Suppressed summary:',
+        '2 configured-reviewer items were deferred for the caller-owned decision.',
+        '',
+        'DONE',
+        '',
+      ].join('\n'),
+    );
+    const sentence =
+      'State the missing `Returned commits:` and `Scope expansion:` lines of your final return per `delegated-scope-return`.';
+    const answer = runIterateEcho(`${sentence}\n`, root, {
+      fixture,
+      args: ['--line-request', '42'],
+    }).result;
+    assert.equal(answer.status, 0, answer.stderr);
+    assert.equal(answer.stdout, 'Returned commits: []\nScope expansion: []\n\nDONE\n');
+    const records = readCallLog(trace);
+    assert.equal(records.length, 2);
+    assert.deepEqual(records[1], {
+      schema: 'effective-flow/merge-gate-iterate-echo/v1',
+      kind: 'line-request',
+      cwd: realpathSync(join(root, 'project')),
+      pullRequest: 42,
+      bytes: Buffer.byteLength(sentence),
+      digest: `sha256:${createHash('sha256').update(sentence).digest('hex')}`,
+      seq: 2,
+    });
+    assert.ok(!readFileSync(trace, 'utf8').includes(sentence), 'the trace copied the message');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('the line-request answer is refused outside the project root and in repair mode', () => {
+  const sentence = 'State the missing lines.';
+  const wrongCwd = mkdtempSync(join(tmpdir(), 'effective-flow-iterate-echo-'));
+  try {
+    const scripts = join(wrongCwd, 'skill', 'scripts');
+    mkdirSync(scripts, { recursive: true });
+    copyFileSync(ITERATE_TRACE_PATH, join(scripts, 'iterate-trace.mjs'));
+    const outside = spawnSync(
+      process.execPath,
+      [join(scripts, 'iterate-trace.mjs'), '--line-request', '42'],
+      { cwd: wrongCwd, input: sentence, encoding: 'utf8' },
+    );
+    assert.notEqual(outside.status, 0);
+    assert.ok(!existsSync(join(wrongCwd, 'trace')));
+  } finally {
+    rmSync(wrongCwd, { recursive: true, force: true });
+  }
+  const repair = runIterateEcho(sentence, null, {
+    fixture: { originHeads: { branch: 'x', heads: [] } },
+    args: ['--line-request', '42'],
+  });
+  try {
+    assert.notEqual(repair.result.status, 0);
+    assert.ok(!existsSync(repair.trace), 'a refused line request wrote a trace');
+  } finally {
+    rmSync(repair.root, { recursive: true, force: true });
+  }
 });
 
 test('the iterate echo fails on missing, duplicate, or mismatched item attribution', () => {

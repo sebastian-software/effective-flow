@@ -49,6 +49,7 @@ import { auxiliaryLogPath, sandboxPaths } from '../evals/_scaffold/sandbox.mjs';
 import { discoverSuite, REQUIRED_RUNS } from '../evals/_scaffold/suite.mjs';
 import { loadSuite, suiteConfigPath, validateSuite } from '../evals/_scaffold/suite-loader.mjs';
 import {
+  LINE_REQUEST_SENTENCE,
   decisiveFindings as evaluatorDecisiveFindings,
   findings as evaluatorFindings,
 } from '../evals/merge-gate/_scaffold/evaluate.mjs';
@@ -421,6 +422,19 @@ const UNRECORDED_SCENARIO_LOGS = Object.freeze({
     operations: ['review-threads-read'],
     trace: ['dispatch:seed>repair-1', 'dispatch:repair-1>repair-2'],
   },
+  // The line-request scenario reaches Phase 4, so it reads every guard surface twice, and pairs an
+  // echo trace: the one delegation and the one line request carrying the contract sentence.
+  'iterate-scope-line-request': {
+    operations: [
+      'review-threads-read',
+      'pr-comments-read',
+      'pr-reviews-read',
+      'review-threads-read',
+      'pr-comments-read',
+      'pr-reviews-read',
+    ],
+    lineRequestTrace: true,
+  },
 });
 
 // The last message each not-yet-recorded scenario that declares a sealed observation passes with.
@@ -460,6 +474,54 @@ function sealedTextFor(each, scenario, lastMessage = null) {
 }
 
 const SYNTHETIC_REPAIR_THREADS = ['PRRT_kwDOrepairCauseOne', 'PRRT_kwDOrepairCauseTwo'];
+
+// The configured-reviewer echo trace of a line-request run, in the shape the echo writes: the one
+// delegation the fixture's surfaces describe, then the one line request by size and digest.
+function syntheticLineRequestTrace(scenario, projectRoot) {
+  const [review] = fixtureOf(scenario).operations['pr-reviews-read'].envelope.data.result;
+  const digest = (text) => `sha256:${createHash('sha256').update(text, 'utf8').digest('hex')}`;
+  const items = [
+    { identifier: 'A'.repeat(32), kind: 'thread', threadId: 'PRRT_kwDOconfiguredReviewer' },
+    {
+      identifier: 'B'.repeat(32),
+      kind: 'review-body',
+      reviewId: String(review.id),
+      author: review.author.login,
+      url: 'https://github.com/example/flow/pull/42#pullrequestreview-700002',
+    },
+  ];
+  const schema = 'effective-flow/merge-gate-iterate-echo/v1';
+  return [
+    {
+      schema,
+      seq: 1,
+      cwd: projectRoot,
+      pullRequest: 42,
+      itemFilter: 'threads=PRRT_kwDOconfiguredReviewer',
+      controls: {
+        summaryComment: 'suppressed',
+        nextSteps: 'suppressed',
+        reviewGuard: 'established',
+      },
+      items,
+      body: {
+        spans: 1,
+        bytes: Buffer.byteLength(review.body, 'utf8'),
+        digest: digest(review.body),
+      },
+      outcomes: items.map(({ identifier }) => ({ identifier, outcome: 'deferred' })),
+    },
+    {
+      schema,
+      seq: 2,
+      kind: 'line-request',
+      cwd: projectRoot,
+      pullRequest: 42,
+      bytes: Buffer.byteLength(LINE_REQUEST_SENTENCE, 'utf8'),
+      digest: digest(LINE_REQUEST_SENTENCE),
+    },
+  ];
+}
 
 // One synthetic repair trace line per `kind:before>after` step, in the shape the echo writes.
 function syntheticRepairTrace(steps, projectRoot) {
@@ -552,11 +614,19 @@ function synthesizeUnrecordedScenario(directory, scenario, identity) {
   for (let slot = 1; slot <= REQUIRED_RUNS; slot += 1) {
     const projectRoot = `/tmp/effective-flow-merge-gate-eval/rounds/synthetic/slots/${scenario}/slot-${slot}/attempt-1/project`;
     const target = resolve(directory, `run-${slot}`);
-    const repair = !Array.isArray(entry);
-    const log = syntheticCallLog(repair ? entry.operations : entry, projectRoot, repair);
+    const repair = !Array.isArray(entry) && entry.trace !== undefined;
+    const log = syntheticCallLog(
+      Array.isArray(entry) ? entry : entry.operations,
+      projectRoot,
+      repair,
+    );
     writeFileSync(`${target}.jsonl`, `${log}\n`);
-    if (repair) {
-      const trace = syntheticRepairTrace(entry.trace, projectRoot);
+    const trace = repair
+      ? syntheticRepairTrace(entry.trace, projectRoot)
+      : entry.lineRequestTrace
+        ? syntheticLineRequestTrace(scenario, projectRoot)
+        : null;
+    if (trace !== null) {
       writeFileSync(
         `${target}.iterate.jsonl`,
         `${trace.map((record) => JSON.stringify(record)).join('\n')}\n`,

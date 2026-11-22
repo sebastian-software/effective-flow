@@ -195,7 +195,7 @@ test('built commit mutexes state the bounded wait, sibling, report-only and re-d
     const applyReview = readFileSync(join(root, 'tools', 'apply-review.md'), 'utf8');
     assert.match(
       iterate,
-      /Mint `runId` once per run as `iterate-<at least 16 random hex characters>`/,
+      /Mint `runId` once per run as `iterate-<at least 16 random lowercase hex characters>`/,
     );
     assert.match(
       applyReview,

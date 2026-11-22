@@ -1,5 +1,5 @@
-// Scenario-local setup for the one configured-reviewer scenario, the two repair-accounting
-// scenarios, the one configuration row the non-interactive dispatch scenario changes, the one row
+// Scenario-local setup for the configured-reviewer scenario and its line-request twin, the two
+// repair-accounting scenarios, the one configuration row the non-interactive dispatch scenario changes, the one row
 // the bot-account scenario appends, and the rows of the six declared no-CI policy scenarios.
 // Every other scenario keeps the shared no-reviewer project configuration and the production
 // `iterate` tool; this module is the single place that
@@ -10,6 +10,18 @@ import { copyFileSync, existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 
 export const CONFIGURED_REVIEWER_SCENARIO = 'configured-reviewer-set-aside-blocks';
+
+// The configured-reviewer scenario's twin for the targeted line request: the same reviewer, echo,
+// fixture surfaces and local `origin`, with one difference its fixture states
+// (`iterateEchoReturn: "lines-on-request"`): the echo's first return omits the `Returned commits:`
+// and `Scope expansion:` lines, so the gate has to request them once before it records the round.
+export const ITERATE_SCOPE_LINE_REQUEST_SCENARIO = 'iterate-scope-line-request';
+
+// The scenarios that run against the configured-reviewer `origin` and echo mode.
+export const CONFIGURED_REVIEWER_SCENARIOS = Object.freeze([
+  CONFIGURED_REVIEWER_SCENARIO,
+  ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
+]);
 
 export const CONFIGURED_REVIEWER_ROWS = [
   ['mergeGate.bots', 'recensor'],
@@ -108,7 +120,7 @@ export function scenarioSetup(scenario) {
   if (REPAIR_SCENARIOS.includes(scenario)) {
     return { projectSetupRows: REPAIR_ROWS.map(([key, value]) => [key, value]), iterateEcho: true };
   }
-  if (scenario !== CONFIGURED_REVIEWER_SCENARIO) {
+  if (!CONFIGURED_REVIEWER_SCENARIOS.includes(scenario)) {
     return { projectSetupRows: [], iterateEcho: false };
   }
   const projectSetupRows = CONFIGURED_REVIEWER_ROWS.map(([key, value]) => [key, value]);
@@ -118,7 +130,7 @@ export function scenarioSetup(scenario) {
   return { projectSetupRows, iterateEcho: true };
 }
 
-// A configured-reviewer or repair-accounting run is one indivisible evidence unit: its call log, its
+// A configured-reviewer, line-request or repair-accounting run is one indivisible evidence unit: its call log, its
 // build stamp, and its `iterate` echo trace. Every other scenario's unit carries no echo trace, and
 // one that appears there is an orphan rather than extra evidence.
 export function requiresIterateTrace(scenario) {

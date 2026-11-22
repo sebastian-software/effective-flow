@@ -1158,7 +1158,8 @@ several.
    stored for the dispatch that returned the question.
 3. **Record after each round.** After every return of a dispatched round, `ABORT` included and
    `BLOCKED-USER` excepted – its dispatch is recorded once, on the return of the dispatch consuming
-   its answer –, take
+   its answer –, and only after any line request of the delegation contract's receiver rule was
+   answered or could not be sent, never on the return that prompted it, take
    `after` from the next fresh `pr-status-read` and run the ancestry check's fetches 1 and 2. Run
    `record` with `scope`, `dispatch` and `before` from step 2, `round` the current round, `after`,
    `gateMerges` (every base-merge SHA this run pushed),

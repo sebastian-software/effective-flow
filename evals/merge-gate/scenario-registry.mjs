@@ -31,6 +31,7 @@ export const SCENARIOS = Object.freeze([
   'forgejo-wip-draft-conflict-asks-nothing',
   'forgejo-wip-draft-marks-ready',
   'guard-blocks-merge',
+  'iterate-scope-line-request',
   'linked-issue-open-points',
   'merge-proceeds',
   'nested-spawn-abort-runs-inline',
