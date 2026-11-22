@@ -229,6 +229,7 @@ export const OUTCOME_CODES = Object.freeze([
   'MARKER_INVALID',
   'CLAIMED',
   'LEGACY_PASS_LOCK',
+  'SCOPE_REFUSED',
 ]);
 
 export const STATE_ERROR_CODES = Object.freeze([

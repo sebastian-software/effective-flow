@@ -102,6 +102,8 @@ const OUTCOME_MESSAGES = Object.freeze({
       : `the settings changed since the preview (${outcome.reason}); nothing was written`,
   HOOKS_UNTRUSTED: (outcome) =>
     `the hooks of this head are not trusted (${outcome.reason}); nothing was staged or committed`,
+  SCOPE_REFUSED: (outcome) =>
+    `the bound scope of this run refused the commit (${outcome.reason}); nothing was staged or committed`,
   INDEX_NOT_CLEAN: () => 'the index already holds staged changes; nothing was staged or committed',
   STAGE_FAILED: () => 'staging the listed paths failed; the listed paths were unstaged',
   STAGED_SET_MISMATCH: () =>

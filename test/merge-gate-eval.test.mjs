@@ -61,6 +61,7 @@ import {
   PHASE_ZERO_REFUSALS,
 } from '../evals/iterate/_scaffold/evaluate.mjs';
 import { reportRecord } from '../evals/iterate/_scaffold/report-channel.mjs';
+import { LINE_REQUEST_SENTENCE } from '../evals/merge-gate/_scaffold/evaluate.mjs';
 import { tmpdir } from 'node:os';
 import { executeOperation } from '../src/scripts/remote-tracker-core.mjs';
 
@@ -2782,6 +2783,116 @@ test('fixture drift does not infer merge-gate refusals or omissions from the rep
     { fixtureCompatible: false, fixture: {} },
   );
   assert.deepEqual(observer.findings, []);
+});
+
+// The line-request scenario, asked of synthetic evidence. Invariant: it passes exactly when the one
+// delegation is followed by exactly one continuation carrying the delegation contract's line-request
+// sentence and nothing else, and the run then reaches Phase 4 without merging; a configured-reviewer
+// return that carried both scoped-return lines gets no continuation at all.
+const LINE_REQUEST_SCENARIO = 'iterate-scope-line-request';
+const LINE_REQUEST_RUN = [...CALLER_PHASE_ZERO, ...GATE_TO_PHASE_FOUR];
+
+function echoDispatchRecord(fixture, seq = 1) {
+  const [review] = fixture.operations['pr-reviews-read'].envelope.data.result;
+  const items = [
+    { identifier: 'A'.repeat(32), kind: 'thread', threadId: 'PRRT_kwDOconfiguredReviewer' },
+    {
+      identifier: 'B'.repeat(32),
+      kind: 'review-body',
+      reviewId: String(review.id),
+      author: review.author.login,
+      url: 'https://github.com/example/flow/pull/42#pullrequestreview-700002',
+    },
+  ];
+  return {
+    schema: 'effective-flow/merge-gate-iterate-echo/v1',
+    seq,
+    cwd: SYNTHETIC_PROJECT,
+    pullRequest: 42,
+    itemFilter: 'threads=PRRT_kwDOconfiguredReviewer',
+    controls: { summaryComment: 'suppressed', nextSteps: 'suppressed', reviewGuard: 'established' },
+    items,
+    body: {
+      spans: 1,
+      bytes: Buffer.byteLength(review.body, 'utf8'),
+      digest: `sha256:${createHash('sha256').update(review.body, 'utf8').digest('hex')}`,
+    },
+    outcomes: items.map(({ identifier }) => ({ identifier, outcome: 'deferred' })),
+  };
+}
+
+function lineRequestRecord(seq, message = LINE_REQUEST_SENTENCE) {
+  return {
+    schema: 'effective-flow/merge-gate-iterate-echo/v1',
+    kind: 'line-request',
+    seq,
+    cwd: SYNTHETIC_PROJECT,
+    pullRequest: 42,
+    bytes: Buffer.byteLength(message, 'utf8'),
+    digest: `sha256:${createHash('sha256').update(message, 'utf8').digest('hex')}`,
+  };
+}
+
+function echoTraceText(scenario, messages) {
+  const fixture = JSON.parse(readFileSync(join(FIXTURE_DIR, `${scenario}.json`), 'utf8'));
+  return [
+    echoDispatchRecord(fixture),
+    ...messages.map((message, index) => lineRequestRecord(index + 2, message)),
+  ]
+    .map((record) => `${JSON.stringify(record)}\n`)
+    .join('');
+}
+
+test('the line-request sentence the evaluator expects is the delegation contract sentence, fenced alone', () => {
+  const contract = readFileSync(
+    resolve(import.meta.dirname, '..', 'src', 'shared', 'merge-gate-delegation-contract.md'),
+    'utf8',
+  );
+  const fenced = [...contract.matchAll(/```text\n([^\n]*)\n```/g)].map((match) => match[1]);
+  assert.ok(
+    fenced.includes(LINE_REQUEST_SENTENCE),
+    'the contract no longer fences the sentence evaluate.mjs compares the recorded line request with',
+  );
+  assert.doesNotMatch(LINE_REQUEST_SENTENCE, /\{\{/, 'a placeholder would render differently');
+});
+
+test('the line-request scenario passes one exact line request and refuses every other count or text', () => {
+  const evaluate = (messages, operations = LINE_REQUEST_RUN, scenario = LINE_REQUEST_SCENARIO) =>
+    evaluateSynthetic(scenario, operations, { auxiliaryText: echoTraceText(scenario, messages) });
+  const passed = evaluate([LINE_REQUEST_SENTENCE]);
+  assert.deepEqual(passed.validityProblems, []);
+  assert.deepEqual(passed.findings, []);
+  for (const [messages, expected] of [
+    [[], /0 line request/],
+    [[LINE_REQUEST_SENTENCE, LINE_REQUEST_SENTENCE], /2 line request/],
+    [[`${LINE_REQUEST_SENTENCE}\nItem: X`], /exactly the contract sentence/],
+    [['Please continue.'], /exactly the contract sentence/],
+  ]) {
+    const result = evaluate(messages);
+    assert.deepEqual(result.validityProblems, [], JSON.stringify(messages));
+    assert.equal(result.findings.length, 1, JSON.stringify(result.findings));
+    assert.match(result.findings[0], expected);
+  }
+  // A run that stopped after the delegation never reaches the second guard reads of Phase 4.
+  const stopped = evaluate(
+    [LINE_REQUEST_SENTENCE],
+    [...CALLER_PHASE_ZERO, ...GATE_TO_PHASE_FOUR.slice(0, -GUARD_SURFACES.length)],
+  );
+  assert.ok(stopped.findings.some((finding) => /Phase 4 was not observed/.test(finding)));
+  const merged = evaluate([LINE_REQUEST_SENTENCE], [...LINE_REQUEST_RUN, 'pr-merge']);
+  assert.ok(merged.findings.some((finding) => /requested pr-merge/.test(finding)));
+  // The configured-reviewer return carries both lines, so any continuation there is a finding.
+  const configured = evaluate(
+    [LINE_REQUEST_SENTENCE],
+    LINE_REQUEST_RUN,
+    'configured-reviewer-set-aside-blocks',
+  );
+  assert.equal(configured.findings.length, 1, JSON.stringify(configured.findings));
+  assert.match(configured.findings[0], /continued the delegation 1 time/);
+  assert.deepEqual(
+    evaluate([], LINE_REQUEST_RUN, 'configured-reviewer-set-aside-blocks').findings,
+    [],
+  );
 });
 
 function decisiveSynthetic(scenario, operations) {

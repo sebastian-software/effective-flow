@@ -18,6 +18,7 @@ import {
 import {
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
   NO_CI_FLAG_ABSENT_SCENARIO,
   NO_CI_MERGE_FAILURE_SCENARIO,
   NO_CI_REPORTED_CHECK_SCENARIO,
@@ -63,6 +64,12 @@ const ITERATE_TRACE_KEYS = [
   'schema',
   'seq',
 ];
+// The echo's record of the gate's continuation of a delegation, by size and digest only.
+const LINE_REQUEST_KEYS = ['bytes', 'cwd', 'digest', 'kind', 'pullRequest', 'schema', 'seq'];
+// The one sentence a line request carries, exactly as `shared/merge-gate-delegation-contract.md`
+// fixes it; `test/merge-gate-eval.test.mjs` pins this copy to that fragment.
+export const LINE_REQUEST_SENTENCE =
+  'State the missing `Returned commits:` and `Scope expansion:` lines of your final return per `delegated-scope-return`.';
 // The repair scenarios' trace: one schema, two record kinds — a delegation the echo answered and a
 // push the bare `origin` received — each with exactly its own keys.
 const REPAIR_TRACE_SCHEMA = 'effective-flow/merge-gate-repair-trace/v1';
@@ -162,7 +169,11 @@ export function parseIterateTrace(raw, projectRoot) {
       continue;
     }
     const repair = record.schema === REPAIR_TRACE_SCHEMA;
-    const keys = repair ? REPAIR_TRACE_KEYS[record.kind] : ITERATE_TRACE_KEYS;
+    const keys = repair
+      ? REPAIR_TRACE_KEYS[record.kind]
+      : record.kind === 'line-request'
+        ? LINE_REQUEST_KEYS
+        : ITERATE_TRACE_KEYS;
     if (!keys || !isDeepStrictEqual(Object.keys(record).sort(), keys)) {
       problems.push(`${label} does not carry exactly the echo record keys`);
     }
@@ -192,15 +203,18 @@ function sha256(text) {
 // What the configured-reviewer trace has to show: exactly one delegation, carrying one thread item
 // and one review-body item attributed to the fixture's reviewer, the declared controls, a body that
 // is byte-for-byte the fixture's review body, and one `deferred` outcome under each caller-minted
-// identifier. The trace records the handoff and the controlled return, never the chat report.
-function iterateTraceFindings(records, fixture) {
+// identifier. The trace records the handoff and the controlled return, never the chat report. Its
+// line requests are checked by `lineRequestFindings`.
+function iterateTraceFindings(allRecords, fixture, lineRequest = { expected: false }) {
   const findings = [];
+  const records = allRecords.filter((record) => record.kind === undefined);
   if (records.length !== 1) {
     findings.push(
       `Phase 3 invoked the iterate echo ${records.length} time(s); exactly one delegation of both configured-reviewer items is expected`,
     );
     return findings;
   }
+  findings.push(...lineRequestFindings(allRecords, records[0], lineRequest));
   const [trace] = records;
   const reviews = fixture.operations?.['pr-reviews-read']?.envelope?.data?.result ?? [];
   if (reviews.length !== 1 || typeof reviews[0]?.body !== 'string') {
@@ -261,6 +275,45 @@ function iterateTraceFindings(records, fixture) {
     findings.push(
       'the echo did not return exactly one deferred outcome under each caller-minted key',
     );
+  }
+  return findings;
+}
+
+// The gate's continuations of the one delegation, as the echo's `--line-request` mode records them.
+// The line-request scenario's first return omits both scoped-return lines, so exactly one
+// continuation has to follow the delegation, carrying exactly the contract's sentence; a return that
+// carried both lines gets none. A stopped run may lack the continuation it was about to send, so a
+// decisive read counts only a continuation that was sent and is wrong.
+function lineRequestFindings(records, dispatch, { expected, decisive = false }) {
+  const requests = records.filter((record) => record.kind === 'line-request');
+  if (!expected) {
+    return requests.length === 0
+      ? []
+      : [
+          `the gate continued the delegation ${requests.length} time(s) although its return carried both scoped-return lines`,
+        ];
+  }
+  const findings = [];
+  if (requests.length > 1 || (requests.length === 0 && !decisive)) {
+    findings.push(
+      `the gate sent ${requests.length} line request(s) for the return that lacked both scoped-return lines; exactly one is expected`,
+    );
+  }
+  for (const request of requests) {
+    if (request.seq < dispatch.seq) {
+      findings.push('a line request precedes the delegation it continues');
+    }
+    if (request.pullRequest !== 42) {
+      findings.push(`the line request names pull request ${request.pullRequest}`);
+    }
+    if (
+      request.digest !== sha256(LINE_REQUEST_SENTENCE) ||
+      request.bytes !== Buffer.byteLength(LINE_REQUEST_SENTENCE, 'utf8')
+    ) {
+      findings.push(
+        'the line request does not carry exactly the contract sentence and nothing else',
+      );
+    }
   }
   return findings;
 }
@@ -483,6 +536,8 @@ function redispatchFindings(records) {
 // a merge is what they expect.
 const MERGE_REFUSALS = Object.freeze({
   [CONFIGURED_REVIEWER_SCENARIO]:
+    'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
+  [ITERATE_SCOPE_LINE_REQUEST_SCENARIO]:
     'the gate requested pr-merge after both reviewer findings came back deferred and no set-aside confirmation was available',
   'guard-blocks-merge': 'the gate requested pr-merge under an active guard',
   'linked-issue-open-points': 'the observer-only run requested pr-merge',
@@ -730,6 +785,12 @@ function outcomeFindings(scenario, records, fixture, sealedEvidence = null) {
   if (scenario === CONFIGURED_REVIEWER_SCENARIO) {
     findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
+  } else if (scenario === ITERATE_SCOPE_LINE_REQUEST_SCENARIO) {
+    // The answered line request lets the gate record the round and go on to Phase 4, whose second
+    // guard reads a `scope-line-missing` stop never reaches; the set-aside gate then blocks the
+    // merge exactly as in the configured-reviewer scenario.
+    findings.push(...mergeRefusalFindings(scenario, records));
+    guardReadFindings();
   } else if (scenario === NON_INTERACTIVE_DISPATCH_SCENARIO) {
     findings.push(...mergeRefusalFindings(scenario, records));
     guardReadFindings();
@@ -889,6 +950,7 @@ function outcomeFindings(scenario, records, fixture, sealedEvidence = null) {
 export const BRANCHED_SCENARIOS = Object.freeze([
   BOT_LOGIN_SCENARIO,
   CONFIGURED_REVIEWER_SCENARIO,
+  ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
   'guard-blocks-merge',
   'linked-issue-open-points',
   'merge-proceeds',
@@ -956,7 +1018,11 @@ export function parseSealedEvidence(text) {
 }
 
 function traceFindings(scenario, records, auxiliaryRecords, fixture) {
-  if (!REPAIR_SCENARIOS.includes(scenario)) return iterateTraceFindings(auxiliaryRecords, fixture);
+  if (!REPAIR_SCENARIOS.includes(scenario)) {
+    return iterateTraceFindings(auxiliaryRecords, fixture, {
+      expected: scenario === ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
+    });
+  }
   return [
     ...repairTraceFindings(scenario, auxiliaryRecords, fixture),
     ...repairOrderingFindings(scenario, records, auxiliaryRecords),
@@ -1038,7 +1104,10 @@ export function decisiveFindings({
     findings.push(
       ...(REPAIR_SCENARIOS.includes(scenario)
         ? repairTraceFindings(scenario, auxiliaryRecords, fixture, { decisive: true })
-        : iterateTraceFindings(auxiliaryRecords, fixture)),
+        : iterateTraceFindings(auxiliaryRecords, fixture, {
+            expected: scenario === ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
+            decisive: true,
+          })),
     );
   }
   return findings;

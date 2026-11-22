@@ -12,7 +12,11 @@ import {
   prepareConfiguredReviewerOrigin,
   threadAnchor,
 } from '../evals/merge-gate/_scaffold/configured-reviewer-origin.mjs';
-import { CONFIGURED_REVIEWER_SCENARIO } from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
+import {
+  CONFIGURED_REVIEWER_SCENARIO,
+  CONFIGURED_REVIEWER_SCENARIOS,
+  ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
+} from '../evals/merge-gate/_scaffold/configured-reviewer-scenario.mjs';
 import suite from '../evals/merge-gate/suite.config.mjs';
 
 // The configured-reviewer scenario delegates, and immediately before its first delegation the gate
@@ -43,15 +47,16 @@ function loadFixture(scenario = CONFIGURED_REVIEWER_SCENARIO) {
 function provision(
   fixture = loadFixture(),
   attempt = mkdtempSync(join(tmpdir(), 'effective-flow-configured-origin-')),
+  scenario = CONFIGURED_REVIEWER_SCENARIO,
 ) {
   const projectRoot = join(attempt, 'project');
   mkdirSync(projectRoot);
   writeProject(
     suite,
     projectRoot,
-    CONFIGURED_REVIEWER_SCENARIO,
+    scenario,
     fixture,
-    suite.scenarioSetup(CONFIGURED_REVIEWER_SCENARIO).projectSetupRows,
+    suite.scenarioSetup(scenario).projectSetupRows,
   );
   return { attempt, projectRoot, remote: join(attempt, 'remote.git'), fixture };
 }
@@ -163,9 +168,30 @@ test('a configured-reviewer fixture naming another head fails provisioning', () 
   }
 });
 
+// The line-request twin runs against the same origin; its setup document names the twin, so its
+// fixture states the head that seeding produces for that name, and provisioning checks it.
+test('the line-request twin provisions the configured-reviewer origin at its own fixture head', () => {
+  const fixture = loadFixture(ITERATE_SCOPE_LINE_REQUEST_SCENARIO);
+  const slot = provision(
+    fixture,
+    mkdtempSync(join(tmpdir(), 'effective-flow-configured-origin-')),
+    ITERATE_SCOPE_LINE_REQUEST_SCENARIO,
+  );
+  try {
+    const pr = fixture.operations['pr-read'].envelope.data.result;
+    assert.equal(git(slot.remote, ['rev-parse', `refs/heads/${pr.head}`]), fixture.headSha);
+    assert.equal(
+      git(slot.remote, ['rev-parse', `refs/pull/${fixture.pullRequest}/head`]),
+      fixture.headSha,
+    );
+  } finally {
+    rmSync(slot.attempt, { recursive: true, force: true });
+  }
+});
+
 test('the configured-reviewer origin prepares nothing for any other scenario', () => {
   for (const scenario of suite.scenarios) {
-    if (scenario === CONFIGURED_REVIEWER_SCENARIO) continue;
+    if (CONFIGURED_REVIEWER_SCENARIOS.includes(scenario)) continue;
     assert.equal(
       prepareConfiguredReviewerOrigin({ scenario, fixture: {}, projectRoot: '/nonexistent' }),
       null,

@@ -10,9 +10,27 @@
 // the blob OID the caller inspected, or null for a deletion. `hookBase` is the commit the hook
 // configuration is compared against, `sameRepository` whether the head comes from this repository.
 //
-// Before the lock (INVALID_INPUT for a bad request; HOOKS_UNTRUSTED for an untrusted head):
+// Before the lock (INVALID_INPUT for a bad request; SCOPE_REFUSED for a path outside a bound
+// scope; HOOKS_UNTRUSTED for an untrusted head):
 //   - the request shape, `worktree` and every path are validated; a path below `.effective-flow/`
 //     or `.git/`, absolute, unnormalized, with `..`, or resolving outside `worktree` is refused;
+//   - the scope check, when `<cwd>/.effective-flow/runs/<owner.runId>/iterate-scope.json` exists:
+//     the record `repair-attempt scope-bind` wrote in the run's Phase 0, read by the shared reader
+//     of `repair-attempt-core.mjs`, which spawns nothing, so a call without a record costs no git
+//     process. The request carries no scope; the record is its only source. The HEAD of `worktree`
+//     is resolved to its OID first, and every scope read runs in `worktree` against that OID. A
+//     listed path inside the scope passes without a read. Each other listed path's status is
+//     derived, never supplied: a null `expect` entry is `D`, otherwise a path absent from that HEAD
+//     (one `ls-tree` for all of them) is `A` and a present one `M`, so both sides of a rename are
+//     checked as a `D` and an `A`; an unreadable status, or an unresolvable HEAD, makes those paths
+//     `undetermined`, never `A`. The derived changes go
+//     through `scopeCheck` with that OID as the tip. Any `outside` or `undetermined` path is
+//     SCOPE_REFUSED `reason: 'outside'` carrying both lists; a record the reader finds invalid is
+//     `reason: 'scope-record-invalid'`, never an unscoped commit. The HEAD resolution, the status
+//     reads and `scopeCheck`'s reads share SCOPE_READ_BUDGET_MS, each bounded by what is left; a
+//     read that hits the bound, or finds it spent, is `reason: 'scope-read-timeout'` with no path
+//     declared. The check precedes the hook trust check, so HOOKS_UNTRUSTED implies checked paths;
+//     nothing is locked, staged or committed on a refusal;
 //   - the hook trust check: a fork head, or a hook-relevant configuration (HOOK_CONFIG below) that
 //     differs between `hookBase` and HEAD or between HEAD and the working tree, ignored files and
 //     the in-worktree targets of hook symlinks included, is HOOKS_UNTRUSTED, and so is a hook
@@ -29,7 +47,10 @@
 //
 // Under the lock, which is taken with the `lock acquire` protocol (LOCK_HELD after `waitSeconds`,
 // with the same owner and identity details):
-//   1. an empty index is required (INDEX_NOT_CLEAN, nothing touched);
+//   1. after a scope check, HEAD must still be the OID it checked, compared right after acquisition
+//      and before the hook trust check runs again, and once more on the HEAD read before staging
+//      (SCOPE_REFUSED `reason: 'head-moved'`, nothing staged); an empty index is required
+//      (INDEX_NOT_CLEAN, nothing touched);
 //   2. exactly the listed paths are staged with literal pathspecs (STAGE_FAILED, with `timedOut`);
 //   3. the staged set must equal the listed set (STAGED_SET_MISMATCH);
 //   4. every staged blob must equal its `expect` entry, a null one a staged deletion
@@ -81,6 +102,13 @@ import { performance } from 'node:perf_hooks';
 import { setTimeout as delay } from 'node:timers/promises';
 import { redact } from './remote-tracker-shared-core.mjs';
 import {
+  createGitReads,
+  gitReadEnv,
+  isScopeRunId,
+  readScopeRecord,
+  scopeCheck,
+} from './repair-attempt-core.mjs';
+import {
   FORBIDDEN_ROOT_CHARACTERS,
   OPERATION_KEYS,
   StateOutcome,
@@ -114,9 +142,18 @@ export const COMMIT_LOCKS = Object.freeze(['iterate-commit']);
 // so the helper reports COMMIT_FAILED before the harness kills it.
 export const COMMIT_TIMEOUT_MS = 300_000;
 // The time all filter-running calls of one `commit create` share, each bounded by what is left. It
-// is a total, not a per-call bound, so this, COMMIT_TIMEOUT_MS and the 30 s lock wait together stay
-// below the 360000 ms tool timeout `iterate` sets.
+// is a total, not a per-call bound.
 export const FILTER_BUDGET_MS = 20_000;
+// The time all scope reads of one `commit create` share, each bounded by what is left.
+//
+// The 420000 ms tool timeout `iterate` sets on this call must exceed the sum of every bound plus
+// the reads no bound covers: COMMIT_TIMEOUT_MS (300 s), FILTER_BUDGET_MS (20 s), the 30 s lock
+// wait (MAX_WAIT_SECONDS) plus its final acquire attempt, GUARD_WAIT_MS (10 s) for acquire and
+// another 10 s for release, SCOPE_READ_BUDGET_MS (10 s), and the unbounded git reads
+// (`requireWorktree`, the `hookScope` listings, the verification) at their measured worst case.
+// The bounded terms sum to 380 s, which leaves 40 s for those reads; a new unbounded read, or a
+// raised bound, must keep that sum below the tool timeout.
+export const SCOPE_READ_BUDGET_MS = 10_000;
 export const MAX_COMMIT_PATHS = 512;
 export const MAX_MESSAGE_BYTES = 16 * 1024;
 export const MAX_STDERR_CHARS = 4096;
@@ -1133,11 +1170,27 @@ async function interruptedOutcome(context, request, held, signal, before) {
 
 // Runs steps 1 to 6. `signals` is consulted after every step; `before` is HEAD before staging.
 // Ownership of `held` is verified before staging, before the commit and before every unstage.
-async function commitUnderLock(context, request, signals, deps, held, filtered) {
+// `scoped` is the scope check's `{ head }`, or null when no scope is bound.
+async function commitUnderLock(context, request, signals, deps, held, filtered, scoped) {
   const { worktree, paths } = request;
   const stop = (before) => interruptedOutcome(context, request, held, signals.signal, before);
   await deps.onPhase?.('locked');
   if (signals.signal) return stop(undefined);
+  // A HEAD that moved since the scope check is refused before the under-lock hook trust check, so a
+  // concurrent commit never surfaces as HOOKS_UNTRUSTED for paths checked against the old HEAD.
+  const headMoved = (head) =>
+    new StateOutcome('SCOPE_REFUSED', {
+      reason: 'head-moved',
+      checked: scoped.head,
+      head,
+      outside: [],
+      undetermined: [],
+    });
+  const checksHead = scoped !== null && scoped.head !== null;
+  if (checksHead) {
+    const locked = await headCommit(context, worktree);
+    if (locked !== scoped.head) return headMoved(locked);
+  }
   const untrusted = await hookTrust(context, request, deps, signals, filtered);
   if (signals.signal) return stop(undefined);
   if (untrusted) return new StateOutcome('HOOKS_UNTRUSTED', untrusted);
@@ -1148,6 +1201,8 @@ async function commitUnderLock(context, request, signals, deps, held, filtered) 
   const before = await headCommit(context, worktree);
   if (before === null) fail('INVALID_INPUT', 'worktree has no HEAD commit');
   if (signals.signal) return stop(undefined);
+  // The same comparison on the HEAD the staging builds on closes the window of the hook trust check.
+  if (checksHead && before !== scoped.head) return headMoved(before);
 
   const unstaged = async (code, details) => {
     if (!(await ownsLock(context, held))) {
@@ -1356,6 +1411,129 @@ async function verify(context, request, before, head, committed) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Scope check
+
+// A runner over `runner` that bounds every call by what is left of `budgetMs` and remembers whether
+// a call hit the bound or found it spent; such a call answers as a failed read.
+function budgetedRunner(runner, budgetMs) {
+  let left = budgetMs;
+  let exhausted = false;
+  const run = async (request) => {
+    if (left <= 0) {
+      exhausted = true;
+      return { status: null, stdout: '', stderr: '', timedOut: true };
+    }
+    const timeoutMs = Math.max(1, Math.ceil(left));
+    const started = performance.now();
+    let result;
+    try {
+      result = await runner({ ...request, timeoutMs, processGroup: true });
+    } finally {
+      left -= performance.now() - started;
+    }
+    if (result?.timedOut === true || (result?.status !== 0 && left <= 0)) exhausted = true;
+    return result;
+  };
+  return {
+    run,
+    get exhausted() {
+      return exhausted;
+    },
+  };
+}
+
+// Which of `read` the tree of `head` holds, read with one `ls-tree`, or null when the read fails.
+async function presentInTree(run, worktree, envSource, head, read) {
+  if (read.length === 0) return new Set();
+  const result = await run({
+    executable: 'git',
+    args: [
+      '--no-replace-objects',
+      '--literal-pathspecs',
+      'ls-tree',
+      '-r',
+      '-z',
+      '--name-only',
+      '--full-tree',
+      head,
+      '--',
+      ...read,
+    ],
+    cwd: worktree,
+    env: gitReadEnv(envSource),
+  }).catch(() => null);
+  if (result?.status !== 0) return null;
+  return new Set(asBuffer(result.stdout).toString('utf8').split('\0').filter(Boolean));
+}
+
+function scopeRefused(reason, extra = {}) {
+  return new StateOutcome('SCOPE_REFUSED', { reason, outside: [], undetermined: [], ...extra });
+}
+
+// The scope check of a run with a bound record: null without a record (nothing spawned), the
+// checked HEAD OID `{ head }` when every listed path is in scope, or a SCOPE_REFUSED outcome.
+async function checkBoundScope(context, request, deps) {
+  const { runId } = request.owner;
+  if (!isScopeRunId(runId)) return null;
+  const found = await readScopeRecord(context.cwd, runId);
+  if (found.status === 'absent') return null;
+  if (found.status === 'invalid') {
+    return scopeRefused('scope-record-invalid', { message: found.message });
+  }
+  const { scope } = found.record;
+  const { worktree, paths, expect } = request;
+  const budget = budgetedRunner(context.runner, deps.scopeReadBudgetMs ?? SCOPE_READ_BUDGET_MS);
+  const envSource = deps.env ?? process.env;
+  const resolved = await budget
+    .run({
+      executable: 'git',
+      args: ['--no-replace-objects', 'rev-parse', '--verify', '--quiet', 'HEAD^{commit}'],
+      cwd: worktree,
+      env: gitReadEnv(envSource),
+    })
+    .catch(() => null);
+  if (budget.exhausted) return scopeRefused('scope-read-timeout');
+  const resolvedHead =
+    resolved?.status === 0 ? asBuffer(resolved.stdout).toString('utf8').trim() : '';
+  const head = OID_PATTERN.test(resolvedHead) ? resolvedHead : null;
+  // A listed path inside the scope passes whatever its status, so only the others are read.
+  const inScope = new Set(scope.paths);
+  const candidates = paths.filter((entry) => !inScope.has(entry));
+  if (candidates.length === 0) return { head };
+  if (head === null) {
+    return scopeRefused('outside', {
+      undetermined: [...candidates]
+        .sort()
+        .map((entry) => ({ path: entry, code: 'tree-unreadable' })),
+    });
+  }
+  const changes = [];
+  const unread = [];
+  const present = await presentInTree(
+    budget.run,
+    worktree,
+    envSource,
+    head,
+    candidates.filter((entry) => expect[entry] !== null),
+  );
+  for (const entry of candidates) {
+    if (expect[entry] === null) changes.push({ status: 'D', path: entry });
+    else if (present === null) unread.push({ path: entry, code: 'tree-unreadable' });
+    else changes.push({ status: present.has(entry) ? 'M' : 'A', path: entry });
+  }
+  const reads = createGitReads(budget.run, worktree, envSource);
+  const checked = await scopeCheck(scope, changes, reads, head);
+  if (budget.exhausted) return scopeRefused('scope-read-timeout');
+  const undetermined = [...unread, ...checked.undetermined].sort((a, b) =>
+    a.path < b.path ? -1 : a.path > b.path ? 1 : 0,
+  );
+  if (checked.outside.length > 0 || undetermined.length > 0) {
+    return scopeRefused('outside', { outside: checked.outside, undetermined });
+  }
+  return { head };
+}
+
+// ---------------------------------------------------------------------------------------------
 // commit create
 
 async function releaseHeld(context, held, deps) {
@@ -1392,6 +1570,11 @@ export async function commitCreate(input, deps) {
     if (signals.signal) {
       return new StateOutcome('INTERRUPTED', { signal: signals.signal, commit: null });
     }
+    const scoped = await checkBoundScope(context, request, deps);
+    if (signals.signal) {
+      return new StateOutcome('INTERRUPTED', { signal: signals.signal, commit: null });
+    }
+    if (scoped instanceof StateOutcome) return scoped;
     const untrusted = await hookTrust(context, request, deps, signals, filtered);
 
     // A signal during the hook trust check ends the call before the lock is touched; one during
@@ -1430,7 +1613,7 @@ export async function commitCreate(input, deps) {
     let value;
     let failure;
     try {
-      value = await commitUnderLock(context, request, signals, deps, held, filtered);
+      value = await commitUnderLock(context, request, signals, deps, held, filtered, scoped);
     } catch (error) {
       failure = error;
     }

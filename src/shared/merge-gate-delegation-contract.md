@@ -281,17 +281,17 @@ when: this run is about to build a Phase 3 step 5 bot-round delegation to `{{SKI
    fallback uses no fabricated recipient/context and preserves all caller limits and terminal joins.
    <!-- spawn-site:merge-gate-delegation-contract/iterate-delegation -->
    No return-protocol text goes with it: how the return is read is this run's business under
-   "Returned outcome record", never an instruction to the delegated run. A host with no spawn
-   mechanism, a declined dispatch, or a gate run bound by a restriction neither caller-limit token
-   expresses runs `{{SKILL:iterate}}` inline in this run with that same argument and its own gates,
-   and says so once; that inline run's final keyword line (`DONE`,
+   "Returned outcome record", never an instruction to the delegated run, with the one bounded
+   exception of that section's line request. A host with no spawn mechanism, a declined dispatch,
+   or a gate run bound by a restriction neither caller-limit token expresses runs
+   `{{SKILL:iterate}}` inline in this run with that same argument and its own gates, and says so once; that inline run's final keyword line (`DONE`,
    `ABORT: …` or `BLOCKED-USER iterate-approval`) is the round's return under "Returned outcome
    record", and this run continues instead of ending its turn on it. Only now record the outcomes of a `written` build's
    refused items – each delimiter-carrying or `missing-provenance` body as `unassessed` – because a sender stop before this point records no
    outcome from that build.
 
 Delete the message file and its snapshot once `{{SKILL:iterate}}` has returned for good (after any
-resume below), or in the run's final cleanup after a sender stop.
+resume or line request below), or in the run's final cleanup after a sender stop.
 
 **What `build` refuses, and what each refusal costs.** A refusal is an outcome of the round, never a
 fault of the channel:
@@ -351,16 +351,36 @@ text, and hand every entry of every such line, unfiltered, to `record` per "Repa
   correction bucket – stops the run, failing closed, per "Repair checkpoints" step 4.
 
 A `BLOCKED-USER` return and a Phase-0 refusal – an `ABORT` naming `duplicated control line`,
-`manifest and body mismatch` or a reason starting `unparseable` – carry neither line and edited
-nothing, and the keyword is handled as below. A `BLOCKED-USER` return gets no `record` call: the
+`manifest and body mismatch`, a reason starting `unparseable` or one starting `scope bind refused` –
+carry neither line and edited nothing, and the keyword is handled as below. A `BLOCKED-USER` return gets no `record` call: the
 delegation consuming its answer re-enters the same round, which "Repair checkpoints" records once,
 on that delegation's return. A Phase-0 refusal gets `record` with `returned: []` and
 `scopeExpansion: []`, which counts nothing, or leaves the round `uncertain` with its foreign commits
-where the head moved anyway. On any other return a missing or unparseable line is never guessed: without a parseable
+where the head moved anyway. On any other return a missing or unparseable line is never guessed. A
+dispatched round whose final return carries `DONE` or an `ABORT` after Phase 0 but lacks a
+`Scope expansion:` label or a parseable `Returned commits:` line first gets the line request below; after
+it, or where the spawn cannot be continued: without a parseable
 `Scope expansion:` line, `record` gets `scopeExpansion: []` and `scopeLineMissing: true`, which stops
 the run with `scope-line-missing`; without a parseable `Returned commits:` line, `returned` is `[]`,
 so the round is `uncertain` where the head moved and counts no attempt. An entry `record` rejects
 ends the run as its failed call does.
+
+**The line request** is the one bounded exception to "never an instruction to the delegated run".
+It continues the dispatched round's own spawn once more as a separate turn that carries exactly this
+sentence and nothing else – no control keyword, no `Item:` line or item text:
+
+```text
+State the missing `Returned commits:` and `Scope expansion:` lines of your final return per `delegated-scope-return`.
+```
+
+Per dispatch it follows any keyword-less resume below and is sent at most once; a Phase 2 step 3 CI
+repair and each Phase 3 reviewer dispatch of one gate round count separately. It does not advance
+the round counter and mints no new `dispatch`. An inline round, a Phase-0 refusal and a
+`BLOCKED-USER` return get none. The answer contributes only a line the final return lacked: a
+`Scope expansion:` label present there counts as carried, parseable or not, and is never taken from
+the answer; `Returned commits:` is taken from the answer only where the final return had no
+parseable one. The keyword, the outcome record and any `Review-fix validation result:` line stay
+with that final return, and nothing else in the answer counts.
 
 ```lazy-include
 delegated-scope-return
@@ -390,8 +410,8 @@ delegation sites – the Phase 2 step 3 CI repair and the Phase 3 step 5 bot rou
 own spawn; an inline round gets no resume): no envelope is
 rebuilt or re-sent, and that turn carries no control keyword, no `Item:` line or item text, and no
 return-protocol instruction – only a plain request to await pending work and finish, in place of the
-completion protocol's continuation hint. The resume does not advance the round counter. The interim
-keyword-less text is not a return. The receiver rule reads only the resumed turn's final return, and
+completion protocol's continuation hint. The resume does not advance the round counter and mints no
+new `dispatch`. The interim keyword-less text is not a return. The receiver rule reads only the resumed turn's final return, and
 every recorded identifier must be answered there: an outcome stated only in the interim text is
 absent – the same mismatch. Nothing in the interim text counts, conflicts with the final return, is
 recorded, or is reported as an inert outcome. A return still keyword-less after the resume, or one

@@ -44,6 +44,7 @@ import {
   makeContext,
   resolveRoot,
 } from '../src/scripts/effective-flow-state-core.mjs';
+import * as repairAttemptCore from '../src/scripts/repair-attempt-core.mjs';
 import { gitCommitEnv } from '../src/scripts/runtime-state-guard.mjs';
 import {
   createProcessRunner,
@@ -2791,4 +2792,529 @@ test('commit create reports COMMIT_UNVERIFIED when another owner holds the lock 
   assert.equal(outcome.lockRelease.released, false);
   assert.equal(outcome.lockRelease.code, 'NOT_OWNER');
   assert.equal(outcome.heldLock, undefined);
+});
+
+// --- Commit-time scope check ---------------------------------------------------------------------
+//
+// Plan 2026-11-22-reliable-scoped-iterate-returns-and-a-commit-time-scope-check: when a scope
+// record for `owner.runId` exists below `cwd`, `commit create` checks the listed paths against it
+// before the lock and refuses with SCOPE_REFUSED. These tests write the record file directly (the
+// format `repair-attempt scope-bind` stores) so the commit helper is tested on its own.
+
+const OTHER_RUN_ID = 'iterate-fedcba9876543210';
+const ID_FREE = 'F'.repeat(32);
+const ID_CORR = 'K'.repeat(32);
+
+const scopeRecordPath = (root, runId = OWNER.runId) =>
+  join(root, '.effective-flow', 'runs', runId, 'iterate-scope.json');
+
+// Binds `scope` (`{ paths, mergeBase?, head? }`, both SHAs defaulting to the current HEAD) for a run.
+function bindScope(root, scope, runId = OWNER.runId) {
+  const current = head(root);
+  const record = {
+    version: 1,
+    runId,
+    scope: { mergeBase: current, head: current, ...scope },
+    freeText: ID_FREE,
+    correction: ID_CORR,
+  };
+  mkdirSync(join(root, '.effective-flow', 'runs', runId), { recursive: true });
+  writeFileSync(scopeRecordPath(root, runId), `${JSON.stringify(record, null, 2)}\n`);
+  return record;
+}
+
+// Every SCOPE_REFUSED leaves the repository as it was: nothing staged, no lock, HEAD unchanged.
+function expectScopeRefused(root, envelope, reason, headBefore = head(root)) {
+  const outcome = expectOutcome(envelope, 'SCOPE_REFUSED');
+  assert.equal(outcome.reason, reason, JSON.stringify(outcome));
+  assert.deepEqual(staged(root), [], 'nothing is staged');
+  assert.equal(lockPresent(root), false, 'no lock is left or taken');
+  assert.equal(head(root), headBefore, 'HEAD is unchanged');
+  return outcome;
+}
+
+// Commits `relative` with `content` in `root` (a fixture commit made before the run's scope head).
+function commitFixture(root, relative, content, message = `add ${relative}`) {
+  mkdirSync(join(root, relative, '..'), { recursive: true });
+  writeFileSync(join(root, relative), content);
+  git(root, 'add', '--', relative);
+  git(root, 'commit', '-q', '-m', message);
+  return head(root);
+}
+
+// A runner over the real one that records every call, optionally answering some itself.
+function observingRunner(calls, intercept = () => undefined) {
+  const runner = createProcessRunner();
+  return async (request) => {
+    calls.push({ args: request.args, cwd: request.cwd });
+    return (await intercept(request)) ?? runner(request);
+  };
+}
+
+const failedGit = () => ({
+  status: 128,
+  stdout: Buffer.alloc(0),
+  stderr: Buffer.from('fatal: injected\n'),
+});
+
+test('commit create with a scope record commits listed in-scope paths, a rename with both sides in scope included', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  const result = expectResult(await commitCreate(input(root)));
+  assert.equal(result.commit, head(root));
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+
+  const renamed = repository(t);
+  unlinkSync(join(renamed, 'old-name.txt'));
+  writeFileSync(join(renamed, 'new-name.txt'), 'renamed content\n');
+  bindScope(renamed, { paths: ['old-name.txt', 'new-name.txt'] });
+  const both = expectResult(
+    await commitCreate(
+      input(renamed, {
+        paths: ['old-name.txt', 'new-name.txt'],
+        expect: { 'old-name.txt': null, 'new-name.txt': blob(renamed, 'new-name.txt') },
+      }),
+    ),
+  );
+  assert.equal(both.commit, head(renamed));
+});
+
+test('commit create refuses a listed path outside the bound scope before the lock is touched', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['other.txt'] });
+  // A foreign lock holder must not be reported: the scope refusal comes first, so nothing waits.
+  const held = await executeOperation(
+    'lock acquire',
+    { cwd: root, lock: 'iterate-commit', owner: { ...OWNER, item: 'PRRT_other' } },
+    deps(),
+  );
+  assert.equal(held.ok, true, JSON.stringify(held));
+  const before = head(root);
+  const outcome = expectOutcome(
+    await commitCreate(input(root, { waitSeconds: 1 })),
+    'SCOPE_REFUSED',
+  );
+  assert.equal(outcome.reason, 'outside');
+  assert.deepEqual(outcome.outside, ['tracked.txt']);
+  assert.deepEqual(outcome.undetermined, []);
+  assert.deepEqual(staged(root), []);
+  assert.equal(head(root), before);
+  assert.equal(lockPresent(root), true, 'the foreign lock stays and was not waited for');
+  // The same call without the foreign holder is refused identically, with the lock never taken.
+  rmSync(join(root, ...LOCK_DIR), { recursive: true, force: true });
+  const again = expectScopeRefused(root, await commitCreate(input(root)), 'outside', before);
+  assert.deepEqual(again.outside, ['tracked.txt']);
+});
+
+test('commit create reports a test path whose addition by the run cannot be read as undetermined', async (t) => {
+  const root = repository(t);
+  commitFixture(root, 'test/existing.test.mjs', 'existing\n');
+  writeFileSync(join(root, 'test', 'existing.test.mjs'), 'changed\n');
+  // A scope head Git cannot resolve: whether the run added the test is unreadable, never "no".
+  bindScope(root, { paths: ['tracked.txt'], head: 'f'.repeat(40), mergeBase: 'f'.repeat(40) });
+  const outcome = expectScopeRefused(
+    root,
+    await commitCreate(
+      input(root, {
+        paths: ['test/existing.test.mjs'],
+        expect: { 'test/existing.test.mjs': blob(root, 'test/existing.test.mjs') },
+      }),
+    ),
+    'outside',
+  );
+  assert.deepEqual(outcome.outside, []);
+  assert.equal(outcome.undetermined.length, 1);
+  assert.equal(outcome.undetermined[0].path, 'test/existing.test.mjs');
+  assert.equal(typeof outcome.undetermined[0].code, 'string');
+});
+
+test('commit create treats an unreadable change status as undetermined and never falls back to an added file', async (t) => {
+  const root = repository(t);
+  const relative = 'test/pre-existing.test.mjs';
+  commitFixture(root, relative, 'existing\n');
+  writeFileSync(join(root, relative), 'changed\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  // Assumption: the scope reads of `commit create` run as plain git reads naming the listed path
+  // (`ls-tree` / `cat-file` / `--no-replace-objects` reads); every such call fails here. Were the
+  // status to fall back to "added", the test-glob path would be allowed and the commit would land.
+  const runner = observingRunner([], (request) => {
+    const named = request.args.some((arg) => arg.includes(relative));
+    const mutating = request.args.some((arg) => ['add', 'commit', '--cached'].includes(arg));
+    const read =
+      request.args.includes('--no-replace-objects') ||
+      request.args.includes('ls-tree') ||
+      request.args.includes('cat-file');
+    return named && read && !mutating ? failedGit() : undefined;
+  });
+  const outcome = expectScopeRefused(
+    root,
+    await commitCreate(
+      input(root, { paths: [relative], expect: { [relative]: blob(root, relative) } }),
+      { runner },
+    ),
+    'outside',
+  );
+  assert.deepEqual(
+    outcome.undetermined.map(({ path }) => path),
+    [relative],
+  );
+  assert.ok(outcome.undetermined.every(({ code }) => typeof code === 'string'));
+  assert.deepEqual(outcome.outside, []);
+});
+
+test('commit create reports an exhausted scope read budget as scope-read-timeout and declares no expansion', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  // Assumption: every scope read gets the remaining budget as `timeoutMs`; a slow Git here either
+  // reports the bound as fired (like the process runner) or leaves nothing for the next read.
+  const slow = observingRunner([], async (request) => {
+    await delay(40);
+    if (request.timeoutMs !== undefined && request.timeoutMs < 40) {
+      return { status: null, stdout: '', stderr: '', timedOut: true };
+    }
+    return undefined;
+  });
+  const outcome = expectScopeRefused(
+    root,
+    await commitCreate(input(root), { runner: slow, scopeReadBudgetMs: 5 }),
+    'scope-read-timeout',
+  );
+  assert.deepEqual(outcome.outside ?? [], [], 'a timeout declares no outside path');
+  assert.deepEqual(outcome.undetermined ?? [], [], 'a timeout declares no undetermined path');
+});
+
+test('commit create refuses with head-moved when HEAD moves between the check and the staging', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  let moved = null;
+  // Another writer commits right after the lock is taken, before `git add`.
+  const onPhase = (phase) => {
+    if (phase !== 'locked' || moved !== null) return;
+    git(root, 'commit', '-q', '--allow-empty', '-m', 'another writer');
+    moved = head(root);
+  };
+  // The default `headBefore` is read after the call: HEAD stays where the other writer left it.
+  expectScopeRefused(root, await commitCreate(input(root), { onPhase }), 'head-moved');
+  assert.notEqual(moved, null, 'the lock phase was reached');
+  assert.equal(head(root), moved);
+  assert.equal(
+    git(root, 'show', '-s', '--format=%s', 'HEAD'),
+    'another writer',
+    'no commit of this call landed',
+  );
+  assert.equal(git(root, 'status', '--porcelain', '--', 'tracked.txt'), 'M tracked.txt');
+});
+
+// Invariant: a HEAD that another writer moved after the scope check is refused as head-moved right
+// after the lock is taken, before the hook trust check runs again, so a moved HEAD that changes
+// hook configuration never surfaces as HOOKS_UNTRUSTED for paths checked against the old HEAD.
+test('commit create reports head-moved before the under-lock hook trust check', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  let moved = null;
+  const onPhase = (phase) => {
+    if (phase !== 'locked' || moved !== null) return;
+    mkdirSync(join(root, '.husky'), { recursive: true });
+    writeFileSync(join(root, '.husky', 'pre-commit'), 'exit 0\n');
+    git(root, 'add', '--', '.husky/pre-commit');
+    git(root, 'commit', '-q', '-m', 'another writer adds a hook');
+    moved = head(root);
+  };
+  expectScopeRefused(root, await commitCreate(input(root), { onPhase }), 'head-moved');
+  assert.notEqual(moved, null, 'the lock phase was reached');
+});
+
+// Invariant: a listed path inside the bound scope passes without a status read, so an unreadable
+// status never refuses it, and an unresolvable HEAD marks only the paths outside the scope.
+test('commit create reads no status for in-scope paths and marks only outside paths on a HEAD failure', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  const calls = [];
+  // A scope read leads with `--no-replace-objects`; the verification after the commit does not.
+  const scopeTreeRead = (args) =>
+    args.includes('--no-replace-objects') &&
+    args.includes('ls-tree') &&
+    args.includes('tracked.txt');
+  const lsTree = observingRunner(calls, (request) =>
+    scopeTreeRead(request.args) ? failedGit() : undefined,
+  );
+  const result = expectResult(await commitCreate(input(root), { runner: lsTree }));
+  assert.equal(result.commit, head(root));
+  assert.deepEqual(
+    calls.filter(({ args }) => scopeTreeRead(args)),
+    [],
+    'an in-scope path is never read',
+  );
+
+  const mixed = repository(t);
+  writeFileSync(join(mixed, 'tracked.txt'), 'changed\n');
+  writeFileSync(join(mixed, 'outside.txt'), 'new\n');
+  bindScope(mixed, { paths: ['tracked.txt'] });
+  const noHead = observingRunner([], (request) =>
+    request.args.includes('--no-replace-objects') && request.args.includes('HEAD^{commit}')
+      ? failedGit()
+      : undefined,
+  );
+  const outcome = expectScopeRefused(
+    mixed,
+    await commitCreate(
+      input(mixed, {
+        paths: ['tracked.txt', 'outside.txt'],
+        expect: {
+          'tracked.txt': blob(mixed, 'tracked.txt'),
+          'outside.txt': blob(mixed, 'outside.txt'),
+        },
+      }),
+      { runner: noHead },
+    ),
+    'outside',
+  );
+  assert.deepEqual(outcome.outside, []);
+  assert.deepEqual(outcome.undetermined, [{ path: 'outside.txt', code: 'tree-unreadable' }]);
+});
+
+test('commit create checks both sides of a rename and names the outside one', async (t) => {
+  for (const [inScope, outside] of [
+    ['old-name.txt', 'new-name.txt'],
+    ['new-name.txt', 'old-name.txt'],
+  ]) {
+    const root = repository(t);
+    unlinkSync(join(root, 'old-name.txt'));
+    writeFileSync(join(root, 'new-name.txt'), 'renamed content\n');
+    bindScope(root, { paths: [inScope] });
+    const outcome = expectScopeRefused(
+      root,
+      await commitCreate(
+        input(root, {
+          paths: ['old-name.txt', 'new-name.txt'],
+          expect: { 'old-name.txt': null, 'new-name.txt': blob(root, 'new-name.txt') },
+        }),
+      ),
+      'outside',
+    );
+    assert.deepEqual(outcome.outside, [outside], `${inScope} in scope, ${outside} outside`);
+  }
+});
+
+test('commit create applies the test-path allowance exactly as scope-check does', async (t) => {
+  const run = async (root, paths, bound) => {
+    bindScope(root, bound);
+    const expect = Object.fromEntries(
+      paths.map((path) => [path, existsSync(join(root, path)) ? blob(root, path) : null]),
+    );
+    return commitCreate(input(root, { paths, expect }));
+  };
+  // An existing test outside the scope that the run did not add is refused when modified.
+  const existing = repository(t);
+  commitFixture(existing, 'test/existing.test.mjs', 'existing\n');
+  writeFileSync(join(existing, 'test', 'existing.test.mjs'), 'changed\n');
+  const refused = expectScopeRefused(
+    existing,
+    await run(existing, ['test/existing.test.mjs'], { paths: ['tracked.txt'] }),
+    'outside',
+  );
+  assert.deepEqual(refused.outside, ['test/existing.test.mjs']);
+
+  // A test file the run adds is allowed without being listed in the scope.
+  const added = repository(t);
+  mkdirSync(join(added, 'test'));
+  writeFileSync(join(added, 'test', 'new-case.test.mjs'), 'new\n');
+  expectResult(await run(added, ['test/new-case.test.mjs'], { paths: ['tracked.txt'] }));
+  assert.equal(git(added, 'show', '--name-only', '--format=', 'HEAD'), 'test/new-case.test.mjs');
+
+  // A test file the run added in an earlier commit stays modifiable.
+  const later = repository(t);
+  const scopeHead = head(later);
+  commitFixture(later, 'test/new-case.test.mjs', 'new\n', 'run adds a test');
+  writeFileSync(join(later, 'test', 'new-case.test.mjs'), 'edited\n');
+  expectResult(
+    await run(later, ['test/new-case.test.mjs'], { paths: ['tracked.txt'], head: scopeHead }),
+  );
+  assert.equal(git(later, 'show', '--name-only', '--format=', 'HEAD'), 'test/new-case.test.mjs');
+});
+
+test('commit create refuses a non-canonical spelling of an unscoped test path', async (t) => {
+  const root = repository(t);
+  mkdirSync(join(root, 'test'));
+  writeFileSync(join(root, 'test', 'new.test.mjs'), 'new\n');
+  bindScope(root, { paths: ['tracked.txt'] });
+  const before = head(root);
+  // Whether the path shape check or the scope check refuses it, the spelling never commits.
+  const envelope = await commitCreate(
+    input(root, {
+      paths: ['test/./new.test.mjs'],
+      expect: { 'test/./new.test.mjs': blob(root, 'test/new.test.mjs') },
+    }),
+  );
+  assert.equal(envelope.ok, false, JSON.stringify(envelope));
+  assert.equal(head(root), before);
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
+});
+
+test('commit create refuses an outside path of a fork head as SCOPE_REFUSED, an in-scope one as HOOKS_UNTRUSTED', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  bindScope(root, { paths: ['other.txt'] });
+  const outside = expectScopeRefused(
+    root,
+    await commitCreate(input(root, { sameRepository: false })),
+    'outside',
+  );
+  assert.deepEqual(outside.outside, ['tracked.txt']);
+
+  const inScope = repository(t);
+  writeFileSync(join(inScope, 'tracked.txt'), 'changed\n');
+  bindScope(inScope, { paths: ['tracked.txt'] });
+  const untrusted = expectOutcome(
+    await commitCreate(input(inScope, { sameRepository: false })),
+    'HOOKS_UNTRUSTED',
+  );
+  assert.equal(untrusted.reason, 'fork-head');
+});
+
+test('commit create fails closed on a malformed scope record and never commits unscoped', async (t) => {
+  const max = repairAttemptCore.SCOPE_RECORD_MAX_BYTES;
+  assert.ok(Number.isSafeInteger(max), 'SCOPE_RECORD_MAX_BYTES is exported');
+  const valid = (root) => ({
+    version: 1,
+    runId: OWNER.runId,
+    scope: { mergeBase: head(root), head: head(root), paths: ['tracked.txt'] },
+    freeText: ID_FREE,
+    correction: ID_CORR,
+  });
+  const variants = {
+    'bad JSON': () => '{"version":',
+    'wrong runId': (root) => JSON.stringify({ ...valid(root), runId: OTHER_RUN_ID }),
+    'wrong version': (root) => JSON.stringify({ ...valid(root), version: 2 }),
+    'scope without paths': (root) =>
+      JSON.stringify({ ...valid(root), scope: { mergeBase: head(root), head: head(root) } }),
+    oversized: (root) => {
+      const json = JSON.stringify(valid(root));
+      return json + ' '.repeat(max + 1 - json.length);
+    },
+  };
+  for (const content of Object.values(variants)) {
+    const root = repository(t);
+    writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+    mkdirSync(join(root, '.effective-flow', 'runs', OWNER.runId), { recursive: true });
+    writeFileSync(scopeRecordPath(root), content(root));
+    expectScopeRefused(root, await commitCreate(input(root)), 'scope-record-invalid');
+  }
+  // A symlinked record file and a symlinked run directory are refused as well.
+  const linkedFile = repository(t);
+  writeFileSync(join(linkedFile, 'tracked.txt'), 'changed\n');
+  writeFileSync(join(linkedFile, 'real-record.json'), JSON.stringify(valid(linkedFile)));
+  mkdirSync(join(linkedFile, '.effective-flow', 'runs', OWNER.runId), { recursive: true });
+  symlinkSync(join(linkedFile, 'real-record.json'), scopeRecordPath(linkedFile));
+  expectScopeRefused(linkedFile, await commitCreate(input(linkedFile)), 'scope-record-invalid');
+
+  const linkedDir = repository(t);
+  writeFileSync(join(linkedDir, 'tracked.txt'), 'changed\n');
+  mkdirSync(join(linkedDir, 'elsewhere'));
+  writeFileSync(
+    join(linkedDir, 'elsewhere', 'iterate-scope.json'),
+    JSON.stringify(valid(linkedDir)),
+  );
+  mkdirSync(join(linkedDir, '.effective-flow', 'runs'), { recursive: true });
+  symlinkSync(
+    join(linkedDir, 'elsewhere'),
+    join(linkedDir, '.effective-flow', 'runs', OWNER.runId),
+  );
+  expectScopeRefused(linkedDir, await commitCreate(input(linkedDir)), 'scope-record-invalid');
+});
+
+test('commit create looks the record up by owner.runId only and ignores the record of another run', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  // The other run's record would refuse this path; this run has none, so the commit is unscoped.
+  bindScope(root, { paths: ['other.txt'] }, OTHER_RUN_ID);
+  const result = expectResult(await commitCreate(input(root)));
+  assert.equal(result.commit, head(root));
+});
+
+test('commit create without a scope record runs no scope git read', async (t) => {
+  // Assumption: the scope reads are those of repair-attempt-core (every one leads with
+  // `--no-replace-objects`, and the ancestry read is a `merge-base`) plus the status read of the
+  // listed paths. The unscoped path issues none of the former, and strictly fewer calls overall.
+  const readsOf = (calls) =>
+    calls.filter(
+      ({ args }) => args.includes('--no-replace-objects') || args.includes('merge-base'),
+    );
+  const plain = repository(t);
+  writeFileSync(join(plain, 'tracked.txt'), 'changed\n');
+  // The same runtime directories as the scoped repository, without a record, so the call counts
+  // differ only by the scope reads and not by the lock's creation of `.effective-flow/`.
+  mkdirSync(join(plain, '.effective-flow', 'runs', OWNER.runId), { recursive: true });
+  const plainCalls = [];
+  expectResult(await commitCreate(input(plain), { runner: observingRunner(plainCalls) }));
+  assert.deepEqual(readsOf(plainCalls), []);
+
+  const scoped = repository(t);
+  writeFileSync(join(scoped, 'tracked.txt'), 'changed\n');
+  bindScope(scoped, { paths: ['tracked.txt'] });
+  const scopedCalls = [];
+  expectResult(await commitCreate(input(scoped), { runner: observingRunner(scopedCalls) }));
+  assert.ok(
+    scopedCalls.length > plainCalls.length,
+    `a bound scope costs reads (${scopedCalls.length} against ${plainCalls.length})`,
+  );
+});
+
+test('commit create runs its scope reads in the worktree, not in the runtime root', async (t) => {
+  const relative = 'test/new-case.test.mjs';
+  const scenario = async (name, bound) => {
+    const root = repository(t);
+    const linked = join(root, '.effective-flow', '.worktrees', name);
+    mkdirSync(join(root, '.effective-flow', '.worktrees'), { recursive: true });
+    git(root, 'worktree', 'add', '-q', '-b', name, linked);
+    mkdirSync(join(linked, 'test'));
+    writeFileSync(join(linked, relative), 'new\n');
+    if (bound) bindScope(root, { paths: ['tracked.txt'] });
+    const calls = [];
+    const result = expectResult(
+      await commitCreate(
+        input(root, {
+          worktree: linked,
+          paths: [relative],
+          expect: { [relative]: blob(linked, relative) },
+          hookBase: head(linked),
+        }),
+        { runner: observingRunner(calls) },
+      ),
+    );
+    assert.equal(result.commit, head(linked));
+    // Assumption: a read of the listed path is a git call naming it through one of these verbs.
+    const reads = calls.filter(
+      ({ args }) =>
+        args.some((arg) => arg.includes(relative)) &&
+        ['--no-replace-objects', 'ls-tree', 'cat-file', 'log'].some((word) => args.includes(word)),
+    );
+    return { reads, linked };
+  };
+  const plain = await scenario('plain', false);
+  const scoped = await scenario('scoped', true);
+  assert.ok(scoped.reads.length > plain.reads.length, 'the bound scope reads the listed path');
+  for (const { cwd } of scoped.reads) {
+    assert.equal(realpathSync(cwd), scoped.linked, 'every read of the path runs in the worktree');
+  }
+});
+
+test('commit create keeps a scope field out of its input so the record is the only scope source', async (t) => {
+  const root = repository(t);
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const envelope = await commitCreate(
+    input(root, { scope: { mergeBase: head(root), head: head(root), paths: ['tracked.txt'] } }),
+  );
+  assert.equal(envelope.ok, false, JSON.stringify(envelope));
+  assert.equal(envelope.error?.code, 'INVALID_INPUT', JSON.stringify(envelope));
+  assert.deepEqual(staged(root), []);
+  assert.equal(lockPresent(root), false);
 });

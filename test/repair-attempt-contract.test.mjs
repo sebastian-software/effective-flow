@@ -171,8 +171,9 @@ test('the configured-reviewer route states the same/new/uncertain rule per revie
 });
 
 // Invariant: in delegated mode with a scope line, iterate declares every item's paths through the
-// helper before any edit and before its commit, at all three ownership checkpoints, and a refused
-// manifest item returns `unassessed`, which the set-aside confirmation cannot clear.
+// helper before any edit, at both ownership checkpoints by the bound `runId`, and `commit create`
+// enforces the same bound scope before its commit; a refused manifest item returns `unassessed`,
+// which the set-aside confirmation cannot clear.
 test('iterate declares the authorized scope before edit and before commit', () => {
   const phase3 = section(iterate, '### Phase 3: Implementation');
   const declaration = flat(phase3.slice(0, phase3.indexOf('\n1. ')));
@@ -198,20 +199,20 @@ test('iterate declares the authorized scope before edit and before commit', () =
   );
   assert.match(
     flat(step(phase3, 1)),
-    /run the scope check on it/,
-    'step 1 must check analyzed paths',
+    /run the scope check by `runId` on it/,
+    'step 1 must check analyzed paths against the bound scope',
   );
   assert.match(
     flat(step(phase3, 2)),
-    /Run the scope check on it, then add the path to the item's actual ownership/,
-    'step 2 must check an outside path before adding it to ownership',
+    /Run the scope check by `runId` on it, then add the path to the item's actual ownership/,
+    'step 2 must check an outside path against the bound scope before adding it to ownership',
   );
   const integrity = flat(section(iterate, '#### Commit integrity for parallel items'));
   ordered(
     integrity,
     '1. **Inspect the diff**',
-    'Run the scope check',
-    'before `commit create`',
+    '`commit create` enforces the scope Phase 0 step 12 bound on the listed paths',
+    'before it locks or stages anything',
     '2. **Commit with one call.**',
   );
   assert.match(
@@ -475,14 +476,14 @@ test('the gate states its side of a missing or unparseable return line', () => {
   );
   assert.match(
     flat(scopeReturn),
-    /the caller ends the run on a missing `Scope expansion:` line/,
+    /the caller ends the run on a missing `Scope expansion:` line after one line request/,
     'the return format names the consequence',
   );
   assert.equal(MAINTAINER_DECISIONS['scope-line-missing'], 'verify-returned-commits');
   assert.match(
     flat(repairReport),
-    /without a parseable `Scope expansion:` line \(`scope-line-missing`\)/,
-    'the repair report names the missing-line stop',
+    /without a parseable `Scope expansion:` line, still missing after any line request \(`scope-line-missing`\)/,
+    'the repair report names the missing-line stop as one that survived the line request',
   );
   assert.match(
     flat(step(section(delegatedRun, '#### Repair checkpoints'), 3)),
@@ -505,7 +506,7 @@ test('a BLOCKED-USER return is never recorded and a Phase-0 refusal counts nothi
   );
   assert.match(
     receiver,
-    /A `BLOCKED-USER` return and a Phase-0 refusal[^.]*`duplicated control line`, `manifest and body mismatch` or a reason starting `unparseable`[^.]*carry neither line and edited nothing/,
+    /A `BLOCKED-USER` return and a Phase-0 refusal[^.]*`duplicated control line`, `manifest and body mismatch`, a reason starting `unparseable` or one starting `scope bind refused`[^.]*carry neither line and edited nothing/,
     'neither is read as a missing line',
   );
   // The delegation consuming the answer re-enters the same round; a record for the question would
@@ -609,7 +610,247 @@ test("iterate rejects a refused item's paths at every scope checkpoint", () => {
   assert.match(declaration, /"cwd":"<this run's execution root>"/, 'scope-check reads the tree');
   assert.match(
     flat(section(iterate, '### Phase 4: Validation')),
-    /correction item through the scope check of Phase 3 "Authorized scope" on its planned paths/,
+    /correction item through the scope check by `runId` of Phase 3 "Authorized scope" on its planned paths/,
     'a correction item is scope-checked in Phase 4',
+  );
+});
+
+const fallback = source('src/shared/iterate-commit-fallback.md');
+const LINE_REQUEST =
+  'State the missing `Returned commits:` and `Scope expansion:` lines of your final return per `delegated-scope-return`.';
+
+// Invariant: a scoped iterate run binds its scope once in Phase 0, by `runId`, and every later
+// scope check reads that bound scope instead of one the run builds itself: a run that checked a
+// self-built scope committed paths the line's scope never authorized. A bind failure aborts before
+// Phase 1, with a shape refusal kept apart from every other refusal.
+test('iterate binds its scope in Phase 0 and checks every scoped path by runId', () => {
+  const phase0 = section(iterate, '### Phase 0: Target detection and input parsing');
+  const bindStep = flat(step(phase0, 12));
+  assert.match(
+    bindStep,
+    /`node <skill-root>\/scripts\/repair-attempt\.mjs scope-bind`/,
+    'Phase 0 binds the scope through the helper',
+  );
+  assert.ok(
+    bindStep.includes(
+      '`{"stateRoot":"<RUNTIME_STATE_ROOT>","runId":"<runId>","authorizedScope":<the line\'s JSON verbatim>}`',
+    ),
+    'the bind takes the runtime root, the run identity and the line verbatim',
+  );
+  assert.match(
+    bindStep,
+    /Only the refusal code `AUTHORIZED_SCOPE_INVALID` returns `ABORT: unparseable authorized scope`; any other result than `ok: true` returns `ABORT: scope bind refused: <CODE>`/,
+    'only a shape refusal reads as unparseable; every other bind failure names its code',
+  );
+  ordered(flat(phase0), '11. **Run identity.**', '12. **Scope bind.**');
+  const phase3 = section(iterate, '### Phase 3: Implementation');
+  const declaration = flat(phase3.slice(0, phase3.indexOf('\n1. ')));
+  assert.ok(
+    declaration.includes(
+      '"cwd":"<this run\'s execution root>","stateRoot":"<RUNTIME_STATE_ROOT>","runId":"<runId>","changes"',
+    ),
+    'the general scope-check call shape reads the bound scope by runId',
+  );
+  assert.ok(
+    !iterate.includes('"scope":<the line\'s scope>'),
+    'no scope-check call shape passes the scope by value',
+  );
+  assert.match(
+    declaration,
+    /`SCOPE_RECORD_MISSING` or `SCOPE_RECORD_INVALID` ends the run per Commit integrity step 3/,
+    'a missing or invalid bound scope ends the run instead of refusing one item',
+  );
+  assert.match(
+    declaration,
+    /\(after a call that returned no envelope, the checked paths\)/,
+    'only a call without an envelope declares the checked paths',
+  );
+});
+
+// Invariant: `commit create` enforces the bound scope, and iterate handles its refusal by cause: only
+// an `outside` refusal declares paths, and exactly the reported ones; a moved head is retried once
+// and a read timeout is no expansion, so neither declares an in-scope path; a missing or invalid
+// record ends the whole run. The commit timeout covers the helper's full bounded duration.
+test('iterate handles a commit-time scope refusal by cause and gives the commit call 420000 ms', () => {
+  const integrity = section(iterate, '#### Commit integrity for parallel items');
+  const handle = flat(step(integrity, 3));
+  assert.match(
+    handle,
+    /`SCOPE_REFUSED`, with nothing locked or staged, by `outcome\.reason`: `outside` refuses the item per "Authorized scope", declaring exactly `outcome\.outside` and the `outcome\.undetermined` paths/,
+    'an outside refusal declares exactly the reported paths and maps to unassessed',
+  );
+  assert.match(
+    handle,
+    /`head-moved` inspects the item again and repeats the call once, and a recurrence returns the item `unassessed` with no scope expansion/,
+    'a moved head is retried once and then unassessed without expansion',
+  );
+  assert.match(
+    handle,
+    /`scope-read-timeout` returns the item `unassessed` with no scope expansion/,
+    'a read timeout is unassessed without expansion',
+  );
+  assert.match(
+    handle,
+    /`SCOPE_REFUSED` reason `scope-record-invalid`, or `SCOPE_RECORD_MISSING` or `SCOPE_RECORD_INVALID` from either helper: end the whole run with `ABORT: scope record unavailable`/,
+    'an unavailable record ends the whole run',
+  );
+  const commitStep = flat(step(integrity, 2));
+  assert.match(
+    commitStep,
+    /an explicit timeout of 420000 ms/,
+    'the commit call gets the full bound',
+  );
+  for (const term of [
+    '300000 ms commit bound',
+    '20 s of filters',
+    '30 s lock wait with its final acquire attempt',
+    'lock-guard wait for acquire and for release',
+    '10 s scope read budget',
+    'unbounded git reads at their measured worst case',
+  ]) {
+    assert.ok(commitStep.includes(term), `the timeout sum names ${term}`);
+  }
+  assert.ok(!iterate.includes('360000 ms'), 'the old commit timeout is gone');
+  assert.match(
+    flat(fallback),
+    /after its paths passed the bound scope check of a scoped run, which precedes the hook trust check/,
+    'the HOOKS_UNTRUSTED fallback commits only scope-checked paths',
+  );
+});
+
+// Invariant: a scoped run names its return lines at the point it composes its final `DONE`, while
+// the format stays in its lazy owner, and it releases the bound scope only in Phase 6: a release
+// anywhere earlier would leave the run's later commits unchecked.
+test('iterate names the scoped return lines in Phase 6 and releases the bound scope only there', () => {
+  const phase6 = section(iterate, '### Phase 6: Summary');
+  assert.match(
+    flat(step(phase6, 4)),
+    /On a run whose Phase 0 recorded an `Authorized scope:` line, that final `DONE` return states `Returned commits:` and `Scope expansion:` per `delegated-scope-return`/,
+    'the final DONE names both return lines',
+  );
+  const release = flat(step(phase6, 1));
+  assert.ok(
+    release.includes(
+      '`node <skill-root>/scripts/repair-attempt.mjs scope-release` with `{"stateRoot":"<RUNTIME_STATE_ROOT>","runId":"<runId>"}`',
+    ),
+    'Phase 6 releases the bound scope through the helper',
+  );
+  assert.match(release, /This is its only release point/, 'Phase 6 is the only release point');
+  ordered(flat(phase6), 'scope-release', '2. Run the worktree-record exit self-check');
+  assert.equal(
+    iterate.split('scope-release').length - 1,
+    1,
+    'scope-release is called nowhere but Phase 6',
+  );
+  assert.match(
+    lazyPointers(iterate).get('delegated-scope-return') ?? '',
+    /or answers a request for its missing `Returned commits:` and `Scope expansion:` lines/,
+    'the return format also loads when the run answers a line request',
+  );
+});
+
+// Invariant: a dispatched scoped round whose final return lacks a return line gets exactly one
+// targeted line request before the run stops on `scope-line-missing`. The request is a fixed
+// sentence, the only instruction ever sent to the delegated run; it never replaces a declared
+// expansion, and the round is recorded once, after it.
+test('merge-gate sends one bounded line request before a missing return line stops the run', () => {
+  const receiver = section(contract, '## Returned outcome record');
+  assert.equal(
+    contract.split(LINE_REQUEST).length - 1,
+    1,
+    'the literal line-request sentence is stated once',
+  );
+  assert.ok(receiver.includes(`\`\`\`text\n${LINE_REQUEST}\n\`\`\``), 'the sentence is literal');
+  const rule = flat(receiver);
+  assert.match(
+    rule,
+    /final return carries `DONE` or an `ABORT` after Phase 0 but lacks a `Scope expansion:` label or a parseable `Returned commits:` line first gets the line request below; after it, or where the spawn cannot be continued: without a parseable `Scope expansion:` line/,
+    'only a line the answer could supply triggers the request, which precedes the unchanged fallback',
+  );
+  const request = flat(
+    receiver.split(/\n\s*\n/).find((block) => block.startsWith('**The line request**')) ?? '',
+  );
+  assert.match(
+    request,
+    /the one bounded exception to "never an instruction to the delegated run"/,
+    'the request is the stated exception to the principle',
+  );
+  assert.match(
+    request,
+    /carries exactly this sentence and nothing else – no control keyword, no `Item:` line or item text/,
+    'the request carries nothing but the sentence',
+  );
+  const terms = flat(receiver.slice(receiver.indexOf(LINE_REQUEST)));
+  for (const [pattern, label] of [
+    [/follows any keyword-less resume below and is sent at most once/, 'once, after the resume'],
+    [
+      /a Phase 2 step 3 CI repair and each Phase 3 reviewer dispatch of one gate round count separately/,
+      'counted per dispatch',
+    ],
+    [/does not advance the round counter and mints no new `dispatch`/, 'no round, no dispatch'],
+    [
+      /An inline round, a Phase-0 refusal and a `BLOCKED-USER` return get none/,
+      'never inline, after a Phase-0 refusal or for a question',
+    ],
+    [
+      /a `Scope expansion:` label present there counts as carried, parseable or not, and is never taken from the answer/,
+      'a declared expansion line is never replaced',
+    ],
+    [
+      /`Returned commits:` is taken from the answer only where the final return had no parseable one/,
+      'only a lacking commit line is taken',
+    ],
+    [
+      /The keyword, the outcome record and any `Review-fix validation result:` line stay with that final return, and nothing else in the answer counts/,
+      'everything else stays with the final return',
+    ],
+  ]) {
+    assert.match(terms, pattern, `the line request: ${label}`);
+  }
+  assert.match(
+    flat(section(contract, '## Returned outcome record')),
+    /The resume does not advance the round counter and mints no new `dispatch`/,
+    'the resume, like the line request, mints no dispatch',
+  );
+  assert.equal(
+    (flat(contract).match(/keyword-less resume below/g) ?? []).length,
+    1,
+    'the order of resume and line request is stated once, in the line request',
+  );
+  assert.match(
+    flat(step(section(delegatedRun, '#### Repair checkpoints'), 3)),
+    /only after any line request of the delegation contract's receiver rule was answered or could not be sent, never on the return that prompted it/,
+    'the round is recorded once, after the line request',
+  );
+});
+
+// Invariant: iterate answers a line request with the requested lines and its keyword only, from
+// commits it made itself: an answer that edited, pushed or carried a validation result would let the
+// interim turn change what the gate already read, and a guessed SHA would attribute a foreign commit.
+test('iterate answers a line request with the lines only, from its own commits', () => {
+  const answer = flat(
+    scopeReturn
+      .split(/\n\s*\n/)
+      .find((block) => block.startsWith('**Answering a line request.**')) ?? '',
+  );
+  for (const [pattern, label] of [
+    [/gets only the requested lines, then the same keyword line again/, 'lines, then keyword'],
+    [/no `Review-fix validation result:` line/, 'no validation result line'],
+    [/no edit, commit, push, reply or resolve/, 'no write'],
+    [/from this run's own `commit create` results/, 'own commit results'],
+    [/never from the wisdom file/, 'not the wisdom file'],
+    [/read-only with `git log <head before the run>\.\.HEAD`/, 'read-only confirmation'],
+    [/never name a SHA this run did not create/, 'no foreign SHA'],
+    [
+      /Without certainty about that mapping, omit `Returned commits:`[^.]*and still state `Scope expansion:`/,
+      'omit the commit line if uncertain, never the expansion line',
+    ],
+  ]) {
+    assert.match(answer, pattern, `the answer rule: ${label}`);
+  }
+  assert.match(
+    flat(scopeReturn),
+    /or the checked paths after a call that returned no envelope; a well-formed refusal declares only what it reports/,
+    'only a call without an envelope declares the checked paths',
   );
 });

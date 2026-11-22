@@ -1,7 +1,7 @@
 ---
 description: "Feeds review notes from an existing pull request (bots like Greptile and human reviewers) as well as additional free-text instructions back into the same PR as new commits – a mini build on an already delivered change. Classifies each item and delegates to {{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}}, or {{SKILL:docs}}, replies to and resolves the addressed review threads. Without a PR it iterates locally on the latest branch change."
 catalogHint: "Feeds PR review notes and instructions back into an existing PR as new commits."
-contextBudget: 1847
+contextBudget: 1869
 ---
 
 <!-- progress-context-receiver:1 -->
@@ -226,7 +226,7 @@ complete and stated once is what lets every identifier the caller pre-committed 
 
 ```lazy-include
 delegated-scope-return
-when: Phase 0 recorded an `Authorized scope:` line and this run composes its return, by `DONE` or by an `ABORT` after Phase 0
+when: Phase 0 recorded an `Authorized scope:` line and this run composes its return, by `DONE` or by an `ABORT` after Phase 0, or answers a request for its missing `Returned commits:` and `Scope expansion:` lines
 ```
 
 ## Wisdom Accumulation
@@ -545,9 +545,15 @@ url=<review URL>`. A **thread item** carries a manifest line of its own, in the 
     Record both values, or their absence and the fallback taken, and any approval, scope or
     review-fix validation line in the wisdom file and carry them into Phases 1.5, 2.5, 3 and 4.
 
-11. **Run identity.** Mint `runId` once per run as `iterate-<at least 16 random hex characters>`
+11. **Run identity.** Mint `runId` once per run as `iterate-<at least 16 random lowercase hex characters>`
     from a random source, never derived from a timestamp or the session ID, and record it in the
     wisdom file. A run delegated by {{SKILL:merge-gate}} mints its own.
+12. **Scope bind.** Only with an `Authorized scope:` line, bind it to `runId` before Phase 1 through
+    `node <skill-root>/scripts/repair-attempt.mjs scope-bind` with one JSON object on standard input:
+    `{"stateRoot":"<RUNTIME_STATE_ROOT>","runId":"<runId>","authorizedScope":<the line's JSON verbatim>}`.
+    Only the refusal code `AUTHORIZED_SCOPE_INVALID` returns `ABORT: unparseable authorized scope`;
+    any other result than `ok: true` returns `ABORT: scope bind refused: <CODE>`, `<CODE>` its
+    `error.code` or `NO_ENVELOPE`. Every later scope check of this run reads the bound scope by `runId`.
 
 ### Phase 1: Gather context
 
@@ -795,17 +801,20 @@ options:
 
 **Authorized scope.** Only with Phase 0's `Authorized scope:` line, every item – each manifest item,
 the free-text repair, every Phase-4 correction item – declares its paths before any edit and before
-its commit (steps 1 and 2, Commit integrity step 1) through
-`node <skill-root>/scripts/repair-attempt.mjs scope-check` with one JSON object on standard input:
-`{"cwd":"<this run's execution root>","scope":<the line's scope>,"changes":[{"status":"<A|M|D|R|C>","path":"<path>","from":"<R or C source>"}]}`,
-a planned path stating `A` if it does not exist yet, else `M`. Only `data.status` `in-scope`
-continues. Anything else refuses the item: edit nothing more, commit nothing, record `data.outside`
-and the `undetermined` paths (after a failed call, the checked paths) as its scope expansion and its paths in the wisdom file as
+its commit: before an edit (steps 1 and 2) through
+`node <skill-root>/scripts/repair-attempt.mjs scope-check` with one JSON object on standard input,
+which reads the scope Phase 0 step 12 bound:
+`{"cwd":"<this run's execution root>","stateRoot":"<RUNTIME_STATE_ROOT>","runId":"<runId>","changes":[{"status":"<A|M|D|R|C>","path":"<path>","from":"<R or C source>"}]}`,
+a planned path stating `A` if it does not exist yet, else `M`; before its commit through
+`commit create`, which enforces the same bound scope (Commit integrity step 1). Only `data.status`
+`in-scope` continues. `SCOPE_RECORD_MISSING` or `SCOPE_RECORD_INVALID` ends the run per Commit
+integrity step 3. Anything else refuses the item: edit nothing more, commit nothing, record `data.outside`
+and the `undetermined` paths (after a call that returned no envelope, the checked paths) as its scope expansion and its paths in the wisdom file as
 rejected and left uncommitted, as step 3 does, and return a manifest item `unassessed`, which no
 set-aside confirmation clears. Paths alone decide, never a line count.
 
 1. Before delegation, record the analyzed file ownership of every actionable item and run the scope
-   check on it. Items whose analyzed file sets overlap run sequentially; only items with disjoint
+   check by `runId` on it. Items whose analyzed file sets overlap run sequentially; only items with disjoint
    sets may implement in parallel.
 2. Delegate each actionable item to the appropriate skill ({{SKILL:fix}}, {{SKILL:refactor}}, {{SKILL:build}},
    or {{SKILL:docs}}), on the PR head branch (PR mode) or the current branch (local mode).
@@ -836,7 +845,7 @@ set-aside confirmation clears. Paths alone decide, never a line count.
    included.
    Each delegation receives its analyzed owned paths and reports its actual
    paths. If it discovers that it must touch a path outside its analyzed set, it must stop before
-   modifying that path and return it to the orchestrator. Run the scope check on it, then add the path to the item's actual
+   modifying that path and return it to the orchestrator. Run the scope check by `runId` on it, then add the path to the item's actual
    ownership, compare it with every active item's analyzed and actual paths, and serialize the
    affected items before allowing work on that path to continue. Never let two active items edit
    the same path based only on the original analysis.
@@ -895,12 +904,14 @@ Per item, after its configured pre-commit checks:
    reports once the path is staged: hash a symlink's link text (`readlink -n <path>` into
    `git hash-object --stdin`), never its target, and take a gitlink's checked-out commit
    (`git -C <path> rev-parse HEAD`). These OIDs pin the reviewed content: content changed after
-   the review fails the call's content check. A correction pass inspects again. Run the scope
-   check of "Authorized scope" on the inspected list, each path with its added, modified or deleted
-   status and both sides of a rename, before `commit create`.
-2. **Commit with one call.** Give the Bash tool an explicit timeout above the helper's 300000 ms
-   commit bound, for example 360000 ms. In Codex, request sandbox escalation for this call up
-   front.
+   the review fails the call's content check. A correction pass inspects again. In a scoped run
+   `commit create` enforces the scope Phase 0 step 12 bound on the listed paths, deriving each
+   status itself, before it locks or stages anything; its refusal is handled in step 3.
+2. **Commit with one call.** Give the Bash tool an explicit timeout of 420000 ms: the helper's
+   300000 ms commit bound, 20 s of filters, the 30 s lock wait with its final acquire attempt,
+   10 s each of lock-guard wait for acquire and for release, the 10 s scope read budget, and the
+   unbounded git reads at their measured worst case. In Codex, request sandbox escalation for this
+   call up front.
 
    ```text
    node <skill-root>/scripts/effective-flow-state.mjs commit create <<< '{"cwd":"<RUNTIME_STATE_ROOT>","worktree":"<EXECUTION_ROOT>","lock":"iterate-commit","owner":{"workflow":"iterate","runId":"<runId>","item":"<item>","delegation":"<runId>/<n>"},"paths":["<path>"],"expect":{"<path>":"<blob OID or null>"},"hookBase":"<hookBase>","sameRepository":<true|false>,"message":"<message>"}'
@@ -925,6 +936,14 @@ Per item, after its configured pre-commit checks:
      wait, then applies the rest.
    - `HOOKS_UNTRUSTED`: report `outcome.reason`, and the orchestrator commits this item through the
      prose sequence of the fallback loaded below, which prompts in default mode.
+   - `SCOPE_REFUSED`, with nothing locked or staged, by `outcome.reason`: `outside` refuses the
+     item per "Authorized scope", declaring exactly `outcome.outside` and the `outcome.undetermined`
+     paths; `head-moved` inspects the item again and repeats the call once, and a recurrence returns
+     the item `unassessed` with no scope expansion; `scope-read-timeout` returns the item
+     `unassessed` with no scope expansion; `scope-record-invalid` ends the run as below.
+   - `SCOPE_REFUSED` reason `scope-record-invalid`, or `SCOPE_RECORD_MISSING` or
+     `SCOPE_RECORD_INVALID` from either helper: end the whole run with
+     `ABORT: scope record unavailable`.
    - `INDEX_NOT_CLEAN`, `STAGE_FAILED`, `STAGED_SET_MISMATCH`, `STAGED_CONTENT_CHANGED`,
      `COMMIT_FAILED`: `ABORT` for the item with the reported sets and stderr; the helper unstaged
      only the listed paths.
@@ -966,8 +985,8 @@ when: Phase 0 honored a `Review-fix validation:` line and Phase 4 is about to de
    reported, never fixed. Under `quick`, only {{AGENT:code-validator}} runs, with the review-fix
    scope of that fragment, never the mode-less project-wide quality gate.
    <!-- spawn-site:iterate/validation -->
-2. Fix errors found only as a correction item through the scope check of Phase 3 "Authorized scope"
-   on its planned paths, then Phase 3 steps 2–4 – delegation, pre-commit review, its own commit –
+2. Fix errors found only as a correction item through the scope check by `runId` of Phase 3
+   "Authorized scope" on its planned paths, then Phase 3 steps 2–4 – delegation, pre-commit review, its own commit –
    never inline, and verify again per "Goal-driven completion control":
    limit the internal correction rounds and escalate to the user if the checks still fail
    afterwards. A correction item that cannot run or stays blocked leaves the failure reported.
@@ -1024,7 +1043,10 @@ when: Phase 4 reports the suite as `SKIPPED (environment: <prerequisite id>)` an
 
 ### Phase 6: Summary
 
-1. Delete the wisdom file.
+1. Delete the wisdom file and, where Phase 0 step 12 bound a scope, release it through
+   `node <skill-root>/scripts/repair-attempt.mjs scope-release` with
+   `{"stateRoot":"<RUNTIME_STATE_ROOT>","runId":"<runId>"}` on standard input. This is its only
+   release point: a released scope leaves later commits of the run unchecked.
 2. Run the worktree-record exit self-check.
 3. Give the user a summary:
    - table: one row per item with its processing outcome – implemented, skipped, deferred question,
@@ -1040,7 +1062,7 @@ when: Phase 4 reports the suite as `SKIPPED (environment: <prerequisite id>)` an
    - the worktree-record exit self-check result – in this summary, which is also the content
      handed back under `Summary comment: suppressed`, never in the returned outcome record
 4. Emit the next-step block per `next-steps` as the last element of the report — unless Phase 0
-   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run. On normal completion a delegated run's final line is `DONE`, beside its stop returns `ABORT: <reason>` and `BLOCKED-USER <question-id>`.
+   received `Next steps: suppressed`, in which case emit nothing and let the caller close the run. On normal completion a delegated run's final line is `DONE`, beside its stop returns `ABORT: <reason>` and `BLOCKED-USER <question-id>`. On a run whose Phase 0 recorded an `Authorized scope:` line, that final `DONE` return states `Returned commits:` and `Scope expansion:` per `delegated-scope-return`.
 
 ## Rules
 

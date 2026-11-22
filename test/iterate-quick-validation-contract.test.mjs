@@ -458,13 +458,14 @@ test('the round reports its effective mode, validated head and detection', () =>
 // for exactly the pushed head: one parseable outcome line with mode `full`, a reason and a 40-hex
 // head equal to `after`. Anything else, including a `full` line with a missing, malformed or other
 // head, records `after`, so a round whose report was lost or ambiguous can never merge on the
-// strength of a `full` run nobody saw; a later round never removes the record.
+// strength of a `full` run nobody saw; a later round never removes the record. The line is read
+// from the dispatch's final return, never from a line-request answer, which may not change it.
 test('a missing iterate outcome is recorded fail-closed as a quick-validated review-fix head', () => {
   includesAll(
     record,
     [
       'where the `after` head of "Repair checkpoints" step 3 differs from its `before`, record `after` as the **quick-validated review-fix head**, with the detection\'s `baseCommit`.',
-      'The one exception is a return whose final text, read where its `Returned commits:` line is read, carries exactly one `Review-fix validation result:` line that parses as one compact JSON object with `mode` `full`, a non-empty `reason` string and a `head` of 40 hex characters equal to `after`.',
+      'The one exception is a dispatch whose final return – after any keyword-less resume, never a line-request answer – carries exactly one `Review-fix validation result:` line that parses as one compact JSON object with `mode` `full`, a non-empty `reason` string and a `head` of 40 hex characters equal to `after`.',
       'Every other return records `after`, and a parsed `quick` head other than `after` is recorded as well.',
       'A later round never removes the record;',
     ],

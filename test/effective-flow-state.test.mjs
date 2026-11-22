@@ -268,6 +268,7 @@ test('operations, locks and codes are frozen closed sets', () => {
       'MARKER_INVALID',
       'CLAIMED',
       'LEGACY_PASS_LOCK',
+      'SCOPE_REFUSED',
     ],
   );
   assert.deepEqual(
@@ -317,6 +318,67 @@ test('exit codes: 0 success, 4 outcome, 2 input or root, 3 unsafe or write, 1 ot
   assert.equal(exitFor('LEGACY_CHANGED'), 3);
   assert.equal(exitFor('GIT_FAILED'), 1);
   assert.equal(exitFor('INTERNAL_ERROR'), 1);
+});
+
+// Invariant: SCOPE_REFUSED is an outcome like the others: exit 4, a stderr line the prose can read
+// and no thrown error, reached through the real CLI entry of `commit create`.
+test('commit create reports SCOPE_REFUSED through the CLI with exit 4 and a message line', async (t) => {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-state-scope-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  const env = {
+    ...process.env,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_AUTHOR_NAME: 'Effective Flow Test',
+    GIT_AUTHOR_EMAIL: 'effective-flow@example.invalid',
+    GIT_COMMITTER_NAME: 'Effective Flow Test',
+    GIT_COMMITTER_EMAIL: 'effective-flow@example.invalid',
+  };
+  const git = (...args) => {
+    const result = spawnSync('git', ['-C', root, ...args], { env, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    return result.stdout.trim();
+  };
+  git('init', '-q', '--initial-branch=main');
+  writeFileSync(join(root, '.gitignore'), '.effective-flow/\n');
+  writeFileSync(join(root, 'tracked.txt'), 'tracked\n');
+  git('add', '.');
+  git('commit', '-q', '-m', 'fixture');
+  const head = git('rev-parse', 'HEAD');
+  const owner = OWNERS['iterate-commit'];
+  mkdirSync(join(root, '.effective-flow', 'runs', owner.runId), { recursive: true });
+  writeFileSync(
+    join(root, '.effective-flow', 'runs', owner.runId, 'iterate-scope.json'),
+    JSON.stringify({
+      version: 1,
+      runId: owner.runId,
+      scope: { mergeBase: head, head, paths: ['other.txt'] },
+      freeText: 'F'.repeat(32),
+      correction: 'K'.repeat(32),
+    }),
+  );
+  writeFileSync(join(root, 'tracked.txt'), 'changed\n');
+  const io = captureIo({
+    input: {
+      cwd: root,
+      worktree: root,
+      lock: 'iterate-commit',
+      owner,
+      paths: ['tracked.txt'],
+      expect: { 'tracked.txt': git('hash-object', '--', 'tracked.txt') },
+      hookBase: head,
+      sameRepository: true,
+      message: 'fix: change',
+    },
+  });
+  const envelope = await main(['commit', 'create'], io);
+  assert.equal(envelope.ok, false, JSON.stringify(envelope));
+  assert.equal(envelope.outcome.code, 'SCOPE_REFUSED');
+  assert.equal(envelope.outcome.reason, 'outside');
+  assert.equal(io.exitCode, 4);
+  assert.match(io.err, /^SCOPE_REFUSED: \S/);
+  assert.equal(io.err.split('\n').filter(Boolean).length, 1);
+  assert.equal(io.out.split('\n').filter(Boolean).length, 1);
 });
 
 // Invariant: only the helper's own codes leave the core; a shared-guard code outside the set or a

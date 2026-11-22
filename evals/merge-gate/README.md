@@ -185,7 +185,11 @@ manifest, item filter, and suppression and review-guard controls. It retains rev
 byte count and SHA-256 digest, then returns one controlled `deferred` outcome for each
 caller-minted identifier, below empty `Returned commits: []` and `Scope expansion: []` lines in the
 format of `shared/delegated-scope-return.md`: the gate delegates with `Authorized scope:` and ends the
-run with `scope-line-missing` on a return without the second line. Its build identity hashes the echo
+run with `scope-line-missing` on a return without the second line, unless one targeted line request
+answers it first. The `iterate-scope-line-request` scenario reuses these slots and this `origin`;
+its echo omits both lines from the first return, and its `--line-request` mode records the
+continuation message by size and digest and returns the two lines and `DONE`, so the gate records
+the round after exactly one request. Its build identity hashes the echo
 and the trace helper at the paths the run executes, in place of production `iterate`.
 
 That delegation is preceded by the gate's mandatory repair scope read, which fetches `origin/develop`

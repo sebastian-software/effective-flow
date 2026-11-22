@@ -7,7 +7,24 @@
 // after the `--no-replace-objects` every read must lead with.
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { test } from 'node:test';
+import { main } from '../src/scripts/repair-attempt.mjs';
+import * as core from '../src/scripts/repair-attempt-core.mjs';
+import { createProcessRunner } from '../src/scripts/process-runner.mjs';
 import {
   MAX_INERT_LISTED,
   TEST_GLOBS,
@@ -1880,4 +1897,541 @@ test('invalid input is refused with INVALID_INPUT and no read', async () => {
     assert.equal(envelope.error.code, 'INVALID_INPUT', operation);
   }
   assert.deepEqual(w.calls, []);
+});
+
+// ---------------------------------------------------------------------------------------------
+// Scope record: `scope-bind`, `scope-release` and `scope-check` by `runId` (plan
+// 2026-11-22-reliable-scoped-iterate-returns-and-a-commit-time-scope-check, "Scope binding and
+// enforcement"). These run against real temporary repositories, because the operations validate
+// `stateRoot` with the runtime-state guard, which spawns git.
+
+const RUN_ID = 'iterate-0123456789abcdef';
+const GIT_ENV = {
+  ...process.env,
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_AUTHOR_NAME: 'Effective Flow Test',
+  GIT_AUTHOR_EMAIL: 'effective-flow@example.invalid',
+  GIT_COMMITTER_NAME: 'Effective Flow Test',
+  GIT_COMMITTER_EMAIL: 'effective-flow@example.invalid',
+};
+const AUTHORIZED = Object.freeze({
+  version: 1,
+  scope: { mergeBase: MB, head: H0, paths: ['src/a.mjs', 'src/b.mjs'] },
+  freeText: FREE,
+  correction: CORR,
+});
+
+function gitIn(root, ...args) {
+  const result = spawnSync('git', ['-C', root, ...args], { env: GIT_ENV, encoding: 'utf8' });
+  assert.equal(result.status, 0, result.stderr);
+  return result.stdout.trim();
+}
+
+// A main checkout that ignores `.effective-flow/`, with `test/existing.test.mjs` in its history.
+function repo(t) {
+  const root = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-scope-record-')));
+  t.after(() => rmSync(root, { recursive: true, force: true }));
+  gitIn(root, 'init', '-q', '--initial-branch=main');
+  writeFileSync(join(root, '.gitignore'), '.effective-flow/\n');
+  mkdirSync(join(root, 'test'));
+  writeFileSync(join(root, 'test', 'existing.test.mjs'), 'existing\n');
+  writeFileSync(join(root, 'tracked.txt'), 'tracked\n');
+  gitIn(root, 'add', '.');
+  gitIn(root, 'commit', '-q', '-m', 'fixture');
+  return root;
+}
+
+const realDeps = () => ({ runner: createProcessRunner() });
+const recordDir = (root, runId = RUN_ID) => join(root, '.effective-flow', 'runs', runId);
+const recordPath = (root, runId = RUN_ID) => join(recordDir(root, runId), 'iterate-scope.json');
+const bind = (root, overrides = {}) =>
+  executeOperation(
+    'scope-bind',
+    { stateRoot: root, runId: RUN_ID, authorizedScope: AUTHORIZED, ...overrides },
+    realDeps(),
+  );
+const release = (root, overrides = {}) =>
+  executeOperation('scope-release', { stateRoot: root, runId: RUN_ID, ...overrides }, realDeps());
+const checkById = (root, input = {}, stateRoot = root) =>
+  executeOperation(
+    'scope-check',
+    {
+      cwd: root,
+      stateRoot,
+      runId: RUN_ID,
+      changes: [{ status: 'A', path: 'src/new.mjs' }],
+      ...input,
+    },
+    realDeps(),
+  );
+
+// The record as `scope-bind` stores it, for readers to refuse variants of.
+const recordOf = (overrides = {}) => ({
+  version: 1,
+  runId: RUN_ID,
+  scope: { mergeBase: MB, head: H0, paths: ['src/a.mjs', 'src/b.mjs'] },
+  freeText: FREE,
+  correction: CORR,
+  ...overrides,
+});
+
+function writeRecord(root, content, runId = RUN_ID) {
+  mkdirSync(recordDir(root, runId), { recursive: true });
+  writeFileSync(recordPath(root, runId), content);
+}
+
+function expectRefused(envelope, code, label = '') {
+  assert.equal(envelope.ok, false, `${label} ${JSON.stringify(envelope)}`);
+  if (code !== undefined)
+    assert.equal(envelope.error.code, code, `${label} ${envelope.error.message}`);
+}
+
+const hasRuntimeDir = (root) => existsSync(join(root, '.effective-flow'));
+
+// ---- A. scope-bind -------------------------------------------------------------------------
+
+test('scope-bind and scope-release are operations and SCOPE_RECORD_MAX_BYTES is exported', () => {
+  assert.ok(core.REPAIR_ATTEMPT_OPERATIONS.includes('scope-bind'));
+  assert.ok(core.REPAIR_ATTEMPT_OPERATIONS.includes('scope-release'));
+  assert.ok(
+    Number.isSafeInteger(core.SCOPE_RECORD_MAX_BYTES),
+    'one shared reader and writer bound',
+  );
+  assert.ok(core.SCOPE_RECORD_MAX_BYTES > 0);
+});
+
+test('scope-bind creates the missing parent chain and stores the normalized record', async (t) => {
+  const root = repo(t);
+  assert.equal(hasRuntimeDir(root), false);
+  const envelope = await bind(root, {
+    authorizedScope: {
+      ...AUTHORIZED,
+      scope: { ...AUTHORIZED.scope, paths: ['src/b.mjs', 'src/a.mjs', 'src/a.mjs'] },
+    },
+  });
+  assert.equal(envelope.ok, true, JSON.stringify(envelope));
+  assert.equal(envelope.operation, 'scope-bind');
+  assert.deepEqual(JSON.parse(readFileSync(recordPath(root), 'utf8')), recordOf());
+  // The record is the bound scope's only trace: no stray temporary file stays beside it.
+  assert.deepEqual(readdirSync(recordDir(root)), ['iterate-scope.json']);
+});
+
+test('an identical re-bind is idempotent and leaves the record byte-identical', async (t) => {
+  const root = repo(t);
+  assert.equal((await bind(root)).ok, true);
+  const first = readFileSync(recordPath(root));
+  const again = await bind(root);
+  assert.equal(again.ok, true, JSON.stringify(again));
+  assert.deepEqual(readFileSync(recordPath(root)), first);
+});
+
+test('a conflicting re-bind is refused with SCOPE_CONFLICT, so a bound scope is never widened', async (t) => {
+  const root = repo(t);
+  assert.equal((await bind(root)).ok, true);
+  const first = readFileSync(recordPath(root));
+  for (const authorizedScope of [
+    { ...AUTHORIZED, scope: { ...AUTHORIZED.scope, paths: ['src/a.mjs', 'package.json'] } },
+    { ...AUTHORIZED, scope: { ...AUTHORIZED.scope, head: S1 } },
+    { ...AUTHORIZED, freeText: 'Z'.repeat(32) },
+    { ...AUTHORIZED, correction: 'Y'.repeat(32) },
+  ]) {
+    expectRefused(await bind(root, { authorizedScope }), 'SCOPE_CONFLICT');
+    assert.deepEqual(readFileSync(recordPath(root)), first, 'the original record stays');
+  }
+});
+
+// Invariant: a malformed `Authorized scope:` JSON, and only that, is AUTHORIZED_SCOPE_INVALID, the one
+// code iterate maps to `ABORT: unparseable authorized scope`; a malformed call keeps INVALID_INPUT.
+test('every malformed Authorized scope form is a shape refusal and writes nothing', async (t) => {
+  const root = repo(t);
+  const shortId = 'A'.repeat(31);
+  const forms = {
+    'version other than 1': { ...AUTHORIZED, version: 2 },
+    'version missing': { scope: AUTHORIZED.scope, freeText: FREE, correction: CORR },
+    'version as text': { ...AUTHORIZED, version: '1' },
+    'unknown top-level key': { ...AUTHORIZED, extra: true },
+    'scope missing': { version: 1, freeText: FREE, correction: CORR },
+    'scope head missing': { ...AUTHORIZED, scope: { mergeBase: MB, paths: ['a'] } },
+    'scope paths not an array': { ...AUTHORIZED, scope: { ...AUTHORIZED.scope, paths: 'a' } },
+    'scope path not a string': { ...AUTHORIZED, scope: { ...AUTHORIZED.scope, paths: [1] } },
+    'abbreviated head': { ...AUTHORIZED, scope: { ...AUTHORIZED.scope, head: 'abc1234' } },
+    'uppercase merge base': {
+      ...AUTHORIZED,
+      scope: { ...AUTHORIZED.scope, mergeBase: MB.toUpperCase() },
+    },
+    'identical identifiers': { ...AUTHORIZED, correction: FREE },
+    'identifier shorter than 32 characters': { ...AUTHORIZED, freeText: shortId },
+    'identifier with lower-case letters': { ...AUTHORIZED, freeText: 'a'.repeat(32) },
+    'identifier with punctuation': { ...AUTHORIZED, correction: `${'K'.repeat(31)}-` },
+    'identifier missing': { version: 1, scope: AUTHORIZED.scope, freeText: FREE },
+    'not an object': ['version', 1],
+    null: null,
+  };
+  for (const [label, authorizedScope] of Object.entries(forms)) {
+    expectRefused(await bind(root, { authorizedScope }), 'AUTHORIZED_SCOPE_INVALID', label);
+    assert.equal(hasRuntimeDir(root), false, `${label}: nothing is created`);
+  }
+  // Control: the shape of the valid form binds, so the refusals above are about the forms.
+  assert.equal((await bind(root)).ok, true);
+});
+
+test('a malformed runId is refused before any path is built, and nothing is created', async (t) => {
+  const root = repo(t);
+  const before = readdirSync(root).sort();
+  for (const runId of [
+    '',
+    'iterate-xyz',
+    'iterate-0123456789abcde',
+    '../x',
+    'iterate-0123456789abcdef/../x',
+    'iterate-0123456789abcdef/x',
+    'iterate-0123456789ABCDEF',
+    'apply-review-0123456789abcdef',
+    `iterate-${'a'.repeat(121)}`,
+    7,
+    null,
+  ]) {
+    expectRefused(await bind(root, { runId }), 'INVALID_INPUT', String(runId));
+    expectRefused(await release(root, { runId }), 'INVALID_INPUT', `release ${String(runId)}`);
+  }
+  assert.deepEqual(readdirSync(root).sort(), before);
+  // The longest accepted id is the owner-string limit of `commit create`: 128 characters.
+  const longest = `iterate-${'a'.repeat(120)}`;
+  assert.equal(longest.length, 128);
+  assert.equal((await bind(root, { runId: longest })).ok, true);
+});
+
+test('a record that would exceed SCOPE_RECORD_MAX_BYTES is refused at bind and nothing is stored', async (t) => {
+  const root = repo(t);
+  const max = core.SCOPE_RECORD_MAX_BYTES;
+  assert.ok(Number.isSafeInteger(max), 'the constant is exported');
+  const count = Math.ceil(max / 64) + 16;
+  const paths = Array.from({ length: count }, (_, i) => `src/${String(i).padStart(60, '0')}.mjs`);
+  const envelope = await bind(root, {
+    authorizedScope: { ...AUTHORIZED, scope: { ...AUTHORIZED.scope, paths } },
+  });
+  expectRefused(envelope, 'SCOPE_RECORD_INVALID');
+  assert.equal(
+    existsSync(recordPath(root)),
+    false,
+    'a record that cannot be read back is never bound',
+  );
+});
+
+test('scope-bind and scope-release take exactly their closed input keys', async (t) => {
+  const root = repo(t);
+  const full = { stateRoot: root, runId: RUN_ID, authorizedScope: AUTHORIZED };
+  for (const extra of [{ cwd: root }, { scope: AUTHORIZED.scope }, { other: 1 }]) {
+    expectRefused(
+      await executeOperation('scope-bind', { ...full, ...extra }, realDeps()),
+      'INVALID_INPUT',
+    );
+    expectRefused(
+      await executeOperation(
+        'scope-release',
+        { stateRoot: root, runId: RUN_ID, ...extra },
+        realDeps(),
+      ),
+      'INVALID_INPUT',
+    );
+  }
+  for (const key of Object.keys(full)) {
+    const { [key]: _omitted, ...rest } = full;
+    expectRefused(await executeOperation('scope-bind', rest, realDeps()), 'INVALID_INPUT', key);
+  }
+  expectRefused(
+    await executeOperation('scope-bind', { ...full, stateRoot: 'relative/root' }, realDeps()),
+    undefined,
+    'relative stateRoot',
+  );
+  assert.equal(hasRuntimeDir(root), false);
+  // Control: the closed key set itself binds.
+  assert.equal((await executeOperation('scope-bind', full, realDeps())).ok, true);
+});
+
+test('the CLI accepts scope-bind and scope-release and the usage lists both', async (t) => {
+  const root = repo(t);
+  const out = {
+    value: '',
+    write(chunk) {
+      this.value += chunk;
+    },
+  };
+  const bound = await main(['scope-bind'], {
+    input: { stateRoot: root, runId: RUN_ID, authorizedScope: AUTHORIZED },
+    stdout: out,
+    stderr: { write() {} },
+    setExitCode() {},
+  });
+  assert.equal(bound.ok, true, JSON.stringify(bound));
+  assert.equal(JSON.parse(out.value.trim()).operation, 'scope-bind');
+  assert.equal(existsSync(recordPath(root)), true);
+  const released = await main(['scope-release'], {
+    input: { stateRoot: root, runId: RUN_ID },
+    stdout: { write() {} },
+    stderr: { write() {} },
+    setExitCode() {},
+  });
+  assert.equal(released.ok, true, JSON.stringify(released));
+  assert.equal(existsSync(recordPath(root)), false);
+  const usage = await main(['nope'], {
+    input: {},
+    stdout: { write() {} },
+    stderr: { write() {} },
+    setExitCode() {},
+  });
+  assert.match(usage.error.message, /scope-bind/);
+  assert.match(usage.error.message, /scope-release/);
+});
+
+test('scope-bind refuses a symlinked runs directory or run directory and writes nothing through it', async (t) => {
+  for (const linked of ['runs', 'run']) {
+    const root = repo(t);
+    const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-scope-link-')));
+    t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+    mkdirSync(join(root, '.effective-flow'));
+    if (linked === 'runs') {
+      symlinkSync(elsewhere, join(root, '.effective-flow', 'runs'));
+    } else {
+      mkdirSync(join(root, '.effective-flow', 'runs'));
+      symlinkSync(elsewhere, recordDir(root));
+    }
+    expectRefused(await bind(root), 'UNSAFE_TARGET', linked);
+    assert.deepEqual(readdirSync(elsewhere), [], `${linked}: nothing is written through the link`);
+  }
+});
+
+// ---- B. reader refusals, observed through scope-check by runId -------------------------------
+
+test('the record reader refuses a symlinked run directory as SCOPE_RECORD_INVALID', async (t) => {
+  const root = repo(t);
+  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-scope-link-')));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  writeFileSync(join(elsewhere, 'iterate-scope.json'), JSON.stringify(recordOf()));
+  mkdirSync(join(root, '.effective-flow', 'runs'), { recursive: true });
+  symlinkSync(elsewhere, recordDir(root));
+  expectRefused(await checkById(root), 'SCOPE_RECORD_INVALID');
+});
+
+test('the record reader refuses a symlinked record file as SCOPE_RECORD_INVALID', async (t) => {
+  const root = repo(t);
+  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-scope-link-')));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  writeFileSync(join(elsewhere, 'real.json'), JSON.stringify(recordOf()));
+  mkdirSync(recordDir(root), { recursive: true });
+  symlinkSync(join(elsewhere, 'real.json'), recordPath(root));
+  expectRefused(await checkById(root), 'SCOPE_RECORD_INVALID');
+});
+
+test('the record reader refuses a non-regular record as SCOPE_RECORD_INVALID, not as missing', async (t) => {
+  const root = repo(t);
+  mkdirSync(recordPath(root), { recursive: true });
+  expectRefused(await checkById(root), 'SCOPE_RECORD_INVALID');
+});
+
+test('the record reader refuses bad JSON, a wrong version, a runId mismatch and a bad scope', async (t) => {
+  const root = repo(t);
+  const variants = {
+    'bad JSON': '{"version": 1,',
+    'empty file': '',
+    'not an object': '[1]',
+    'version 2': JSON.stringify(recordOf({ version: 2 })),
+    'runId of another run': JSON.stringify(recordOf({ runId: 'iterate-fedcba9876543210' })),
+    'runId missing': JSON.stringify(recordOf({ runId: undefined })),
+    'scope without head': JSON.stringify(recordOf({ scope: { mergeBase: MB, paths: [] } })),
+    'scope paths not an array': JSON.stringify(
+      recordOf({ scope: { mergeBase: MB, head: H0, paths: 'src/a.mjs' } }),
+    ),
+    'identifier missing': JSON.stringify(recordOf({ correction: undefined })),
+    'identical identifiers': JSON.stringify(recordOf({ correction: FREE })),
+  };
+  for (const [label, content] of Object.entries(variants)) {
+    writeRecord(root, content);
+    expectRefused(await checkById(root), 'SCOPE_RECORD_INVALID', label);
+  }
+});
+
+test('the record reader refuses a file over SCOPE_RECORD_MAX_BYTES even when it is valid JSON', async (t) => {
+  const root = repo(t);
+  const max = core.SCOPE_RECORD_MAX_BYTES;
+  assert.ok(Number.isSafeInteger(max), 'the constant is exported');
+  const json = JSON.stringify(recordOf());
+  writeRecord(root, json + ' '.repeat(max + 1 - json.length));
+  expectRefused(await checkById(root), 'SCOPE_RECORD_INVALID');
+});
+
+test('only a missing record file is SCOPE_RECORD_MISSING', async (t) => {
+  const root = repo(t);
+  // No runtime directory at all, then the run directory without a file.
+  expectRefused(await checkById(root), 'SCOPE_RECORD_MISSING', 'no runtime directory');
+  mkdirSync(recordDir(root), { recursive: true });
+  expectRefused(await checkById(root), 'SCOPE_RECORD_MISSING', 'empty run directory');
+  // A record of another run is no record of this one.
+  writeRecord(
+    root,
+    JSON.stringify(recordOf({ runId: 'iterate-fedcba9876543210' })),
+    'iterate-fedcba9876543210',
+  );
+  expectRefused(await checkById(root), 'SCOPE_RECORD_MISSING', 'record of another run');
+});
+
+// ---- C. scope-release ------------------------------------------------------------------------
+
+test('scope-release removes the record and its empty run directory but keeps runs/', async (t) => {
+  const root = repo(t);
+  assert.equal((await bind(root)).ok, true);
+  const released = await release(root);
+  assert.equal(released.ok, true, JSON.stringify(released));
+  assert.equal(released.operation, 'scope-release');
+  assert.equal(existsSync(recordPath(root)), false);
+  assert.equal(existsSync(recordDir(root)), false);
+  assert.equal(existsSync(join(root, '.effective-flow', 'runs')), true);
+  // A released run reads as missing: a premature release is caught at the next scope-check.
+  expectRefused(await checkById(root), 'SCOPE_RECORD_MISSING');
+});
+
+test('scope-release of an absent record is a success, with or without a runtime directory', async (t) => {
+  const root = repo(t);
+  assert.equal((await release(root)).ok, true);
+  mkdirSync(join(root, '.effective-flow', 'runs'), { recursive: true });
+  assert.equal((await release(root)).ok, true);
+  mkdirSync(recordDir(root));
+  assert.equal((await release(root)).ok, true);
+});
+
+test('scope-release removes only the record and keeps a run directory that is not empty', async (t) => {
+  const root = repo(t);
+  assert.equal((await bind(root)).ok, true);
+  writeFileSync(join(recordDir(root), 'diff-baseline.json'), '{}\n');
+  assert.equal((await release(root)).ok, true);
+  assert.equal(existsSync(recordPath(root)), false);
+  assert.equal(existsSync(join(recordDir(root), 'diff-baseline.json')), true);
+});
+
+test('scope-release refuses a symlinked chain and removes nothing through it', async (t) => {
+  const root = repo(t);
+  const elsewhere = realpathSync(mkdtempSync(join(tmpdir(), 'effective-flow-scope-link-')));
+  t.after(() => rmSync(elsewhere, { recursive: true, force: true }));
+  writeFileSync(join(elsewhere, 'iterate-scope.json'), JSON.stringify(recordOf()));
+  mkdirSync(join(root, '.effective-flow', 'runs'), { recursive: true });
+  symlinkSync(elsewhere, recordDir(root));
+  expectRefused(await release(root), 'UNSAFE_TARGET');
+  assert.equal(existsSync(join(elsewhere, 'iterate-scope.json')), true, 'the target record stays');
+});
+
+// ---- D. scope-check by runId -----------------------------------------------------------------
+
+test('scope-check by runId answers exactly as scope-check with the stored scope literally', async (t) => {
+  const root = repo(t);
+  const head = gitIn(root, 'rev-parse', 'HEAD');
+  const scope = { mergeBase: head, head, paths: ['src/a.mjs', 'src/b.mjs'] };
+  const bound = await bind(root, { authorizedScope: { ...AUTHORIZED, scope } });
+  assert.equal(bound.ok, true, JSON.stringify(bound));
+  for (const changes of [
+    [{ status: 'M', path: 'src/a.mjs' }],
+    [
+      { status: 'M', path: 'src/a.mjs' },
+      { status: 'A', path: 'package-lock.json' },
+    ],
+    [{ status: 'A', path: 'test/new-case.test.mjs' }],
+    // An existing test outside the scope is an expansion, decided by a read in `cwd`.
+    [{ status: 'M', path: 'test/existing.test.mjs' }],
+  ]) {
+    const byId = await checkById(root, { changes });
+    const literal = await executeOperation(
+      'scope-check',
+      { cwd: root, scope, changes },
+      realDeps(),
+    );
+    assert.equal(byId.ok, true, JSON.stringify(byId));
+    assert.deepEqual(byId.data, literal.data, JSON.stringify(changes));
+  }
+  assert.equal(
+    (await checkById(root, { changes: [{ status: 'M', path: 'src/a.mjs' }] })).data.status,
+    'in-scope',
+  );
+  assert.deepEqual(
+    (await checkById(root, { changes: [{ status: 'A', path: 'package-lock.json' }] })).data.outside,
+    ['package-lock.json'],
+  );
+});
+
+test('scope-check takes exactly one of scope or runId with stateRoot, and closed keys', async (t) => {
+  const root = repo(t);
+  assert.equal((await bind(root)).ok, true);
+  const changes = [{ status: 'M', path: 'src/a.mjs' }];
+  // Control: exactly the runId form answers.
+  assert.equal((await checkById(root, { changes })).ok, true);
+  const cases = {
+    'both forms': { cwd: root, scope: SCOPE, stateRoot: root, runId: RUN_ID, changes },
+    'neither form': { cwd: root, changes },
+    'runId without stateRoot': { cwd: root, runId: RUN_ID, changes },
+    'stateRoot without runId': { cwd: root, stateRoot: root, changes },
+    'scope with stateRoot': { cwd: root, scope: SCOPE, stateRoot: root, changes },
+    'scope with runId': { cwd: root, scope: SCOPE, runId: RUN_ID, changes },
+    'unknown key': { cwd: root, stateRoot: root, runId: RUN_ID, changes, other: 1 },
+    'unknown key beside scope': { cwd: root, scope: SCOPE, changes, other: 1 },
+  };
+  for (const [label, input] of Object.entries(cases)) {
+    expectRefused(await executeOperation('scope-check', input, realDeps()), 'INVALID_INPUT', label);
+  }
+});
+
+test('scope-check by runId without a stored record is a refusal, never an unscoped pass', async (t) => {
+  const root = repo(t);
+  expectRefused(
+    await checkById(root, { changes: [{ status: 'M', path: 'src/a.mjs' }] }),
+    'SCOPE_RECORD_MISSING',
+  );
+});
+
+test('scope-check by runId refuses a stateRoot that is not the main checkout of cwd and never reads its record', async (t) => {
+  const root = repo(t);
+  const linked = join(root, '.effective-flow', '.worktrees', 'item');
+  mkdirSync(join(root, '.effective-flow', '.worktrees'), { recursive: true });
+  gitIn(root, 'worktree', 'add', '-q', '-b', 'item', linked);
+  // A hand-written record that would admit everything it lists, in the linked worktree and in a
+  // subdirectory of the main checkout: neither is a valid stateRoot.
+  writeRecord(linked, JSON.stringify(recordOf()));
+  const sub = join(root, 'test');
+  writeRecord(sub, JSON.stringify(recordOf()));
+  const changes = [{ status: 'M', path: 'src/a.mjs' }];
+  // Control: the main checkout is a valid stateRoot, so the refusals below are about the root.
+  const control = await checkById(root, { changes }, root);
+  assert.equal(control.ok, false, 'the root holds no record yet');
+  assert.equal(control.error.code, 'SCOPE_RECORD_MISSING');
+  expectRefused(await checkById(linked, { changes }), undefined, 'linked worktree as both');
+  expectRefused(
+    await checkById(root, { changes }, linked),
+    undefined,
+    'linked worktree as stateRoot',
+  );
+  expectRefused(await checkById(root, { changes }, sub), undefined, 'subdirectory as stateRoot');
+  expectRefused(
+    await checkById(root, { changes }, 'relative/root'),
+    undefined,
+    'relative stateRoot',
+  );
+  expectRefused(
+    await checkById(root, { changes }, join(root, 'does-not-exist')),
+    undefined,
+    'missing stateRoot',
+  );
+});
+
+test('scope-check by runId accepts the main checkout as stateRoot with a linked worktree as cwd', async (t) => {
+  const root = repo(t);
+  const head = gitIn(root, 'rev-parse', 'HEAD');
+  const scope = { mergeBase: head, head, paths: ['src/a.mjs'] };
+  assert.equal((await bind(root, { authorizedScope: { ...AUTHORIZED, scope } })).ok, true);
+  const linked = join(root, '.effective-flow', '.worktrees', 'item');
+  mkdirSync(join(root, '.effective-flow', '.worktrees'), { recursive: true });
+  gitIn(root, 'worktree', 'add', '-q', '-b', 'item', linked);
+  const inScope = await checkById(linked, { changes: [{ status: 'M', path: 'src/a.mjs' }] }, root);
+  assert.equal(inScope.ok, true, JSON.stringify(inScope));
+  assert.equal(inScope.data.status, 'in-scope');
+  const outside = await checkById(linked, { changes: [{ status: 'M', path: 'src/c.mjs' }] }, root);
+  assert.equal(outside.ok, true, JSON.stringify(outside));
+  assert.deepEqual(outside.data.outside, ['src/c.mjs']);
 });

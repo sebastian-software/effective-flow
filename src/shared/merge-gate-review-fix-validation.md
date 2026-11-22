@@ -53,9 +53,9 @@ Record in the wisdom file the ceiling with its source, the detection verbatim, a
 with every unmet condition. After the return of a delegation that carried the line, where the
 `after` head of "Repair checkpoints" step 3 differs from its `before`, record `after` as the
 **quick-validated review-fix head**, with the detection's `baseCommit`. The one exception is a
-return whose final text, read where its `Returned commits:` line is read, carries exactly one
-`Review-fix validation result:` line that parses as one compact JSON object with `mode` `full`, a
-non-empty `reason` string and a `head` of 40 hex characters equal to `after`. Every other return
+dispatch whose final return – after any keyword-less resume, never a line-request answer – carries
+exactly one `Review-fix validation result:` line that parses as one compact JSON object with `mode`
+`full`, a non-empty `reason` string and a `head` of 40 hex characters equal to `after`. Every other return
 records `after`, and a parsed `quick` head other than `after` is recorded as well. A later round
 never removes the record; condition 11 detects against the recorded head itself, never from
 this record.

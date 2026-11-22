@@ -972,12 +972,17 @@ checks, headSha }`) is pure and rejects a detected `detection` without its full 
   rationale for the minting order, the absence-check scope, the token and the helper itself, live
   in the lazily loaded `delegation-envelope-examples` fragment.
 - **Repair-attempt.** Invoke it as `node <skill-root>/scripts/repair-attempt.mjs
-<scope-read|scope-check|attribute|post-check|record|evaluate>` with one JSON object on standard
-  input; it emits one `{ ok, operation, data }` envelope. `merge-gate` uses it for repair accounting
-  and the authorized scope (the pull request's changed paths plus added test files, with the test
-  globs owned here), and `iterate` calls `scope-check` in delegated mode. The core is pure; the CLI
-  runs the ref-only git reads through the injected `process-runner` and never fetches. Reads it
-  cannot complete return `undetermined` codes. The operations are listed in the header comment of
+<scope-read|scope-check|attribute|post-check|record|evaluate|scope-bind|scope-release>` with one
+  JSON object on standard input; it emits one `{ ok, operation, data }` envelope. `merge-gate` uses
+  it for repair accounting and the authorized scope (the pull request's changed paths plus added
+  test files, with the test globs owned here). A scoped `iterate` run binds that scope once in Phase
+  0 with `scope-bind`, which writes `<RUNTIME_STATE_ROOT>/.effective-flow/runs/<runId>/iterate-scope.json`
+  through the runtime-state guard and refuses a different scope for the same `runId`; `scope-check`
+  then reads the scope by `runId` and `stateRoot`, and Phase 6 removes the record with
+  `scope-release`. The git-read logic is deterministic and takes its process runner by injection,
+  but the core is no longer stateless: it owns that record. The CLI runs the ref-only git reads
+  through the injected `process-runner` and never fetches. Reads it cannot complete return
+  `undetermined` codes. The operations are listed in the header comment of
   `repair-attempt-core.mjs`; the gate's call sequence is "Repair checkpoints" in
   `merge-gate-delegated-run`, and the report layout is the lazily loaded `merge-gate-repair-report`.
 - **Delivery-selection.** `deliver` uses it to bind the selected staged or working-tree states to
@@ -1343,7 +1348,14 @@ migrate-directory` performs the whole `.effective-flow/` directory migration: a 
 
   `commit create` (`effective-flow-state-commit-core.mjs`) is the one item commit of `iterate`
   under the `iterate-commit` lock, the only lock it accepts. Before the lock it validates the
-  request and refuses a path below `.effective-flow/` or `.git/`, then runs the hook trust check:
+  request and refuses a path below `.effective-flow/` or `.git/`. When the run's
+  `iterate-scope.json` exists below `cwd` for `owner.runId`, it then checks every listed path
+  against that bound scope through the `repair-attempt` core. A path outside it, a head that moved
+  before the commit, an unreadable record or a spent read budget (`SCOPE_READ_BUDGET_MS`, 10 s) is
+  the outcome `SCOPE_REFUSED` (reason `outside`, `head-moved`, `scope-record-invalid` or
+  `scope-read-timeout`) with nothing staged. The check precedes the hook trust check, so
+  `HOOKS_UNTRUSTED` implies checked paths; `iterate` gives the call a 420000 ms timeout. Then it
+  runs the hook trust check:
   a fork head (`sameRepository: false`), or a hook-relevant configuration that differs between
   `hookBase` (the full SHA of the merge base) and HEAD or between HEAD and the working tree, is the
   outcome `HOOKS_UNTRUSTED`, and the item is committed through the prose fallback in

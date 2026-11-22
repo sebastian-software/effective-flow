@@ -10,7 +10,8 @@ step 2's summary in place of a merge result.
   one (`scope-expansion-committed`), a returned commit without exactly one parent (`merge-commit`),
   a post-check read that could not be made (`post-check-undetermined`), a foreign commit outside the
   scope, without exactly one parent or not readable (`foreign-commit-unverified`, naming each in
-  `report.stop`), or a return without a parseable `Scope expansion:` line (`scope-line-missing`).
+  `report.stop`), or a return without a parseable `Scope expansion:` line, still missing after any
+  line request (`scope-line-missing`).
 - **The unresolved cause and its reviewer**: the configured login, the durable key – thread ID with
   its comment URL, or review id and finding ordinal with the review URL – and the head it was last
   reported on.

@@ -1,5 +1,6 @@
-// The `origin` the configured-reviewer scenario runs against: a local bare repository holding the
-// pull request the fixture reports, commit for commit, so the gate's repair scope read resolves.
+// The `origin` the configured-reviewer scenario and its line-request twin run against: a local bare
+// repository holding the pull request the fixture reports, commit for commit, so the gate's repair
+// scope read resolves.
 //
 // **Why this scenario needs it.** Immediately before its first delegation the gate runs the repair
 // helper's mandatory scope read (`repair-attempt.mjs scope-read`, "Repair checkpoints" step 1): it
@@ -34,7 +35,7 @@
 
 import { dirname, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { CONFIGURED_REVIEWER_SCENARIO } from './configured-reviewer-scenario.mjs';
+import { CONFIGURED_REVIEWER_SCENARIOS } from './configured-reviewer-scenario.mjs';
 import { forgeUrl, git, sandboxGitEnv, seedCommit } from './repair-origin.mjs';
 
 export const REMOTE_DIRECTORY = 'remote.git';
@@ -153,7 +154,7 @@ export function provisionPullRequestOrigin({ scenario, fixture, projectRoot }, s
 }
 
 export function prepareConfiguredReviewerOrigin(input) {
-  if (input.scenario !== CONFIGURED_REVIEWER_SCENARIO) return null;
+  if (!CONFIGURED_REVIEWER_SCENARIOS.includes(input.scenario)) return null;
   return provisionPullRequestOrigin(input, (projectRoot) =>
     seedConfiguredReviewerHistory(projectRoot, input.fixture),
   );

@@ -2,13 +2,17 @@
 // same/new/uncertain match rule per configured reviewer, reviewer and CI attempt counts, and the
 // second-ineffective-repair stop rule.
 //
-// The core is pure: every git read goes through the read functions `createGitReads(runner, cwd)`
-// builds over an injected process runner, which only the CLI entry `repair-attempt.mjs` creates.
-// Every read runs with `--no-replace-objects` and with every inherited variable that would redirect
-// git, inject configuration or replace objects masked (`gitReadEnv`). A failed read is never an
-// error: it surfaces as an `undetermined` code with the outcome the operation states for it. Repair
-// state is in-run data the gate keeps in its wisdom file and passes back on every call; the helper
-// is stateless, and every operation is deterministic for the same input and the same read results.
+// Every git read goes through the read functions `createGitReads(runner, cwd)` builds over an
+// injected process runner, which the CLI entry `repair-attempt.mjs` creates and `commit create`
+// (`effective-flow-state-commit-core.mjs`) passes in for its commit-time scope check. Every read
+// runs with `--no-replace-objects` and with every inherited variable that would redirect git,
+// inject configuration or replace objects masked (`gitReadEnv`). A failed read is never an error:
+// it surfaces as an `undetermined` code with the outcome the operation states for it. Repair state
+// is in-run data the gate keeps in its wisdom file and passes back on every call, and every repair
+// operation is deterministic for the same input and the same read results. The one state the
+// helper keeps itself is the scope record of a scoped `iterate` run, written by `scope-bind`, read
+// by `scope-check` and `commit create`, and removed by `scope-release`, each through the guarded
+// primitives of `runtime-state-guard.mjs`.
 //
 // Operations (input is one JSON object; `cwd` is the absolute checkout path, `base` the PR's base
 // branch name, every SHA a full lowercase object id):
@@ -20,7 +24,29 @@
 //   (both paths of every rename or copy entry). A scope record is
 //   `{ mergeBase, head, paths }` with sorted, de-duplicated paths. An undetermined read blocks
 //   delegation only; it never stops a run.
-// - `scope-check` `{ scope, changes: [{ status, path, from? }], cwd? }` -> `{ status: 'in-scope' |
+// - `scope-bind` `{ stateRoot, runId, authorizedScope }` -> `{ status: 'bound' | 'already-bound',
+//   path }`. `stateRoot` is the main checkout (`resolveRuntimeRoot`), `runId` iterate's own
+//   (`iterate-<16 or more lowercase hex>`, at most 128 characters), and `authorizedScope` the
+//   `Authorized scope:` JSON verbatim: exactly `version` (`1`), `scope` (exactly `mergeBase`, `head`
+//   and `paths`) and two different identifiers `freeText` and `correction` of at least 32
+//   characters from `A`-`Z` and `0`-`9`; any other form of that JSON is AUTHORIZED_SCOPE_INVALID,
+//   while a malformed call around it (keys, `runId`, `stateRoot`) stays INVALID_INPUT. It writes
+//   `<stateRoot>/.effective-flow/runs/<runId>/iterate-scope.json`, `{ version, runId, scope,
+//   freeText, correction }` with the scope normalized, once and never over an existing entry
+//   (`createNoClobber`), creating the parent chain with `ensureGuardedDirectory`. An identical
+//   re-bind is `already-bound` and leaves the record as it is; a different one is SCOPE_CONFLICT, so
+//   a bound scope is never widened; a record larger than SCOPE_RECORD_MAX_BYTES is
+//   SCOPE_RECORD_INVALID and is never written, so every bound record reads back.
+// - `scope-release` `{ stateRoot, runId }` -> `{ status: 'released' | 'absent' }`. Removes the
+//   record (`guardedUnlink`) and then the run directory when it is left empty (`guardedRmdir`); an
+//   absent record is a success.
+// - The record reader (`readScopeRecord`), shared by `scope-check` and `commit create`, spawns no
+//   process: a missing record file is `absent`; a symlinked or non-directory component of
+//   `.effective-flow/runs/<runId>/`, a symlinked or non-regular file, a file over
+//   SCOPE_RECORD_MAX_BYTES, and any content other than a record of exactly that `runId` are
+//   `invalid`.
+// - `scope-check` `{ scope, changes: [{ status, path, from? }], cwd? }` or `{ runId, stateRoot,
+//   changes, cwd }` -> `{ status: 'in-scope' |
 //   'expansion', outside: [path], undetermined: [{ path, code }] }`. `status` is a git name-status
 //   letter (`A`, `M`, `D`, `T`, `R`, `C`); a caller checking planned paths states `A` for a path that
 //   does not exist yet and `M` otherwise. Both sides of `R` and `C` are checked. A path that is not
@@ -34,7 +60,10 @@
 //   <path>`, literal pathspecs) a single-parent commit – so a test a base merge brought in is not
 //   the run's. The tip is `HEAD` of `cwd`, and the checked commit in `post-check`. These reads run
 //   only with `cwd`; a call without it is an expansion for such a path, and a failed read lists the
-//   path under `undetermined` with its code, which makes the status `expansion` too.
+//   path under `undetermined` with its code, which makes the status `expansion` too. The `runId`
+//   form checks against the bound record of that run instead of a supplied scope: `stateRoot` must
+//   be the main checkout of `cwd`'s repository, a missing record is SCOPE_RECORD_MISSING and an
+//   invalid one SCOPE_RECORD_INVALID, never an unscoped pass. Each form takes exactly its own keys.
 // - `attribute` `{ cwd, base, before, after, gateMerges?, shas? }` -> `{ status: 'attributed' |
 //   'uncertain' | 'undetermined', range, foreign, outsideRange, code? }`. Reads
 //   `git rev-list <before>..<after> --not origin/<base>` (no read when `before` equals `after`). The
@@ -90,8 +119,23 @@
 // and then carries the repair-progress data (stop, attempts, timeline, foreign commits, out-of-scope
 // paths, the maintainer decision code).
 
+import { constants as fsConstants } from 'node:fs';
+import { lstat, open, readdir } from 'node:fs/promises';
+import path from 'node:path';
 import process from 'node:process';
-import { gitBaseEnv } from './runtime-state-guard.mjs';
+import {
+  O_NOFOLLOW,
+  RUNTIME_STATE_DIR,
+  RuntimeStateError,
+  assertDirectoryChain,
+  commonDir,
+  createNoClobber,
+  ensureGuardedDirectory,
+  gitBaseEnv,
+  guardedRmdir,
+  guardedUnlink,
+  resolveRuntimeRoot,
+} from './runtime-state-guard.mjs';
 
 export const REPAIR_ATTEMPT_VERSION = 1;
 
@@ -102,9 +146,30 @@ export const REPAIR_ATTEMPT_OPERATIONS = Object.freeze([
   'post-check',
   'record',
   'evaluate',
+  'scope-bind',
+  'scope-release',
 ]);
 
-export const REPAIR_ATTEMPT_ERROR_CODES = Object.freeze(['INVALID_INPUT', 'INTERNAL_ERROR']);
+// The scope-record refusals, then the runtime-state guard's own codes, which pass through.
+export const REPAIR_ATTEMPT_ERROR_CODES = Object.freeze([
+  'INVALID_INPUT',
+  'INTERNAL_ERROR',
+  'AUTHORIZED_SCOPE_INVALID',
+  'SCOPE_CONFLICT',
+  'SCOPE_RECORD_MISSING',
+  'SCOPE_RECORD_INVALID',
+  'UNSAFE_TARGET',
+  'RUNTIME_STATE_UNSAFE',
+  'WRITE_FAILED',
+  'GIT_FAILED',
+]);
+const GUARD_ERROR_CODES = Object.freeze([
+  'INVALID_INPUT',
+  'UNSAFE_TARGET',
+  'RUNTIME_STATE_UNSAFE',
+  'WRITE_FAILED',
+  'GIT_FAILED',
+]);
 
 // Every failed git read surfaces under one of these codes; each operation states its outcome.
 export const UNDETERMINED_CODES = Object.freeze([
@@ -160,7 +225,30 @@ export const STOP_AFTER_ATTEMPTS = 2;
 
 export const MAX_STDIN_BYTES = 4 * 1024 * 1024;
 
-const EXIT_CODES = Object.freeze({ INVALID_INPUT: 2 });
+// The one bound of a scope record, for its writer and every reader: `scope-bind` refuses a record
+// above it, so a bound record always reads back. It equals the stdin bound, so any scope a
+// `scope-bind` call can carry in its JSON binds unless its stored form outgrows that call.
+export const SCOPE_RECORD_MAX_BYTES = MAX_STDIN_BYTES;
+export const SCOPE_RECORD_VERSION = 1;
+export const SCOPE_RECORD_FILE = 'iterate-scope.json';
+// The run id `iterate` mints, capped at the owner-string limit of `commit create`, before it ever
+// names a path.
+export const SCOPE_RUN_ID_PATTERN = /^iterate-[0-9a-f]{16,}$/;
+export const SCOPE_RUN_ID_MAX_LENGTH = 128;
+const SCOPE_RUNS_DIR = 'runs';
+const SCOPE_TEMP_PREFIX = '.iterate-scope-';
+const SCOPE_IDENTIFIER = /^[A-Z0-9]{32,}$/;
+const AUTHORIZED_SCOPE_KEYS = Object.freeze(['version', 'scope', 'freeText', 'correction']);
+const SCOPE_KEYS = Object.freeze(['mergeBase', 'head', 'paths']);
+const SCOPE_RECORD_KEYS = Object.freeze(['version', 'runId', 'scope', 'freeText', 'correction']);
+const SCOPE_OPERATION_KEYS = Object.freeze({
+  'scope-bind': Object.freeze(['stateRoot', 'runId', 'authorizedScope']),
+  'scope-release': Object.freeze(['stateRoot', 'runId']),
+  'scope-check-scope': Object.freeze(['scope', 'changes', 'cwd']),
+  'scope-check-run': Object.freeze(['runId', 'stateRoot', 'changes', 'cwd']),
+});
+
+const EXIT_CODES = Object.freeze({ INVALID_INPUT: 2, AUTHORIZED_SCOPE_INVALID: 2 });
 const OBJECT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const BASE_NAME = /^(?!-)(?!.*\.\.)(?!.*\/\/)(?!.*\/$)(?!.*\.lock$)[A-Za-z0-9._/-]+$/;
 const NAME_STATUS = /^[AMDTRCUXB][0-9]*$/;
@@ -1402,6 +1490,273 @@ export async function evaluate(input, reads) {
 }
 
 // ---------------------------------------------------------------------------------------------
+// Scope record
+
+function requireClosedKeys(value, allowed, label) {
+  for (const key of Object.keys(value)) {
+    if (!allowed.includes(key)) fail(`${label} has an unknown key: ${key}`);
+  }
+  for (const key of allowed) {
+    if (value[key] === undefined) fail(`${label} is missing ${key}`);
+  }
+}
+
+export function isScopeRunId(value) {
+  return (
+    typeof value === 'string' &&
+    value.length <= SCOPE_RUN_ID_MAX_LENGTH &&
+    SCOPE_RUN_ID_PATTERN.test(value)
+  );
+}
+
+function requireScopeRunId(value) {
+  if (!isScopeRunId(value)) {
+    fail(
+      `runId must match ${SCOPE_RUN_ID_PATTERN.source} within ${SCOPE_RUN_ID_MAX_LENGTH} characters`,
+    );
+  }
+  return value;
+}
+
+function requireAbsolute(value, label) {
+  const absolute = requireString(value, label);
+  if (!path.isAbsolute(absolute)) fail(`${label} must be an absolute path`);
+  return absolute;
+}
+
+// The `Authorized scope:` JSON in exactly the form iterate's Phase 0 states.
+export function normalizeAuthorizedScope(value, label = 'authorizedScope') {
+  requireObject(value, label);
+  requireClosedKeys(value, AUTHORIZED_SCOPE_KEYS, label);
+  if (value.version !== SCOPE_RECORD_VERSION) fail(`${label}.version must be 1`);
+  requireObject(value.scope, `${label}.scope`);
+  requireClosedKeys(value.scope, SCOPE_KEYS, `${label}.scope`);
+  if (!Array.isArray(value.scope.paths)) fail(`${label}.scope.paths must be an array`);
+  const scope = normalizeScope(value.scope, `${label}.scope`);
+  for (const key of ['freeText', 'correction']) {
+    if (typeof value[key] !== 'string' || !SCOPE_IDENTIFIER.test(value[key])) {
+      fail(`${label}.${key} must be at least 32 characters from A-Z and 0-9`);
+    }
+  }
+  if (value.freeText === value.correction) fail(`${label} identifiers must differ`);
+  return { scope, freeText: value.freeText, correction: value.correction };
+}
+
+function scopeRecordOf(runId, authorized) {
+  return {
+    version: SCOPE_RECORD_VERSION,
+    runId,
+    scope: {
+      mergeBase: authorized.scope.mergeBase,
+      head: authorized.scope.head,
+      paths: authorized.scope.paths,
+    },
+    freeText: authorized.freeText,
+    correction: authorized.correction,
+  };
+}
+
+const runDirectoryOf = (stateRoot, runId) =>
+  path.join(stateRoot, RUNTIME_STATE_DIR, SCOPE_RUNS_DIR, runId);
+
+// Reads the bound record of `runId` below the canonical `stateRoot` with filesystem calls only:
+// `{ status: 'absent' }` for a missing record file, `{ status: 'present', record, path }`, or
+// `{ status: 'invalid', message }` for everything else.
+export async function readScopeRecord(stateRoot, runId) {
+  const invalid = (message) => ({ status: 'invalid', message });
+  if (!isScopeRunId(runId)) return invalid('runId is not an iterate run id');
+  const directory = runDirectoryOf(stateRoot, runId);
+  const file = path.join(directory, SCOPE_RECORD_FILE);
+  try {
+    if (!(await assertDirectoryChain(stateRoot, directory, { allowMissing: true }))) {
+      return { status: 'absent' };
+    }
+  } catch (error) {
+    return invalid(error?.message ?? 'the record directory is unsafe');
+  }
+  let info;
+  try {
+    info = await lstat(file);
+  } catch (error) {
+    if (error?.code === 'ENOENT') return { status: 'absent' };
+    return invalid(`cannot inspect ${file}: ${error?.code ?? error?.message}`);
+  }
+  if (!info.isFile()) return invalid(`${file} is not a regular file`);
+  if (info.size > SCOPE_RECORD_MAX_BYTES) {
+    return invalid(`${file} exceeds ${SCOPE_RECORD_MAX_BYTES} bytes`);
+  }
+  let bytes;
+  let handle;
+  try {
+    handle = await open(file, fsConstants.O_RDONLY | O_NOFOLLOW);
+    if (!(await handle.stat()).isFile()) return invalid(`${file} is not a regular file`);
+    const buffer = Buffer.alloc(SCOPE_RECORD_MAX_BYTES + 1);
+    let length = 0;
+    for (;;) {
+      const { bytesRead } = await handle.read(buffer, length, buffer.length - length, null);
+      if (bytesRead === 0) break;
+      length += bytesRead;
+      if (length > SCOPE_RECORD_MAX_BYTES) {
+        return invalid(`${file} exceeds ${SCOPE_RECORD_MAX_BYTES} bytes`);
+      }
+    }
+    bytes = buffer.subarray(0, length);
+  } catch (error) {
+    return invalid(`cannot read ${file}: ${error?.code ?? error?.message}`);
+  } finally {
+    await handle?.close().catch(() => {});
+  }
+  let value;
+  try {
+    value = JSON.parse(bytes.toString('utf8'));
+  } catch {
+    return invalid(`${file} is not JSON`);
+  }
+  try {
+    requireObject(value, 'record');
+    requireClosedKeys(value, SCOPE_RECORD_KEYS, 'record');
+    if (value.runId !== runId) fail('record names another run');
+    const { runId: _runId, ...authorizedScope } = value;
+    return {
+      status: 'present',
+      path: file,
+      record: scopeRecordOf(runId, normalizeAuthorizedScope(authorizedScope, 'record')),
+    };
+  } catch (error) {
+    return invalid(`${file} is not a scope record: ${error?.message}`);
+  }
+}
+
+function guardContext(deps) {
+  return { runner: deps.runner, env: gitBaseEnv(deps.env ?? process.env), cwd: null };
+}
+
+export async function scopeBind(input, deps = {}) {
+  requireClosedKeys(input, SCOPE_OPERATION_KEYS['scope-bind'], 'input');
+  const runId = requireScopeRunId(input.runId);
+  const stateRoot = requireAbsolute(input.stateRoot, 'stateRoot');
+  let authorized;
+  try {
+    authorized = normalizeAuthorizedScope(input.authorizedScope);
+  } catch (error) {
+    // The one refusal iterate maps to `ABORT: unparseable authorized scope`: the line itself is
+    // malformed, as opposed to the call around it.
+    if (error instanceof RepairAttemptError && error.code === 'INVALID_INPUT') {
+      throw new RepairAttemptError('AUTHORIZED_SCOPE_INVALID', error.message);
+    }
+    throw error;
+  }
+  const record = scopeRecordOf(runId, authorized);
+  const content = `${JSON.stringify(record, null, 2)}\n`;
+  if (Buffer.byteLength(content, 'utf8') > SCOPE_RECORD_MAX_BYTES) {
+    throw new RepairAttemptError(
+      'SCOPE_RECORD_INVALID',
+      `the scope record would exceed ${SCOPE_RECORD_MAX_BYTES} bytes; nothing was written`,
+    );
+  }
+  const context = guardContext(deps);
+  const { cwd } = await resolveRuntimeRoot(context, stateRoot);
+  const stateDir = path.join(cwd, RUNTIME_STATE_DIR);
+  const runsDir = path.join(stateDir, SCOPE_RUNS_DIR);
+  const directory = path.join(runsDir, runId);
+  for (const target of [stateDir, runsDir, directory]) {
+    await ensureGuardedDirectory(context, target);
+  }
+  const target = path.join(directory, SCOPE_RECORD_FILE);
+  const created = await createNoClobber(context, target, content, {
+    tempPrefix: SCOPE_TEMP_PREFIX,
+  });
+  if (created.created) return { status: 'bound', path: target };
+  const existing = await readScopeRecord(cwd, runId);
+  if (existing.status === 'invalid') {
+    throw new RepairAttemptError('SCOPE_RECORD_INVALID', existing.message);
+  }
+  if (existing.status === 'present' && JSON.stringify(existing.record) === JSON.stringify(record)) {
+    return { status: 'already-bound', path: target };
+  }
+  throw new RepairAttemptError(
+    'SCOPE_CONFLICT',
+    `run ${runId} already has another bound scope; the bound scope stays`,
+  );
+}
+
+export async function scopeRelease(input, deps = {}) {
+  requireClosedKeys(input, SCOPE_OPERATION_KEYS['scope-release'], 'input');
+  const runId = requireScopeRunId(input.runId);
+  const stateRoot = requireAbsolute(input.stateRoot, 'stateRoot');
+  const context = guardContext(deps);
+  const { cwd } = await resolveRuntimeRoot(context, stateRoot);
+  const directory = runDirectoryOf(cwd, runId);
+  if (!(await assertDirectoryChain(cwd, directory, { allowMissing: true }))) {
+    return { status: 'absent' };
+  }
+  const file = path.join(directory, SCOPE_RECORD_FILE);
+  let present = true;
+  try {
+    await lstat(file);
+  } catch (error) {
+    if (error?.code !== 'ENOENT') {
+      throw new RepairAttemptError(
+        'UNSAFE_TARGET',
+        `cannot inspect ${file}: ${error?.code ?? error?.message}`,
+      );
+    }
+    present = false;
+  }
+  if (present) await guardedUnlink(context, file);
+  await assertDirectoryChain(cwd, directory);
+  if ((await readdir(directory)).length === 0) await guardedRmdir(context, directory);
+  return { status: present ? 'released' : 'absent' };
+}
+
+// The scope of a `scope-check` call: the supplied one, or the bound record of `runId` below a
+// `stateRoot` proven to be the main checkout of `cwd`'s repository.
+async function checkedScope(input, deps) {
+  const byRun = Object.hasOwn(input, 'runId') || Object.hasOwn(input, 'stateRoot');
+  if (Object.hasOwn(input, 'scope') === byRun) {
+    fail('scope-check takes exactly one of scope or runId with stateRoot');
+  }
+  if (!byRun) {
+    for (const key of Object.keys(input)) {
+      if (!SCOPE_OPERATION_KEYS['scope-check-scope'].includes(key)) {
+        fail(`input has an unknown key: ${key}`);
+      }
+    }
+    return normalizeScope(input.scope);
+  }
+  requireClosedKeys(input, SCOPE_OPERATION_KEYS['scope-check-run'], 'input');
+  const runId = requireScopeRunId(input.runId);
+  const stateRoot = requireAbsolute(input.stateRoot, 'stateRoot');
+  const cwd = requireCwd(input.cwd);
+  normalizeChanges(input.changes);
+  const context = guardContext(deps);
+  const { cwd: root, common } = await resolveRuntimeRoot(context, stateRoot);
+  let theirs;
+  try {
+    theirs = await commonDir(context, cwd);
+  } catch (error) {
+    if (error instanceof RuntimeStateError && error.code !== 'GIT_FAILED') throw error;
+    throw new RepairAttemptError('UNSAFE_TARGET', 'cwd is not inside a git working tree');
+  }
+  if (theirs !== common) {
+    throw new RepairAttemptError(
+      'UNSAFE_TARGET',
+      "stateRoot is not the main checkout of cwd's repository",
+    );
+  }
+  const found = await readScopeRecord(root, runId);
+  if (found.status === 'absent') {
+    throw new RepairAttemptError(
+      'SCOPE_RECORD_MISSING',
+      `run ${runId} has no bound scope; it is never checked unscoped`,
+    );
+  }
+  if (found.status === 'invalid')
+    throw new RepairAttemptError('SCOPE_RECORD_INVALID', found.message);
+  return found.record.scope;
+}
+
+// ---------------------------------------------------------------------------------------------
 // Operations
 
 export async function executeOperation(operation, input = {}, deps = {}) {
@@ -1409,8 +1764,10 @@ export async function executeOperation(operation, input = {}, deps = {}) {
     if (!REPAIR_ATTEMPT_OPERATIONS.includes(operation)) fail(`unknown operation: ${operation}`);
     requireObject(input, 'input');
     let data;
-    if (operation === 'scope-check') {
-      const scope = normalizeScope(input.scope);
+    if (operation === 'scope-bind') data = await scopeBind(input, deps);
+    else if (operation === 'scope-release') data = await scopeRelease(input, deps);
+    else if (operation === 'scope-check') {
+      const scope = await checkedScope(input, deps);
       const changes = normalizeChanges(input.changes);
       const reads =
         input.cwd === undefined
@@ -1435,10 +1792,12 @@ export function errorEnvelope(operation, error) {
   const normalized =
     error instanceof RepairAttemptError
       ? error
-      : new RepairAttemptError(
-          'INTERNAL_ERROR',
-          error?.message ?? 'unexpected repair-attempt failure',
-        );
+      : error instanceof RuntimeStateError && GUARD_ERROR_CODES.includes(error.code)
+        ? new RepairAttemptError(error.code, error.message)
+        : new RepairAttemptError(
+            'INTERNAL_ERROR',
+            error?.message ?? 'unexpected repair-attempt failure',
+          );
   return {
     ok: false,
     operation: operation ?? null,

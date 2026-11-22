@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 // Thin JSON CLI over repair-attempt-core.mjs:
-//   node repair-attempt.mjs <scope-read|scope-check|attribute|post-check|record|evaluate>
+//   node repair-attempt.mjs
+//     <scope-read|scope-check|attribute|post-check|record|evaluate|scope-bind|scope-release>
 //   (one JSON object on stdin)
 // Writes exactly one `{ ok, operation, data }` envelope line to stdout and exits non-zero on
 // failure. Input never travels as command-line arguments; only the operation name does. The
 // ref-only git reads run through the shared process runner without a shell; this entry never
-// fetches, so the base ref is as fresh as the gate's own ancestry-check fetch left it.
+// fetches, so the base ref is as fresh as the gate's own ancestry-check fetch left it. The scope
+// record of `scope-bind` and `scope-release` is written and removed only below the verified
+// `stateRoot`, through the runtime-state guard.
 
 import { realpathSync } from 'node:fs';
 import process from 'node:process';

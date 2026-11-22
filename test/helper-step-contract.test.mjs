@@ -142,10 +142,10 @@ test('the iterate orchestrator commits each item after its review; the delegatio
     text,
     /The orchestrator resolves `worktree`, `hookBase` and `sameRepository` as concrete values/,
   );
-  const bound = /above the helper's (\d+) ms commit bound, for example (\d+) ms/.exec(text);
+  const bound = /an explicit timeout of (\d+) ms: the helper's (\d+) ms commit bound/.exec(text);
   assert.ok(bound, 'an explicit Bash timeout above the commit bound');
-  assert.equal(Number(bound[1]), COMMIT_TIMEOUT_MS);
-  assert.ok(Number(bound[2]) > COMMIT_TIMEOUT_MS);
+  assert.equal(Number(bound[2]), COMMIT_TIMEOUT_MS);
+  assert.ok(Number(bound[1]) > COMMIT_TIMEOUT_MS);
   assert.match(text, /In Codex, request sandbox escalation for this call up front/);
 });
 
